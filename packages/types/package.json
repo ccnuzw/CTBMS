@@ -1,0 +1,14 @@
+{
+    "name": "@packages/types",
+    "version": "0.0.0",
+    "private": true,
+    "main": "./src/index.ts",
+    "types": "./src/index.ts",
+    "dependencies": {
+        "zod": "^3.0.0"
+    },
+    "devDependencies": {
+        "typescript": "^5.0.0",
+        "@packages/tsconfig": "workspace:*"
+    }
+}

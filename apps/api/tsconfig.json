@@ -1,0 +1,10 @@
+{
+    "extends": "../../packages/tsconfig/nestjs.json",
+    "compilerOptions": {
+        "declaration": false,
+        "outDir": "./dist"
+    },
+    "include": [
+        "src/**/*"
+    ]
+}
