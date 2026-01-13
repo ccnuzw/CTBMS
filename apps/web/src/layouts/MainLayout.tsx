@@ -10,18 +10,18 @@ import {
     CloudOutlined,
     SettingOutlined,
     QuestionCircleOutlined,
-    LogoutOutlined,
 } from '@ant-design/icons';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
+import { ThemeSwitcher } from '../components/ThemeSwitcher';
+import { UserDropdown } from '../components/UserDropdown';
 
 const { Header, Sider, Content } = Layout;
 const { Title, Text } = Typography;
 
 export const MainLayout: React.FC = () => {
     const [collapsed, setCollapsed] = useState(false);
-    const {
-        token: { colorBgContainer, borderRadiusLG, colorPrimary },
-    } = antTheme.useToken();
+    const { token } = antTheme.useToken();
+    const { colorBgContainer, colorPrimary } = token;
     const navigate = useNavigate();
     const location = useLocation();
 
@@ -36,27 +36,7 @@ export const MainLayout: React.FC = () => {
         }
     };
 
-    const userMenu: MenuProps['items'] = [
-        {
-            key: 'profile',
-            label: '个人中心',
-            icon: <UserOutlined />,
-        },
-        {
-            key: 'settings',
-            label: '系统设置',
-            icon: <SettingOutlined />,
-        },
-        {
-            type: 'divider',
-        },
-        {
-            key: 'logout',
-            label: '退出登录',
-            icon: <LogoutOutlined />,
-            danger: true,
-        },
-    ];
+
 
     return (
         <Layout style={{ height: '100vh', overflow: 'hidden' }}>
@@ -75,8 +55,8 @@ export const MainLayout: React.FC = () => {
                 collapsed={collapsed}
                 width={220}
                 style={{
-                    background: '#fff',
-                    borderRight: '1px solid #f0f0f0',
+                    background: colorBgContainer,
+                    borderRight: `1px solid ${token.colorBorderSecondary}`,
                     // Flex column to ensure children fill the space
                     display: 'flex',
                     flexDirection: 'column',
@@ -109,7 +89,6 @@ export const MainLayout: React.FC = () => {
 
                     <div style={{ flex: 1, overflowY: 'auto' }}>
                         <Menu
-                            theme="light"
                             mode="inline"
                             selectedKeys={[location.pathname]}
                             onClick={({ key }) => navigate(key)}
@@ -121,17 +100,37 @@ export const MainLayout: React.FC = () => {
                                     label: '仪表盘',
                                 },
                                 {
-                                    key: '/users',
-                                    icon: <UserOutlined />,
-                                    label: '用户管理',
+                                    key: 'system',
+                                    icon: <SettingOutlined />,
+                                    label: '系统管理',
+                                    children: [
+                                        {
+                                            key: '/users',
+                                            icon: <UserOutlined />,
+                                            label: '用户管理',
+                                        },
+                                        {
+                                            key: 'settings',
+                                            label: '设置中心',
+                                            children: [
+                                                {
+                                                    key: '/settings/general',
+                                                    label: '通用设置',
+                                                },
+                                                {
+                                                    key: '/settings/security',
+                                                    label: '安全设置',
+                                                }
+                                            ]
+                                        }
+                                    ]
                                 },
                             ]}
                         />
                     </div>
 
-                    <div style={{ padding: '0 0 12px 0', borderTop: '1px solid #f0f0f0', flexShrink: 0 }}>
+                    <div style={{ padding: '0 0 12px 0', borderTop: `1px solid ${token.colorBorderSecondary}`, flexShrink: 0 }}>
                         <Menu
-                            theme="light"
                             mode="inline"
                             selectable={false}
                             style={{ borderRight: 0 }}
@@ -156,8 +155,8 @@ export const MainLayout: React.FC = () => {
                                 alignItems: 'center',
                                 justifyContent: 'center',
                                 cursor: 'pointer',
-                                color: '#8c8c8c',
-                                borderTop: '1px solid #f0f0f0',
+                                color: token.colorTextSecondary,
+                                borderTop: `1px solid ${token.colorBorderSecondary}`,
                                 marginTop: 4,
                                 fontSize: 16
                             }}
@@ -174,7 +173,7 @@ export const MainLayout: React.FC = () => {
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'space-between',
-                    borderBottom: '1px solid #f0f0f0',
+                    borderBottom: `1px solid ${token.colorBorderSecondary}`,
                     height: 48,
                     flexShrink: 0,
                     zIndex: 99
@@ -183,32 +182,18 @@ export const MainLayout: React.FC = () => {
                         <Title level={4} style={{ margin: 0 }}>{getPageTitle()}</Title>
                     </div>
 
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 24 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
                         <Input
-                            prefix={<SearchOutlined style={{ color: '#bfbfbf' }} />}
+                            prefix={<SearchOutlined style={{ color: token.colorTextPlaceholder }} />}
                             placeholder="搜索节点、规则..."
-                            style={{ width: 280, borderRadius: 8, background: '#f5f5f5', border: 'none' }}
+                            style={{ width: 200, borderRadius: 8, background: token.colorFillTertiary, border: 'none' }}
                             variant="borderless"
                         />
-                        <Badge dot color="red">
-                            <span style={{ display: 'flex', alignItems: 'center' }}>
-                                <BellOutlined style={{ fontSize: 20, color: '#8c8c8c', cursor: 'pointer' }} />
-                            </span>
+                        <Badge dot color="red" style={{ marginRight: 8 }}>
+                            <BellOutlined style={{ fontSize: 20, color: token.colorTextSecondary, cursor: 'pointer' }} />
                         </Badge>
-                        <div style={{ height: 24, width: 1, background: '#f0f0f0' }} />
-                        <Dropdown menu={{ items: userMenu }} placement="bottomRight" arrow>
-                            <Space size="middle" style={{ cursor: 'pointer' }}>
-                                <div style={{ textAlign: 'right', display: 'none', lineHeight: 1.2 }}>
-                                    <div style={{ fontWeight: 500 }}>管理员</div>
-                                    <div style={{ fontSize: 12, color: '#8c8c8c' }}>系统操作员</div>
-                                </div>
-                                <div style={{ textAlign: 'right', lineHeight: 1.3 }}>
-                                    <div style={{ fontWeight: 600, fontSize: 14 }}>管理员</div>
-                                    <div style={{ fontSize: 11, color: '#8c8c8c' }}>系统操作员</div>
-                                </div>
-                                <Avatar icon={<UserOutlined />} style={{ backgroundColor: colorPrimary }} />
-                            </Space>
-                        </Dropdown>
+                        <ThemeSwitcher />
+                        <UserDropdown />
                     </div>
                 </Header>
                 <Content
