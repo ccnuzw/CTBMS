@@ -1,10 +1,10 @@
 
 import React, { useRef, useState } from 'react';
 import { ProTable, ProColumns, ActionType } from '@ant-design/pro-components';
-import { Button, App } from 'antd';
-import { PlusOutlined, EditOutlined } from '@ant-design/icons';
+import { Button, App, Popconfirm } from 'antd';
+import { PlusOutlined, EditOutlined, DeleteOutlined } from '@ant-design/icons';
 import { UserDto } from '@packages/types';
-import { useUsers, useCreateUser, useUpdateUser } from '../api/users';
+import { useUsers, useCreateUser, useUpdateUser, useDeleteUser } from '../api/users';
 import { ModalForm, ProFormText, ProFormSelect } from '@ant-design/pro-components';
 
 export const UserList: React.FC = () => {
@@ -12,6 +12,7 @@ export const UserList: React.FC = () => {
     const { data: users, isLoading } = useUsers();
     const createUserMutation = useCreateUser();
     const updateUserMutation = useUpdateUser();
+    const deleteUserMutation = useDeleteUser();
     const { message } = App.useApp();
 
     const [modalVisible, setModalVisible] = useState(false);
@@ -20,6 +21,15 @@ export const UserList: React.FC = () => {
     const handleEdit = (record: UserDto) => {
         setCurrentRow(record);
         setModalVisible(true);
+    };
+
+    const handleDelete = async (id: string) => {
+        try {
+            await deleteUserMutation.mutateAsync(id);
+            message.success('用户删除成功');
+        } catch (error) {
+            message.error('删除失败');
+        }
     };
 
     const columns: ProColumns<UserDto>[] = [
@@ -54,7 +64,7 @@ export const UserList: React.FC = () => {
         {
             title: '操作',
             valueType: 'option',
-            width: 100,
+            width: 180,
             render: (_, record) => [
                 <Button
                     key="edit"
@@ -65,6 +75,13 @@ export const UserList: React.FC = () => {
                 >
                     编辑
                 </Button>,
+                <Popconfirm
+                    key="delete"
+                    title="确定删除该用户吗?"
+                    onConfirm={() => handleDelete(record.id)}
+                >
+                    <Button type="primary" size="small" danger icon={<DeleteOutlined />}>删除</Button>
+                </Popconfirm>,
             ],
         },
     ];

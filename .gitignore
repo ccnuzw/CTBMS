@@ -123,3 +123,6 @@ dist/
 # Prisma
 /prisma/*.db
 /prisma/*.db-journal
+
+# Uploads
+apps/api/uploads/

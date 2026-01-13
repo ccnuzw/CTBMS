@@ -1,16 +1,17 @@
 import { Injectable } from '@nestjs/common';
-import { PrismaClient, User, Role } from '@prisma/client';
+import { User, Role } from '@prisma/client';
 import { CreateUserDto } from '@packages/types';
+import { PrismaService } from '../../prisma';
 
 @Injectable()
 export class UsersService {
-    constructor(private prisma: PrismaClient) { }
+    constructor(private prisma: PrismaService) { }
 
     async create(data: CreateUserDto): Promise<User> {
         return this.prisma.user.create({
             data: {
                 ...data,
-                role: data.role as Role, // Ensure Enum match
+                role: data.role as Role,
             },
         });
     }
@@ -28,6 +29,12 @@ export class UsersService {
     async findAll(): Promise<User[]> {
         return this.prisma.user.findMany({
             orderBy: { createdAt: 'desc' },
+        });
+    }
+
+    async remove(id: string): Promise<User> {
+        return this.prisma.user.delete({
+            where: { id },
         });
     }
 }

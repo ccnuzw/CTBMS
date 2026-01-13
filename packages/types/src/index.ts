@@ -22,3 +22,5 @@ export type UserDto = z.infer<typeof UserSchema>;
 export type CreateUserDto = z.infer<typeof CreateUserSchema>;
 export type UpdateUserDto = z.infer<typeof UpdateUserSchema>;
 
+
+export * from './modules/market-info.js';

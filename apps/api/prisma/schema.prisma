@@ -20,3 +20,51 @@ enum Role {
   USER
   ADMIN
 }
+
+// Market Info Subsystem
+model MarketCategory {
+  id          String   @id @default(uuid())
+  name        String
+  code        String   @unique
+  description String?
+  sortOrder   Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  infos       MarketInfo[]
+}
+
+model MarketTag {
+  id        String   @id @default(uuid())
+  name      String   @unique
+  color     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  infos     MarketInfo[] @relation("InfoTags")
+}
+
+model MarketInfo {
+  id          String   @id @default(uuid())
+  title       String
+  content     String   @db.Text
+  summary     String?
+  status      InfoStatus @default(DRAFT)
+  publishedAt DateTime?
+  
+  categoryId  String
+  category    MarketCategory @relation(fields: [categoryId], references: [id])
+  tags        MarketTag[]    @relation("InfoTags")
+  
+  attachments Json?      
+  
+  authorId    String     
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+}
+
+enum InfoStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+}

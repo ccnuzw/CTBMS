@@ -2,6 +2,10 @@ import { createBrowserRouter, Navigate } from 'react-router-dom';
 import { MainLayout } from '../layouts/MainLayout';
 import { UserList } from '../features/users/components/UserList';
 import { DashboardPage } from '../features/dashboard/DashboardPage';
+import { CategoryList } from '../features/market-info/components/CategoryList';
+import { TagList } from '../features/market-info/components/TagList';
+import { InfoList } from '../features/market-info/components/InfoList';
+import { InfoEditor } from '../features/market-info/components/InfoEditor';
 
 export const router = createBrowserRouter([
     {
@@ -19,6 +23,22 @@ export const router = createBrowserRouter([
             {
                 path: 'users',
                 element: <UserList />,
+            },
+            {
+                path: 'market/categories',
+                element: <CategoryList />,
+            },
+            {
+                path: 'market/tags',
+                element: <TagList />,
+            },
+            {
+                path: 'market/info',
+                children: [
+                    { index: true, element: <InfoList /> },
+                    { path: 'new', element: <InfoEditor /> },
+                    { path: 'edit/:id', element: <InfoEditor /> },
+                ]
             },
         ],
     },

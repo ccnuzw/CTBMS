@@ -18,7 +18,12 @@ trigger: always_on
 - **数据库**: `schema.prisma` 是数据库结构的唯一真理。禁止手动修改数据库表结构。
 - **设计风格**: 前端 UI 的所有颜色、间距、字号必须来源于 `themeConfig.ts` 中的 Ant Design Token。
 
-### 1.2 依赖管理 (Dependency Management)
+### 1.2 高内聚低耦合 (High Cohesion, Low Coupling)
+- **一个功能 = 一个模块**: 禁止将多个不相关功能塞入同一个模块。
+- **模块间通信**: 通过 `exports` 暴露 Service，禁止直接导入其他模块的内部文件。
+- **全局基础设施**: PrismaModule 等基础设施模块放在 `src/` 根目录，不属于业务模块目录。
+
+### 1.3 依赖管理 (Dependency Management)
 - **包管理器**: **严格强制使用 `pnpm`**。
 - **依赖安装**:
   - 全局/开发依赖: `pnpm add -w -D <pkg>`
@@ -118,6 +123,26 @@ trigger: always_on
 *   必须抛出 NestJS 内置的 HTTP 异常 (e.g., `new BadRequestException('...')`)。
 *   使用全局 `AllExceptionsFilter` 统一捕获并格式化错误响应。
 
+### 4.4 全局模块 (Global Modules)
+*   **PrismaModule**:
+    *   放在 `src/prisma/` 而非业务模块目录
+    *   使用 `@Global()` 装饰器，全局可用
+    *   所有 Service 通过依赖注入使用 [PrismaService]
+    *   ❌ 禁止 `new PrismaClient()` 或直接导入 `PrismaClient`
+
+### 4.5 模块结构规范
+每个业务模块必须遵循以下结构：
+```text
+<module-name>/
+├── dto/
+│   ├── index.ts
+│   ├── create-xxx.dto.ts
+│   └── update-xxx.dto.ts
+├── xxx.controller.ts
+├── xxx.service.ts
+├── xxx.module.ts
+└── index.ts
+
 ---
 
 ## 5. 代码质量与命名规范 (Coding Standards)
@@ -139,4 +164,3 @@ trigger: always_on
 ### 5.3 注释
 *   **自文档化代码**优于注释。如果代码逻辑复杂到需要大量注释，请重构代码。
 *   **JSDoc**: 仅对公共 util 函数、复杂的业务逻辑方法强制要求 JSDoc 注释。
-

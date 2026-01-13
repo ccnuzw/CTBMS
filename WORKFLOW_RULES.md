@@ -1,6 +1,6 @@
 这是一份严格的**垂直切片开发流程规约 (Vertical Slice Rules)**。
 
-请将其保存为 **`WORKFLOW_RULES.md`**。这将是我们后续开发每一个新功能（Feature）时必须严格遵守的“施工图纸”。
+请将其保存为 **`WORKFLOW_RULES.md`**。这将是我们后续开发每一个新功能（Feature）时必须严格遵守的"施工图纸"。
 
 ---
 
@@ -11,6 +11,37 @@
 
 ## 🚫 黄金法则 (The Golden Rule)
 **Strict Type Sharing**: 后端 DTO 和前端 Interface **严禁**手动重复定义。必须且只能通过 `packages/types` 共享。如果后端改了字段，前端必须在编译时报错。
+
+---
+
+## 🏗️ 架构原则 (Architecture Principles)
+
+### 高内聚低耦合 (High Cohesion, Low Coupling)
+
+1.  **全局 PrismaModule (`apps/api/src/prisma/`)**:
+    *   统一管理数据库连接，使用 `@Global()` 装饰器。
+    *   所有模块通过依赖注入使用 `PrismaService`，**禁止**直接 `new PrismaClient()`。
+
+2.  **一个功能 = 一个模块**:
+    *   每个业务功能应拆分为独立模块（如 `market-category/`, `market-tag/`）。
+    *   **禁止**将多个不相关功能塞入同一个模块。
+
+3.  **模块结构标准**:
+    ```
+    apps/api/src/modules/<module-name>/
+    ├── dto/
+    │   ├── index.ts
+    │   ├── create-xxx.dto.ts
+    │   └── update-xxx.dto.ts
+    ├── xxx.controller.ts
+    ├── xxx.service.ts
+    ├── xxx.module.ts
+    └── index.ts
+    ```
+
+4.  **模块导出规范**:
+    *   每个模块应有 `index.ts` 导出公共 API。
+    *   如果其他模块需要某 Service，必须在 Module 的 `exports` 中声明。
 
 ---
 
@@ -36,13 +67,40 @@
 
 利用 Phase 1 定义的类型构建 API。
 
-1.  **Service Layer**:
-    *   实现业务逻辑，直接与 Prisma 交互。
-    *   **Rule**: Service 方法的入参和出参尽量使用 Shared Types。
-2.  **Controller Layer**:
-    *   实现 API 端点。
-    *   **Validation**: 必须使用 `ZodValidationPipe` 配合 `packages/types` 里的 Schema 进行校验。
-    *   **Swagger**: 使用 `@ApiBody({ type: ... })` 确保文档准确（可选）。
+1.  **创建模块目录**:
+    *   在 `apps/api/src/modules/` 下创建新模块目录。
+    *   创建 `dto/`, `index.ts`, `*.module.ts`, `*.service.ts`, `*.controller.ts`。
+
+2.  **DTO Classes (`dto/`)**:
+    *   使用 `createZodDto` 封装 Schema：
+        ```typescript
+        import { CreateUserSchema } from '@packages/types';
+        import { createZodDto } from 'nestjs-zod';
+        
+        export class CreateUserRequest extends createZodDto(CreateUserSchema) { }
+        ```
+    *   创建 `dto/index.ts` 导出所有 DTO 类。
+
+3.  **Service Layer**:
+    *   注入 `PrismaService`（来自全局 PrismaModule）。
+    *   实现业务逻辑，入参出参使用 Shared Types。
+        ```typescript
+        constructor(private prisma: PrismaService) { }
+        ```
+
+4.  **Controller Layer**:
+    *   **禁止业务逻辑**: Controller 只负责接收请求、调用 Service、返回结果。
+    *   **Validation**: 全局 `ZodValidationPipe` 自动校验 DTO 类参数。
+        ```typescript
+        @Post()
+        create(@Body() dto: CreateUserRequest) {
+            return this.service.create(dto);
+        }
+        ```
+
+5.  **Module 注册**:
+    *   在 `*.module.ts` 中注册 Controller 和 Service。
+    *   在 `app.module.ts` 中导入新模块。
 
 > **Definition of Done**: 使用 Swagger 或 Postman 调用接口，数据能正确写入数据库且校验逻辑生效。
 
@@ -83,6 +141,7 @@
 
 每个功能分支合并前，请自检：
 
+- [ ] **Architecture**: 模块是否独立？是否注入了 `PrismaService`？
 - [ ] **Schema**: `packages/types` 已更新且 build 成功？
 - [ ] **Backend**: API 能正常工作，且对非法输入返回了 400 错误？
 - [ ] **Frontend Bridge**: Request/Response 类型是否直接引用了共享包？
@@ -92,5 +151,3 @@
 ---
 
 **End of Workflow Rules.**
-
-**Antigravity:** 规则已生成。现在，请把您的功能需求发给我，我将直接演示如何应用这套流程。

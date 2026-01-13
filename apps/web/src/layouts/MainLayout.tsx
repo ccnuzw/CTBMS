@@ -31,12 +31,16 @@ export const MainLayout: React.FC = () => {
                 return '仪表盘概览';
             case '/users':
                 return '用户管理';
+            case '/market/categories':
+                return '信息分类管理';
+            case '/market/tags':
+                return '标签管理';
+            case '/market/info':
+                return '信息采集';
             default:
                 return 'CTBMS 系统管理';
         }
     };
-
-
 
     return (
         <Layout style={{ height: '100vh', overflow: 'hidden' }}>
@@ -98,6 +102,25 @@ export const MainLayout: React.FC = () => {
                                     key: '/dashboard',
                                     icon: <DashboardOutlined />,
                                     label: '仪表盘',
+                                },
+                                {
+                                    key: 'market',
+                                    icon: <CloudOutlined />,
+                                    label: '信息采集',
+                                    children: [
+                                        {
+                                            key: '/market/categories',
+                                            label: '信息分类',
+                                        },
+                                        {
+                                            key: '/market/tags',
+                                            label: '标签管理',
+                                        },
+                                        {
+                                            key: '/market/info',
+                                            label: '信息采集',
+                                        }
+                                    ]
                                 },
                                 {
                                     key: 'system',
