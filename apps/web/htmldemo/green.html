@@ -1,0 +1,399 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8" />
+    <meta content="width=device-width, initial-scale=1.0" name="viewport" />
+    <title>SuperSub Dashboard</title>
+    <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+    <link href="https://fonts.googleapis.com" rel="preconnect" />
+    <link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect" />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap"
+        rel="stylesheet" />
+    <link
+        href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap"
+        rel="stylesheet" />
+    <link
+        href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap"
+        rel="stylesheet" />
+    <script id="tailwind-config">
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        "primary": "#00796B", "background-light": "#FFFFFF", "surface-light": "#F0F2F5",// Keeping dark mode colors as original but marking them as unused based on request
+                        "background-dark": "#101922",
+                        "surface-dark": "#1C252E",
+                    },
+                    fontFamily: {
+                        "display": ["Inter", "sans-serif"]
+                    },
+                    borderRadius: {
+                        "DEFAULT": "0.25rem",
+                        "lg": "0.5rem",
+                        "xl": "0.75rem",
+                        "full": "9999px"
+                    },
+                },
+            },
+        }
+    </script>
+    <style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+            font-size: 24px;
+        }
+
+        .material-symbols-outlined.fill {
+            font-variation-settings: 'FILL' 1, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+    </style>
+</head>
+
+<body class="font-display bg-background-light text-slate-900 antialiased overflow-hidden">
+    <div class="flex h-screen w-full overflow-hidden">
+        <aside class="flex w-64 flex-col border-r border-slate-200 bg-background-light flex-shrink-0">
+            <div class="flex flex-col h-full p-4">
+                <div class="flex gap-3 items-center px-2 py-4 mb-6">
+                    <div class="bg-primary/10 flex items-center justify-center rounded-lg size-10 text-primary">
+                        <span class="material-symbols-outlined fill">hub</span>
+                    </div>
+                    <div class="flex flex-col">
+                        <h1 class="text-base font-bold leading-none">SuperSub</h1>
+                        <p class="text-slate-500 text-xs font-medium mt-1">Proxy Manager</p>
+                    </div>
+                </div>
+                <nav class="flex flex-col gap-2 flex-1">
+                    <a class="flex items-center gap-3 px-3 py-2.5 rounded-lg bg-primary text-white shadow-md shadow-primary/20"
+                        href="#">
+                        <span class="material-symbols-outlined fill">grid_view</span>
+                        <span class="text-sm font-medium">Dashboard</span>
+                    </a>
+                    <a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-600 hover:bg-slate-100 transition-colors"
+                        href="#">
+                        <span class="material-symbols-outlined">link</span>
+                        <span class="text-sm font-medium">Subscriptions</span>
+                    </a>
+                    <a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-600 hover:bg-slate-100 transition-colors"
+                        href="#">
+                        <span class="material-symbols-outlined">dns</span>
+                        <span class="text-sm font-medium">Nodes</span>
+                    </a>
+                    <a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-600 hover:bg-slate-100 transition-colors"
+                        href="#">
+                        <span class="material-symbols-outlined">alt_route</span>
+                        <span class="text-sm font-medium">Rules</span>
+                    </a>
+                    <a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-600 hover:bg-slate-100 transition-colors"
+                        href="#">
+                        <span class="material-symbols-outlined">description</span>
+                        <span class="text-sm font-medium">Templates</span>
+                    </a>
+                </nav>
+                <div class="flex flex-col gap-2 pt-4 border-t border-slate-200">
+                    <a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-600 hover:bg-slate-100 transition-colors"
+                        href="#">
+                        <span class="material-symbols-outlined">settings</span>
+                        <span class="text-sm font-medium">Settings</span>
+                    </a>
+                    <a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-600 hover:bg-slate-100 transition-colors"
+                        href="#">
+                        <span class="material-symbols-outlined">help</span>
+                        <span class="text-sm font-medium">Help &amp; Docs</span>
+                    </a>
+                </div>
+            </div>
+        </aside>
+        <main class="flex-1 flex flex-col h-full overflow-hidden relative bg-[#FFFFFF]">
+            <header
+                class="h-16 flex items-center justify-between px-6 border-b border-slate-200 bg-background-light z-10">
+                <div class="flex items-center gap-4">
+                    <h2 class="text-lg font-bold">Dashboard Overview</h2>
+                </div>
+                <div class="flex items-center gap-6">
+                    <div class="relative hidden md:block w-64">
+                        <span class="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 material-symbols-outlined"
+                            style="font-size: 20px;">search</span>
+                        <input
+                            class="w-full h-10 pl-10 pr-4 rounded-lg bg-slate-100 border border-slate-200 text-sm focus:ring-2 focus:ring-primary text-slate-900 placeholder-slate-500 shadow-sm"
+                            placeholder="Search nodes, rules..." type="text" />
+                    </div>
+                    <button class="relative text-slate-500 hover:text-primary transition-colors">
+                        <span class="material-symbols-outlined">notifications</span>
+                        <span
+                            class="absolute top-0 right-0 size-2 bg-red-500 rounded-full border-2 border-background-light"></span>
+                    </button>
+                    <div class="flex items-center gap-3 pl-6 border-l border-slate-200">
+                        <div class="text-right hidden sm:block">
+                            <p class="text-sm font-medium text-slate-900">Alex Admin</p>
+                            <p class="text-xs text-slate-500">System Operator</p>
+                        </div>
+                        <div class="size-9 rounded-full bg-cover bg-center"
+                            data-alt="User profile avatar showing a smiling person"
+                            style="background-image: url('https://lh3.googleusercontent.com/aida-public/AB6AXuAvIlhIe9UkCuatZFlEZpJVriELhr4BJb-83fLMdPqw1F5T2-FR5DgLfxxJNPTueLtdJSCPCL8KaUhhkDITgb7fCvAhJGz7j07EnBXqtArzEiinrZsUNdSgfCwH-L5kG2n6dvoyYryDgkNG6ptIUUQWmrbROjKQ_4U0apSYQOnPCJR_D38EaVA4ZFHa8f8hwfd_LVhADVf13uIsr_x-xBPJe7q3noWRQEm8dNmYdgKYEYU21IfpnKmEDZhceDFu1oHjVwY62jwQlVw');">
+                        </div>
+                    </div>
+                </div>
+            </header>
+            <div class="flex-1 overflow-y-auto p-6 lg:p-10 bg-background-light">
+                <div class="max-w-7xl mx-auto flex flex-col gap-8">
+                    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+                        <div
+                            class="bg-surface-light p-5 rounded-xl border border-slate-200 shadow-sm flex flex-col justify-between h-32 relative overflow-hidden group">
+                            <div
+                                class="absolute right-0 top-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
+                                <span class="material-symbols-outlined" style="font-size: 64px;">dns</span>
+                            </div>
+                            <div class="flex flex-col gap-1 z-10">
+                                <span class="text-slate-500 text-sm font-medium">Total Nodes</span>
+                                <span class="text-3xl font-bold text-slate-900">142</span>
+                            </div>
+                            <div class="flex items-center gap-1 text-emerald-600 text-sm font-medium z-10">
+                                <span class="material-symbols-outlined" style="font-size: 16px;">trending_up</span>
+                                <span>+5% this week</span>
+                            </div>
+                        </div>
+                        <div
+                            class="bg-surface-light p-5 rounded-xl border border-slate-200 shadow-sm flex flex-col justify-between h-32 relative overflow-hidden group">
+                            <div
+                                class="absolute right-0 top-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
+                                <span class="material-symbols-outlined" style="font-size: 64px;">link</span>
+                            </div>
+                            <div class="flex flex-col gap-1 z-10">
+                                <span class="text-slate-500 text-sm font-medium">Active Subs</span>
+                                <span class="text-3xl font-bold text-slate-900">12</span>
+                            </div>
+                            <div class="flex items-center gap-1 text-emerald-600 text-sm font-medium z-10">
+                                <span class="material-symbols-outlined" style="font-size: 16px;">trending_up</span>
+                                <span>+2% this week</span>
+                            </div>
+                        </div>
+                        <div
+                            class="bg-surface-light p-5 rounded-xl border border-slate-200 shadow-sm flex flex-col justify-between h-32 relative overflow-hidden group">
+                            <div
+                                class="absolute right-0 top-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
+                                <span class="material-symbols-outlined" style="font-size: 64px;">alt_route</span>
+                            </div>
+                            <div class="flex flex-col gap-1 z-10">
+                                <span class="text-slate-500 text-sm font-medium">Routing Rules</span>
+                                <span class="text-3xl font-bold text-slate-900">45</span>
+                            </div>
+                            <div class="flex items-center gap-1 text-slate-500 text-sm font-medium z-10">
+                                <span class="material-symbols-outlined" style="font-size: 16px;">remove</span>
+                                <span>No change</span>
+                            </div>
+                        </div>
+                        <div
+                            class="bg-surface-light p-5 rounded-xl border border-slate-200 shadow-sm flex flex-col justify-between h-32 relative overflow-hidden group">
+                            <div
+                                class="absolute right-0 top-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
+                                <span class="material-symbols-outlined" style="font-size: 64px;">description</span>
+                            </div>
+                            <div class="flex flex-col gap-1 z-10">
+                                <span class="text-slate-500 text-sm font-medium">Templates</span>
+                                <span class="text-3xl font-bold text-slate-900">8</span>
+                            </div>
+                            <div class="flex items-center gap-1 text-primary text-sm font-medium z-10">
+                                <span class="material-symbols-outlined" style="font-size: 16px;">add</span>
+                                <span>1 new</span>
+                            </div>
+                        </div>
+                        <div
+                            class="bg-surface-light p-5 rounded-xl border border-slate-200 shadow-sm flex flex-col justify-between h-32 relative overflow-hidden group">
+                            <div
+                                class="absolute right-0 top-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
+                                <span class="material-symbols-outlined" style="font-size: 64px;">play_circle</span>
+                            </div>
+                            <div class="flex flex-col gap-1 z-10">
+                                <span class="text-slate-500 text-sm font-medium">Pipelines</span>
+                                <span class="text-3xl font-bold text-slate-900">3</span>
+                            </div>
+                            <div class="flex items-center gap-1 text-primary text-sm font-medium z-10">
+                                <span class="material-symbols-outlined fill" style="font-size: 16px;">circle</span>
+                                <span>All Active</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                        <div class="lg:col-span-2 bg-surface-light rounded-xl border border-slate-200 shadow-sm p-6">
+                            <div class="flex items-center justify-between mb-6">
+                                <div>
+                                    <h3 class="text-lg font-bold text-slate-900">System Health</h3>
+                                    <p class="text-sm text-slate-500">Latency overview for the last hour</p>
+                                </div>
+                                <div class="flex items-center gap-4">
+                                    <div
+                                        class="flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20">
+                                        <div class="size-2 rounded-full bg-emerald-500 animate-pulse"></div>
+                                        <span class="text-xs font-bold text-emerald-600">API Operational</span>
+                                    </div>
+                                    <div class="text-right">
+                                        <p class="text-2xl font-bold text-slate-900">24ms</p>
+                                        <p class="text-xs text-emerald-600 font-medium">-2ms avg</p>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="w-full h-64 relative">
+                                <svg class="w-full h-full" fill="none" preserveAspectRatio="none" viewBox="0 0 478 150">
+                                    <defs>
+                                        <linearGradient id="chartGradient" x1="0" x2="0" y1="0" y2="1">
+                                            <stop offset="0%" stop-color="#00796B" stop-opacity="0.3"></stop>
+                                            <stop offset="100%" stop-color="#00796B" stop-opacity="0"></stop>
+                                        </linearGradient>
+                                    </defs>
+                                    <path
+                                        d="M0 109C18.15 109 18.15 21 36.3 21C54.46 21 54.46 41 72.6 41C90.7 41 90.7 93 108.9 93C127 93 127 33 145.2 33C163.3 33 163.3 101 181.5 101C199.6 101 199.6 61 217.8 61C236 61 236 45 254.1 45C272.3 45 272.3 121 290.4 121C308.6 121 308.6 149 326.7 149C344.9 149 344.9 1 363 1C381.2 1 381.2 81 399.3 81C417.5 81 417.5 129 435.6 129C453.8 129 453.8 25 472 25V150H0V109Z"
+                                        fill="url(#chartGradient)"></path>
+                                    <path
+                                        d="M0 109C18.15 109 18.15 21 36.3 21C54.46 21 54.46 41 72.6 41C90.7 41 90.7 93 108.9 93C127 93 127 33 145.2 33C163.3 33 163.3 101 181.5 101C199.6 101 199.6 61 217.8 61C236 61 236 45 254.1 45C272.3 45 272.3 121 290.4 121C308.6 121 308.6 149 326.7 149C344.9 149 344.9 1 363 1C381.2 1 381.2 81 399.3 81C417.5 81 417.5 129 435.6 129C453.8 129 453.8 25 472 25"
+                                        stroke="#00796B" stroke-linecap="round" stroke-width="2"
+                                        vector-effect="non-scaling-stroke"></path>
+                                </svg>
+                                <div class="flex justify-between mt-4 text-xs text-slate-500 font-medium">
+                                    <span>10:00</span>
+                                    <span>10:15</span>
+                                    <span>10:30</span>
+                                    <span>10:45</span>
+                                    <span>11:00</span>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="flex flex-col gap-4">
+                            <h3 class="text-lg font-bold text-slate-900">Quick Actions</h3>
+                            <button
+                                class="flex items-center gap-4 p-4 rounded-xl bg-primary hover:bg-[#00695C] transition-colors text-white shadow-lg shadow-primary/20 group">
+                                <div class="bg-white/20 p-2 rounded-lg group-hover:scale-110 transition-transform">
+                                    <span class="material-symbols-outlined">add_circle</span>
+                                </div>
+                                <div class="text-left">
+                                    <p class="font-bold">Add New Node</p>
+                                    <p class="text-xs text-white/90">Manually configure proxy</p>
+                                </div>
+                            </button>
+                            <button
+                                class="flex items-center gap-4 p-4 rounded-xl bg-surface-light border border-slate-200 hover:border-primary/50 transition-colors group shadow-sm">
+                                <div
+                                    class="bg-slate-100 p-2 rounded-lg text-slate-600 group-hover:text-primary transition-colors">
+                                    <span class="material-symbols-outlined">file_upload</span>
+                                </div>
+                                <div class="text-left">
+                                    <p class="font-bold text-slate-900">Import Subscription</p>
+                                    <p class="text-xs text-slate-500">From clipboard or URL</p>
+                                </div>
+                            </button>
+                            <button
+                                class="flex items-center gap-4 p-4 rounded-xl bg-surface-light border border-slate-200 hover:border-primary/50 transition-colors group shadow-sm">
+                                <div
+                                    class="bg-slate-100 p-2 rounded-lg text-slate-600 group-hover:text-primary transition-colors">
+                                    <span class="material-symbols-outlined">network_node</span>
+                                </div>
+                                <div class="text-left">
+                                    <p class="font-bold text-slate-900">Create Pipeline</p>
+                                    <p class="text-xs text-slate-500">Chain rules &amp; nodes</p>
+                                </div>
+                            </button>
+                            <button
+                                class="flex items-center gap-4 p-4 rounded-xl bg-surface-light border border-slate-200 hover:border-primary/50 transition-colors group shadow-sm">
+                                <div
+                                    class="bg-slate-100 p-2 rounded-lg text-slate-600 group-hover:text-primary transition-colors">
+                                    <span class="material-symbols-outlined">speed</span>
+                                </div>
+                                <div class="text-left">
+                                    <p class="font-bold text-slate-900">Run Speed Test</p>
+                                    <p class="text-xs text-slate-500">Check all node latencies</p>
+                                </div>
+                            </button>
+                        </div>
+                    </div>
+                    <div class="flex flex-col gap-4 pb-6">
+                        <div class="flex items-center justify-between">
+                            <h3 class="text-lg font-bold text-slate-900">Recent Activity</h3>
+                            <a class="text-sm text-primary font-medium hover:underline" href="#">View All Logs</a>
+                        </div>
+                        <div class="rounded-xl border border-slate-200 bg-surface-light overflow-hidden shadow-sm">
+                            <table class="w-full text-left text-sm">
+                                <thead class="bg-slate-50 border-b border-slate-200">
+                                    <tr>
+                                        <th class="px-6 py-3 font-semibold text-slate-900 w-1/4">Event Type</th>
+                                        <th class="px-6 py-3 font-semibold text-slate-900 w-2/4">Description</th>
+                                        <th class="px-6 py-3 font-semibold text-slate-900 w-1/4">Time</th>
+                                    </tr>
+                                </thead>
+                                <tbody class="divide-y divide-slate-200">
+                                    <tr class="hover:bg-slate-50 transition-colors">
+                                        <td class="px-6 py-4">
+                                            <div class="flex items-center gap-2">
+                                                <span class="material-symbols-outlined text-emerald-600"
+                                                    style="font-size: 18px;">sync</span>
+                                                <span class="font-medium text-slate-700">Subscription Sync</span>
+                                            </div>
+                                        </td>
+                                        <td class="px-6 py-4 text-slate-600">
+                                            Updated <span class="text-slate-900 font-medium">HK-Premium-V2</span> with 4
+                                            new nodes
+                                        </td>
+                                        <td class="px-6 py-4 text-slate-500 text-xs">
+                                            2 minutes ago
+                                        </td>
+                                    </tr>
+                                    <tr class="hover:bg-slate-50 transition-colors">
+                                        <td class="px-6 py-4">
+                                            <div class="flex items-center gap-2">
+                                                <span class="material-symbols-outlined text-amber-500"
+                                                    style="font-size: 18px;">warning</span>
+                                                <span class="font-medium text-slate-700">Latency Warning</span>
+                                            </div>
+                                        </td>
+                                        <td class="px-6 py-4 text-slate-600">
+                                            High latency detected on <span
+                                                class="text-slate-900 font-medium">US-West-04</span> (&gt;500ms)
+                                        </td>
+                                        <td class="px-6 py-4 text-slate-500 text-xs">
+                                            15 minutes ago
+                                        </td>
+                                    </tr>
+                                    <tr class="hover:bg-slate-50 transition-colors">
+                                        <td class="px-6 py-4">
+                                            <div class="flex items-center gap-2">
+                                                <span class="material-symbols-outlined text-primary"
+                                                    style="font-size: 18px;">add_circle</span>
+                                                <span class="font-medium text-slate-700">Node Added</span>
+                                            </div>
+                                        </td>
+                                        <td class="px-6 py-4 text-slate-600">
+                                            Manually added node <span
+                                                class="text-slate-900 font-medium">SG-Private-Relay</span>
+                                        </td>
+                                        <td class="px-6 py-4 text-slate-500 text-xs">
+                                            1 hour ago
+                                        </td>
+                                    </tr>
+                                    <tr class="hover:bg-slate-50 transition-colors">
+                                        <td class="px-6 py-4">
+                                            <div class="flex items-center gap-2">
+                                                <span class="material-symbols-outlined text-purple-600"
+                                                    style="font-size: 18px;">rule</span>
+                                                <span class="font-medium text-slate-700">Rule Active</span>
+                                            </div>
+                                        </td>
+                                        <td class="px-6 py-4 text-slate-600">
+                                            Traffic to <span
+                                                class="font-mono text-xs bg-slate-200 px-1 py-0.5 rounded">netflix.com</span>
+                                            routed via <span class="text-slate-900 font-medium">Stream-Optimized</span>
+                                        </td>
+                                        <td class="px-6 py-4 text-slate-500 text-xs">
+                                            3 hours ago
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+</body>
+
+</html>

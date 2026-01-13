@@ -9,22 +9,23 @@
         "preview": "vite preview"
     },
     "dependencies": {
-        "react": "^18.2.0",
-        "react-dom": "^18.2.0",
-        "antd": "^5.0.0",
         "@ant-design/icons": "^5.0.0",
         "@ant-design/pro-components": "^2.0.0",
+        "@packages/types": "workspace:*",
         "@tanstack/react-query": "^4.0.0",
-        "zustand": "^4.0.0",
-        "@packages/types": "workspace:*"
+        "antd": "^5.0.0",
+        "react": "^18.2.0",
+        "react-dom": "^18.2.0",
+        "react-router-dom": "^7.12.0",
+        "zustand": "^4.0.0"
     },
     "devDependencies": {
+        "@packages/eslint-config": "workspace:*",
+        "@packages/tsconfig": "workspace:*",
         "@types/react": "^18.2.0",
         "@types/react-dom": "^18.2.0",
         "@vitejs/plugin-react": "^4.0.0",
-        "vite": "^4.0.0",
         "typescript": "^5.0.0",
-        "@packages/tsconfig": "workspace:*",
-        "@packages/eslint-config": "workspace:*"
+        "vite": "^4.0.0"
     }
 }
