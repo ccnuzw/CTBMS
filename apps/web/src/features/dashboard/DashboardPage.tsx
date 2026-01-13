@@ -10,12 +10,12 @@ export const DashboardPage: React.FC = () => {
             <Row gutter={[16, 16]}>
                 <Col xs={24} sm={12} lg={6}>
                     <Card variant="borderless">
-                        <Statistic title="总用户数" value={1128} prefix={<UserOutlined />} valueStyle={{ color: token.colorSuccess }} />
+                        <Statistic title="总用户数" value={1128} prefix={<UserOutlined />} styles={{ content: { color: token.colorSuccess } }} />
                     </Card>
                 </Col>
                 <Col xs={24} sm={12} lg={6}>
                     <Card variant="borderless">
-                        <Statistic title="活跃会话" value={93} prefix={<RiseOutlined />} valueStyle={{ color: token.colorError }} />
+                        <Statistic title="活跃会话" value={93} prefix={<RiseOutlined />} styles={{ content: { color: token.colorError } }} />
                     </Card>
                 </Col>
                 <Col xs={24} sm={12} lg={6}>

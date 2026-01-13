@@ -6,11 +6,10 @@ import {
     ProFormUploadButton,
 } from '@ant-design/pro-components';
 import { PageContainer } from '@ant-design/pro-components';
-import { Card, Button, UploadFile, App } from 'antd';
-import { FilePdfOutlined, FileWordOutlined, FileExcelOutlined, FilePptOutlined, FileOutlined } from '@ant-design/icons';
+import { Card, Button, UploadFile, App, Grid, Flex, Space, theme } from 'antd';
+import { FilePdfOutlined, FileWordOutlined, FileExcelOutlined, FilePptOutlined, FileOutlined, SaveOutlined, CloseOutlined } from '@ant-design/icons';
 import { useNavigate, useParams } from 'react-router-dom';
-import ReactQuill from 'react-quill';
-import 'react-quill/dist/quill.snow.css';
+import { TiptapEditor } from '../../../components/TiptapEditor';
 import { useCategories } from '../api/categories';
 import { useTags } from '../api/tags';
 import { useCreateInfo, useUpdateInfo } from '../api/info';
@@ -22,6 +21,7 @@ export const InfoEditor: React.FC = () => {
     const { id } = useParams<{ id: string }>();
     const isEdit = !!id && id !== 'new';
     const { message } = App.useApp();
+    const screens = Grid.useBreakpoint();
 
     const { data: categories } = useCategories();
     const { data: tags } = useTags();
@@ -130,15 +130,77 @@ export const InfoEditor: React.FC = () => {
     // Removed loading check
 
 
+    const { token: antdToken } = theme.useToken();
+    const isMobile = !screens.md;
+
     return (
-        <PageContainer title={isEdit ? '编辑信息' : '新建信息'}>
-            <Card>
+        <PageContainer
+            title={!isMobile ? (isEdit ? '编辑信息' : '新建信息') : undefined}
+            header={isMobile ? { title: undefined, breadcrumb: undefined } : undefined}
+            style={isMobile ? { padding: 0, margin: 0 } : undefined}
+        >
+            <Card
+                bordered={!isMobile}
+                style={isMobile ? {
+                    borderRadius: 0,
+                    boxShadow: 'none',
+                    margin: 0
+                } : undefined}
+                styles={isMobile ? {
+                    body: { padding: '12px' }
+                } : undefined}
+            >
                 <ProForm
                     key={isEdit ? id : 'new'}
                     request={loadData}
                     onFinish={handleFinish}
+                    layout="vertical"
+                    grid={isMobile}
+                    colProps={isMobile ? { span: 24 } : undefined}
                     submitter={{
                         render: (props, dom) => {
+                            if (isMobile) {
+                                // 移动端：底部固定按钮栏
+                                return (
+                                    <div
+                                        style={{
+                                            position: 'sticky',
+                                            bottom: 0,
+                                            left: 0,
+                                            right: 0,
+                                            padding: '12px 16px',
+                                            background: antdToken.colorBgContainer,
+                                            borderTop: `1px solid ${antdToken.colorBorderSecondary}`,
+                                            marginLeft: -12,
+                                            marginRight: -12,
+                                            marginBottom: -12,
+                                            zIndex: 100,
+                                        }}
+                                    >
+                                        <Flex gap={8}>
+                                            <Button
+                                                block
+                                                size="large"
+                                                icon={<CloseOutlined />}
+                                                onClick={() => navigate('/market/info')}
+                                            >
+                                                取消
+                                            </Button>
+                                            <Button
+                                                block
+                                                type="primary"
+                                                size="large"
+                                                icon={<SaveOutlined />}
+                                                onClick={() => props.form?.submit()}
+                                                loading={props.submitButtonProps && typeof props.submitButtonProps !== 'boolean' ? props.submitButtonProps.loading : false}
+                                            >
+                                                保存
+                                            </Button>
+                                        </Flex>
+                                    </div>
+                                );
+                            }
+                            // 桌面端：默认布局
                             return [
                                 <Button key="cancel" onClick={() => navigate('/market/info')}>
                                     取消
@@ -153,6 +215,10 @@ export const InfoEditor: React.FC = () => {
                         label="标题"
                         placeholder="请输入标题"
                         rules={[{ required: true, message: '请输入标题' }]}
+                        colProps={isMobile ? { span: 24 } : undefined}
+                        fieldProps={{
+                            size: isMobile ? 'large' : 'middle',
+                        }}
                     />
 
                     <ProFormSelect
@@ -160,6 +226,10 @@ export const InfoEditor: React.FC = () => {
                         label="分类"
                         options={categories?.map(c => ({ label: c.name, value: c.id }))}
                         rules={[{ required: true, message: '请选择分类' }]}
+                        colProps={isMobile ? { span: 24 } : undefined}
+                        fieldProps={{
+                            size: isMobile ? 'large' : 'middle',
+                        }}
                     />
 
                     <ProFormSelect
@@ -167,9 +237,10 @@ export const InfoEditor: React.FC = () => {
                         label="标签"
                         mode="multiple"
                         options={tags?.map(t => ({ label: t.name, value: t.id }))}
-                    // Initial values transformation might be needed if infoData.tags is object array
-                    // ProForm handles this if name matches, but we need to map objects to IDs for initial value
-                    // Handled by `initialValues` transform usually, simpler to just rely on user re-selecting for MVP or basic map
+                        colProps={isMobile ? { span: 24 } : undefined}
+                        fieldProps={{
+                            size: isMobile ? 'large' : 'middle',
+                        }}
                     />
 
                     <ProFormSelect
@@ -180,15 +251,29 @@ export const InfoEditor: React.FC = () => {
                             PUBLISHED: '发布',
                             ARCHIVED: '归档'
                         }}
+                        colProps={isMobile ? { span: 24 } : undefined}
+                        fieldProps={{
+                            size: isMobile ? 'large' : 'middle',
+                        }}
                     />
 
-                    <div style={{ marginBottom: 24 }}>
-                        <label style={{ display: 'block', marginBottom: 8 }}>内容详情</label>
-                        <ReactQuill
-                            theme="snow"
+                    <div style={{ marginBottom: isMobile ? 80 : 24 }}>
+                        <label
+                            style={{
+                                display: 'block',
+                                marginBottom: 8,
+                                fontSize: isMobile ? 16 : 14,
+                                fontWeight: isMobile ? 500 : 400,
+                            }}
+                        >
+                            内容详情
+                        </label>
+                        <TiptapEditor
                             value={content}
                             onChange={setContent}
-                            style={{ height: 300, marginBottom: 50 }}
+                            placeholder="请输入内容详情..."
+                            minHeight={isMobile ? 250 : 350}
+                            isMobile={isMobile}
                         />
                     </div>
 
@@ -196,38 +281,35 @@ export const InfoEditor: React.FC = () => {
                         name="attachments"
                         label="附件"
                         title="上传文件"
+                        max={10}
                         fileList={fileList}
                         onChange={({ fileList }) => setFileList(fileList)}
                         action="http://localhost:3000/market/info/upload"
+                        colProps={isMobile ? { span: 24 } : undefined}
                         fieldProps={{
                             name: 'file',
-                            listType: 'picture',
+                            listType: isMobile ? 'picture-card' : 'picture',
                             onPreview: (file) => {
                                 const url = file.url || file.response?.url;
                                 if (!url) return;
 
-                                // 获取文件扩展名
                                 const ext = file.name.split('.').pop()?.toLowerCase();
 
-                                // 图片直接预览
                                 if (['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg'].includes(ext || '')) {
                                     window.open(url, '_blank');
                                     return;
                                 }
 
-                                // PDF 使用浏览器内置预览
                                 if (ext === 'pdf') {
                                     window.open(url, '_blank');
                                     return;
                                 }
 
-                                // Office 文件使用 Google Docs Viewer
                                 if (['doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx'].includes(ext || '')) {
                                     window.open(`https://docs.google.com/viewer?url=${encodeURIComponent(url)}&embedded=true`, '_blank');
                                     return;
                                 }
 
-                                // 其他文件直接下载
                                 window.open(url, '_blank');
                             },
                         }}
@@ -235,6 +317,6 @@ export const InfoEditor: React.FC = () => {
 
                 </ProForm>
             </Card>
-        </PageContainer >
+        </PageContainer>
     );
 };

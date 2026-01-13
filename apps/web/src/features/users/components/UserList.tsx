@@ -1,13 +1,18 @@
 
 import React, { useRef, useState } from 'react';
 import { ProTable, ProColumns, ActionType } from '@ant-design/pro-components';
-import { Button, App, Popconfirm } from 'antd';
-import { PlusOutlined, EditOutlined, DeleteOutlined } from '@ant-design/icons';
+import { Button, App, Popconfirm, Grid, Card, Space, Tag, Avatar, Flex, Typography, theme } from 'antd';
+import { PlusOutlined, EditOutlined, DeleteOutlined, UserOutlined } from '@ant-design/icons';
 import { UserDto } from '@packages/types';
 import { useUsers, useCreateUser, useUpdateUser, useDeleteUser } from '../api/users';
 import { ModalForm, ProFormText, ProFormSelect } from '@ant-design/pro-components';
+import dayjs from 'dayjs';
+
+const { Text } = Typography;
 
 export const UserList: React.FC = () => {
+    const screens = Grid.useBreakpoint();
+    const { token } = theme.useToken();
     const actionRef = useRef<ActionType>();
     const { data: users, isLoading } = useUsers();
     const createUserMutation = useCreateUser();
@@ -32,6 +37,54 @@ export const UserList: React.FC = () => {
         }
     };
 
+    // 移动端卡片渲染
+    const renderMobileCard = (user: UserDto) => (
+        <Card
+            key={user.id}
+            size="small"
+            style={{ marginBottom: token.marginSM }}
+            styles={{ body: { padding: token.paddingSM } }}
+        >
+            <Flex justify="space-between" align="flex-start">
+                <Flex gap={token.marginSM} align="center" style={{ flex: 1 }}>
+                    <Avatar
+                        size={48}
+                        icon={<UserOutlined />}
+                        style={{ backgroundColor: user.role === 'ADMIN' ? token.colorError : token.colorPrimary }}
+                    />
+                    <Flex vertical gap={4} style={{ flex: 1, minWidth: 0 }}>
+                        <Flex align="center" gap={token.marginXS}>
+                            <Text strong ellipsis style={{ maxWidth: 120 }}>{user.name}</Text>
+                            <Tag color={user.role === 'ADMIN' ? 'error' : 'success'}>
+                                {user.role === 'ADMIN' ? '管理员' : '普通用户'}
+                            </Tag>
+                        </Flex>
+                        <Text type="secondary" style={{ fontSize: token.fontSizeSM }} ellipsis>
+                            {user.email}
+                        </Text>
+                        <Text type="secondary" style={{ fontSize: token.fontSizeSM }}>
+                            {dayjs(user.createdAt).format('YYYY-MM-DD HH:mm')}
+                        </Text>
+                    </Flex>
+                </Flex>
+                <Space size={4}>
+                    <Button
+                        type="primary"
+                        size="small"
+                        icon={<EditOutlined />}
+                        onClick={() => handleEdit(user)}
+                    />
+                    <Popconfirm
+                        title="确定删除该用户吗?"
+                        onConfirm={() => handleDelete(user.id)}
+                    >
+                        <Button type="primary" size="small" danger icon={<DeleteOutlined />} />
+                    </Popconfirm>
+                </Space>
+            </Flex>
+        </Card>
+    );
+
     const columns: ProColumns<UserDto>[] = [
         {
             title: '用户 ID',
@@ -39,6 +92,8 @@ export const UserList: React.FC = () => {
             copyable: true,
             ellipsis: true,
             width: 300,
+            search: false,
+            responsive: ['lg'],
         },
         {
             title: '姓名',
@@ -47,6 +102,7 @@ export const UserList: React.FC = () => {
         {
             title: '邮箱',
             dataIndex: 'email',
+            responsive: ['md'],
         },
         {
             title: '角色',
@@ -60,6 +116,8 @@ export const UserList: React.FC = () => {
             title: '创建时间',
             dataIndex: 'createdAt',
             valueType: 'dateTime',
+            search: false,
+            responsive: ['xl'],
         },
         {
             title: '操作',
@@ -92,10 +150,24 @@ export const UserList: React.FC = () => {
                 headerTitle="用户管理"
                 actionRef={actionRef}
                 rowKey="id"
-                search={false}
+                search={{
+                    filterType: screens.md ? 'query' : 'light',
+                }}
+                cardBordered
                 dataSource={users}
                 loading={isLoading}
                 columns={columns}
+                tableRender={(_, dom) => {
+                    // 移动端使用卡片列表
+                    if (!screens.md && users && users.length > 0) {
+                        return (
+                            <div style={{ padding: token.paddingSM }}>
+                                {users.map(renderMobileCard)}
+                            </div>
+                        );
+                    }
+                    return dom;
+                }}
                 toolBarRender={() => [
                     <Button
                         type="primary"
@@ -105,7 +177,7 @@ export const UserList: React.FC = () => {
                             setModalVisible(true);
                         }}
                     >
-                        新建用户
+                        {screens.md ? '新建用户' : '新建'}
                     </Button>
                 ]}
             />
