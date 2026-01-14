@@ -11,9 +11,6 @@ export const UserStatusEnum = z.enum([
     'SUSPENDED',  // 停职
 ]);
 
-// 系统角色枚举（管理员/普通用户）
-export const SystemRoleEnum = z.enum(['ADMIN', 'USER']);
-
 // 性别枚举
 export const GenderEnum = z.enum(['MALE', 'FEMALE', 'OTHER']);
 
@@ -30,7 +27,6 @@ export const UserSchema = z.object({
     employeeNo: z.string().nullable().optional(),
     phone: z.string().nullable().optional(),
     avatar: z.string().nullable().optional(),
-    systemRole: SystemRoleEnum.default('USER'),
     organizationId: z.string().uuid().nullable().optional(),
     departmentId: z.string().uuid().nullable().optional(),
     position: z.string().nullable().optional(),
@@ -49,7 +45,6 @@ export const CreateUserSchema = z.object({
     employeeNo: z.string().nullable().optional(),
     phone: z.string().nullable().optional(),
     avatar: z.string().nullable().optional(),
-    systemRole: SystemRoleEnum.default('USER'),
     organizationId: z.string().uuid().nullable().optional(),
     departmentId: z.string().uuid().nullable().optional(),
     position: z.string().nullable().optional(),
@@ -100,7 +95,7 @@ export const UpdateRoleSchema = CreateRoleSchema.partial().omit({
 // 导出 TypeScript 类型
 // =============================================
 export type UserStatus = z.infer<typeof UserStatusEnum>;
-export type SystemRole = z.infer<typeof SystemRoleEnum>;
+export type Gender = z.infer<typeof GenderEnum>;
 
 export type UserDto = z.infer<typeof UserSchema>;
 export type CreateUserDto = z.infer<typeof CreateUserSchema>;

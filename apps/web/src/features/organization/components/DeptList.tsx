@@ -42,6 +42,7 @@ import {
     ProFormDigit,
     ProFormSelect,
 } from '@ant-design/pro-components';
+import { useModalAutoFocus } from '../../../hooks/useModalAutoFocus';
 
 // 扩展类型
 interface DepartmentWithRelations extends DepartmentDto {
@@ -82,6 +83,7 @@ export const DeptList: React.FC = () => {
     const [currentRow, setCurrentRow] = useState<DepartmentWithRelations | undefined>(undefined);
     const [searchText, setSearchText] = useState('');
     const [selectedOrgId, setSelectedOrgId] = useState<string | undefined>(undefined);
+    const { containerRef, autoFocusFieldProps, modalProps: deptModalProps } = useModalAutoFocus();
 
     const { data: organizations } = useOrganizations();
     const { data: departments, isLoading } = useDepartments(selectedOrgId);
@@ -218,12 +220,13 @@ export const DeptList: React.FC = () => {
 
     // 表单组件
     const FormContent = () => (
-        <>
+        <div ref={containerRef}>
             <ProFormText
                 name="name"
                 label="部门名称"
                 placeholder="请输入名称"
                 rules={[{ required: true, message: '请输入名称' }]}
+                fieldProps={autoFocusFieldProps}
             />
             <ProFormText
                 name="code"
@@ -261,10 +264,9 @@ export const DeptList: React.FC = () => {
                     { value: 'ACTIVE', label: '启用' },
                     { value: 'INACTIVE', label: '禁用' },
                 ]}
-                initialValue="ACTIVE"
             />
             <ProFormTextArea name="description" label="描述" placeholder="请输入描述" />
-        </>
+        </div>
     );
 
     // 移动端视图
@@ -401,12 +403,14 @@ export const DeptList: React.FC = () => {
                 <ModalForm
                     title={currentRow ? '编辑部门' : '新建部门'}
                     width="500px"
-                    open={editModalVisible}
-                    onOpenChange={setEditModalVisible}
+                    visible={editModalVisible}
+                    onVisibleChange={setEditModalVisible}
                     onFinish={handleSubmit}
-                    initialValues={currentRow}
+                    initialValues={currentRow || { status: 'ACTIVE' }}
                     modalProps={{
+                        ...deptModalProps,
                         destroyOnClose: true,
+                        focusTriggerAfterClose: false,
                     }}
                 >
                     <FormContent />
@@ -456,12 +460,14 @@ export const DeptList: React.FC = () => {
             <ModalForm
                 title={currentRow ? '编辑部门' : '新建部门'}
                 width="500px"
-                open={editModalVisible}
-                onOpenChange={setEditModalVisible}
+                visible={editModalVisible}
+                onVisibleChange={setEditModalVisible}
                 onFinish={handleSubmit}
-                initialValues={currentRow}
+                initialValues={currentRow || { status: 'ACTIVE' }}
                 modalProps={{
+                    ...deptModalProps,
                     destroyOnClose: true,
+                    focusTriggerAfterClose: false,
                 }}
             >
                 <FormContent />

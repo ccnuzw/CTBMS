@@ -1,5 +1,5 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
-import { User, UserStatus, SystemRole, Gender } from '@prisma/client';
+import { User, UserStatus, Gender } from '@prisma/client';
 import { CreateUserDto, UpdateUserDto, AssignRolesDto } from '@packages/types';
 import { PrismaService } from '../../prisma';
 
@@ -71,7 +71,6 @@ export class UsersService {
                 employeeNo: data.employeeNo ?? null,
                 phone: data.phone ?? null,
                 avatar: data.avatar ?? null,
-                systemRole: (data.systemRole as SystemRole) ?? 'USER',
                 organizationId: data.organizationId ?? null,
                 departmentId: data.departmentId ?? null,
                 position: data.position ?? null,
@@ -118,10 +117,11 @@ export class UsersService {
             where: { id },
             data: {
                 name: data.name,
+                gender: data.gender as Gender | undefined,
+                birthday: data.birthday,
                 employeeNo: data.employeeNo,
                 phone: data.phone,
                 avatar: data.avatar,
-                systemRole: data.systemRole as SystemRole | undefined,
                 organizationId: data.organizationId,
                 departmentId: data.departmentId,
                 position: data.position,

@@ -17,12 +17,6 @@ enum UserStatus {
   SUSPENDED   // 停职
 }
 
-// 系统角色枚举（用于区分管理员和普通用户）
-enum SystemRole {
-  USER
-  ADMIN
-}
-
 // 性别枚举
 enum Gender {
   MALE
@@ -48,9 +42,6 @@ model User {
   phone          String?                // 电话
   avatar         String?                // 头像 URL
   
-  // 系统权限
-  systemRole     SystemRole   @default(USER)
-  
   // 归属组织/部门（可选，有归属即为员工）
   organizationId String?
   organization   Organization? @relation(fields: [organizationId], references: [id])
@@ -64,7 +55,7 @@ model User {
   // 员工状态
   status         UserStatus   @default(ACTIVE)
   
-  // 业务角色
+  // 角色（通过 UserRole 关联）
   roles          UserRole[]
   
   createdAt      DateTime     @default(now())

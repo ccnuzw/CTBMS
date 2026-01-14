@@ -8,6 +8,7 @@ import { MarketInfoModule } from './modules/market-info';
 import { OrganizationModule } from './modules/organization';
 import { DepartmentModule } from './modules/department';
 import { RoleModule } from './modules/role';
+import { InitModule } from './modules/init';
 import { LoggerMiddleware } from './common/middleware/logger.middleware';
 
 @Module({
@@ -20,6 +21,7 @@ import { LoggerMiddleware } from './common/middleware/logger.middleware';
         OrganizationModule,
         DepartmentModule,
         RoleModule,
+        InitModule,
     ],
     controllers: [AppController],
     providers: [],

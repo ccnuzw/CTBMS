@@ -36,6 +36,7 @@ import {
     ProFormSelect,
     ProFormSwitch,
 } from '@ant-design/pro-components';
+import { useModalAutoFocus } from '../../../hooks/useModalAutoFocus';
 
 export const RoleList: React.FC = () => {
     const { message } = App.useApp();
@@ -45,6 +46,7 @@ export const RoleList: React.FC = () => {
     const [editModalVisible, setEditModalVisible] = useState(false);
     const [currentRow, setCurrentRow] = useState<RoleWithCount | undefined>(undefined);
     const [searchText, setSearchText] = useState('');
+    const { containerRef, autoFocusFieldProps, modalProps: roleModalProps } = useModalAutoFocus();
 
     const { data: roles, isLoading } = useRoles();
     const createRole = useCreateRole();
@@ -119,17 +121,19 @@ export const RoleList: React.FC = () => {
             search: false,
         },
         {
-            title: '系统角色',
-            dataIndex: 'isSystem',
-            render: (_, record) =>
-                record.isSystem ? <Tag color="blue">是</Tag> : <Tag>否</Tag>,
+            title: '状态',
+            dataIndex: 'status',
             search: false,
-        },
-        {
-            title: '排序',
-            dataIndex: 'sortOrder',
-            search: false,
-            responsive: ['lg'],
+            render: (_, record) => {
+                if (record.isSystem) {
+                    return <Tag color="blue">系统</Tag>;
+                }
+                return record.status === 'ACTIVE' ? (
+                    <Tag color="green">启用</Tag>
+                ) : (
+                    <Tag color="red">禁用</Tag>
+                );
+            },
         },
         {
             title: '操作',
@@ -168,12 +172,13 @@ export const RoleList: React.FC = () => {
 
     // 表单组件
     const FormContent = () => (
-        <>
+        <div ref={containerRef}>
             <ProFormText
                 name="name"
                 label="角色名称"
                 placeholder="请输入角色名称"
                 rules={[{ required: true, message: '请输入角色名称' }]}
+                fieldProps={autoFocusFieldProps}
             />
             <ProFormText
                 name="code"
@@ -186,7 +191,6 @@ export const RoleList: React.FC = () => {
                 name="isSystem"
                 label="系统内置"
                 tooltip="系统内置角色不可删除"
-                initialValue={false}
             />
             <ProFormDigit name="sortOrder" label="排序" placeholder="请输入排序号" />
             <ProFormSelect
@@ -196,10 +200,9 @@ export const RoleList: React.FC = () => {
                     { value: 'ACTIVE', label: '启用' },
                     { value: 'INACTIVE', label: '禁用' },
                 ]}
-                initialValue="ACTIVE"
             />
             <ProFormTextArea name="description" label="描述" placeholder="请输入描述" />
-        </>
+        </div>
     );
 
     // 移动端视图
@@ -296,11 +299,15 @@ export const RoleList: React.FC = () => {
                 <ModalForm
                     title={currentRow ? '编辑角色' : '新建角色'}
                     width="500px"
-                    open={editModalVisible}
-                    onOpenChange={setEditModalVisible}
+                    visible={editModalVisible}
+                    onVisibleChange={setEditModalVisible}
                     onFinish={handleSubmit}
-                    initialValues={currentRow}
-                    modalProps={{ destroyOnClose: true }}
+                    initialValues={currentRow || { isSystem: false, status: 'ACTIVE' }}
+                    modalProps={{
+                        ...roleModalProps,
+                        destroyOnClose: true,
+                        focusTriggerAfterClose: false,
+                    }}
                 >
                     <FormContent />
                 </ModalForm>
@@ -329,11 +336,15 @@ export const RoleList: React.FC = () => {
             <ModalForm
                 title={currentRow ? '编辑角色' : '新建角色'}
                 width="500px"
-                open={editModalVisible}
-                onOpenChange={setEditModalVisible}
+                visible={editModalVisible}
+                onVisibleChange={setEditModalVisible}
                 onFinish={handleSubmit}
-                initialValues={currentRow}
-                modalProps={{ destroyOnClose: true }}
+                initialValues={currentRow || { isSystem: false, status: 'ACTIVE' }}
+                modalProps={{
+                    ...roleModalProps,
+                    destroyOnClose: true,
+                    focusTriggerAfterClose: false,
+                }}
             >
                 <FormContent />
             </ModalForm>

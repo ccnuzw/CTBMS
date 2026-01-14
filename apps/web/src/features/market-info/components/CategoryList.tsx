@@ -5,6 +5,7 @@ import { Button, message, Popconfirm, App, Grid, Input, Flex, Card, Typography, 
 import { CategoryResponse, CreateCategoryDto, UpdateCategoryDto } from '@packages/types';
 import { useCategories, useCreateCategory, useUpdateCategory, useDeleteCategory } from '../api/categories';
 import { ModalForm, ProFormText, ProFormTextArea, ProFormDigit } from '@ant-design/pro-components';
+import { useModalAutoFocus } from '../../../hooks/useModalAutoFocus';
 
 export const CategoryList: React.FC = () => {
     const { message } = App.useApp();
@@ -14,6 +15,7 @@ export const CategoryList: React.FC = () => {
     const [editModalVisible, setEditModalVisible] = useState(false);
     const [currentRow, setCurrentRow] = useState<CategoryResponse | undefined>(undefined);
     const [searchText, setSearchText] = useState('');
+    const { containerRef, autoFocusFieldProps, modalProps: categoryModalProps } = useModalAutoFocus();
 
     const { data: categories, isLoading } = useCategories();
     const createCategory = useCreateCategory();
@@ -244,32 +246,37 @@ export const CategoryList: React.FC = () => {
                     onFinish={handleSubmit}
                     initialValues={currentRow}
                     modalProps={{
+                        ...categoryModalProps,
                         destroyOnClose: true,
+                        focusTriggerAfterClose: false,
                     }}
                 >
-                    <ProFormText
-                        name="name"
-                        label="分类名称"
-                        placeholder="请输入名称"
-                        rules={[{ required: true, message: '请输入名称' }]}
-                    />
-                    <ProFormText
-                        name="code"
-                        label="分类编码"
-                        placeholder="请输入编码"
-                        rules={[{ required: true, message: '请输入编码' }]}
-                        disabled={!!currentRow}
-                    />
-                    <ProFormDigit
-                        name="sortOrder"
-                        label="排序"
-                        placeholder="请输入排序号"
-                    />
-                    <ProFormTextArea
-                        name="description"
-                        label="描述"
-                        placeholder="请输入描述"
-                    />
+                    <div ref={containerRef}>
+                        <ProFormText
+                            name="name"
+                            label="分类名称"
+                            placeholder="请输入名称"
+                            rules={[{ required: true, message: '请输入名称' }]}
+                            fieldProps={autoFocusFieldProps}
+                        />
+                        <ProFormText
+                            name="code"
+                            label="分类编码"
+                            placeholder="请输入编码"
+                            rules={[{ required: true, message: '请输入编码' }]}
+                            disabled={!!currentRow}
+                        />
+                        <ProFormDigit
+                            name="sortOrder"
+                            label="排序"
+                            placeholder="请输入排序号"
+                        />
+                        <ProFormTextArea
+                            name="description"
+                            label="描述"
+                            placeholder="请输入描述"
+                        />
+                    </div>
                 </ModalForm>
             </>
         );
@@ -308,32 +315,37 @@ export const CategoryList: React.FC = () => {
                 onFinish={handleSubmit}
                 initialValues={currentRow}
                 modalProps={{
+                    ...categoryModalProps,
                     destroyOnClose: true,
+                    focusTriggerAfterClose: false,
                 }}
             >
-                <ProFormText
-                    name="name"
-                    label="分类名称"
-                    placeholder="请输入名称"
-                    rules={[{ required: true, message: '请输入名称' }]}
-                />
-                <ProFormText
-                    name="code"
-                    label="分类编码"
-                    placeholder="请输入编码"
-                    rules={[{ required: true, message: '请输入编码' }]}
-                    disabled={!!currentRow}
-                />
-                <ProFormDigit
-                    name="sortOrder"
-                    label="排序"
-                    placeholder="请输入排序号"
-                />
-                <ProFormTextArea
-                    name="description"
-                    label="描述"
-                    placeholder="请输入描述"
-                />
+                <div ref={containerRef}>
+                    <ProFormText
+                        name="name"
+                        label="分类名称"
+                        placeholder="请输入名称"
+                        rules={[{ required: true, message: '请输入名称' }]}
+                        fieldProps={autoFocusFieldProps}
+                    />
+                    <ProFormText
+                        name="code"
+                        label="分类编码"
+                        placeholder="请输入编码"
+                        rules={[{ required: true, message: '请输入编码' }]}
+                        disabled={!!currentRow}
+                    />
+                    <ProFormDigit
+                        name="sortOrder"
+                        label="排序"
+                        placeholder="请输入排序号"
+                    />
+                    <ProFormTextArea
+                        name="description"
+                        label="描述"
+                        placeholder="请输入描述"
+                    />
+                </div>
             </ModalForm>
         </>
     );

@@ -1,5 +1,5 @@
 import React from 'react';
-import { ConfigProvider, App as AntdApp } from 'antd';
+import { App as AntdApp } from 'antd';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { RouterProvider } from 'react-router-dom';
 import { ThemeProvider } from './theme/ThemeContext';
@@ -30,3 +30,4 @@ const App: React.FC = () => {
 }
 
 export default App;
+

@@ -26,7 +26,6 @@ import {
     OrganizationDto,
     CreateOrganizationDto,
     OrganizationType,
-    EntityStatus,
     OrganizationTreeNode,
 } from '@packages/types';
 import {
@@ -43,6 +42,7 @@ import {
     ProFormDigit,
     ProFormSelect,
 } from '@ant-design/pro-components';
+import { useModalAutoFocus } from '../../../hooks/useModalAutoFocus';
 
 // 扩展类型
 interface OrganizationWithRelations extends OrganizationDto {
@@ -89,6 +89,7 @@ export const OrgList: React.FC = () => {
     const [editModalVisible, setEditModalVisible] = useState(false);
     const [currentRow, setCurrentRow] = useState<OrganizationWithRelations | undefined>(undefined);
     const [searchText, setSearchText] = useState('');
+    const { containerRef, autoFocusFieldProps, modalProps: orgModalProps } = useModalAutoFocus();
 
     const { data: organizations, isLoading } = useOrganizations();
     const { data: orgTree } = useOrganizationTree();
@@ -237,12 +238,13 @@ export const OrgList: React.FC = () => {
 
     // 表单组件
     const FormContent = () => (
-        <>
+        <div ref={containerRef}>
             <ProFormText
                 name="name"
                 label="组织名称"
                 placeholder="请输入名称"
                 rules={[{ required: true, message: '请输入名称' }]}
+                fieldProps={autoFocusFieldProps}
             />
             <ProFormText
                 name="code"
@@ -277,10 +279,9 @@ export const OrgList: React.FC = () => {
                     { value: 'ACTIVE', label: '启用' },
                     { value: 'INACTIVE', label: '禁用' },
                 ]}
-                initialValue="ACTIVE"
             />
             <ProFormTextArea name="description" label="描述" placeholder="请输入描述" />
-        </>
+        </div>
     );
 
     // 移动端视图
@@ -406,12 +407,14 @@ export const OrgList: React.FC = () => {
                 <ModalForm
                     title={currentRow ? '编辑组织' : '新建组织'}
                     width="500px"
-                    open={editModalVisible}
-                    onOpenChange={setEditModalVisible}
+                    visible={editModalVisible}
+                    onVisibleChange={setEditModalVisible}
                     onFinish={handleSubmit}
-                    initialValues={currentRow}
+                    initialValues={currentRow || { status: 'ACTIVE' }}
                     modalProps={{
+                        ...orgModalProps,
                         destroyOnClose: true,
+                        focusTriggerAfterClose: false,
                     }}
                 >
                     <FormContent />
@@ -444,12 +447,14 @@ export const OrgList: React.FC = () => {
             <ModalForm
                 title={currentRow ? '编辑组织' : '新建组织'}
                 width="500px"
-                open={editModalVisible}
-                onOpenChange={setEditModalVisible}
+                visible={editModalVisible}
+                onVisibleChange={setEditModalVisible}
                 onFinish={handleSubmit}
-                initialValues={currentRow}
+                initialValues={currentRow || { status: 'ACTIVE' }}
                 modalProps={{
+                    ...orgModalProps,
                     destroyOnClose: true,
+                    focusTriggerAfterClose: false,
                 }}
             >
                 <FormContent />

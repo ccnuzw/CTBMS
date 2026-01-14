@@ -5,6 +5,7 @@ import { Button, message, Popconfirm, Tag, App, ColorPicker, Form, Grid, Input, 
 import { TagResponse, CreateTagDto } from '@packages/types';
 import { useTags, useCreateTag, useUpdateTag, useDeleteTag } from '../api/tags';
 import { ModalForm, ProFormText } from '@ant-design/pro-components';
+import { useModalAutoFocus } from '../../../hooks/useModalAutoFocus';
 
 export const TagList: React.FC = () => {
     const { message } = App.useApp();
@@ -14,6 +15,7 @@ export const TagList: React.FC = () => {
     const [editModalVisible, setEditModalVisible] = useState(false);
     const [currentRow, setCurrentRow] = useState<TagResponse | undefined>(undefined);
     const [searchText, setSearchText] = useState('');
+    const { containerRef, autoFocusFieldProps, modalProps: tagModalProps } = useModalAutoFocus();
 
     const { data: tags, isLoading } = useTags();
     const createTag = useCreateTag();
@@ -200,22 +202,26 @@ export const TagList: React.FC = () => {
                     onFinish={handleSubmit}
                     initialValues={currentRow}
                     modalProps={{
+                        ...tagModalProps,
                         destroyOnClose: true,
                     }}
                 >
-                    <ProFormText
-                        name="name"
-                        label="标签名称"
-                        placeholder="请输入名称"
-                        rules={[{ required: true, message: '请输入名称' }]}
-                    />
-                    <Form.Item
-                        name="color"
-                        label="颜色"
-                        getValueFromEvent={(color) => color?.toHexString?.() || color}
-                    >
-                        <ColorPicker showText allowClear />
-                    </Form.Item>
+                    <div ref={containerRef}>
+                        <ProFormText
+                            name="name"
+                            label="标签名称"
+                            placeholder="请输入名称"
+                            rules={[{ required: true, message: '请输入名称' }]}
+                            fieldProps={autoFocusFieldProps}
+                        />
+                        <Form.Item
+                            name="color"
+                            label="颜色"
+                            getValueFromEvent={(color) => color?.toHexString?.() || color}
+                        >
+                            <ColorPicker showText allowClear />
+                        </Form.Item>
+                    </div>
                 </ModalForm>
             </>
         );
@@ -255,22 +261,27 @@ export const TagList: React.FC = () => {
                 onFinish={handleSubmit}
                 initialValues={currentRow}
                 modalProps={{
+                    ...tagModalProps,
                     destroyOnClose: true,
+                    focusTriggerAfterClose: false,
                 }}
             >
-                <ProFormText
-                    name="name"
-                    label="标签名称"
-                    placeholder="请输入名称"
-                    rules={[{ required: true, message: '请输入名称' }]}
-                />
-                <Form.Item
-                    name="color"
-                    label="颜色"
-                    getValueFromEvent={(color) => color?.toHexString?.() || color}
-                >
-                    <ColorPicker showText allowClear />
-                </Form.Item>
+                <div ref={containerRef}>
+                    <ProFormText
+                        name="name"
+                        label="标签名称"
+                        placeholder="请输入名称"
+                        rules={[{ required: true, message: '请输入名称' }]}
+                        fieldProps={autoFocusFieldProps}
+                    />
+                    <Form.Item
+                        name="color"
+                        label="颜色"
+                        getValueFromEvent={(color) => color?.toHexString?.() || color}
+                    >
+                        <ColorPicker showText allowClear />
+                    </Form.Item>
+                </div>
             </ModalForm>
         </>
     );

@@ -30,8 +30,16 @@ import {
     ProForm,
 } from '@ant-design/pro-components';
 import dayjs from 'dayjs';
-import { useUsers, useCreateUser, useUpdateUser, useDeleteUser, useAssignRoles, UserWithRelations } from '../api/users';
+import {
+    useUsers,
+    useCreateUser,
+    useUpdateUser,
+    useDeleteUser,
+    useAssignRoles,
+    UserWithRelations,
+} from '../api/users';
 import { useRoles } from '../api/roles';
+import { useModalAutoFocus } from '../../../hooks/useModalAutoFocus';
 
 const { Text } = Typography;
 
@@ -67,6 +75,8 @@ export const UserList: React.FC = () => {
     const [roleModalVisible, setRoleModalVisible] = useState(false);
     const [currentRow, setCurrentRow] = useState<UserWithRelations | undefined>(undefined);
     const [selectedRoleIds, setSelectedRoleIds] = useState<string[]>([]);
+    const { containerRef, autoFocusFieldProps, modalProps: userModalProps } = useModalAutoFocus();
+    const { focusRef: roleSelectRef, modalProps: roleModalProps } = useModalAutoFocus();
 
     // 角色选项
     const roleOptions = useMemo(() => {
@@ -75,6 +85,11 @@ export const UserList: React.FC = () => {
 
     const handleEdit = (record: UserWithRelations) => {
         setCurrentRow(record);
+        setModalVisible(true);
+    };
+
+    const handleAdd = () => {
+        setCurrentRow(undefined);
         setModalVisible(true);
     };
 
@@ -164,21 +179,17 @@ export const UserList: React.FC = () => {
                                 </Tag>
                             )}
                         </Flex>
-                        {user.roles && user.roles.length > 0 && (
-                            <Flex gap={4} wrap="wrap">
-                                {user.roles.slice(0, 2).map((r) => (
-                                    <Tag key={r.role.id} color="purple">
-                                        {r.role.name}
-                                    </Tag>
-                                ))}
-                                {user.roles.length > 2 && <Tag>+{user.roles.length - 2}</Tag>}
-                            </Flex>
-                        )}
+                        <Text type="secondary" style={{ fontSize: 12 }}>
+                            {user.email}
+                        </Text>
                     </Flex>
                 </Flex>
-                <Space size={4} direction="vertical">
+                <Space size="small">
                     <Button size="small" icon={<EditOutlined />} onClick={() => handleEdit(user)} />
-                    <Popconfirm title="确定删除吗?" onConfirm={() => handleDelete(user.id)}>
+                    <Popconfirm
+                        title="确定删除该用户吗?"
+                        onConfirm={() => handleDelete(user.id)}
+                    >
                         <Button size="small" danger icon={<DeleteOutlined />} />
                     </Popconfirm>
                 </Space>
@@ -187,6 +198,19 @@ export const UserList: React.FC = () => {
     );
 
     const columns: ProColumns<UserWithRelations>[] = [
+        {
+            title: '头像',
+            dataIndex: 'avatar',
+            search: false,
+            width: 80,
+            render: (_, record) => (
+                <Avatar
+                    src={record.avatar}
+                    icon={!record.avatar && <UserOutlined />}
+                    style={{ backgroundColor: token.colorPrimary }}
+                />
+            ),
+        },
         {
             title: '用户名',
             dataIndex: 'username',
@@ -312,10 +336,7 @@ export const UserList: React.FC = () => {
                     <Button
                         type="primary"
                         icon={<PlusOutlined />}
-                        onClick={() => {
-                            setCurrentRow(undefined);
-                            setModalVisible(true);
-                        }}
+                        onClick={handleAdd}
                     >
                         {screens.md ? '新建用户' : '新建'}
                     </Button>,
@@ -325,91 +346,92 @@ export const UserList: React.FC = () => {
             {/* 新建/编辑用户表单 */}
             <ModalForm
                 title={currentRow ? '编辑用户' : '新建用户'}
-                open={modalVisible}
-                onOpenChange={setModalVisible}
-                modalProps={{ destroyOnClose: true }}
+                visible={modalVisible}
+                onVisibleChange={setModalVisible}
+                modalProps={{
+                    ...userModalProps,
+                    destroyOnClose: true,
+                    focusTriggerAfterClose: false,
+                }}
                 initialValues={
                     currentRow
                         ? {
                             ...currentRow,
                             birthday: currentRow.birthday ? dayjs(currentRow.birthday) : undefined,
                         }
-                        : { status: 'ACTIVE', systemRole: 'USER' }
+                        : { status: 'ACTIVE' }
                 }
                 onFinish={handleSubmit}
                 width={600}
             >
-                <ProForm.Group>
-                    <ProFormText
-                        name="username"
-                        label="用户名"
-                        width="sm"
-                        placeholder="用于登录"
-                        rules={[{ required: true, message: '请输入用户名' }]}
-                        disabled={!!currentRow}
-                    />
-                    <ProFormText
-                        name="name"
-                        label="姓名"
-                        width="sm"
-                        rules={[{ required: true, message: '请输入姓名' }]}
-                    />
-                </ProForm.Group>
-                <ProForm.Group>
-                    <ProFormText
-                        name="email"
-                        label="邮箱"
-                        width="sm"
-                        rules={[{ required: true, type: 'email', message: '请输入有效邮箱' }]}
-                        disabled={!!currentRow}
-                    />
-                    <ProFormText name="phone" label="电话" width="sm" />
-                </ProForm.Group>
-                <ProForm.Group>
-                    <ProFormSelect
-                        name="gender"
-                        label="性别"
-                        width="xs"
-                        options={[
-                            { value: 'MALE', label: '男' },
-                            { value: 'FEMALE', label: '女' },
-                            { value: 'OTHER', label: '其他' },
-                        ]}
-                    />
-                    <ProFormDatePicker name="birthday" label="生日" width="sm" />
-                    <ProFormText name="employeeNo" label="工号" width="sm" />
-                </ProForm.Group>
-                <ProForm.Group>
-                    <ProFormSelect
-                        name="status"
-                        label="状态"
-                        width="sm"
-                        options={[
-                            { value: 'ACTIVE', label: '在职' },
-                            { value: 'PROBATION', label: '试用期' },
-                            { value: 'RESIGNED', label: '离职' },
-                            { value: 'SUSPENDED', label: '停职' },
-                        ]}
-                    />
-                    <ProFormSelect
-                        name="systemRole"
-                        label="系统权限"
-                        width="sm"
-                        options={[
-                            { value: 'USER', label: '普通用户' },
-                            { value: 'ADMIN', label: '管理员' },
-                        ]}
-                        tooltip="管理员拥有系统管理权限"
-                    />
-                </ProForm.Group>
+                <div ref={containerRef}>
+                    <ProForm.Group>
+                        <ProFormText
+                            name="username"
+                            label="用户名"
+                            width="sm"
+                            placeholder="用于登录"
+                            rules={[{ required: true, message: '请输入用户名' }]}
+                            disabled={!!currentRow}
+                        />
+                        <ProFormText
+                            name="name"
+                            label="姓名"
+                            width="sm"
+                            rules={[{ required: true, message: '请输入姓名' }]}
+                            fieldProps={autoFocusFieldProps}
+                        />
+                    </ProForm.Group>
+                    <ProForm.Group>
+                        <ProFormText
+                            name="email"
+                            label="邮箱"
+                            width="sm"
+                            rules={[{ required: true, type: 'email', message: '请输入有效邮箱' }]}
+                            disabled={!!currentRow}
+                        />
+                        <ProFormText name="phone" label="电话" width="sm" />
+                    </ProForm.Group>
+                    <ProForm.Group>
+                        <ProFormSelect
+                            name="gender"
+                            label="性别"
+                            width="xs"
+                            options={[
+                                { value: 'MALE', label: '男' },
+                                { value: 'FEMALE', label: '女' },
+                                { value: 'OTHER', label: '其他' },
+                            ]}
+                        />
+                        <ProFormDatePicker name="birthday" label="生日" width="sm" />
+                        <ProFormText name="employeeNo" label="工号" width="sm" />
+                    </ProForm.Group>
+                    <ProForm.Group>
+                        <ProFormSelect
+                            name="status"
+                            label="状态"
+                            width="sm"
+                            options={[
+                                { value: 'ACTIVE', label: '在职' },
+                                { value: 'PROBATION', label: '试用期' },
+                                { value: 'RESIGNED', label: '离职' },
+                                { value: 'SUSPENDED', label: '停职' },
+                            ]}
+                        />
+                    </ProForm.Group>
+                </div>
             </ModalForm>
 
             {/* 角色分配弹窗 */}
             <ModalForm
                 title={`分配角色 - ${currentRow?.name}`}
-                open={roleModalVisible}
-                onOpenChange={setRoleModalVisible}
-                modalProps={{ destroyOnClose: true }}
+                visible={roleModalVisible}
+                onVisibleChange={setRoleModalVisible}
+                modalProps={{
+                    ...roleModalProps,
+                    destroyOnClose: true,
+                    focusTriggerAfterClose: false,
+                }}
                 onFinish={handleAssignRolesSubmit}
                 width={500}
                 submitter={{
@@ -417,6 +439,7 @@ export const UserList: React.FC = () => {
                 }}
             >
                 <Select
+                    ref={roleSelectRef}
                     mode="multiple"
                     style={{ width: '100%' }}
                     placeholder="选择角色"
