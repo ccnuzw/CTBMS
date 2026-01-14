@@ -19,30 +19,19 @@ import {
     Space,
     theme,
     Select,
-    TreeSelect,
-    Form,
 } from 'antd';
 import {
     DepartmentDto,
     CreateDepartmentDto,
-    DepartmentTreeNode,
 } from '@packages/types';
 import {
     useDepartments,
-    useDepartmentTree,
     useCreateDepartment,
     useUpdateDepartment,
     useDeleteDepartment,
 } from '../api/departments';
 import { useOrganizations } from '../api/organizations';
-import {
-    ModalForm,
-    ProFormText,
-    ProFormTextArea,
-    ProFormDigit,
-    ProFormSelect,
-} from '@ant-design/pro-components';
-import { useModalAutoFocus } from '../../../hooks/useModalAutoFocus';
+import { DeptEditModal } from './DeptEditModal';
 
 // 扩展类型
 interface DepartmentWithRelations extends DepartmentDto {
@@ -50,29 +39,6 @@ interface DepartmentWithRelations extends DepartmentDto {
     parent?: DepartmentDto | null;
     _count?: { children: number };
 }
-
-// TreeSelect 数据节点类型
-interface TreeSelectNode {
-    value: string;
-    title: string;
-    children?: TreeSelectNode[];
-}
-
-// 将树形数据转换为 TreeSelect 格式
-const convertToTreeSelectData = (
-    nodes: DepartmentTreeNode[],
-    excludeId?: string,
-): TreeSelectNode[] => {
-    return nodes
-        .filter((node) => node.id !== excludeId)
-        .map((node) => ({
-            value: node.id,
-            title: node.name,
-            children: node.children?.length
-                ? convertToTreeSelectData(node.children, excludeId)
-                : undefined,
-        }));
-};
 
 export const DeptList: React.FC = () => {
     const { message } = App.useApp();
@@ -83,11 +49,11 @@ export const DeptList: React.FC = () => {
     const [currentRow, setCurrentRow] = useState<DepartmentWithRelations | undefined>(undefined);
     const [searchText, setSearchText] = useState('');
     const [selectedOrgId, setSelectedOrgId] = useState<string | undefined>(undefined);
-    const { containerRef, autoFocusFieldProps, modalProps: deptModalProps } = useModalAutoFocus();
 
     const { data: organizations } = useOrganizations();
     const { data: departments, isLoading } = useDepartments(selectedOrgId);
-    const { data: deptTree } = useDepartmentTree(selectedOrgId || '', !!selectedOrgId);
+
+    // Hooks
     const createDept = useCreateDepartment();
     const updateDept = useUpdateDepartment();
     const deleteDept = useDeleteDepartment();
@@ -218,56 +184,23 @@ export const DeptList: React.FC = () => {
         },
     ];
 
-    // 表单组件
-    const FormContent = () => (
-        <div ref={containerRef}>
-            <ProFormText
-                name="name"
-                label="部门名称"
-                placeholder="请输入名称"
-                rules={[{ required: true, message: '请输入名称' }]}
-                fieldProps={autoFocusFieldProps}
-            />
-            <ProFormText
-                name="code"
-                label="部门编码"
-                placeholder="请输入编码"
-                rules={[{ required: true, message: '请输入编码' }]}
-                disabled={!!currentRow}
-            />
-            <ProFormSelect
-                name="organizationId"
-                label="所属组织"
-                placeholder="请选择所属组织"
-                rules={[{ required: true, message: '请选择所属组织' }]}
-                disabled={!!currentRow}
-                options={
+    const renderEditModal = () => {
+        if (!editModalVisible) return null;
+        return (
+            <DeptEditModal
+                open={editModalVisible}
+                onOpenChange={setEditModalVisible}
+                onFinish={handleSubmit}
+                initialValues={currentRow}
+                orgOptions={
                     organizations?.map((org) => ({
                         value: org.id,
                         label: org.name,
                     })) || []
                 }
             />
-            <Form.Item name="parentId" label="上级部门">
-                <TreeSelect
-                    placeholder="请选择上级部门（可选）"
-                    allowClear
-                    treeDefaultExpandAll
-                    treeData={convertToTreeSelectData(deptTree || [], currentRow?.id)}
-                />
-            </Form.Item>
-            <ProFormDigit name="sortOrder" label="排序" placeholder="请输入排序号" />
-            <ProFormSelect
-                name="status"
-                label="状态"
-                options={[
-                    { value: 'ACTIVE', label: '启用' },
-                    { value: 'INACTIVE', label: '禁用' },
-                ]}
-            />
-            <ProFormTextArea name="description" label="描述" placeholder="请输入描述" />
-        </div>
-    );
+        );
+    };
 
     // 移动端视图
     if (!screens.md) {
@@ -400,21 +333,7 @@ export const DeptList: React.FC = () => {
                     </Flex>
                 </Flex>
 
-                <ModalForm
-                    title={currentRow ? '编辑部门' : '新建部门'}
-                    width="500px"
-                    visible={editModalVisible}
-                    onVisibleChange={setEditModalVisible}
-                    onFinish={handleSubmit}
-                    initialValues={currentRow || { status: 'ACTIVE' }}
-                    modalProps={{
-                        ...deptModalProps,
-                        destroyOnClose: true,
-                        focusTriggerAfterClose: false,
-                    }}
-                >
-                    <FormContent />
-                </ModalForm>
+                {renderEditModal()}
             </>
         );
     }
@@ -457,21 +376,7 @@ export const DeptList: React.FC = () => {
                 columns={columns}
             />
 
-            <ModalForm
-                title={currentRow ? '编辑部门' : '新建部门'}
-                width="500px"
-                visible={editModalVisible}
-                onVisibleChange={setEditModalVisible}
-                onFinish={handleSubmit}
-                initialValues={currentRow || { status: 'ACTIVE' }}
-                modalProps={{
-                    ...deptModalProps,
-                    destroyOnClose: true,
-                    focusTriggerAfterClose: false,
-                }}
-            >
-                <FormContent />
-            </ModalForm>
+            {renderEditModal()}
         </>
     );
 };

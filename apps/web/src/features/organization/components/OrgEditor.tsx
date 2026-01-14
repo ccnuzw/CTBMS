@@ -140,7 +140,7 @@ export const OrgEditor: React.FC = () => {
             >
                 <ProForm<CreateOrganizationDto>
                     key={isEdit ? id : 'new'}
-                    request={loadData}
+                    request={loadData as any}
                     onFinish={handleFinish}
                     layout="vertical"
                     grid={isMobile}

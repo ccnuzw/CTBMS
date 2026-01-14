@@ -214,7 +214,7 @@ export const UserList: React.FC = () => {
         {
             title: '用户名',
             dataIndex: 'username',
-            width: 120,
+            width: 180,
         },
         {
             title: '姓名',
@@ -322,6 +322,10 @@ export const UserList: React.FC = () => {
                 dataSource={users}
                 loading={isLoading}
                 columns={columns}
+                pagination={{
+                    defaultPageSize: 10,
+                    showSizeChanger: true,
+                }}
                 tableRender={(_, dom) => {
                     if (!screens.md && users && users.length > 0) {
                         return (
@@ -379,7 +383,7 @@ export const UserList: React.FC = () => {
                             label="姓名"
                             width="sm"
                             rules={[{ required: true, message: '请输入姓名' }]}
-                            fieldProps={autoFocusFieldProps}
+                            fieldProps={autoFocusFieldProps as any}
                         />
                     </ProForm.Group>
                     <ProForm.Group>

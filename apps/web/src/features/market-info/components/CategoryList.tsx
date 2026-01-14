@@ -257,7 +257,7 @@ export const CategoryList: React.FC = () => {
                             label="分类名称"
                             placeholder="请输入名称"
                             rules={[{ required: true, message: '请输入名称' }]}
-                            fieldProps={autoFocusFieldProps}
+                            fieldProps={autoFocusFieldProps as any}
                         />
                         <ProFormText
                             name="code"
@@ -326,7 +326,7 @@ export const CategoryList: React.FC = () => {
                         label="分类名称"
                         placeholder="请输入名称"
                         rules={[{ required: true, message: '请输入名称' }]}
-                        fieldProps={autoFocusFieldProps}
+                        fieldProps={autoFocusFieldProps as any}
                     />
                     <ProFormText
                         name="code"

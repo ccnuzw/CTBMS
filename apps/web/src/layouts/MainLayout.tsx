@@ -159,13 +159,18 @@ export const MainLayout: React.FC = () => {
                                         label: '组织架构',
                                         children: [
                                             {
+                                                key: '/organization/manage',
+                                                icon: <TeamOutlined />,
+                                                label: '统一管理',
+                                            },
+                                            {
                                                 key: '/organization',
                                                 icon: <BankOutlined />,
                                                 label: '组织管理',
                                             },
                                             {
                                                 key: '/organization/departments',
-                                                icon: <TeamOutlined />,
+                                                icon: <ApartmentOutlined />,
                                                 label: '部门管理',
                                             },
                                             {
@@ -316,13 +321,18 @@ export const MainLayout: React.FC = () => {
                                     label: '组织架构',
                                     children: [
                                         {
+                                            key: '/organization/manage',
+                                            icon: <TeamOutlined />,
+                                            label: '统一管理',
+                                        },
+                                        {
                                             key: '/organization',
                                             icon: <BankOutlined />,
                                             label: '组织管理',
                                         },
                                         {
                                             key: '/organization/departments',
-                                            icon: <TeamOutlined />,
+                                            icon: <ApartmentOutlined />,
                                             label: '部门管理',
                                         },
                                         {

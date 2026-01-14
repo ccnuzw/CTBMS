@@ -244,7 +244,7 @@ export const OrgList: React.FC = () => {
                 label="组织名称"
                 placeholder="请输入名称"
                 rules={[{ required: true, message: '请输入名称' }]}
-                fieldProps={autoFocusFieldProps}
+                fieldProps={autoFocusFieldProps as any}
             />
             <ProFormText
                 name="code"

@@ -212,7 +212,7 @@ export const TagList: React.FC = () => {
                             label="标签名称"
                             placeholder="请输入名称"
                             rules={[{ required: true, message: '请输入名称' }]}
-                            fieldProps={autoFocusFieldProps}
+                            fieldProps={autoFocusFieldProps as any}
                         />
                         <Form.Item
                             name="color"
@@ -272,7 +272,7 @@ export const TagList: React.FC = () => {
                         label="标签名称"
                         placeholder="请输入名称"
                         rules={[{ required: true, message: '请输入名称' }]}
-                        fieldProps={autoFocusFieldProps}
+                        fieldProps={autoFocusFieldProps as any}
                     />
                     <Form.Item
                         name="color"

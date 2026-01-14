@@ -7,7 +7,7 @@ import { CategoryList } from '../features/market-info/components/CategoryList';
 import { TagList } from '../features/market-info/components/TagList';
 import { InfoList } from '../features/market-info/components/InfoList';
 import { InfoEditor } from '../features/market-info/components/InfoEditor';
-import { OrgList, DeptList } from '../features/organization';
+import { OrgList, DeptList, OrgUserManagement } from '../features/organization';
 
 export const router = createBrowserRouter([
     {
@@ -51,6 +51,7 @@ export const router = createBrowserRouter([
                 children: [
                     { index: true, element: <OrgList /> },
                     { path: 'departments', element: <DeptList /> },
+                    { path: 'manage', element: <OrgUserManagement /> },
                 ]
             },
         ],

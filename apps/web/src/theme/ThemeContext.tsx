@@ -35,10 +35,13 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
 
         const updateTheme = () => {
-            if (themeMode === 'system') {
-                setIsDark(mediaQuery.matches);
+            const isDarkMatches = themeMode === 'system' ? mediaQuery.matches : themeMode === 'dark';
+            setIsDark(isDarkMatches);
+
+            if (isDarkMatches) {
+                document.body.classList.add('dark');
             } else {
-                setIsDark(themeMode === 'dark');
+                document.body.classList.remove('dark');
             }
         };
 

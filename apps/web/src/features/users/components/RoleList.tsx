@@ -178,7 +178,7 @@ export const RoleList: React.FC = () => {
                 label="角色名称"
                 placeholder="请输入角色名称"
                 rules={[{ required: true, message: '请输入角色名称' }]}
-                fieldProps={autoFocusFieldProps}
+                fieldProps={autoFocusFieldProps as any}
             />
             <ProFormText
                 name="code"

@@ -6,6 +6,7 @@ import {
     ProFormSelect,
     ProFormDigit,
     ProFormTextArea,
+    ProFormTreeSelect,
 } from '@ant-design/pro-components';
 import { App, Card, Form, Grid, TreeSelect } from 'antd';
 import { useNavigate, useParams } from 'react-router-dom';
@@ -21,11 +22,13 @@ import {
 } from '../api/departments';
 import { useOrganizations } from '../api/organizations';
 import { apiClient } from '../../../api/client';
+import { DeptFormFields } from './DeptFormFields';
 
 // TreeSelect 数据节点类型
 interface TreeSelectNode {
     value: string;
     title: string;
+    label: string;
     children?: TreeSelectNode[];
 }
 
@@ -39,6 +42,7 @@ const convertToTreeSelectData = (
         .map((node) => ({
             value: node.id,
             title: node.name,
+            label: node.name,
             children: node.children?.length
                 ? convertToTreeSelectData(node.children, excludeId)
                 : undefined,
@@ -148,7 +152,10 @@ export const DeptEditor: React.FC = () => {
                 <ProForm<CreateDepartmentDto>
                     form={form}
                     key={isEdit ? id : 'new'}
-                    request={loadData}
+                    request={async () => {
+                        const data = await loadData();
+                        return data as unknown as CreateDepartmentDto;
+                    }}
                     onFinish={handleFinish}
                     layout="vertical"
                     grid={isMobile}
@@ -163,48 +170,14 @@ export const DeptEditor: React.FC = () => {
                         },
                     }}
                 >
-                    <ProFormText
-                        name="name"
-                        label="部门名称"
-                        placeholder="请输入名称"
-                        rules={[{ required: true, message: '请输入名称' }]}
+                    <DeptFormFields
+                        isEdit={isEdit}
+                        orgOptions={orgOptions}
+                        treeData={treeData}
+                        orgIdForTree={orgIdForTree}
                     />
-                    <ProFormText
-                        name="code"
-                        label="部门编码"
-                        placeholder="请输入编码"
-                        rules={[{ required: true, message: '请输入编码' }]}
-                        disabled={isEdit}
-                    />
-                    <ProFormSelect
-                        name="organizationId"
-                        label="所属组织"
-                        placeholder="请选择所属组织"
-                        rules={[{ required: true, message: '请选择所属组织' }]}
-                        disabled={isEdit}
-                        options={orgOptions}
-                    />
-                    <Form.Item name="parentId" label="上级部门">
-                        <TreeSelect
-                            placeholder="请选择上级部门（可选）"
-                            allowClear
-                            treeDefaultExpandAll
-                            treeData={treeData}
-                            disabled={!orgIdForTree}
-                        />
-                    </Form.Item>
-                    <ProFormDigit name="sortOrder" label="排序" placeholder="请输入排序号" />
-                    <ProFormSelect
-                        name="status"
-                        label="状态"
-                        options={[
-                            { value: 'ACTIVE', label: '启用' },
-                            { value: 'INACTIVE', label: '禁用' },
-                        ]}
-                    />
-                    <ProFormTextArea name="description" label="描述" placeholder="请输入描述" />
                 </ProForm>
             </Card>
-        </PageContainer>
+        </PageContainer >
     );
 };
