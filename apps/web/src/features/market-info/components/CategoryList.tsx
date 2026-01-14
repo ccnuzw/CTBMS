@@ -244,7 +244,7 @@ export const CategoryList: React.FC = () => {
                     onFinish={handleSubmit}
                     initialValues={currentRow}
                     modalProps={{
-                        destroyOnHidden: true,
+                        destroyOnClose: true,
                     }}
                 >
                     <ProFormText
@@ -308,7 +308,7 @@ export const CategoryList: React.FC = () => {
                 onFinish={handleSubmit}
                 initialValues={currentRow}
                 modalProps={{
-                    destroyOnHidden: true,
+                    destroyOnClose: true,
                 }}
             >
                 <ProFormText

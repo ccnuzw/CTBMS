@@ -19,6 +19,7 @@ import {
     FontSizeOutlined,
     MoreOutlined,
     CheckOutlined,
+    TableOutlined,
 } from '@ant-design/icons';
 
 interface MobileToolbarProps {
@@ -102,6 +103,20 @@ export const MobileToolbar: React.FC<MobileToolbarProps> = ({ editor }) => {
             key: 'code',
             label: '代码',
             onClick: () => editor.chain().focus().toggleCode().run(),
+        },
+        { type: 'divider' },
+        {
+            key: 'insert-table',
+            label: '插入表格',
+            icon: <TableOutlined />,
+            onClick: () => editor.chain().focus().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run(),
+        },
+        {
+            key: 'delete-table',
+            label: '删除表格',
+            danger: true,
+            onClick: () => editor.chain().focus().deleteTable().run(),
+            disabled: !editor.can().deleteTable(),
         },
     ];
 

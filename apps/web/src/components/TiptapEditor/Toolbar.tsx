@@ -1,6 +1,6 @@
 import React, { useCallback } from 'react';
 import { Editor } from '@tiptap/react';
-import { Button, Tooltip, Divider, Select, ColorPicker, Flex, theme } from 'antd';
+import { Button, Tooltip, Divider, Select, ColorPicker, Flex, theme, Dropdown } from 'antd';
 import {
     BoldOutlined,
     ItalicOutlined,
@@ -18,6 +18,7 @@ import {
     CodeOutlined,
     LineOutlined,
     MinusOutlined,
+    TableOutlined,
 } from '@ant-design/icons';
 
 interface ToolbarProps {
@@ -223,6 +224,95 @@ export const Toolbar: React.FC<ToolbarProps> = ({ editor }) => {
 
                 <Tooltip title="插入图片">
                     <Button size="small" type="text" icon={<PictureOutlined />} onClick={addImage} />
+                </Tooltip>
+
+                <Tooltip title="表格">
+                    <Dropdown
+                        menu={{
+                            items: [
+                                {
+                                    key: 'insert-table',
+                                    label: '插入表格',
+                                    onClick: () => editor.chain().focus().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run(),
+                                },
+                                {
+                                    type: 'divider',
+                                },
+                                {
+                                    key: 'add-column-before',
+                                    label: '左侧插入列',
+                                    onClick: () => editor.chain().focus().addColumnBefore().run(),
+                                    disabled: !editor.can().addColumnBefore(),
+                                },
+                                {
+                                    key: 'add-column-after',
+                                    label: '右侧插入列',
+                                    onClick: () => editor.chain().focus().addColumnAfter().run(),
+                                    disabled: !editor.can().addColumnAfter(),
+                                },
+                                {
+                                    key: 'delete-column',
+                                    label: '删除列',
+                                    danger: true,
+                                    onClick: () => editor.chain().focus().deleteColumn().run(),
+                                    disabled: !editor.can().deleteColumn(),
+                                },
+                                {
+                                    type: 'divider',
+                                },
+                                {
+                                    key: 'add-row-before',
+                                    label: '上方插入行',
+                                    onClick: () => editor.chain().focus().addRowBefore().run(),
+                                    disabled: !editor.can().addRowBefore(),
+                                },
+                                {
+                                    key: 'add-row-after',
+                                    label: '下方插入行',
+                                    onClick: () => editor.chain().focus().addRowAfter().run(),
+                                    disabled: !editor.can().addRowAfter(),
+                                },
+                                {
+                                    key: 'delete-row',
+                                    label: '删除行',
+                                    danger: true,
+                                    onClick: () => editor.chain().focus().deleteRow().run(),
+                                    disabled: !editor.can().deleteRow(),
+                                },
+                                {
+                                    type: 'divider',
+                                },
+                                {
+                                    key: 'merge-cells',
+                                    label: '合并单元格',
+                                    onClick: () => editor.chain().focus().mergeCells().run(),
+                                    disabled: !editor.can().mergeCells(),
+                                },
+                                {
+                                    key: 'split-cell',
+                                    label: '拆分单元格',
+                                    onClick: () => editor.chain().focus().splitCell().run(),
+                                    disabled: !editor.can().splitCell(),
+                                },
+                                {
+                                    type: 'divider',
+                                },
+                                {
+                                    key: 'delete-table',
+                                    label: '删除表格',
+                                    danger: true,
+                                    onClick: () => editor.chain().focus().deleteTable().run(),
+                                    disabled: !editor.can().deleteTable(),
+                                },
+                            ],
+                        }}
+                    >
+                        <Button
+                            size="small"
+                            type={editor.isActive('table') ? 'primary' : 'text'}
+                            icon={<TableOutlined />}
+                        />
+                    </Dropdown>
                 </Tooltip>
 
                 <Tooltip title="分隔线">

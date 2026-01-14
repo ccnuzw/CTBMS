@@ -43,7 +43,7 @@ export const UserList: React.FC = () => {
             key={user.id}
             size="small"
             style={{ marginBottom: token.marginSM }}
-            styles={{ body: { padding: token.paddingSM } }}
+            bodyStyle={{ padding: token.paddingSM }}
         >
             <Flex justify="space-between" align="flex-start">
                 <Flex gap={token.marginSM} align="center" style={{ flex: 1 }}>
@@ -186,7 +186,7 @@ export const UserList: React.FC = () => {
                 open={modalVisible}
                 onOpenChange={setModalVisible}
                 modalProps={{
-                    destroyOnHidden: true,
+                    destroyOnClose: true,
                 }}
                 initialValues={currentRow}
                 onFinish={async (values) => {

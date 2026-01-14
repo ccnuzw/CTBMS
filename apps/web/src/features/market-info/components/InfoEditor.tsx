@@ -146,9 +146,7 @@ export const InfoEditor: React.FC = () => {
                     boxShadow: 'none',
                     margin: 0
                 } : undefined}
-                styles={isMobile ? {
-                    body: { padding: '12px' }
-                } : undefined}
+                bodyStyle={isMobile ? { padding: '12px' } : undefined}
             >
                 <ProForm
                     key={isEdit ? id : 'new'}

@@ -143,6 +143,58 @@
   text-align: left;
 }
 
+/* Table */
+.tiptap-editor-content .tiptap table {
+  border-collapse: collapse;
+  table-layout: fixed;
+  width: 100%;
+  margin: 0;
+  overflow: hidden;
+}
+
+.tiptap-editor-content .tiptap table td,
+.tiptap-editor-content .tiptap table th {
+  min-width: 1em;
+  border: 1px solid #ced4da;
+  padding: 3px 5px;
+  vertical-align: top;
+  box-sizing: border-box;
+  position: relative;
+}
+
+.tiptap-editor-content .tiptap table th {
+  font-weight: bold;
+  text-align: left;
+  background-color: #f1f3f5;
+}
+
+.tiptap-editor-content .tiptap table .selectedCell:after {
+  z-index: 2;
+  position: absolute;
+  content: "";
+  left: 0;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  background: rgba(200, 200, 255, 0.4);
+  pointer-events: none;
+}
+
+.tiptap-editor-content .tiptap table .column-resize-handle {
+  position: absolute;
+  right: -2px;
+  top: 0;
+  bottom: 0;
+  width: 4px;
+  background-color: #adf;
+  pointer-events: none;
+}
+
+.tiptap-editor-content .tiptap .tableWrapper {
+  overflow-x: auto;
+  margin: 1.5em 0;
+}
+
 /* Selection */
 .tiptap-editor-content .tiptap ::selection {
   background: rgba(22, 119, 255, 0.2);
@@ -209,7 +261,16 @@
     font-size: 1.3em;
   }
 
+
   .tiptap-mobile-content .tiptap h3 {
     font-size: 1.1em;
   }
+}
+
+/* Footer */
+.tiptap-footer {
+  padding: 8px 12px;
+  font-size: 12px;
+  text-align: right;
+  /* 颜色和边框由组件内联提供 */
 }

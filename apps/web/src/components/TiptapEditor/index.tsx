@@ -6,9 +6,15 @@ import Underline from '@tiptap/extension-underline';
 import TextAlign from '@tiptap/extension-text-align';
 import Link from '@tiptap/extension-link';
 import Image from '@tiptap/extension-image';
+// Tiptap table extensions
+import { Table } from '@tiptap/extension-table';
+import { TableRow } from '@tiptap/extension-table-row';
+import { TableCell } from '@tiptap/extension-table-cell';
+import { TableHeader } from '@tiptap/extension-table-header';
 import Placeholder from '@tiptap/extension-placeholder';
 import { Color } from '@tiptap/extension-color';
 import { TextStyle } from '@tiptap/extension-text-style';
+import CharacterCount from '@tiptap/extension-character-count';
 import { Toolbar } from './Toolbar';
 import { MobileToolbar } from './MobileToolbar';
 import './styles.css';
@@ -29,8 +35,8 @@ export const TiptapEditor: React.FC<TiptapEditorProps> = ({
     isMobile = false,
 }) => {
     const { token } = theme.useToken();
+    const [counts, setCounts] = React.useState({ words: 0, characters: 0 });
 
-    // 使用 useMemo 缓存 extensions 避免重复创建
     const extensions = React.useMemo(
         () => [
             StarterKit.configure({
@@ -60,11 +66,23 @@ export const TiptapEditor: React.FC<TiptapEditorProps> = ({
                     class: 'tiptap-image',
                 },
             }),
+            Table.configure({
+                resizable: true,
+                HTMLAttributes: {
+                    class: 'tiptap-table',
+                },
+            }),
+            TableRow,
+            TableHeader,
+            TableCell,
+            CharacterCount.configure({
+                limit: null,
+            }),
             Placeholder.configure({
                 placeholder,
             }),
         ],
-        [], // 移除 placeholder 依赖,避免重新创建
+        [],
     );
 
     const editor = useEditor(
@@ -79,10 +97,14 @@ export const TiptapEditor: React.FC<TiptapEditorProps> = ({
                 },
             },
             onUpdate: ({ editor }) => {
+                setCounts({
+                    words: editor.storage.characterCount.words(),
+                    characters: editor.storage.characterCount.characters(),
+                });
                 onChange(editor.getHTML());
             },
         },
-        [], // 空依赖数组,确保只创建一次
+        [],
     );
 
     // 更新 placeholder (如果需要)
@@ -102,6 +124,16 @@ export const TiptapEditor: React.FC<TiptapEditorProps> = ({
             editor.commands.setContent(value, { emitUpdate: false });
         }
     }, [value, editor]);
+
+    // Initial counts
+    React.useEffect(() => {
+        if (editor) {
+            setCounts({
+                words: editor.storage.characterCount.words(),
+                characters: editor.storage.characterCount.characters(),
+            });
+        }
+    }, [editor, value]);
 
     if (!editor) {
         return null;
@@ -123,6 +155,22 @@ export const TiptapEditor: React.FC<TiptapEditorProps> = ({
         boxShadow: `0 0 0 2px ${token.colorPrimaryBg}`,
     };
 
+
+
+    // Footer component
+    const EditorFooter = () => (
+        <div
+            className="tiptap-footer"
+            style={{
+                borderTop: `1px solid ${token.colorBorderSecondary}`,
+                color: token.colorTextSecondary,
+                background: token.colorBgContainer
+            }}
+        >
+            {counts.characters} 字符 | {counts.words} 词
+        </div>
+    );
+
     // 移动端布局：工具栏在底部
     if (isMobile) {
         return (
@@ -136,6 +184,7 @@ export const TiptapEditor: React.FC<TiptapEditorProps> = ({
                 }}
             >
                 <EditorContent editor={editor} className="tiptap-editor-content tiptap-mobile-content" />
+                <EditorFooter />
                 <MobileToolbar editor={editor} />
             </div>
         );
@@ -146,10 +195,9 @@ export const TiptapEditor: React.FC<TiptapEditorProps> = ({
         <div className="tiptap-editor-wrapper" style={wrapperStyle}>
             <Toolbar editor={editor} />
             <EditorContent editor={editor} className="tiptap-editor-content" />
+            <EditorFooter />
         </div>
     );
 };
 
 export default TiptapEditor;
-
-

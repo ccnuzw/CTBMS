@@ -200,7 +200,7 @@ export const TagList: React.FC = () => {
                     onFinish={handleSubmit}
                     initialValues={currentRow}
                     modalProps={{
-                        destroyOnHidden: true,
+                        destroyOnClose: true,
                     }}
                 >
                     <ProFormText
@@ -255,7 +255,7 @@ export const TagList: React.FC = () => {
                 onFinish={handleSubmit}
                 initialValues={currentRow}
                 modalProps={{
-                    destroyOnHidden: true,
+                    destroyOnClose: true,
                 }}
             >
                 <ProFormText

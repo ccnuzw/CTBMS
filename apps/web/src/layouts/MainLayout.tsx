@@ -358,7 +358,7 @@ export const MainLayout: React.FC = () => {
                                 prefix={<SearchOutlined style={{ color: token.colorTextPlaceholder }} />}
                                 placeholder="搜索节点、规则..."
                                 style={{ width: 200, borderRadius: 8, background: token.colorFillTertiary, border: 'none' }}
-                                variant="borderless"
+                                bordered={false}
                             />
                         )}
                         <Button

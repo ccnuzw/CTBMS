@@ -89,7 +89,7 @@ export const UserDropdown: React.FC = () => {
 
     return (
         <Dropdown
-            popupRender={() => dropdownContent}
+            dropdownRender={() => dropdownContent}
             placement="bottomRight"
             trigger={['click']}
         >
