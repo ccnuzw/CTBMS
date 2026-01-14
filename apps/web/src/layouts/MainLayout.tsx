@@ -10,6 +10,13 @@ import {
     CloudOutlined,
     SettingOutlined,
     QuestionCircleOutlined,
+    ApartmentOutlined,
+    TeamOutlined,
+    SafetyCertificateOutlined,
+    BankOutlined,
+    TagsOutlined,
+    FileTextOutlined,
+    AppstoreOutlined,
 } from '@ant-design/icons';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { ThemeSwitcher } from '../components/ThemeSwitcher';
@@ -46,6 +53,10 @@ export const MainLayout: React.FC = () => {
                 return '标签管理';
             case '/market/info':
                 return '信息采集';
+            case '/organization':
+                return '组织管理';
+            case '/organization/departments':
+                return '部门管理';
             default:
                 return 'CTBMS 系统管理';
         }
@@ -127,15 +138,45 @@ export const MainLayout: React.FC = () => {
                                         children: [
                                             {
                                                 key: '/market/categories',
+                                                icon: <AppstoreOutlined />,
                                                 label: '信息分类',
                                             },
                                             {
                                                 key: '/market/tags',
+                                                icon: <TagsOutlined />,
                                                 label: '标签管理',
                                             },
                                             {
                                                 key: '/market/info',
+                                                icon: <FileTextOutlined />,
                                                 label: '信息采集',
+                                            }
+                                        ]
+                                    },
+                                    {
+                                        key: 'org',
+                                        icon: <ApartmentOutlined />,
+                                        label: '组织架构',
+                                        children: [
+                                            {
+                                                key: '/organization',
+                                                icon: <BankOutlined />,
+                                                label: '组织管理',
+                                            },
+                                            {
+                                                key: '/organization/departments',
+                                                icon: <TeamOutlined />,
+                                                label: '部门管理',
+                                            },
+                                            {
+                                                key: '/users',
+                                                icon: <UserOutlined />,
+                                                label: '用户管理',
+                                            },
+                                            {
+                                                key: '/roles',
+                                                icon: <SafetyCertificateOutlined />,
+                                                label: '角色管理',
                                             }
                                         ]
                                     },
@@ -145,12 +186,8 @@ export const MainLayout: React.FC = () => {
                                         label: '系统管理',
                                         children: [
                                             {
-                                                key: '/users',
-                                                icon: <UserOutlined />,
-                                                label: '用户管理',
-                                            },
-                                            {
                                                 key: 'settings',
+                                                icon: <SettingOutlined />,
                                                 label: '设置中心',
                                                 children: [
                                                     {
@@ -258,15 +295,45 @@ export const MainLayout: React.FC = () => {
                                     children: [
                                         {
                                             key: '/market/categories',
+                                            icon: <AppstoreOutlined />,
                                             label: '信息分类',
                                         },
                                         {
                                             key: '/market/tags',
+                                            icon: <TagsOutlined />,
                                             label: '标签管理',
                                         },
                                         {
                                             key: '/market/info',
+                                            icon: <FileTextOutlined />,
                                             label: '信息采集',
+                                        }
+                                    ]
+                                },
+                                {
+                                    key: 'org',
+                                    icon: <ApartmentOutlined />,
+                                    label: '组织架构',
+                                    children: [
+                                        {
+                                            key: '/organization',
+                                            icon: <BankOutlined />,
+                                            label: '组织管理',
+                                        },
+                                        {
+                                            key: '/organization/departments',
+                                            icon: <TeamOutlined />,
+                                            label: '部门管理',
+                                        },
+                                        {
+                                            key: '/users',
+                                            icon: <UserOutlined />,
+                                            label: '用户管理',
+                                        },
+                                        {
+                                            key: '/roles',
+                                            icon: <SafetyCertificateOutlined />,
+                                            label: '角色管理',
                                         }
                                     ]
                                 },
@@ -276,12 +343,8 @@ export const MainLayout: React.FC = () => {
                                     label: '系统管理',
                                     children: [
                                         {
-                                            key: '/users',
-                                            icon: <UserOutlined />,
-                                            label: '用户管理',
-                                        },
-                                        {
                                             key: 'settings',
+                                            icon: <SettingOutlined />,
                                             label: '设置中心',
                                             children: [
                                                 {

@@ -5,6 +5,9 @@ import { UsersModule } from './modules/users/users.module';
 import { MarketCategoryModule } from './modules/market-category';
 import { MarketTagModule } from './modules/market-tag';
 import { MarketInfoModule } from './modules/market-info';
+import { OrganizationModule } from './modules/organization';
+import { DepartmentModule } from './modules/department';
+import { RoleModule } from './modules/role';
 import { LoggerMiddleware } from './common/middleware/logger.middleware';
 
 @Module({
@@ -14,6 +17,9 @@ import { LoggerMiddleware } from './common/middleware/logger.middleware';
         MarketCategoryModule,
         MarketTagModule,
         MarketInfoModule,
+        OrganizationModule,
+        DepartmentModule,
+        RoleModule,
     ],
     controllers: [AppController],
     providers: [],

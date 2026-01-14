@@ -1,38 +1,244 @@
-import { Injectable } from '@nestjs/common';
-import { User, Role } from '@prisma/client';
-import { CreateUserDto } from '@packages/types';
+import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { User, UserStatus, SystemRole, Gender } from '@prisma/client';
+import { CreateUserDto, UpdateUserDto, AssignRolesDto } from '@packages/types';
 import { PrismaService } from '../../prisma';
 
 @Injectable()
 export class UsersService {
     constructor(private prisma: PrismaService) { }
 
+    /**
+     * 创建用户
+     */
     async create(data: CreateUserDto): Promise<User> {
-        return this.prisma.user.create({
+        // 验证组织存在性（如果指定）
+        if (data.organizationId) {
+            const org = await this.prisma.organization.findUnique({
+                where: { id: data.organizationId },
+            });
+            if (!org) {
+                throw new BadRequestException('所属组织不存在');
+            }
+        }
+
+        // 验证部门存在性（如果指定）
+        if (data.departmentId) {
+            const dept = await this.prisma.department.findUnique({
+                where: { id: data.departmentId },
+            });
+            if (!dept) {
+                throw new BadRequestException('所属部门不存在');
+            }
+            if (data.organizationId && dept.organizationId !== data.organizationId) {
+                throw new BadRequestException('部门必须属于该组织');
+            }
+        }
+
+        // 检查用户名是否已存在
+        const existingUsername = await this.prisma.user.findUnique({
+            where: { username: data.username },
+        });
+        if (existingUsername) {
+            throw new BadRequestException('用户名已被使用');
+        }
+
+        // 检查邮箱是否已存在
+        const existingUser = await this.prisma.user.findUnique({
+            where: { email: data.email },
+        });
+        if (existingUser) {
+            throw new BadRequestException('该邮箱已被使用');
+        }
+
+        // 检查工号是否已存在
+        if (data.employeeNo) {
+            const existingNo = await this.prisma.user.findUnique({
+                where: { employeeNo: data.employeeNo },
+            });
+            if (existingNo) {
+                throw new BadRequestException('工号已存在');
+            }
+        }
+
+        // 创建用户
+        const user = await this.prisma.user.create({
             data: {
-                ...data,
-                role: data.role as Role,
+                username: data.username,
+                email: data.email,
+                name: data.name,
+                gender: (data.gender as Gender) ?? null,
+                birthday: data.birthday ?? null,
+                employeeNo: data.employeeNo ?? null,
+                phone: data.phone ?? null,
+                avatar: data.avatar ?? null,
+                systemRole: (data.systemRole as SystemRole) ?? 'USER',
+                organizationId: data.organizationId ?? null,
+                departmentId: data.departmentId ?? null,
+                position: data.position ?? null,
+                hireDate: data.hireDate ?? null,
+                status: (data.status as UserStatus) ?? 'ACTIVE',
             },
         });
+
+        // 分配角色（如果有）
+        if (data.roleIds && data.roleIds.length > 0) {
+            await this.prisma.userRole.createMany({
+                data: data.roleIds.map((roleId) => ({
+                    userId: user.id,
+                    roleId,
+                })),
+            });
+        }
+
+        return this.findOne(user.id);
     }
 
-    async update(id: string, data: Partial<CreateUserDto>): Promise<User> {
+    /**
+     * 更新用户
+     */
+    async update(id: string, data: UpdateUserDto): Promise<User> {
+        const existing = await this.prisma.user.findUnique({
+            where: { id },
+        });
+        if (!existing) {
+            throw new NotFoundException('用户不存在');
+        }
+
+        // 验证部门存在性（如果更改）
+        if (data.departmentId) {
+            const dept = await this.prisma.department.findUnique({
+                where: { id: data.departmentId },
+            });
+            if (!dept) {
+                throw new BadRequestException('所属部门不存在');
+            }
+        }
+
         return this.prisma.user.update({
             where: { id },
             data: {
-                ...data,
-                role: data.role ? (data.role as Role) : undefined,
+                name: data.name,
+                employeeNo: data.employeeNo,
+                phone: data.phone,
+                avatar: data.avatar,
+                systemRole: data.systemRole as SystemRole | undefined,
+                organizationId: data.organizationId,
+                departmentId: data.departmentId,
+                position: data.position,
+                hireDate: data.hireDate,
+                status: data.status as UserStatus | undefined,
+            },
+            include: {
+                organization: true,
+                department: true,
+                roles: {
+                    include: { role: true },
+                },
             },
         });
     }
 
-    async findAll(): Promise<User[]> {
+    /**
+     * 获取所有用户（支持筛选）
+     */
+    async findAll(filters?: {
+        organizationId?: string;
+        departmentId?: string;
+        status?: UserStatus;
+    }): Promise<User[]> {
         return this.prisma.user.findMany({
-            orderBy: { createdAt: 'desc' },
+            where: {
+                organizationId: filters?.organizationId,
+                departmentId: filters?.departmentId,
+                status: filters?.status,
+            },
+            orderBy: [{ createdAt: 'desc' }],
+            include: {
+                organization: true,
+                department: true,
+                roles: {
+                    include: { role: true },
+                },
+            },
         });
     }
 
+    /**
+     * 获取单个用户详情
+     */
+    async findOne(id: string): Promise<User> {
+        const user = await this.prisma.user.findUnique({
+            where: { id },
+            include: {
+                organization: true,
+                department: true,
+                roles: {
+                    include: { role: true },
+                },
+            },
+        });
+
+        if (!user) {
+            throw new NotFoundException('用户不存在');
+        }
+
+        return user;
+    }
+
+    /**
+     * 分配角色
+     */
+    async assignRoles(id: string, data: AssignRolesDto): Promise<User> {
+        const user = await this.prisma.user.findUnique({
+            where: { id },
+        });
+        if (!user) {
+            throw new NotFoundException('用户不存在');
+        }
+
+        // 验证所有角色存在
+        if (data.roleIds.length > 0) {
+            const roles = await this.prisma.role.findMany({
+                where: { id: { in: data.roleIds } },
+            });
+            if (roles.length !== data.roleIds.length) {
+                throw new BadRequestException('部分角色不存在');
+            }
+        }
+
+        // 使用事务更新角色
+        await this.prisma.$transaction(async (tx) => {
+            // 删除现有角色
+            await tx.userRole.deleteMany({
+                where: { userId: id },
+            });
+
+            // 添加新角色
+            if (data.roleIds.length > 0) {
+                await tx.userRole.createMany({
+                    data: data.roleIds.map((roleId) => ({
+                        userId: id,
+                        roleId,
+                    })),
+                });
+            }
+        });
+
+        return this.findOne(id);
+    }
+
+    /**
+     * 删除用户
+     */
     async remove(id: string): Promise<User> {
+        const user = await this.prisma.user.findUnique({
+            where: { id },
+        });
+
+        if (!user) {
+            throw new NotFoundException('用户不存在');
+        }
+
         return this.prisma.user.delete({
             where: { id },
         });
