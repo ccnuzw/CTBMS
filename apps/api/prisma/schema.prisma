@@ -94,6 +94,85 @@ model UserRole {
 }
 
 // =============================================
+// 全局标签系统 (Global Tag System)
+// =============================================
+
+// 标签作用域枚举
+enum TagScope {
+  GLOBAL       // 全局可用
+  CUSTOMER     // 客户
+  SUPPLIER     // 供应商
+  VEHICLE      // 车辆
+  CONTRACT     // 合同单据
+  MARKET_INFO  // 信息采集（兼容旧数据）
+}
+
+// 可挂载标签的实体类型
+enum TaggableEntityType {
+  CUSTOMER
+  SUPPLIER
+  VEHICLE
+  CONTRACT
+  MARKET_INFO
+}
+
+// 标签组模型 (用于互斥逻辑)
+model TagGroup {
+  id           String       @id @default(uuid())
+  name         String       @unique
+  description  String?
+  isExclusive  Boolean      @default(true)  // 组内互斥
+  sortOrder    Int          @default(0)
+  status       EntityStatus @default(ACTIVE)
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+  
+  tags         Tag[]
+}
+
+// 全局标签模型
+model Tag {
+  id          String       @id @default(uuid())
+  name        String
+  color       String?      // HEX 颜色
+  icon        String?      // 图标标识符
+  description String?
+  
+  // 作用域 (决定该标签可挂载到哪些实体)
+  scopes      TagScope[]   @default([GLOBAL])
+  
+  // 所属标签组 (可选)
+  groupId     String?
+  group       TagGroup?    @relation(fields: [groupId], references: [id])
+  
+  sortOrder   Int          @default(0)
+  status      EntityStatus @default(ACTIVE)
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+  
+  // 关联实体
+  entityTags  EntityTag[]
+  
+  @@unique([name, groupId]) // 同组内标签名唯一
+}
+
+// 多态关联表 (标签 <-> 业务实体)
+model EntityTag {
+  id         String             @id @default(uuid())
+  tagId      String
+  tag        Tag                @relation(fields: [tagId], references: [id], onDelete: Cascade)
+  
+  // 多态字段
+  entityType TaggableEntityType
+  entityId   String             // 目标实体ID
+  
+  createdAt  DateTime           @default(now())
+  
+  @@unique([tagId, entityType, entityId]) // 防止重复关联
+  @@index([entityType, entityId])         // 按实体查询优化
+}
+
+// =============================================
 // 信息采集子系统 (Market Info Subsystem)
 // =============================================
 model MarketCategory {
@@ -108,15 +187,7 @@ model MarketCategory {
   infos       MarketInfo[]
 }
 
-model MarketTag {
-  id        String   @id @default(uuid())
-  name      String   @unique
-  color     String?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  infos     MarketInfo[] @relation("InfoTags")
-}
+// MarketTag 已迁移到全局 Tag 系统，通过 EntityTag 关联
 
 model MarketInfo {
   id          String   @id @default(uuid())
@@ -128,7 +199,7 @@ model MarketInfo {
   
   categoryId  String
   category    MarketCategory @relation(fields: [categoryId], references: [id])
-  tags        MarketTag[]    @relation("InfoTags")
+  // 标签关联已迁移到 EntityTag 表
   
   attachments Json?      
   

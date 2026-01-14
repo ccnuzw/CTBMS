@@ -11,9 +11,9 @@ import { FilePdfOutlined, FileWordOutlined, FileExcelOutlined, FilePptOutlined, 
 import { useNavigate, useParams } from 'react-router-dom';
 import { TiptapEditor } from '../../../components/TiptapEditor';
 import { useCategories } from '../api/categories';
-import { useTags } from '../api/tags';
+import { useGlobalTags } from '../../tags/api/tags';
 import { useCreateInfo, useUpdateInfo } from '../api/info';
-import { CreateInfoDto, InfoStatus } from '@packages/types';
+import { CreateInfoDto, InfoStatus, TagScope } from '@packages/types';
 import { apiClient } from '../../../api/client';
 
 export const InfoEditor: React.FC = () => {
@@ -24,7 +24,8 @@ export const InfoEditor: React.FC = () => {
     const screens = Grid.useBreakpoint();
 
     const { data: categories } = useCategories();
-    const { data: tags } = useTags();
+    // 使用全局标签 API，过滤 MARKET_INFO 作用域的标签
+    const { data: tags } = useGlobalTags({ scope: TagScope.MARKET_INFO });
     // const { data: infoData, isLoading: isInfoLoading } = useInfo(id || ''); // Removed to avoid double fetch
 
 
@@ -98,6 +99,23 @@ export const InfoEditor: React.FC = () => {
     };
 
     const handleFinish = async (values: any) => {
+        // 前端互斥标签校验
+        if (values.tagIds && values.tagIds.length > 0 && tags) {
+            const selectedTags = tags.filter(t => values.tagIds.includes(t.id));
+            const exclusiveGroups = new Map<string, string>(); // groupId -> tagName
+
+            for (const tag of selectedTags) {
+                if (tag.group && tag.group.isExclusive) {
+                    if (exclusiveGroups.has(tag.group.id)) {
+                        const existingTagName = exclusiveGroups.get(tag.group.id);
+                        message.error(`标签组 "${tag.group.name}" 是互斥的，不能同时选择 "${existingTagName}" 和 "${tag.name}"`);
+                        return; // 中止提交
+                    }
+                    exclusiveGroups.set(tag.group.id, tag.name);
+                }
+            }
+        }
+
         const payload: CreateInfoDto = {
             title: values.title,
             content: content,
@@ -121,8 +139,14 @@ export const InfoEditor: React.FC = () => {
                 message.success('创建成功');
             }
             navigate('/market/info');
-        } catch (error) {
-            // Error handled by interceptor
+        } catch (error: any) {
+            // 提取并显示后端返回的具体错误信息
+            const errorMsg = error.response?.data?.message;
+            if (errorMsg) {
+                message.error(Array.isArray(errorMsg) ? errorMsg.join('; ') : errorMsg);
+            } else {
+                message.error('保存失败');
+            }
         }
     };
 

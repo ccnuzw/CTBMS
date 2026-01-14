@@ -27,15 +27,15 @@ export const CategoryResponseSchema = z.object({
     updatedAt: z.date(),
 });
 
-// --- Tag Schemas ---
-export const CreateTagSchema = z.object({
+// --- MarketTag Schemas (旧版，保留兼容) ---
+export const CreateMarketTagSchema = z.object({
     name: z.string().min(1, '标签名不能为空'),
     color: z.string().optional().nullable(), // hex
 });
 
-export const UpdateTagSchema = CreateTagSchema.partial();
+export const UpdateMarketTagSchema = CreateMarketTagSchema.partial();
 
-export const TagResponseSchema = z.object({
+export const MarketTagResponseSchema = z.object({
     id: z.string(),
     name: z.string(),
     color: z.string().nullable(),
@@ -74,7 +74,7 @@ export const InfoResponseSchema = z.object({
     authorId: z.string(),
     attachments: z.any().optional(), // JSON type handling
     category: CategoryResponseSchema.optional(),
-    tags: z.array(TagResponseSchema).optional(),
+    tags: z.array(MarketTagResponseSchema).optional(),
 });
 
 // Export Types
@@ -82,9 +82,9 @@ export type CreateCategoryDto = z.infer<typeof CreateCategorySchema>;
 export type UpdateCategoryDto = z.infer<typeof UpdateCategorySchema>;
 export type CategoryResponse = z.infer<typeof CategoryResponseSchema>;
 
-export type CreateTagDto = z.infer<typeof CreateTagSchema>;
-export type UpdateTagDto = z.infer<typeof UpdateTagSchema>;
-export type TagResponse = z.infer<typeof TagResponseSchema>;
+export type CreateMarketTagDto = z.infer<typeof CreateMarketTagSchema>;
+export type UpdateMarketTagDto = z.infer<typeof UpdateMarketTagSchema>;
+export type MarketTagResponse = z.infer<typeof MarketTagResponseSchema>;
 
 export type CreateInfoDto = z.infer<typeof CreateInfoSchema>;
 export type UpdateInfoDto = z.infer<typeof UpdateInfoSchema>;

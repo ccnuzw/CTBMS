@@ -1,16 +1,21 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
-import { MarketInfo } from '@prisma/client';
-import { CreateInfoDto, UpdateInfoDto } from '@packages/types';
+import { MarketInfo, TaggableEntityType as PrismaEntityType } from '@prisma/client';
+import { CreateInfoDto, UpdateInfoDto, TaggableEntityType } from '@packages/types';
 import { PrismaService } from '../../prisma';
+import { TagsService } from '../tags/tags.service';
 
 @Injectable()
 export class InfoService {
-    constructor(private prisma: PrismaService) { }
+    constructor(
+        private prisma: PrismaService,
+        private tagsService: TagsService,
+    ) { }
 
     async create(data: CreateInfoDto & { authorId: string }) {
         const { tagIds, categoryId, ...rest } = data;
 
-        return this.prisma.marketInfo.create({
+        // 创建信息
+        const info = await this.prisma.marketInfo.create({
             data: {
                 ...rest,
                 // @ts-ignore - Handle null attachments
@@ -18,25 +23,50 @@ export class InfoService {
                 category: {
                     connect: { id: categoryId }
                 },
-                tags: tagIds ? {
-                    connect: tagIds.map(id => ({ id }))
-                } : undefined
             },
             include: {
                 category: true,
-                tags: true
             }
         });
+
+        // 关联标签（通过 EntityTag）
+        if (tagIds && tagIds.length > 0) {
+            await this.tagsService.attachTags({
+                entityType: TaggableEntityType.MARKET_INFO,
+                entityId: info.id,
+                tagIds,
+            });
+        }
+
+        // 返回带标签的完整数据
+        const tags = await this.tagsService.getEntityTags(
+            TaggableEntityType.MARKET_INFO,
+            info.id
+        );
+
+        return { ...info, tags };
     }
 
     async findAll() {
-        return this.prisma.marketInfo.findMany({
+        const infos = await this.prisma.marketInfo.findMany({
             include: {
                 category: true,
-                tags: true
             },
             orderBy: { createdAt: 'desc' },
         });
+
+        // 为每条信息获取标签
+        const infosWithTags = await Promise.all(
+            infos.map(async (info) => {
+                const tags = await this.tagsService.getEntityTags(
+                    TaggableEntityType.MARKET_INFO,
+                    info.id
+                );
+                return { ...info, tags };
+            })
+        );
+
+        return infosWithTags;
     }
 
     async findOne(id: string) {
@@ -44,20 +74,27 @@ export class InfoService {
             where: { id },
             include: {
                 category: true,
-                tags: true
             }
         });
         if (!info) {
             throw new NotFoundException(`Info with ID ${id} not found`);
         }
-        return info;
+
+        // 获取关联的标签
+        const tags = await this.tagsService.getEntityTags(
+            TaggableEntityType.MARKET_INFO,
+            id
+        );
+
+        return { ...info, tags };
     }
 
     async update(id: string, data: UpdateInfoDto) {
         await this.findOne(id);
         const { tagIds, categoryId, ...rest } = data;
 
-        return this.prisma.marketInfo.update({
+        // 更新信息
+        const info = await this.prisma.marketInfo.update({
             where: { id },
             data: {
                 ...rest,
@@ -66,21 +103,55 @@ export class InfoService {
                 category: categoryId ? {
                     connect: { id: categoryId }
                 } : undefined,
-                tags: tagIds ? {
-                    set: tagIds.map(id => ({ id }))
-                } : undefined
             },
             include: {
                 category: true,
-                tags: true
             }
         });
+
+        // 更新标签关联（先删除旧的，再添加新的）
+        if (tagIds !== undefined) {
+            // 删除所有旧标签关联
+            await this.prisma.entityTag.deleteMany({
+                where: {
+                    entityType: PrismaEntityType.MARKET_INFO,
+                    entityId: id,
+                }
+            });
+
+            // 添加新的标签关联
+            if (tagIds.length > 0) {
+                await this.tagsService.attachTags({
+                    entityType: TaggableEntityType.MARKET_INFO,
+                    entityId: id,
+                    tagIds,
+                });
+            }
+        }
+
+        // 返回带标签的完整数据
+        const tags = await this.tagsService.getEntityTags(
+            TaggableEntityType.MARKET_INFO,
+            id
+        );
+
+        return { ...info, tags };
     }
 
     async remove(id: string) {
         await this.findOne(id);
+
+        // 删除标签关联
+        await this.prisma.entityTag.deleteMany({
+            where: {
+                entityType: PrismaEntityType.MARKET_INFO,
+                entityId: id,
+            }
+        });
+
         return this.prisma.marketInfo.delete({
             where: { id },
         });
     }
 }
+

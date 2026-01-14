@@ -49,14 +49,16 @@ export const MainLayout: React.FC = () => {
                 return '用户管理';
             case '/market/categories':
                 return '信息分类管理';
-            case '/market/tags':
-                return '标签管理';
             case '/market/info':
                 return '信息采集';
             case '/organization':
                 return '组织管理';
             case '/organization/departments':
                 return '部门管理';
+            case '/system/tags':
+                return '全局标签管理';
+            case '/system/tag-groups':
+                return '标签组管理';
             default:
                 return 'CTBMS 系统管理';
         }
@@ -142,11 +144,6 @@ export const MainLayout: React.FC = () => {
                                                 label: '信息分类',
                                             },
                                             {
-                                                key: '/market/tags',
-                                                icon: <TagsOutlined />,
-                                                label: '标签管理',
-                                            },
-                                            {
                                                 key: '/market/info',
                                                 icon: <FileTextOutlined />,
                                                 label: '信息采集',
@@ -190,6 +187,16 @@ export const MainLayout: React.FC = () => {
                                         icon: <SettingOutlined />,
                                         label: '系统管理',
                                         children: [
+                                            {
+                                                key: '/system/tags',
+                                                icon: <TagsOutlined />,
+                                                label: '全局标签',
+                                            },
+                                            {
+                                                key: '/system/tag-groups',
+                                                icon: <AppstoreOutlined />,
+                                                label: '标签组',
+                                            },
                                             {
                                                 key: 'settings',
                                                 icon: <SettingOutlined />,
@@ -304,11 +311,6 @@ export const MainLayout: React.FC = () => {
                                             label: '信息分类',
                                         },
                                         {
-                                            key: '/market/tags',
-                                            icon: <TagsOutlined />,
-                                            label: '标签管理',
-                                        },
-                                        {
                                             key: '/market/info',
                                             icon: <FileTextOutlined />,
                                             label: '信息采集',
@@ -352,6 +354,16 @@ export const MainLayout: React.FC = () => {
                                     icon: <SettingOutlined />,
                                     label: '系统管理',
                                     children: [
+                                        {
+                                            key: '/system/tags',
+                                            icon: <TagsOutlined />,
+                                            label: '全局标签',
+                                        },
+                                        {
+                                            key: '/system/tag-groups',
+                                            icon: <AppstoreOutlined />,
+                                            label: '标签组',
+                                        },
                                         {
                                             key: 'settings',
                                             icon: <SettingOutlined />,

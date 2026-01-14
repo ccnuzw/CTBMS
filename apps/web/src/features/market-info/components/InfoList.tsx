@@ -2,10 +2,10 @@ import React, { useRef, useMemo, useState } from 'react';
 import { PlusOutlined, EditOutlined, DeleteOutlined, FilterOutlined } from '@ant-design/icons';
 import { ActionType, ProColumns, ProTable } from '@ant-design/pro-components';
 import { Button, Popconfirm, Tag, App, Grid, Input, Flex, Card, Typography, Space, Select, Collapse, Badge, theme } from 'antd';
-import { InfoResponse } from '@packages/types';
+import { InfoResponse, TagScope, TagResponse } from '@packages/types';
 import { useInfos, useDeleteInfo } from '../api/info';
 import { useCategories } from '../api/categories';
-import { useTags } from '../api/tags';
+import { useGlobalTags } from '../../tags/api/tags';
 import { useNavigate } from 'react-router-dom';
 import dayjs from 'dayjs';
 
@@ -23,7 +23,7 @@ export const InfoList: React.FC = () => {
 
     const { data: infos, isLoading } = useInfos();
     const { data: categories } = useCategories();
-    const { data: tags } = useTags();
+    const { data: tags } = useGlobalTags({ scope: TagScope.MARKET_INFO });
     const deleteInfo = useDeleteInfo();
 
     // 构建分类筛选选项
@@ -38,7 +38,7 @@ export const InfoList: React.FC = () => {
     // 构建标签筛选选项
     const tagValueEnum = useMemo(() => {
         const enumObj: Record<string, string> = {};
-        tags?.forEach(t => {
+        tags?.forEach((t: TagResponse) => {
             enumObj[t.id] = t.name;
         });
         return enumObj;

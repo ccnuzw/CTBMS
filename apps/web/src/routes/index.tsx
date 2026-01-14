@@ -4,10 +4,10 @@ import { UserList } from '../features/users/components/UserList';
 import { RoleList } from '../features/users/components/RoleList';
 import { DashboardPage } from '../features/dashboard/DashboardPage';
 import { CategoryList } from '../features/market-info/components/CategoryList';
-import { TagList } from '../features/market-info/components/TagList';
 import { InfoList } from '../features/market-info/components/InfoList';
 import { InfoEditor } from '../features/market-info/components/InfoEditor';
 import { OrgList, DeptList, OrgUserManagement } from '../features/organization';
+import { GlobalTagList, TagGroupList } from '../features/tags';
 
 export const router = createBrowserRouter([
     {
@@ -35,10 +35,6 @@ export const router = createBrowserRouter([
                 element: <CategoryList />,
             },
             {
-                path: 'market/tags',
-                element: <TagList />,
-            },
-            {
                 path: 'market/info',
                 children: [
                     { index: true, element: <InfoList /> },
@@ -54,6 +50,14 @@ export const router = createBrowserRouter([
                     { path: 'manage', element: <OrgUserManagement /> },
                 ]
             },
+            {
+                path: 'system',
+                children: [
+                    { path: 'tags', element: <GlobalTagList /> },
+                    { path: 'tag-groups', element: <TagGroupList /> },
+                ]
+            },
         ],
     },
 ]);
+
