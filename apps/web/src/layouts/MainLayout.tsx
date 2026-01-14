@@ -32,7 +32,7 @@ export const MainLayout: React.FC = () => {
     const navigate = useNavigate();
     const location = useLocation();
     const screens = Grid.useBreakpoint();
-    const isMobile = !screens.md;
+    const isMobile = Object.keys(screens).length > 0 && !screens.md;
 
     // Close drawer when route changes on mobile
     React.useEffect(() => {
