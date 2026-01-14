@@ -8,6 +8,7 @@ import { InfoList } from '../features/market-info/components/InfoList';
 import { InfoEditor } from '../features/market-info/components/InfoEditor';
 import { OrgList, DeptList, OrgUserManagement } from '../features/organization';
 import { GlobalTagList, TagGroupList } from '../features/tags';
+import { EnterpriseDashboard } from '../features/enterprise';
 
 export const router = createBrowserRouter([
     {
@@ -49,6 +50,10 @@ export const router = createBrowserRouter([
                     { path: 'departments', element: <DeptList /> },
                     { path: 'manage', element: <OrgUserManagement /> },
                 ]
+            },
+            {
+                path: 'enterprise',
+                element: <EnterpriseDashboard />,
             },
             {
                 path: 'system',

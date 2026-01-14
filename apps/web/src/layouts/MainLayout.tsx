@@ -17,6 +17,7 @@ import {
     TagsOutlined,
     FileTextOutlined,
     AppstoreOutlined,
+    ShopOutlined,
 } from '@ant-design/icons';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { ThemeSwitcher } from '../components/ThemeSwitcher';
@@ -55,6 +56,8 @@ export const MainLayout: React.FC = () => {
                 return '组织管理';
             case '/organization/departments':
                 return '部门管理';
+            case '/enterprise':
+                return '客商管理';
             case '/system/tags':
                 return '全局标签管理';
             case '/system/tag-groups':
@@ -181,6 +184,11 @@ export const MainLayout: React.FC = () => {
                                                 label: '角色管理',
                                             }
                                         ]
+                                    },
+                                    {
+                                        key: '/enterprise',
+                                        icon: <ShopOutlined />,
+                                        label: '客商管理',
                                     },
                                     {
                                         key: 'system',
@@ -348,6 +356,11 @@ export const MainLayout: React.FC = () => {
                                             label: '角色管理',
                                         }
                                     ]
+                                },
+                                {
+                                    key: '/enterprise',
+                                    icon: <ShopOutlined />,
+                                    label: '客商管理',
                                 },
                                 {
                                     key: 'system',

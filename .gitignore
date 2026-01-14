@@ -126,3 +126,6 @@ dist/
 
 # Uploads
 apps/api/uploads/
+
+# HtmlDemo
+apps/web/htmldemo

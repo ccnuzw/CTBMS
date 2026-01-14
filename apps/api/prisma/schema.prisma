@@ -283,3 +283,89 @@ model Department {
   
   @@unique([organizationId, code]) // 同一组织内部门代码唯一
 }
+
+// =============================================
+// 客商管理系统 (Enterprise Management System)
+// =============================================
+
+// 企业/客商类型枚举
+enum EnterpriseType {
+  SUPPLIER         // 供应商
+  CUSTOMER         // 客户
+  LOGISTICS        // 物流商
+  GROUP            // 集团
+}
+
+// 联系人角色枚举
+enum ContactRole {
+  PROCUREMENT      // 采购决策线
+  EXECUTION        // 执行运营线
+  FINANCE          // 财务结算线
+  MANAGEMENT       // 高层管理线
+}
+
+// 企业/客商模型
+model Enterprise {
+  id          String           @id @default(uuid())
+  name        String           // 企业全称
+  shortName   String?          // 简称
+  taxId       String           @unique  // 统一社会信用代码
+  types       EnterpriseType[] // 业务身份（可多选）
+  
+  // 集团层级关系 (自引用)
+  parentId    String?
+  parent      Enterprise?      @relation("EnterpriseHierarchy", fields: [parentId], references: [id])
+  children    Enterprise[]     @relation("EnterpriseHierarchy")
+  
+  // 地址信息
+  province    String?
+  city        String?
+  address     String?
+  longitude   Float?           // 经度
+  latitude    Float?           // 纬度
+  
+  description String?          @db.Text  // 企业描述
+  riskScore   Int              @default(80)  // 信用评分 0-100
+  
+  // 关联
+  contacts     Contact[]
+  bankAccounts BankAccount[]
+  
+  status      EntityStatus     @default(ACTIVE)
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+}
+
+// 联系人模型
+model Contact {
+  id           String       @id @default(uuid())
+  name         String       // 姓名
+  title        String?      // 职位
+  role         ContactRole  // 职能角色
+  phone        String       // 电话
+  email        String?      // 邮箱
+  notes        String?      // 备注（如：决策人、响应快等）
+  
+  enterpriseId String
+  enterprise   Enterprise   @relation(fields: [enterpriseId], references: [id], onDelete: Cascade)
+  
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+}
+
+// 银行账户模型
+model BankAccount {
+  id            String     @id @default(uuid())
+  bankName      String     // 开户行
+  accountNumber String     // 账号
+  accountName   String     // 户名
+  branch        String?    // 支行
+  isDefault     Boolean    @default(false)  // 默认账户
+  isWhitelisted Boolean    @default(false)  // 是否白名单验证
+  
+  enterpriseId  String
+  enterprise    Enterprise @relation(fields: [enterpriseId], references: [id], onDelete: Cascade)
+  
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+}

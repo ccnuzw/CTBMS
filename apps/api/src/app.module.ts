@@ -10,6 +10,7 @@ import { RoleModule } from './modules/role';
 import { InitModule } from './modules/init';
 import { TagsModule } from './modules/tags';
 import { TagGroupsModule } from './modules/tag-groups';
+import { EnterpriseModule } from './modules/enterprise';
 import { LoggerMiddleware } from './common/middleware/logger.middleware';
 
 @Module({
@@ -24,6 +25,7 @@ import { LoggerMiddleware } from './common/middleware/logger.middleware';
         InitModule,
         TagsModule,
         TagGroupsModule,
+        EnterpriseModule,
     ],
     controllers: [AppController],
     providers: [],
