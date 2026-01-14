@@ -17,6 +17,7 @@ import {
     PlusOutlined,
     TableOutlined,
     AppstoreOutlined,
+    GlobalOutlined,
     FilterOutlined,
 } from '@ant-design/icons';
 import { EnterpriseType, EnterpriseResponse, EnterpriseQueryParams } from '@packages/types';
@@ -25,6 +26,7 @@ import { EnterpriseTable } from './EnterpriseTable';
 import { EnterpriseCardGrid } from './EnterpriseCardGrid';
 import { Enterprise360 } from './Enterprise360';
 import { EnterpriseEditor } from './EnterpriseEditor';
+import { GeoMap } from './GeoMap';
 
 const { useToken } = theme;
 
@@ -46,10 +48,10 @@ export const EnterpriseDashboard: React.FC = () => {
     const [typeFilter, setTypeFilter] = useState<EnterpriseType | ''>('');
     const [rootOnly, setRootOnly] = useState(true);
     const [page, setPage] = useState(1);
-    const [pageSize, setPageSize] = useState(20);
+    const [pageSize, setPageSize] = useState(50);
 
     // 视图状态
-    const [viewMode, setViewMode] = useState<'table' | 'card'>('table');
+    const [viewMode, setViewMode] = useState<'table' | 'card' | 'map'>('table');
     const [selectedEnterpriseId, setSelectedEnterpriseId] = useState<string | null>(null);
     const [editorOpen, setEditorOpen] = useState(false);
     const [editingId, setEditingId] = useState<string | null>(null);
@@ -60,15 +62,19 @@ export const EnterpriseDashboard: React.FC = () => {
         type: typeFilter || undefined,
         rootOnly: rootOnly,
         page,
-        pageSize,
-    }), [searchText, typeFilter, rootOnly, page, pageSize]);
+        pageSize: viewMode === 'map' ? 1000 : pageSize, // 地图模式下加载更多数据
+    }), [searchText, typeFilter, rootOnly, page, pageSize, viewMode]);
 
     // 获取数据
     const { data: listData, isLoading } = useEnterprises(queryParams);
 
     // 处理选择企业
-    const handleSelectEnterprise = (id: string | null) => {
-        setSelectedEnterpriseId(id);
+    const handleSelectEnterprise = (ent: EnterpriseResponse | string | null) => {
+        if (typeof ent === 'string' || ent === null) {
+            setSelectedEnterpriseId(ent);
+        } else {
+            setSelectedEnterpriseId(ent.id);
+        }
     };
 
     // 处理新增
@@ -170,10 +176,11 @@ export const EnterpriseDashboard: React.FC = () => {
 
                             <Segmented
                                 value={viewMode}
-                                onChange={(v) => setViewMode(v as 'table' | 'card')}
+                                onChange={(v) => setViewMode(v as 'table' | 'card' | 'map')}
                                 options={[
-                                    { value: 'table', icon: <TableOutlined /> },
-                                    { value: 'card', icon: <AppstoreOutlined /> },
+                                    { value: 'table', icon: <TableOutlined />, label: '列表' },
+                                    { value: 'card', icon: <AppstoreOutlined />, label: '卡片' },
+                                    { value: 'map', icon: <GlobalOutlined />, label: '地图' },
                                 ]}
                             />
 
@@ -187,7 +194,7 @@ export const EnterpriseDashboard: React.FC = () => {
                 </div>
 
                 {/* 内容区 */}
-                <div style={{ flex: 1, overflow: 'auto', background: token.colorBgLayout }}>
+                <div style={{ flex: 1, overflow: 'auto', background: token.colorBgLayout, padding: viewMode === 'map' ? token.padding : 0 }}>
                     {viewMode === 'table' ? (
                         <EnterpriseTable
                             data={listData?.data ?? []}
@@ -204,7 +211,7 @@ export const EnterpriseDashboard: React.FC = () => {
                             onEdit={handleEdit}
                             hideAddress={!!selectedEnterpriseId}
                         />
-                    ) : (
+                    ) : viewMode === 'card' ? (
                         <EnterpriseCardGrid
                             data={listData?.data ?? []}
                             loading={isLoading}
@@ -217,6 +224,11 @@ export const EnterpriseDashboard: React.FC = () => {
                             }}
                             onSelect={handleSelectEnterprise}
                             selectedId={selectedEnterpriseId}
+                        />
+                    ) : (
+                        <GeoMap
+                            enterprises={listData?.data ?? []}
+                            onSelectEnterprise={(ent) => handleSelectEnterprise(ent.id)}
                         />
                     )}
                 </div>

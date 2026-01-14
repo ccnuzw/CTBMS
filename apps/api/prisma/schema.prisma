@@ -102,7 +102,7 @@ enum TagScope {
   GLOBAL       // 全局可用
   CUSTOMER     // 客户
   SUPPLIER     // 供应商
-  VEHICLE      // 车辆
+  LOGISTICS    // 物流供应商
   CONTRACT     // 合同单据
   MARKET_INFO  // 信息采集（兼容旧数据）
 }
@@ -111,7 +111,7 @@ enum TagScope {
 enum TaggableEntityType {
   CUSTOMER
   SUPPLIER
-  VEHICLE
+  LOGISTICS
   CONTRACT
   MARKET_INFO
 }

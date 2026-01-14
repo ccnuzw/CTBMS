@@ -5,7 +5,7 @@ export enum TagScope {
   GLOBAL = 'GLOBAL',
   CUSTOMER = 'CUSTOMER',
   SUPPLIER = 'SUPPLIER',
-  VEHICLE = 'VEHICLE',
+  LOGISTICS = 'LOGISTICS',
   CONTRACT = 'CONTRACT',
   MARKET_INFO = 'MARKET_INFO',
 }
@@ -13,7 +13,7 @@ export enum TagScope {
 export enum TaggableEntityType {
   CUSTOMER = 'CUSTOMER',
   SUPPLIER = 'SUPPLIER',
-  VEHICLE = 'VEHICLE',
+  LOGISTICS = 'LOGISTICS',
   CONTRACT = 'CONTRACT',
   MARKET_INFO = 'MARKET_INFO',
 }

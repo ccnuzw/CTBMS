@@ -36,7 +36,7 @@ const SCOPE_OPTIONS = [
     { label: '全局', value: TagScope.GLOBAL },
     { label: '客户', value: TagScope.CUSTOMER },
     { label: '供应商', value: TagScope.SUPPLIER },
-    { label: '车辆', value: TagScope.VEHICLE },
+    { label: '物流供应商', value: TagScope.LOGISTICS },
     { label: '合同', value: TagScope.CONTRACT },
     { label: '信息采集', value: TagScope.MARKET_INFO },
 ];
@@ -46,7 +46,7 @@ const SCOPE_COLOR_MAP: Record<TagScope, string> = {
     [TagScope.GLOBAL]: 'blue',
     [TagScope.CUSTOMER]: 'green',
     [TagScope.SUPPLIER]: 'orange',
-    [TagScope.VEHICLE]: 'purple',
+    [TagScope.LOGISTICS]: 'purple',
     [TagScope.CONTRACT]: 'cyan',
     [TagScope.MARKET_INFO]: 'magenta',
 };

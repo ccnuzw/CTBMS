@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
     Tabs,
     Typography,
@@ -31,6 +31,7 @@ import {
     SafetyCertificateOutlined,
     ExclamationCircleOutlined,
     ApartmentOutlined,
+    ThunderboltOutlined,
 } from '@ant-design/icons';
 import {
     EnterpriseType,
@@ -40,6 +41,7 @@ import {
     BankAccountResponse,
 } from '@packages/types';
 import { useEnterprise } from '../api';
+import { analyzeEnterpriseRisk, RiskAnalysisResult } from '../services/aiService';
 
 const { Title, Text, Paragraph } = Typography;
 const { useToken } = theme;
@@ -82,7 +84,31 @@ export const Enterprise360: React.FC<Enterprise360Props> = ({
     const { message } = App.useApp();
     const [activeTab, setActiveTab] = useState('overview');
 
+    const [analysis, setAnalysis] = useState<RiskAnalysisResult | null>(null);
+    const [analyzing, setAnalyzing] = useState(false);
+
+    // Reset analysis when switching enterprises
+    useEffect(() => {
+        setAnalysis(null);
+        setAnalyzing(false);
+    }, [enterpriseId]);
+
     const { data: enterprise, isLoading, error } = useEnterprise(enterpriseId);
+
+    // AI Analysis Handler
+    const handleAnalyze = async () => {
+        if (!enterprise) return;
+        setAnalyzing(true);
+        try {
+            const result = await analyzeEnterpriseRisk(enterprise);
+            setAnalysis(result);
+            message.success('AI 风控分析报告已生成');
+        } catch (e) {
+            message.error('生成失败，请稍后重试');
+        } finally {
+            setAnalyzing(false);
+        }
+    };
 
     // 复制到剪贴板
     const copyToClipboard = (text: string, label: string) => {
@@ -133,6 +159,64 @@ export const Enterprise360: React.FC<Enterprise360Props> = ({
             ),
             children: (
                 <div style={{ padding: token.paddingSM }}>
+                    {/* AI 风控分析卡片 */}
+                    <Card
+                        size="small"
+                        style={{
+                            marginBottom: token.marginMD,
+                            border: `1px solid ${token.colorBorderSecondary}`,
+                            background: analysis ? undefined : token.colorFillAlter,
+                        }}
+                    >
+                        <Flex justify="space-between" align="start" style={{ marginBottom: analysis ? token.marginSM : 0 }}>
+                            <div style={{ flex: 1 }}>
+                                <Space style={{ fontSize: token.fontSizeLG, fontWeight: 'bold', color: token.colorTextHeading, marginBottom: token.marginXS }}>
+                                    <ThunderboltOutlined style={{ color: '#722ED1' }} />
+                                    AI 智能风控 & 标签分析
+                                </Space>
+                                {!analysis && (
+                                    <Paragraph type="secondary" style={{ marginBottom: 0, marginTop: token.marginXS }}>
+                                        基于实时市场信息及企业工商数据，一键生成风险评估报告。
+                                    </Paragraph>
+                                )}
+                            </div>
+                            {!analysis && (
+                                <Button
+                                    type="primary"
+                                    onClick={handleAnalyze}
+                                    loading={analyzing}
+                                    style={{ background: 'linear-gradient(135deg, #722ED1, #1890FF)', border: 'none' }}
+                                >
+                                    生成分析报告
+                                </Button>
+                            )}
+                        </Flex>
+
+                        {analysis && (
+                            <div style={{ marginTop: token.marginXS }}>
+                                <Paragraph style={{ color: token.colorText, lineHeight: 1.6 }}>
+                                    {analysis.analysis}
+                                </Paragraph>
+                                <Space size="large" align="center" style={{ marginTop: token.marginXS }}>
+                                    <Space>
+                                        <Text type="secondary">风险评级:</Text>
+                                        <Tag color={analysis.riskLevel === '高' ? 'red' : analysis.riskLevel === '中' ? 'orange' : 'green'}>
+                                            {analysis.riskLevel}
+                                        </Tag>
+                                    </Space>
+
+                                    <Space>
+                                        {analysis.suggestedTags.map(tag => (
+                                            <Tag key={tag} color="geekblue" style={{ borderRadius: 4 }}>
+                                                + {tag}
+                                            </Tag>
+                                        ))}
+                                    </Space>
+                                </Space>
+                            </div>
+                        )}
+                    </Card>
+
                     {/* 工商档案 */}
                     <Card size="small" title="工商档案" style={{ marginBottom: token.marginMD }}>
                         <Paragraph>{enterprise.description || '暂无描述'}</Paragraph>
