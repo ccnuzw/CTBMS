@@ -11,7 +11,9 @@ import {
     ExclamationCircleOutlined,
     RadiusSettingOutlined,
     EnvironmentOutlined,
+    GlobalOutlined,
 } from '@ant-design/icons';
+import { Select, Segmented } from 'antd';
 import { MapContainer, TileLayer, Marker, Polyline, Circle, useMap, Tooltip, useMapEvents } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
@@ -63,7 +65,8 @@ const MapController: React.FC<{
     enterprises: EnterpriseResponse[];
     shouldReset: boolean;
     onResetComplete: () => void;
-}> = ({ selectedEnterprise, enterprises, shouldReset, onResetComplete }) => {
+    fitToEnterprises?: EnterpriseResponse[];
+}> = ({ selectedEnterprise, enterprises, shouldReset, onResetComplete, fitToEnterprises }) => {
     const map = useMap();
 
     useEffect(() => {
@@ -81,14 +84,22 @@ const MapController: React.FC<{
     }, [shouldReset, enterprises, map, onResetComplete]);
 
     useEffect(() => {
-        if (selectedEnterprise && selectedEnterprise.latitude && selectedEnterprise.longitude) {
+        if (fitToEnterprises && fitToEnterprises.length > 0) {
+            const validEnts = fitToEnterprises.filter((e) => e.longitude != null && e.latitude != null);
+            if (validEnts.length > 0) {
+                const bounds = L.latLngBounds(
+                    validEnts.map((e) => [e.latitude!, e.longitude!] as L.LatLngTuple),
+                );
+                map.fitBounds(bounds, { padding: [50, 50] });
+            }
+        } else if (selectedEnterprise && selectedEnterprise.latitude && selectedEnterprise.longitude) {
             // Group gets a wider view (10), others get a closer view (14)
             const zoomLevel = selectedEnterprise.types.includes(EnterpriseType.GROUP) ? 10 : 14;
             map.flyTo([selectedEnterprise.latitude, selectedEnterprise.longitude], zoomLevel, {
                 duration: 0.5,
             });
         }
-    }, [selectedEnterprise, map]);
+    }, [selectedEnterprise, map, fitToEnterprises]);
 
     return null;
 };
@@ -156,7 +167,25 @@ export const GeoMap: React.FC<GeoMapProps> = ({ enterprises, onSelectEnterprise,
     }, [selectedId]);
 
     // Geofence State
-    const [geofence, setGeofence] = useState<{ center: L.LatLng; radius: number } | null>(null);
+    const [geofenceMode, setGeofenceMode] = useState<'circle' | 'province'>('circle');
+    const [geofenceCircle, setGeofenceCircle] = useState<{ center: L.LatLng; radius: number } | null>(null);
+    const [geofenceProvince, setGeofenceProvince] = useState<string | null>(null);
+
+    // Derived provinces
+    const provinceOptions = useMemo(() => {
+        const counts: Record<string, number> = {};
+        enterprises.forEach(ent => {
+            if (ent.province) {
+                counts[ent.province] = (counts[ent.province] || 0) + 1;
+            }
+        });
+        return Object.entries(counts)
+            .sort((a, b) => b[1] - a[1]) // Sort by count desc
+            .map(([prov, count]) => ({
+                label: `${prov} (${count})`,
+                value: prov,
+            }));
+    }, [enterprises]);
 
     // Route State
     const [routeNodes, setRouteNodes] = useState<EnterpriseResponse[]>([]);
@@ -242,13 +271,19 @@ export const GeoMap: React.FC<GeoMapProps> = ({ enterprises, onSelectEnterprise,
 
     // Geofence Calc
     const geofenceResults = useMemo(() => {
-        if (!geofence || !geofence.center || geofence.radius <= 0) return null;
+        let selected: EnterpriseResponse[] = [];
 
-        const selected = enterprises.filter((ent) => {
-            if (ent.latitude == null || ent.longitude == null) return false;
-            const nodePos = L.latLng(ent.latitude, ent.longitude);
-            return geofence.center.distanceTo(nodePos) <= geofence.radius;
-        });
+        if (geofenceMode === 'circle') {
+            if (!geofenceCircle || !geofenceCircle.center || geofenceCircle.radius <= 0) return null;
+            selected = enterprises.filter((ent) => {
+                if (ent.latitude == null || ent.longitude == null) return false;
+                const nodePos = L.latLng(ent.latitude, ent.longitude);
+                return geofenceCircle.center.distanceTo(nodePos) <= geofenceCircle.radius;
+            });
+        } else {
+            if (!geofenceProvince) return null;
+            selected = enterprises.filter((ent) => ent.province === geofenceProvince);
+        }
 
         const counts = {
             [EnterpriseType.CUSTOMER]: 0,
@@ -257,14 +292,48 @@ export const GeoMap: React.FC<GeoMapProps> = ({ enterprises, onSelectEnterprise,
             [EnterpriseType.GROUP]: 0,
         };
 
-        selected.forEach(ent => {
-            ent.types.forEach(t => { if (counts[t] !== undefined) counts[t]++ });
+        selected.forEach((ent) => {
+            ent.types.forEach((t) => {
+                if (counts[t] !== undefined) counts[t]++;
+            });
         });
 
         return { selected, counts };
+    }, [geofenceMode, geofenceCircle, geofenceProvince, enterprises]);
 
-    }, [geofence, enterprises]);
+    // Group Connections (Explore Mode)
+    const groupConnections = useMemo(() => {
+        if (
+            mapMode !== 'explore' ||
+            !selectedEnterprise ||
+            !selectedEnterprise.types.includes(EnterpriseType.GROUP) ||
+            !selectedEnterprise.latitude ||
+            !selectedEnterprise.longitude
+        ) {
+            return [];
+        }
 
+        const centerPos: L.LatLngTuple = [selectedEnterprise.latitude, selectedEnterprise.longitude];
+
+        // Find visible children in the current list
+        const visibleChildren = enterprises.filter(
+            (e) => e.parent && e.parent.id === selectedEnterprise.id && e.latitude && e.longitude
+        );
+
+        // Also check for children in the selectedEnterprise object itself (if detailed data is available)
+        const nestedChildren = (selectedEnterprise.children || []).filter(
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            (c: any) => c.latitude && c.longitude && !visibleChildren.find((vc) => vc.id === c.id)
+        );
+
+        return [...visibleChildren, ...nestedChildren].map((child) => ({
+            id: child.id,
+            from: centerPos,
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            to: [child.latitude!, child.longitude!] as L.LatLngTuple,
+            name: child.name,
+        }));
+    }, [mapMode, selectedEnterprise, enterprises]);
 
     // 路径线坐标
     const routePositions = useMemo(() => {
@@ -311,7 +380,8 @@ export const GeoMap: React.FC<GeoMapProps> = ({ enterprises, onSelectEnterprise,
                         onClick={() => {
                             setMapMode('explore');
                             clearRoute();
-                            setGeofence(null);
+                            setGeofenceCircle(null);
+                            setGeofenceProvince(null);
                         }}
                         style={{
                             border: 'none',
@@ -332,7 +402,8 @@ export const GeoMap: React.FC<GeoMapProps> = ({ enterprises, onSelectEnterprise,
                         onClick={() => {
                             setMapMode('route');
                             setSelectedNodeId(null);
-                            setGeofence(null);
+                            setGeofenceCircle(null);
+                            setGeofenceProvince(null);
                         }}
                         style={{
                             border: 'none',
@@ -455,22 +526,59 @@ export const GeoMap: React.FC<GeoMapProps> = ({ enterprises, onSelectEnterprise,
                     >
                         <div style={{ fontWeight: 'bold', marginBottom: 8, display: 'flex', justifyContent: 'space-between' }}>
                             <span>地理围栏筛选</span>
-                            {geofence && <CloseOutlined onClick={() => setGeofence(null)} style={{ cursor: 'pointer', fontSize: 12 }} />}
+                            {(geofenceCircle || geofenceProvince) && <CloseOutlined onClick={() => { setGeofenceCircle(null); setGeofenceProvince(null); }} style={{ cursor: 'pointer', fontSize: 12 }} />}
                         </div>
 
-                        {!geofence ? (
-                            <div style={{ fontSize: 12, color: token.colorTextDescription }}>
-                                <ol style={{ paddingLeft: 20, margin: 0 }}>
-                                    <li>点击地图确定中心点</li>
-                                    <li>移动鼠标调整半径</li>
-                                    <li>再次点击确认范围</li>
-                                </ol>
+                        <div style={{ marginBottom: 16 }}>
+                            <Segmented
+                                block
+                                size="small"
+                                value={geofenceMode}
+                                onChange={(val) => {
+                                    setGeofenceMode(val as 'circle' | 'province');
+                                    setGeofenceCircle(null);
+                                    setGeofenceProvince(null);
+                                }}
+                                options={[
+                                    { label: '圆形框选', value: 'circle', icon: <RadiusSettingOutlined /> },
+                                    { label: '省份筛选', value: 'province', icon: <GlobalOutlined /> },
+                                ]}
+                            />
+                        </div>
+
+                        {geofenceMode === 'province' && (
+                            <div style={{ marginBottom: 12 }}>
+                                <Select
+                                    style={{ width: '100%' }}
+                                    placeholder="请选择省份"
+                                    value={geofenceProvince}
+                                    onChange={setGeofenceProvince}
+                                    options={provinceOptions}
+                                />
                             </div>
+                        )}
+
+                        {!geofenceCircle && !geofenceProvince ? (
+                            geofenceMode === 'circle' ? (
+                                <div style={{ fontSize: 12, color: token.colorTextDescription }}>
+                                    <ol style={{ paddingLeft: 20, margin: 0 }}>
+                                        <li>点击地图确定中心点</li>
+                                        <li>移动鼠标调整半径</li>
+                                        <li>再次点击确认范围</li>
+                                    </ol>
+                                </div>
+                            ) : (
+                                <div style={{ fontSize: 12, color: token.colorTextDescription, textAlign: 'center' }}>
+                                    请选择一个省份进行快速筛选
+                                </div>
+                            )
                         ) : (
                             <div>
-                                <div style={{ marginBottom: 12, fontSize: 12, color: token.colorTextSecondary }}>
-                                    半径: <span style={{ fontWeight: 'bold', color: token.colorPrimary }}>{(geofence.radius / 1000).toFixed(1)} km</span>
-                                </div>
+                                {geofenceCircle && (
+                                    <div style={{ marginBottom: 12, fontSize: 12, color: token.colorTextSecondary }}>
+                                        半径: <span style={{ fontWeight: 'bold', color: token.colorPrimary }}>{(geofenceCircle.radius / 1000).toFixed(1)} km</span>
+                                    </div>
+                                )}
                                 {geofenceResults && (
                                     <>
                                         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 12 }}>
@@ -497,7 +605,21 @@ export const GeoMap: React.FC<GeoMapProps> = ({ enterprises, onSelectEnterprise,
                                             ) : (
                                                 <ul style={{ padding: 0, margin: 0, listStyle: 'none' }}>
                                                     {geofenceResults.selected.map(ent => (
-                                                        <li key={ent.id} style={{ padding: '4px 0', borderBottom: `1px dashed ${token.colorBorderSecondary}`, fontSize: 12 }}>
+                                                        <li
+                                                            key={ent.id}
+                                                            onClick={() => {
+                                                                setSelectedNodeId(ent.id);
+                                                                onSelectEnterprise(ent);
+                                                            }}
+                                                            style={{
+                                                                padding: '4px 0',
+                                                                borderBottom: `1px dashed ${token.colorBorderSecondary}`,
+                                                                fontSize: 12,
+                                                                cursor: 'pointer',
+                                                            }}
+                                                            onMouseEnter={(e) => (e.currentTarget.style.background = token.colorFillTertiary)}
+                                                            onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+                                                        >
                                                             {ent.name}
                                                         </li>
                                                     ))}
@@ -699,12 +821,13 @@ export const GeoMap: React.FC<GeoMapProps> = ({ enterprises, onSelectEnterprise,
                     enterprises={enterprises}
                     shouldReset={shouldResetView}
                     onResetComplete={() => setShouldResetView(false)}
+                    fitToEnterprises={mapMode === 'geofence' && geofenceProvince && geofenceResults ? geofenceResults.selected : undefined}
                 />
 
                 <GeofenceController
-                    isActive={mapMode === 'geofence'}
-                    hasGeofence={!!geofence}
-                    onGeofenceUpdate={(c, r) => setGeofence(c ? { center: c, radius: r } : null)}
+                    isActive={mapMode === 'geofence' && geofenceMode === 'circle'}
+                    hasGeofence={!!geofenceCircle}
+                    onGeofenceUpdate={(c, r) => setGeofenceCircle(c ? { center: c, radius: r } : null)}
                 />
 
                 {/* Route Path Lines */}
@@ -719,6 +842,22 @@ export const GeoMap: React.FC<GeoMapProps> = ({ enterprises, onSelectEnterprise,
                         }}
                     />
                 )}
+
+                {/* Group Connections (Explore Mode) */}
+                {groupConnections.map(conn => (
+                    <Polyline
+                        key={conn.id}
+                        positions={[conn.from, conn.to]}
+                        pathOptions={{
+                            color: '#722ED1',
+                            weight: 2,
+                            opacity: 0.6,
+                            dashArray: '5, 5',
+                        }}
+                    >
+                        <Tooltip sticky>{conn.name}</Tooltip>
+                    </Polyline>
+                ))}
 
                 {/* 500km Radius Circle (Explore Mode) */}
                 {mapMode === 'explore' &&
@@ -739,10 +878,10 @@ export const GeoMap: React.FC<GeoMapProps> = ({ enterprises, onSelectEnterprise,
                     )}
 
                 {/* Geofence Drawing Circle */}
-                {geofence && (
+                {geofenceCircle && (
                     <Circle
-                        center={geofence.center}
-                        radius={geofence.radius}
+                        center={geofenceCircle.center}
+                        radius={geofenceCircle.radius}
                         pathOptions={{
                             color: token.colorPrimary,
                             fillColor: token.colorPrimaryBg,

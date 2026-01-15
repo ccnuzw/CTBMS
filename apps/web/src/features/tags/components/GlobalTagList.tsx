@@ -61,7 +61,9 @@ export const GlobalTagList: React.FC = () => {
     const [searchText, setSearchText] = useState('');
     const { containerRef, autoFocusFieldProps, modalProps: tagModalProps } = useModalAutoFocus();
 
-    const { data: tags, isLoading } = useGlobalTags();
+    const [filterParams, setFilterParams] = useState<{ scope?: TagScope; groupId?: string }>({});
+
+    const { data: tags, isLoading } = useGlobalTags(filterParams);
     const { data: tagGroups } = useTagGroups();
     const createTag = useCreateGlobalTag();
     const updateTag = useUpdateGlobalTag();
@@ -128,6 +130,13 @@ export const GlobalTagList: React.FC = () => {
         {
             title: '作用域',
             dataIndex: 'scopes',
+            key: 'scope',
+            valueType: 'select',
+            fieldProps: {
+                mode: undefined,
+                placeholder: '请选择作用域',
+                options: SCOPE_OPTIONS,
+            },
             render: (_, record) => (
                 <Space wrap size={4}>
                     {record.scopes?.map((scope) => (
@@ -137,7 +146,6 @@ export const GlobalTagList: React.FC = () => {
                     ))}
                 </Space>
             ),
-            search: false,
         },
         {
             title: '标签组',
@@ -332,6 +340,12 @@ export const GlobalTagList: React.FC = () => {
                 search={{
                     labelWidth: 120,
                     filterType: 'query',
+                }}
+                onSubmit={(params) => {
+                    setFilterParams({ scope: params.scope as TagScope });
+                }}
+                onReset={() => {
+                    setFilterParams({});
                 }}
                 cardBordered
                 toolBarRender={() => [
