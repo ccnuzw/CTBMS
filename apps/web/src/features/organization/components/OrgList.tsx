@@ -21,6 +21,10 @@ import {
     Tag,
     TreeSelect,
     Form,
+    Drawer,
+    Spin,
+    Select,
+    InputNumber,
 } from 'antd';
 import {
     OrganizationDto,
@@ -35,14 +39,8 @@ import {
     useUpdateOrganization,
     useDeleteOrganization,
 } from '../api/organizations';
-import {
-    ModalForm,
-    ProFormText,
-    ProFormTextArea,
-    ProFormDigit,
-    ProFormSelect,
-} from '@ant-design/pro-components';
-import { useModalAutoFocus } from '../../../hooks/useModalAutoFocus';
+
+const { TextArea } = Input;
 
 // 扩展类型
 interface OrganizationWithRelations extends OrganizationDto {
@@ -86,10 +84,10 @@ export const OrgList: React.FC = () => {
     const screens = Grid.useBreakpoint();
     const { token } = theme.useToken();
     const actionRef = useRef<ActionType>();
-    const [editModalVisible, setEditModalVisible] = useState(false);
+    const [form] = Form.useForm();
+    const [drawerVisible, setDrawerVisible] = useState(false);
     const [currentRow, setCurrentRow] = useState<OrganizationWithRelations | undefined>(undefined);
     const [searchText, setSearchText] = useState('');
-    const { containerRef, autoFocusFieldProps, modalProps: orgModalProps } = useModalAutoFocus();
 
     const { data: organizations, isLoading } = useOrganizations();
     const { data: orgTree } = useOrganizationTree();
@@ -97,14 +95,34 @@ export const OrgList: React.FC = () => {
     const updateOrg = useUpdateOrganization();
     const deleteOrg = useDeleteOrganization();
 
+    const isEdit = !!currentRow;
+    const isSubmitting = createOrg.isPending || updateOrg.isPending;
+
     const handleEdit = (record: OrganizationWithRelations) => {
         setCurrentRow(record);
-        setEditModalVisible(true);
+        form.setFieldsValue({
+            name: record.name,
+            code: record.code,
+            type: record.type,
+            parentId: record.parentId,
+            sortOrder: record.sortOrder,
+            status: record.status,
+            description: record.description,
+        });
+        setDrawerVisible(true);
     };
 
     const handleAdd = () => {
         setCurrentRow(undefined);
-        setEditModalVisible(true);
+        form.resetFields();
+        form.setFieldsValue({ status: 'ACTIVE' });
+        setDrawerVisible(true);
+    };
+
+    const handleCloseDrawer = () => {
+        setDrawerVisible(false);
+        setCurrentRow(undefined);
+        form.resetFields();
     };
 
     const handleDelete = async (id: string) => {
@@ -117,8 +135,10 @@ export const OrgList: React.FC = () => {
         }
     };
 
-    const handleSubmit = async (values: CreateOrganizationDto) => {
+    const handleSubmit = async () => {
         try {
+            const values = await form.validateFields();
+
             if (currentRow) {
                 const { name, type, description, parentId, sortOrder, status } = values;
                 const payload: Record<string, unknown> = {};
@@ -137,12 +157,12 @@ export const OrgList: React.FC = () => {
                 await createOrg.mutateAsync(values);
                 message.success('创建成功');
             }
-            setEditModalVisible(false);
+            handleCloseDrawer();
             actionRef.current?.reload();
-            return true;
         } catch (error) {
-            console.error(error);
-            return false;
+            if (error instanceof Error) {
+                message.error(error.message);
+            }
         }
     };
 
@@ -155,6 +175,11 @@ export const OrgList: React.FC = () => {
                 item.code.toLowerCase().includes(searchText.toLowerCase()),
         );
     }, [organizations, searchText]);
+
+    const treeData = useMemo(
+        () => convertToTreeSelectData(orgTree || [], currentRow?.id),
+        [orgTree, currentRow?.id],
+    );
 
     const columns: ProColumns<OrganizationWithRelations>[] = [
         {
@@ -236,52 +261,65 @@ export const OrgList: React.FC = () => {
         },
     ];
 
-    // 表单组件
-    const FormContent = () => (
-        <div ref={containerRef}>
-            <ProFormText
+    // 抽屉表单内容
+    const DrawerFormContent = () => (
+        <Form form={form} layout="vertical" initialValues={{ status: 'ACTIVE' }}>
+            <Form.Item
                 name="name"
                 label="组织名称"
-                placeholder="请输入名称"
-                rules={[{ required: true, message: '请输入名称' }]}
-                fieldProps={autoFocusFieldProps as any}
-            />
-            <ProFormText
+                rules={[{ required: true, message: '请输入组织名称' }]}
+            >
+                <Input placeholder="请输入组织名称" />
+            </Form.Item>
+
+            <Form.Item
                 name="code"
                 label="组织编码"
-                placeholder="请输入编码"
-                rules={[{ required: true, message: '请输入编码' }]}
-                disabled={!!currentRow}
-            />
-            <ProFormSelect
+                rules={[{ required: true, message: '请输入组织编码' }]}
+            >
+                <Input placeholder="请输入组织编码" disabled={isEdit} />
+            </Form.Item>
+
+            <Form.Item
                 name="type"
                 label="组织类型"
-                placeholder="请选择类型"
-                rules={[{ required: true, message: '请选择类型' }]}
-                options={Object.entries(ORG_TYPE_MAP).map(([key, val]) => ({
-                    value: key,
-                    label: val.label,
-                }))}
-            />
+                rules={[{ required: true, message: '请选择组织类型' }]}
+            >
+                <Select
+                    placeholder="请选择组织类型"
+                    options={Object.entries(ORG_TYPE_MAP).map(([key, val]) => ({
+                        value: key,
+                        label: val.label,
+                    }))}
+                />
+            </Form.Item>
+
             <Form.Item name="parentId" label="上级组织">
                 <TreeSelect
                     placeholder="请选择上级组织（可选）"
                     allowClear
                     treeDefaultExpandAll
-                    treeData={convertToTreeSelectData(orgTree || [], currentRow?.id)}
+                    treeData={treeData}
                 />
             </Form.Item>
-            <ProFormDigit name="sortOrder" label="排序" placeholder="请输入排序号" />
-            <ProFormSelect
-                name="status"
-                label="状态"
-                options={[
-                    { value: 'ACTIVE', label: '启用' },
-                    { value: 'INACTIVE', label: '禁用' },
-                ]}
-            />
-            <ProFormTextArea name="description" label="描述" placeholder="请输入描述" />
-        </div>
+
+            <Form.Item name="sortOrder" label="排序">
+                <InputNumber placeholder="请输入排序号" style={{ width: '100%' }} />
+            </Form.Item>
+
+            <Form.Item name="status" label="状态">
+                <Select
+                    options={[
+                        { value: 'ACTIVE', label: '启用' },
+                        { value: 'INACTIVE', label: '禁用' },
+                    ]}
+                />
+            </Form.Item>
+
+            <Form.Item name="description" label="描述">
+                <TextArea rows={3} placeholder="请输入描述（可选）" />
+            </Form.Item>
+        </Form>
     );
 
     // 移动端视图
@@ -404,21 +442,24 @@ export const OrgList: React.FC = () => {
                     </Flex>
                 </Flex>
 
-                <ModalForm
-                    title={currentRow ? '编辑组织' : '新建组织'}
-                    width="500px"
-                    visible={editModalVisible}
-                    onVisibleChange={setEditModalVisible}
-                    onFinish={handleSubmit}
-                    initialValues={currentRow || { status: 'ACTIVE' }}
-                    modalProps={{
-                        ...orgModalProps,
-                        destroyOnClose: true,
-                        focusTriggerAfterClose: false,
-                    }}
+                {/* Drawer 抽屉 */}
+                <Drawer
+                    title={isEdit ? '编辑组织' : '新建组织'}
+                    open={drawerVisible}
+                    onClose={handleCloseDrawer}
+                    width={400}
+                    destroyOnClose
+                    extra={
+                        <Space>
+                            <Button onClick={handleCloseDrawer}>取消</Button>
+                            <Button type="primary" onClick={handleSubmit} loading={isSubmitting}>
+                                {isEdit ? '保存' : '创建'}
+                            </Button>
+                        </Space>
+                    }
                 >
-                    <FormContent />
-                </ModalForm>
+                    <DrawerFormContent />
+                </Drawer>
             </>
         );
     }
@@ -444,21 +485,24 @@ export const OrgList: React.FC = () => {
                 columns={columns}
             />
 
-            <ModalForm
-                title={currentRow ? '编辑组织' : '新建组织'}
-                width="500px"
-                visible={editModalVisible}
-                onVisibleChange={setEditModalVisible}
-                onFinish={handleSubmit}
-                initialValues={currentRow || { status: 'ACTIVE' }}
-                modalProps={{
-                    ...orgModalProps,
-                    destroyOnClose: true,
-                    focusTriggerAfterClose: false,
-                }}
+            {/* Drawer 抽屉 */}
+            <Drawer
+                title={isEdit ? '编辑组织' : '新建组织'}
+                open={drawerVisible}
+                onClose={handleCloseDrawer}
+                width={500}
+                destroyOnClose
+                extra={
+                    <Space>
+                        <Button onClick={handleCloseDrawer}>取消</Button>
+                        <Button type="primary" onClick={handleSubmit} loading={isSubmitting}>
+                            {isEdit ? '保存' : '创建'}
+                        </Button>
+                    </Space>
+                }
             >
-                <FormContent />
-            </ModalForm>
+                <DrawerFormContent />
+            </Drawer>
         </>
     );
 };

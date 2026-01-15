@@ -10,7 +10,6 @@ import {
     Empty,
     App,
     Modal,
-    Select,
     List,
     Checkbox,
 } from 'antd';
@@ -21,18 +20,11 @@ import {
     UsergroupAddOutlined,
 } from '@ant-design/icons';
 import { useUsers, UserWithRelations, useUpdateUser } from '../../users/api/users';
-import { useRoles } from '../../users/api/roles';
 import { useOrganizations } from '../api/organizations';
 import { useDepartments } from '../api/departments';
-import { CreateUserDto, UserStatus, UpdateUserDto } from '@packages/types';
-import { useCreateUser } from '../../users/api/users';
-import {
-    ModalForm,
-    ProFormText,
-    ProFormSelect,
-    ProFormDatePicker,
-} from '@ant-design/pro-components';
+import { UserStatus, UpdateUserDto } from '@packages/types';
 import type { SelectedNode } from './OrgDeptTree';
+import { UserFormModal, USER_STATUS_CONFIG } from '../../users/components/UserFormModal';
 
 interface UserCardListProps {
     selectedNode: SelectedNode | null;
@@ -40,21 +32,6 @@ interface UserCardListProps {
     onSelectUser: (userId: string | null) => void;
     showAllLevels: boolean;
 }
-
-// 用户状态配置
-const USER_STATUS_CONFIG: Record<UserStatus, { color: string; label: string }> = {
-    ACTIVE: { color: 'success', label: '在职' },
-    PROBATION: { color: 'warning', label: '试用期' },
-    RESIGNED: { color: 'textTertiary', label: '离职' },
-    SUSPENDED: { color: 'error', label: '停职' },
-};
-
-// 性别选项
-const GENDER_OPTIONS = [
-    { value: 'MALE', label: '男' },
-    { value: 'FEMALE', label: '女' },
-    { value: 'OTHER', label: '其他' },
-];
 
 export const UserCardList: React.FC<UserCardListProps> = ({
     selectedNode,
@@ -83,12 +60,10 @@ export const UserCardList: React.FC<UserCardListProps> = ({
     }, [selectedNode]);
 
     // 获取数据
-    const { data: allUsers, isLoading } = useUsers({});
+    const { data: allUsers, isLoading, refetch } = useUsers({});
     const { data: organizations } = useOrganizations();
     const { data: departments } = useDepartments(selectedNode?.type === 'org' ? selectedNode.id : selectedNode?.orgId);
     const { data: allDepartments } = useDepartments(); // 获取所有部门用于构建层级
-    const { data: roles } = useRoles();
-    const createUserMutation = useCreateUser();
     const updateUserMutation = useUpdateUser();
 
     // 获取未分配的用户
@@ -163,27 +138,6 @@ export const UserCardList: React.FC<UserCardListProps> = ({
         return users;
     }, [allUsers, selectedNode, showAllLevels, searchValue, organizations, allDepartments]);
 
-    // 创建用户
-    const handleCreateUser = async (values: CreateUserDto) => {
-        try {
-            // 如果选中了组织/部门，自动关联
-            if (selectedNode?.type === 'org') {
-                values.organizationId = selectedNode.id;
-            } else if (selectedNode?.type === 'dept') {
-                values.departmentId = selectedNode.id;
-                values.organizationId = selectedNode.orgId;
-            }
-
-            await createUserMutation.mutateAsync(values);
-            message.success('用户创建成功');
-            setCreateModalOpen(false);
-            return true;
-        } catch (error) {
-            message.error((error as Error).message || '创建失败');
-            return false;
-        }
-    };
-
     // 分配未分配用户到当前组织/部门
     const handleAssignUsers = async () => {
         if (!selectedNode || selectedUnassignedUsers.length === 0) return;
@@ -208,33 +162,6 @@ export const UserCardList: React.FC<UserCardListProps> = ({
             message.error((error as Error).message || '分配失败');
         }
     };
-
-    // 构建组织选择数据
-    const orgSelectData = useMemo(() => {
-        if (!organizations) return [];
-        return organizations.map((org) => ({
-            value: org.id,
-            label: org.name,
-        }));
-    }, [organizations]);
-
-    // 构建部门选择数据
-    const deptSelectData = useMemo(() => {
-        if (!departments) return [];
-        return departments.map((dept) => ({
-            value: dept.id,
-            label: dept.name,
-        }));
-    }, [departments]);
-
-    // 构建角色选择数据
-    const roleSelectData = useMemo(() => {
-        if (!roles) return [];
-        return roles.map((role) => ({
-            value: role.id,
-            label: role.name,
-        }));
-    }, [roles]);
 
     // 构建部门Map用于查找父级
     const deptMap = useMemo(() => {
@@ -338,69 +265,19 @@ export const UserCardList: React.FC<UserCardListProps> = ({
             </div>
 
             {/* 新增用户弹窗 */}
-            <ModalForm<CreateUserDto>
+            <UserFormModal
+                open={createModalOpen}
+                onOpenChange={setCreateModalOpen}
+                onSuccess={() => refetch()}
+                organizationId={selectedNode?.type === 'org' ? selectedNode.id : selectedNode?.orgId}
+                departmentId={selectedNode?.type === 'dept' ? selectedNode.id : undefined}
                 title={selectedNode
                     ? `新增用户 - ${selectedNode.name}${selectedNode.type === 'dept' ? '（部门）' : ''}`
                     : '新增用户'}
-                open={createModalOpen}
-                onOpenChange={setCreateModalOpen}
-                onFinish={handleCreateUser}
-                modalProps={{ destroyOnClose: true }}
-                width={500}
-            >
-                {selectedNode && (
-                    <div style={{
-                        padding: '8px 12px',
-                        background: token.colorInfoBg,
-                        borderRadius: 6,
-                        marginBottom: 16,
-                        fontSize: 13
-                    }}>
-                        ℹ️ 新用户将被添加到: <strong>{selectedNode.name}</strong>
-                    </div>
+                hint={selectedNode && (
+                    <>ℹ️ 新用户将被添加到: <strong>{selectedNode.name}</strong></>
                 )}
-                <ProFormText
-                    name="username"
-                    label="用户名"
-                    placeholder="登录用户名"
-                    rules={[{ required: true, message: '请输入用户名' }]}
-                />
-                <ProFormText
-                    name="email"
-                    label="邮箱"
-                    placeholder="user@example.com"
-                    rules={[
-                        { required: true, message: '请输入邮箱' },
-                        { type: 'email', message: '邮箱格式不正确' },
-                    ]}
-                />
-                <ProFormText
-                    name="name"
-                    label="姓名"
-                    placeholder="真实姓名"
-                    rules={[{ required: true, message: '请输入姓名' }]}
-                />
-                <ProFormText name="employeeNo" label="工号" placeholder="如：ENG-001" />
-                <ProFormSelect name="gender" label="性别" options={GENDER_OPTIONS} />
-                <ProFormText name="phone" label="电话" placeholder="手机号码" />
-                <ProFormText name="position" label="职位" placeholder="如：高级开发工程师" />
-                <ProFormSelect
-                    name="roleIds"
-                    label="角色"
-                    mode="multiple"
-                    options={roleSelectData}
-                />
-                <ProFormDatePicker name="hireDate" label="入职日期" />
-                <ProFormSelect
-                    name="status"
-                    label="状态"
-                    options={[
-                        { value: 'ACTIVE', label: '在职' },
-                        { value: 'PROBATION', label: '试用期' },
-                    ]}
-                    initialValue="ACTIVE"
-                />
-            </ModalForm>
+            />
 
             {/* 分配用户弹窗 */}
             <Modal

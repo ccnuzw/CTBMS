@@ -7,12 +7,10 @@ import {
     theme,
     Spin,
     Empty,
-    Descriptions,
     App,
     Popconfirm,
     Input,
     Select,
-    DatePicker,
     Divider,
     Modal,
     TreeSelect,
@@ -25,7 +23,6 @@ import {
     MailOutlined,
     PhoneOutlined,
     CheckCircleOutlined,
-    SafetyCertificateOutlined,
     SwapOutlined,
     GlobalOutlined,
     ClusterOutlined,
@@ -41,34 +38,16 @@ import { useDepartments } from '../api/departments';
 import { UpdateUserDto, UserStatus, Gender, OrganizationType } from '@packages/types';
 import dayjs from 'dayjs';
 import { useModalAutoFocus } from '../../../hooks/useModalAutoFocus';
+import {
+    GENDER_OPTIONS,
+    STATUS_OPTIONS,
+    USER_STATUS_CONFIG,
+} from '../../users/components/UserFormModal';
 
 interface UserDetailPanelProps {
     userId: string | null;
     onUserDeleted?: () => void;
 }
-
-// 用户状态配置
-const USER_STATUS_CONFIG: Record<UserStatus, { color: string; label: string }> = {
-    ACTIVE: { color: 'success', label: '在职' },
-    PROBATION: { color: 'warning', label: '试用期' },
-    RESIGNED: { color: 'default', label: '离职' },
-    SUSPENDED: { color: 'error', label: '停职' },
-};
-
-// 性别选项
-const GENDER_OPTIONS = [
-    { value: 'MALE', label: '男' },
-    { value: 'FEMALE', label: '女' },
-    { value: 'OTHER', label: '其他' },
-];
-
-// 状态选项
-const STATUS_OPTIONS = [
-    { value: 'ACTIVE', label: '在职' },
-    { value: 'PROBATION', label: '试用期' },
-    { value: 'RESIGNED', label: '离职' },
-    { value: 'SUSPENDED', label: '停职' },
-];
 
 export const UserDetailPanel: React.FC<UserDetailPanelProps> = ({
     userId,
@@ -434,7 +413,7 @@ export const UserDetailPanel: React.FC<UserDetailPanelProps> = ({
                             isEditing={isEditing}
                             editValue={editData.gender ?? undefined}
                             type="select"
-                            options={GENDER_OPTIONS}
+                            options={[...GENDER_OPTIONS]}
                             onChange={(v) => setEditData((prev) => ({ ...prev, gender: v as Gender }))}
                         />
                         <InfoItem
@@ -472,7 +451,7 @@ export const UserDetailPanel: React.FC<UserDetailPanelProps> = ({
                             isEditing={isEditing}
                             editValue={editData.status}
                             type="select"
-                            options={STATUS_OPTIONS}
+                            options={[...STATUS_OPTIONS]}
                             onChange={(v) => setEditData((prev) => ({ ...prev, status: v as UserStatus }))}
                         />
                         <InfoItem

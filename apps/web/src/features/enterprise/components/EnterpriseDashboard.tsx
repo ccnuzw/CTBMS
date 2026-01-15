@@ -229,6 +229,7 @@ export const EnterpriseDashboard: React.FC = () => {
                         <GeoMap
                             enterprises={listData?.data ?? []}
                             onSelectEnterprise={(ent) => handleSelectEnterprise(ent.id)}
+                            selectedId={selectedEnterpriseId}
                         />
                     )}
                 </div>
@@ -250,6 +251,7 @@ export const EnterpriseDashboard: React.FC = () => {
                         enterpriseId={selectedEnterpriseId}
                         onClose={() => setSelectedEnterpriseId(null)}
                         onEdit={() => handleEdit(selectedEnterpriseId)}
+                        onEnterpriseClick={(id) => handleSelectEnterprise(id)}
                     />
                 </Col>
             )}

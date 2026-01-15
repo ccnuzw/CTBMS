@@ -45,6 +45,7 @@ import {
     ProFormTreeSelect,
 } from '@ant-design/pro-components';
 import type { CreateOrganizationDto, CreateDepartmentDto } from '@packages/types';
+import { DeptFormFields } from './DeptFormFields';
 
 // 节点类型
 export type TreeNodeType = 'org' | 'dept';
@@ -528,40 +529,14 @@ export const OrgDeptTree: React.FC<OrgDeptTreeProps> = ({
                             ℹ️ 新部门将创建在 <strong>{selectedNode.name}</strong> 下
                         </div>
                     )}
-                    <ProFormText
-                        name="name"
-                        label="部门名称"
-                        placeholder="请输入部门名称"
-                        rules={[{ required: true, message: '请输入部门名称' }]}
-                        fieldProps={deptAutoFocusProps as any}
+                    <DeptFormFields
+                        isEdit={false}
+                        hideOrgSelect={true}
+                        hideStatus={true}
+                        useSimpleMode={true}
+                        treeData={deptSelectData}
+                        autoFocusFieldProps={deptAutoFocusProps}
                     />
-                    <ProFormText
-                        name="code"
-                        label="部门代码"
-                        placeholder="如：HR, IT"
-                        rules={[{ required: true, message: '请输入部门代码' }]}
-                    />
-                    <ProFormText
-                        name="organizationId"
-                        label="所属组织"
-                        disabled
-                        hidden
-                    />
-                    <ProFormTreeSelect
-                        name="parentId"
-                        label="上级部门"
-                        placeholder="请选择上级部门（可选）"
-                        fieldProps={{
-                            treeData: deptSelectData,
-                            treeDataSimpleMode: true,
-                            treeDefaultExpandAll: true,
-                            allowClear: true,
-                            showSearch: true,
-                            treeNodeFilterProp: 'title',
-                        }}
-                    />
-                    <ProFormTextArea name="description" label="描述" placeholder="可选" />
-                    <ProFormDigit name="sortOrder" label="排序" initialValue={0} min={0} />
                 </div>
             </ModalForm>
         </Flex>

@@ -73,12 +73,14 @@ interface Enterprise360Props {
     enterpriseId: string;
     onClose: () => void;
     onEdit: () => void;
+    onEnterpriseClick: (id: string) => void;
 }
 
 export const Enterprise360: React.FC<Enterprise360Props> = ({
     enterpriseId,
     onClose,
     onEdit,
+    onEnterpriseClick,
 }) => {
     const { token } = useToken();
     const { message } = App.useApp();
@@ -275,7 +277,12 @@ export const Enterprise360: React.FC<Enterprise360Props> = ({
                                 <Text type="secondary" style={{ fontSize: token.fontSizeSM }}>
                                     上级集团
                                 </Text>
-                                <Card size="small" style={{ marginTop: token.marginXS, background: token.colorPrimaryBg }}>
+                                <Card
+                                    size="small"
+                                    hoverable
+                                    onClick={() => onEnterpriseClick(enterprise.parent!.id)}
+                                    style={{ marginTop: token.marginXS, background: token.colorPrimaryBg, cursor: 'pointer' }}
+                                >
                                     <Text strong>{enterprise.parent.name}</Text>
                                 </Card>
                             </div>
@@ -308,7 +315,22 @@ export const Enterprise360: React.FC<Enterprise360Props> = ({
                                     size="small"
                                     dataSource={enterprise.children}
                                     renderItem={(child) => (
-                                        <List.Item style={{ padding: `${token.paddingXS}px 0` }}>
+                                        <List.Item
+                                            className="clickable-list-item"
+                                            onClick={() => onEnterpriseClick(child.id)}
+                                            style={{
+                                                padding: `${token.paddingXS}px ${token.paddingXS}px`,
+                                                cursor: 'pointer',
+                                                borderRadius: token.borderRadiusSM,
+                                                transition: 'background 0.3s',
+                                            }}
+                                            onMouseEnter={(e) => {
+                                                e.currentTarget.style.background = token.colorFillAlter;
+                                            }}
+                                            onMouseLeave={(e) => {
+                                                e.currentTarget.style.background = 'transparent';
+                                            }}
+                                        >
                                             <Text>{child.name}</Text>
                                         </List.Item>
                                     )}
