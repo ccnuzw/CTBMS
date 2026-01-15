@@ -96,6 +96,24 @@ export const useAttachTags = () => {
             queryClient.invalidateQueries({
                 queryKey: ['entity-tags', variables.entityType, variables.entityId],
             });
+            queryClient.invalidateQueries({ queryKey: ['enterprises'] });
+        },
+    });
+};
+
+export const useSyncTags = () => {
+    const queryClient = useQueryClient();
+
+    return useMutation({
+        mutationFn: async (data: AttachTagsDto) => {
+            const res = await apiClient.post('/tags/sync', data);
+            return res.data;
+        },
+        onSuccess: (_, variables) => {
+            queryClient.invalidateQueries({
+                queryKey: ['entity-tags', variables.entityType, variables.entityId],
+            });
+            queryClient.invalidateQueries({ queryKey: ['enterprises'] });
         },
     });
 };

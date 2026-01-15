@@ -60,10 +60,21 @@ export class EnterpriseService {
                             shortName: true,
                         },
                     },
-                    // 包含子公司用于层级展开
+                    // 包含子公司用于层级展开 (地图需要坐标)
                     children: {
                         orderBy: { name: 'asc' },
-                        include: {
+                        select: {
+                            id: true,
+                            name: true,
+                            shortName: true,
+                            types: true,
+                            province: true,
+                            city: true,
+                            address: true,
+                            latitude: true,
+                            longitude: true,
+                            riskScore: true,
+                            status: true,
                             _count: {
                                 select: { children: true, contacts: true },
                             },
@@ -88,14 +99,15 @@ export class EnterpriseService {
             this.prisma.enterprise.count({ where }),
         ]);
 
-        // 获取所有企业的标签
+        // 获取所有企业的标签（根据企业类型查询对应作用域的 entityType）
         const enterpriseIds = data.map((e) => e.id);
         const childIds = data.flatMap((e) => e.children?.map((c) => c.id) ?? []);
         const allIds = [...enterpriseIds, ...childIds];
 
+        // 查询所有客商相关的实体类型（CUSTOMER/SUPPLIER/LOGISTICS）
         const entityTags = await this.prisma.entityTag.findMany({
             where: {
-                entityType: 'CUSTOMER',
+                entityType: { in: ['CUSTOMER', 'SUPPLIER', 'LOGISTICS'] },
                 entityId: { in: allIds },
             },
             include: {
@@ -162,7 +174,25 @@ export class EnterpriseService {
             throw new NotFoundException(`企业 ${id} 不存在`);
         }
 
-        return enterprise;
+        // 获取企业关联的标签（查询所有客商相关的实体类型）
+        const entityTags = await this.prisma.entityTag.findMany({
+            where: {
+                entityType: { in: ['CUSTOMER', 'SUPPLIER', 'LOGISTICS'] },
+                entityId: id,
+            },
+            include: {
+                tag: {
+                    select: { id: true, name: true, color: true, icon: true, description: true },
+                },
+            },
+        });
+
+        const tags = entityTags.map((et) => et.tag);
+
+        return {
+            ...enterprise,
+            tags,
+        };
     }
 
     async findTree() {

@@ -36,7 +36,7 @@ const SCOPE_OPTIONS = [
     { label: '全局', value: TagScope.GLOBAL },
     { label: '客户', value: TagScope.CUSTOMER },
     { label: '供应商', value: TagScope.SUPPLIER },
-    { label: '物流供应商', value: TagScope.LOGISTICS },
+    { label: '物流商', value: TagScope.LOGISTICS },
     { label: '合同', value: TagScope.CONTRACT },
     { label: '信息采集', value: TagScope.MARKET_INFO },
 ];

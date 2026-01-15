@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import {
     Drawer,
     Form,
@@ -11,6 +11,7 @@ import {
     Spin,
     theme,
     App,
+    Tag,
 } from 'antd';
 import { PlusOutlined, DeleteOutlined } from '@ant-design/icons';
 import {
@@ -18,6 +19,9 @@ import {
     ContactRole,
     CreateEnterpriseDto,
     UpdateEnterpriseDto,
+    TagScope,
+    TaggableEntityType,
+    TagResponse,
 } from '@packages/types';
 import {
     useEnterprise,
@@ -25,6 +29,7 @@ import {
     useUpdateEnterprise,
     useEnterprises,
 } from '../api';
+import { useGlobalTags, useSyncTags } from '../../tags/api/tags';
 
 const { TextArea } = Input;
 const { useToken } = theme;
@@ -73,6 +78,39 @@ export const EnterpriseEditor: React.FC<EnterpriseEditorProps> = ({
     // Mutations
     const createMutation = useCreateEnterprise();
     const updateMutation = useUpdateEnterprise();
+    const syncTagsMutation = useSyncTags();
+
+    // 标签相关
+    const [selectedTypes, setSelectedTypes] = useState<EnterpriseType[]>([]);
+    const [selectedTagIds, setSelectedTagIds] = useState<string[]>([]);
+
+    // 根据业务身份类型获取对应的标签作用域
+    const tagScopes = useMemo(() => {
+        const scopes: TagScope[] = [];
+        if (selectedTypes.includes(EnterpriseType.CUSTOMER)) scopes.push(TagScope.CUSTOMER);
+        if (selectedTypes.includes(EnterpriseType.SUPPLIER)) scopes.push(TagScope.SUPPLIER);
+        if (selectedTypes.includes(EnterpriseType.LOGISTICS)) scopes.push(TagScope.LOGISTICS);
+        return scopes;
+    }, [selectedTypes]);
+
+    // 获取所有可能的标签（合并多个作用域）
+    const { data: customerTags } = useGlobalTags({ scope: TagScope.CUSTOMER });
+    const { data: supplierTags } = useGlobalTags({ scope: TagScope.SUPPLIER });
+    const { data: logisticsTags } = useGlobalTags({ scope: TagScope.LOGISTICS });
+    const { data: globalTags } = useGlobalTags({ scope: TagScope.GLOBAL });
+
+    // 合并可用标签
+    const availableTags = useMemo(() => {
+        const tags: TagResponse[] = [...(globalTags || [])];
+        if (selectedTypes.includes(EnterpriseType.CUSTOMER)) tags.push(...(customerTags || []));
+        if (selectedTypes.includes(EnterpriseType.SUPPLIER)) tags.push(...(supplierTags || []));
+        if (selectedTypes.includes(EnterpriseType.LOGISTICS)) tags.push(...(logisticsTags || []));
+        // 去重
+        const uniqueTags = tags.filter((tag, index, self) =>
+            self.findIndex(t => t.id === tag.id) === index
+        );
+        return uniqueTags;
+    }, [selectedTypes, customerTags, supplierTags, logisticsTags, globalTags]);
 
     // 填充表单数据（编辑模式）
     useEffect(() => {
@@ -107,8 +145,15 @@ export const EnterpriseEditor: React.FC<EnterpriseEditorProps> = ({
                     isWhitelisted: b.isWhitelisted,
                 })),
             });
+            setSelectedTypes(enterprise.types || []);
+            // 设置已选标签
+            if ((enterprise as any).tags) {
+                setSelectedTagIds((enterprise as any).tags.map((t: any) => t.id));
+            }
         } else if (!isEdit && open) {
             form.resetFields();
+            setSelectedTypes([]);
+            setSelectedTagIds([]);
         }
     }, [enterprise, isEdit, open, form]);
 
@@ -116,6 +161,7 @@ export const EnterpriseEditor: React.FC<EnterpriseEditorProps> = ({
     const handleSubmit = async () => {
         try {
             const values = await form.validateFields();
+            let savedEnterpriseId = enterpriseId || '';
 
             if (isEdit && enterpriseId) {
                 await updateMutation.mutateAsync({
@@ -124,8 +170,30 @@ export const EnterpriseEditor: React.FC<EnterpriseEditorProps> = ({
                 });
                 message.success('企业信息已更新');
             } else {
-                await createMutation.mutateAsync(values as CreateEnterpriseDto);
+                const result = await createMutation.mutateAsync(values as CreateEnterpriseDto);
+                savedEnterpriseId = result.id;
                 message.success('企业已创建');
+            }
+
+            // 保存标签关联（编辑模式始终同步，新建模式有选择才同步）
+            if (savedEnterpriseId && (isEdit || selectedTagIds.length > 0)) {
+                // 根据企业类型确定 entityType
+                const types = values.types as EnterpriseType[];
+                // 优先使用第一个非 GROUP 的类型作为 entityType
+                let entityType: TaggableEntityType = TaggableEntityType.CUSTOMER;
+                if (types.includes(EnterpriseType.CUSTOMER)) {
+                    entityType = TaggableEntityType.CUSTOMER;
+                } else if (types.includes(EnterpriseType.SUPPLIER)) {
+                    entityType = TaggableEntityType.SUPPLIER;
+                } else if (types.includes(EnterpriseType.LOGISTICS)) {
+                    entityType = TaggableEntityType.LOGISTICS;
+                }
+
+                await syncTagsMutation.mutateAsync({
+                    entityType,
+                    entityId: savedEnterpriseId,
+                    tagIds: selectedTagIds,
+                });
             }
 
             onClose();
@@ -137,7 +205,7 @@ export const EnterpriseEditor: React.FC<EnterpriseEditorProps> = ({
         }
     };
 
-    const isSubmitting = createMutation.isPending || updateMutation.isPending;
+    const isSubmitting = createMutation.isPending || updateMutation.isPending || syncTagsMutation.isPending;
 
     // 只在编辑模式且正在加载时显示 loading
     const showLoading = isEdit && loadingEnterprise;
@@ -199,8 +267,46 @@ export const EnterpriseEditor: React.FC<EnterpriseEditorProps> = ({
                             mode="multiple"
                             placeholder="请选择业务身份（可多选）"
                             options={ENTERPRISE_TYPE_OPTIONS}
+                            onChange={(values) => setSelectedTypes(values)}
                         />
                     </Form.Item>
+
+                    {/* 业务标签 - 仅在选择业务身份后显示 */}
+                    {selectedTypes.length > 0 && selectedTypes.some(t => t !== EnterpriseType.GROUP) && (
+                        <Form.Item label="业务标签">
+                            <Select
+                                mode="multiple"
+                                placeholder="选择标签（可选）"
+                                value={selectedTagIds}
+                                onChange={setSelectedTagIds}
+                                optionLabelProp="label"
+                                tagRender={(props) => {
+                                    const tag = availableTags.find(t => t.id === props.value);
+                                    return (
+                                        <Tag
+                                            closable={props.closable}
+                                            onClose={props.onClose}
+                                            color={tag?.color || 'default'}
+                                            style={{ marginRight: 3 }}
+                                        >
+                                            {props.label}
+                                        </Tag>
+                                    );
+                                }}
+                            >
+                                {availableTags.map((tag) => (
+                                    <Select.Option key={tag.id} value={tag.id} label={tag.name}>
+                                        <Space>
+                                            <Tag color={tag.color || 'default'}>{tag.name}</Tag>
+                                            {tag.description && (
+                                                <span style={{ color: '#999', fontSize: 12 }}>{tag.description}</span>
+                                            )}
+                                        </Space>
+                                    </Select.Option>
+                                ))}
+                            </Select>
+                        </Form.Item>
+                    )}
 
                     <Form.Item name="parentId" label="所属集团">
                         <Select

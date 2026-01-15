@@ -309,7 +309,12 @@ export const GeoMap: React.FC<GeoMapProps> = ({ enterprises, onSelectEnterprise 
                     <pattern id="grid" width="50" height="50" patternUnits="userSpaceOnUse">
                         <path d="M 50 0 L 0 0 0 50" fill="none" stroke={token.colorBorderSecondary} strokeWidth="0.5" strokeOpacity="0.5" />
                     </pattern>
+                    <linearGradient id="mapBg" x1="0%" y1="0%" x2="100%" y2="100%">
+                        <stop offset="0%" stopColor={token.colorBgLayout} />
+                        <stop offset="100%" stopColor={token.colorBgContainer} />
+                    </linearGradient>
                 </defs>
+                <rect width="100%" height="100%" fill="url(#mapBg)" />
                 <rect width="100%" height="100%" fill="url(#grid)" />
 
                 {/* Route Path Lines */}
@@ -334,24 +339,34 @@ export const GeoMap: React.FC<GeoMapProps> = ({ enterprises, onSelectEnterprise 
                     );
                 })}
 
-                {/* Group Hierarchies (Explore Mode) */}
-                {mapMode === 'explore' && enterprises.filter(e => e.types.includes(EnterpriseType.GROUP)).map(group => {
-                    const p1 = helper.getCoords(group);
-                    if (!p1 || !group.children) return null;
+                {/* Group Hierarchies (Explore Mode) - Only when explicitly clicked on a group */}
+                {mapMode === 'explore' && selectedNodeId && enterprises
+                    .filter(e => e.id === selectedNodeId && e.types.includes(EnterpriseType.GROUP))
+                    .map(group => {
+                        const p1 = helper.getCoords(group);
+                        if (!p1 || !group.children || group.children.length === 0) return null;
 
-                    return group.children.map((child) => {
-                        const p2 = helper.getCoords(child as EnterpriseResponse); // Assuming children are full objects
-                        if (!p2) return null;
-                        return (
-                            <line
-                                key={`link-${group.id}-${child.id}`}
-                                x1={p1.x} y1={p1.y} x2={p2.x} y2={p2.y}
-                                stroke={token.colorBorder}
-                                strokeWidth="1"
-                            />
-                        );
-                    });
-                })}
+                        return group.children.map((child) => {
+                            // Only draw line if child has valid coordinates
+                            const childEnt = child as EnterpriseResponse;
+                            if (!childEnt.longitude || !childEnt.latitude) return null;
+
+                            const p2 = helper.getCoords(childEnt);
+                            if (!p2) return null;
+
+                            return (
+                                <line
+                                    key={`link-${group.id}-${childEnt.id}`}
+                                    x1={p1.x} y1={p1.y} x2={p2.x} y2={p2.y}
+                                    stroke={token.colorPrimary}
+                                    strokeWidth="2"
+                                    strokeDasharray="4,4"
+                                    opacity="0.6"
+                                />
+                            );
+                        });
+                    })
+                }
 
                 {/* Nodes */}
                 {enterprises.map(ent => {

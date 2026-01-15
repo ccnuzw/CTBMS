@@ -232,7 +232,7 @@ export const Enterprise360: React.FC<Enterprise360Props> = ({
                             </Descriptions.Item>
                         </Descriptions>
 
-                        {/* 业务标签 */}
+                        {/* 业务身份 */}
                         <Divider style={{ margin: `${token.marginSM}px 0` }} />
                         <Text type="secondary" style={{ fontSize: token.fontSizeSM }}>业务身份</Text>
                         <div style={{ marginTop: token.marginXS }}>
@@ -242,6 +242,21 @@ export const Enterprise360: React.FC<Enterprise360Props> = ({
                                 </Tag>
                             ))}
                         </div>
+
+                        {/* 业务标签 */}
+                        {(enterprise as any).tags && (enterprise as any).tags.length > 0 && (
+                            <>
+                                <Divider style={{ margin: `${token.marginSM}px 0` }} />
+                                <Text type="secondary" style={{ fontSize: token.fontSizeSM }}>业务标签</Text>
+                                <div style={{ marginTop: token.marginXS }}>
+                                    {(enterprise as any).tags.map((tag: { id: string; name: string; color: string | null }) => (
+                                        <Tag key={tag.id} color={tag.color || 'default'}>
+                                            {tag.name}
+                                        </Tag>
+                                    ))}
+                                </div>
+                            </>
+                        )}
                     </Card>
 
                     {/* 组织架构 */}
@@ -569,13 +584,30 @@ export const Enterprise360: React.FC<Enterprise360Props> = ({
             </div>
 
             {/* Tab 内容 */}
-            <Tabs
-                activeKey={activeTab}
-                onChange={setActiveTab}
-                items={tabItems}
-                style={{ flex: 1, overflow: 'hidden' }}
-                tabBarStyle={{ padding: `0 ${token.padding}px`, margin: 0 }}
-            />
+            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, overflow: 'hidden' }}>
+                <Tabs
+                    activeKey={activeTab}
+                    onChange={setActiveTab}
+                    items={tabItems.map(item => ({
+                        ...item,
+                        children: (
+                            <div style={{
+                                height: 'calc(100vh - 280px)',
+                                overflow: 'auto',
+                                paddingBottom: token.paddingLG,
+                            }}>
+                                {item.children}
+                            </div>
+                        ),
+                    }))}
+                    tabBarStyle={{
+                        padding: `0 ${token.padding}px`,
+                        margin: 0,
+                        background: token.colorBgContainer,
+                        borderBottom: `1px solid ${token.colorBorderSecondary}`,
+                    }}
+                />
+            </div>
         </div>
     );
 };

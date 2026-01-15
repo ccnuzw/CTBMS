@@ -51,6 +51,11 @@ export class TagsController {
         return this.tagsService.attachTags(attachTagsDto);
     }
 
+    @Post('sync')
+    syncTags(@Body() syncTagsDto: AttachTagsRequest) {
+        return this.tagsService.syncEntityTags(syncTagsDto);
+    }
+
     @Delete('detach')
     detachTag(@Body() detachTagDto: DetachTagRequest) {
         return this.tagsService.detachTag(detachTagDto);
