@@ -9,6 +9,18 @@ import { InfoEditor } from '../features/market-info/components/InfoEditor';
 import { OrgList, DeptList, OrgUserManagement } from '../features/organization';
 import { GlobalTagList, TagGroupList } from '../features/tags';
 import { EnterpriseDashboard } from '../features/enterprise';
+import {
+    SuperDashboard,
+    Dashboard,
+    DataEntry,
+    Leaderboard,
+    IntelligenceFeed,
+    MarketData,
+    KnowledgeBase,
+    EntityProfile,
+    OperationalWorkbench,
+    UniversalSearch,
+} from '../features/market-intel';
 
 export const router = createBrowserRouter([
     {
@@ -60,6 +72,21 @@ export const router = createBrowserRouter([
                 children: [
                     { path: 'tags', element: <GlobalTagList /> },
                     { path: 'tag-groups', element: <TagGroupList /> },
+                ]
+            },
+            {
+                path: 'intel',
+                children: [
+                    { index: true, element: <SuperDashboard /> },
+                    { path: 'dashboard', element: <Dashboard /> },
+                    { path: 'workbench', element: <OperationalWorkbench /> },
+                    { path: 'search', element: <UniversalSearch /> },
+                    { path: 'entry', element: <DataEntry /> },
+                    { path: 'market-data', element: <MarketData /> },
+                    { path: 'feed', element: <IntelligenceFeed /> },
+                    { path: 'knowledge', element: <KnowledgeBase /> },
+                    { path: 'entity', element: <EntityProfile /> },
+                    { path: 'leaderboard', element: <Leaderboard /> },
                 ]
             },
         ],

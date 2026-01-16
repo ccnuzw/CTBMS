@@ -11,11 +11,14 @@ import { InitModule } from './modules/init';
 import { TagsModule } from './modules/tags';
 import { TagGroupsModule } from './modules/tag-groups';
 import { EnterpriseModule } from './modules/enterprise';
+import { MarketIntelModule } from './modules/market-intel';
+import { AIModule } from './modules/ai';
 import { LoggerMiddleware } from './common/middleware/logger.middleware';
 
 @Module({
     imports: [
         PrismaModule,
+        AIModule,
         UsersModule,
         MarketCategoryModule,
         MarketInfoModule,
@@ -26,6 +29,7 @@ import { LoggerMiddleware } from './common/middleware/logger.middleware';
         TagsModule,
         TagGroupsModule,
         EnterpriseModule,
+        MarketIntelModule,
     ],
     controllers: [AppController],
     providers: [],

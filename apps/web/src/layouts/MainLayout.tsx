@@ -191,6 +191,63 @@ export const MainLayout: React.FC = () => {
                                         label: '客商管理',
                                     },
                                     {
+                                        key: 'intel',
+                                        icon: <CloudOutlined />,
+                                        label: '商情中心',
+                                        children: [
+                                            {
+                                                key: '/intel',
+                                                icon: <DashboardOutlined />,
+                                                label: '全域驾驶舱',
+                                            },
+                                            {
+                                                key: '/intel/dashboard',
+                                                icon: <DashboardOutlined />,
+                                                label: '简版看板',
+                                            },
+                                            {
+                                                key: '/intel/workbench',
+                                                icon: <SettingOutlined />,
+                                                label: '业务工作台',
+                                            },
+                                            {
+                                                key: '/intel/search',
+                                                icon: <SearchOutlined />,
+                                                label: '全景检索',
+                                            },
+                                            {
+                                                key: '/intel/entry',
+                                                icon: <CloudOutlined />,
+                                                label: '智能采集',
+                                            },
+                                            {
+                                                key: '/intel/market-data',
+                                                icon: <FileTextOutlined />,
+                                                label: 'A类行情',
+                                            },
+                                            {
+                                                key: '/intel/feed',
+                                                icon: <FileTextOutlined />,
+                                                label: 'B类情报流',
+                                            },
+                                            {
+                                                key: '/intel/knowledge',
+                                                icon: <FileTextOutlined />,
+                                                label: 'C类知识库',
+                                            },
+                                            {
+                                                key: '/intel/entity',
+                                                icon: <ShopOutlined />,
+                                                label: 'D类企业档案',
+                                            },
+                                            {
+                                                key: '/intel/leaderboard',
+                                                icon: <TeamOutlined />,
+                                                label: '绩效排行',
+                                            },
+                                        ]
+                                    },
+                                    {
                                         key: 'system',
                                         icon: <SettingOutlined />,
                                         label: '系统管理',
@@ -361,6 +418,33 @@ export const MainLayout: React.FC = () => {
                                     key: '/enterprise',
                                     icon: <ShopOutlined />,
                                     label: '客商管理',
+                                },
+                                {
+                                    key: 'intel',
+                                    icon: <CloudOutlined />,
+                                    label: '商情中心',
+                                    children: [
+                                        {
+                                            key: '/intel',
+                                            icon: <DashboardOutlined />,
+                                            label: '全域驾驶舱',
+                                        },
+                                        {
+                                            key: '/intel/entry',
+                                            icon: <CloudOutlined />,
+                                            label: '智能采集',
+                                        },
+                                        {
+                                            key: '/intel/feed',
+                                            icon: <FileTextOutlined />,
+                                            label: '情报流',
+                                        },
+                                        {
+                                            key: '/intel/leaderboard',
+                                            icon: <TeamOutlined />,
+                                            label: '绩效排行',
+                                        },
+                                    ]
                                 },
                                 {
                                     key: 'system',

@@ -58,6 +58,11 @@ model User {
   // 角色（通过 UserRole 关联）
   roles          UserRole[]
   
+  // 商情情报关联
+  marketIntels   MarketIntel[]
+  intelStats     UserIntelStats?
+  intelTasks     IntelTask[]       // 分配的采集任务
+  
   createdAt      DateTime     @default(now())
   updatedAt      DateTime     @updatedAt
 }
@@ -330,6 +335,7 @@ model Enterprise {
   // 关联
   contacts     Contact[]
   bankAccounts BankAccount[]
+  intelLinks   IntelEntityLink[]  // 关联的商情情报
   
   status      EntityStatus     @default(ACTIVE)
   createdAt   DateTime         @default(now())
@@ -368,4 +374,224 @@ model BankAccount {
   
   createdAt     DateTime   @default(now())
   updatedAt     DateTime   @updatedAt
+}
+
+// =============================================
+// 商情情报子系统 (Market Intelligence Subsystem)
+// =============================================
+
+// 情报分类枚举
+enum IntelCategory {
+  A_STRUCTURED      // 标准化硬数据 (价格/库存)
+  B_SEMI_STRUCTURED // 半结构化情报 (心态/事件)
+  C_DOCUMENT        // 文档与图表 (研报/政策)
+  D_ENTITY          // 实体档案 (企业画像)
+}
+
+// 信源类型枚举
+enum IntelSourceType {
+  FIRST_LINE  // 一线采集
+  COMPETITOR  // 竞对情报
+  OFFICIAL    // 官方发布
+}
+
+// 商情情报主表
+model MarketIntel {
+  id            String          @id @default(uuid())
+  category      IntelCategory
+  sourceType    IntelSourceType
+  
+  // 元数据
+  effectiveTime DateTime        // 业务生效时间
+  location      String          // 地理位置
+  region        String[]        // 行政区划层级
+  gpsLat        Float?          // GPS 纬度
+  gpsLng        Float?          // GPS 经度
+  gpsVerified   Boolean         @default(false)  // 地理围栏验证
+  
+  // 内容
+  rawContent    String          @db.Text
+  summary       String?         @db.Text
+  
+  // AI 分析结果 (JSON)
+  aiAnalysis    Json?
+  
+  // 质量评分
+  completenessScore Int         @default(0)  // 完整度
+  scarcityScore     Int         @default(0)  // 稀缺度
+  validationScore   Int         @default(0)  // 验证分
+  totalScore        Int         @default(0)  // 总分
+  
+  // 标记
+  isFlagged     Boolean         @default(false)  // 风控标记
+  
+  // 关联
+  authorId      String
+  author        User            @relation(fields: [authorId], references: [id])
+  
+  // 扩展关联
+  priceData     PriceData[]       // A类：提取的价格数据
+  attachments   IntelAttachment[] // C类：附件
+  entityLinks   IntelEntityLink[] // D类：关联实体
+  tasks         IntelTask[]       // 关联任务
+  
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+  
+  @@index([category])
+  @@index([sourceType])
+  @@index([effectiveTime])
+  @@index([authorId])
+}
+
+// 情报员统计表
+model UserIntelStats {
+  id                String   @id @default(uuid())
+  userId            String   @unique
+  user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  creditCoefficient Float    @default(3.0)   // 信用系数 0-5
+  monthlyPoints     Int      @default(0)     // 月度积分
+  submissionCount   Int      @default(0)     // 提交数量
+  accuracyRate      Float    @default(0)     // 准确率 %
+  highValueCount    Int      @default(0)     // 高价值引用数
+  
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+}
+
+// =============================================
+// A类：结构化价格数据（宽表存储）
+// =============================================
+model PriceData {
+  id            String   @id @default(uuid())
+  
+  // 维度
+  effectiveDate DateTime @db.Date       // 价格日期
+  commodity     String                  // 品种（玉米/大豆等）
+  grade         String?                 // 等级（二等/三等）
+  location      String                  // 采集点（锦州港/梅花味精）
+  region        String[]                // 行政区划
+  
+  // 指标
+  price         Decimal  @db.Decimal(10, 2)   // 收购价（元/吨）
+  moisture      Decimal? @db.Decimal(5, 2)    // 水分 %
+  bulkDensity   Int?                          // 容重 g/L
+  toxin         Decimal? @db.Decimal(5, 2)    // 毒素
+  freight       Decimal? @db.Decimal(10, 2)   // 运费
+  inventory     Int?                          // 库存量（吨）
+  
+  // 计算列
+  foldPrice     Decimal? @db.Decimal(10, 2)   // 折标价格
+  dayChange     Decimal? @db.Decimal(10, 2)   // 较昨日涨跌
+  yearChange    Decimal? @db.Decimal(10, 2)   // 较去年同期涨跌
+  
+  // 关联
+  intelId       String?
+  intel         MarketIntel? @relation(fields: [intelId], references: [id])
+  authorId      String
+  
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  
+  @@unique([effectiveDate, commodity, location])
+  @@index([commodity, effectiveDate])
+  @@index([location, effectiveDate])
+}
+
+// =============================================
+// C类：文档附件存储
+// =============================================
+model IntelAttachment {
+  id          String   @id @default(uuid())
+  
+  // 文件信息
+  filename    String
+  mimeType    String
+  fileSize    Int
+  storagePath String               // 存储路径（OSS/本地）
+  
+  // 索引内容
+  ocrText     String?  @db.Text    // OCR 提取的全文
+  
+  // 关联
+  intelId     String
+  intel       MarketIntel @relation(fields: [intelId], references: [id], onDelete: Cascade)
+  
+  createdAt   DateTime @default(now())
+  
+  @@index([intelId])
+}
+
+// =============================================
+// D类：情报-实体关联表
+// =============================================
+
+// 关联类型枚举
+enum IntelEntityLinkType {
+  MENTIONED   // 在情报中被提及
+  SUBJECT     // 情报主体
+  SOURCE      // 情报来源
+}
+
+model IntelEntityLink {
+  id           String              @id @default(uuid())
+  
+  intelId      String
+  intel        MarketIntel         @relation(fields: [intelId], references: [id], onDelete: Cascade)
+  
+  enterpriseId String
+  enterprise   Enterprise          @relation(fields: [enterpriseId], references: [id], onDelete: Cascade)
+  
+  // 关联类型
+  linkType     IntelEntityLinkType @default(MENTIONED)
+  
+  createdAt    DateTime            @default(now())
+  
+  @@unique([intelId, enterpriseId])
+  @@index([enterpriseId])
+}
+
+// =============================================
+// 任务调度系统
+// =============================================
+
+// 任务类型枚举
+enum IntelTaskType {
+  PRICE_REPORT   // 价格上报
+  FIELD_CHECK    // 现场确认
+  DOCUMENT_SCAN  // 文档采集
+}
+
+// 任务状态枚举
+enum IntelTaskStatus {
+  PENDING
+  COMPLETED
+  OVERDUE
+}
+
+model IntelTask {
+  id          String          @id @default(uuid())
+  
+  title       String
+  type        IntelTaskType
+  deadline    DateTime
+  
+  // 分配对象
+  assigneeId  String
+  assignee    User            @relation(fields: [assigneeId], references: [id])
+  
+  // 状态
+  status      IntelTaskStatus @default(PENDING)
+  completedAt DateTime?
+  
+  // 关联完成的情报
+  intelId     String?
+  intel       MarketIntel?    @relation(fields: [intelId], references: [id])
+  
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+  
+  @@index([assigneeId, status])
+  @@index([deadline])
 }
