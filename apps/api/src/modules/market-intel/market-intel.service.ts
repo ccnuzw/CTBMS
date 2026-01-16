@@ -46,7 +46,9 @@ export class MarketIntelService {
      * 查询情报列表 (分页)
      */
     async findAll(query: MarketIntelQuery) {
-        const { page, pageSize, category, sourceType, startDate, endDate, location, isFlagged, authorId } = query;
+        const { page, pageSize, category, sourceType, startDate, endDate, location, isFlagged, authorId, keyword } = query;
+        // Query param conversion if coming from simple query object, though DTO usually handles it.
+        // Assuming dto allows optional params.
 
         const where: any = {};
         if (category) where.category = category;
@@ -58,6 +60,17 @@ export class MarketIntelService {
             where.effectiveTime = {};
             if (startDate) where.effectiveTime.gte = startDate;
             if (endDate) where.effectiveTime.lte = endDate;
+        }
+
+        // Keyword Search
+        if (keyword) {
+            where.OR = [
+                { rawContent: { contains: keyword, mode: 'insensitive' } },
+                { summary: { contains: keyword, mode: 'insensitive' } },
+                { location: { contains: keyword, mode: 'insensitive' } },
+                // Note: Searching inside JSON (aiAnalysis) or relation (tags/entities) requires advanced query.
+                // For MVP, text fields are primary.
+            ];
         }
 
         const [data, total] = await Promise.all([

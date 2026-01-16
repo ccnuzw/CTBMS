@@ -69,7 +69,7 @@ export class PriceDataService {
      * 查询价格数据 (分页)
      */
     async findAll(query: PriceDataQuery) {
-        const { commodity, location, startDate, endDate } = query;
+        const { commodity, location, startDate, endDate, keyword } = query;
         // Query 参数从 URL 传入时都是字符串，需要转换
         const page = Number(query.page) || 1;
         const pageSize = Number(query.pageSize) || 20;
@@ -82,6 +82,16 @@ export class PriceDataService {
             // 将字符串转换为 Date 对象
             if (startDate) where.effectiveDate.gte = new Date(startDate);
             if (endDate) where.effectiveDate.lte = new Date(endDate);
+        }
+
+        // Keyword Search
+        if (keyword) {
+            where.OR = [
+                { commodity: { contains: keyword, mode: 'insensitive' } },
+                { location: { contains: keyword, mode: 'insensitive' } },
+                // Region is string[], we can check if it contains the exact keyword
+                { region: { has: keyword } },
+            ];
         }
 
         const [data, total] = await Promise.all([

@@ -138,6 +138,7 @@ export const MarketIntelQuerySchema = z.object({
   location: z.string().optional(),
   isFlagged: z.coerce.boolean().optional(),
   authorId: z.string().optional(),
+  keyword: z.string().optional(),
   page: z.coerce.number().min(1).default(1),
   pageSize: z.coerce.number().min(1).max(1000).default(20),
 });
@@ -273,6 +274,7 @@ export const PriceDataQuerySchema = z.object({
   location: z.string().optional(),
   startDate: z.coerce.date().optional(),
   endDate: z.coerce.date().optional(),
+  keyword: z.string().optional(),
   page: z.coerce.number().min(1).default(1),
   pageSize: z.coerce.number().min(1).max(100).default(20),
 });
