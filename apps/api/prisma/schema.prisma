@@ -290,6 +290,104 @@ model Department {
 }
 
 // =============================================
+// 基础数据：行政区划 (国标编码)
+// =============================================
+
+// 行政区划层级
+enum RegionLevel {
+  COUNTRY       // 国家
+  PROVINCE      // 省级（省/直辖市/自治区）
+  CITY          // 地级市
+  DISTRICT      // 区/县
+  TOWN          // 乡镇/街道（可选）
+}
+
+// 行政区划表（采用国家统计局标准编码）
+model AdministrativeRegion {
+  id            String       @id @default(uuid())
+  
+  code          String       @unique  // 国标行政区划代码（如 110000 北京市）
+  name          String                // 名称
+  shortName     String?               // 简称（如 京、沪）
+  level         RegionLevel           // 层级
+  
+  // 层级关系
+  parentCode    String?               // 上级区划代码
+  parent        AdministrativeRegion?  @relation("RegionHierarchy", fields: [parentCode], references: [code])
+  children      AdministrativeRegion[] @relation("RegionHierarchy")
+  
+  // 地理信息
+  longitude     Float?                // 中心经度
+  latitude      Float?                // 中心纬度
+  
+  // 排序与状态
+  sortOrder     Int          @default(0)
+  isActive      Boolean      @default(true)
+  
+  // 关联
+  collectionPoints CollectionPoint[]
+  
+  @@index([level])
+  @@index([parentCode])
+}
+
+// =============================================
+// 基础数据：采集点配置
+// =============================================
+
+// 采集点类型
+enum CollectionPointType {
+  ENTERPRISE    // 企业（深加工、贸易商等）
+  PORT          // 港口
+  STATION       // 站台
+  REGION        // 地域（大区级别，如"东北"）
+  MARKET        // 批发市场
+}
+
+// 采集点配置表
+model CollectionPoint {
+  id            String               @id @default(uuid())
+  
+  // 基本信息
+  code          String               @unique  // 唯一编码（如 JINZHOU_PORT）
+  name          String                        // 显示名称
+  shortName     String?                       // 简称
+  aliases       String[]                      // 别名列表（用于 AI 模糊匹配）
+  type          CollectionPointType           // 采集点类型
+  
+  // 行政区划关联
+  regionCode    String?                       // 关联的行政区划代码
+  region        AdministrativeRegion? @relation(fields: [regionCode], references: [code])
+  
+  // 详细地理信息（可覆盖行政区划的坐标）
+  address       String?                       // 详细地址
+  longitude     Float?                        // 经度
+  latitude      Float?                        // 纬度
+  
+  // 业务属性
+  commodities   String[]                      // 主营品种
+  defaultSubType String?                      // 默认价格子类型（如 FOB、LISTED）
+  
+  // 关联企业（如果是企业类型）
+  enterpriseId  String?
+  enterprise    Enterprise?          @relation(fields: [enterpriseId], references: [id])
+  
+  // 优先级与状态
+  priority      Int                  @default(0)  // 匹配优先级（高优先匹配）
+  isActive      Boolean              @default(true)
+  
+  // 元数据
+  description   String?
+  createdAt     DateTime             @default(now())
+  updatedAt     DateTime             @updatedAt
+  createdById   String?              // 创建人
+  
+  @@index([type])
+  @@index([regionCode])
+  @@index([isActive, priority])
+}
+
+// =============================================
 // 客商管理系统 (Enterprise Management System)
 // =============================================
 
@@ -336,6 +434,8 @@ model Enterprise {
   contacts     Contact[]
   bankAccounts BankAccount[]
   intelLinks   IntelEntityLink[]  // 关联的商情情报
+  priceData    PriceData[]        // 关联的价格数据（企业价格）
+  collectionPoints CollectionPoint[]  // 关联的采集点配置
   
   status      EntityStatus     @default(ACTIVE)
   createdAt   DateTime         @default(now())
@@ -463,30 +563,83 @@ model UserIntelStats {
 // =============================================
 // A类：结构化价格数据（宽表存储）
 // =============================================
+
+// 价格主体类型（谁的价格）
+enum PriceSourceType {
+  ENTERPRISE    // 企业收购价（具体企业的挂牌/成交价）
+  REGIONAL      // 地域市场价（区域综合价格）
+  PORT          // 港口价格（港口到港/平舱价）
+}
+
+// 价格子类型（什么性质的价格）
+enum PriceSubType {
+  LISTED        // 挂牌价（企业对外公布）
+  TRANSACTION   // 成交价（实际成交）
+  ARRIVAL       // 到港价（到达港口的价格）
+  FOB           // 平舱价（船舱交货价）
+  STATION_ORIGIN    // 站台价-产区（东北站台发货价）
+  STATION_DEST      // 站台价-销区（销区站台到货价）
+  PURCHASE      // 收购价（向农户/贸易商收购）
+  WHOLESALE     // 批发价（批发市场价格）
+  OTHER         // 其他
+}
+
+// 地理层级
+enum GeoLevel {
+  COUNTRY       // 国家级
+  REGION        // 大区（东北/华北等）
+  PROVINCE      // 省级
+  CITY          // 市级
+  DISTRICT      // 区县级
+  PORT          // 港口
+  STATION       // 站台
+  ENTERPRISE    // 企业点位
+}
+
 model PriceData {
   id            String   @id @default(uuid())
   
-  // 维度
-  effectiveDate DateTime @db.Date       // 价格日期
-  commodity     String                  // 品种（玉米/大豆等）
-  grade         String?                 // 等级（二等/三等）
-  location      String                  // 采集点（锦州港/梅花味精）
-  region        String[]                // 行政区划
+  // ===== 价格分类 =====
+  sourceType    PriceSourceType @default(REGIONAL)  // 价格主体类型
+  subType       PriceSubType    @default(LISTED)    // 价格子类型
   
-  // 指标
-  price         Decimal  @db.Decimal(10, 2)   // 收购价（元/吨）
-  moisture      Decimal? @db.Decimal(5, 2)    // 水分 %
-  bulkDensity   Int?                          // 容重 g/L
-  toxin         Decimal? @db.Decimal(5, 2)    // 毒素
-  freight       Decimal? @db.Decimal(10, 2)   // 运费
-  inventory     Int?                          // 库存量（吨）
+  // ===== 地理维度 =====
+  geoLevel      GeoLevel        @default(CITY)      // 地理层级
+  location      String                              // 采集点名称（锦州港/梅花味精）
+  province      String?                             // 省份
+  city          String?                             // 城市
+  district      String?                             // 区县
+  region        String[]                            // 行政区划数组（向后兼容）
+  longitude     Float?                              // 经度（用于地图展示）
+  latitude      Float?                              // 纬度（用于地图展示）
   
-  // 计算列
-  foldPrice     Decimal? @db.Decimal(10, 2)   // 折标价格
-  dayChange     Decimal? @db.Decimal(10, 2)   // 较昨日涨跌
-  yearChange    Decimal? @db.Decimal(10, 2)   // 较去年同期涨跌
+  // ===== 企业关联（仅企业价格有值）=====
+  enterpriseId  String?
+  enterprise    Enterprise? @relation(fields: [enterpriseId], references: [id])
+  enterpriseName String?                            // 冗余存储企业名称（便于查询）
   
-  // 关联
+  // ===== 品种维度 =====
+  effectiveDate DateTime @db.Date                   // 价格日期
+  commodity     String                              // 品种（玉米/大豆等）
+  grade         String?                             // 等级（二等/三等）
+  
+  // ===== 价格指标 =====
+  price         Decimal  @db.Decimal(10, 2)         // 价格（元/吨）
+  moisture      Decimal? @db.Decimal(5, 2)          // 水分 %
+  bulkDensity   Int?                                // 容重 g/L
+  toxin         Decimal? @db.Decimal(5, 2)          // 毒素
+  freight       Decimal? @db.Decimal(10, 2)         // 运费
+  inventory     Int?                                // 库存量（吨）
+  
+  // ===== 计算列 =====
+  foldPrice     Decimal? @db.Decimal(10, 2)         // 折标价格
+  dayChange     Decimal? @db.Decimal(10, 2)         // 较昨日涨跌
+  yearChange    Decimal? @db.Decimal(10, 2)         // 较去年同期涨跌
+  
+  // ===== 备注 =====
+  note          String?                             // 附加说明
+  
+  // ===== 关联 =====
   intelId       String?
   intel         MarketIntel? @relation(fields: [intelId], references: [id])
   authorId      String
@@ -494,9 +647,14 @@ model PriceData {
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
   
-  @@unique([effectiveDate, commodity, location])
+  // 唯一约束：同一天同一地点同一品种同一来源类型同一子类型
+  @@unique([effectiveDate, commodity, location, sourceType, subType])
+  @@index([sourceType, commodity, effectiveDate])
+  @@index([geoLevel, effectiveDate])
+  @@index([enterpriseId, effectiveDate])
   @@index([commodity, effectiveDate])
   @@index([location, effectiveDate])
+  @@index([province, city, effectiveDate])
 }
 
 // =============================================

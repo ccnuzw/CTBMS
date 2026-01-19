@@ -15,6 +15,7 @@ import {
     CreateMarketIntelRequest,
     UpdateMarketIntelRequest,
     MarketIntelQueryRequest,
+    AnalyzeContentRequest,
 } from './dto';
 import {
     CreatePriceDataDto,
@@ -61,6 +62,11 @@ export class MarketIntelController {
     @Get('leaderboard')
     async getLeaderboard(@Query('limit') limit = '10') {
         return this.marketIntelService.getLeaderboard(parseInt(limit, 10));
+    }
+
+    @Post('analyze')
+    async analyze(@Body() dto: AnalyzeContentRequest) {
+        return this.marketIntelService.analyze(dto.content as string, dto.category, dto.location);
     }
 
     // --- A类：价格数据 ---

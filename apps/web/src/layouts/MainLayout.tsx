@@ -18,6 +18,7 @@ import {
     FileTextOutlined,
     AppstoreOutlined,
     ShopOutlined,
+    GlobalOutlined,
 } from '@ant-design/icons';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { ThemeSwitcher } from '../components/ThemeSwitcher';
@@ -245,6 +246,11 @@ export const MainLayout: React.FC = () => {
                                                 icon: <TeamOutlined />,
                                                 label: '绩效排行',
                                             },
+                                            {
+                                                key: '/intel/collection-points',
+                                                icon: <SettingOutlined />,
+                                                label: '采集点配置',
+                                            },
                                         ]
                                     },
                                     {
@@ -261,6 +267,11 @@ export const MainLayout: React.FC = () => {
                                                 key: '/system/tag-groups',
                                                 icon: <AppstoreOutlined />,
                                                 label: '标签组',
+                                            },
+                                            {
+                                                key: '/system/regions',
+                                                icon: <GlobalOutlined />,
+                                                label: '行政区划',
                                             },
                                             {
                                                 key: 'settings',

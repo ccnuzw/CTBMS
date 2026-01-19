@@ -55,6 +55,7 @@ export const UniversalSearch: React.FC = () => {
     const [dateRange, setDateRange] = useState<TimeRange>('ALL');
     const [sentimentFilter, setSentimentFilter] = useState<SentimentFilter>('ALL');
     const [isAiSummarizing, setIsAiSummarizing] = useState(false);
+    const analyzeMutation = useAnalyzeContent();
     const [expandedSection, setExpandedSection] = useState<'price' | 'doc' | 'intel' | null>(null);
 
     const toggleExpand = (section: 'price' | 'doc' | 'intel') => {
@@ -133,9 +134,22 @@ export const UniversalSearch: React.FC = () => {
 
     // AI 分析刷新
     const handleAiRefresh = () => {
-        setIsAiSummarizing(true);
-        setTimeout(() => setIsAiSummarizing(false), 2000);
+        if (!combinedResults.length) return;
+
+        // 收集前 5 条相关情报的内容进行综合分析
+        const topContent = combinedResults
+            .slice(0, 5)
+            .map(r => r.aiAnalysis?.summary || r.rawContent)
+            .join('\n---\n');
+
+        analyzeMutation.mutate({
+            content: `关键词：${query}\n相关数据：\n${topContent}`,
+            category: IntelCategory.B_SEMI_STRUCTURED, // 使用商情分类进行综述
+        });
     };
+
+    const aiSummaryResult = analyzeMutation.data;
+    const isSummarizing = analyzeMutation.isPending;
 
     return (
         <div
@@ -243,7 +257,7 @@ export const UniversalSearch: React.FC = () => {
                                         </Text>
                                     </Flex>
 
-                                    {isAiSummarizing ? (
+                                    {isSummarizing ? (
                                         <Flex align="center" gap={8}>
                                             <div
                                                 style={{
@@ -262,23 +276,27 @@ export const UniversalSearch: React.FC = () => {
                                         <div>
                                             <Paragraph style={{ marginBottom: 8 }}>
                                                 <Text strong>市场共识：</Text>
-                                                基于检索到的 {prices.length + intels.length} 条记录，当前围绕"
-                                                <Text strong style={{ borderBottom: `2px solid ${token.colorPrimary}` }}>
-                                                    {query}
-                                                </Text>
-                                                "的市场情绪整体呈现{' '}
-                                                <Text strong style={{ color: token.colorTextSecondary }}>
-                                                    观察
-                                                </Text>{' '}
-                                                态势。
+                                                {aiSummaryResult ? aiSummaryResult.summary : (
+                                                    <>
+                                                        基于检索到的 {prices.length + intels.length + docs.length} 条记录，当前围绕"
+                                                        <Text strong style={{ borderBottom: `2px solid ${token.colorPrimary}` }}>
+                                                            {query || '当前市场'}
+                                                        </Text>
+                                                        "的市场情绪整体呈现{' '}
+                                                        <Text strong style={{ color: token.colorTextSecondary }}>
+                                                            观察
+                                                        </Text>{' '}
+                                                        态势。
+                                                    </>
+                                                )}
                                             </Paragraph>
                                             <ul style={{ margin: 0, paddingLeft: 20, color: token.colorTextSecondary }}>
                                                 <li>
-                                                    <Text strong>数据面：</Text> 相关价格在 {priceRange} 元/吨区间波动。
+                                                    <Text strong>数据面：</Text> {aiSummaryResult?.extractedData?.price ? `发现价格 ${aiSummaryResult.extractedData.price} 元/吨` : `相关价格在 ${priceRange} 元/吨区间波动。`}
                                                 </li>
                                                 <li>
                                                     <Text strong>关注点：</Text> 主要涉及{' '}
-                                                    {relatedTags.slice(0, 3).map(t => t[0]).join('、') || '暂无其他'}{' '}
+                                                    {(aiSummaryResult?.tags || relatedTags.slice(0, 3).map(t => t[0])).join('、') || '暂无其他'}{' '}
                                                     等关键实体。
                                                 </li>
                                             </ul>
@@ -289,7 +307,7 @@ export const UniversalSearch: React.FC = () => {
                                     type="text"
                                     icon={<ReloadOutlined />}
                                     onClick={handleAiRefresh}
-                                    loading={isAiSummarizing}
+                                    loading={isSummarizing}
                                 >
                                     刷新分析 <RightOutlined />
                                 </Button>

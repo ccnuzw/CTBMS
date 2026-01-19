@@ -41,7 +41,73 @@ export const StructuredEventSchema = z.object({
   impact: z.string().optional(),
 });
 
+// 提取的价格点（从日报中批量提取）
+export const ExtractedPricePointSchema = z.object({
+  location: z.string(),           // 采集点名称（锦州港/梅花味精等）
+  price: z.number(),              // 价格
+  change: z.number().nullable(),  // 涨跌幅
+  unit: z.string().default('元/吨'),
+  commodity: z.string().optional(), // 品种（默认从上下文推断）
+  grade: z.string().optional(),     // 等级
+
+  // ===== 新增：价格分类 =====
+  sourceType: z.enum(['ENTERPRISE', 'REGIONAL', 'PORT']).optional(), // 价格主体类型
+  subType: z.enum(['LISTED', 'TRANSACTION', 'ARRIVAL', 'FOB', 'STATION_ORIGIN', 'STATION_DEST', 'PURCHASE', 'WHOLESALE', 'OTHER']).optional(), // 价格子类型
+  geoLevel: z.enum(['COUNTRY', 'REGION', 'PROVINCE', 'CITY', 'DISTRICT', 'PORT', 'STATION', 'ENTERPRISE']).optional(), // 地理层级
+
+  // 企业信息（企业价格时填充）
+  enterpriseName: z.string().optional(),  // 企业名称
+  enterpriseId: z.string().optional(),    // 系统中的企业ID（如果能匹配）
+
+  // 地理信息
+  province: z.string().optional(),        // 省份
+  city: z.string().optional(),            // 城市
+  longitude: z.number().optional(),       // 经度
+  latitude: z.number().optional(),        // 纬度
+
+  // 附加说明
+  note: z.string().optional(),            // 如：平舱价、挂牌价、二等
+});
+
+// 市场心态分析（B类核心）
+export const MarketSentimentSchema = z.object({
+  overall: z.enum(['bullish', 'bearish', 'neutral', 'mixed']), // 整体情绪
+  score: z.number().min(-100).max(100).optional(), // 情绪分值
+  traders: z.string().optional(),      // 贸易商心态
+  processors: z.string().optional(),   // 加工企业心态
+  farmers: z.string().optional(),      // 农户/基层心态
+  summary: z.string().optional(),      // 心态一句话概述
+});
+
+// 后市预判
+export const ForecastSchema = z.object({
+  shortTerm: z.string().optional(),    // 短期预判（1周内）
+  mediumTerm: z.string().optional(),   // 中期预判（1月内）
+  longTerm: z.string().optional(),     // 长期预判
+  keyFactors: z.array(z.string()).optional(), // 关键影响因素
+  riskLevel: z.enum(['low', 'medium', 'high']).optional(), // 风险等级
+});
+
+// 日报分段（保留原始结构）
+export const ReportSectionSchema = z.object({
+  title: z.string(),              // 段落标题
+  content: z.string(),            // 段落内容
+  type: z.enum(['overview', 'price', 'sentiment', 'forecast', 'event', 'other']),
+  order: z.number().optional(),   // 段落顺序
+});
+
+// 日报元信息
+export const DailyReportMetaSchema = z.object({
+  reportType: z.enum(['market_daily', 'regional_weekly', 'topic_analysis', 'price_report', 'other']),
+  reportDate: z.string().optional(),     // 报告日期 (YYYY-MM-DD)
+  region: z.string().optional(),         // 覆盖区域
+  commodity: z.string().optional(),      // 主要品种
+  marketTrend: z.enum(['up', 'down', 'stable', 'volatile']).optional(), // 整体趋势
+  keyChange: z.number().optional(),      // 主要变动值
+});
+
 export const AIAnalysisResultSchema = z.object({
+  // 基础分析（保持向后兼容）
   summary: z.string(),
   tags: z.array(z.string()),
   sentiment: z.enum(['positive', 'negative', 'neutral']),
@@ -52,6 +118,26 @@ export const AIAnalysisResultSchema = z.object({
   structuredEvent: StructuredEventSchema.optional(),
   entities: z.array(z.string()).optional(),
   ocrText: z.string().optional(),
+
+  // ========== 新增：日报解析扩展 ==========
+
+  // 日报元信息（C类日报专用）
+  reportMeta: DailyReportMetaSchema.optional(),
+
+  // A类：批量提取的价格点
+  pricePoints: z.array(ExtractedPricePointSchema).optional(),
+
+  // B类：市场心态分析
+  marketSentiment: MarketSentimentSchema.optional(),
+
+  // 后市预判
+  forecast: ForecastSchema.optional(),
+
+  // 原文分段（便于检索和展示）
+  sections: z.array(ReportSectionSchema).optional(),
+
+  // 提取的事件列表（B类扩展）
+  events: z.array(StructuredEventSchema).optional(),
 });
 
 // =============================================
@@ -217,6 +303,13 @@ export type StructuredEvent = z.infer<typeof StructuredEventSchema>;
 export type AIAnalysisResult = z.infer<typeof AIAnalysisResultSchema>;
 export type QualityScore = z.infer<typeof QualityScoreSchema>;
 
+// 新增：日报解析相关类型
+export type ExtractedPricePoint = z.infer<typeof ExtractedPricePointSchema>;
+export type MarketSentiment = z.infer<typeof MarketSentimentSchema>;
+export type Forecast = z.infer<typeof ForecastSchema>;
+export type ReportSection = z.infer<typeof ReportSectionSchema>;
+export type DailyReportMeta = z.infer<typeof DailyReportMetaSchema>;
+
 export type CreateMarketIntelDto = z.infer<typeof CreateMarketIntelSchema>;
 export type UpdateMarketIntelDto = z.infer<typeof UpdateMarketIntelSchema>;
 export type MarketIntelResponse = z.infer<typeof MarketIntelResponseSchema>;
@@ -232,37 +325,155 @@ export type MarketIntelStats = z.infer<typeof MarketIntelStatsSchema>;
 // A类：价格数据 (PriceData)
 // =============================================
 
+// 价格主体类型（谁的价格）
+export enum PriceSourceType {
+  ENTERPRISE = 'ENTERPRISE',    // 企业收购价
+  REGIONAL = 'REGIONAL',        // 地域市场价
+  PORT = 'PORT',                // 港口价格
+}
+
+// 价格子类型（什么性质的价格）
+export enum PriceSubType {
+  LISTED = 'LISTED',                  // 挂牌价
+  TRANSACTION = 'TRANSACTION',        // 成交价
+  ARRIVAL = 'ARRIVAL',                // 到港价
+  FOB = 'FOB',                        // 平舱价
+  STATION_ORIGIN = 'STATION_ORIGIN',  // 站台价-产区
+  STATION_DEST = 'STATION_DEST',      // 站台价-销区
+  PURCHASE = 'PURCHASE',              // 收购价
+  WHOLESALE = 'WHOLESALE',            // 批发价
+  OTHER = 'OTHER',                    // 其他
+}
+
+// 地理层级
+export enum GeoLevel {
+  COUNTRY = 'COUNTRY',        // 国家级
+  REGION = 'REGION',          // 大区
+  PROVINCE = 'PROVINCE',      // 省级
+  CITY = 'CITY',              // 市级
+  DISTRICT = 'DISTRICT',      // 区县级
+  PORT = 'PORT',              // 港口
+  STATION = 'STATION',        // 站台
+  ENTERPRISE = 'ENTERPRISE',  // 企业点位
+}
+
+// 标签映射
+export const PRICE_SOURCE_TYPE_LABELS: Record<PriceSourceType, string> = {
+  [PriceSourceType.ENTERPRISE]: '企业收购价',
+  [PriceSourceType.REGIONAL]: '地域市场价',
+  [PriceSourceType.PORT]: '港口价格',
+};
+
+export const PRICE_SUB_TYPE_LABELS: Record<PriceSubType, string> = {
+  [PriceSubType.LISTED]: '挂牌价',
+  [PriceSubType.TRANSACTION]: '成交价',
+  [PriceSubType.ARRIVAL]: '到港价',
+  [PriceSubType.FOB]: '平舱价',
+  [PriceSubType.STATION_ORIGIN]: '站台价-产区',
+  [PriceSubType.STATION_DEST]: '站台价-销区',
+  [PriceSubType.PURCHASE]: '收购价',
+  [PriceSubType.WHOLESALE]: '批发价',
+  [PriceSubType.OTHER]: '其他',
+};
+
+export const GEO_LEVEL_LABELS: Record<GeoLevel, string> = {
+  [GeoLevel.COUNTRY]: '国家级',
+  [GeoLevel.REGION]: '大区',
+  [GeoLevel.PROVINCE]: '省级',
+  [GeoLevel.CITY]: '市级',
+  [GeoLevel.DISTRICT]: '区县级',
+  [GeoLevel.PORT]: '港口',
+  [GeoLevel.STATION]: '站台',
+  [GeoLevel.ENTERPRISE]: '企业点位',
+};
+
 export const CreatePriceDataSchema = z.object({
+  // 价格分类
+  sourceType: z.nativeEnum(PriceSourceType).optional().default(PriceSourceType.REGIONAL),
+  subType: z.nativeEnum(PriceSubType).optional().default(PriceSubType.LISTED),
+
+  // 地理维度
+  geoLevel: z.nativeEnum(GeoLevel).optional().default(GeoLevel.CITY),
+  location: z.string().min(1, '采集点不能为空'),
+  province: z.string().optional(),
+  city: z.string().optional(),
+  district: z.string().optional(),
+  region: z.array(z.string()).optional().default([]),
+  longitude: z.number().optional(),
+  latitude: z.number().optional(),
+
+  // 企业关联
+  enterpriseId: z.string().optional(),
+  enterpriseName: z.string().optional(),
+
+  // 品种维度
   effectiveDate: z.coerce.date(),
   commodity: z.string().min(1, '品种不能为空'),
   grade: z.string().optional(),
-  location: z.string().min(1, '采集点不能为空'),
-  region: z.array(z.string()).optional().default([]),
+
+  // 价格指标
   price: z.number().positive('价格必须为正数'),
   moisture: z.number().min(0).max(100).optional(),
   bulkDensity: z.number().int().positive().optional(),
   toxin: z.number().min(0).optional(),
   freight: z.number().min(0).optional(),
   inventory: z.number().int().min(0).optional(),
+
+  // 备注
+  note: z.string().optional(),
+
+  // 关联
   intelId: z.string().optional(),
 });
 
 export const PriceDataResponseSchema = z.object({
   id: z.string(),
+
+  // 价格分类
+  sourceType: z.nativeEnum(PriceSourceType),
+  subType: z.nativeEnum(PriceSubType),
+
+  // 地理维度
+  geoLevel: z.nativeEnum(GeoLevel),
+  location: z.string(),
+  province: z.string().nullable(),
+  city: z.string().nullable(),
+  district: z.string().nullable(),
+  region: z.array(z.string()),
+  longitude: z.number().nullable(),
+  latitude: z.number().nullable(),
+
+  // 企业关联
+  enterpriseId: z.string().nullable(),
+  enterpriseName: z.string().nullable(),
+  enterprise: z.object({
+    id: z.string(),
+    name: z.string(),
+    shortName: z.string().nullable(),
+  }).optional(),
+
+  // 品种维度
   effectiveDate: z.date(),
   commodity: z.string(),
   grade: z.string().nullable(),
-  location: z.string(),
-  region: z.array(z.string()),
+
+  // 价格指标
   price: z.number(),
   moisture: z.number().nullable(),
   bulkDensity: z.number().nullable(),
   toxin: z.number().nullable(),
   freight: z.number().nullable(),
   inventory: z.number().nullable(),
+
+  // 计算列
   foldPrice: z.number().nullable(),
   dayChange: z.number().nullable(),
   yearChange: z.number().nullable(),
+
+  // 备注
+  note: z.string().nullable(),
+
+  // 关联
   intelId: z.string().nullable(),
   authorId: z.string(),
   createdAt: z.date(),
@@ -270,8 +481,14 @@ export const PriceDataResponseSchema = z.object({
 });
 
 export const PriceDataQuerySchema = z.object({
+  sourceType: z.nativeEnum(PriceSourceType).optional(),
+  subType: z.nativeEnum(PriceSubType).optional(),
+  geoLevel: z.nativeEnum(GeoLevel).optional(),
   commodity: z.string().optional(),
   location: z.string().optional(),
+  province: z.string().optional(),
+  city: z.string().optional(),
+  enterpriseId: z.string().optional(),
   startDate: z.coerce.date().optional(),
   endDate: z.coerce.date().optional(),
   keyword: z.string().optional(),

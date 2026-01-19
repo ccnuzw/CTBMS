@@ -526,131 +526,567 @@ export const DataEntry: React.FC<DataEntryProps> = ({ onSuccess, onCancel }) => 
                             />
                         )}
 
-                        <Row gutter={24}>
-                            {/* 左列：摘要与标签 */}
-                            <Col xs={24} lg={12}>
-                                <Space direction="vertical" size="large" style={{ width: '100%' }}>
-                                    <div>
-                                        <Text type="secondary" style={{ fontSize: 10, textTransform: 'uppercase' }}>
-                                            智能摘要 (Auto-Summary)
-                                        </Text>
-                                        <Paragraph strong style={{ fontSize: 16, marginTop: 8 }}>
-                                            {aiResult.summary}
-                                        </Paragraph>
-                                    </div>
+                        {/* ===== 新增：采集数据摘要 ===== */}
+                        <Card
+                            size="small"
+                            title={
+                                <Flex align="center" gap={8}>
+                                    <ThunderboltOutlined style={{ color: token.colorPrimary }} />
+                                    <Text strong>📋 采集数据摘要 - 确认入库内容</Text>
+                                </Flex>
+                            }
+                            style={{
+                                marginBottom: 24,
+                                background: `linear-gradient(135deg, ${token.colorPrimaryBg} 0%, ${token.colorBgContainer} 100%)`,
+                                border: `1px solid ${token.colorPrimaryBorder}`,
+                            }}
+                        >
+                            {/* 主情报信息 */}
+                            <Descriptions
+                                size="small"
+                                column={{ xs: 1, sm: 2, md: 3 }}
+                                style={{ marginBottom: 16 }}
+                            >
+                                <Descriptions.Item label="情报类型">
+                                    <Tag color={
+                                        category === IntelCategory.A_STRUCTURED ? 'blue' :
+                                            category === IntelCategory.B_SEMI_STRUCTURED ? 'purple' :
+                                                category === IntelCategory.C_DOCUMENT ? 'orange' : 'default'
+                                    }>
+                                        {INTEL_CATEGORY_LABELS[category].split('：')[0]}
+                                    </Tag>
+                                </Descriptions.Item>
+                                <Descriptions.Item label="信源类型">
+                                    <Tag>{INTEL_SOURCE_TYPE_LABELS[sourceType]}</Tag>
+                                </Descriptions.Item>
+                                <Descriptions.Item label="置信度">
+                                    <Progress
+                                        percent={aiResult.confidenceScore}
+                                        size="small"
+                                        style={{ width: 100 }}
+                                        status={aiResult.confidenceScore >= 80 ? 'success' : aiResult.confidenceScore >= 60 ? 'normal' : 'exception'}
+                                    />
+                                </Descriptions.Item>
+                            </Descriptions>
 
-                                    <div>
-                                        <Text type="secondary" style={{ fontSize: 10, textTransform: 'uppercase' }}>
-                                            业务标签 (Business Tags)
-                                        </Text>
-                                        <Flex wrap="wrap" gap={8} style={{ marginTop: 8 }}>
-                                            {aiResult.tags.map((tag) => (
-                                                <Tag key={tag}>{tag}</Tag>
-                                            ))}
+                            <Divider style={{ margin: '12px 0' }} />
+
+                            {/* 采集内容统计 */}
+                            <Row gutter={[16, 12]}>
+                                {/* 主情报 */}
+                                <Col xs={24} sm={12} md={8}>
+                                    <Card size="small" style={{ background: token.colorSuccessBg, borderColor: token.colorSuccessBorder }}>
+                                        <Flex align="center" gap={8}>
+                                            <FileTextOutlined style={{ fontSize: 20, color: token.colorSuccess }} />
+                                            <div>
+                                                <Text type="secondary" style={{ fontSize: 11 }}>主情报</Text>
+                                                <div>
+                                                    <Text strong style={{ color: token.colorSuccess }}>1</Text>
+                                                    <Text type="secondary" style={{ fontSize: 11 }}> 条待入库</Text>
+                                                </div>
+                                            </div>
                                         </Flex>
-                                    </div>
-
-                                    {/* 实体关联 */}
-                                    {aiResult.entities && aiResult.entities.length > 0 && (
-                                        <Card
-                                            size="small"
-                                            style={{ background: `${token.colorInfo}08`, borderColor: token.colorInfoBorder }}
-                                        >
-                                            <Text type="secondary" style={{ fontSize: 10, textTransform: 'uppercase' }}>
-                                                <LinkOutlined /> 已自动关联实体 (Category D)
-                                            </Text>
-                                            <Flex gap={8} style={{ marginTop: 8 }}>
-                                                {aiResult.entities.map((ent) => (
-                                                    <Tag key={ent} color="blue">
-                                                        {ent} →
-                                                    </Tag>
-                                                ))}
-                                            </Flex>
-                                            <Text type="secondary" style={{ fontSize: 11, marginTop: 8, display: 'block' }}>
-                                                该情报将同步挂载到上述企业的信用档案中。
-                                            </Text>
-                                        </Card>
-                                    )}
-                                </Space>
-                            </Col>
-
-                            {/* 右列：结构化数据 */}
-                            <Col xs={24} lg={12}>
-                                <Space direction="vertical" size="middle" style={{ width: '100%' }}>
-                                    <Text type="secondary" style={{ fontSize: 10, textTransform: 'uppercase' }}>
-                                        元数据提取 (Metadata)
-                                    </Text>
-
-                                    {aiResult.extractedEffectiveTime && (
-                                        <Card size="small" style={{ background: `${token.colorPrimary}08` }}>
-                                            <Flex justify="space-between">
-                                                <Text>推断生效时间:</Text>
-                                                <Text strong>{aiResult.extractedEffectiveTime}</Text>
-                                            </Flex>
-                                        </Card>
-                                    )}
-
-                                    {/* B类事件结构 */}
-                                    {aiResult.structuredEvent && (
-                                        <Descriptions bordered size="small" column={1}>
-                                            <Descriptions.Item label="事件主体">
-                                                {aiResult.structuredEvent.subject || '-'}
-                                            </Descriptions.Item>
-                                            <Descriptions.Item label="发生动作">
-                                                <Text type="warning">{aiResult.structuredEvent.action || '-'}</Text>
-                                            </Descriptions.Item>
-                                            <Descriptions.Item label="预估影响">
-                                                <Text type="danger">{aiResult.structuredEvent.impact || '-'}</Text>
-                                            </Descriptions.Item>
-                                        </Descriptions>
-                                    )}
-
-                                    {/* A类硬数据 */}
-                                    {aiResult.extractedData && Object.keys(aiResult.extractedData).length > 0 && (
-                                        <Descriptions bordered size="small" column={2}>
-                                            {Object.entries(aiResult.extractedData).map(([k, v]) => (
-                                                <Descriptions.Item key={k} label={k}>
-                                                    <Text strong>{String(v)}</Text>
-                                                </Descriptions.Item>
-                                            ))}
-                                        </Descriptions>
-                                    )}
-
-                                    {/* OCR 结果 */}
-                                    {aiResult.ocrText && (
-                                        <Card
-                                            size="small"
-                                            title={
-                                                <Text type="secondary" style={{ fontSize: 11 }}>
-                                                    <PictureOutlined /> OCR 识别结果 (已自动填入正文)
-                                                </Text>
-                                            }
-                                        >
-                                            <pre
-                                                style={{
-                                                    fontSize: 11,
-                                                    margin: 0,
-                                                    maxHeight: 120,
-                                                    overflow: 'auto',
-                                                    whiteSpace: 'pre-wrap',
-                                                }}
-                                            >
-                                                {aiResult.ocrText}
-                                            </pre>
-                                        </Card>
-                                    )}
-
-                                    <Flex justify="space-between">
-                                        <Text type="secondary" style={{ fontSize: 11 }}>
-                                            Sentiment: {aiResult.sentiment}
+                                        <Text type="secondary" style={{ fontSize: 11, display: 'block', marginTop: 4 }}>
+                                            {content.length} 字原文 + AI摘要
                                         </Text>
+                                    </Card>
+                                </Col>
+
+                                {/* 价格数据 */}
+                                <Col xs={24} sm={12} md={8}>
+                                    <Card
+                                        size="small"
+                                        style={{
+                                            background: aiResult.pricePoints?.length ? token.colorInfoBg : token.colorBgContainerDisabled,
+                                            borderColor: aiResult.pricePoints?.length ? token.colorInfoBorder : token.colorBorder,
+                                        }}
+                                    >
+                                        <Flex align="center" gap={8}>
+                                            <DatabaseOutlined style={{ fontSize: 20, color: aiResult.pricePoints?.length ? token.colorInfo : token.colorTextDisabled }} />
+                                            <div>
+                                                <Text type="secondary" style={{ fontSize: 11 }}>价格数据 (A类)</Text>
+                                                <div>
+                                                    <Text strong style={{ color: aiResult.pricePoints?.length ? token.colorInfo : token.colorTextDisabled }}>
+                                                        {aiResult.pricePoints?.length || 0}
+                                                    </Text>
+                                                    <Text type="secondary" style={{ fontSize: 11 }}> 条待入库</Text>
+                                                </div>
+                                            </div>
+                                        </Flex>
+                                        {aiResult.pricePoints && aiResult.pricePoints.length > 0 && (
+                                            <Flex gap={4} wrap="wrap" style={{ marginTop: 4 }}>
+                                                {(() => {
+                                                    const ent = aiResult.pricePoints.filter(p => p.sourceType === 'ENTERPRISE').length;
+                                                    const port = aiResult.pricePoints.filter(p => p.sourceType === 'PORT').length;
+                                                    const reg = aiResult.pricePoints.filter(p => !p.sourceType || p.sourceType === 'REGIONAL').length;
+                                                    return (
+                                                        <>
+                                                            {ent > 0 && <Tag color="orange" style={{ fontSize: 10 }}>🏭企业{ent}</Tag>}
+                                                            {port > 0 && <Tag color="blue" style={{ fontSize: 10 }}>⚓港口{port}</Tag>}
+                                                            {reg > 0 && <Tag color="green" style={{ fontSize: 10 }}>🌍地域{reg}</Tag>}
+                                                        </>
+                                                    );
+                                                })()}
+                                            </Flex>
+                                        )}
+                                    </Card>
+                                </Col>
+
+                                {/* 市场心态 */}
+                                <Col xs={24} sm={12} md={8}>
+                                    <Card
+                                        size="small"
+                                        style={{
+                                            background: aiResult.marketSentiment ? token.colorWarningBg : token.colorBgContainerDisabled,
+                                            borderColor: aiResult.marketSentiment ? token.colorWarningBorder : token.colorBorder,
+                                        }}
+                                    >
+                                        <Flex align="center" gap={8}>
+                                            <RadarChartOutlined style={{ fontSize: 20, color: aiResult.marketSentiment ? token.colorWarning : token.colorTextDisabled }} />
+                                            <div>
+                                                <Text type="secondary" style={{ fontSize: 11 }}>市场心态 (B类)</Text>
+                                                <div>
+                                                    {aiResult.marketSentiment ? (
+                                                        <Tag color={
+                                                            aiResult.marketSentiment.overall === 'bullish' ? 'success' :
+                                                                aiResult.marketSentiment.overall === 'bearish' ? 'error' : 'warning'
+                                                        }>
+                                                            {aiResult.marketSentiment.overall === 'bullish' ? '看涨' :
+                                                                aiResult.marketSentiment.overall === 'bearish' ? '看跌' :
+                                                                    aiResult.marketSentiment.overall === 'mixed' ? '分化' : '中性'}
+                                                        </Tag>
+                                                    ) : (
+                                                        <Text type="secondary" style={{ fontSize: 11 }}>未识别</Text>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        </Flex>
+                                        {aiResult.marketSentiment?.score !== undefined && (
+                                            <Text type="secondary" style={{ fontSize: 11, display: 'block', marginTop: 4 }}>
+                                                情绪分值: {aiResult.marketSentiment.score}
+                                            </Text>
+                                        )}
+                                    </Card>
+                                </Col>
+
+                                {/* 后市预判 */}
+                                <Col xs={24} sm={12} md={8}>
+                                    <Card
+                                        size="small"
+                                        style={{
+                                            background: aiResult.forecast?.shortTerm ? token.colorPrimaryBg : token.colorBgContainerDisabled,
+                                            borderColor: aiResult.forecast?.shortTerm ? token.colorPrimaryBorder : token.colorBorder,
+                                        }}
+                                    >
+                                        <Flex align="center" gap={8}>
+                                            <BulbOutlined style={{ fontSize: 20, color: aiResult.forecast?.shortTerm ? token.colorPrimary : token.colorTextDisabled }} />
+                                            <div>
+                                                <Text type="secondary" style={{ fontSize: 11 }}>后市预判</Text>
+                                                <div>
+                                                    {aiResult.forecast?.shortTerm ? (
+                                                        <Text strong style={{ fontSize: 12 }}>已提取</Text>
+                                                    ) : (
+                                                        <Text type="secondary" style={{ fontSize: 11 }}>未识别</Text>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        </Flex>
+                                        {aiResult.forecast?.keyFactors && aiResult.forecast.keyFactors.length > 0 && (
+                                            <Text type="secondary" style={{ fontSize: 11, display: 'block', marginTop: 4 }}>
+                                                关键因素: {aiResult.forecast.keyFactors.length}个
+                                            </Text>
+                                        )}
+                                    </Card>
+                                </Col>
+
+                                {/* 关联实体 */}
+                                <Col xs={24} sm={12} md={8}>
+                                    <Card
+                                        size="small"
+                                        style={{
+                                            background: aiResult.entities?.length ? token.colorInfoBg : token.colorBgContainerDisabled,
+                                            borderColor: aiResult.entities?.length ? token.colorInfoBorder : token.colorBorder,
+                                        }}
+                                    >
+                                        <Flex align="center" gap={8}>
+                                            <TeamOutlined style={{ fontSize: 20, color: aiResult.entities?.length ? token.colorInfo : token.colorTextDisabled }} />
+                                            <div>
+                                                <Text type="secondary" style={{ fontSize: 11 }}>关联实体 (D类)</Text>
+                                                <div>
+                                                    <Text strong style={{ color: aiResult.entities?.length ? token.colorInfo : token.colorTextDisabled }}>
+                                                        {aiResult.entities?.length || 0}
+                                                    </Text>
+                                                    <Text type="secondary" style={{ fontSize: 11 }}> 个企业</Text>
+                                                </div>
+                                            </div>
+                                        </Flex>
+                                        {aiResult.entities && aiResult.entities.length > 0 && (
+                                            <Flex gap={4} wrap="wrap" style={{ marginTop: 4 }}>
+                                                {aiResult.entities.slice(0, 3).map(ent => (
+                                                    <Tag key={ent} style={{ fontSize: 10 }}>{ent}</Tag>
+                                                ))}
+                                                {aiResult.entities.length > 3 && (
+                                                    <Tag style={{ fontSize: 10 }}>+{aiResult.entities.length - 3}</Tag>
+                                                )}
+                                            </Flex>
+                                        )}
+                                    </Card>
+                                </Col>
+
+                                {/* 原文分段 */}
+                                <Col xs={24} sm={12} md={8}>
+                                    <Card
+                                        size="small"
+                                        style={{
+                                            background: aiResult.sections?.length ? token.colorSuccessBg : token.colorBgContainerDisabled,
+                                            borderColor: aiResult.sections?.length ? token.colorSuccessBorder : token.colorBorder,
+                                        }}
+                                    >
+                                        <Flex align="center" gap={8}>
+                                            <FileTextOutlined style={{ fontSize: 20, color: aiResult.sections?.length ? token.colorSuccess : token.colorTextDisabled }} />
+                                            <div>
+                                                <Text type="secondary" style={{ fontSize: 11 }}>原文分段</Text>
+                                                <div>
+                                                    <Text strong style={{ color: aiResult.sections?.length ? token.colorSuccess : token.colorTextDisabled }}>
+                                                        {aiResult.sections?.length || 0}
+                                                    </Text>
+                                                    <Text type="secondary" style={{ fontSize: 11 }}> 个段落</Text>
+                                                </div>
+                                            </div>
+                                        </Flex>
+                                        {aiResult.sections && aiResult.sections.length > 0 && (
+                                            <Text type="secondary" style={{ fontSize: 11, display: 'block', marginTop: 4 }}>
+                                                {aiResult.sections.map(s => s.title).slice(0, 3).join('、')}
+                                                {aiResult.sections.length > 3 ? '...' : ''}
+                                            </Text>
+                                        )}
+                                    </Card>
+                                </Col>
+                            </Row>
+
+                            {/* 入库预览提示 */}
+                            <Alert
+                                type="info"
+                                showIcon
+                                icon={<InfoCircleOutlined />}
+                                message={
+                                    <Flex justify="space-between" align="center">
+                                        <span>
+                                            点击【确认入库】后，以上数据将写入：
+                                            <Text strong> 1条主情报</Text>
+                                            {aiResult.pricePoints?.length ? <Text strong> + {aiResult.pricePoints.length}条价格数据</Text> : null}
+                                            {aiResult.entities?.length ? <Text strong> + {aiResult.entities.length}个实体关联</Text> : null}
+                                        </span>
+                                    </Flex>
+                                }
+                                style={{ marginTop: 16 }}
+                            />
+                        </Card>
+                        {/* ===== 采集数据摘要结束 ===== */}
+
+                        {/* 详细解析结果 - 可展开查看 */}
+                        <Collapse
+                            items={[{
+                                key: 'details',
+                                label: (
+                                    <Flex align="center" gap={8}>
+                                        <FileTextOutlined />
+                                        <Text strong>查看详细解析结果</Text>
                                         <Text type="secondary" style={{ fontSize: 11 }}>
-                                            Confidence: {aiResult.confidenceScore}%
+                                            (点击展开查看摘要、标签、价格明细等)
                                         </Text>
                                     </Flex>
-                                </Space>
-                            </Col>
-                        </Row>
+                                ),
+                                children: (
+                                    <Row gutter={24}>
+                                        {/* 左列：摘要与标签 */}
+                                        <Col xs={24} lg={12}>
+                                            <Space direction="vertical" size="large" style={{ width: '100%' }}>
+                                                <div>
+                                                    <Text type="secondary" style={{ fontSize: 10, textTransform: 'uppercase' }}>
+                                                        智能摘要 (Auto-Summary)
+                                                    </Text>
+                                                    <Paragraph strong style={{ fontSize: 16, marginTop: 8 }}>
+                                                        {aiResult.summary}
+                                                    </Paragraph>
+                                                </div>
+
+                                                <div>
+                                                    <Text type="secondary" style={{ fontSize: 10, textTransform: 'uppercase' }}>
+                                                        业务标签 (Business Tags)
+                                                    </Text>
+                                                    <Flex wrap="wrap" gap={8} style={{ marginTop: 8 }}>
+                                                        {aiResult.tags.map((tag) => (
+                                                            <Tag key={tag}>{tag}</Tag>
+                                                        ))}
+                                                    </Flex>
+                                                </div>
+
+                                                {/* 实体关联 */}
+                                                {aiResult.entities && aiResult.entities.length > 0 && (
+                                                    <Card
+                                                        size="small"
+                                                        style={{ background: `${token.colorInfo}08`, borderColor: token.colorInfoBorder }}
+                                                    >
+                                                        <Text type="secondary" style={{ fontSize: 10, textTransform: 'uppercase' }}>
+                                                            <LinkOutlined /> 已自动关联实体 (Category D)
+                                                        </Text>
+                                                        <Flex gap={8} style={{ marginTop: 8 }}>
+                                                            {aiResult.entities.map((ent) => (
+                                                                <Tag key={ent} color="blue">
+                                                                    {ent} →
+                                                                </Tag>
+                                                            ))}
+                                                        </Flex>
+                                                        <Text type="secondary" style={{ fontSize: 11, marginTop: 8, display: 'block' }}>
+                                                            该情报将同步挂载到上述企业的信用档案中。
+                                                        </Text>
+                                                    </Card>
+                                                )}
+                                            </Space>
+                                        </Col>
+
+                                        {/* 右列：结构化数据 */}
+                                        <Col xs={24} lg={12}>
+                                            <Space direction="vertical" size="middle" style={{ width: '100%' }}>
+                                                <Text type="secondary" style={{ fontSize: 10, textTransform: 'uppercase' }}>
+                                                    元数据提取 (Metadata)
+                                                </Text>
+
+                                                {aiResult.extractedEffectiveTime && (
+                                                    <Card size="small" style={{ background: `${token.colorPrimary}08` }}>
+                                                        <Flex justify="space-between">
+                                                            <Text>推断生效时间:</Text>
+                                                            <Text strong>{aiResult.extractedEffectiveTime}</Text>
+                                                        </Flex>
+                                                    </Card>
+                                                )}
+
+                                                {/* B类事件结构 */}
+                                                {aiResult.structuredEvent && (
+                                                    <Descriptions bordered size="small" column={1}>
+                                                        <Descriptions.Item label="事件主体">
+                                                            {aiResult.structuredEvent.subject || '-'}
+                                                        </Descriptions.Item>
+                                                        <Descriptions.Item label="发生动作">
+                                                            <Text type="warning">{aiResult.structuredEvent.action || '-'}</Text>
+                                                        </Descriptions.Item>
+                                                        <Descriptions.Item label="预估影响">
+                                                            <Text type="danger">{aiResult.structuredEvent.impact || '-'}</Text>
+                                                        </Descriptions.Item>
+                                                    </Descriptions>
+                                                )}
+
+                                                {/* A类硬数据 */}
+                                                {aiResult.extractedData && Object.keys(aiResult.extractedData).length > 0 && (
+                                                    <Descriptions bordered size="small" column={2}>
+                                                        {Object.entries(aiResult.extractedData).map(([k, v]) => (
+                                                            <Descriptions.Item key={k} label={k}>
+                                                                <Text strong>{String(v)}</Text>
+                                                            </Descriptions.Item>
+                                                        ))}
+                                                    </Descriptions>
+                                                )}
+
+                                                {/* 日报提取的价格点列表 (A类扩展) */}
+                                                {aiResult.pricePoints && aiResult.pricePoints.length > 0 && (() => {
+                                                    // 按类型分组
+                                                    const enterprisePrices = aiResult.pricePoints.filter(p => p.sourceType === 'ENTERPRISE');
+                                                    const portPrices = aiResult.pricePoints.filter(p => p.sourceType === 'PORT');
+                                                    const regionalPrices = aiResult.pricePoints.filter(p => p.sourceType === 'REGIONAL' || !p.sourceType);
+
+                                                    const renderPriceList = (prices: typeof aiResult.pricePoints, title: string, icon: React.ReactNode, bgColor: string) => (
+                                                        prices && prices.length > 0 && (
+                                                            <div style={{ marginBottom: 8 }}>
+                                                                <Flex gap={4} align="center" style={{ marginBottom: 4 }}>
+                                                                    {icon}
+                                                                    <Text strong style={{ fontSize: 12 }}>{title}</Text>
+                                                                    <Tag color="blue" style={{ marginLeft: 'auto' }}>{prices.length}条</Tag>
+                                                                </Flex>
+                                                                <div style={{ background: bgColor, borderRadius: token.borderRadius, padding: 8 }}>
+                                                                    {prices.map((point, idx) => (
+                                                                        <Flex
+                                                                            key={idx}
+                                                                            justify="space-between"
+                                                                            align="center"
+                                                                            style={{
+                                                                                padding: '4px 0',
+                                                                                borderBottom: idx < prices.length - 1 ? `1px solid ${token.colorBorderSecondary}` : undefined,
+                                                                            }}
+                                                                        >
+                                                                            <Flex gap={4} align="center">
+                                                                                <Text>{point.location}</Text>
+                                                                                {point.note && (
+                                                                                    <Tag style={{ fontSize: 10, padding: '0 4px' }}>{point.note}</Tag>
+                                                                                )}
+                                                                            </Flex>
+                                                                            <Flex gap={8} align="center">
+                                                                                <Text strong style={{ color: token.colorPrimary }}>
+                                                                                    {point.price} {point.unit}
+                                                                                </Text>
+                                                                                {point.change !== null && point.change !== undefined && (
+                                                                                    <Text
+                                                                                        style={{
+                                                                                            color: point.change > 0 ? token.colorSuccess : point.change < 0 ? token.colorError : token.colorTextSecondary,
+                                                                                        }}
+                                                                                    >
+                                                                                        {point.change > 0 ? `↑${point.change}` : point.change < 0 ? `↓${Math.abs(point.change)}` : '→'}
+                                                                                    </Text>
+                                                                                )}
+                                                                            </Flex>
+                                                                        </Flex>
+                                                                    ))}
+                                                                </div>
+                                                            </div>
+                                                        )
+                                                    );
+
+                                                    return (
+                                                        <Card
+                                                            size="small"
+                                                            title={
+                                                                <Flex justify="space-between" align="center">
+                                                                    <Text style={{ fontSize: 12 }}>
+                                                                        <DatabaseOutlined style={{ color: token.colorPrimary }} /> 提取的价格数据 (A类)
+                                                                    </Text>
+                                                                    <Tag color="blue">{aiResult.pricePoints!.length} 条</Tag>
+                                                                </Flex>
+                                                            }
+                                                        >
+                                                            <div style={{ maxHeight: 300, overflow: 'auto' }}>
+                                                                {renderPriceList(enterprisePrices, '🏭 企业收购价', null, `${token.colorWarning}08`)}
+                                                                {renderPriceList(portPrices, '⚓ 港口价格', null, `${token.colorInfo}08`)}
+                                                                {renderPriceList(regionalPrices, '🌍 地域市场价', null, `${token.colorSuccess}08`)}
+                                                            </div>
+                                                            <Text type="secondary" style={{ fontSize: 11, marginTop: 8, display: 'block' }}>
+                                                                提交后将自动同步到价格数据库，企业价格会尝试关联系统中的企业档案
+                                                            </Text>
+                                                        </Card>
+                                                    );
+                                                })()}
+
+                                                {/* 市场心态分析 (B类扩展) */}
+                                                {aiResult.marketSentiment && (
+                                                    <Card
+                                                        size="small"
+                                                        title={
+                                                            <Text style={{ fontSize: 12 }}>
+                                                                <RadarChartOutlined style={{ color: token.colorWarning }} /> 市场心态分析 (B类)
+                                                            </Text>
+                                                        }
+                                                        style={{
+                                                            background: aiResult.marketSentiment.overall === 'bullish'
+                                                                ? `${token.colorSuccess}08`
+                                                                : aiResult.marketSentiment.overall === 'bearish'
+                                                                    ? `${token.colorError}08`
+                                                                    : `${token.colorWarning}08`,
+                                                        }}
+                                                    >
+                                                        <Flex gap={8} style={{ marginBottom: 8 }}>
+                                                            <Tag
+                                                                color={
+                                                                    aiResult.marketSentiment.overall === 'bullish'
+                                                                        ? 'success'
+                                                                        : aiResult.marketSentiment.overall === 'bearish'
+                                                                            ? 'error'
+                                                                            : 'warning'
+                                                                }
+                                                            >
+                                                                {aiResult.marketSentiment.overall === 'bullish' && '看涨'}
+                                                                {aiResult.marketSentiment.overall === 'bearish' && '看跌'}
+                                                                {aiResult.marketSentiment.overall === 'neutral' && '中性'}
+                                                                {aiResult.marketSentiment.overall === 'mixed' && '分化'}
+                                                            </Tag>
+                                                            {aiResult.marketSentiment.score !== undefined && (
+                                                                <Text type="secondary" style={{ fontSize: 11 }}>
+                                                                    情绪分值: {aiResult.marketSentiment.score}
+                                                                </Text>
+                                                            )}
+                                                        </Flex>
+                                                        {aiResult.marketSentiment.summary && (
+                                                            <Paragraph style={{ fontSize: 13, margin: 0 }}>
+                                                                {aiResult.marketSentiment.summary}
+                                                            </Paragraph>
+                                                        )}
+                                                        {(aiResult.marketSentiment.traders || aiResult.marketSentiment.processors) && (
+                                                            <div style={{ marginTop: 8 }}>
+                                                                {aiResult.marketSentiment.traders && (
+                                                                    <Text type="secondary" style={{ fontSize: 11, display: 'block' }}>
+                                                                        贸易商: {aiResult.marketSentiment.traders}
+                                                                    </Text>
+                                                                )}
+                                                                {aiResult.marketSentiment.processors && (
+                                                                    <Text type="secondary" style={{ fontSize: 11, display: 'block' }}>
+                                                                        加工企业: {aiResult.marketSentiment.processors}
+                                                                    </Text>
+                                                                )}
+                                                            </div>
+                                                        )}
+                                                    </Card>
+                                                )}
+
+                                                {/* 后市预判 */}
+                                                {aiResult.forecast && (aiResult.forecast.shortTerm || aiResult.forecast.keyFactors?.length) && (
+                                                    <Card size="small" title={<Text style={{ fontSize: 12 }}>后市预判</Text>}>
+                                                        {aiResult.forecast.shortTerm && (
+                                                            <Paragraph style={{ fontSize: 13, marginBottom: 4 }}>
+                                                                <Text strong>短期: </Text>{aiResult.forecast.shortTerm}
+                                                            </Paragraph>
+                                                        )}
+                                                        {aiResult.forecast.mediumTerm && (
+                                                            <Paragraph style={{ fontSize: 13, marginBottom: 4 }}>
+                                                                <Text strong>中期: </Text>{aiResult.forecast.mediumTerm}
+                                                            </Paragraph>
+                                                        )}
+                                                        {aiResult.forecast.keyFactors && aiResult.forecast.keyFactors.length > 0 && (
+                                                            <Flex wrap="wrap" gap={4}>
+                                                                {aiResult.forecast.keyFactors.map((factor, idx) => (
+                                                                    <Tag key={idx} color="orange">{factor}</Tag>
+                                                                ))}
+                                                            </Flex>
+                                                        )}
+                                                    </Card>
+                                                )}
+
+                                                {/* OCR 结果 */}
+                                                {aiResult.ocrText && (
+                                                    <Card
+                                                        size="small"
+                                                        title={
+                                                            <Text type="secondary" style={{ fontSize: 11 }}>
+                                                                <PictureOutlined /> OCR 识别结果 (已自动填入正文)
+                                                            </Text>
+                                                        }
+                                                    >
+                                                        <pre
+                                                            style={{
+                                                                fontSize: 11,
+                                                                margin: 0,
+                                                                maxHeight: 120,
+                                                                overflow: 'auto',
+                                                                whiteSpace: 'pre-wrap',
+                                                            }}
+                                                        >
+                                                            {aiResult.ocrText}
+                                                        </pre>
+                                                    </Card>
+                                                )}
+
+                                                <Flex justify="space-between">
+                                                    <Text type="secondary" style={{ fontSize: 11 }}>
+                                                        Sentiment: {aiResult.sentiment}
+                                                    </Text>
+                                                    <Text type="secondary" style={{ fontSize: 11 }}>
+                                                        Confidence: {aiResult.confidenceScore}%
+                                                    </Text>
+                                                </Flex>
+                                            </Space>
+                                        </Col>
+                                    </Row>
+                                ),
+                            }]}
+                            style={{ marginBottom: 24 }}
+                        />
 
                         <Divider />
 

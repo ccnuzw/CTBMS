@@ -1,5 +1,6 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../../prisma';
+import { AIService } from '../ai/ai.service';
 import {
     CreateMarketIntelDto,
     UpdateMarketIntelDto,
@@ -10,10 +11,21 @@ import {
 
 @Injectable()
 export class MarketIntelService {
-    constructor(private prisma: PrismaService) { }
+    constructor(
+        private prisma: PrismaService,
+        private aiService: AIService,
+    ) { }
+
+    /**
+     * AI 内容分析
+     */
+    async analyze(content: string, category: IntelCategory, location?: string) {
+        return this.aiService.analyzeContent(content, category, location);
+    }
 
     /**
      * 创建商情情报
+     * 支持从 C 类日报自动提取 A 类价格数据
      */
     async create(dto: CreateMarketIntelDto, authorId: string) {
         // 计算总分
@@ -36,10 +48,99 @@ export class MarketIntelService {
             },
         });
 
+        // 如果 aiAnalysis 包含 pricePoints，自动批量写入 PriceData
+        const aiAnalysis = dto.aiAnalysis as AIAnalysisResult | undefined;
+        if (aiAnalysis?.pricePoints && aiAnalysis.pricePoints.length > 0) {
+            await this.batchCreatePriceData(intel.id, authorId, dto.effectiveTime, aiAnalysis);
+        }
+
         // 更新情报员统计
         await this.updateAuthorStats(authorId);
 
         return intel;
+    }
+
+    /**
+     * 批量创建价格数据（从日报解析结果）
+     */
+    private async batchCreatePriceData(
+        intelId: string,
+        authorId: string,
+        effectiveTime: Date,
+        aiAnalysis: AIAnalysisResult,
+    ) {
+        const pricePoints = aiAnalysis.pricePoints;
+        if (!pricePoints || pricePoints.length === 0) return;
+
+        const effectiveDate = new Date(effectiveTime);
+        effectiveDate.setHours(0, 0, 0, 0);
+
+        // 逐条处理价格数据
+        for (const point of pricePoints) {
+            // 尝试匹配系统中的企业
+            let enterpriseId: string | null = null;
+            if (point.sourceType === 'ENTERPRISE' && point.enterpriseName) {
+                const enterprise = await this.prisma.enterprise.findFirst({
+                    where: { name: { contains: point.enterpriseName, mode: 'insensitive' } },
+                });
+                enterpriseId = enterprise?.id ?? null;
+            }
+
+            // 构建价格数据
+            const priceData = {
+                // 价格分类
+                sourceType: (point.sourceType || 'REGIONAL') as any,
+                subType: (point.subType || 'LISTED') as any,
+                geoLevel: (point.geoLevel || 'CITY') as any,
+
+                // 位置信息
+                location: point.location,
+                province: point.province || null,
+                city: point.city || null,
+                region: aiAnalysis.reportMeta?.region ? [aiAnalysis.reportMeta.region] : [],
+                longitude: point.longitude || null,
+                latitude: point.latitude || null,
+
+                // 企业关联
+                enterpriseId,
+                enterpriseName: point.enterpriseName || null,
+
+                // 品种和价格
+                effectiveDate,
+                commodity: point.commodity || aiAnalysis.reportMeta?.commodity || '玉米',
+                grade: point.grade || null,
+                price: point.price,
+                dayChange: point.change,
+
+                // 备注
+                note: point.note || null,
+
+                // 关联
+                intelId,
+                authorId,
+            };
+
+            // 使用 upsert 避免重复数据（基于新的唯一约束）
+            await this.prisma.priceData.upsert({
+                where: {
+                    effectiveDate_commodity_location_sourceType_subType: {
+                        effectiveDate: priceData.effectiveDate,
+                        commodity: priceData.commodity,
+                        location: priceData.location,
+                        sourceType: priceData.sourceType,
+                        subType: priceData.subType,
+                    },
+                },
+                update: {
+                    price: priceData.price,
+                    dayChange: priceData.dayChange,
+                    intelId: priceData.intelId,
+                    enterpriseId: priceData.enterpriseId,
+                    note: priceData.note,
+                },
+                create: priceData,
+            });
+        }
     }
 
     /**

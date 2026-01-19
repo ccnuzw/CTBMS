@@ -8,4 +8,6 @@ export { KnowledgeBase } from './KnowledgeBase';
 export { EntityProfile } from './EntityProfile';
 export { OperationalWorkbench } from './OperationalWorkbench';
 export { UniversalSearch } from './UniversalSearch';
-
+export { CollectionPointManager } from './CollectionPointManager';
+export { CollectionPointEditor } from './CollectionPointEditor';
+export { RegionManager } from './RegionManager';

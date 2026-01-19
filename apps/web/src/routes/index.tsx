@@ -20,6 +20,8 @@ import {
     EntityProfile,
     OperationalWorkbench,
     UniversalSearch,
+    CollectionPointManager,
+    RegionManager,
 } from '../features/market-intel';
 
 export const router = createBrowserRouter([
@@ -72,6 +74,7 @@ export const router = createBrowserRouter([
                 children: [
                     { path: 'tags', element: <GlobalTagList /> },
                     { path: 'tag-groups', element: <TagGroupList /> },
+                    { path: 'regions', element: <RegionManager /> },
                 ]
             },
             {
@@ -87,6 +90,7 @@ export const router = createBrowserRouter([
                     { path: 'knowledge', element: <KnowledgeBase /> },
                     { path: 'entity', element: <EntityProfile /> },
                     { path: 'leaderboard', element: <Leaderboard /> },
+                    { path: 'collection-points', element: <CollectionPointManager /> },
                 ]
             },
         ],

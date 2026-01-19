@@ -13,6 +13,8 @@ import { TagGroupsModule } from './modules/tag-groups';
 import { EnterpriseModule } from './modules/enterprise';
 import { MarketIntelModule } from './modules/market-intel';
 import { AIModule } from './modules/ai';
+import { CollectionPointModule } from './modules/collection-point';
+import { RegionModule } from './modules/region';
 import { LoggerMiddleware } from './common/middleware/logger.middleware';
 
 @Module({
@@ -30,6 +32,8 @@ import { LoggerMiddleware } from './common/middleware/logger.middleware';
         TagGroupsModule,
         EnterpriseModule,
         MarketIntelModule,
+        CollectionPointModule,
+        RegionModule,
     ],
     controllers: [AppController],
     providers: [],
