@@ -102,6 +102,55 @@ export class MarketIntelController {
         );
     }
 
+    /**
+     * 按采集点查询历史价格（时间序列）
+     */
+    @Get('price-data/by-collection-point/:id')
+    async getPriceByCollectionPoint(
+        @Param('id') collectionPointId: string,
+        @Query('commodity') commodity?: string,
+        @Query('days') days = '30',
+    ) {
+        return this.priceDataService.getByCollectionPoint(
+            collectionPointId,
+            commodity,
+            parseInt(days, 10),
+        );
+    }
+
+    /**
+     * 按行政区划查询价格数据（支持聚合）
+     */
+    @Get('price-data/by-region/:code')
+    async getPriceByRegion(
+        @Param('code') regionCode: string,
+        @Query('commodity') commodity?: string,
+        @Query('days') days = '30',
+    ) {
+        return this.priceDataService.getByRegion(
+            regionCode,
+            commodity,
+            parseInt(days, 10),
+        );
+    }
+
+    /**
+     * 多采集点对比趋势
+     */
+    @Get('price-data/compare')
+    async getMultiPointTrend(
+        @Query('ids') ids: string,
+        @Query('commodity') commodity: string,
+        @Query('days') days = '30',
+    ) {
+        const collectionPointIds = ids.split(',').filter(id => id.trim());
+        return this.priceDataService.getMultiPointTrend(
+            collectionPointIds,
+            commodity,
+            parseInt(days, 10),
+        );
+    }
+
     // --- 任务调度 ---
 
     @Post('tasks')

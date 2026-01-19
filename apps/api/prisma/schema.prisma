@@ -355,6 +355,10 @@ model CollectionPoint {
   aliases       String[]                      // 别名列表（用于 AI 模糊匹配）
   type          CollectionPointType           // 采集点类型
   
+  // ===== 增强：地域匹配（松耦合） =====
+  matchRegionCodes  String[]                  // 匹配的行政区划列表
+  matchKeywords     String[]                  // 额外的匹配关键词
+  
   // 行政区划关联
   regionCode    String?                       // 关联的行政区划代码
   region        AdministrativeRegion? @relation(fields: [regionCode], references: [code])
@@ -366,7 +370,9 @@ model CollectionPoint {
   
   // 业务属性
   commodities   String[]                      // 主营品种
+  priceSubTypes String[]                      // 支持的价格类型列表
   defaultSubType String?                      // 默认价格子类型（如 FOB、LISTED）
+  isDataSource  Boolean              @default(true) // 是否作为数据来源点
   
   // 关联企业（如果是企业类型）
   enterpriseId  String?
@@ -381,6 +387,11 @@ model CollectionPoint {
   createdAt     DateTime             @default(now())
   updatedAt     DateTime             @updatedAt
   createdById   String?              // 创建人
+  
+  // 关联的价格数据（反向关联）
+  priceData     PriceData[]
+  // 关联的市场事件
+  marketEvents  MarketEvent[]
   
   @@index([type])
   @@index([regionCode])
@@ -436,6 +447,7 @@ model Enterprise {
   intelLinks   IntelEntityLink[]  // 关联的商情情报
   priceData    PriceData[]        // 关联的价格数据（企业价格）
   collectionPoints CollectionPoint[]  // 关联的采集点配置
+  marketEvents MarketEvent[]      // 关联的市场事件
   
   status      EntityStatus     @default(ACTIVE)
   createdAt   DateTime         @default(now())
@@ -530,10 +542,12 @@ model MarketIntel {
   author        User            @relation(fields: [authorId], references: [id])
   
   // 扩展关联
-  priceData     PriceData[]       // A类：提取的价格数据
-  attachments   IntelAttachment[] // C类：附件
-  entityLinks   IntelEntityLink[] // D类：关联实体
-  tasks         IntelTask[]       // 关联任务
+  priceData       PriceData[]       // A类：提取的价格数据
+  attachments     IntelAttachment[] // C类：附件
+  entityLinks     IntelEntityLink[] // D类：关联实体
+  tasks           IntelTask[]       // 关联任务
+  marketEvents    MarketEvent[]     // B类：提取的市场事件
+  marketInsights  MarketInsight[]   // C类：提取的市场洞察
   
   createdAt     DateTime        @default(now())
   updatedAt     DateTime        @updatedAt
@@ -618,6 +632,13 @@ model PriceData {
   enterprise    Enterprise? @relation(fields: [enterpriseId], references: [id])
   enterpriseName String?                            // 冗余存储企业名称（便于查询）
   
+  // ===== 采集点关联（支持连续性数据分析）=====
+  collectionPointId  String?
+  collectionPoint    CollectionPoint? @relation(fields: [collectionPointId], references: [id])
+  
+  // ===== 标准化行政区划代码（松耦合）=====
+  regionCode         String?                        // 关联的行政区划代码（如 210700 锦州市）
+  
   // ===== 品种维度 =====
   effectiveDate DateTime @db.Date                   // 价格日期
   commodity     String                              // 品种（玉米/大豆等）
@@ -655,6 +676,8 @@ model PriceData {
   @@index([commodity, effectiveDate])
   @@index([location, effectiveDate])
   @@index([province, city, effectiveDate])
+  @@index([collectionPointId, effectiveDate])       // 按采集点查询连续性数据
+  @@index([regionCode, effectiveDate])              // 按行政区划聚合查询
 }
 
 // =============================================
@@ -753,3 +776,173 @@ model IntelTask {
   @@index([assigneeId, status])
   @@index([deadline])
 }
+
+// =============================================
+// 提取规则配置系统
+// =============================================
+
+// 事件类型配置表
+model EventTypeConfig {
+  id          String   @id @default(uuid())
+  code        String   @unique    // ENTERPRISE_ACTION
+  name        String              // 企业动态
+  description String?
+  category    String              // supply | demand | policy | weather | sentiment
+  icon        String?
+  color       String?
+  isActive    Boolean  @default(true)
+  sortOrder   Int      @default(0)
+  
+  // 关联
+  events          MarketEvent[]
+  extractionRules ExtractionRule[]
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  @@index([isActive, sortOrder])
+}
+
+// 洞察类型配置表
+model InsightTypeConfig {
+  id          String   @id @default(uuid())
+  code        String   @unique    // FORECAST
+  name        String              // 后市预判
+  description String?
+  category    String              // forecast | analysis | data | logic
+  icon        String?
+  color       String?
+  isActive    Boolean  @default(true)
+  sortOrder   Int      @default(0)
+  
+  // 关联
+  insights        MarketInsight[]
+  extractionRules ExtractionRule[]
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  @@index([isActive, sortOrder])
+}
+
+// 提取规则配置表（可视化编辑器存储）
+model ExtractionRule {
+  id          String   @id @default(uuid())
+  name        String              // 规则名称
+  description String?
+  isActive    Boolean  @default(true)
+  priority    Int      @default(0)
+  
+  // 规则类型
+  targetType  String              // EVENT | INSIGHT
+  
+  // 关联类型
+  eventTypeId   String?
+  eventType     EventTypeConfig?    @relation(fields: [eventTypeId], references: [id])
+  insightTypeId String?
+  insightType   InsightTypeConfig?  @relation(fields: [insightTypeId], references: [id])
+  
+  // 可视化规则配置（JSON）
+  conditions    Json              // RuleCondition[] 结构
+  outputConfig  Json?             // 输出配置
+  
+  // 适用范围
+  commodities   String[]  @default([])
+  regions       String[]  @default([])
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  @@index([targetType, isActive])
+}
+
+// =============================================
+// B类：市场事件（从日报中提取）
+// =============================================
+
+model MarketEvent {
+  id            String   @id @default(uuid())
+  
+  // 来源关联
+  intelId       String
+  intel         MarketIntel @relation(fields: [intelId], references: [id], onDelete: Cascade)
+  
+  // 原文追溯
+  sourceText    String   @db.Text    // 提取的原文片段
+  sourceStart   Int?                 // 原文起始位置
+  sourceEnd     Int?                 // 原文结束位置
+  sectionIndex  Int?                 // 段落索引
+  
+  // 事件类型
+  eventTypeId   String
+  eventType     EventTypeConfig   @relation(fields: [eventTypeId], references: [id])
+  
+  // 事件内容
+  subject       String            // 主体（企业/港口）
+  action        String            // 动作
+  content       String  @db.Text  // 完整描述
+  
+  // 影响评估
+  impact        String?           // 影响描述
+  impactLevel   String?           // HIGH/MEDIUM/LOW
+  sentiment     String?           // bullish/bearish/neutral
+  
+  // 关联
+  collectionPointId String?
+  collectionPoint   CollectionPoint? @relation(fields: [collectionPointId], references: [id])
+  enterpriseId  String?
+  enterprise    Enterprise?       @relation(fields: [enterpriseId], references: [id])
+  regionCode    String?
+  commodity     String?
+  
+  eventDate     DateTime?
+  createdAt     DateTime @default(now())
+  
+  @@index([eventTypeId, eventDate])
+  @@index([intelId])
+  @@index([enterpriseId])
+  @@index([collectionPointId])
+}
+
+// =============================================
+// C类：市场洞察（从日报中提取）
+// =============================================
+
+model MarketInsight {
+  id            String   @id @default(uuid())
+  
+  // 来源关联
+  intelId       String
+  intel         MarketIntel @relation(fields: [intelId], references: [id], onDelete: Cascade)
+  
+  // 原文追溯
+  sourceText    String   @db.Text    // 提取的原文片段
+  sourceStart   Int?                 // 原文起始位置
+  sourceEnd     Int?                 // 原文结束位置
+  sectionTitle  String?              // 段落标题
+  sectionIndex  Int?                 // 段落索引
+  
+  // 洞察类型
+  insightTypeId String
+  insightType   InsightTypeConfig @relation(fields: [insightTypeId], references: [id])
+  
+  // 内容
+  title         String
+  content       String  @db.Text
+  
+  // 预判属性
+  direction     String?           // up/down/stable
+  timeframe     String?           // short/medium/long
+  confidence    Int?              // 0-100
+  factors       String[]          // 关键因素
+  
+  commodity     String?
+  regionCode    String?
+  
+  createdAt     DateTime @default(now())
+  
+  @@index([insightTypeId])
+  @@index([intelId])
+  @@index([commodity])
+}
+

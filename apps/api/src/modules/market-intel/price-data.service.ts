@@ -67,9 +67,10 @@ export class PriceDataService {
 
     /**
      * 查询价格数据 (分页)
+     * 增强版：支持按采集点和行政区划过滤
      */
     async findAll(query: PriceDataQuery) {
-        const { commodity, location, startDate, endDate, keyword } = query;
+        const { commodity, location, startDate, endDate, keyword, collectionPointId, regionCode } = query;
         // Query 参数从 URL 传入时都是字符串，需要转换
         const page = Number(query.page) || 1;
         const pageSize = Number(query.pageSize) || 20;
@@ -77,6 +78,13 @@ export class PriceDataService {
         const where: any = {};
         if (commodity) where.commodity = commodity;
         if (location) where.location = { contains: location, mode: 'insensitive' };
+
+        // 新增：按采集点过滤
+        if (collectionPointId) where.collectionPointId = collectionPointId;
+
+        // 新增：按行政区划过滤
+        if (regionCode) where.regionCode = regionCode;
+
         if (startDate || endDate) {
             where.effectiveDate = {};
             // 将字符串转换为 Date 对象
@@ -100,6 +108,12 @@ export class PriceDataService {
                 skip: (page - 1) * pageSize,
                 take: pageSize,
                 orderBy: { effectiveDate: 'desc' },
+                // 新增：包含采集点关联信息
+                include: {
+                    collectionPoint: {
+                        select: { id: true, code: true, name: true, shortName: true, type: true },
+                    },
+                },
             }),
             this.prisma.priceData.count({ where }),
         ]);
@@ -157,6 +171,11 @@ export class PriceDataService {
                 region: true,
                 price: true,
                 dayChange: true,
+                // 新增：采集点信息
+                collectionPointId: true,
+                collectionPoint: {
+                    select: { code: true, name: true, type: true },
+                },
             },
         });
 
@@ -165,7 +184,185 @@ export class PriceDataService {
             region: item.region,
             price: Number(item.price),
             change: item.dayChange ? Number(item.dayChange) : null,
+            collectionPointId: item.collectionPointId,
+            collectionPoint: item.collectionPoint,
         }));
+    }
+
+    /**
+     * 按采集点查询历史价格（时间序列）
+     * 用于连续性数据分析
+     */
+    async getByCollectionPoint(collectionPointId: string, commodity?: string, days = 30) {
+        const startDate = new Date();
+        startDate.setDate(startDate.getDate() - days);
+
+        const where: any = {
+            collectionPointId,
+            effectiveDate: { gte: startDate },
+        };
+        if (commodity) where.commodity = commodity;
+
+        const data = await this.prisma.priceData.findMany({
+            where,
+            orderBy: { effectiveDate: 'asc' },
+            select: {
+                id: true,
+                effectiveDate: true,
+                commodity: true,
+                price: true,
+                dayChange: true,
+                sourceType: true,
+                subType: true,
+                note: true,
+            },
+        });
+
+        // 获取采集点信息
+        const collectionPoint = await this.prisma.collectionPoint.findUnique({
+            where: { id: collectionPointId },
+            select: { id: true, code: true, name: true, shortName: true, type: true, regionCode: true },
+        });
+
+        return {
+            collectionPoint,
+            data: data.map((item) => ({
+                id: item.id,
+                date: item.effectiveDate,
+                commodity: item.commodity,
+                price: Number(item.price),
+                change: item.dayChange ? Number(item.dayChange) : null,
+                sourceType: item.sourceType,
+                subType: item.subType,
+                note: item.note,
+            })),
+            summary: {
+                count: data.length,
+                minPrice: data.length > 0 ? Math.min(...data.map(d => Number(d.price))) : null,
+                maxPrice: data.length > 0 ? Math.max(...data.map(d => Number(d.price))) : null,
+                avgPrice: data.length > 0 ? data.reduce((sum, d) => sum + Number(d.price), 0) / data.length : null,
+            },
+        };
+    }
+
+    /**
+     * 按行政区划查询价格数据（支持聚合）
+     * 用于区域连续性分析
+     */
+    async getByRegion(regionCode: string, commodity?: string, days = 30) {
+        const startDate = new Date();
+        startDate.setDate(startDate.getDate() - days);
+
+        const where: any = {
+            regionCode,
+            effectiveDate: { gte: startDate },
+        };
+        if (commodity) where.commodity = commodity;
+
+        const data = await this.prisma.priceData.findMany({
+            where,
+            orderBy: [{ effectiveDate: 'asc' }, { location: 'asc' }],
+            select: {
+                id: true,
+                effectiveDate: true,
+                location: true,
+                commodity: true,
+                price: true,
+                dayChange: true,
+                sourceType: true,
+                collectionPointId: true,
+                collectionPoint: {
+                    select: { code: true, name: true, type: true },
+                },
+            },
+        });
+
+        // 获取行政区划信息
+        const region = await this.prisma.administrativeRegion.findUnique({
+            where: { code: regionCode },
+            select: { code: true, name: true, level: true, shortName: true },
+        });
+
+        // 按日期聚合计算均价
+        const dailyAggregation: Record<string, { prices: number[]; count: number }> = {};
+        for (const item of data) {
+            const dateKey = item.effectiveDate.toISOString().split('T')[0];
+            if (!dailyAggregation[dateKey]) {
+                dailyAggregation[dateKey] = { prices: [], count: 0 };
+            }
+            dailyAggregation[dateKey].prices.push(Number(item.price));
+            dailyAggregation[dateKey].count++;
+        }
+
+        const trend = Object.entries(dailyAggregation)
+            .sort(([a], [b]) => a.localeCompare(b))
+            .map(([date, agg]) => ({
+                date,
+                avgPrice: agg.prices.reduce((a, b) => a + b, 0) / agg.prices.length,
+                minPrice: Math.min(...agg.prices),
+                maxPrice: Math.max(...agg.prices),
+                count: agg.count,
+            }));
+
+        return {
+            region,
+            data: data.map((item) => ({
+                id: item.id,
+                date: item.effectiveDate,
+                location: item.location,
+                commodity: item.commodity,
+                price: Number(item.price),
+                change: item.dayChange ? Number(item.dayChange) : null,
+                sourceType: item.sourceType,
+                collectionPoint: item.collectionPoint,
+            })),
+            trend,
+            summary: {
+                totalRecords: data.length,
+                uniqueLocations: [...new Set(data.map(d => d.location))].length,
+            },
+        };
+    }
+
+    /**
+     * 获取多采集点对比趋势
+     */
+    async getMultiPointTrend(collectionPointIds: string[], commodity: string, days = 30) {
+        const startDate = new Date();
+        startDate.setDate(startDate.getDate() - days);
+
+        const data = await this.prisma.priceData.findMany({
+            where: {
+                collectionPointId: { in: collectionPointIds },
+                commodity,
+                effectiveDate: { gte: startDate },
+            },
+            orderBy: { effectiveDate: 'asc' },
+            include: {
+                collectionPoint: {
+                    select: { id: true, code: true, name: true, shortName: true },
+                },
+            },
+        });
+
+        // 按采集点分组
+        const grouped: Record<string, { point: any; data: any[] }> = {};
+        for (const item of data) {
+            const pointId = item.collectionPointId!;
+            if (!grouped[pointId]) {
+                grouped[pointId] = {
+                    point: item.collectionPoint,
+                    data: [],
+                };
+            }
+            grouped[pointId].data.push({
+                date: item.effectiveDate,
+                price: Number(item.price),
+                change: item.dayChange ? Number(item.dayChange) : null,
+            });
+        }
+
+        return Object.values(grouped);
     }
 
     /**

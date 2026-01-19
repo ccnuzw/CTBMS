@@ -334,23 +334,56 @@ export class AIService implements OnModuleInit {
     }
 
     /**
-     * 价格点分类
+     * 价格点分类（增强版：关联采集点和行政区划）
      */
     private classifyPricePoint(location: string, fullContent: string, matchedText: string): {
         sourceType: 'ENTERPRISE' | 'REGIONAL' | 'PORT';
         subType: 'LISTED' | 'TRANSACTION' | 'ARRIVAL' | 'FOB' | 'STATION_ORIGIN' | 'STATION_DEST' | 'PURCHASE' | 'WHOLESALE' | 'OTHER';
         geoLevel: 'PORT' | 'ENTERPRISE' | 'CITY' | 'PROVINCE' | 'REGION';
         enterpriseName?: string;
+        enterpriseId?: string;
         note?: string;
+        // 新增：采集点关联
+        collectionPointId?: string;
+        collectionPointCode?: string;
+        // 新增：行政区划关联
+        regionCode?: string;
+        regionName?: string;
+        // 新增：地理坐标（从采集点继承）
+        longitude?: number;
+        latitude?: number;
     } {
         // 1. 判断主体类型
         let sourceType: 'ENTERPRISE' | 'REGIONAL' | 'PORT' = 'REGIONAL';
         let geoLevel: 'PORT' | 'ENTERPRISE' | 'CITY' | 'PROVINCE' | 'REGION' = 'CITY';
         let enterpriseName: string | undefined;
+        let enterpriseId: string | undefined;
 
-        // 先尝试从缓存中匹配
+        // 新增：采集点关联
+        let collectionPointId: string | undefined;
+        let collectionPointCode: string | undefined;
+        let regionCode: string | undefined;
+        let regionName: string | undefined;
+        let longitude: number | undefined;
+        let latitude: number | undefined;
+
+        // 先尝试从缓存中匹配采集点
         const cachedPoint = this.findCollectionPoint(location);
         if (cachedPoint) {
+            // 匹配成功：填充采集点关联信息
+            collectionPointId = cachedPoint.id;
+            collectionPointCode = cachedPoint.code;
+            regionCode = cachedPoint.regionCode || undefined;
+
+            // 继承坐标
+            if (cachedPoint.longitude) longitude = cachedPoint.longitude;
+            if (cachedPoint.latitude) latitude = cachedPoint.latitude;
+
+            // 继承企业关联
+            if (cachedPoint.enterpriseId) {
+                enterpriseId = cachedPoint.enterpriseId;
+            }
+
             const typeMap: Record<string, 'ENTERPRISE' | 'REGIONAL' | 'PORT'> = {
                 'ENTERPRISE': 'ENTERPRISE',
                 'PORT': 'PORT',
@@ -365,6 +398,8 @@ export class AIService implements OnModuleInit {
             } else if (cachedPoint.type === 'PORT' || cachedPoint.type === 'STATION') {
                 geoLevel = 'PORT';
             }
+
+            this.logger.debug(`采集点匹配成功: ${location} -> ${cachedPoint.code} (type=${cachedPoint.type})`);
         } else if (this.FALLBACK_ENTERPRISES.some((ent: string) => location.includes(ent))) {
             sourceType = 'ENTERPRISE';
             geoLevel = 'ENTERPRISE';
@@ -427,7 +462,17 @@ export class AIService implements OnModuleInit {
             subType,
             geoLevel,
             enterpriseName,
+            enterpriseId,
             note,
+            // 采集点关联
+            collectionPointId,
+            collectionPointCode,
+            // 行政区划关联
+            regionCode,
+            regionName,
+            // 地理坐标
+            longitude,
+            latitude,
         };
     }
 

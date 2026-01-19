@@ -62,6 +62,7 @@ export class MarketIntelService {
 
     /**
      * 批量创建价格数据（从日报解析结果）
+     * 增强版：自动关联采集点和行政区划
      */
     private async batchCreatePriceData(
         intelId: string,
@@ -77,16 +78,16 @@ export class MarketIntelService {
 
         // 逐条处理价格数据
         for (const point of pricePoints) {
-            // 尝试匹配系统中的企业
-            let enterpriseId: string | null = null;
-            if (point.sourceType === 'ENTERPRISE' && point.enterpriseName) {
+            // 优先使用 AI 解析时匹配到的企业ID，否则尝试查询
+            let enterpriseId: string | null = point.enterpriseId || null;
+            if (!enterpriseId && point.sourceType === 'ENTERPRISE' && point.enterpriseName) {
                 const enterprise = await this.prisma.enterprise.findFirst({
                     where: { name: { contains: point.enterpriseName, mode: 'insensitive' } },
                 });
                 enterpriseId = enterprise?.id ?? null;
             }
 
-            // 构建价格数据
+            // 构建价格数据（增强版：包含采集点和行政区划关联）
             const priceData = {
                 // 价格分类
                 sourceType: (point.sourceType || 'REGIONAL') as any,
@@ -98,12 +99,19 @@ export class MarketIntelService {
                 province: point.province || null,
                 city: point.city || null,
                 region: aiAnalysis.reportMeta?.region ? [aiAnalysis.reportMeta.region] : [],
+                // 优先使用采集点继承的坐标
                 longitude: point.longitude || null,
                 latitude: point.latitude || null,
 
                 // 企业关联
                 enterpriseId,
                 enterpriseName: point.enterpriseName || null,
+
+                // ===== 新增：采集点关联 =====
+                collectionPointId: point.collectionPointId || null,
+
+                // ===== 新增：行政区划关联 =====
+                regionCode: point.regionCode || null,
 
                 // 品种和价格
                 effectiveDate,
@@ -120,7 +128,7 @@ export class MarketIntelService {
                 authorId,
             };
 
-            // 使用 upsert 避免重复数据（基于新的唯一约束）
+            // 使用 upsert 避免重复数据（基于唯一约束）
             await this.prisma.priceData.upsert({
                 where: {
                     effectiveDate_commodity_location_sourceType_subType: {
@@ -136,6 +144,11 @@ export class MarketIntelService {
                     dayChange: priceData.dayChange,
                     intelId: priceData.intelId,
                     enterpriseId: priceData.enterpriseId,
+                    // 更新关联信息
+                    collectionPointId: priceData.collectionPointId,
+                    regionCode: priceData.regionCode,
+                    longitude: priceData.longitude,
+                    latitude: priceData.latitude,
                     note: priceData.note,
                 },
                 create: priceData,

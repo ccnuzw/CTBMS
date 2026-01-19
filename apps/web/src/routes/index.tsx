@@ -23,6 +23,7 @@ import {
     CollectionPointManager,
     RegionManager,
 } from '../features/market-intel';
+import { ExtractionConfigPage } from '../features/extraction-config';
 
 export const router = createBrowserRouter([
     {
@@ -91,9 +92,11 @@ export const router = createBrowserRouter([
                     { path: 'entity', element: <EntityProfile /> },
                     { path: 'leaderboard', element: <Leaderboard /> },
                     { path: 'collection-points', element: <CollectionPointManager /> },
+                    { path: 'extraction-config', element: <ExtractionConfigPage /> },
                 ]
             },
         ],
     },
 ]);
+
 

@@ -50,10 +50,18 @@ export const ExtractedPricePointSchema = z.object({
   commodity: z.string().optional(), // 品种（默认从上下文推断）
   grade: z.string().optional(),     // 等级
 
-  // ===== 新增：价格分类 =====
+  // ===== 价格分类 =====
   sourceType: z.enum(['ENTERPRISE', 'REGIONAL', 'PORT']).optional(), // 价格主体类型
   subType: z.enum(['LISTED', 'TRANSACTION', 'ARRIVAL', 'FOB', 'STATION_ORIGIN', 'STATION_DEST', 'PURCHASE', 'WHOLESALE', 'OTHER']).optional(), // 价格子类型
   geoLevel: z.enum(['COUNTRY', 'REGION', 'PROVINCE', 'CITY', 'DISTRICT', 'PORT', 'STATION', 'ENTERPRISE']).optional(), // 地理层级
+
+  // ===== 采集点关联（新增）=====
+  collectionPointId: z.string().optional(),    // 匹配到的采集点ID
+  collectionPointCode: z.string().optional(),  // 采集点编码
+
+  // ===== 行政区划关联（新增）=====
+  regionCode: z.string().optional(),           // 标准行政区划代码（如 210700 锦州市）
+  regionName: z.string().optional(),           // 行政区划名称
 
   // 企业信息（企业价格时填充）
   enterpriseName: z.string().optional(),  // 企业名称
@@ -406,6 +414,12 @@ export const CreatePriceDataSchema = z.object({
   enterpriseId: z.string().optional(),
   enterpriseName: z.string().optional(),
 
+  // 采集点关联（新增）
+  collectionPointId: z.string().optional(),
+
+  // 行政区划关联（新增）
+  regionCode: z.string().optional(),
+
   // 品种维度
   effectiveDate: z.coerce.date(),
   commodity: z.string().min(1, '品种不能为空'),
@@ -452,6 +466,19 @@ export const PriceDataResponseSchema = z.object({
     shortName: z.string().nullable(),
   }).optional(),
 
+  // 采集点关联（新增）
+  collectionPointId: z.string().nullable(),
+  collectionPoint: z.object({
+    id: z.string(),
+    code: z.string(),
+    name: z.string(),
+    shortName: z.string().nullable(),
+    type: z.string(),
+  }).optional(),
+
+  // 行政区划关联（新增）
+  regionCode: z.string().nullable(),
+
   // 品种维度
   effectiveDate: z.date(),
   commodity: z.string(),
@@ -489,6 +516,9 @@ export const PriceDataQuerySchema = z.object({
   province: z.string().optional(),
   city: z.string().optional(),
   enterpriseId: z.string().optional(),
+  // 新增：采集点和行政区划查询
+  collectionPointId: z.string().optional(),
+  regionCode: z.string().optional(),
   startDate: z.coerce.date().optional(),
   endDate: z.coerce.date().optional(),
   keyword: z.string().optional(),

@@ -15,6 +15,7 @@ import { MarketIntelModule } from './modules/market-intel';
 import { AIModule } from './modules/ai';
 import { CollectionPointModule } from './modules/collection-point';
 import { RegionModule } from './modules/region';
+import { ExtractionConfigModule } from './modules/extraction-config';
 import { LoggerMiddleware } from './common/middleware/logger.middleware';
 
 @Module({
@@ -34,6 +35,7 @@ import { LoggerMiddleware } from './common/middleware/logger.middleware';
         MarketIntelModule,
         CollectionPointModule,
         RegionModule,
+        ExtractionConfigModule,
     ],
     controllers: [AppController],
     providers: [],

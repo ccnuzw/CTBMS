@@ -251,6 +251,11 @@ export const MainLayout: React.FC = () => {
                                                 icon: <SettingOutlined />,
                                                 label: '采集点配置',
                                             },
+                                            {
+                                                key: '/intel/extraction-config',
+                                                icon: <SettingOutlined />,
+                                                label: '配置中心',
+                                            },
                                         ]
                                     },
                                     {

@@ -257,6 +257,225 @@ export const usePriceHeatmap = (commodity: string, date?: string) => {
 };
 
 // =============================================
+// 新增：按采集点查询时间序列
+// =============================================
+
+interface CollectionPointPriceData {
+    collectionPoint: {
+        id: string;
+        code: string;
+        name: string;
+        shortName: string | null;
+        type: string;
+        regionCode: string | null;
+    } | null;
+    data: Array<{
+        id: string;
+        date: Date;
+        commodity: string;
+        price: number;
+        change: number | null;
+        sourceType: string;
+        subType: string;
+        note: string | null;
+    }>;
+    summary: {
+        count: number;
+        minPrice: number | null;
+        maxPrice: number | null;
+        avgPrice: number | null;
+    };
+}
+
+export const usePriceByCollectionPoint = (
+    collectionPointId: string,
+    commodity?: string,
+    days = 30,
+) => {
+    return useQuery<CollectionPointPriceData>({
+        queryKey: ['price-by-collection-point', collectionPointId, commodity, days],
+        queryFn: async () => {
+            const params = new URLSearchParams();
+            if (commodity) params.append('commodity', commodity);
+            params.append('days', String(days));
+            const res = await apiClient.get<CollectionPointPriceData>(
+                `/market-intel/price-data/by-collection-point/${collectionPointId}?${params.toString()}`,
+            );
+            return res.data;
+        },
+        enabled: !!collectionPointId,
+    });
+};
+
+// =============================================
+// 新增：按行政区划查询聚合
+// =============================================
+
+interface RegionPriceData {
+    region: {
+        code: string;
+        name: string;
+        level: string;
+        shortName: string | null;
+    } | null;
+    data: Array<{
+        id: string;
+        date: Date;
+        location: string;
+        commodity: string;
+        price: number;
+        change: number | null;
+        sourceType: string;
+        collectionPoint: { code: string; name: string; type: string } | null;
+    }>;
+    trend: Array<{
+        date: string;
+        avgPrice: number;
+        minPrice: number;
+        maxPrice: number;
+        count: number;
+    }>;
+    summary: {
+        totalRecords: number;
+        uniqueLocations: number;
+    };
+}
+
+export const usePriceByRegion = (regionCode: string, commodity?: string, days = 30) => {
+    return useQuery<RegionPriceData>({
+        queryKey: ['price-by-region', regionCode, commodity, days],
+        queryFn: async () => {
+            const params = new URLSearchParams();
+            if (commodity) params.append('commodity', commodity);
+            params.append('days', String(days));
+            const res = await apiClient.get<RegionPriceData>(
+                `/market-intel/price-data/by-region/${regionCode}?${params.toString()}`,
+            );
+            return res.data;
+        },
+        enabled: !!regionCode,
+    });
+};
+
+// =============================================
+// 新增：多采集点对比趋势
+// =============================================
+
+interface MultiPointTrendItem {
+    point: {
+        id: string;
+        code: string;
+        name: string;
+        shortName: string | null;
+    };
+    data: Array<{
+        date: Date;
+        price: number;
+        change: number | null;
+    }>;
+}
+
+export const useMultiPointCompare = (
+    collectionPointIds: string[],
+    commodity: string,
+    days = 30,
+) => {
+    return useQuery<MultiPointTrendItem[]>({
+        queryKey: ['multi-point-compare', collectionPointIds, commodity, days],
+        queryFn: async () => {
+            const res = await apiClient.get<MultiPointTrendItem[]>(
+                `/market-intel/price-data/compare?ids=${collectionPointIds.join(',')}&commodity=${encodeURIComponent(commodity)}&days=${days}`,
+            );
+            return res.data;
+        },
+        enabled: collectionPointIds.length > 0 && !!commodity,
+    });
+};
+
+// =============================================
+// 新增：获取采集点列表
+// =============================================
+
+interface CollectionPointItem {
+    id: string;
+    code: string;
+    name: string;
+    shortName: string | null;
+    type: string;
+    regionCode: string | null;
+    longitude: number | null;
+    latitude: number | null;
+    region?: {
+        code: string;
+        name: string;
+    };
+}
+
+interface CollectionPointListResponse {
+    data: CollectionPointItem[];
+    total: number;
+}
+
+export const useCollectionPoints = (type?: string, keyword?: string) => {
+    return useQuery<CollectionPointListResponse>({
+        queryKey: ['collection-points', type, keyword],
+        queryFn: async () => {
+            const params = new URLSearchParams();
+            if (type) params.append('type', type);
+            if (keyword) params.append('keyword', keyword);
+            params.append('pageSize', '200');
+            const res = await apiClient.get<CollectionPointListResponse>(
+                `/collection-points?${params.toString()}`,
+            );
+            return res.data;
+        },
+    });
+};
+
+// =============================================
+// 新增：获取行政区划树
+// =============================================
+
+interface RegionTreeNode {
+    code: string;
+    name: string;
+    shortName: string | null;
+    level: string;
+    children: RegionTreeNode[];
+}
+
+export const useRegionTree = () => {
+    return useQuery<RegionTreeNode[]>({
+        queryKey: ['region-tree'],
+        queryFn: async () => {
+            const res = await apiClient.get<RegionTreeNode[]>('/regions/tree');
+            return res.data;
+        },
+    });
+};
+
+// =============================================
+// 新增：获取省份列表
+// =============================================
+
+interface ProvinceItem {
+    id: string;
+    code: string;
+    name: string;
+    shortName: string | null;
+}
+
+export const useProvinces = () => {
+    return useQuery<ProvinceItem[]>({
+        queryKey: ['provinces'],
+        queryFn: async () => {
+            const res = await apiClient.get<ProvinceItem[]>('/regions/provinces');
+            return res.data;
+        },
+    });
+};
+
+// =============================================
 // 任务调度
 // =============================================
 

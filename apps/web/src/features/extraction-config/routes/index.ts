@@ -1,0 +1,1 @@
+export { ExtractionConfigPage } from './ExtractionConfigPage';

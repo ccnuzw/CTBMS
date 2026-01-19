@@ -16,6 +16,9 @@ import {
     Row,
     Col,
     theme,
+    Modal,
+    Divider,
+    Alert,
 } from 'antd';
 import {
     PlusOutlined,
@@ -24,6 +27,11 @@ import {
     SearchOutlined,
     ReloadOutlined,
     EnvironmentOutlined,
+    QuestionCircleOutlined,
+    CheckCircleOutlined,
+    BankOutlined,
+    ShopOutlined,
+    GlobalOutlined,
 } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
 import {
@@ -39,7 +47,7 @@ import {
     type CollectionPointResponse,
 } from '@packages/types';
 
-const { Title, Text } = Typography;
+const { Title, Text, Paragraph } = Typography;
 
 export const CollectionPointManager: React.FC = () => {
     const { token } = theme.useToken();
@@ -57,6 +65,7 @@ export const CollectionPointManager: React.FC = () => {
 
     const [editorOpen, setEditorOpen] = useState(false);
     const [editingId, setEditingId] = useState<string | undefined>();
+    const [helpVisible, setHelpVisible] = useState(false);
 
     const { data, isLoading, refetch } = useCollectionPoints(filters);
     const { data: stats } = useCollectionPointStats();
@@ -211,13 +220,22 @@ export const CollectionPointManager: React.FC = () => {
                     <Title level={4} style={{ margin: 0 }}>🎯 采集点配置管理</Title>
                     <Text type="secondary">配置 AI 智能识别所需的企业、港口、地域等关键词库</Text>
                 </div>
-                <Button
-                    type="primary"
-                    icon={<PlusOutlined />}
-                    onClick={() => handleEdit()}
-                >
-                    新增采集点
-                </Button>
+                <Space>
+                    <Button
+                        type="text"
+                        icon={<QuestionCircleOutlined />}
+                        onClick={() => setHelpVisible(true)}
+                    >
+                        使用说明
+                    </Button>
+                    <Button
+                        type="primary"
+                        icon={<PlusOutlined />}
+                        onClick={() => handleEdit()}
+                    >
+                        新增采集点
+                    </Button>
+                </Space>
             </Flex>
 
             {/* 统计卡片 */}
@@ -316,6 +334,80 @@ export const CollectionPointManager: React.FC = () => {
                 editId={editingId}
                 onClose={handleEditorClose}
             />
+
+            {/* 使用说明 Modal */}
+            <Modal
+                title={
+                    <Flex align="center" gap={8}>
+                        <QuestionCircleOutlined style={{ color: token.colorPrimary }} />
+                        采集点配置使用说明
+                    </Flex>
+                }
+                open={helpVisible}
+                onCancel={() => setHelpVisible(false)}
+                footer={
+                    <Button type="primary" onClick={() => setHelpVisible(false)}>
+                        我知道了
+                    </Button>
+                }
+                width={700}
+            >
+                <Space direction="vertical" size={16} style={{ width: '100%' }}>
+                    <Alert
+                        type="info"
+                        showIcon
+                        message="采集点是 AI 智能分析的核心关键词库，用于从日报文本中精准识别企业、港口、地区等关键信息节点。"
+                    />
+
+                    <Card size="small" title={<><BankOutlined /> 什么是采集点？</>}>
+                        <Paragraph style={{ marginBottom: 8 }}>
+                            采集点代表日报中需要识别的<Text strong>关键信息节点</Text>，包括：
+                        </Paragraph>
+                        <Flex wrap="wrap" gap={8}>
+                            <Tag color="orange">🏭 企业 - 淀粉厂、深加工企业</Tag>
+                            <Tag color="blue">⚓ 港口 - 鲅鱼圈港、锦州港</Tag>
+                            <Tag color="purple">🚉 站点 - 四平站、公主岭站</Tag>
+                            <Tag color="green">🏪 市场 - 杨凌粮食批发市场</Tag>
+                            <Tag color="cyan">📍 地区 - 吉林东部、黑龙江南部</Tag>
+                        </Flex>
+                    </Card>
+
+                    <Card size="small" title={<><ShopOutlined /> 核心字段说明</>}>
+                        <ul style={{ margin: 0, paddingLeft: 20 }}>
+                            <li><Text strong>编码</Text> - 唯一标识，如 <Text code>ENT_001</Text></li>
+                            <li><Text strong>名称</Text> - 正式名称，如"中粮生化公主岭公司"</li>
+                            <li><Text strong>别名</Text> - 日报中可能出现的变体写法，如"公主岭中粮"、"中粮公主岭"</li>
+                            <li><Text strong>简称</Text> - 简短称呼，如"公主岭厂"</li>
+                            <li><Text strong>行政区划</Text> - 关联的地区，用于区域数据聚合</li>
+                            <li><Text strong>坐标</Text> - 经纬度，用于地图展示</li>
+                            <li><Text strong>优先级</Text> - 匹配时的优先级，数字越大越优先</li>
+                        </ul>
+                    </Card>
+
+                    <Card size="small" title={<><GlobalOutlined /> AI 匹配机制</>}>
+                        <Paragraph style={{ marginBottom: 8 }}>
+                            当 AI 分析日报时，会按以下顺序尝试匹配：
+                        </Paragraph>
+                        <ol style={{ margin: 0, paddingLeft: 20 }}>
+                            <li>精确匹配<Text strong>名称</Text></li>
+                            <li>精确匹配<Text strong>别名</Text>列表中的任一项</li>
+                            <li>模糊匹配<Text strong>简称</Text></li>
+                            <li>结合上下文的<Text strong>行政区划</Text>推断</li>
+                        </ol>
+                        <Divider style={{ margin: '12px 0' }} />
+                        <Text type="secondary" style={{ fontSize: 12 }}>
+                            💡 提示：别名越丰富，AI 识别准确率越高。建议收集日报中实际出现的各种写法。
+                        </Text>
+                    </Card>
+
+                    <Divider style={{ margin: '8px 0' }} />
+
+                    <Flex align="center" gap={8}>
+                        <CheckCircleOutlined style={{ color: token.colorSuccess }} />
+                        <Text type="secondary">配置完成后，AI 分析引擎会自动使用最新的采集点库进行识别。</Text>
+                    </Flex>
+                </Space>
+            </Modal>
         </div>
     );
 };
