@@ -13,11 +13,11 @@ import {
     Col,
     Switch,
     InputNumber,
-    message,
     Alert,
     Flex,
     theme,
     Tooltip,
+    App,
 } from 'antd';
 import {
     PlusOutlined,
@@ -71,10 +71,12 @@ interface RuleEditorProps {
     rule?: ExtractionRule | null;
     onSave?: () => void;
     onCancel?: () => void;
+    autoFocusProps?: any;
 }
 
-export const RuleEditor: React.FC<RuleEditorProps> = ({ rule, onSave, onCancel }) => {
+export const RuleEditor: React.FC<RuleEditorProps> = ({ rule, onSave, onCancel, autoFocusProps }) => {
     const { token } = theme.useToken();
+    const { message } = App.useApp();
     const [form] = Form.useForm();
     const [conditions, setConditions] = useState<RuleCondition[]>([]);
     const [testText, setTestText] = useState('');
@@ -359,7 +361,7 @@ export const RuleEditor: React.FC<RuleEditorProps> = ({ rule, onSave, onCancel }
                                 label="规则名称"
                                 rules={[{ required: true, message: '请输入规则名称' }]}
                             >
-                                <Input placeholder="如：企业停收检测" />
+                                <Input placeholder="如：企业停收检测" {...autoFocusProps} />
                             </Form.Item>
                         </Col>
                         <Col span={12}>

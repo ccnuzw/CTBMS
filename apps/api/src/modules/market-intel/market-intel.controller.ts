@@ -151,7 +151,146 @@ export class MarketIntelController {
         );
     }
 
+    // --- B类增强：市场事件 ---
+
+    @Get('filter-options')
+    async getFilterOptions() {
+        return this.marketIntelService.getFilterOptions();
+    }
+
+    @Get('trend-analysis')
+    async getTrendAnalysis(
+        @Query('startDate') startDate?: string,
+        @Query('endDate') endDate?: string,
+        @Query('commodities') commodities?: string,
+        @Query('regions') regions?: string,
+    ) {
+        return this.marketIntelService.getTrendAnalysis({
+            startDate: startDate ? new Date(startDate) : undefined,
+            endDate: endDate ? new Date(endDate) : undefined,
+            commodities: commodities ? commodities.split(',') : undefined,
+            regions: regions ? regions.split(',') : undefined,
+        });
+    }
+
+    @Get('events')
+    async findEvents(
+        @Query('eventTypeId') eventTypeId?: string,
+        @Query('enterpriseId') enterpriseId?: string,
+        @Query('collectionPointId') collectionPointId?: string,
+        @Query('commodity') commodity?: string,
+        @Query('sentiment') sentiment?: string,
+        @Query('impactLevel') impactLevel?: string,
+        @Query('startDate') startDate?: string,
+        @Query('endDate') endDate?: string,
+        @Query('keyword') keyword?: string,
+        @Query('page') page = '1',
+        @Query('pageSize') pageSize = '20',
+    ) {
+        return this.marketIntelService.findEvents({
+            eventTypeId,
+            enterpriseId,
+            collectionPointId,
+            commodity,
+            sentiment,
+            impactLevel,
+            startDate: startDate ? new Date(startDate) : undefined,
+            endDate: endDate ? new Date(endDate) : undefined,
+            keyword,
+            page: parseInt(page, 10),
+            pageSize: parseInt(pageSize, 10),
+        });
+    }
+
+    @Get('events/stats')
+    async getEventStats(
+        @Query('startDate') startDate?: string,
+        @Query('endDate') endDate?: string,
+        @Query('commodities') commodities?: string,
+        @Query('regions') regions?: string,
+    ) {
+        return this.marketIntelService.getEventStats({
+            startDate: startDate ? new Date(startDate) : undefined,
+            endDate: endDate ? new Date(endDate) : undefined,
+            commodities: commodities ? commodities.split(',') : undefined,
+            regions: regions ? regions.split(',') : undefined,
+        });
+    }
+
+    @Get('events/:id')
+    async findEventById(@Param('id') id: string) {
+        return this.marketIntelService.findEventById(id);
+    }
+
+    // --- C类增强：市场洞察 ---
+
+    @Get('insights')
+    async findInsights(
+        @Query('insightTypeId') insightTypeId?: string,
+        @Query('direction') direction?: string,
+        @Query('timeframe') timeframe?: string,
+        @Query('commodity') commodity?: string,
+        @Query('startDate') startDate?: string,
+        @Query('endDate') endDate?: string,
+        @Query('keyword') keyword?: string,
+        @Query('page') page = '1',
+        @Query('pageSize') pageSize = '20',
+    ) {
+        return this.marketIntelService.findInsights({
+            insightTypeId,
+            direction,
+            timeframe,
+            commodity,
+            startDate: startDate ? new Date(startDate) : undefined,
+            endDate: endDate ? new Date(endDate) : undefined,
+            keyword,
+            page: parseInt(page, 10),
+            pageSize: parseInt(pageSize, 10),
+        });
+    }
+
+    @Get('insights/stats')
+    async getInsightStats() {
+        return this.marketIntelService.getInsightStats();
+    }
+
+    @Get('insights/:id')
+    async findInsightById(@Param('id') id: string) {
+        return this.marketIntelService.findInsightById(id);
+    }
+
+    // --- 综合情报流 ---
+
+    @Get('feed')
+    async getIntelligenceFeed(
+        @Query('startDate') startDate?: string,
+        @Query('endDate') endDate?: string,
+        @Query('eventTypeIds') eventTypeIds?: string,
+        @Query('insightTypeIds') insightTypeIds?: string,
+        @Query('sentiments') sentiments?: string,
+        @Query('commodities') commodities?: string,
+        @Query('keyword') keyword?: string,
+        @Query('limit') limit = '50',
+    ) {
+        return this.marketIntelService.getIntelligenceFeed({
+            startDate: startDate ? new Date(startDate) : undefined,
+            endDate: endDate ? new Date(endDate) : undefined,
+            eventTypeIds: eventTypeIds ? eventTypeIds.split(',') : undefined,
+            insightTypeIds: insightTypeIds ? insightTypeIds.split(',') : undefined,
+            sentiments: sentiments ? sentiments.split(',') : undefined,
+            commodities: commodities ? commodities.split(',') : undefined,
+            keyword,
+            limit: parseInt(limit, 10),
+        });
+    }
+
+    @Get('hot-topics')
+    async getHotTopics(@Query('limit') limit = '20') {
+        return this.marketIntelService.getHotTopics(parseInt(limit, 10));
+    }
+
     // --- 任务调度 ---
+
 
     @Post('tasks')
     async createTask(@Body() dto: CreateIntelTaskDto) {

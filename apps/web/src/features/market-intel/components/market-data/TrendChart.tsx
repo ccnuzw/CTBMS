@@ -246,8 +246,9 @@ export const TrendChart: React.FC<TrendChartProps> = ({
 
             {/* 图表 */}
             {isLoading ? (
-                <Flex justify="center" align="center" style={{ height: 350 }}>
-                    <Spin tip="加载数据中..." />
+                <Flex justify="center" align="center" vertical style={{ height: 350, gap: 16 }}>
+                    <Spin size="large" />
+                    <Text type="secondary">加载数据中...</Text>
                 </Flex>
             ) : chartData.length === 0 ? (
                 <Empty description="所选时间范围内无数据" style={{ height: 350 }} />

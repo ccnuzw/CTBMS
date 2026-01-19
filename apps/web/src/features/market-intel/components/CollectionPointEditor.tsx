@@ -9,7 +9,7 @@ import {
     Row,
     Col,
     Divider,
-    message,
+    App,
     Space,
     Typography,
 } from 'antd';
@@ -18,6 +18,7 @@ import {
     EnvironmentOutlined,
     TagsOutlined,
     SettingOutlined,
+    RobotOutlined,
 } from '@ant-design/icons';
 import {
     useCollectionPoint,
@@ -30,6 +31,7 @@ import {
     COLLECTION_POINT_TYPE_ICONS,
     type CreateCollectionPointDto,
 } from '@packages/types';
+import { useModalAutoFocus } from '../../../hooks/useModalAutoFocus';
 
 const { Text } = Typography;
 const { TextArea } = Input;
@@ -47,6 +49,8 @@ export const CollectionPointEditor: React.FC<CollectionPointEditorProps> = ({
 }) => {
     const [form] = Form.useForm();
     const isEdit = !!editId;
+    const { message } = App.useApp();
+    const { containerRef, autoFocusFieldProps, modalProps } = useModalAutoFocus();
 
     const { data: editData, isLoading: loadingData } = useCollectionPoint(editId);
     const createMutation = useCreateCollectionPoint();
@@ -65,11 +69,44 @@ export const CollectionPointEditor: React.FC<CollectionPointEditorProps> = ({
         try {
             const values = await form.validateFields();
 
+            // 只选取 UpdateCollectionPointSchema 允许的字段
+            // 过滤掉 API 返回的额外字段（如 id、region、enterprise、createdAt、updatedAt 等）
+            const allowedFields = [
+                'code',
+                'name',
+                'shortName',
+                'aliases',
+                'type',
+                'regionCode',
+                'address',
+                'longitude',
+                'latitude',
+                'commodities',
+                'defaultSubType',
+                'enterpriseId',
+                'priority',
+                'isActive',
+                'description',
+                // AI Config
+                'matchRegionCodes',
+                'matchKeywords',
+                'priceSubTypes',
+                'isDataSource',
+            ];
+            const filteredValues = Object.fromEntries(
+                Object.entries(values)
+                    .filter(([key]) => allowedFields.includes(key))
+                    .map(([key, value]) => [key, value === null ? undefined : value]) // 将 null 转为 undefined
+                    .filter(([, value]) => value !== undefined) // 移除 undefined 字段，保持 payload 干净
+            );
+
+            filteredValues.priority = Number(filteredValues.priority);
+
             if (isEdit) {
-                await updateMutation.mutateAsync({ id: editId, dto: values });
+                await updateMutation.mutateAsync({ id: editId, dto: filteredValues });
                 message.success('更新成功');
             } else {
-                await createMutation.mutateAsync(values as CreateCollectionPointDto);
+                await createMutation.mutateAsync(filteredValues as CreateCollectionPointDto);
                 message.success('创建成功');
             }
             onClose(true);
@@ -91,207 +128,272 @@ export const CollectionPointEditor: React.FC<CollectionPointEditorProps> = ({
             confirmLoading={isPending}
             width={700}
             destroyOnClose
+            afterOpenChange={modalProps.afterOpenChange}
         >
-            <Form
-                form={form}
-                layout="vertical"
-                initialValues={{ isActive: true, priority: 0 }}
-            >
-                {/* 基本信息 */}
-                <Divider orientation="left">
-                    <Space>
-                        <ShopOutlined />
-                        <Text strong>基本信息</Text>
-                    </Space>
-                </Divider>
+            <div ref={containerRef}>
+                <Form
+                    form={form}
+                    layout="vertical"
+                    initialValues={{ isActive: true, isDataSource: true, priority: 0 }}
+                >
+                    {/* 基本信息 */}
+                    <Divider orientation="left">
+                        <Space>
+                            <ShopOutlined />
+                            <Text strong>基本信息</Text>
+                        </Space>
+                    </Divider>
 
-                <Row gutter={16}>
-                    <Col span={8}>
-                        <Form.Item
-                            name="code"
-                            label="编码"
-                            rules={[
-                                { required: true, message: '请输入编码' },
-                                { pattern: /^[A-Z0-9_]+$/, message: '仅支持大写字母、数字、下划线' },
-                            ]}
-                        >
-                            <Input placeholder="如 JINZHOU_PORT" disabled={isEdit} />
-                        </Form.Item>
-                    </Col>
-                    <Col span={8}>
-                        <Form.Item
-                            name="name"
-                            label="名称"
-                            rules={[{ required: true, message: '请输入名称' }]}
-                        >
-                            <Input placeholder="如 锦州港" />
-                        </Form.Item>
-                    </Col>
-                    <Col span={8}>
-                        <Form.Item name="shortName" label="简称">
-                            <Input placeholder="如 锦州" />
-                        </Form.Item>
-                    </Col>
-                </Row>
-
-                <Row gutter={16}>
-                    <Col span={8}>
-                        <Form.Item
-                            name="type"
-                            label="类型"
-                            rules={[{ required: true, message: '请选择类型' }]}
-                        >
-                            <Select
-                                placeholder="选择类型"
-                                options={Object.entries(COLLECTION_POINT_TYPE_LABELS).map(
-                                    ([value, label]) => ({
-                                        value,
-                                        label: (
-                                            <Space>
-                                                {COLLECTION_POINT_TYPE_ICONS[value as CollectionPointType]}
-                                                {label}
-                                            </Space>
-                                        ),
-                                    })
-                                )}
-                            />
-                        </Form.Item>
-                    </Col>
-                    <Col span={16}>
-                        <Form.Item
-                            name="aliases"
-                            label="别名（用于 AI 匹配）"
-                            tooltip="多个别名用于提高 AI 识别准确率"
-                        >
-                            <Select
-                                mode="tags"
-                                placeholder="输入别名后按回车添加"
-                                tokenSeparators={[',']}
-                            />
-                        </Form.Item>
-                    </Col>
-                </Row>
-
-                {/* 地理信息 */}
-                <Divider orientation="left">
-                    <Space>
-                        <EnvironmentOutlined />
-                        <Text strong>地理信息</Text>
-                    </Space>
-                </Divider>
-
-                <Row gutter={16}>
-                    <Col span={12}>
-                        <Form.Item name="address" label="详细地址">
-                            <Input placeholder="省/市/区 + 详细地址" />
-                        </Form.Item>
-                    </Col>
-                    <Col span={6}>
-                        <Form.Item name="longitude" label="经度">
-                            <InputNumber
-                                style={{ width: '100%' }}
-                                min={-180}
-                                max={180}
-                                precision={6}
-                                placeholder="经度"
-                            />
-                        </Form.Item>
-                    </Col>
-                    <Col span={6}>
-                        <Form.Item name="latitude" label="纬度">
-                            <InputNumber
-                                style={{ width: '100%' }}
-                                min={-90}
-                                max={90}
-                                precision={6}
-                                placeholder="纬度"
-                            />
-                        </Form.Item>
-                    </Col>
-                </Row>
-
-                {/* 业务属性 */}
-                <Divider orientation="left">
-                    <Space>
-                        <TagsOutlined />
-                        <Text strong>业务属性</Text>
-                    </Space>
-                </Divider>
-
-                <Row gutter={16}>
-                    <Col span={12}>
-                        <Form.Item
-                            name="commodities"
-                            label="主营品种"
-                            tooltip="该采集点主要涉及的品种"
-                        >
-                            <Select
-                                mode="tags"
-                                placeholder="如：玉米、大豆"
-                                options={[
-                                    { value: '玉米', label: '玉米' },
-                                    { value: '大豆', label: '大豆' },
-                                    { value: '小麦', label: '小麦' },
-                                    { value: '稻谷', label: '稻谷' },
-                                    { value: '高粱', label: '高粱' },
-                                    { value: '豆粕', label: '豆粕' },
+                    <Row gutter={16}>
+                        <Col span={8}>
+                            <Form.Item
+                                name="code"
+                                label="编码"
+                                rules={[
+                                    { required: true, message: '请输入编码' },
+                                    { pattern: /^[A-Z0-9_]+$/, message: '仅支持大写字母、数字、下划线' },
                                 ]}
-                            />
-                        </Form.Item>
-                    </Col>
-                    <Col span={12}>
-                        <Form.Item
-                            name="defaultSubType"
-                            label="默认价格子类型"
-                            tooltip="该采集点的价格默认分类"
-                        >
-                            <Select
-                                allowClear
-                                placeholder="选择默认价格子类型"
-                                options={[
-                                    { value: 'LISTED', label: '挂牌价' },
-                                    { value: 'TRANSACTION', label: '成交价' },
-                                    { value: 'ARRIVAL', label: '到港价' },
-                                    { value: 'FOB', label: '平舱价' },
-                                    { value: 'STATION_ORIGIN', label: '站台价-产区' },
-                                    { value: 'STATION_DEST', label: '站台价-销区' },
-                                    { value: 'PURCHASE', label: '收购价' },
-                                    { value: 'WHOLESALE', label: '批发价' },
-                                ]}
-                            />
-                        </Form.Item>
-                    </Col>
-                </Row>
+                            >
+                                <Input
+                                    placeholder="如 JINZHOU_PORT"
+                                    disabled={isEdit}
+                                    {...(!isEdit ? autoFocusFieldProps : {})}
+                                />
+                            </Form.Item>
+                        </Col>
+                        <Col span={8}>
+                            <Form.Item
+                                name="name"
+                                label="名称"
+                                rules={[{ required: true, message: '请输入名称' }]}
+                            >
+                                <Input placeholder="如 锦州港" {...(isEdit ? autoFocusFieldProps : {})} />
+                            </Form.Item>
+                        </Col>
+                        <Col span={8}>
+                            <Form.Item name="shortName" label="简称">
+                                <Input placeholder="如 锦州" />
+                            </Form.Item>
+                        </Col>
+                    </Row>
 
-                {/* 控制 */}
-                <Divider orientation="left">
-                    <Space>
-                        <SettingOutlined />
-                        <Text strong>控制</Text>
-                    </Space>
-                </Divider>
+                    <Row gutter={16}>
+                        <Col span={8}>
+                            <Form.Item
+                                name="type"
+                                label="类型"
+                                rules={[{ required: true, message: '请选择类型' }]}
+                            >
+                                <Select
+                                    placeholder="选择类型"
+                                    options={Object.entries(COLLECTION_POINT_TYPE_LABELS).map(
+                                        ([value, label]) => ({
+                                            value,
+                                            label: (
+                                                <Space>
+                                                    {COLLECTION_POINT_TYPE_ICONS[value as CollectionPointType]}
+                                                    {label}
+                                                </Space>
+                                            ),
+                                        })
+                                    )}
+                                />
+                            </Form.Item>
+                        </Col>
+                        <Col span={16}>
+                            <Form.Item
+                                name="aliases"
+                                label="别名（用于 AI 匹配）"
+                                tooltip="多个别名用于提高 AI 识别准确率"
+                            >
+                                <Select
+                                    mode="tags"
+                                    placeholder="输入别名后按回车添加"
+                                    tokenSeparators={[',']}
+                                />
+                            </Form.Item>
+                        </Col>
+                    </Row>
 
-                <Row gutter={16}>
-                    <Col span={8}>
-                        <Form.Item
-                            name="priority"
-                            label="匹配优先级"
-                            tooltip="数值越大，匹配优先级越高"
-                        >
-                            <InputNumber style={{ width: '100%' }} min={0} max={100} />
-                        </Form.Item>
-                    </Col>
-                    <Col span={8}>
-                        <Form.Item name="isActive" label="启用状态" valuePropName="checked">
-                            <Switch checkedChildren="启用" unCheckedChildren="禁用" />
-                        </Form.Item>
-                    </Col>
-                </Row>
+                    {/* 地理信息 */}
+                    <Divider orientation="left">
+                        <Space>
+                            <EnvironmentOutlined />
+                            <Text strong>地理信息</Text>
+                        </Space>
+                    </Divider>
 
-                <Form.Item name="description" label="备注">
-                    <TextArea rows={2} placeholder="可选备注信息" />
-                </Form.Item>
-            </Form>
+                    <Row gutter={16}>
+                        <Col span={12}>
+                            <Form.Item name="address" label="详细地址">
+                                <Input placeholder="省/市/区 + 详细地址" />
+                            </Form.Item>
+                        </Col>
+                        <Col span={6}>
+                            <Form.Item name="longitude" label="经度">
+                                <InputNumber
+                                    style={{ width: '100%' }}
+                                    min={-180}
+                                    max={180}
+                                    precision={6}
+                                    placeholder="经度"
+                                />
+                            </Form.Item>
+                        </Col>
+                        <Col span={6}>
+                            <Form.Item name="latitude" label="纬度">
+                                <InputNumber
+                                    style={{ width: '100%' }}
+                                    min={-90}
+                                    max={90}
+                                    precision={6}
+                                    placeholder="纬度"
+                                />
+                            </Form.Item>
+                        </Col>
+                    </Row>
+
+                    {/* 业务属性 */}
+                    <Divider orientation="left">
+                        <Space>
+                            <TagsOutlined />
+                            <Text strong>业务属性</Text>
+                        </Space>
+                    </Divider>
+
+                    <Row gutter={16}>
+                        <Col span={12}>
+                            <Form.Item
+                                name="commodities"
+                                label="主营品种"
+                                tooltip="该采集点主要涉及的品种"
+                            >
+                                <Select
+                                    mode="tags"
+                                    placeholder="如：玉米、大豆"
+                                    options={[
+                                        { value: '玉米', label: '玉米' },
+                                        { value: '大豆', label: '大豆' },
+                                        { value: '小麦', label: '小麦' },
+                                        { value: '稻谷', label: '稻谷' },
+                                        { value: '高粱', label: '高粱' },
+                                        { value: '豆粕', label: '豆粕' },
+                                    ]}
+                                />
+                            </Form.Item>
+                        </Col>
+                        <Col span={12}>
+                            <Form.Item
+                                name="defaultSubType"
+                                label="默认价格子类型"
+                                tooltip="该采集点的价格默认分类"
+                            >
+                                <Select
+                                    allowClear
+                                    placeholder="选择默认价格子类型"
+                                    options={[
+                                        { value: 'LISTED', label: '挂牌价' },
+                                        { value: 'TRANSACTION', label: '成交价' },
+                                        { value: 'ARRIVAL', label: '到港价' },
+                                        { value: 'FOB', label: '平舱价' },
+                                        { value: 'STATION_ORIGIN', label: '站台价-产区' },
+                                        { value: 'STATION_DEST', label: '站台价-销区' },
+                                        { value: 'PURCHASE', label: '收购价' },
+                                        { value: 'WHOLESALE', label: '批发价' },
+                                    ]}
+                                />
+                            </Form.Item>
+                        </Col>
+                    </Row>
+
+                    {/* AI 智能提取配置 */}
+                    <Divider orientation="left">
+                        <Space>
+                            <RobotOutlined />
+                            <Text strong>AI 智能提取配置</Text>
+                        </Space>
+                    </Divider>
+
+                    <Row gutter={16}>
+                        <Col span={24}>
+                            <Form.Item
+                                name="matchKeywords"
+                                label="匹配关键词"
+                                tooltip="除别名外，AI 用于上下文匹配的通用行业词汇（如：淀粉厂、酒精厂）"
+                            >
+                                <Select
+                                    mode="tags"
+                                    placeholder="输入关键词后按回车添加"
+                                    tokenSeparators={[',']}
+                                />
+                            </Form.Item>
+                        </Col>
+                    </Row>
+
+                    <Row gutter={16}>
+                        <Col span={16}>
+                            <Form.Item
+                                name="priceSubTypes"
+                                label="支持的价格类型"
+                                tooltip="限制该站点允许提取的价格类型，防止幻觉"
+                            >
+                                <Select
+                                    mode="multiple"
+                                    allowClear
+                                    placeholder="选择支该站点通常发布的价格类型"
+                                    options={[
+                                        { value: 'LISTED', label: '挂牌价' },
+                                        { value: 'TRANSACTION', label: '成交价' },
+                                        { value: 'ARRIVAL', label: '到港价' },
+                                        { value: 'FOB', label: '平舱价' },
+                                        { value: 'PURCHASE', label: '收购价' },
+                                        { value: 'WHOLESALE', label: '批发价' },
+                                    ]}
+                                />
+                            </Form.Item>
+                        </Col>
+                        <Col span={8}>
+                            <Form.Item
+                                name="isDataSource"
+                                label="作为数据源"
+                                valuePropName="checked"
+                                tooltip="是否作为可信的价格/信息数据来源"
+                            >
+                                <Switch checkedChildren="是" unCheckedChildren="否" />
+                            </Form.Item>
+                        </Col>
+                    </Row>
+
+                    {/* 控制 */}
+                    <Divider orientation="left">
+                        <Space>
+                            <SettingOutlined />
+                            <Text strong>控制</Text>
+                        </Space>
+                    </Divider>
+
+                    <Row gutter={16}>
+                        <Col span={8}>
+                            <Form.Item
+                                name="priority"
+                                label="匹配优先级"
+                                tooltip="数值越大，匹配优先级越高"
+                            >
+                                <InputNumber style={{ width: '100%' }} min={0} max={100} />
+                            </Form.Item>
+                        </Col>
+                        <Col span={8}>
+                            <Form.Item name="isActive" label="启用状态" valuePropName="checked">
+                                <Switch checkedChildren="启用" unCheckedChildren="禁用" />
+                            </Form.Item>
+                        </Col>
+                    </Row>
+
+                    <Form.Item name="description" label="备注">
+                        <TextArea rows={2} placeholder="可选备注信息" />
+                    </Form.Item>
+                </Form>
+            </div>
         </Modal>
     );
 };

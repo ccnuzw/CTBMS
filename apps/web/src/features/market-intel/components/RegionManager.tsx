@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
     Card,
     Table,
@@ -6,7 +6,7 @@ import {
     Space,
     Tag,
     Popconfirm,
-    message,
+    App,
     Select,
     Input,
     Flex,
@@ -44,11 +44,13 @@ import {
     type AdministrativeRegion,
 } from '@packages/types';
 import { RegionCascader } from './RegionCascader';
+import { useModalAutoFocus } from '@/hooks/useModalAutoFocus';
 
 const { Title, Text } = Typography;
 
 export const RegionManager: React.FC = () => {
     const { token } = theme.useToken();
+    const { message } = App.useApp();
     const [viewMode, setViewMode] = useState<'list' | 'cascader'>('list');
     const [filters, setFilters] = useState<{
         level?: RegionLevel;
@@ -60,6 +62,15 @@ export const RegionManager: React.FC = () => {
     const [editingRecord, setEditingRecord] = useState<AdministrativeRegion | null>(null);
     const [form] = Form.useForm();
 
+    // Auto-focus management
+    const { containerRef, autoFocusFieldProps, modalProps } = useModalAutoFocus({
+        afterOpenChange: (open) => {
+            if (!open) {
+                // optional cleanup or logging
+            }
+        }
+    });
+
     const { data: regions, isLoading, refetch } = useRegions(filters);
     const { data: stats } = useRegionStats();
     const createMutation = useCreateRegion();
@@ -68,14 +79,20 @@ export const RegionManager: React.FC = () => {
 
     const handleEdit = (record?: AdministrativeRegion) => {
         setEditingRecord(record || null);
-        if (record) {
-            form.setFieldsValue(record);
-        } else {
-            form.resetFields();
-            form.setFieldsValue({ isActive: true, sortOrder: 0 });
-        }
         setEditorOpen(true);
     };
+
+    // Ensure form is mounted before setting values
+    useEffect(() => {
+        if (editorOpen) {
+            if (editingRecord) {
+                form.setFieldsValue(editingRecord);
+            } else {
+                form.resetFields();
+                form.setFieldsValue({ isActive: true, sortOrder: 0 });
+            }
+        }
+    }, [editorOpen, editingRecord, form]);
 
     const handleDelete = async (id: string) => {
         try {
@@ -89,11 +106,24 @@ export const RegionManager: React.FC = () => {
     const handleSubmit = async () => {
         try {
             const values = await form.validateFields();
+            // 只提取 DTO 需要的字段，排除 id, createdAt, updatedAt 等额外字段
+            const cleanValues = {
+                code: values.code,
+                name: values.name,
+                shortName: values.shortName || undefined,
+                level: values.level,
+                parentCode: values.parentCode || undefined,
+                longitude: values.longitude,
+                latitude: values.latitude,
+                sortOrder: values.sortOrder ?? 0,
+                isActive: values.isActive,
+            };
+
             if (editingRecord) {
-                await updateMutation.mutateAsync({ id: editingRecord.id, dto: values });
+                await updateMutation.mutateAsync({ id: editingRecord.id, dto: cleanValues });
                 message.success('更新成功');
             } else {
-                await createMutation.mutateAsync(values);
+                await createMutation.mutateAsync(cleanValues);
                 message.success('创建成功');
             }
             setEditorOpen(false);
@@ -301,69 +331,80 @@ export const RegionManager: React.FC = () => {
                 onOk={handleSubmit}
                 confirmLoading={createMutation.isPending || updateMutation.isPending}
                 width={500}
+                destroyOnClose
+                afterOpenChange={modalProps.afterOpenChange}
             >
-                <Form form={form} layout="vertical">
-                    <Row gutter={16}>
-                        <Col span={12}>
-                            <Form.Item
-                                name="code"
-                                label="区划代码"
-                                rules={[{ required: true, message: '请输入区划代码' }]}
-                            >
-                                <Input placeholder="如 110000" disabled={!!editingRecord} />
-                            </Form.Item>
-                        </Col>
-                        <Col span={12}>
-                            <Form.Item
-                                name="name"
-                                label="名称"
-                                rules={[{ required: true, message: '请输入名称' }]}
-                            >
-                                <Input placeholder="如 北京市" />
-                            </Form.Item>
-                        </Col>
-                    </Row>
+                <div ref={containerRef}>
+                    <Form form={form} layout="vertical">
+                        <Row gutter={16}>
+                            <Col span={12}>
+                                <Form.Item
+                                    name="code"
+                                    label="区划代码"
+                                    rules={[{ required: true, message: '请输入区划代码' }]}
+                                >
+                                    <Input
+                                        placeholder="如 110000"
+                                        disabled={!!editingRecord}
+                                        {...(!editingRecord ? autoFocusFieldProps : {})}
+                                    />
+                                </Form.Item>
+                            </Col>
+                            <Col span={12}>
+                                <Form.Item
+                                    name="name"
+                                    label="名称"
+                                    rules={[{ required: true, message: '请输入名称' }]}
+                                >
+                                    <Input
+                                        placeholder="如 北京市"
+                                        {...(editingRecord ? autoFocusFieldProps : {})}
+                                    />
+                                </Form.Item>
+                            </Col>
+                        </Row>
 
-                    <Row gutter={16}>
-                        <Col span={12}>
-                            <Form.Item name="shortName" label="简称">
-                                <Input placeholder="如 京" />
-                            </Form.Item>
-                        </Col>
-                        <Col span={12}>
-                            <Form.Item
-                                name="level"
-                                label="层级"
-                                rules={[{ required: true, message: '请选择层级' }]}
-                            >
-                                <Select
-                                    placeholder="选择层级"
-                                    options={Object.entries(REGION_LEVEL_LABELS).map(([value, label]) => ({
-                                        value,
-                                        label,
-                                    }))}
-                                />
-                            </Form.Item>
-                        </Col>
-                    </Row>
+                        <Row gutter={16}>
+                            <Col span={12}>
+                                <Form.Item name="shortName" label="简称">
+                                    <Input placeholder="如 京" />
+                                </Form.Item>
+                            </Col>
+                            <Col span={12}>
+                                <Form.Item
+                                    name="level"
+                                    label="层级"
+                                    rules={[{ required: true, message: '请选择层级' }]}
+                                >
+                                    <Select
+                                        placeholder="选择层级"
+                                        options={Object.entries(REGION_LEVEL_LABELS).map(([value, label]) => ({
+                                            value,
+                                            label,
+                                        }))}
+                                    />
+                                </Form.Item>
+                            </Col>
+                        </Row>
 
-                    <Form.Item name="parentCode" label="上级区划代码">
-                        <Input placeholder="如 110000（北京市的区县填写此代码）" />
-                    </Form.Item>
+                        <Form.Item name="parentCode" label="上级区划代码">
+                            <Input placeholder="如 110000（北京市的区县填写此代码）" />
+                        </Form.Item>
 
-                    <Row gutter={16}>
-                        <Col span={8}>
-                            <Form.Item name="sortOrder" label="排序">
-                                <InputNumber style={{ width: '100%' }} min={0} />
-                            </Form.Item>
-                        </Col>
-                        <Col span={8}>
-                            <Form.Item name="isActive" label="启用" valuePropName="checked">
-                                <Switch />
-                            </Form.Item>
-                        </Col>
-                    </Row>
-                </Form>
+                        <Row gutter={16}>
+                            <Col span={8}>
+                                <Form.Item name="sortOrder" label="排序">
+                                    <InputNumber style={{ width: '100%' }} min={0} />
+                                </Form.Item>
+                            </Col>
+                            <Col span={8}>
+                                <Form.Item name="isActive" label="启用" valuePropName="checked">
+                                    <Switch />
+                                </Form.Item>
+                            </Col>
+                        </Row>
+                    </Form>
+                </div>
             </Modal>
         </div>
     );

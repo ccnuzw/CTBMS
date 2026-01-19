@@ -416,7 +416,16 @@ interface CollectionPointListResponse {
     total: number;
 }
 
-export const useCollectionPoints = (type?: string, keyword?: string) => {
+
+interface UseCollectionPointsOptions {
+    enabled?: boolean;
+}
+
+export const useCollectionPoints = (
+    type?: string,
+    keyword?: string,
+    options?: UseCollectionPointsOptions,
+) => {
     return useQuery<CollectionPointListResponse>({
         queryKey: ['collection-points', type, keyword],
         queryFn: async () => {
@@ -429,6 +438,7 @@ export const useCollectionPoints = (type?: string, keyword?: string) => {
             );
             return res.data;
         },
+        enabled: options?.enabled,
     });
 };
 
@@ -707,5 +717,379 @@ export const useLinkEntity = () => {
             queryClient.invalidateQueries({ queryKey: ['intel-entities', variables.intelId] });
             queryClient.invalidateQueries({ queryKey: ['enterprise-intels'] });
         },
+    });
+};
+
+// =============================================
+// B类增强：市场事件 (MarketEvent)
+// =============================================
+
+export interface MarketEventResponse {
+    id: string;
+    sourceText: string;
+    sourceStart: number | null;
+    sourceEnd: number | null;
+    sectionIndex: number | null;
+    subject: string;
+    action: string;
+    content: string;
+    impact: string | null;
+    impactLevel: string | null;
+    sentiment: string | null;
+    eventDate: Date | null;
+    commodity: string | null;
+    regionCode: string | null;
+    createdAt: Date;
+    eventType: {
+        id: string;
+        code: string;
+        name: string;
+        icon?: string;
+        color?: string;
+        category?: string;
+    };
+    enterprise?: {
+        id: string;
+        name: string;
+        shortName?: string;
+    };
+    collectionPoint?: {
+        id: string;
+        code: string;
+        name: string;
+        type: string;
+    };
+    intel: {
+        id: string;
+        rawContent: string;
+        effectiveTime: Date;
+        location: string;
+    };
+}
+
+export interface EventQuery {
+    eventTypeId?: string;
+    enterpriseId?: string;
+    collectionPointId?: string;
+    commodity?: string;
+    sentiment?: string;
+    impactLevel?: string;
+    startDate?: Date;
+    endDate?: Date;
+    keyword?: string;
+    page?: number;
+    pageSize?: number;
+}
+
+export interface EventStats {
+    total: number;
+    todayCount: number;
+    weekCount: number;
+    typeBreakdown: Array<{
+        typeId: string;
+        typeName: string;
+        icon?: string;
+        color?: string;
+        count: number;
+    }>;
+    sentimentBreakdown: Array<{
+        sentiment: string;
+        count: number;
+    }>;
+    impactBreakdown: Array<{
+        level: string;
+        count: number;
+    }>;
+    commodityStats: Array<{
+        commodity: string;
+        count: number;
+    }>;
+    regionStats: Array<{
+        region: string;
+        count: number;
+    }>;
+}
+
+export const useMarketEvents = (query?: EventQuery) => {
+    return useQuery<PaginatedResponse<MarketEventResponse>>({
+        queryKey: ['market-events', query],
+        queryFn: async () => {
+            const params = new URLSearchParams();
+            if (query) {
+                Object.entries(query).forEach(([key, value]) => {
+                    if (value !== undefined && value !== null) {
+                        if (value instanceof Date) {
+                            params.append(key, value.toISOString());
+                        } else {
+                            params.append(key, String(value));
+                        }
+                    }
+                });
+            }
+            const res = await apiClient.get<PaginatedResponse<MarketEventResponse>>(
+                `/market-intel/events?${params.toString()}`,
+            );
+            return res.data;
+        },
+    });
+};
+
+export const useMarketEvent = (id: string) => {
+    return useQuery<MarketEventResponse>({
+        queryKey: ['market-events', id],
+        queryFn: async () => {
+            const res = await apiClient.get<MarketEventResponse>(`/market-intel/events/${id}`);
+            return res.data;
+        },
+        enabled: !!id,
+    });
+};
+
+export const useEventStats = (query?: {
+    startDate?: Date;
+    endDate?: Date;
+    commodities?: string[];
+    regions?: string[];
+}) => {
+    return useQuery<EventStats>({
+        queryKey: ['event-stats', query],
+        queryFn: async () => {
+            const params = new URLSearchParams();
+            if (query) {
+                if (query.startDate) params.append('startDate', query.startDate.toISOString());
+                if (query.endDate) params.append('endDate', query.endDate.toISOString());
+                if (query.commodities?.length) params.append('commodities', query.commodities.join(','));
+                if (query.regions?.length) params.append('regions', query.regions.join(','));
+            }
+            const res = await apiClient.get<EventStats>(`/market-intel/events/stats?${params.toString()}`);
+            return res.data;
+        },
+        refetchInterval: 60000,
+    });
+};
+
+export interface FilterOptions {
+    commodities: string[];
+    regions: string[];
+    eventTypes: Array<{ id: string; name: string; code: string }>;
+    insightTypes: Array<{ id: string; name: string; category: string }>;
+}
+
+export const useFilterOptions = () => {
+    return useQuery<FilterOptions>({
+        queryKey: ['filter-options'],
+        queryFn: async () => {
+            const res = await apiClient.get<FilterOptions>('/market-intel/filter-options');
+            return res.data;
+        },
+        staleTime: 5 * 60 * 1000, // 5 minutes cache
+    });
+};
+
+export interface TrendData {
+    date: string;
+    volume: number;
+    sentimentScore: number;
+}
+
+export const useTrendAnalysis = (query?: {
+    startDate?: Date;
+    endDate?: Date;
+    commodities?: string[];
+    regions?: string[];
+}) => {
+    return useQuery<TrendData[]>({
+        queryKey: ['trend-analysis', query],
+        queryFn: async () => {
+            const params = new URLSearchParams();
+            if (query) {
+                if (query.startDate) params.append('startDate', query.startDate.toISOString());
+                if (query.endDate) params.append('endDate', query.endDate.toISOString());
+                if (query.commodities?.length) params.append('commodities', query.commodities.join(','));
+                if (query.regions?.length) params.append('regions', query.regions.join(','));
+            }
+            const res = await apiClient.get<TrendData[]>(`/market-intel/trend-analysis?${params.toString()}`);
+            return res.data;
+        },
+    });
+};
+
+// =============================================
+// C类增强：市场洞察 (MarketInsight)
+// =============================================
+
+export interface MarketInsightResponse {
+    id: string;
+    sourceText: string;
+    sourceStart: number | null;
+    sourceEnd: number | null;
+    sectionTitle: string | null;
+    sectionIndex: number | null;
+    title: string;
+    content: string;
+    direction: string | null;
+    timeframe: string | null;
+    confidence: number | null;
+    factors: string[];
+    commodity: string | null;
+    regionCode: string | null;
+    createdAt: Date;
+    insightType: {
+        id: string;
+        code: string;
+        name: string;
+        icon?: string;
+        color?: string;
+        category?: string;
+    };
+    intel: {
+        id: string;
+        rawContent: string;
+        effectiveTime: Date;
+        location: string;
+    };
+}
+
+export interface InsightQuery {
+    insightTypeId?: string;
+    direction?: string;
+    timeframe?: string;
+    commodity?: string;
+    startDate?: Date;
+    endDate?: Date;
+    keyword?: string;
+    page?: number;
+    pageSize?: number;
+}
+
+export interface InsightStats {
+    total: number;
+    todayCount: number;
+    weekCount: number;
+    avgConfidence: number;
+    typeBreakdown: Array<{
+        typeId: string;
+        typeName: string;
+        icon?: string;
+        color?: string;
+        count: number;
+    }>;
+    directionBreakdown: Array<{
+        direction: string;
+        count: number;
+    }>;
+    timeframeBreakdown: Array<{
+        timeframe: string;
+        count: number;
+    }>;
+}
+
+export const useMarketInsights = (query?: InsightQuery) => {
+    return useQuery<PaginatedResponse<MarketInsightResponse>>({
+        queryKey: ['market-insights', query],
+        queryFn: async () => {
+            const params = new URLSearchParams();
+            if (query) {
+                Object.entries(query).forEach(([key, value]) => {
+                    if (value !== undefined && value !== null) {
+                        if (value instanceof Date) {
+                            params.append(key, value.toISOString());
+                        } else {
+                            params.append(key, String(value));
+                        }
+                    }
+                });
+            }
+            const res = await apiClient.get<PaginatedResponse<MarketInsightResponse>>(
+                `/market-intel/insights?${params.toString()}`,
+            );
+            return res.data;
+        },
+    });
+};
+
+export const useMarketInsight = (id: string) => {
+    return useQuery<MarketInsightResponse>({
+        queryKey: ['market-insights', id],
+        queryFn: async () => {
+            const res = await apiClient.get<MarketInsightResponse>(`/market-intel/insights/${id}`);
+            return res.data;
+        },
+        enabled: !!id,
+    });
+};
+
+export const useInsightStats = () => {
+    return useQuery<InsightStats>({
+        queryKey: ['insight-stats'],
+        queryFn: async () => {
+            const res = await apiClient.get<InsightStats>('/market-intel/insights/stats');
+            return res.data;
+        },
+        refetchInterval: 60000,
+    });
+};
+
+// =============================================
+// 综合情报流 (Intelligence Feed)
+// =============================================
+
+export interface FeedItem {
+    type: 'EVENT' | 'INSIGHT';
+    id: string;
+    createdAt: Date;
+    data: MarketEventResponse | MarketInsightResponse;
+}
+
+export interface FeedQuery {
+    startDate?: Date;
+    endDate?: Date;
+    eventTypeIds?: string[];
+    insightTypeIds?: string[];
+    sentiments?: string[];
+    commodities?: string[];
+    keyword?: string;
+    limit?: number;
+}
+
+export const useIntelligenceFeed = (query?: FeedQuery) => {
+    return useQuery<FeedItem[]>({
+        queryKey: ['intelligence-feed', query],
+        queryFn: async () => {
+            const params = new URLSearchParams();
+            if (query) {
+                if (query.startDate) params.append('startDate', query.startDate.toISOString());
+                if (query.endDate) params.append('endDate', query.endDate.toISOString());
+                if (query.eventTypeIds?.length) params.append('eventTypeIds', query.eventTypeIds.join(','));
+                if (query.insightTypeIds?.length) params.append('insightTypeIds', query.insightTypeIds.join(','));
+                if (query.sentiments?.length) params.append('sentiments', query.sentiments.join(','));
+                if (query.commodities?.length) params.append('commodities', query.commodities.join(','));
+                if (query.keyword) params.append('keyword', query.keyword);
+                if (query.limit) params.append('limit', String(query.limit));
+            }
+            const res = await apiClient.get<FeedItem[]>(`/market-intel/feed?${params.toString()}`);
+            return res.data;
+        },
+        refetchInterval: 30000,
+    });
+};
+
+// =============================================
+// 热门话题
+// =============================================
+
+export interface HotTopic {
+    topic: string;
+    count: number;
+}
+
+export const useHotTopics = (limit = 20) => {
+    return useQuery<HotTopic[]>({
+        queryKey: ['hot-topics', limit],
+        queryFn: async () => {
+            const res = await apiClient.get<HotTopic[]>(`/market-intel/hot-topics?limit=${limit}`);
+            return res.data;
+        },
+        refetchInterval: 60000,
     });
 };

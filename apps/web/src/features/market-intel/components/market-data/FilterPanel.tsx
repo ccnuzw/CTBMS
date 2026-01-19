@@ -85,7 +85,13 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
     const [searchKeyword, setSearchKeyword] = React.useState('');
 
     // 获取采集点列表
-    const { data: collectionPointsData, isLoading: isLoadingPoints } = useCollectionPoints();
+    // 只有当有类型过滤或有搜索关键词时才加载数据
+    const shouldFetch = pointTypeFilter.length > 0 || !!searchKeyword;
+    const { data: collectionPointsData, isLoading: isLoadingPoints } = useCollectionPoints(
+        undefined,
+        undefined,
+        { enabled: shouldFetch },
+    );
     const collectionPoints = collectionPointsData?.data || [];
 
     // 获取省份列表
@@ -248,6 +254,11 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
                     <Flex justify="center" style={{ padding: 32 }}>
                         <Spin size="small" />
                     </Flex>
+                ) : !shouldFetch ? (
+                    <Empty
+                        image={Empty.PRESENTED_IMAGE_SIMPLE}
+                        description="请选择采集点类型以查看列表"
+                    />
                 ) : Object.keys(groupedPoints).length === 0 ? (
                     <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="无匹配采集点" />
                 ) : (

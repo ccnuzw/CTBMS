@@ -6,13 +6,13 @@ import {
     Space,
     Tag,
     Popconfirm,
-    message,
     Typography,
     Flex,
     Switch,
     Modal,
     Empty,
     theme,
+    App,
 } from 'antd';
 import {
     PlusOutlined,
@@ -29,13 +29,16 @@ import {
     ExtractionRule,
 } from '../api/hooks';
 import { RuleEditor } from './RuleEditor';
+import { useModalAutoFocus } from '../../../hooks/useModalAutoFocus';
 
 const { Text } = Typography;
 
 export const RuleManager: React.FC = () => {
     const { token } = theme.useToken();
+    const { message } = App.useApp();
     const [editorVisible, setEditorVisible] = useState(false);
     const [editingRule, setEditingRule] = useState<ExtractionRule | null>(null);
+    const { containerRef, autoFocusFieldProps, modalProps } = useModalAutoFocus();
 
     const { data: rules, isLoading } = useExtractionRules();
     const updateMutation = useUpdateExtractionRule();
@@ -200,12 +203,16 @@ export const RuleManager: React.FC = () => {
                 footer={null}
                 width={900}
                 destroyOnClose
+                afterOpenChange={modalProps.afterOpenChange}
             >
-                <RuleEditor
-                    rule={editingRule}
-                    onSave={handleEditorSave}
-                    onCancel={() => setEditorVisible(false)}
-                />
+                <div ref={containerRef}>
+                    <RuleEditor
+                        rule={editingRule}
+                        onSave={handleEditorSave}
+                        onCancel={() => setEditorVisible(false)}
+                        autoFocusProps={autoFocusFieldProps}
+                    />
+                </div>
             </Modal>
         </>
     );

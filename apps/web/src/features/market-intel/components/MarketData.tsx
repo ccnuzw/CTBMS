@@ -23,6 +23,7 @@ import {
 } from '@ant-design/icons';
 import { useQueryClient } from '@tanstack/react-query';
 import { FilterPanel, TrendChart, ComparisonPanel, DataGrid, InsightCards } from './market-data';
+import { useModalAutoFocus } from '@/hooks/useModalAutoFocus';
 
 const { Title, Text, Paragraph } = Typography;
 
@@ -40,6 +41,7 @@ export const MarketData: React.FC = () => {
     const [pointTypeFilter, setPointTypeFilter] = useState<string[]>([]);
     const [activeTab, setActiveTab] = useState<TabKey>('trend');
     const [helpVisible, setHelpVisible] = useState(false);
+    const { containerRef, modalProps, focusRef } = useModalAutoFocus();
 
     // 刷新数据
     const handleRefresh = () => {
@@ -212,54 +214,56 @@ export const MarketData: React.FC = () => {
                 open={helpVisible}
                 onCancel={() => setHelpVisible(false)}
                 footer={
-                    <Button type="primary" onClick={() => setHelpVisible(false)}>
+                    <Button type="primary" onClick={() => setHelpVisible(false)} ref={focusRef}>
                         我知道了
                     </Button>
                 }
                 width={680}
+                afterOpenChange={modalProps.afterOpenChange}
             >
-                <Divider orientation="left">
-                    <FilterOutlined /> 操作步骤
-                </Divider>
-                <List
-                    itemLayout="horizontal"
-                    dataSource={helpSteps}
-                    renderItem={(item) => (
-                        <List.Item>
-                            <List.Item.Meta
-                                avatar={<CheckCircleOutlined style={{ color: token.colorSuccess, fontSize: 20 }} />}
-                                title={<Text strong>{item.title}</Text>}
-                                description={item.description}
-                            />
-                        </List.Item>
-                    )}
-                />
+                <div ref={containerRef} tabIndex={-1} style={{ outline: 'none' }}>
+                    <Divider orientation="left">
+                        <FilterOutlined /> 操作步骤
+                    </Divider>
+                    <List
+                        itemLayout="horizontal"
+                        dataSource={helpSteps}
+                        renderItem={(item) => (
+                            <List.Item>
+                                <List.Item.Meta
+                                    avatar={<CheckCircleOutlined style={{ color: token.colorSuccess, fontSize: 20 }} />}
+                                    title={<Text strong>{item.title}</Text>}
+                                    description={item.description}
+                                />
+                            </List.Item>
+                        )}
+                    />
 
-                <Divider orientation="left">
-                    <BulbOutlined /> 功能亮点
-                </Divider>
-                <Space direction="vertical" size={8} style={{ width: '100%' }}>
-                    {features.map((feature, index) => (
-                        <Flex key={index} align="center" gap={12}>
-                            <span style={{ color: token.colorPrimary, fontSize: 16 }}>{feature.icon}</span>
-                            <Text>{feature.text}</Text>
-                        </Flex>
-                    ))}
-                </Space>
+                    <Divider orientation="left">
+                        <BulbOutlined /> 功能亮点
+                    </Divider>
+                    <Space direction="vertical" size={8} style={{ width: '100%' }}>
+                        {features.map((feature, index) => (
+                            <Flex key={index} align="center" gap={12}>
+                                <span style={{ color: token.colorPrimary, fontSize: 16 }}>{feature.icon}</span>
+                                <Text>{feature.text}</Text>
+                            </Flex>
+                        ))}
+                    </Space>
 
-                <Divider orientation="left">
-                    <Tag color="blue">小贴士</Tag>
-                </Divider>
-                <Paragraph type="secondary" style={{ marginBottom: 0 }}>
-                    • 选择多个采集点时，趋势图会用不同颜色区分各采集点<br />
-                    • 智能洞察会自动检测价格异常（偏离均价超过5%）和连续涨跌趋势<br />
-                    • 如果选择了省份筛选，趋势图会显示该区域的均价参考线<br />
-                    • 数据明细支持按日期、价格等字段排序，便于快速定位
-                </Paragraph>
+                    <Divider orientation="left">
+                        <Tag color="blue">小贴士</Tag>
+                    </Divider>
+                    <Paragraph type="secondary" style={{ marginBottom: 0 }}>
+                        • 选择多个采集点时，趋势图会用不同颜色区分各采集点<br />
+                        • 智能洞察会自动检测价格异常（偏离均价超过5%）和连续涨跌趋势<br />
+                        • 如果选择了省份筛选，趋势图会显示该区域的均价参考线<br />
+                        • 数据明细支持按日期、价格等字段排序，便于快速定位
+                    </Paragraph>
+                </div>
             </Modal>
-        </Flex>
+        </Flex >
     );
 };
 
-export default MarketData;
 

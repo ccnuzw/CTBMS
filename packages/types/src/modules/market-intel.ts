@@ -39,6 +39,11 @@ export const StructuredEventSchema = z.object({
   subject: z.string().optional(),
   action: z.string().optional(),
   impact: z.string().optional(),
+  commodity: z.string().optional(),
+  regionCode: z.string().optional(),
+  sourceText: z.string().optional(),
+  sourceStart: z.number().optional(),
+  sourceEnd: z.number().optional(),
 });
 
 // 提取的价格点（从日报中批量提取）

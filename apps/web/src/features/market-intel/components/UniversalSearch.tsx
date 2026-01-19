@@ -520,7 +520,7 @@ export const UniversalSearch: React.FC = () => {
                                                                 {c.aiAnalysis?.summary || c.rawContent.substring(0, 50)}...
                                                             </Text>
                                                             <Flex gap={4} wrap="wrap">
-                                                                {c.aiAnalysis?.tags.slice(0, 3).map((t) => (
+                                                                {(c.aiAnalysis?.tags || []).slice(0, 3).map((t) => (
                                                                     <Tag key={t} style={{ fontSize: 10 }}>{t}</Tag>
                                                                 ))}
                                                             </Flex>

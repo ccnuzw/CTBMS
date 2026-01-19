@@ -46,6 +46,7 @@ import {
     COLLECTION_POINT_TYPE_ICONS,
     type CollectionPointResponse,
 } from '@packages/types';
+import { useModalAutoFocus } from '../../../hooks/useModalAutoFocus';
 
 const { Title, Text, Paragraph } = Typography;
 
@@ -62,6 +63,12 @@ export const CollectionPointManager: React.FC = () => {
         pageSize: 20,
         isActive: true,
     });
+
+    // Help modal focus management
+    const {
+        focusRef: helpFocusRef,
+        modalProps: helpModalProps
+    } = useModalAutoFocus();
 
     const [editorOpen, setEditorOpen] = useState(false);
     const [editingId, setEditingId] = useState<string | undefined>();
@@ -346,67 +353,68 @@ export const CollectionPointManager: React.FC = () => {
                 open={helpVisible}
                 onCancel={() => setHelpVisible(false)}
                 footer={
-                    <Button type="primary" onClick={() => setHelpVisible(false)}>
+                    <Button type="primary" onClick={() => setHelpVisible(false)} ref={helpFocusRef}>
                         我知道了
                     </Button>
                 }
                 width={700}
+                afterOpenChange={helpModalProps.afterOpenChange}
             >
-                <Space direction="vertical" size={16} style={{ width: '100%' }}>
-                    <Alert
-                        type="info"
-                        showIcon
-                        message="采集点是 AI 智能分析的核心关键词库，用于从日报文本中精准识别企业、港口、地区等关键信息节点。"
-                    />
+                <div>
+                    <Space direction="vertical" size={16} style={{ width: '100%' }}>
+                        <Alert
+                            type="info"
+                            showIcon
+                            message="采集点是 AI 智能分析的核心关键词库，用于从日报文本中精准识别企业、港口、地区等关键信息节点。"
+                        />
 
-                    <Card size="small" title={<><BankOutlined /> 什么是采集点？</>}>
-                        <Paragraph style={{ marginBottom: 8 }}>
-                            采集点代表日报中需要识别的<Text strong>关键信息节点</Text>，包括：
-                        </Paragraph>
-                        <Flex wrap="wrap" gap={8}>
-                            <Tag color="orange">🏭 企业 - 淀粉厂、深加工企业</Tag>
-                            <Tag color="blue">⚓ 港口 - 鲅鱼圈港、锦州港</Tag>
-                            <Tag color="purple">🚉 站点 - 四平站、公主岭站</Tag>
-                            <Tag color="green">🏪 市场 - 杨凌粮食批发市场</Tag>
-                            <Tag color="cyan">📍 地区 - 吉林东部、黑龙江南部</Tag>
+                        <Card size="small" title={<><BankOutlined /> 什么是采集点？</>}>
+                            <Paragraph style={{ marginBottom: 8 }}>
+                                采集点代表日报中需要识别的<Text strong>关键信息节点</Text>，包括：
+                            </Paragraph>
+                            <Flex wrap="wrap" gap={8}>
+                                <Tag color="orange">🏭 企业 - 淀粉厂、深加工企业</Tag>
+                                <Tag color="blue">⚓ 港口 - 鲅鱼圈港、锦州港</Tag>
+                                <Tag color="purple">🚉 站点 - 四平站、公主岭站</Tag>
+                                <Tag color="green">🏪 市场 - 杨凌粮食批发市场</Tag>
+                                <Tag color="cyan">📍 地区 - 吉林东部、黑龙江南部</Tag>
+                            </Flex>
+                        </Card>
+
+                        <Card size="small" title={<><ShopOutlined /> 核心字段说明</>}>
+                            <ul style={{ margin: 0, paddingLeft: 20 }}>
+                                <li><Text strong>编码</Text> - 唯一标识，如 <Text code>ENT_001</Text></li>
+                                <li><Text strong>名称</Text> - 正式名称，如"中粮生化公主岭公司"</li>
+                                <li><Text strong>别名</Text> - <Tag color="blue">强匹配</Tag> 日报中可能出现的<Text strong>专有名词</Text>变体，如"公主岭中粮"</li>
+                                <li><Text strong>关键词</Text> - <Tag color="orange">弱匹配</Tag> 行业<Text strong>通用词</Text>，如"淀粉厂"，用于上下文辅助匹配</li>
+                                <li><Text strong>支持价格类型</Text> - <Tag color="green">校验规则</Tag> 限制该站点允许提取的价格类型白名单</li>
+                                <li><Text strong>默认价格子类型</Text> - <Tag color="cyan">缺省值</Tag> 当 AI 无法确定具体类型时使用的默认值</li>
+                            </ul>
+                        </Card>
+
+                        <Card size="small" title={<><GlobalOutlined /> AI 匹配机制</>}>
+                            <Paragraph style={{ marginBottom: 8 }}>
+                                当 AI 分析日报时，会按以下逻辑工作：
+                            </Paragraph>
+                            <ol style={{ margin: 0, paddingLeft: 20 }}>
+                                <li><Text strong>别名 (Aliases)</Text>: 见到"锦港"立刻识别为"锦州港"（精准指向）</li>
+                                <li><Text strong>关键词 (Keywords)</Text>: 见到"东北港口"，结合上下文判断是否指"锦州港"（模糊推断）</li>
+                                <li><Text strong>价格提取</Text>: 提取价格后，检查是否在"支持的价格类型"中，防止幻觉</li>
+                            </ol>
+                            <Divider style={{ margin: '12px 0' }} />
+                            <Text type="secondary" style={{ fontSize: 12 }}>
+                                💡 提示：别名越丰富，AI 识别准确率越高；关键词设置得越精准，AI 的上下文理解能力越强。
+                            </Text>
+                        </Card>
+
+                        <Divider style={{ margin: '8px 0' }} />
+
+                        <Flex align="center" gap={8}>
+                            <CheckCircleOutlined style={{ color: token.colorSuccess }} />
+                            <Text type="secondary">配置完成后，AI 分析引擎会自动使用最新的采集点库进行识别。</Text>
                         </Flex>
-                    </Card>
-
-                    <Card size="small" title={<><ShopOutlined /> 核心字段说明</>}>
-                        <ul style={{ margin: 0, paddingLeft: 20 }}>
-                            <li><Text strong>编码</Text> - 唯一标识，如 <Text code>ENT_001</Text></li>
-                            <li><Text strong>名称</Text> - 正式名称，如"中粮生化公主岭公司"</li>
-                            <li><Text strong>别名</Text> - 日报中可能出现的变体写法，如"公主岭中粮"、"中粮公主岭"</li>
-                            <li><Text strong>简称</Text> - 简短称呼，如"公主岭厂"</li>
-                            <li><Text strong>行政区划</Text> - 关联的地区，用于区域数据聚合</li>
-                            <li><Text strong>坐标</Text> - 经纬度，用于地图展示</li>
-                            <li><Text strong>优先级</Text> - 匹配时的优先级，数字越大越优先</li>
-                        </ul>
-                    </Card>
-
-                    <Card size="small" title={<><GlobalOutlined /> AI 匹配机制</>}>
-                        <Paragraph style={{ marginBottom: 8 }}>
-                            当 AI 分析日报时，会按以下顺序尝试匹配：
-                        </Paragraph>
-                        <ol style={{ margin: 0, paddingLeft: 20 }}>
-                            <li>精确匹配<Text strong>名称</Text></li>
-                            <li>精确匹配<Text strong>别名</Text>列表中的任一项</li>
-                            <li>模糊匹配<Text strong>简称</Text></li>
-                            <li>结合上下文的<Text strong>行政区划</Text>推断</li>
-                        </ol>
-                        <Divider style={{ margin: '12px 0' }} />
-                        <Text type="secondary" style={{ fontSize: 12 }}>
-                            💡 提示：别名越丰富，AI 识别准确率越高。建议收集日报中实际出现的各种写法。
-                        </Text>
-                    </Card>
-
-                    <Divider style={{ margin: '8px 0' }} />
-
-                    <Flex align="center" gap={8}>
-                        <CheckCircleOutlined style={{ color: token.colorSuccess }} />
-                        <Text type="secondary">配置完成后，AI 分析引擎会自动使用最新的采集点库进行识别。</Text>
-                    </Flex>
-                </Space>
+                    </Space>
+                </div>
             </Modal>
         </div>
     );

@@ -8,10 +8,16 @@ export const CreateRegionSchema = z.object({
     name: z.string().min(1).max(50),
     shortName: z.string().max(10).optional(),
     level: z.nativeEnum(RegionLevel),
-    parentCode: z.string().optional(),
+    parentCode: z.preprocess(
+        (val) => (val === '' ? undefined : val),
+        z.string().optional()
+    ),
     longitude: z.number().min(-180).max(180).optional(),
     latitude: z.number().min(-90).max(90).optional(),
-    sortOrder: z.number().int().min(0).optional().default(0),
+    sortOrder: z.preprocess(
+        (val) => (val === null ? 0 : val),
+        z.number().int().min(0).optional().default(0)
+    ),
     isActive: z.boolean().optional().default(true),
 });
 

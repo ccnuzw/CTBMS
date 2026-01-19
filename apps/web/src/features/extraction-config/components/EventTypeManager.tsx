@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
     Card,
     Table,
@@ -11,12 +11,12 @@ import {
     Select,
     Switch,
     Popconfirm,
-    message,
     Typography,
     Flex,
     ColorPicker,
     InputNumber,
     theme,
+    App,
 } from 'antd';
 import {
     PlusOutlined,
@@ -32,6 +32,7 @@ import {
     useDeleteEventType,
     EventTypeConfig,
 } from '../api/hooks';
+import { useModalAutoFocus } from '../../../hooks/useModalAutoFocus';
 
 const { Title, Text } = Typography;
 
@@ -45,9 +46,24 @@ const CATEGORY_OPTIONS = [
 
 export const EventTypeManager: React.FC = () => {
     const { token } = theme.useToken();
+    const { message } = App.useApp();
     const [modalVisible, setModalVisible] = useState(false);
     const [editingItem, setEditingItem] = useState<EventTypeConfig | null>(null);
     const [form] = Form.useForm();
+    const { containerRef, autoFocusFieldProps, modalProps } = useModalAutoFocus();
+
+    useEffect(() => {
+        if (modalVisible) {
+            if (editingItem) {
+                form.setFieldsValue({
+                    ...editingItem,
+                    color: editingItem.color || '#1890ff',
+                });
+            } else {
+                form.resetFields();
+            }
+        }
+    }, [modalVisible, editingItem, form]);
 
     const { data: eventTypes, isLoading } = useEventTypes();
     const createMutation = useCreateEventType();
@@ -56,16 +72,11 @@ export const EventTypeManager: React.FC = () => {
 
     const handleCreate = () => {
         setEditingItem(null);
-        form.resetFields();
         setModalVisible(true);
     };
 
     const handleEdit = (record: EventTypeConfig) => {
         setEditingItem(record);
-        form.setFieldsValue({
-            ...record,
-            color: record.color || '#1890ff',
-        });
         setModalVisible(true);
     };
 
@@ -212,40 +223,48 @@ export const EventTypeManager: React.FC = () => {
                 onOk={handleSubmit}
                 onCancel={() => setModalVisible(false)}
                 confirmLoading={createMutation.isPending || updateMutation.isPending}
+                destroyOnClose
+                afterOpenChange={modalProps.afterOpenChange}
             >
-                <Form form={form} layout="vertical">
-                    <Form.Item
-                        name="code"
-                        label="编码"
-                        rules={[{ required: true, message: '请输入编码' }]}
-                    >
-                        <Input placeholder="如：ENTERPRISE_ACTION" disabled={!!editingItem} />
-                    </Form.Item>
-                    <Form.Item name="name" label="名称" rules={[{ required: true, message: '请输入名称' }]}>
-                        <Input placeholder="如：企业动态" />
-                    </Form.Item>
-                    <Form.Item
-                        name="category"
-                        label="分类"
-                        rules={[{ required: true, message: '请选择分类' }]}
-                    >
-                        <Select options={CATEGORY_OPTIONS} placeholder="选择分类" />
-                    </Form.Item>
-                    <Form.Item name="description" label="描述">
-                        <Input.TextArea placeholder="类型描述" rows={2} />
-                    </Form.Item>
-                    <Flex gap={16}>
-                        <Form.Item name="color" label="颜色">
-                            <ColorPicker />
+                <div ref={containerRef}>
+                    <Form form={form} layout="vertical">
+                        <Form.Item
+                            name="code"
+                            label="编码"
+                            rules={[{ required: true, message: '请输入编码' }]}
+                        >
+                            <Input
+                                placeholder="如：ENTERPRISE_ACTION"
+                                disabled={!!editingItem}
+                                {...(!editingItem ? autoFocusFieldProps : {})}
+                            />
                         </Form.Item>
-                        <Form.Item name="sortOrder" label="排序" initialValue={0}>
-                            <InputNumber min={0} />
+                        <Form.Item name="name" label="名称" rules={[{ required: true, message: '请输入名称' }]}>
+                            <Input placeholder="如：企业动态" {...(editingItem ? autoFocusFieldProps : {})} />
                         </Form.Item>
-                        <Form.Item name="isActive" label="启用" valuePropName="checked" initialValue={true}>
-                            <Switch />
+                        <Form.Item
+                            name="category"
+                            label="分类"
+                            rules={[{ required: true, message: '请选择分类' }]}
+                        >
+                            <Select options={CATEGORY_OPTIONS} placeholder="选择分类" />
                         </Form.Item>
-                    </Flex>
-                </Form>
+                        <Form.Item name="description" label="描述">
+                            <Input.TextArea placeholder="类型描述" rows={2} />
+                        </Form.Item>
+                        <Flex gap={16}>
+                            <Form.Item name="color" label="颜色">
+                                <ColorPicker />
+                            </Form.Item>
+                            <Form.Item name="sortOrder" label="排序" initialValue={0}>
+                                <InputNumber min={0} />
+                            </Form.Item>
+                            <Form.Item name="isActive" label="启用" valuePropName="checked" initialValue={true}>
+                                <Switch />
+                            </Form.Item>
+                        </Flex>
+                    </Form>
+                </div>
             </Modal>
         </Card>
     );

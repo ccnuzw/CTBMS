@@ -107,6 +107,12 @@ export const CreateCollectionPointSchema = z.object({
     longitude: z.number().min(-180).max(180).optional(),
     latitude: z.number().min(-90).max(90).optional(),
     commodities: z.array(z.string()).optional().default([]),
+    // AI 提取增强配置
+    matchRegionCodes: z.array(z.string()).optional().default([]),
+    matchKeywords: z.array(z.string()).optional().default([]),
+    priceSubTypes: z.array(z.string()).optional().default([]),
+    isDataSource: z.boolean().optional().default(true),
+
     defaultSubType: z.string().optional(),
     enterpriseId: z.string().optional(),
     priority: z.number().int().min(0).max(100).optional().default(0),
@@ -115,7 +121,8 @@ export const CreateCollectionPointSchema = z.object({
 });
 
 // 更新采集点 DTO
-export const UpdateCollectionPointSchema = CreateCollectionPointSchema.partial();
+// 使用 passthrough 允许数据库额外字段（如 matchRegionCodes、matchKeywords 等）通过验证
+export const UpdateCollectionPointSchema = CreateCollectionPointSchema.partial().passthrough();
 
 // 采集点响应 Schema
 export const CollectionPointResponseSchema = z.object({
@@ -131,6 +138,13 @@ export const CollectionPointResponseSchema = z.object({
     longitude: z.number().nullable(),
     latitude: z.number().nullable(),
     commodities: z.array(z.string()),
+
+    // AI 提取增强配置
+    matchRegionCodes: z.array(z.string()),
+    matchKeywords: z.array(z.string()),
+    priceSubTypes: z.array(z.string()),
+    isDataSource: z.boolean(),
+
     defaultSubType: z.string().nullable(),
     enterpriseId: z.string().nullable(),
     enterprise: z.object({
@@ -152,7 +166,7 @@ export const CollectionPointQuerySchema = z.object({
     keyword: z.string().optional(),
     isActive: z.coerce.boolean().optional(),
     page: z.coerce.number().min(1).default(1),
-    pageSize: z.coerce.number().min(1).max(100).default(20),
+    pageSize: z.coerce.number().min(1).max(1000).default(20),
 });
 
 // 用于 AI 识别的精简采集点

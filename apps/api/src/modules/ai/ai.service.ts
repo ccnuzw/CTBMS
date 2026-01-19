@@ -187,7 +187,12 @@ export class AIService implements OnModuleInit {
         const entities = this.extractEntities(content);
 
         // 提取事件
-        const events = this.extractEvents(content);
+        // 提取主要品种和区域 (为事件提供上下文)
+        const mainCommodity = this.extractMainCommodity(content);
+        const mainRegion = this.extractRegion(content);
+
+        // 提取事件 (传入默认品种和区域)
+        const events = this.extractEvents(content, mainCommodity, mainRegion);
 
         // 提取后市预判
         const forecast = this.extractForecast(content);
@@ -199,8 +204,8 @@ export class AIService implements OnModuleInit {
         const reportMeta: DailyReportMeta | undefined = isDailyReport ? {
             reportType: this.detectReportType(content),
             reportDate: this.extractReportDate(content),
-            region: this.extractRegion(content),
-            commodity: this.extractMainCommodity(content),
+            region: mainRegion,
+            commodity: mainCommodity || '未知',
             marketTrend: this.detectMarketTrend(content, pricePoints),
             keyChange: pricePoints.length > 0 ? pricePoints[0].change ?? undefined : undefined,
         } : undefined;
@@ -660,26 +665,63 @@ export class AIService implements OnModuleInit {
     /**
      * 提取事件
      */
-    private extractEvents(content: string): Array<{ subject?: string; action?: string; impact?: string }> {
-        const events: Array<{ subject?: string; action?: string; impact?: string }> = [];
+    private extractEvents(
+        content: string,
+        defaultCommodity?: string,
+        defaultRegion?: string,
+    ): Array<{
+        subject?: string;
+        action?: string;
+        impact?: string;
+        sourceStart?: number;
+        sourceEnd?: number;
+        sourceText?: string;
+        commodity?: string;
+        regionCode?: string;
+    }> {
+        const events: Array<{
+            subject?: string;
+            action?: string;
+            impact?: string;
+            sourceStart?: number;
+            sourceEnd?: number;
+            sourceText?: string;
+            commodity?: string;
+            regionCode?: string;
+        }> = [];
 
-        // 简单的事件提取
+        // 简单的事件提取正则
         const eventPatterns = [
-            /([\u4e00-\u9fa5]+公司|[\u4e00-\u9fa5]+企业|[\u4e00-\u9fa5]+港)(开始|停止|启动|关闭|检修|复产)/g,
+            /([\u4e00-\u9fa5]+(?:公司|企业|港|厂|基地))(?:计划|预计)?(开始|停止|启动|关闭|检修|复产|提价|降价|到港)/g,
         ];
 
         for (const pattern of eventPatterns) {
             const matches = content.matchAll(pattern);
             for (const m of matches) {
-                events.push({
-                    subject: m[1],
-                    action: m[2],
-                    impact: m[2].includes('停') || m[2].includes('关') ? '利空影响' : '利好影响',
-                });
+                if (m.index !== undefined) {
+                    events.push({
+                        subject: m[1],
+                        action: m[2],
+                        impact: this.determineImpact(m[2]),
+                        sourceStart: m.index,
+                        sourceEnd: m.index + m[0].length,
+                        sourceText: m[0],
+                        commodity: defaultCommodity, // 暂用文档级默认值，未来可细化为句级提取
+                        regionCode: defaultRegion,   // 暂用文档级默认值
+                    });
+                }
             }
         }
 
         return events;
+    }
+
+    private determineImpact(action: string): string {
+        if (['停止', '关闭', '检修', '减产'].some(k => action.includes(k))) return '供应减少，短期利空';
+        if (['启动', '复产', '增产', '到港'].some(k => action.includes(k))) return '供应增加，短期利好';
+        if (['提价', '涨价'].some(k => action.includes(k))) return '价格上行，利好';
+        if (['降价', '跌价'].some(k => action.includes(k))) return '价格下行，利空';
+        return '影响中性';
     }
 
     /**
