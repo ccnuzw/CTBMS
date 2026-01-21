@@ -313,6 +313,7 @@ export const TrendChart: React.FC<TrendChartProps> = ({
                                     <Line
                                         type="monotone"
                                         dataKey="区域均价"
+                                        name={`区域聚合均价${regionData.summary?.uniqueLocations ? ` (${regionData.summary.uniqueLocations}个采集点)` : ''}`}
                                         stroke={token.colorTextQuaternary}
                                         strokeWidth={2}
                                         strokeDasharray="5 5"

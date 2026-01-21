@@ -17,23 +17,23 @@ interface CategoryGuideline {
 
 export const INTEL_CATEGORY_GUIDELINES: Record<IntelCategory, CategoryGuideline> = {
   [IntelCategory.A_STRUCTURED]: {
-    title: 'A类：标准化硬数据 (Hard Data) 采集规范',
+    title: 'AB类：文本采集 (价格/事件/洞察) 规范',
     color: 'blue',
     items: [
-      { label: '核心五要素', desc: '必须包含【品名】【价格】【单位】【水分】【容重】。' },
-      { label: '凭证要求', desc: '一线采集必须拍摄工厂/粮库的公开报价板，照片需清晰无反光。' },
-      { label: '风控阈值', desc: '价格录入偏离当地主流均价 ±50元/吨 时，系统将触发异常阻断。' },
-      { label: '时效红线', desc: '晨间报价需在每日 09:30 前完成，晚间收盘价需在 17:00 前完成。' },
+      { label: '价格数据', desc: '包含【品名】【价格】【单位】【水分】【容重】等要素，AI 自动提取为 A 类结构化数据。' },
+      { label: '事件情报', desc: '遵循 5W1H 原则描述事件：时间、地点、主体、动作、影响，AI 自动提取为 B 类事件。' },
+      { label: '后市洞察', desc: '包含预判和分析的内容，AI 会自动识别情绪倾向和预测方向。' },
+      { label: '一份日报多类产出', desc: '系统会自动分析日报内容，同时提取价格数据、市场事件和洞察预判。' },
     ],
   },
   [IntelCategory.B_SEMI_STRUCTURED]: {
-    title: 'B类：半结构化情报 (Intelligence) 采集规范',
-    color: 'purple',
+    title: 'AB类：文本采集 (价格/事件/洞察) 规范',
+    color: 'blue',
     items: [
-      { label: '结构化描述', desc: '遵循 5W1H 原则：时间、地点、主体、事件动作、具体影响。' },
-      { label: '物流/排队', desc: "需量化描述，如'排队约5公里'或'预计等待24小时'，禁止使用'很多车'。" },
-      { label: '情绪术语', desc: "使用标准术语：'惜售挺价'、'恐慌抛售'、'观望为主'，避免主观臆测。" },
-      { label: '语音录入', desc: '环境嘈杂时请复核语音转文字结果，确保关键数字（如车辆数）准确。' },
+      { label: '价格数据', desc: '包含【品名】【价格】【单位】【水分】【容重】等要素，AI 自动提取为 A 类结构化数据。' },
+      { label: '事件情报', desc: '遵循 5W1H 原则描述事件：时间、地点、主体、动作、影响，AI 自动提取为 B 类事件。' },
+      { label: '后市洞察', desc: '包含预判和分析的内容，AI 会自动识别情绪倾向和预测方向。' },
+      { label: '一份日报多类产出', desc: '系统会自动分析日报内容，同时提取价格数据、市场事件和洞察预判。' },
     ],
   },
   [IntelCategory.C_DOCUMENT]: {

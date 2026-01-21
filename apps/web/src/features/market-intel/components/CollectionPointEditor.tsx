@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useMemo } from 'react';
 import {
     Modal,
     Form,
@@ -12,6 +12,7 @@ import {
     App,
     Space,
     Typography,
+    Cascader,
 } from 'antd';
 import {
     ShopOutlined,
@@ -32,6 +33,7 @@ import {
     type CreateCollectionPointDto,
 } from '@packages/types';
 import { useModalAutoFocus } from '../../../hooks/useModalAutoFocus';
+import { useRegionTree } from '../api/region';
 
 const { Text } = Typography;
 const { TextArea } = Input;
@@ -55,6 +57,21 @@ export const CollectionPointEditor: React.FC<CollectionPointEditorProps> = ({
     const { data: editData, isLoading: loadingData } = useCollectionPoint(editId);
     const createMutation = useCreateCollectionPoint();
     const updateMutation = useUpdateCollectionPoint();
+    const { data: regionTree } = useRegionTree();
+
+    // Watch type field to conditionally show region selector
+    const selectedType = Form.useWatch('type', form);
+
+    // Convert region tree to Cascader options
+    const regionOptions = useMemo(() => {
+        if (!regionTree) return [];
+        const convertNode = (node: any): any => ({
+            value: node.code,
+            label: node.name,
+            children: node.children?.map(convertNode),
+        });
+        return regionTree.map(convertNode);
+    }, [regionTree]);
 
     useEffect(() => {
         if (open && editData) {
@@ -253,6 +270,69 @@ export const CollectionPointEditor: React.FC<CollectionPointEditorProps> = ({
                         </Col>
                     </Row>
 
+                    {/* 行政区划关联 - 所有类型都可设置，REGION 类型必填 */}
+                    <Row gutter={16}>
+                        <Col span={24}>
+                            <Form.Item
+                                name="regionCode"
+                                label="关联行政区划"
+                                tooltip={selectedType === 'REGION'
+                                    ? "地域类型必须关联标准行政区划"
+                                    : "可选：关联所在的省/市/区县，用于数据聚合和未来地图展示"}
+                                rules={selectedType === 'REGION'
+                                    ? [{ required: true, message: '地域类型必须关联行政区划' }]
+                                    : []}
+                                getValueProps={(value) => {
+                                    // 将单个 regionCode 转换为完整路径用于显示
+                                    if (!value || !regionTree) return { value: undefined };
+                                    const findPath = (nodes: any[], target: string, path: string[] = []): string[] | null => {
+                                        for (const node of nodes) {
+                                            const currentPath = [...path, node.code];
+                                            if (node.code === target) return currentPath;
+                                            if (node.children) {
+                                                const found = findPath(node.children, target, currentPath);
+                                                if (found) return found;
+                                            }
+                                        }
+                                        return null;
+                                    };
+                                    return { value: findPath(regionTree, value) || [value] };
+                                }}
+                                getValueFromEvent={(value) => {
+                                    // 取最后一级的 code 作为表单值
+                                    return value && value.length > 0 ? value[value.length - 1] : undefined;
+                                }}
+                            >
+                                <Cascader
+                                    options={regionOptions}
+                                    placeholder="选择省/市/区县"
+                                    allowClear
+                                    showSearch={{
+                                        filter: (inputValue, path) =>
+                                            path.some((option) =>
+                                                (option.label as string)
+                                                    .toLowerCase()
+                                                    .includes(inputValue.toLowerCase())
+                                            ),
+                                    }}
+                                    changeOnSelect
+                                    displayRender={(labels) => labels.join(' / ')}
+                                    onChange={(_value, selectedOptions) => {
+                                        // 仅 REGION 类型自动填充名称
+                                        if (selectedType === 'REGION' && selectedOptions && selectedOptions.length > 0) {
+                                            const lastOption = selectedOptions[selectedOptions.length - 1];
+                                            const regionName = (lastOption?.label as string) || '';
+                                            // 去掉"省/市/区/县"等后缀作为简称
+                                            const shortName = regionName.replace(/(省|市|区|县|自治区|自治州)$/, '');
+                                            form.setFieldValue('name', regionName);
+                                            form.setFieldValue('shortName', shortName);
+                                        }
+                                    }}
+                                />
+                            </Form.Item>
+                        </Col>
+                    </Row>
+
                     {/* 业务属性 */}
                     <Divider orientation="left">
                         <Space>
@@ -392,9 +472,9 @@ export const CollectionPointEditor: React.FC<CollectionPointEditorProps> = ({
                     <Form.Item name="description" label="备注">
                         <TextArea rows={2} placeholder="可选备注信息" />
                     </Form.Item>
-                </Form>
-            </div>
-        </Modal>
+                </Form >
+            </div >
+        </Modal >
     );
 };
 

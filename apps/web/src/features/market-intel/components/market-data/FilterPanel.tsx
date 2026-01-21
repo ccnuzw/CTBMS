@@ -42,7 +42,7 @@ const POINT_TYPE_LABELS: Record<string, string> = {
     PORT: '港口',
     ENTERPRISE: '企业',
     MARKET: '市场',
-    REGION: '区域',
+    REGION: '地域(市/县)',
     STATION: '站台',
 };
 
@@ -195,15 +195,26 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
                 />
             </div>
 
-            {/* 省份筛选 */}
-            <div style={{ marginBottom: 16 }}>
-                <Text type="secondary" style={{ fontSize: 11, textTransform: 'uppercase' }}>
-                    区域筛选
+            {/* ===== 区域参考 ===== */}
+            <div
+                style={{
+                    marginBottom: 16,
+                    padding: 12,
+                    background: token.colorFillQuaternary,
+                    borderRadius: token.borderRadius,
+                }}
+            >
+                <Flex align="center" gap={6} style={{ marginBottom: 8 }}>
+                    <GlobalOutlined style={{ color: '#722ed1' }} />
+                    <Text strong style={{ fontSize: 12 }}>区域参考</Text>
+                </Flex>
+                <Text type="secondary" style={{ fontSize: 11, display: 'block', marginBottom: 8 }}>
+                    选择省份后，图表将显示该区域的聚合均价参考线
                 </Text>
                 <Select
                     allowClear
                     placeholder="选择省份"
-                    style={{ width: '100%', marginTop: 8 }}
+                    style={{ width: '100%' }}
                     value={selectedProvince}
                     onChange={(val) => onSelectedProvinceChange(val)}
                     options={provinces?.map((p) => ({ label: p.name, value: p.code })) || []}
@@ -213,17 +224,28 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
                 />
             </div>
 
-            <Divider style={{ margin: '12px 0' }} />
-
-            {/* 采集点类型过滤 */}
-            <div style={{ marginBottom: 12 }}>
-                <Text type="secondary" style={{ fontSize: 11, textTransform: 'uppercase' }}>
-                    采集点类型
+            {/* ===== 采集点对比 ===== */}
+            <div
+                style={{
+                    padding: 12,
+                    background: token.colorFillQuaternary,
+                    borderRadius: token.borderRadius,
+                    marginBottom: 12,
+                }}
+            >
+                <Flex align="center" gap={6} style={{ marginBottom: 8 }}>
+                    <EnvironmentOutlined style={{ color: token.colorPrimary }} />
+                    <Text strong style={{ fontSize: 12 }}>采集点对比</Text>
+                </Flex>
+                <Text type="secondary" style={{ fontSize: 11, display: 'block', marginBottom: 8 }}>
+                    选择具体采集点，图表将显示各点位的价格曲线
                 </Text>
+
+                {/* 采集点类型过滤 */}
                 <Checkbox.Group
                     value={pointTypeFilter}
                     onChange={(vals) => onPointTypeFilterChange(vals as string[])}
-                    style={{ marginTop: 8 }}
+                    style={{ marginBottom: 8 }}
                 >
                     <Space wrap size={4}>
                         {Object.entries(POINT_TYPE_LABELS).map(([key, label]) => (
@@ -250,15 +272,15 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
 
             {/* 采集点列表 */}
             <div style={{ maxHeight: 400, overflow: 'auto' }}>
-                {isLoadingPoints ? (
-                    <Flex justify="center" style={{ padding: 32 }}>
-                        <Spin size="small" />
-                    </Flex>
-                ) : !shouldFetch ? (
+                {!shouldFetch ? (
                     <Empty
                         image={Empty.PRESENTED_IMAGE_SIMPLE}
                         description="请选择采集点类型以查看列表"
                     />
+                ) : isLoadingPoints ? (
+                    <Flex justify="center" style={{ padding: 32 }}>
+                        <Spin size="small" />
+                    </Flex>
                 ) : Object.keys(groupedPoints).length === 0 ? (
                     <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="无匹配采集点" />
                 ) : (

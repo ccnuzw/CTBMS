@@ -250,45 +250,47 @@ export const DataEntry: React.FC<DataEntryProps> = ({ onSuccess, onCancel }) => 
                     <Text type="secondary">全源宽口径采集 • 统一资产封装 • AI自动治理</Text>
                 </div>
 
-                {/* 分类选择 */}
+                {/* 分类选择 - AB类合并后只显示3个选项 */}
                 <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
-                    {Object.entries(INTEL_CATEGORY_LABELS).map(([key, label]) => {
-                        const isActive = category === key;
-                        const catKey = key as IntelCategory;
-                        const guideline = INTEL_CATEGORY_GUIDELINES[catKey];
-                        const color = CATEGORY_COLORS[guideline.color];
+                    {Object.entries(INTEL_CATEGORY_LABELS)
+                        .filter(([key]) => key !== 'A_STRUCTURED') // 过滤掉A类，因为已与B类合并
+                        .map(([key, label]) => {
+                            const catKey = key as IntelCategory;
+                            const isActive = category === catKey || (catKey === IntelCategory.B_SEMI_STRUCTURED && category === IntelCategory.A_STRUCTURED);
+                            const guideline = INTEL_CATEGORY_GUIDELINES[catKey];
+                            const color = CATEGORY_COLORS[guideline.color];
 
-                        return (
-                            <Col xs={12} md={6} key={key}>
-                                <Card
-                                    hoverable
-                                    size="small"
-                                    onClick={() => setCategory(catKey)}
-                                    style={{
-                                        borderColor: isActive ? color : undefined,
-                                        borderWidth: isActive ? 2 : 1,
-                                        background: isActive ? `${color}08` : undefined,
-                                    }}
-                                >
-                                    <Flex vertical gap={4}>
-                                        <Text
-                                            strong
-                                            style={{
-                                                fontSize: 10,
-                                                textTransform: 'uppercase',
-                                                color: isActive ? color : token.colorTextSecondary,
-                                            }}
-                                        >
-                                            {CATEGORY_ICONS[catKey]} {key.split('_')[0]} 类
-                                        </Text>
-                                        <Text style={{ fontSize: 13, color: isActive ? color : undefined }}>
-                                            {label.split('：')[1]?.split('（')[0]}
-                                        </Text>
-                                    </Flex>
-                                </Card>
-                            </Col>
-                        );
-                    })}
+                            return (
+                                <Col xs={24} md={8} key={key}>
+                                    <Card
+                                        hoverable
+                                        size="small"
+                                        onClick={() => setCategory(catKey)}
+                                        style={{
+                                            borderColor: isActive ? color : undefined,
+                                            borderWidth: isActive ? 2 : 1,
+                                            background: isActive ? `${color}08` : undefined,
+                                        }}
+                                    >
+                                        <Flex vertical gap={4}>
+                                            <Text
+                                                strong
+                                                style={{
+                                                    fontSize: 10,
+                                                    textTransform: 'uppercase',
+                                                    color: isActive ? color : token.colorTextSecondary,
+                                                }}
+                                            >
+                                                {CATEGORY_ICONS[catKey]} {catKey === IntelCategory.B_SEMI_STRUCTURED ? 'AB' : key.split('_')[0]} 类
+                                            </Text>
+                                            <Text style={{ fontSize: 13, color: isActive ? color : undefined }}>
+                                                {label.split('：')[1]?.split('（')[0]}
+                                            </Text>
+                                        </Flex>
+                                    </Card>
+                                </Col>
+                            );
+                        })}
                 </Row>
 
                 {/* 采集规范面板 */}

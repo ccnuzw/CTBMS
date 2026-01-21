@@ -164,19 +164,6 @@ export const CollectionPointManager: React.FC = () => {
             render: (commodities: string[]) => commodities.join('、') || '-',
         },
         {
-            title: '坐标',
-            key: 'location',
-            width: 80,
-            render: (_, record) =>
-                record.longitude && record.latitude ? (
-                    <Tag icon={<EnvironmentOutlined />} color="cyan">
-                        已设置
-                    </Tag>
-                ) : (
-                    <Text type="secondary">-</Text>
-                ),
-        },
-        {
             title: '优先级',
             dataIndex: 'priority',
             width: 80,

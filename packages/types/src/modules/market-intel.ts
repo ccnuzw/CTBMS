@@ -19,8 +19,8 @@ export enum IntelSourceType {
 
 // 枚举标签映射
 export const INTEL_CATEGORY_LABELS: Record<IntelCategory, string> = {
-  [IntelCategory.A_STRUCTURED]: 'A类：标准化硬数据 (价格/库存)',
-  [IntelCategory.B_SEMI_STRUCTURED]: 'B类：半结构化情报 (心态/事件)',
+  [IntelCategory.A_STRUCTURED]: 'AB类：文本采集 (价格/事件/洞察)',
+  [IntelCategory.B_SEMI_STRUCTURED]: 'AB类：文本采集 (价格/事件/洞察)',
   [IntelCategory.C_DOCUMENT]: 'C类：文档与图表 (研报/政策)',
   [IntelCategory.D_ENTITY]: 'D类：实体档案 (企业画像)',
 };
