@@ -19,6 +19,7 @@ import {
     Row,
     Col,
     Progress,
+    Tabs,
 } from 'antd';
 import {
     SendOutlined,
@@ -32,6 +33,7 @@ import {
     InfoCircleOutlined,
     LinkOutlined,
     FileTextOutlined,
+    InboxOutlined,
     SoundOutlined,
     BulbOutlined,
     DatabaseOutlined,
@@ -40,14 +42,17 @@ import {
 } from '@ant-design/icons';
 import { useCreateMarketIntel, useAnalyzeContent } from '../api';
 import {
-    IntelCategory,
+    ContentType,
+    CONTENT_TYPE_LABELS,
+    CONTENT_TYPE_DESCRIPTIONS,
+    CONTENT_TYPE_SOURCE_OPTIONS,
     IntelSourceType,
-    INTEL_CATEGORY_LABELS,
     INTEL_SOURCE_TYPE_LABELS,
-    INTEL_CATEGORY_GUIDELINES,
+    IntelCategory,
     type AIAnalysisResult,
     type InfoCard,
 } from '../types';
+import { DocumentUploader } from './DocumentUploader';
 
 const { Title, Text, Paragraph } = Typography;
 const { TextArea } = Input;
@@ -57,12 +62,11 @@ interface DataEntryProps {
     onCancel?: () => void;
 }
 
-// 分类图标映射
-const CATEGORY_ICONS: Record<IntelCategory, React.ReactNode> = {
-    [IntelCategory.A_STRUCTURED]: <DatabaseOutlined />,
-    [IntelCategory.B_SEMI_STRUCTURED]: <RadarChartOutlined />,
-    [IntelCategory.C_DOCUMENT]: <FileTextOutlined />,
-    [IntelCategory.D_ENTITY]: <TeamOutlined />,
+// 内容类型图标映射
+const CONTENT_TYPE_ICONS: Record<ContentType, React.ReactNode> = {
+    [ContentType.DAILY_REPORT]: <DatabaseOutlined />,
+    [ContentType.RESEARCH_REPORT]: <FileTextOutlined />,
+    [ContentType.POLICY_DOC]: <TeamOutlined />,
 };
 
 // 分类颜色映射
@@ -79,13 +83,14 @@ export const DataEntry: React.FC<DataEntryProps> = ({ onSuccess, onCancel }) => 
     const fileInputRef = useRef<HTMLInputElement>(null);
 
     // 状态
-    const [category, setCategory] = useState<IntelCategory>(IntelCategory.B_SEMI_STRUCTURED);
+    const [contentType, setContentType] = useState<ContentType>(ContentType.DAILY_REPORT);
     const [sourceType, setSourceType] = useState<IntelSourceType>(IntelSourceType.FIRST_LINE);
     const [content, setContent] = useState('');
     const [gpsStatus, setGpsStatus] = useState<'idle' | 'verifying' | 'success' | 'failed'>('idle');
     const [aiResult, setAiResult] = useState<AIAnalysisResult | null>(null);
     const [imageData, setImageData] = useState<{ data: string; mimeType: string; preview: string } | null>(null);
     const [showGuidelines, setShowGuidelines] = useState(true);
+    const [activeTab, setActiveTab] = useState('text');
 
     const createMutation = useCreateMarketIntel();
     const analyzeMutation = useAnalyzeContent();
@@ -97,7 +102,18 @@ export const DataEntry: React.FC<DataEntryProps> = ({ onSuccess, onCancel }) => 
         setImageData(null);
         setGpsStatus('idle');
         setShowGuidelines(true);
-    }, [category]);
+        // 自动选择第一个可用的信源类型
+        const availableSources = CONTENT_TYPE_SOURCE_OPTIONS[contentType] || [];
+        if (availableSources.length > 0) {
+            setSourceType(availableSources[0]);
+        }
+        // 默认 Tab
+        if (contentType === ContentType.DAILY_REPORT) {
+            setActiveTab('text');
+        } else {
+            setActiveTab('file');
+        }
+    }, [contentType]);
 
     // 计算预估质量分
     const calculatePreviewScore = () => {
@@ -147,9 +163,15 @@ export const DataEntry: React.FC<DataEntryProps> = ({ onSuccess, onCancel }) => 
         }
 
         try {
+            // Map ContentType to Category for legacy backend support
+            let legacyCategory = IntelCategory.B_SEMI_STRUCTURED;
+            if (contentType === ContentType.RESEARCH_REPORT || contentType === ContentType.POLICY_DOC) {
+                legacyCategory = IntelCategory.C_DOCUMENT;
+            }
+
             const result = await analyzeMutation.mutateAsync({
                 content,
-                category,
+                category: legacyCategory,
                 location: '锦州港物流园区',
                 base64Image: imageData?.data,
                 mimeType: imageData?.mimeType,
@@ -171,7 +193,7 @@ export const DataEntry: React.FC<DataEntryProps> = ({ onSuccess, onCancel }) => 
 
     // 模拟语音输入
     const handleVoiceDemo = () => {
-        setCategory(IntelCategory.B_SEMI_STRUCTURED);
+        setContentType(ContentType.DAILY_REPORT);
         setSourceType(IntelSourceType.FIRST_LINE);
         setContent('刚才路过锦州港，听说因为环保检查，后面三天集港都要受限，大家都在抛货。');
         message.info('已模拟语音输入');
@@ -179,7 +201,7 @@ export const DataEntry: React.FC<DataEntryProps> = ({ onSuccess, onCancel }) => 
 
     // 模拟文档输入
     const handleDocDemo = () => {
-        setCategory(IntelCategory.C_DOCUMENT);
+        setContentType(ContentType.RESEARCH_REPORT);
         setSourceType(IntelSourceType.OFFICIAL);
         setContent(
             '【2024年5月第3周 东北玉米市场周报】\n一、市场综述\n本周东北市场价格稳中偏弱，锦州港平舱价2810元/吨，较上周下跌10元。\n\n二、价格监测（表格数据）\n- 锦州港：2810元/吨（水分14.5%）\n- 鲅鱼圈：2815元/吨（水分15%）\n- 梅花味精：2750元/吨（挂牌）\n\n三、后市预测\n受阴雨天气影响，物流受阻，预计下周价格小幅反弹。',
@@ -200,9 +222,16 @@ export const DataEntry: React.FC<DataEntryProps> = ({ onSuccess, onCancel }) => 
         }
 
         try {
+            // Map ContentType to Category for legacy backend support
+            let legacyCategory = IntelCategory.B_SEMI_STRUCTURED;
+            if (contentType === ContentType.RESEARCH_REPORT || contentType === ContentType.POLICY_DOC) {
+                legacyCategory = IntelCategory.C_DOCUMENT;
+            }
+
             const totalScore = Math.round(previewScore * 0.4 + 80 * 0.3 + 0 * 0.3);
             await createMutation.mutateAsync({
-                category,
+                category: legacyCategory,
+                contentType,
                 sourceType,
                 rawContent: content,
                 effectiveTime: aiResult.extractedEffectiveTime
@@ -235,8 +264,7 @@ export const DataEntry: React.FC<DataEntryProps> = ({ onSuccess, onCancel }) => 
         form.resetFields();
     };
 
-    const currentGuideline = INTEL_CATEGORY_GUIDELINES[category];
-    const categoryColor = CATEGORY_COLORS[currentGuideline.color] || token.colorPrimary;
+    const categoryColor = CATEGORY_COLORS['blue']; // 统一色调
 
     return (
         <div style={{ padding: 24, background: token.colorBgLayout, minHeight: '100%', overflow: 'auto' }}>
@@ -250,115 +278,61 @@ export const DataEntry: React.FC<DataEntryProps> = ({ onSuccess, onCancel }) => 
                     <Text type="secondary">全源宽口径采集 • 统一资产封装 • AI自动治理</Text>
                 </div>
 
-                {/* 分类选择 - AB类合并后只显示3个选项 */}
+                {/* 分类选择 - Unified Entry */}
                 <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
-                    {Object.entries(INTEL_CATEGORY_LABELS)
-                        .filter(([key]) => key !== 'A_STRUCTURED') // 过滤掉A类，因为已与B类合并
-                        .map(([key, label]) => {
-                            const catKey = key as IntelCategory;
-                            const isActive = category === catKey || (catKey === IntelCategory.B_SEMI_STRUCTURED && category === IntelCategory.A_STRUCTURED);
-                            const guideline = INTEL_CATEGORY_GUIDELINES[catKey];
-                            const color = CATEGORY_COLORS[guideline.color];
+                    {Object.entries(CONTENT_TYPE_LABELS).map(([key, label]) => {
+                        const typeKey = key as ContentType;
+                        const isActive = contentType === typeKey;
+                        // Use blue as standard active color
+                        const color = token.colorPrimary;
 
-                            return (
-                                <Col xs={24} md={8} key={key}>
-                                    <Card
-                                        hoverable
-                                        size="small"
-                                        onClick={() => setCategory(catKey)}
-                                        style={{
-                                            borderColor: isActive ? color : undefined,
-                                            borderWidth: isActive ? 2 : 1,
-                                            background: isActive ? `${color}08` : undefined,
-                                        }}
-                                    >
-                                        <Flex vertical gap={4}>
-                                            <Text
-                                                strong
-                                                style={{
-                                                    fontSize: 10,
-                                                    textTransform: 'uppercase',
-                                                    color: isActive ? color : token.colorTextSecondary,
-                                                }}
-                                            >
-                                                {CATEGORY_ICONS[catKey]} {catKey === IntelCategory.B_SEMI_STRUCTURED ? 'AB' : key.split('_')[0]} 类
-                                            </Text>
-                                            <Text style={{ fontSize: 13, color: isActive ? color : undefined }}>
-                                                {label.split('：')[1]?.split('（')[0]}
-                                            </Text>
-                                        </Flex>
-                                    </Card>
-                                </Col>
-                            );
-                        })}
+                        return (
+                            <Col xs={24} md={8} key={key}>
+                                <Card
+                                    hoverable
+                                    size="small"
+                                    onClick={() => setContentType(typeKey)}
+                                    style={{
+                                        borderColor: isActive ? color : undefined,
+                                        borderWidth: isActive ? 2 : 1,
+                                        background: isActive ? `${color}08` : undefined,
+                                    }}
+                                >
+                                    <Flex vertical gap={4}>
+                                        <Text
+                                            strong
+                                            style={{
+                                                fontSize: 10,
+                                                textTransform: 'uppercase',
+                                                color: isActive ? color : token.colorTextSecondary,
+                                            }}
+                                        >
+                                            {CONTENT_TYPE_ICONS[typeKey]} {label}
+                                        </Text>
+                                        <Text style={{ fontSize: 13, color: isActive ? color : undefined }}>
+                                            {CONTENT_TYPE_DESCRIPTIONS[typeKey]}
+                                        </Text>
+                                    </Flex>
+                                </Card>
+                            </Col>
+                        );
+                    })}
                 </Row>
 
-                {/* 采集规范面板 */}
-                {showGuidelines && (
-                    <Alert
-                        type="info"
-                        showIcon
-                        icon={<BulbOutlined style={{ color: categoryColor }} />}
-                        style={{ marginBottom: 24, borderColor: categoryColor }}
-                        message={
-                            <Flex justify="space-between" align="center">
-                                <Text strong style={{ color: categoryColor }}>
-                                    {currentGuideline.title}
-                                </Text>
-                                <Button type="link" size="small" onClick={() => setShowGuidelines(false)}>
-                                    收起说明
-                                </Button>
-                            </Flex>
-                        }
-                        description={
-                            <Row gutter={[16, 12]} style={{ marginTop: 12 }}>
-                                {currentGuideline.items.map((item, idx) => (
-                                    <Col xs={24} md={12} key={idx}>
-                                        <Flex gap={8} align="flex-start">
-                                            <div
-                                                style={{
-                                                    width: 4,
-                                                    height: 4,
-                                                    borderRadius: '50%',
-                                                    background: categoryColor,
-                                                    marginTop: 8,
-                                                    flexShrink: 0,
-                                                }}
-                                            />
-                                            <div>
-                                                <Text strong style={{ fontSize: 13 }}>
-                                                    {item.label}：
-                                                </Text>
-                                                <Text type="secondary" style={{ fontSize: 13 }}>
-                                                    {item.desc}
-                                                </Text>
-                                            </div>
-                                        </Flex>
-                                    </Col>
-                                ))}
-                            </Row>
-                        }
-                    />
-                )}
+                {/* 采集规范面板 -> 内容描述 */}
+                <Alert
+                    type="info"
+                    showIcon
+                    style={{ marginBottom: 24 }}
+                    message={CONTENT_TYPE_LABELS[contentType]}
+                    description={CONTENT_TYPE_DESCRIPTIONS[contentType]}
+                />
 
-                {/* 规范收起后的快捷按钮 */}
-                {!showGuidelines && (
-                    <Flex justify="flex-end" style={{ marginBottom: 16 }}>
-                        <Button
-                            type="link"
-                            size="small"
-                            icon={<InfoCircleOutlined />}
-                            onClick={() => setShowGuidelines(true)}
-                        >
-                            查看 {category.split('_')[0]} 类采集规范
-                        </Button>
-                    </Flex>
-                )}
 
-                {/* 主表单 */}
+
                 <Card>
                     {/* 信源类型 */}
-                    <Flex align="center" gap={16} style={{ marginBottom: 16 }}>
+                    <Flex align="center" gap={16} style={{ marginBottom: 24 }}>
                         <Text strong style={{ fontSize: 12, color: token.colorTextSecondary }}>
                             信源类型
                         </Text>
@@ -369,133 +343,162 @@ export const DataEntry: React.FC<DataEntryProps> = ({ onSuccess, onCancel }) => 
                             buttonStyle="solid"
                             size="small"
                         >
-                            {Object.entries(INTEL_SOURCE_TYPE_LABELS).map(([key, label]) => (
-                                <Radio.Button key={key} value={key}>
-                                    {label}
+                            {(CONTENT_TYPE_SOURCE_OPTIONS[contentType] || []).map((type) => (
+                                <Radio.Button key={type} value={type}>
+                                    {INTEL_SOURCE_TYPE_LABELS[type]}
                                 </Radio.Button>
                             ))}
                         </Radio.Group>
                     </Flex>
 
-                    {/* GPS 验证 (一线采集) */}
-                    {sourceType === IntelSourceType.FIRST_LINE && (
-                        <Alert
-                            type={gpsStatus === 'success' ? 'success' : 'warning'}
-                            showIcon
-                            icon={<EnvironmentOutlined />}
-                            style={{ marginBottom: 16 }}
-                            message={
-                                <Flex justify="space-between" align="center">
-                                    <Text>地理围栏校验 (System Watchdog)</Text>
-                                    <Button
-                                        type={gpsStatus === 'success' ? 'default' : 'primary'}
-                                        size="small"
-                                        loading={gpsStatus === 'verifying'}
-                                        onClick={handleGpsVerify}
-                                        disabled={gpsStatus === 'success'}
-                                    >
-                                        {gpsStatus === 'success' ? '✓ 位置已核验' : '点击打卡 (模拟GPS)'}
-                                    </Button>
-                                </Flex>
+                    <Tabs
+                        activeKey={activeTab}
+                        onChange={setActiveTab}
+                        type="card"
+                        items={[
+                            {
+                                key: 'text',
+                                label: <span><FileTextOutlined /> 文本/语音智能录入</span>,
+                                children: (
+                                    <>
+
+                                        {/* GPS 验证 (一线采集) */}
+                                        {sourceType === IntelSourceType.FIRST_LINE && (
+                                            <Alert
+                                                type={gpsStatus === 'success' ? 'success' : 'warning'}
+                                                showIcon
+                                                icon={<EnvironmentOutlined />}
+                                                style={{ marginBottom: 16 }}
+                                                message={
+                                                    <Flex justify="space-between" align="center">
+                                                        <Text>地理围栏校验 (System Watchdog)</Text>
+                                                        <Button
+                                                            type={gpsStatus === 'success' ? 'default' : 'primary'}
+                                                            size="small"
+                                                            loading={gpsStatus === 'verifying'}
+                                                            onClick={handleGpsVerify}
+                                                            disabled={gpsStatus === 'success'}
+                                                        >
+                                                            {gpsStatus === 'success' ? '✓ 位置已核验' : '点击打卡 (模拟GPS)'}
+                                                        </Button>
+                                                    </Flex>
+                                                }
+                                            />
+                                        )}
+
+                                        {/* 质量分预览 */}
+                                        <Flex justify="flex-end" align="center" gap={8} style={{ marginBottom: 12 }}>
+                                            <Text type="secondary" style={{ fontSize: 12 }}>
+                                                <ThunderboltOutlined style={{ color: token.colorWarning }} /> 预估质量分
+                                            </Text>
+                                            <Text strong style={{ color: token.colorPrimary, fontSize: 24 }}>
+                                                {previewScore}
+                                            </Text>
+                                            <Text type="secondary">/100</Text>
+                                            {sourceType === IntelSourceType.FIRST_LINE && gpsStatus !== 'success' && (
+                                                <Tag color="error" style={{ marginLeft: 8 }}>
+                                                    未通过地理围栏
+                                                </Tag>
+                                            )}
+                                        </Flex>
+
+                                        {/* 图片预览 */}
+                                        {imageData && (
+                                            <div style={{ marginBottom: 16, position: 'relative' }}>
+                                                <img
+                                                    src={imageData.preview}
+                                                    alt="预览"
+                                                    style={{
+                                                        width: '100%',
+                                                        maxHeight: 200,
+                                                        objectFit: 'contain',
+                                                        borderRadius: token.borderRadius,
+                                                        background: token.colorBgContainerDisabled,
+                                                    }}
+                                                />
+                                                <Button
+                                                    type="text"
+                                                    icon={<CloseOutlined />}
+                                                    onClick={() => setImageData(null)}
+                                                    style={{ position: 'absolute', top: 8, right: 8 }}
+                                                />
+                                                <Tag color="blue" style={{ position: 'absolute', bottom: 8, left: 8 }}>
+                                                    已就绪: AI将提取此图文字 (OCR)
+                                                </Tag>
+                                            </div>
+                                        )}
+
+                                        {/* 内容输入 */}
+                                        <TextArea
+                                            value={content}
+                                            onChange={(e) => setContent(e.target.value)}
+                                            placeholder={
+                                                contentType === ContentType.RESEARCH_REPORT
+                                                    ? '请输入研报摘要或上传文档...'
+                                                    : "请拍摄价格黑板或输入：'玉米 2800元/吨'..."
+                                            }
+                                            rows={6}
+                                            style={{ marginBottom: 16 }}
+                                        />
+
+                                        {/* 操作按钮 */}
+                                        <input
+                                            type="file"
+                                            ref={fileInputRef}
+                                            accept="image/*"
+                                            style={{ display: 'none' }}
+                                            onChange={handleFileSelect}
+                                        />
+
+                                        <Flex justify="space-between">
+                                            <Space>
+                                                <Button
+                                                    icon={<PictureOutlined />}
+                                                    onClick={() => fileInputRef.current?.click()}
+                                                    type={imageData ? 'primary' : 'default'}
+                                                    ghost={!!imageData}
+                                                >
+                                                    上传图片
+                                                </Button>
+                                                <Button icon={<SoundOutlined />} onClick={handleVoiceDemo}>
+                                                    语音演示
+                                                </Button>
+                                                <Button icon={<FileTextOutlined />} onClick={handleDocDemo}>
+                                                    文档演示
+                                                </Button>
+                                            </Space>
+
+                                            <Button
+                                                type="primary"
+                                                icon={<ThunderboltOutlined />}
+                                                onClick={handleAnalyze}
+                                                loading={analyzeMutation.isPending}
+                                                disabled={!content.trim() && !imageData}
+                                                size="large"
+                                            >
+                                                AI 分析与校验
+                                            </Button>
+                                        </Flex>
+                                    </>
+                                )
+                            },
+                            {
+                                key: 'file',
+                                label: <span><InboxOutlined /> 文档/图片上传</span>,
+                                children: (
+                                    <DocumentUploader
+                                        contentType={contentType}
+                                        sourceType={sourceType}
+                                        location={undefined}
+                                        onUploadSuccess={() => {
+                                            message.success('文档已成功入库');
+                                            onSuccess?.();
+                                        }}
+                                    />
+                                )
                             }
-                        />
-                    )}
-
-                    {/* 质量分预览 */}
-                    <Flex justify="flex-end" align="center" gap={8} style={{ marginBottom: 12 }}>
-                        <Text type="secondary" style={{ fontSize: 12 }}>
-                            <ThunderboltOutlined style={{ color: token.colorWarning }} /> 预估质量分
-                        </Text>
-                        <Text strong style={{ color: token.colorPrimary, fontSize: 24 }}>
-                            {previewScore}
-                        </Text>
-                        <Text type="secondary">/100</Text>
-                        {sourceType === IntelSourceType.FIRST_LINE && gpsStatus !== 'success' && (
-                            <Tag color="error" style={{ marginLeft: 8 }}>
-                                未通过地理围栏
-                            </Tag>
-                        )}
-                    </Flex>
-
-                    {/* 图片预览 */}
-                    {imageData && (
-                        <div style={{ marginBottom: 16, position: 'relative' }}>
-                            <img
-                                src={imageData.preview}
-                                alt="预览"
-                                style={{
-                                    width: '100%',
-                                    maxHeight: 200,
-                                    objectFit: 'contain',
-                                    borderRadius: token.borderRadius,
-                                    background: token.colorBgContainerDisabled,
-                                }}
-                            />
-                            <Button
-                                type="text"
-                                icon={<CloseOutlined />}
-                                onClick={() => setImageData(null)}
-                                style={{ position: 'absolute', top: 8, right: 8 }}
-                            />
-                            <Tag color="blue" style={{ position: 'absolute', bottom: 8, left: 8 }}>
-                                已就绪: AI将提取此图文字 (OCR)
-                            </Tag>
-                        </div>
-                    )}
-
-                    {/* 内容输入 */}
-                    <TextArea
-                        value={content}
-                        onChange={(e) => setContent(e.target.value)}
-                        placeholder={
-                            category === IntelCategory.A_STRUCTURED
-                                ? "请拍摄价格黑板或输入：'玉米 2800元/吨'..."
-                                : category === IntelCategory.B_SEMI_STRUCTURED
-                                    ? "请语音描述：'某地 发生某事 导致某种影响'..."
-                                    : '【支持OCR】请上传文档图片，系统将自动识别文字。或直接粘贴全文...'
-                        }
-                        rows={6}
-                        style={{ marginBottom: 16 }}
+                        ]}
                     />
-
-                    {/* 操作按钮 */}
-                    <input
-                        type="file"
-                        ref={fileInputRef}
-                        accept="image/*"
-                        style={{ display: 'none' }}
-                        onChange={handleFileSelect}
-                    />
-
-                    <Flex justify="space-between">
-                        <Space>
-                            <Button
-                                icon={<PictureOutlined />}
-                                onClick={() => fileInputRef.current?.click()}
-                                type={imageData ? 'primary' : 'default'}
-                                ghost={!!imageData}
-                            >
-                                上传图片
-                            </Button>
-                            <Button icon={<SoundOutlined />} onClick={handleVoiceDemo}>
-                                语音演示
-                            </Button>
-                            <Button icon={<FileTextOutlined />} onClick={handleDocDemo}>
-                                文档演示
-                            </Button>
-                        </Space>
-
-                        <Button
-                            type="primary"
-                            icon={<ThunderboltOutlined />}
-                            onClick={handleAnalyze}
-                            loading={analyzeMutation.isPending}
-                            disabled={!content.trim() && !imageData}
-                            size="large"
-                        >
-                            AI 分析与校验
-                        </Button>
-                    </Flex>
                 </Card>
 
                 {/* AI 分析结果 */}
@@ -549,13 +552,9 @@ export const DataEntry: React.FC<DataEntryProps> = ({ onSuccess, onCancel }) => 
                                 column={{ xs: 1, sm: 2, md: 3 }}
                                 style={{ marginBottom: 16 }}
                             >
-                                <Descriptions.Item label="情报类型">
-                                    <Tag color={
-                                        category === IntelCategory.A_STRUCTURED ? 'blue' :
-                                            category === IntelCategory.B_SEMI_STRUCTURED ? 'purple' :
-                                                category === IntelCategory.C_DOCUMENT ? 'orange' : 'default'
-                                    }>
-                                        {INTEL_CATEGORY_LABELS[category].split('：')[0]}
+                                <Descriptions.Item label="内容类型">
+                                    <Tag color="blue">
+                                        {CONTENT_TYPE_LABELS[contentType]}
                                     </Tag>
                                 </Descriptions.Item>
                                 <Descriptions.Item label="信源类型">
@@ -1111,6 +1110,7 @@ export const DataEntry: React.FC<DataEntryProps> = ({ onSuccess, onCancel }) => 
                         </Flex>
                     </Card>
                 )}
+
             </div>
         </div>
     );

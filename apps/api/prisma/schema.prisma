@@ -502,9 +502,29 @@ enum IntelCategory {
 
 // 信源类型枚举
 enum IntelSourceType {
-  FIRST_LINE  // 一线采集
-  COMPETITOR  // 竞对情报
-  OFFICIAL    // 官方发布
+  FIRST_LINE    // 一线采集
+  COMPETITOR    // 竞对情报
+  OFFICIAL      // 官方发布
+  RESEARCH_INST // 第三方研究机构
+  MEDIA         // 媒体报道
+}
+
+// 内容类型（统一入口）
+enum ContentType {
+  DAILY_REPORT     // 市场日报
+  RESEARCH_REPORT  // 研究报告
+  POLICY_DOC       // 政策文件
+}
+
+// 研报类型
+enum ReportType {
+  WEEKLY     // 周报
+  MONTHLY    // 月报
+  QUARTERLY  // 季报
+  ANNUAL     // 年报
+  POLICY     // 政策文件
+  RESEARCH   // 第三方研报
+  OTHER      // 其他
 }
 
 // 商情情报主表
@@ -548,6 +568,10 @@ model MarketIntel {
   tasks           IntelTask[]       // 关联任务
   marketEvents    MarketEvent[]     // B类：提取的市场事件
   marketInsights  MarketInsight[]   // C类：提取的市场洞察
+  researchReport  ResearchReport?   // 研报档案（一对一）
+  
+  // 统一入口：内容类型
+  contentType     ContentType?      // 内容类型（日报/研报/政策）
   
   createdAt     DateTime        @default(now())
   updatedAt     DateTime        @updatedAt
@@ -556,6 +580,41 @@ model MarketIntel {
   @@index([sourceType])
   @@index([effectiveTime])
   @@index([authorId])
+  @@index([contentType])
+}
+
+// =============================================
+// C类增强：研究报告档案
+// =============================================
+model ResearchReport {
+  id            String     @id @default(uuid())
+  
+  // 基础信息
+  title         String                       // 报告标题
+  reportType    ReportType                   // 报告类型
+  publishDate   DateTime?                    // 发布日期
+  source        String?                      // 来源机构
+  
+  // AI 生成内容
+  summary       String     @db.Text          // AI 生成摘要
+  keyPoints     Json?                        // 关键观点 [{point, sentiment, confidence}]
+  prediction    Json?                        // 预测信息 {direction, timeframe, reasoning}
+  dataPoints    Json?                        // 提及的数据点 [{metric, value, period}]
+  
+  // 覆盖范围
+  commodities   String[]                     // 涉及品种
+  regions       String[]                     // 涉及区域
+  timeframe     String?                      // 预测周期
+  
+  // 关联
+  intelId       String     @unique           // 关联 MarketIntel
+  intel         MarketIntel @relation(fields: [intelId], references: [id], onDelete: Cascade)
+  
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+  
+  @@index([reportType])
+  @@index([publishDate])
 }
 
 // 情报员统计表

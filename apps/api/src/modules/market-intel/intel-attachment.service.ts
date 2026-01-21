@@ -98,6 +98,16 @@ export class IntelAttachmentService {
     }
 
     /**
+     * 更新附件关联的情报ID
+     */
+    async updateIntelId(attachmentId: string, intelId: string) {
+        return this.prisma.intelAttachment.update({
+            where: { id: attachmentId },
+            data: { intelId },
+        });
+    }
+
+    /**
      * 全文搜索附件（基于 OCR 文本）
      */
     async searchByOcrText(keyword: string, limit = 20) {

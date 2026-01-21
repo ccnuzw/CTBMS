@@ -1,6 +1,7 @@
 export { SuperDashboard } from './SuperDashboard';
 export { Dashboard } from './Dashboard';
 export { DataEntry } from './DataEntry';
+export { DocumentUploader } from './DocumentUploader';
 export { Leaderboard } from './Leaderboard';
 export { IntelligenceFeed } from './IntelligenceFeed';
 export { MarketData } from './MarketData';

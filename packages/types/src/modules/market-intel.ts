@@ -15,6 +15,8 @@ export enum IntelSourceType {
   FIRST_LINE = 'FIRST_LINE',
   COMPETITOR = 'COMPETITOR',
   OFFICIAL = 'OFFICIAL',
+  RESEARCH_INST = 'RESEARCH_INST',  // 第三方研究机构
+  MEDIA = 'MEDIA',                   // 媒体报道
 }
 
 // 枚举标签映射
@@ -29,6 +31,55 @@ export const INTEL_SOURCE_TYPE_LABELS: Record<IntelSourceType, string> = {
   [IntelSourceType.FIRST_LINE]: '一线采集',
   [IntelSourceType.COMPETITOR]: '竞对情报',
   [IntelSourceType.OFFICIAL]: '官方发布',
+  [IntelSourceType.RESEARCH_INST]: '第三方研究机构',
+  [IntelSourceType.MEDIA]: '媒体报道',
+};
+
+// 统一入口：内容类型
+export enum ContentType {
+  DAILY_REPORT = 'DAILY_REPORT',     // 市场日报（提取价格/事件/洞察）
+  RESEARCH_REPORT = 'RESEARCH_REPORT', // 研究报告（存入知识库）
+  POLICY_DOC = 'POLICY_DOC',         // 政策文件
+}
+
+export const CONTENT_TYPE_LABELS: Record<ContentType, string> = {
+  [ContentType.DAILY_REPORT]: '市场日报',
+  [ContentType.RESEARCH_REPORT]: '研究报告',
+  [ContentType.POLICY_DOC]: '政策文件',
+};
+
+export const CONTENT_TYPE_DESCRIPTIONS: Record<ContentType, string> = {
+  [ContentType.DAILY_REPORT]: '价格、事件等日常市场信息 → 提取结构化数据',
+  [ContentType.RESEARCH_REPORT]: '周报、月报、第三方研报 → 存入知识库档案',
+  [ContentType.POLICY_DOC]: '政策通知、官方文件 → 标记关键要点',
+};
+
+// 内容类型对应的可选信源
+export const CONTENT_TYPE_SOURCE_OPTIONS: Record<ContentType, IntelSourceType[]> = {
+  [ContentType.DAILY_REPORT]: [IntelSourceType.FIRST_LINE, IntelSourceType.COMPETITOR, IntelSourceType.OFFICIAL],
+  [ContentType.RESEARCH_REPORT]: [IntelSourceType.RESEARCH_INST, IntelSourceType.OFFICIAL, IntelSourceType.MEDIA],
+  [ContentType.POLICY_DOC]: [IntelSourceType.OFFICIAL],
+};
+
+// 研报类型
+export enum ReportType {
+  WEEKLY = 'WEEKLY',       // 周报
+  MONTHLY = 'MONTHLY',     // 月报
+  QUARTERLY = 'QUARTERLY', // 季报
+  ANNUAL = 'ANNUAL',       // 年报
+  POLICY = 'POLICY',       // 政策文件
+  RESEARCH = 'RESEARCH',   // 第三方研报
+  OTHER = 'OTHER',         // 其他
+}
+
+export const REPORT_TYPE_LABELS: Record<ReportType, string> = {
+  [ReportType.WEEKLY]: '周报',
+  [ReportType.MONTHLY]: '月报',
+  [ReportType.QUARTERLY]: '季报',
+  [ReportType.ANNUAL]: '年报',
+  [ReportType.POLICY]: '政策文件',
+  [ReportType.RESEARCH]: '第三方研报',
+  [ReportType.OTHER]: '其他',
 };
 
 // =============================================
@@ -171,6 +222,7 @@ export const QualityScoreSchema = z.object({
 // 创建情报请求
 export const CreateMarketIntelSchema = z.object({
   category: z.nativeEnum(IntelCategory),
+  contentType: z.nativeEnum(ContentType).optional(),
   sourceType: z.nativeEnum(IntelSourceType),
   effectiveTime: z.coerce.date(),
   location: z.string().min(1, '位置不能为空'),
@@ -195,6 +247,7 @@ export const UpdateMarketIntelSchema = CreateMarketIntelSchema.partial();
 export const MarketIntelResponseSchema = z.object({
   id: z.string(),
   category: z.nativeEnum(IntelCategory),
+  contentType: z.nativeEnum(ContentType).nullable().optional(),
   sourceType: z.nativeEnum(IntelSourceType),
   effectiveTime: z.date(),
   location: z.string(),

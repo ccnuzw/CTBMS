@@ -5,6 +5,8 @@ import { PriceDataService } from './price-data.service';
 import { IntelTaskService } from './intel-task.service';
 import { IntelAttachmentService } from './intel-attachment.service';
 import { IntelEntityService } from './intel-entity.service';
+import { DocumentParserService } from './document-parser.service';
+import { ResearchReportService } from './research-report.service';
 
 @Module({
     controllers: [MarketIntelController],
@@ -14,6 +16,8 @@ import { IntelEntityService } from './intel-entity.service';
         IntelTaskService,
         IntelAttachmentService,
         IntelEntityService,
+        DocumentParserService,
+        ResearchReportService,
     ],
     exports: [
         MarketIntelService,
@@ -21,6 +25,8 @@ import { IntelEntityService } from './intel-entity.service';
         IntelTaskService,
         IntelAttachmentService,
         IntelEntityService,
+        DocumentParserService,
+        ResearchReportService,
     ],
 })
 export class MarketIntelModule { }

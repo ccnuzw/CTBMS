@@ -7,7 +7,11 @@ import {
     Body,
     Param,
     Query,
+    UseInterceptors,
+    UploadedFile,
+    BadRequestException,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import { MarketIntelService } from './market-intel.service';
 import { PriceDataService } from './price-data.service';
 import { IntelTaskService } from './intel-task.service';
@@ -23,9 +27,12 @@ import {
     CreateIntelTaskDto,
     UpdateIntelTaskDto,
     IntelTaskQuery,
+    ContentType,
+    IntelCategory,
 } from '@packages/types';
 import { IntelAttachmentService } from './intel-attachment.service';
 import { IntelEntityService } from './intel-entity.service';
+import { DocumentParserService } from './document-parser.service';
 
 @Controller('market-intel')
 export class MarketIntelController {
@@ -35,6 +42,7 @@ export class MarketIntelController {
         private readonly intelTaskService: IntelTaskService,
         private readonly intelAttachmentService: IntelAttachmentService,
         private readonly intelEntityService: IntelEntityService,
+        private readonly documentParserService: DocumentParserService,
     ) { }
 
     // =============================================
@@ -330,7 +338,117 @@ export class MarketIntelController {
         return this.intelTaskService.remove(id);
     }
 
-    // --- 附件管理 ---
+    // --- C类：附件/文档管理 ---
+
+    /**
+     * 上传文档（C类核心接口）
+     * 支持 PDF/Word/Excel/图片
+     */
+    @Post('upload')
+    @UseInterceptors(FileInterceptor('file', {
+        limits: { fileSize: 20 * 1024 * 1024 }, // 20MB
+        fileFilter: (_req, file, callback) => {
+            const allowedMimes = [
+                'application/pdf',
+                'application/msword',
+                'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+                'application/vnd.ms-excel',
+                'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                'image/jpeg',
+                'image/png',
+                'image/webp',
+                'text/plain',
+            ];
+            if (allowedMimes.includes(file.mimetype)) {
+                callback(null, true);
+            } else {
+                callback(new BadRequestException(`不支持的文件类型: ${file.mimetype}`), false);
+            }
+        },
+    }))
+    async uploadDocument(
+        @UploadedFile() file: Express.Multer.File,
+        @Body('sourceType') sourceType?: string,
+        @Body('contentType') contentType?: string,
+        @Body('location') location?: string,
+        @Body('region') region?: string,
+    ) {
+        if (!file) {
+            throw new BadRequestException('请上传文件');
+        }
+
+        const authorId = 'system-user-placeholder';
+
+        // 1. 解析文档内容
+        let extractedText = '';
+        let parseError = '';
+        try {
+            const parseResult = await this.documentParserService.parse(file.buffer, file.mimetype);
+            extractedText = parseResult.text || '';
+        } catch (error) {
+            parseError = error instanceof Error ? error.message : '文档解析失败';
+        }
+
+        // 2. 保存文件并创建附件记录（带 OCR 文本）
+        const attachment = await this.intelAttachmentService.saveFile(
+            {
+                buffer: file.buffer,
+                originalname: file.originalname,
+                mimetype: file.mimetype,
+                size: file.size,
+            },
+            '', // intelId 稍后关联
+            extractedText, // 存储提取的文本作为 ocrText
+        );
+
+        // 3. 创建 MarketIntel 记录
+        const rawContent = extractedText
+            ? `[文档上传] ${file.originalname}\n\n--- 提取内容 ---\n${extractedText.substring(0, 5000)}${extractedText.length > 5000 ? '...(已截断)' : ''}`
+            : `[文档上传] ${file.originalname}${parseError ? `\n\n[解析警告] ${parseError}` : ''}`;
+
+
+        // Map ContentType to Category (Legacy Support)
+        const inputContentType = (contentType as ContentType) || ContentType.DAILY_REPORT;
+        let mappedCategory = IntelCategory.C_DOCUMENT;
+        if (inputContentType === ContentType.DAILY_REPORT) {
+            mappedCategory = IntelCategory.B_SEMI_STRUCTURED;
+        }
+
+        const intel = await this.marketIntelService.create({
+            category: mappedCategory,
+            contentType: inputContentType,
+            sourceType: (sourceType as any) || 'OFFICIAL',
+            rawContent,
+            effectiveTime: new Date(),
+            location: location || '未指定',
+            region: region ? region.split(',') : [],
+            gpsVerified: false,
+            completenessScore: extractedText ? 70 : 50,  // 解析成功得分更高
+            scarcityScore: 50,
+            validationScore: 0,
+            totalScore: extractedText ? 60 : 50,
+            isFlagged: false,
+        }, authorId);
+
+        // 4. 更新附件关联
+        await this.intelAttachmentService.updateIntelId(attachment.id, intel.id);
+
+        return {
+            success: true,
+            intel,
+            attachment: {
+                id: attachment.id,
+                filename: attachment.filename,
+                mimeType: attachment.mimeType,
+                fileSize: attachment.fileSize,
+            },
+            extractedTextLength: extractedText.length,
+            parseError: parseError || undefined,
+            message: extractedText
+                ? `文档上传成功，已提取 ${extractedText.length} 字符`
+                : '文档上传成功，内容解析待处理',
+        };
+    }
 
     @Get('attachments/search')
     async searchAttachments(
