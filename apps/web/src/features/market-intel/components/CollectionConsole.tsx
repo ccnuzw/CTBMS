@@ -22,6 +22,7 @@ import {
     INTEL_SOURCE_TYPE_LABELS,
 } from '../types';
 import { DocumentUploader } from './DocumentUploader';
+import { useTestAI } from '../api';
 
 const { TextArea } = Input;
 const { Text } = Typography;
@@ -77,6 +78,7 @@ export const CollectionConsole: React.FC<CollectionConsoleProps> = ({
 }) => {
     const { token } = theme.useToken();
     const fileInputRef = useRef<HTMLInputElement>(null);
+    const testAIMutation = useTestAI();
 
     // 快捷填入 Prompt placeholder
     const getPlaceholder = () => {
@@ -118,6 +120,20 @@ export const CollectionConsole: React.FC<CollectionConsoleProps> = ({
 短期内受天气和物流影响，价格可能小幅震荡。建议关注华北地区新粮上市进度。`,
         );
         message.info('已填入标准日报样稿');
+    };
+
+    // 测试 AI 连接
+    const handleTestAI = async () => {
+        try {
+            const result = await testAIMutation.mutateAsync();
+            if (result.success) {
+                message.success(`${result.message} - ${result.response || ''}`);
+            } else {
+                message.error(`${result.message}${result.error ? `: ${result.error.substring(0, 100)}` : ''}`);
+            }
+        } catch (error) {
+            message.error('AI 连接测试失败');
+        }
     };
 
     // 图片上传处理
@@ -339,6 +355,16 @@ export const CollectionConsole: React.FC<CollectionConsoleProps> = ({
             {/* 4. Action Footer */}
             <Divider style={{ margin: '16px 0' }} />
             <Flex gap={12} justify="flex-end">
+                <Tooltip title="测试 AI 服务是否配置正确">
+                    <Button
+                        icon={<ThunderboltOutlined />}
+                        loading={testAIMutation.isPending}
+                        onClick={handleTestAI}
+                        size="small"
+                    >
+                        测试 AI
+                    </Button>
+                </Tooltip>
                 <Button
                     icon={<ReloadOutlined />}
                     onClick={handleReset}

@@ -83,6 +83,11 @@ export class MarketIntelController {
         );
     }
 
+    @Get('test-ai')
+    async testAI() {
+        return this.marketIntelService.testAI();
+    }
+
     // --- A类：价格数据 ---
 
     @Post('price-data')

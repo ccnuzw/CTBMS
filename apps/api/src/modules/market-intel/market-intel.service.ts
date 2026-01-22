@@ -30,6 +30,13 @@ export class MarketIntelService {
     }
 
     /**
+     * 测试 AI 连接
+     */
+    async testAI() {
+        return this.aiService.testConnection();
+    }
+
+    /**
      * 创建商情情报
      * 支持从 C 类日报自动提取 A 类价格数据
      */

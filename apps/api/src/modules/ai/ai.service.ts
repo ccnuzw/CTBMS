@@ -11,6 +11,7 @@ import {
     CollectionPointType,
 } from '@packages/types';
 import { PrismaService } from '../../prisma/prisma.service';
+import { GoogleGenerativeAI, GenerativeModel } from '@google/generative-ai';
 
 /**
  * AI 分析服务
@@ -22,6 +23,8 @@ import { PrismaService } from '../../prisma/prisma.service';
 export class AIService implements OnModuleInit {
     private readonly logger = new Logger(AIService.name);
     private readonly apiKey: string;
+    private readonly apiUrl: string;
+    private readonly modelId: string;
 
     // 采集点缓存（从数据库加载）
     // 使用 any[] 避免 Prisma 枚举与 types 枚举不兼容问题
@@ -52,9 +55,15 @@ export class AIService implements OnModuleInit {
     private readonly KNOWN_COMMODITIES = ['玉米', '大豆', '小麦', '稻谷', '高粱', '豆粕', '菜粕'];
 
     constructor(private readonly prisma: PrismaService) {
+        // Gemini API 配置（支持中转服务）
         this.apiKey = process.env.GEMINI_API_KEY || '';
+        this.apiUrl = process.env.GEMINI_API_URL || 'https://generativelanguage.googleapis.com/v1';
+        this.modelId = process.env.GEMINI_MODEL_ID || 'gemini-pro';
+
         if (!this.apiKey) {
             this.logger.warn('GEMINI_API_KEY not configured. Using demo mode.');
+        } else {
+            this.logger.log(`Gemini API configured: URL=${this.apiUrl}, Model=${this.modelId}`);
         }
     }
 
@@ -145,19 +154,511 @@ export class AIService implements OnModuleInit {
         }
 
         try {
-            // TODO: 集成真实的 Gemini API 调用
-            // 当前返回模拟数据，后续可替换为真实实现
-            return this.getMockAnalysis(content, category);
+            // 调用真实的 Gemini API
+            const aiResponse = await this.callGeminiAPI(content, category, base64Image, mimeType);
+
+            // 使用 AI 返回的结果增强本地解析
+            return this.enhanceWithAIResponse(content, category, aiResponse);
         } catch (error) {
-            this.logger.error('AI analysis failed', error);
+            this.logger.error('AI analysis failed, falling back to local parsing', error);
+            try {
+                // 降级到本地模拟解析
+                return this.getMockAnalysis(content, category);
+            } catch (fallbackError) {
+                this.logger.error('Local parsing fallback also failed', fallbackError);
+                // 终极兜底：返回最基础的空结果，防止前端崩溃
+                return {
+                    summary: 'AI 分析服务暂时不可用，且本地解析失败。请稍后重试或手动录入。',
+                    tags: ['#系统错误'],
+                    sentiment: 'neutral',
+                    confidenceScore: 0,
+                    validationMessage: error instanceof Error ? error.message : '未知错误',
+                };
+            }
+        }
+    }
+
+    /**
+     * 测试 AI 连接
+     * 用简单的提示词测试 Gemini API 是否配置正确
+     */
+    async testConnection(): Promise<{
+        success: boolean;
+        message: string;
+        apiUrl?: string;
+        modelId?: string;
+        response?: string;
+        error?: string;
+    }> {
+        if (!this.apiKey) {
+            return { success: false, message: 'GEMINI_API_KEY 未配置' };
+        }
+        if (!this.apiUrl) {
+            return { success: false, message: 'GEMINI_API_URL 未配置' };
+        }
+
+        try {
+            const genAI = new GoogleGenerativeAI(this.apiKey);
+            const model = genAI.getGenerativeModel({ model: this.modelId }, {
+                baseUrl: this.apiUrl,
+            });
+
+            const result = await model.generateContent('Hello');
+            const response = await result.response;
+            const text = response.text();
+
             return {
-                summary: 'AI 解析失败',
-                tags: ['#错误'],
-                sentiment: 'neutral',
-                confidenceScore: 0,
-                validationMessage: '系统连接异常或解析错误',
+                success: true,
+                message: 'AI 连接测试成功！',
+                apiUrl: this.apiUrl,
+                modelId: this.modelId,
+                response: text.substring(0, 200),
+            };
+        } catch (error) {
+            const errorMessage = error instanceof Error ? error.message : String(error);
+            this.logger.error('Gemini SDK test error', error);
+            return {
+                success: false,
+                message: `连接错误: ${errorMessage}`,
+                apiUrl: this.apiUrl,
+                modelId: this.modelId,
+                error: errorMessage,
             };
         }
+    }
+
+    /**
+     * 调用 Gemini API（支持中转服务）
+     */
+    private async callGeminiAPI(
+        content: string,
+        category: IntelCategory,
+        base64Image?: string,
+        mimeType?: string,
+    ): Promise<string> {
+        // 构建 Prompt
+        const systemPrompt = this.buildSystemPrompt(category);
+        const userPrompt = this.buildUserPrompt(content, category);
+
+        const fullPrompt = `${systemPrompt}\n\n${userPrompt}`;
+
+        this.logger.debug(`[AI] Preparing request for model: ${this.modelId}`);
+        this.logger.debug(`[AI] Base URL: ${this.apiUrl}`);
+        this.logger.debug(`[AI] System Prompt Length: ${systemPrompt.length}`);
+        this.logger.debug(`[AI] User Prompt Length: ${userPrompt.length}`);
+
+        const genAI = new GoogleGenerativeAI(this.apiKey);
+        const model = genAI.getGenerativeModel({
+            model: this.modelId,
+            generationConfig: {
+                maxOutputTokens: 8192,
+                temperature: 0.3,
+            }
+        }, {
+            baseUrl: this.apiUrl,
+        });
+
+        const parts: any[] = [{ text: fullPrompt }];
+
+        // 如果有图片，添加到请求中
+        if (base64Image && mimeType) {
+            this.logger.debug(`[AI] Adding image: ${mimeType}, base64 length: ${base64Image.length}`);
+            parts.push({
+                inlineData: {
+                    mimeType: mimeType,
+                    data: base64Image,
+                },
+            });
+        }
+
+        this.logger.debug(`[AI] Calling SDK generateContent...`);
+
+        try {
+            const result = await model.generateContent(parts);
+            this.logger.debug(`[AI] SDK generateContent complete. Fetching response...`);
+
+            const response = await result.response;
+            this.logger.debug(`[AI] Response candidates: ${JSON.stringify(response.candidates?.[0]?.finishReason)}`);
+
+            const text = response.text();
+            this.logger.debug(`[AI] Response text length: ${text?.length}`);
+            this.logger.debug(`[AI] Response preview: ${text?.substring(0, 100)}...`);
+
+            if (!text) {
+                this.logger.warn(`[AI] Empty text received! Full response: ${JSON.stringify(response)}`);
+                throw new Error('Empty response from Gemini SDK');
+            }
+
+            return text;
+        } catch (error) {
+            const msg = error instanceof Error ? error.message : String(error);
+            // 记录详细错误以便调试
+            this.logger.error(`[AI] Gemini SDK generateContent failed: ${msg}`, error instanceof Error ? error.stack : undefined);
+            if (error instanceof Error && 'response' in error) {
+                this.logger.error(`[AI] SDK Error Response: ${JSON.stringify((error as any).response)}`);
+            }
+            throw error;
+        }
+    }
+
+    /**
+     * 构建系统提示词（完全匹配项目数据结构）
+     */
+    private buildSystemPrompt(category: IntelCategory): string {
+        // 根据内容类别调整提示词重点
+        const categoryInstructions: Record<IntelCategory, string> = {
+            [IntelCategory.A_STRUCTURED]: `
+重点任务：提取结构化价格数据
+- 识别每个价格点的采集点名称、价格、涨跌、品种
+- 判断价格主体类型：ENTERPRISE(企业收购价) / REGIONAL(地域市场价) / PORT(港口价格)
+- 判断价格子类型：LISTED(挂牌价) / TRANSACTION(成交价) / ARRIVAL(到港价) / FOB(平舱价) / STATION_ORIGIN(站台价-产区) / STATION_DEST(站台价-销区) / PURCHASE(收购价) / WHOLESALE(批发价)
+- 判断地理层级：ENTERPRISE(企业) / PORT(港口) / CITY(市级) / PROVINCE(省级) / REGION(大区)`,
+
+            [IntelCategory.B_SEMI_STRUCTURED]: `
+重点任务：提取市场事件和市场心态
+- 市场事件：企业动态、供需变化、政策影响、物流运输等
+- 市场心态：贸易商、加工企业、农户的心态倾向
+- 识别事件的影响程度(HIGH/MEDIUM/LOW)和市场情绪(bullish/bearish/neutral)`,
+
+            [IntelCategory.C_DOCUMENT]: `
+重点任务：提取市场洞察和预判
+- 后市预判：短期/中期/长期展望
+- 关键因素：影响市场的主要因素
+- 预判方向：up(看涨) / down(看跌) / stable(持稳)
+- 置信度：0-100的可信度评分`,
+
+            [IntelCategory.D_ENTITY]: `
+重点任务：识别企业实体信息
+- 提取企业名称、动态、产能变化
+- 关联相关市场影响`,
+        };
+
+        return `你是 CTBMS（粮贸商情管理系统）的专业农产品市场分析师。请分析输入内容并以 JSON 格式返回结构化数据。
+
+${categoryInstructions[category] || ''}
+
+## 常见采集点参考
+- 港口：锦州港、鲅鱼圈、北良港、大连港、营口港、丹东港、秦皇岛港、唐山港、天津港、青岛港、日照港
+- 深加工企业：梅花味精、中粮生化、益海嘉里、象屿生化、吉林燃料乙醇、长春大成、公主岭黄龙、嘉吉、国投生物、诺维信、西王、鲁洲
+- 贸易商：中粮玉米、北大荒粮食、象屿物流、中储粮、华粮物流
+- 地域：东北、华北、华东、华南、华中、西北、西南
+
+## 常见品种
+玉米、大豆、小麦、稻谷、高粱、豆粕、菜粕
+
+## 输出 JSON 格式（严格遵循，不要包含 markdown 代码块，请输出紧凑的 JSON 以节省 Token）
+{
+  "summary": "一句话概括当前市场状况",
+  "sentiment": "positive/negative/neutral",
+  "tags": ["#玉米", "#价格", "#日报"],
+
+  "pricePoints": [
+    {
+      "location": "采集点名称",
+      "price": 2800,
+      "change": 10,
+      "unit": "元/吨",
+      "commodity": "玉米",
+      "grade": "二等",
+      "sourceType": "ENTERPRISE/REGIONAL/PORT",
+      "subType": "LISTED/TRANSACTION/ARRIVAL/FOB/STATION_ORIGIN/STATION_DEST/PURCHASE/WHOLESALE",
+      "geoLevel": "ENTERPRISE/PORT/CITY/PROVINCE/REGION",
+      "note": "备注如：平舱价、挂牌价"
+    }
+  ],
+
+  "events": [
+    {
+      "subject": "事件主体（企业名或港口名）",
+      "action": "动作（开始收购/停机检修/到港增加等）",
+      "content": "事件完整描述",
+      "impact": "对市场的影响描述",
+      "impactLevel": "HIGH/MEDIUM/LOW",
+      "sentiment": "bullish/bearish/neutral",
+      "commodity": "相关品种",
+      "sourceText": "原文片段"
+    }
+  ],
+
+  "insights": [
+    {
+      "title": "洞察标题",
+      "content": "详细内容",
+      "direction": "up/down/stable",
+      "timeframe": "short/medium/long",
+      "confidence": 80,
+      "factors": ["因素1", "因素2"],
+      "commodity": "相关品种",
+      "sourceText": "原文片段"
+    }
+  ],
+
+  "marketSentiment": {
+    "overall": "bullish/bearish/neutral/mixed",
+    "score": 50,
+    "traders": "贸易商心态描述",
+    "processors": "加工企业心态描述",
+    "farmers": "农户/基层心态描述",
+    "summary": "整体市场情绪概述"
+  }
+}`;
+    }
+
+    /**
+     * 构建用户提示词（针对不同类别提供具体指导）
+     */
+    private buildUserPrompt(content: string, category: IntelCategory): string {
+        const categoryGuidance: Record<IntelCategory, string> = {
+            [IntelCategory.A_STRUCTURED]: `请从以下A类价格快讯中提取所有价格点，注意区分：
+- 企业挂牌价 vs 市场成交价
+- 港口平舱价 vs 到港价
+- 站台价（产区/销区）
+
+每个价格点都要识别 sourceType、subType 和 geoLevel。`,
+
+            [IntelCategory.B_SEMI_STRUCTURED]: `请从以下B类市场动态中提取：
+1. 市场事件（企业动态、供需变化、物流运输）
+2. 市场心态（贸易商、加工企业、农户的心理预期）
+3. 如有价格信息也一并提取`,
+
+            [IntelCategory.C_DOCUMENT]: `请从以下C类日报/研报中全面提取：
+1. 价格数据汇总
+2. 市场事件动态
+3. 后市预判和洞察
+4. 整体市场心态
+5. 关键影响因素`,
+
+            [IntelCategory.D_ENTITY]: `请从以下D类企业档案中提取：
+1. 企业动态和产能变化
+2. 与市场相关的事件
+3. 对行情的潜在影响`,
+        };
+
+        return `${categoryGuidance[category] || '请分析以下市场内容：'}
+
+===== 原文内容 =====
+${content}
+===== 原文结束 =====
+
+请严格按照系统提示的 JSON 格式输出，确保所有字段名称正确。`;
+    }
+
+    /**
+     * 使用 AI 响应增强本地解析结果
+     */
+    private enhanceWithAIResponse(
+        content: string,
+        category: IntelCategory,
+        aiResponse: string,
+    ): AIAnalysisResult {
+        // 先获取本地解析结果作为基础
+        const localResult = this.getMockAnalysis(content, category);
+
+        try {
+            // 尝试解析 AI 返回的 JSON
+            let cleanJson = aiResponse;
+
+            // 1. 移除 Markdown 代码块标记（包括可能的语言标识）
+            cleanJson = cleanJson.replace(/```[a-zA-Z]*\n?/g, '').replace(/```/g, '');
+
+            // 2. 提取 JSON 对象 (查找第一个 { 和最后一个 })
+            const firstBrace = cleanJson.indexOf('{');
+            const lastBrace = cleanJson.lastIndexOf('}');
+
+            if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
+                cleanJson = cleanJson.substring(firstBrace, lastBrace + 1);
+            }
+
+            cleanJson = cleanJson.trim();
+
+            this.logger.debug(`Cleaned JSON for parsing: ${cleanJson.substring(0, 100)}...`);
+
+            const aiResult = JSON.parse(cleanJson);
+
+            // 处理价格点：保留 AI 提取的增强字段
+            const pricePoints = aiResult.pricePoints?.length > 0
+                ? aiResult.pricePoints.map((p: {
+                    location: string;
+                    price: number;
+                    change?: number | null;
+                    unit?: string;
+                    commodity?: string;
+                    grade?: string;
+                    sourceType?: string;
+                    subType?: string;
+                    geoLevel?: string;
+                    note?: string;
+                }) => ({
+                    location: p.location,
+                    price: p.price,
+                    change: p.change ?? null,
+                    unit: p.unit || '元/吨',
+                    commodity: p.commodity || '玉米',
+                    grade: p.grade,
+                    // 使用 AI 识别的分类，提供智能默认值
+                    sourceType: this.mapSourceType(p.sourceType, p.location),
+                    subType: this.mapSubType(p.subType, p.note),
+                    geoLevel: this.mapGeoLevel(p.geoLevel, p.location),
+                    note: p.note,
+                }))
+                : localResult.pricePoints;
+
+            // 处理事件：包含增强字段
+            const events = aiResult.events?.length > 0
+                ? aiResult.events.map((e: {
+                    subject?: string;
+                    action?: string;
+                    content?: string;
+                    impact?: string;
+                    impactLevel?: string;
+                    sentiment?: string;
+                    commodity?: string;
+                    sourceText?: string;
+                }) => ({
+                    subject: e.subject,
+                    action: e.action,
+                    content: e.content,
+                    impact: e.impact,
+                    impactLevel: e.impactLevel,
+                    sentiment: e.sentiment,
+                    commodity: e.commodity,
+                    sourceText: e.sourceText,
+                }))
+                : localResult.events;
+
+            // 处理洞察：新增字段
+            const insights = aiResult.insights?.length > 0
+                ? aiResult.insights.map((i: {
+                    title?: string;
+                    content?: string;
+                    direction?: string;
+                    timeframe?: string;
+                    confidence?: number;
+                    factors?: string[];
+                    commodity?: string;
+                    sourceText?: string;
+                }) => ({
+                    title: i.title,
+                    content: i.content,
+                    direction: i.direction,
+                    timeframe: i.timeframe,
+                    confidence: i.confidence,
+                    factors: i.factors || [],
+                    commodity: i.commodity,
+                    sourceText: i.sourceText,
+                }))
+                : undefined;
+
+            // 处理市场心态：包含完整字段
+            const marketSentiment = aiResult.marketSentiment ? {
+                overall: aiResult.marketSentiment.overall || 'neutral',
+                score: aiResult.marketSentiment.score,
+                traders: aiResult.marketSentiment.traders,
+                processors: aiResult.marketSentiment.processors,
+                farmers: aiResult.marketSentiment.farmers,
+                summary: aiResult.marketSentiment.summary,
+            } : localResult.marketSentiment;
+
+            // 合并 AI 结果和本地结果
+            return {
+                ...localResult,
+                // AI 生成的摘要优先
+                summary: aiResult.summary || localResult.summary,
+                // AI 识别的情绪
+                sentiment: this.mapSentiment(aiResult.sentiment) || localResult.sentiment,
+                // 合并标签（去重）
+                tags: [...new Set([...(aiResult.tags || []), ...localResult.tags])],
+                // 提高置信度（因为使用了真实 AI）
+                confidenceScore: Math.min((localResult.confidenceScore || 75) + 15, 98),
+                // 增强的数据
+                pricePoints,
+                events,
+                marketSentiment,
+                // 新增：洞察数据（用于生成 MarketInsight）
+                forecast: insights?.length > 0 ? {
+                    shortTerm: insights.find((i: { timeframe?: string }) => i.timeframe === 'short')?.content,
+                    mediumTerm: insights.find((i: { timeframe?: string }) => i.timeframe === 'medium')?.content,
+                    longTerm: insights.find((i: { timeframe?: string }) => i.timeframe === 'long')?.content,
+                    keyFactors: insights.flatMap((i: { factors?: string[] }) => i.factors || []).slice(0, 5),
+                } : localResult.forecast,
+            };
+        } catch (parseError) {
+            this.logger.warn('Failed to parse AI response as JSON, using as summary', parseError);
+            // 如果 JSON 解析失败，将 AI 响应作为摘要使用
+            return {
+                ...localResult,
+                summary: aiResponse.substring(0, 500),
+                confidenceScore: Math.min((localResult.confidenceScore || 75) + 5, 90),
+            };
+        }
+    }
+
+    /**
+     * 映射价格主体类型
+     */
+    private mapSourceType(type: string | undefined, location: string): 'ENTERPRISE' | 'REGIONAL' | 'PORT' {
+        if (type) {
+            const upper = type.toUpperCase();
+            if (upper === 'ENTERPRISE') return 'ENTERPRISE';
+            if (upper === 'PORT') return 'PORT';
+            if (upper === 'REGIONAL') return 'REGIONAL';
+        }
+        // 智能推断
+        if (this.FALLBACK_PORTS.some(p => location.includes(p))) return 'PORT';
+        if (this.FALLBACK_ENTERPRISES.some(e => location.includes(e))) return 'ENTERPRISE';
+        return 'REGIONAL';
+    }
+
+    /**
+     * 映射价格子类型
+     */
+    private mapSubType(
+        type: string | undefined,
+        note: string | undefined,
+    ): 'LISTED' | 'TRANSACTION' | 'ARRIVAL' | 'FOB' | 'STATION_ORIGIN' | 'STATION_DEST' | 'PURCHASE' | 'WHOLESALE' | 'OTHER' {
+        type SubTypeValue = 'LISTED' | 'TRANSACTION' | 'ARRIVAL' | 'FOB' | 'STATION_ORIGIN' | 'STATION_DEST' | 'PURCHASE' | 'WHOLESALE' | 'OTHER';
+        if (type) {
+            const upper = type.toUpperCase() as SubTypeValue;
+            const validTypes: SubTypeValue[] = ['LISTED', 'TRANSACTION', 'ARRIVAL', 'FOB', 'STATION_ORIGIN', 'STATION_DEST', 'PURCHASE', 'WHOLESALE', 'OTHER'];
+            if (validTypes.includes(upper)) return upper;
+        }
+        // 从备注推断
+        const context = (note || '').toLowerCase();
+        if (context.includes('平舱') || context.includes('fob')) return 'FOB';
+        if (context.includes('到港') || context.includes('到货')) return 'ARRIVAL';
+        if (context.includes('成交')) return 'TRANSACTION';
+        if (context.includes('收购')) return 'PURCHASE';
+        if (context.includes('站台')) return 'STATION_ORIGIN';
+        return 'LISTED';
+    }
+
+    /**
+     * 映射地理层级
+     */
+    private mapGeoLevel(
+        level: string | undefined,
+        location: string,
+    ): 'COUNTRY' | 'REGION' | 'PROVINCE' | 'CITY' | 'DISTRICT' | 'PORT' | 'STATION' | 'ENTERPRISE' {
+        type GeoLevelValue = 'COUNTRY' | 'REGION' | 'PROVINCE' | 'CITY' | 'DISTRICT' | 'PORT' | 'STATION' | 'ENTERPRISE';
+        if (level) {
+            const upper = level.toUpperCase() as GeoLevelValue;
+            const validLevels: GeoLevelValue[] = ['COUNTRY', 'REGION', 'PROVINCE', 'CITY', 'DISTRICT', 'PORT', 'STATION', 'ENTERPRISE'];
+            if (validLevels.includes(upper)) return upper;
+        }
+        // 智能推断
+        if (this.FALLBACK_PORTS.some(p => location.includes(p))) return 'PORT';
+        if (this.FALLBACK_ENTERPRISES.some(e => location.includes(e))) return 'ENTERPRISE';
+        const regions = ['东北', '华北', '华东', '华南', '华中', '西北', '西南'];
+        if (regions.some(r => location.includes(r))) return 'REGION';
+        return 'CITY';
+    }
+    private mapSentiment(sentiment: string): 'positive' | 'negative' | 'neutral' | undefined {
+        if (!sentiment) return undefined;
+        const lower = sentiment.toLowerCase();
+        if (lower === 'positive' || lower === 'bullish') return 'positive';
+        if (lower === 'negative' || lower === 'bearish') return 'negative';
+        if (lower === 'neutral' || lower === 'mixed') return 'neutral';
+        return undefined;
     }
 
     /**

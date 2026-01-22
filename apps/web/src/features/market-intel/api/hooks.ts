@@ -158,6 +158,25 @@ export const useAnalyzeContent = () => {
     });
 };
 
+// AI 连接测试结果
+interface AITestResult {
+    success: boolean;
+    message: string;
+    apiUrl?: string;
+    modelId?: string;
+    response?: string;
+    error?: string;
+}
+
+export const useTestAI = () => {
+    return useMutation({
+        mutationFn: async () => {
+            const res = await apiClient.get<AITestResult>('/market-intel/test-ai');
+            return res.data;
+        },
+    });
+};
+
 // =============================================
 // A类：价格数据
 // =============================================
