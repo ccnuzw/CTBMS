@@ -51,6 +51,14 @@ const POINT_TYPE_LABELS: Record<string, string> = {
     STATION: '站台',
 };
 
+const POINT_TYPE_COLORS: Record<string, string> = {
+    PORT: 'blue',
+    ENTERPRISE: 'green',
+    MARKET: 'orange',
+    REGION: 'purple',
+    STATION: 'cyan',
+};
+
 const COMMODITIES = ['玉米', '大豆', '小麦', '高粱', '豆粕'];
 
 const TIME_RANGES = [
@@ -90,6 +98,7 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
     const [searchKeyword, setSearchKeyword] = useState('');
     const [selectorVisible, setSelectorVisible] = useState(false);
     const [expanded, setExpanded] = useState(false);
+    const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({}); // 新增：控制每个类型组的展开/收起
 
     // 获取采集点列表
     // 只有当有类型过滤或有搜索关键词时才加载数据
@@ -277,7 +286,22 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
                     {/* 采集点类型过滤 */}
                     <Checkbox.Group
                         value={pointTypeFilter}
-                        onChange={(vals) => onPointTypeFilterChange(vals as string[])}
+                        onChange={(vals) => {
+                            const newTypes = vals as string[];
+                            // 联动逻辑：取消勾选类型时，同时取消该类型下已选中的采集点
+                            const removedTypes = pointTypeFilter.filter(t => !newTypes.includes(t));
+                            if (removedTypes.length > 0) {
+                                // 找到要移除的类型下的所有采集点ID
+                                const pointsToRemove = collectionPoints
+                                    .filter(p => removedTypes.includes(p.type))
+                                    .map(p => p.id);
+                                const newSelectedIds = selectedPointIds.filter(id => !pointsToRemove.includes(id));
+                                if (newSelectedIds.length !== selectedPointIds.length) {
+                                    onSelectedPointIdsChange(newSelectedIds);
+                                }
+                            }
+                            onPointTypeFilterChange(newTypes);
+                        }}
                         style={{ marginBottom: 8 }}
                     >
                         <Space wrap size={4}>
@@ -345,7 +369,7 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
                                     </Text>
                                 </Flex>
                                 <Space direction="vertical" size={2} style={{ width: '100%' }}>
-                                    {points.slice(0, 20).map((point) => (
+                                    {points.slice(0, expandedGroups[type] ? 50 : 8).map((point) => (
                                         <Flex
                                             key={point.id}
                                             align="center"
@@ -379,9 +403,13 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
                                             </Tooltip>
                                         </Flex>
                                     ))}
-                                    {points.length > 20 && (
-                                        <Text type="secondary" style={{ fontSize: 10, paddingLeft: 8 }}>
-                                            还有 {points.length - 20} 个...
+                                    {points.length > 8 && (
+                                        <Text
+                                            type="secondary"
+                                            style={{ fontSize: 11, paddingLeft: 8, cursor: 'pointer', color: token.colorPrimary }}
+                                            onClick={() => setExpandedGroups({ ...expandedGroups, [type]: !expandedGroups[type] })}
+                                        >
+                                            {expandedGroups[type] ? '收起' : `展开剩余 ${points.length - 8} 个...`}
                                         </Text>
                                     )}
                                 </Space>
@@ -392,17 +420,40 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
 
                 <Divider style={{ margin: '12px 0' }} />
 
-                {/* 已选统计 */}
-                <Flex justify="center" vertical align="center" gap={8}>
-                    <Tag color={selectedPointIds.length > 0 ? 'blue' : undefined}>
-                        已选择 {selectedPointIds.length} 个采集点
-                    </Tag>
-                    {selectedPointIds.length > 0 && (
-                        <Button size="small" type="link" onClick={() => onSelectedPointIdsChange([])}>
-                            清空已选
-                        </Button>
-                    )}
-                </Flex>
+                {/* 已选采集点详情列表 */}
+                {selectedPointIds.length > 0 && (
+                    <div style={{ marginTop: 8 }}>
+                        <Flex justify="space-between" align="center" style={{ marginBottom: 8 }}>
+                            <Text type="secondary" style={{ fontSize: 11 }}>已选采集点</Text>
+                            <Button size="small" type="link" onClick={() => onSelectedPointIdsChange([])} style={{ padding: 0, fontSize: 11 }}>
+                                清空全部
+                            </Button>
+                        </Flex>
+                        <Space size={[4, 4]} wrap>
+                            {selectedPointIds.map(id => {
+                                const point = collectionPoints.find(p => p.id === id);
+                                if (!point) return null;
+                                return (
+                                    <Tag
+                                        key={id}
+                                        closable
+                                        color={POINT_TYPE_COLORS[point.type]}
+                                        onClose={() => togglePoint(id)}
+                                        style={{ fontSize: 11, margin: 0 }}
+                                    >
+                                        {point.shortName || point.name}
+                                    </Tag>
+                                );
+                            })}
+                        </Space>
+                    </div>
+                )}
+
+                {selectedPointIds.length === 0 && (
+                    <Flex justify="center" vertical align="center" gap={8}>
+                        <Tag>未选择采集点</Tag>
+                    </Flex>
+                )}
             </Card>
 
             {/* 高级选择弹窗 */}
