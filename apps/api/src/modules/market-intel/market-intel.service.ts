@@ -19,8 +19,14 @@ export class MarketIntelService {
     /**
      * AI 内容分析
      */
-    async analyze(content: string, category: IntelCategory, location?: string) {
-        return this.aiService.analyzeContent(content, category, location);
+    async analyze(
+        content: string,
+        category: IntelCategory,
+        location?: string,
+        base64Image?: string,
+        mimeType?: string,
+    ) {
+        return this.aiService.analyzeContent(content, category, location, base64Image, mimeType);
     }
 
     /**

@@ -20,6 +20,8 @@ export {
     type UserIntelStats,
     type LeaderboardEntry,
     type MarketIntelStats,
+    type ExtractedPricePoint,
+    type StructuredEvent,
 } from '@packages/types';
 
 // Re-export local types and constants

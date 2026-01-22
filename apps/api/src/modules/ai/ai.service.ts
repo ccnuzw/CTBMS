@@ -137,6 +137,10 @@ export class AIService implements OnModuleInit {
     ): Promise<AIAnalysisResult> {
         // 如果没有 API Key，返回模拟结果
         if (!this.apiKey) {
+            // 模拟 OCR：如果有图片但没文字，伪造一段识别结果
+            if (!content && base64Image) {
+                content = `【识别结果】\n锦州港  玉米  2810  (+10)\n梅花味精  收购价  2700\n鲅鱼圈  平舱价  2820  (持平)`;
+            }
             return this.getMockAnalysis(content, category);
         }
 

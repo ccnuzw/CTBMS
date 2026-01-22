@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { Card, Typography, Flex, Segmented, Empty, Spin, Statistic, Space, Tag, theme } from 'antd';
+import { Card, Typography, Flex, Segmented, Empty, Spin, Statistic, Space, Tag, theme, Button } from 'antd';
 import {
     LineChartOutlined,
     ArrowUpOutlined,
@@ -55,11 +55,12 @@ export const TrendChart: React.FC<TrendChartProps> = ({
     const [viewMode, setViewMode] = useState<ViewMode>('line');
 
     // 多采集点对比数据
-    const { data: multiPointData, isLoading: isLoadingPoints } = useMultiPointCompare(
-        selectedPointIds,
-        commodity,
-        days,
-    );
+    const {
+        data: multiPointData,
+        isLoading: isLoadingPoints,
+        isError,
+        error,
+    } = useMultiPointCompare(selectedPointIds, commodity, days);
 
     // 区域聚合数据
     const { data: regionData, isLoading: isLoadingRegion } = usePriceByRegion(
@@ -68,7 +69,8 @@ export const TrendChart: React.FC<TrendChartProps> = ({
         days,
     );
 
-    const isLoading = isLoadingPoints || isLoadingRegion;
+    // 只有当实际上正在请求区域数据时，才计入 loading
+    const isLoading = isLoadingPoints || (!!selectedRegionCode && isLoadingRegion);
 
     // 转换为图表数据
     const chartData = useMemo(() => {
@@ -245,7 +247,15 @@ export const TrendChart: React.FC<TrendChartProps> = ({
             )}
 
             {/* 图表 */}
-            {isLoading ? (
+            {isError ? (
+                <Flex justify="center" align="center" vertical style={{ height: 350, gap: 16 }}>
+                    <Empty
+                        image={Empty.PRESENTED_IMAGE_SIMPLE}
+                        description={<Text type="danger">数据加载失败: {(error as Error)?.message || '未知错误'}</Text>}
+                    />
+                    <Button onClick={() => window.location.reload()}>刷新重试</Button>
+                </Flex>
+            ) : isLoading ? (
                 <Flex justify="center" align="center" vertical style={{ height: 350, gap: 16 }}>
                     <Spin size="large" />
                     <Text type="secondary">加载数据中...</Text>

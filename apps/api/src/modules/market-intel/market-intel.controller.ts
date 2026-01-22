@@ -74,7 +74,13 @@ export class MarketIntelController {
 
     @Post('analyze')
     async analyze(@Body() dto: AnalyzeContentRequest) {
-        return this.marketIntelService.analyze(dto.content as string, dto.category, dto.location);
+        return this.marketIntelService.analyze(
+            dto.content as string,
+            dto.category,
+            dto.location,
+            dto.base64Image,
+            dto.mimeType
+        );
     }
 
     // --- A类：价格数据 ---

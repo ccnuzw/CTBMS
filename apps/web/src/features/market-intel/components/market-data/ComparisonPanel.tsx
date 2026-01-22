@@ -14,14 +14,25 @@ interface ComparisonPanelProps {
     commodity: string;
     days: number;
     selectedPointIds: string[];
+    selectedProvince?: string;
+    pointTypeFilter?: string[];
 }
 
 export const ComparisonPanel: React.FC<ComparisonPanelProps> = ({
     commodity,
     days,
     selectedPointIds,
+    selectedProvince,
+    pointTypeFilter,
 }) => {
     const { token } = theme.useToken();
+
+    // 计算开始时间
+    const startDate = useMemo(() => {
+        const d = new Date();
+        d.setDate(d.getDate() - days);
+        return d;
+    }, [days]);
 
     // 多采集点数据
     const { data: multiPointData, isLoading } = useMultiPointCompare(
@@ -30,10 +41,12 @@ export const ComparisonPanel: React.FC<ComparisonPanelProps> = ({
         days,
     );
 
-    // 获取价格数据用于分类统计
+    // 获取价格数据用于分类统计 (受筛选器控制)
     const { data: priceDataResult } = usePriceData({
         commodity,
-        pageSize: 500,
+        startDate, // 时间筛选
+        regionCode: selectedProvince, // 区域筛选
+        pageSize: 1000,
     });
 
     const priceDataList = priceDataResult?.data || [];
@@ -65,32 +78,41 @@ export const ComparisonPanel: React.FC<ComparisonPanelProps> = ({
         return [...priceRanking].sort((a, b) => b.change - a.change);
     }, [priceRanking]);
 
-    // 按价格类型统计
-    const typeStats = useMemo(() => {
+    // 按省份统计均价 (受类型过滤控制)
+    const regionStats = useMemo(() => {
         const stats: Record<string, { count: number; avgPrice: number; prices: number[] }> = {};
 
         priceDataList.forEach((item) => {
-            const type = item.sourceType || 'OTHER';
-            if (!stats[type]) {
-                stats[type] = { count: 0, avgPrice: 0, prices: [] };
+            // 本地类型过滤: 如果选了"港口"，就只统计港口数据
+            if (pointTypeFilter && pointTypeFilter.length > 0) {
+                const pointType = item.collectionPoint?.type;
+                // 如果有采集点信息且类型不匹配，则跳过
+                if (pointType && !pointTypeFilter.includes(pointType)) {
+                    return;
+                }
+                // 如果没有采集点信息 (纯区域价格)，我们假设它属于 REGIONAL 类型
+                if (!pointType && !pointTypeFilter.includes('REGION')) {
+                    return;
+                }
             }
-            stats[type].count++;
-            stats[type].prices.push(item.price);
+
+            // 优先取省份，如果没有则取 region 数组第一个元素，还没有则归为'其他'
+            const regionName = item.province || item.region?.[0] || '其他';
+
+            if (!stats[regionName]) {
+                stats[regionName] = { count: 0, avgPrice: 0, prices: [] };
+            }
+            stats[regionName].count++;
+            stats[regionName].prices.push(item.price);
         });
 
-        Object.keys(stats).forEach((type) => {
-            const prices = stats[type].prices;
-            stats[type].avgPrice = prices.length > 0 ? prices.reduce((a, b) => a + b, 0) / prices.length : 0;
+        Object.keys(stats).forEach((r) => {
+            const prices = stats[r].prices;
+            stats[r].avgPrice = prices.length > 0 ? prices.reduce((a, b) => a + b, 0) / prices.length : 0;
         });
 
         return stats;
-    }, [priceDataList]);
-
-    const typeLabels: Record<string, string> = {
-        PORT: '港口价',
-        ENTERPRISE: '企业价',
-        REGIONAL: '区域价',
-    };
+    }, [priceDataList, pointTypeFilter]);
 
     if (selectedPointIds.length === 0) {
         return (
@@ -115,7 +137,7 @@ export const ComparisonPanel: React.FC<ComparisonPanelProps> = ({
                     title={
                         <Flex align="center" gap={8}>
                             <BarChartOutlined style={{ color: token.colorPrimary }} />
-                            <span>价格排行</span>
+                            <span>价格排行 (Top 10)</span>
                             <Tag color="blue">{commodity}</Tag>
                         </Flex>
                     }
@@ -249,35 +271,37 @@ export const ComparisonPanel: React.FC<ComparisonPanelProps> = ({
                 </Card>
             </Col>
 
-            {/* 类型均价对比 */}
+            {/* 区域均价对比 (替代原类型均价) */}
             <Col xs={24}>
                 <Card
                     title={
                         <Flex align="center" gap={8}>
                             <BarChartOutlined style={{ color: token.colorPrimary }} />
-                            <span>类型均价对比</span>
+                            <span>各省/区域均价对比 (参考)</span>
                         </Flex>
                     }
                     bodyStyle={{ padding: '16px 24px' }}
                 >
                     <Row gutter={24}>
-                        {Object.entries(typeStats).map(([type, stat]) => (
-                            <Col key={type} xs={8} sm={6} md={4}>
-                                <Statistic
-                                    title={typeLabels[type] || type}
-                                    value={stat.avgPrice}
-                                    precision={0}
-                                    suffix="元/吨"
-                                    valueStyle={{ fontSize: 18 }}
-                                />
-                                <Text type="secondary" style={{ fontSize: 11 }}>
-                                    {stat.count} 条数据
-                                </Text>
-                            </Col>
-                        ))}
-                        {Object.keys(typeStats).length === 0 && (
+                        {Object.entries(regionStats)
+                            .sort(([, a], [, b]) => b.avgPrice - a.avgPrice) // 按价格降序
+                            .map(([region, stat]) => (
+                                <Col key={region} xs={8} sm={6} md={4}>
+                                    <Statistic
+                                        title={region}
+                                        value={stat.avgPrice}
+                                        precision={0}
+                                        suffix="元/吨"
+                                        valueStyle={{ fontSize: 18 }}
+                                    />
+                                    <Text type="secondary" style={{ fontSize: 11 }}>
+                                        {stat.count} 个样本
+                                    </Text>
+                                </Col>
+                            ))}
+                        {Object.keys(regionStats).length === 0 && (
                             <Col span={24}>
-                                <Empty description="暂无类型统计数据" />
+                                <Empty description="暂无区域统计数据" />
                             </Col>
                         )}
                     </Row>

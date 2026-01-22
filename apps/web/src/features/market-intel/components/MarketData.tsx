@@ -91,6 +91,8 @@ export const MarketData: React.FC = () => {
                     commodity={commodity}
                     days={days}
                     selectedPointIds={selectedPointIds}
+                    selectedProvince={selectedProvince}
+                    pointTypeFilter={pointTypeFilter}
                 />
             ),
         },
@@ -108,6 +110,7 @@ export const MarketData: React.FC = () => {
                     days={days}
                     selectedPointIds={selectedPointIds}
                     selectedProvince={selectedProvince}
+                    pointTypeFilter={pointTypeFilter}
                 />
             ),
         },

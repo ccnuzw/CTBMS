@@ -1,5 +1,5 @@
 import React, { useMemo } from 'react';
-import { Table, Tag, Typography, Flex, Button, Space, Tooltip, theme } from 'antd';
+import { Table, Tag, Typography, Flex, Button, Space, Tooltip, theme, Empty } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import {
     DownloadOutlined,
@@ -40,6 +40,7 @@ interface DataGridProps {
     days: number;
     selectedPointIds: string[];
     selectedProvince?: string;
+    pointTypeFilter?: string[];
 }
 
 export const DataGrid: React.FC<DataGridProps> = ({
@@ -47,6 +48,7 @@ export const DataGrid: React.FC<DataGridProps> = ({
     days,
     selectedPointIds,
     selectedProvince,
+    pointTypeFilter,
 }) => {
     const { token } = theme.useToken();
 
@@ -61,7 +63,8 @@ export const DataGrid: React.FC<DataGridProps> = ({
     const { data: priceDataResult, isLoading } = usePriceData({
         commodity,
         startDate,
-        pageSize: 200,
+        regionCode: selectedProvince, // 服务端区域过滤
+        pageSize: 1000, // 扩大以支持足够的本地过滤
     });
 
     const priceDataList = priceDataResult?.data || [];
@@ -70,15 +73,38 @@ export const DataGrid: React.FC<DataGridProps> = ({
     const filteredData = useMemo(() => {
         let filtered = priceDataList;
 
-        // 按选中的采集点过滤
+        // 1. 按采集点ID过滤（如果选中了特定采集点）
         if (selectedPointIds.length > 0) {
-            // 由于采集点ID可能没有直接关联，先按location匹配
-            // 后续可以改进为按collectionPointId过滤
-            filtered = filtered;
+            filtered = filtered.filter(item => {
+                // 如果是采集点产生的价格 (item.collectionPointId 或 item.collectionPoint.id)
+                const cpId = item.collectionPointId || item.collectionPoint?.id;
+                if (cpId && selectedPointIds.includes(cpId)) {
+                    return true;
+                }
+                return false;
+            });
+        }
+
+        // 2. 按采集点类型过滤 (如果选中了特定类型，如港口/企业)
+        if (pointTypeFilter && pointTypeFilter.length > 0) {
+            filtered = filtered.filter(item => {
+                const pointType = item.collectionPoint?.type ||
+                    (item.sourceType === 'REGIONAL' ? 'REGION' : item.sourceType);
+
+                // 如果有类型且匹配
+                if (pointType && pointTypeFilter.includes(pointType)) {
+                    return true;
+                }
+                // 特殊处理：如果没有明确类型但选择了 Region，且原数据是 REGIONAL
+                if (!pointType && item.sourceType === 'REGIONAL' && pointTypeFilter.includes('REGION')) {
+                    return true;
+                }
+                return false;
+            });
         }
 
         return filtered;
-    }, [priceDataList, selectedPointIds]);
+    }, [priceDataList, selectedPointIds, pointTypeFilter]);
 
     // 导出 CSV
     const handleExport = () => {
@@ -215,6 +241,25 @@ export const DataGrid: React.FC<DataGridProps> = ({
             ),
         },
     ];
+
+    // 如果未选择采集点，显示空状态
+    if (selectedPointIds.length === 0) {
+        return (
+            <Flex justify="center" align="center" style={{ height: 400 }}>
+                <Empty
+                    image={Empty.PRESENTED_IMAGE_SIMPLE}
+                    description={
+                        <Space direction="vertical" align="center">
+                            <Text type="secondary">请先在左侧选择采集点以查看数据明细</Text>
+                            <Text type="secondary" style={{ fontSize: 12 }}>
+                                (数据量较大，请使用筛选器精准定位)
+                            </Text>
+                        </Space>
+                    }
+                />
+            </Flex>
+        );
+    }
 
     return (
         <div>
