@@ -105,6 +105,18 @@ export class AIService implements OnModuleInit {
     }
 
     /**
+     * 标准化关键词：统一全角/半角括号，去除多余空白
+     */
+    private normalizeKeyword(text: string): string {
+        if (!text) return '';
+        return text
+            .replace(/（/g, '(')
+            .replace(/）/g, ')')
+            .replace(/\s+/g, '')
+            .trim();
+    }
+
+    /**
      * 获取所有采集点关键词（用于匹配）
      */
     private getKnownLocations(): string[] {
@@ -133,50 +145,87 @@ export class AIService implements OnModuleInit {
     }
 
     /**
-     * 根据关键词查找采集点（增强版：支持智能匹配）
-     * 匹配策略：
-     * 1. 精确匹配 name/shortName/aliases
-     * 2. 去掉括号后缀再匹配（如 "梅花味精（通辽）" → "梅花味精"）
-     * 3. 检查采集点名称是否被包含在输入中
+     * 根据关键词查找采集点（增强版：最佳匹配策略）
+     * 策略：计算匹配分数，取最高分。
+     * 分数规则：
+     * 1. 精确匹配：1000 + 词长
+     * 2. 去括号后精确匹配：800 + 词长
+     * 3. 包含匹配 (输入包含配置词)：100 + 配置词长 (越具体的配置词分数越高)
      */
     private findCollectionPoint(keyword: string): CollectionPointForRecognition | null {
-        // 1. 精确匹配
-        for (const point of this.collectionPointCache) {
-            if (point.name === keyword || point.shortName === keyword || point.aliases.includes(keyword)) {
-                return point;
+        const normalizedKeyword = this.normalizeKeyword(keyword);
+        const candidates: { point: CollectionPointForRecognition; score: number; matchType: string; matchTerm: string }[] = [];
+
+        // 辅助函数：计算单点匹配
+        const matchPoint = (point: CollectionPointForRecognition) => {
+            const terms = [point.name, point.shortName, ...point.aliases]
+                .filter((t): t is string => !!t && t.trim().length > 0);
+
+            for (const term of terms) {
+                const normalizedTerm = this.normalizeKeyword(term);
+
+                // 1. 精确匹配 (Priority: Highest)
+                if (normalizedKeyword === normalizedTerm) {
+                    candidates.push({
+                        point,
+                        score: 1000 + term.length,
+                        matchType: 'exact',
+                        matchTerm: term
+                    });
+                    continue;
+                }
+
+                // 2. 包含匹配: 输入包含配置词 (Priority: Medium)
+                // 例如：输入="中粮生化公主岭分厂" (len 9), 配置词="中粮公主岭" (len 5)
+                // 只有当配置词长度 >= 2 时才匹配，避免单字误配
+                if (normalizedTerm.length >= 2 && normalizedKeyword.includes(normalizedTerm)) {
+                    candidates.push({
+                        point,
+                        score: 100 + term.length,
+                        matchType: 'contains',
+                        matchTerm: term
+                    });
+                }
             }
+        };
+
+        // 遍历所有缓存点
+        for (const point of this.collectionPointCache) {
+            matchPoint(point);
         }
 
-        // 2. 去掉括号后缀再匹配
-        const cleanKeyword = this.removeParentheses(keyword);
-        if (cleanKeyword !== keyword) {
-            for (const point of this.collectionPointCache) {
-                if (point.name === cleanKeyword || point.shortName === cleanKeyword || point.aliases.includes(cleanKeyword)) {
-                    this.logger.debug(`智能匹配(去括号): ${keyword} → ${point.name}`);
-                    return point;
+        // 3. 特殊策略：去括号后匹配 (支持 AI 提取带括号但格式不一致的情况)
+        // 仅当 keyword 本身包含括号时才尝试
+        if (normalizedKeyword.includes('(')) {
+            const cleanKeyword = this.removeParentheses(normalizedKeyword);
+            if (cleanKeyword.length > 0 && cleanKeyword !== normalizedKeyword) {
+                // 尝试用去括号后的词去匹配所有的点
+                for (const point of this.collectionPointCache) {
+                    const terms = [point.name, point.shortName, ...point.aliases]
+                        .filter((t): t is string => !!t && t.trim().length > 0);
+
+                    for (const term of terms) {
+                        const normalizedTerm = this.normalizeKeyword(term);
+                        if (cleanKeyword === normalizedTerm) {
+                            candidates.push({
+                                point,
+                                score: 800 + term.length, // 比完全精确低，比包含高
+                                matchType: 'exact_no_parentheses',
+                                matchTerm: term
+                            });
+                        }
+                    }
                 }
             }
         }
 
-        // 3. 检查采集点名称是否被包含在输入中（模糊匹配）
-        for (const point of this.collectionPointCache) {
-            // 检查 name 是否被包含
-            if (point.name.length >= 2 && keyword.includes(point.name)) {
-                this.logger.debug(`智能匹配(包含): ${keyword} → ${point.name}`);
-                return point;
-            }
-            // 检查 shortName 是否被包含
-            if (point.shortName && point.shortName.length >= 2 && keyword.includes(point.shortName)) {
-                this.logger.debug(`智能匹配(包含简称): ${keyword} → ${point.name}`);
-                return point;
-            }
-            // 检查 aliases 是否被包含
-            for (const alias of point.aliases) {
-                if (alias.length >= 2 && keyword.includes(alias)) {
-                    this.logger.debug(`智能匹配(包含别名): ${keyword} → ${point.name}`);
-                    return point;
-                }
-            }
+        // 选取最高分结果
+        if (candidates.length > 0) {
+            // 按分数降序，分数相同按词长降序
+            candidates.sort((a, b) => b.score - a.score || b.matchTerm.length - a.matchTerm.length);
+            const best = candidates[0];
+            this.logger.debug(`智能匹配最佳结果: ${keyword} → ${best.point.name} (Type: ${best.matchType}, Term: ${best.matchTerm}, Score: ${best.score})`);
+            return best.point;
         }
 
         return null;

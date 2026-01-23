@@ -108,14 +108,11 @@ export const CollectionPointManager: React.FC = () => {
         {
             title: '名称',
             dataIndex: 'name',
-            width: 150,
+            width: 180,
             render: (name, record) => (
                 <Space>
                     <span>{COLLECTION_POINT_TYPE_ICONS[record.type]}</span>
                     <Text strong>{name}</Text>
-                    {record.shortName && (
-                        <Text type="secondary">({record.shortName})</Text>
-                    )}
                 </Space>
             ),
         },
