@@ -106,7 +106,6 @@ export const CollectionPointEditor: React.FC<CollectionPointEditorProps> = ({
                 'description',
                 // AI Config
                 'matchRegionCodes',
-                'matchKeywords',
                 'priceSubTypes',
                 'isDataSource',
             ];
@@ -395,22 +394,6 @@ export const CollectionPointEditor: React.FC<CollectionPointEditorProps> = ({
                     </Divider>
 
                     <Row gutter={16}>
-                        <Col span={24}>
-                            <Form.Item
-                                name="matchKeywords"
-                                label="匹配关键词"
-                                tooltip="除别名外，AI 用于上下文匹配的通用行业词汇（如：淀粉厂、酒精厂）"
-                            >
-                                <Select
-                                    mode="tags"
-                                    placeholder="输入关键词后按回车添加"
-                                    tokenSeparators={[',']}
-                                />
-                            </Form.Item>
-                        </Col>
-                    </Row>
-
-                    <Row gutter={16}>
                         <Col span={16}>
                             <Form.Item
                                 name="priceSubTypes"
@@ -420,7 +403,7 @@ export const CollectionPointEditor: React.FC<CollectionPointEditorProps> = ({
                                 <Select
                                     mode="multiple"
                                     allowClear
-                                    placeholder="选择支该站点通常发布的价格类型"
+                                    placeholder="选择该站点通常发布的价格类型"
                                     options={[
                                         { value: 'LISTED', label: '挂牌价' },
                                         { value: 'TRANSACTION', label: '成交价' },

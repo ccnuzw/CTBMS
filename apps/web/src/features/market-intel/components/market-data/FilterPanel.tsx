@@ -398,7 +398,7 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
                                                             : undefined,
                                                     }}
                                                 >
-                                                    {point.shortName || point.name}
+                                                    {point.name}
                                                 </Text>
                                             </Tooltip>
                                         </Flex>
@@ -441,7 +441,7 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
                                         onClose={() => togglePoint(id)}
                                         style={{ fontSize: 11, margin: 0 }}
                                     >
-                                        {point.shortName || point.name}
+                                        {point.name}
                                     </Tag>
                                 );
                             })}

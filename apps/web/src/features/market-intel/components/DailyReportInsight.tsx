@@ -82,6 +82,25 @@ export const DailyReportInsight: React.FC<DailyReportInsightProps> = ({ aiResult
             render: (text: string) => (
                 <Tag>{text === 'ENTERPRISE' ? '企业' : text === 'PORT' ? '港口' : '地域'}</Tag>
             )
+        },
+        {
+            title: '价格类型',
+            dataIndex: 'subType',
+            key: 'subType',
+            render: (text: string) => {
+                const labels: Record<string, string> = {
+                    'LISTED': '挂牌价',
+                    'TRANSACTION': '成交价',
+                    'ARRIVAL': '到港价',
+                    'FOB': '平舱价',
+                    'STATION_ORIGIN': '站台价(产区)',
+                    'STATION_DEST': '站台价(销区)',
+                    'PURCHASE': '收购价',
+                    'WHOLESALE': '批发价',
+                    'OTHER': '其他',
+                };
+                return <Tag color="cyan">{labels[text] || text || '挂牌价'}</Tag>;
+            }
         }
     ];
 
@@ -160,12 +179,12 @@ export const DailyReportInsight: React.FC<DailyReportInsightProps> = ({ aiResult
                         label: <span><DatabaseOutlined /> 价格校对 ({aiResult.pricePoints?.length || 0})</span>,
                         children: (
                             <Table
-                                dataSource={aiResult.pricePoints || []}
+                                dataSource={(aiResult.pricePoints || []).map((p, idx) => ({ ...p, _rowKey: `${p.location}-${p.commodity}-${p.price}-${p.subType || ''}-${p.grade || ''}-${idx}` }))}
                                 columns={priceColumns}
                                 pagination={false}
                                 size="small"
-                                scroll={{ y: 300 }}
-                                rowKey={(record) => `${record.location}-${record.commodity}`}
+                                scroll={aiResult.pricePoints && aiResult.pricePoints.length > 10 ? { y: 400 } : undefined}
+                                rowKey="_rowKey"
                             />
                         )
                     },
@@ -173,8 +192,8 @@ export const DailyReportInsight: React.FC<DailyReportInsightProps> = ({ aiResult
                         key: 'event',
                         label: <span><RiseOutlined /> 市场事件 ({aiResult.events?.length || 0})</span>,
                         children: (
-                            <div style={{ maxHeight: 400, overflow: 'auto', padding: 12 }}>
-                                <Timeline mode="left" items={getEventItems()} />
+                            <div style={{ padding: 12 }}>
+                                <Timeline items={getEventItems()} />
                             </div>
                         )
                     },

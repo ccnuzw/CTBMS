@@ -357,7 +357,6 @@ model CollectionPoint {
   
   // ===== 增强：地域匹配（松耦合） =====
   matchRegionCodes  String[]                  // 匹配的行政区划列表
-  matchKeywords     String[]                  // 额外的匹配关键词
   
   // 行政区划关联
   regionCode    String?                       // 关联的行政区划代码

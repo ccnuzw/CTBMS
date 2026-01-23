@@ -109,7 +109,6 @@ export const CreateCollectionPointSchema = z.object({
     commodities: z.array(z.string()).optional().default([]),
     // AI 提取增强配置
     matchRegionCodes: z.array(z.string()).optional().default([]),
-    matchKeywords: z.array(z.string()).optional().default([]),
     priceSubTypes: z.array(z.string()).optional().default([]),
     isDataSource: z.boolean().optional().default(true),
 
@@ -121,7 +120,7 @@ export const CreateCollectionPointSchema = z.object({
 });
 
 // 更新采集点 DTO
-// 使用 passthrough 允许数据库额外字段（如 matchRegionCodes、matchKeywords 等）通过验证
+// 使用 passthrough 允许数据库额外字段（如 matchRegionCodes 等）通过验证
 export const UpdateCollectionPointSchema = CreateCollectionPointSchema.partial().passthrough();
 
 // 采集点响应 Schema
@@ -141,7 +140,6 @@ export const CollectionPointResponseSchema = z.object({
 
     // AI 提取增强配置
     matchRegionCodes: z.array(z.string()),
-    matchKeywords: z.array(z.string()),
     priceSubTypes: z.array(z.string()),
     isDataSource: z.boolean(),
 

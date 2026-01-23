@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Row, Col, message, theme } from 'antd';
+import { Row, Col, App, theme } from 'antd';
 import {
     ContentType,
     CONTENT_TYPE_SOURCE_OPTIONS,
@@ -19,6 +19,7 @@ interface DataEntryProps {
 
 export const DataEntry: React.FC<DataEntryProps> = ({ onSuccess }) => {
     const { token } = theme.useToken();
+    const { message } = App.useApp();
 
     // === State Management ===
     const [contentType, setContentType] = useState<ContentType>(ContentType.DAILY_REPORT);

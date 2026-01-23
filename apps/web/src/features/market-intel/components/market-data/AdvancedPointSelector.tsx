@@ -111,7 +111,7 @@ export const AdvancedPointSelector: React.FC<AdvancedPointSelectorProps> = ({
             }
             // 搜索过滤
             if (searchKeyword) {
-                const displayName = point.shortName || point.name;
+                const displayName = point.name;
                 const titleMatch = PinyinMatch.match(displayName, searchKeyword);
                 if (!Array.isArray(titleMatch) || titleMatch[0] !== 0) {
                     return;
@@ -243,7 +243,7 @@ export const AdvancedPointSelector: React.FC<AdvancedPointSelectorProps> = ({
                                 >
                                     <Space>
                                         <PlusOutlined style={{ color: token.colorPrimary, fontSize: 10 }} />
-                                        <span style={{ fontSize: 12 }}>{point.shortName || point.name}</span>
+                                        <span style={{ fontSize: 12 }}>{point.name}</span>
                                     </Space>
                                     <Tag bordered={false} style={{ fontSize: 10, margin: 0 }}>
                                         {point.regionName || '-'}
@@ -305,7 +305,7 @@ export const AdvancedPointSelector: React.FC<AdvancedPointSelectorProps> = ({
                                     onClose={() => handleDeselect(point.id)}
                                     style={{ fontSize: 11, margin: 0 }}
                                 >
-                                    {point.shortName || point.name}
+                                    {point.name}
                                 </Tag>
                             ))}
                         </Space>

@@ -1,5 +1,5 @@
-import React from 'react';
-import { Card, Empty, Skeleton, Typography, Tag, Descriptions, Space, Divider, Alert, Steps } from 'antd';
+import React, { useState, useEffect, useRef } from 'react';
+import { Card, Empty, Skeleton, Typography, Tag, Descriptions, Space, Divider, Alert, Steps, theme } from 'antd';
 import {
     BarChartOutlined,
     LineChartOutlined,
@@ -7,6 +7,7 @@ import {
     CheckCircleOutlined,
     SyncOutlined,
     BulbOutlined,
+    ClockCircleOutlined,
 } from '@ant-design/icons';
 import {
     type AIAnalysisResult,
@@ -19,6 +20,18 @@ import { DailyReportInsight } from './DailyReportInsight';
 
 const { Title, Text, Paragraph } = Typography;
 
+// 动态提示信息池
+const LOADING_TIPS = [
+    '正在提取实体、识别价格点、构建知识图谱关联',
+    '分析市场情绪和价格趋势...',
+    '识别关键企业和采集点信息...',
+    '提取结构化价格数据...',
+    '构建行业知识图谱关联...',
+    '分析市场事件和政策影响...',
+    '生成深度洞察和后市预判...',
+    '优化数据关联和验证...',
+];
+
 interface IntelInsightPanelProps {
     isLoading: boolean;
     aiResult: AIAnalysisResult | null;
@@ -30,6 +43,48 @@ export const IntelInsightPanel: React.FC<IntelInsightPanelProps> = ({
     aiResult,
     contentType,
 }) => {
+    const { token } = theme.useToken();
+    const [elapsedSeconds, setElapsedSeconds] = useState(0);
+    const [tipIndex, setTipIndex] = useState(0);
+    const [currentStep, setCurrentStep] = useState(1);
+    const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+    // 计时器和动态提示
+    useEffect(() => {
+        if (isLoading) {
+            // 重置状态
+            setElapsedSeconds(0);
+            setTipIndex(0);
+            setCurrentStep(1);
+
+            // 每秒更新时间
+            timerRef.current = setInterval(() => {
+                setElapsedSeconds((prev) => prev + 1);
+            }, 1000);
+
+            // 每3秒更换提示
+            const tipTimer = setInterval(() => {
+                setTipIndex((prev) => (prev + 1) % LOADING_TIPS.length);
+            }, 3000);
+
+            // 模拟步骤进度
+            const stepTimer = setInterval(() => {
+                setCurrentStep((prev) => Math.min(prev + 1, 3));
+            }, 4000);
+
+            return () => {
+                if (timerRef.current) clearInterval(timerRef.current);
+                clearInterval(tipTimer);
+                clearInterval(stepTimer);
+            };
+        } else {
+            if (timerRef.current) {
+                clearInterval(timerRef.current);
+                timerRef.current = null;
+            }
+        }
+    }, [isLoading]);
+
     // 1. Loading State
     if (isLoading) {
         return (
@@ -38,18 +93,30 @@ export const IntelInsightPanel: React.FC<IntelInsightPanelProps> = ({
                 bodyStyle={{ height: '100%', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}
             >
                 <div style={{ textAlign: 'center', marginBottom: 40 }}>
-                    <SyncOutlined spin style={{ fontSize: 48, color: '#1890ff', marginBottom: 24 }} />
+                    <SyncOutlined spin style={{ fontSize: 48, color: token.colorPrimary, marginBottom: 24 }} />
                     <Title level={4}>AI 正在深度解析...</Title>
-                    <Text type="secondary">正在提取实体、识别价格点、构建知识图谱关联</Text>
+                    <Text type="secondary" style={{ display: 'block', minHeight: 22, transition: 'opacity 0.3s' }}>
+                        {LOADING_TIPS[tipIndex]}
+                    </Text>
+                    <div style={{ marginTop: 16 }}>
+                        <Tag icon={<ClockCircleOutlined />} color="processing" style={{ fontSize: 14, padding: '4px 12px' }}>
+                            已等待 {elapsedSeconds} 秒
+                        </Tag>
+                        {elapsedSeconds > 10 && (
+                            <Text type="secondary" style={{ marginLeft: 12, fontSize: 12 }}>
+                                AI 分析需要 10-30 秒，请耐心等待
+                            </Text>
+                        )}
+                    </div>
                 </div>
                 <div style={{ padding: '0 40px' }}>
                     <Steps
-                        current={1}
+                        current={currentStep}
                         items={[
-                            { title: '文档预处理', status: 'finish', icon: <FileSearchOutlined /> },
-                            { title: 'NLP 实体提取', status: 'process', icon: <SyncOutlined spin /> },
-                            { title: '知识图谱关联', status: 'wait', icon: <LineChartOutlined /> },
-                            { title: '结果生成', status: 'wait', icon: <CheckCircleOutlined /> },
+                            { title: '文档预处理', status: currentStep > 0 ? 'finish' : 'process', icon: <FileSearchOutlined /> },
+                            { title: 'NLP 实体提取', status: currentStep > 1 ? 'finish' : currentStep === 1 ? 'process' : 'wait', icon: currentStep === 1 ? <SyncOutlined spin /> : <SyncOutlined /> },
+                            { title: '知识图谱关联', status: currentStep > 2 ? 'finish' : currentStep === 2 ? 'process' : 'wait', icon: currentStep === 2 ? <SyncOutlined spin /> : <LineChartOutlined /> },
+                            { title: '结果生成', status: currentStep > 3 ? 'finish' : currentStep === 3 ? 'process' : 'wait', icon: currentStep === 3 ? <SyncOutlined spin /> : <CheckCircleOutlined /> },
                         ]}
                     />
                     <Divider />
@@ -58,6 +125,7 @@ export const IntelInsightPanel: React.FC<IntelInsightPanelProps> = ({
             </Card>
         );
     }
+
 
     // 2. Result State
     if (aiResult) {

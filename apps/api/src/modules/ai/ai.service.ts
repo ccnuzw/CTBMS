@@ -123,14 +123,62 @@ export class AIService implements OnModuleInit {
     }
 
     /**
-     * 根据关键词查找采集点
+     * 去除括号及其内容的辅助函数
+     */
+    private removeParentheses(text: string): string {
+        return text
+            .replace(/（.*?）/g, '')  // 中文括号
+            .replace(/\(.*?\)/g, '')  // 英文括号
+            .trim();
+    }
+
+    /**
+     * 根据关键词查找采集点（增强版：支持智能匹配）
+     * 匹配策略：
+     * 1. 精确匹配 name/shortName/aliases
+     * 2. 去掉括号后缀再匹配（如 "梅花味精（通辽）" → "梅花味精"）
+     * 3. 检查采集点名称是否被包含在输入中
      */
     private findCollectionPoint(keyword: string): CollectionPointForRecognition | null {
+        // 1. 精确匹配
         for (const point of this.collectionPointCache) {
             if (point.name === keyword || point.shortName === keyword || point.aliases.includes(keyword)) {
                 return point;
             }
         }
+
+        // 2. 去掉括号后缀再匹配
+        const cleanKeyword = this.removeParentheses(keyword);
+        if (cleanKeyword !== keyword) {
+            for (const point of this.collectionPointCache) {
+                if (point.name === cleanKeyword || point.shortName === cleanKeyword || point.aliases.includes(cleanKeyword)) {
+                    this.logger.debug(`智能匹配(去括号): ${keyword} → ${point.name}`);
+                    return point;
+                }
+            }
+        }
+
+        // 3. 检查采集点名称是否被包含在输入中（模糊匹配）
+        for (const point of this.collectionPointCache) {
+            // 检查 name 是否被包含
+            if (point.name.length >= 2 && keyword.includes(point.name)) {
+                this.logger.debug(`智能匹配(包含): ${keyword} → ${point.name}`);
+                return point;
+            }
+            // 检查 shortName 是否被包含
+            if (point.shortName && point.shortName.length >= 2 && keyword.includes(point.shortName)) {
+                this.logger.debug(`智能匹配(包含简称): ${keyword} → ${point.name}`);
+                return point;
+            }
+            // 检查 aliases 是否被包含
+            for (const alias of point.aliases) {
+                if (alias.length >= 2 && keyword.includes(alias)) {
+                    this.logger.debug(`智能匹配(包含别名): ${keyword} → ${point.name}`);
+                    return point;
+                }
+            }
+        }
+
         return null;
     }
 
@@ -228,7 +276,7 @@ export class AIService implements OnModuleInit {
     }
 
     /**
-     * 调用 Gemini API（支持中转服务）
+     * 调用 Gemini API（支持中转服务，带重试机制）
      */
     private async callGeminiAPI(
         content: string,
@@ -271,34 +319,60 @@ export class AIService implements OnModuleInit {
             });
         }
 
-        this.logger.debug(`[AI] Calling SDK generateContent...`);
+        // 重试配置
+        const maxRetries = 3;
+        const baseDelayMs = 5000; // 5秒基础延迟
 
-        try {
-            const result = await model.generateContent(parts);
-            this.logger.debug(`[AI] SDK generateContent complete. Fetching response...`);
+        for (let attempt = 1; attempt <= maxRetries; attempt++) {
+            this.logger.debug(`[AI] Calling SDK generateContent (attempt ${attempt}/${maxRetries})...`);
 
-            const response = await result.response;
-            this.logger.debug(`[AI] Response candidates: ${JSON.stringify(response.candidates?.[0]?.finishReason)}`);
+            try {
+                const result = await model.generateContent(parts);
+                this.logger.debug(`[AI] SDK generateContent complete. Fetching response...`);
 
-            const text = response.text();
-            this.logger.debug(`[AI] Response text length: ${text?.length}`);
-            this.logger.debug(`[AI] Response preview: ${text?.substring(0, 100)}...`);
+                const response = await result.response;
+                this.logger.debug(`[AI] Response candidates: ${JSON.stringify(response.candidates?.[0]?.finishReason)}`);
 
-            if (!text) {
-                this.logger.warn(`[AI] Empty text received! Full response: ${JSON.stringify(response)}`);
-                throw new Error('Empty response from Gemini SDK');
+                const text = response.text();
+                this.logger.debug(`[AI] Response text length: ${text?.length}`);
+                this.logger.debug(`[AI] Response preview: ${text?.substring(0, 100)}...`);
+
+                if (!text) {
+                    this.logger.warn(`[AI] Empty text received! Full response: ${JSON.stringify(response)}`);
+                    throw new Error('Empty response from Gemini SDK');
+                }
+
+                return text;
+            } catch (error) {
+                const msg = error instanceof Error ? error.message : String(error);
+
+                // 检查是否为 429 速率限制错误
+                const isRateLimited = msg.includes('429') || msg.includes('Too Many Requests');
+
+                if (isRateLimited && attempt < maxRetries) {
+                    const delayMs = baseDelayMs * attempt; // 指数退避：5s, 10s, 15s
+                    this.logger.warn(`[AI] Rate limited (429). Waiting ${delayMs / 1000}s before retry ${attempt + 1}/${maxRetries}...`);
+                    await this.sleep(delayMs);
+                    continue;
+                }
+
+                // 记录详细错误以便调试
+                this.logger.error(`[AI] Gemini SDK generateContent failed: ${msg}`, error instanceof Error ? error.stack : undefined);
+                if (error instanceof Error && 'response' in error) {
+                    this.logger.error(`[AI] SDK Error Response: ${JSON.stringify((error as any).response)}`);
+                }
+                throw error;
             }
-
-            return text;
-        } catch (error) {
-            const msg = error instanceof Error ? error.message : String(error);
-            // 记录详细错误以便调试
-            this.logger.error(`[AI] Gemini SDK generateContent failed: ${msg}`, error instanceof Error ? error.stack : undefined);
-            if (error instanceof Error && 'response' in error) {
-                this.logger.error(`[AI] SDK Error Response: ${JSON.stringify((error as any).response)}`);
-            }
-            throw error;
         }
+
+        throw new Error('Max retries exceeded for Gemini API call');
+    }
+
+    /**
+     * 延迟工具函数
+     */
+    private sleep(ms: number): Promise<void> {
+        return new Promise(resolve => setTimeout(resolve, ms));
     }
 
     /**
@@ -461,21 +535,62 @@ ${content}
             // 1. 移除 Markdown 代码块标记（包括可能的语言标识）
             cleanJson = cleanJson.replace(/```[a-zA-Z]*\n?/g, '').replace(/```/g, '');
 
-            // 2. 提取 JSON 对象 (查找第一个 { 和最后一个 })
+            // 2. 使用括号匹配找到完整的 JSON 对象
             const firstBrace = cleanJson.indexOf('{');
-            const lastBrace = cleanJson.lastIndexOf('}');
+            if (firstBrace !== -1) {
+                let depth = 0;
+                let endIndex = -1;
+                let inString = false;
+                let escapeNext = false;
 
-            if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
-                cleanJson = cleanJson.substring(firstBrace, lastBrace + 1);
+                for (let i = firstBrace; i < cleanJson.length; i++) {
+                    const char = cleanJson[i];
+
+                    if (escapeNext) {
+                        escapeNext = false;
+                        continue;
+                    }
+
+                    if (char === '\\' && inString) {
+                        escapeNext = true;
+                        continue;
+                    }
+
+                    if (char === '"') {
+                        inString = !inString;
+                        continue;
+                    }
+
+                    if (!inString) {
+                        if (char === '{') depth++;
+                        else if (char === '}') {
+                            depth--;
+                            if (depth === 0) {
+                                endIndex = i;
+                                break;
+                            }
+                        }
+                    }
+                }
+
+                if (endIndex !== -1) {
+                    cleanJson = cleanJson.substring(firstBrace, endIndex + 1);
+                } else {
+                    // 降级：使用 lastIndexOf
+                    const lastBrace = cleanJson.lastIndexOf('}');
+                    if (lastBrace > firstBrace) {
+                        cleanJson = cleanJson.substring(firstBrace, lastBrace + 1);
+                    }
+                }
             }
 
             cleanJson = cleanJson.trim();
 
-            this.logger.debug(`Cleaned JSON for parsing: ${cleanJson.substring(0, 100)}...`);
+            this.logger.debug(`Cleaned JSON for parsing (len=${cleanJson.length}): ${cleanJson.substring(0, 100)}...`);
 
             const aiResult = JSON.parse(cleanJson);
 
-            // 处理价格点：保留 AI 提取的增强字段
+            // 处理价格点：保留 AI 提取的增强字段，同时进行采集点匹配和标准化
             const pricePoints = aiResult.pricePoints?.length > 0
                 ? aiResult.pricePoints.map((p: {
                     location: string;
@@ -488,19 +603,28 @@ ${content}
                     subType?: string;
                     geoLevel?: string;
                     note?: string;
-                }) => ({
-                    location: p.location,
-                    price: p.price,
-                    change: p.change ?? null,
-                    unit: p.unit || '元/吨',
-                    commodity: p.commodity || '玉米',
-                    grade: p.grade,
-                    // 使用 AI 识别的分类，提供智能默认值
-                    sourceType: this.mapSourceType(p.sourceType, p.location),
-                    subType: this.mapSubType(p.subType, p.note),
-                    geoLevel: this.mapGeoLevel(p.geoLevel, p.location),
-                    note: p.note,
-                }))
+                }) => {
+                    // 尝试匹配采集点进行标准化
+                    const matchedPoint = this.findCollectionPoint(p.location);
+                    const normalizedLocation = matchedPoint?.name || p.location;
+
+                    return {
+                        location: normalizedLocation,
+                        price: p.price,
+                        change: p.change ?? null,
+                        unit: p.unit || '元/吨',
+                        commodity: p.commodity || '玉米',
+                        grade: p.grade,
+                        // 使用 AI 识别的分类，提供智能默认值
+                        sourceType: this.mapSourceType(p.sourceType, p.location),
+                        subType: this.mapSubType(p.subType, p.note),
+                        geoLevel: this.mapGeoLevel(p.geoLevel, p.location),
+                        note: p.note,
+                        // 附加采集点关联信息
+                        collectionPointId: matchedPoint?.id,
+                        collectionPointCode: matchedPoint?.code,
+                    };
+                })
                 : localResult.pricePoints;
 
             // 处理事件：包含增强字段
@@ -827,7 +951,8 @@ ${content}
                             const classification = this.classifyPricePoint(loc, content, match[0]);
 
                             pricePoints.push({
-                                location: loc,
+                                // 优先使用标准化的采集点名称，否则使用原始识别值
+                                location: classification.normalizedLocation || loc,
                                 price,
                                 change,
                                 unit: '元/吨',
@@ -856,6 +981,8 @@ ${content}
         // 新增：采集点关联
         collectionPointId?: string;
         collectionPointCode?: string;
+        // 新增：标准化地点名称（替换 AI 识别的原始值）
+        normalizedLocation?: string;
         // 新增：行政区划关联
         regionCode?: string;
         regionName?: string;
@@ -872,6 +999,7 @@ ${content}
         // 新增：采集点关联
         let collectionPointId: string | undefined;
         let collectionPointCode: string | undefined;
+        let normalizedLocation: string | undefined;
         let regionCode: string | undefined;
         let regionName: string | undefined;
         let longitude: number | undefined;
@@ -883,6 +1011,7 @@ ${content}
             // 匹配成功：填充采集点关联信息
             collectionPointId = cachedPoint.id;
             collectionPointCode = cachedPoint.code;
+            normalizedLocation = cachedPoint.name; // 使用标准化的采集点名称
             regionCode = cachedPoint.regionCode || undefined;
 
             // 继承坐标
@@ -977,6 +1106,7 @@ ${content}
             // 采集点关联
             collectionPointId,
             collectionPointCode,
+            normalizedLocation,
             // 行政区划关联
             regionCode,
             regionName,
