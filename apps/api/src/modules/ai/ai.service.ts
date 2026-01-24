@@ -175,14 +175,23 @@ export class AIService implements OnModuleInit {
                     continue;
                 }
 
-                // 2. 包含匹配: 输入包含配置词 (Priority: Medium)
-                // 例如：输入="中粮生化公主岭分厂" (len 9), 配置词="中粮公主岭" (len 5)
-                // 只有当配置词长度 >= 2 时才匹配，避免单字误配
+                // 2. 包含匹配 (双向) (Priority: Medium)
+                // Case A: 输入包含配置词 (e.g. 输入="中粮生化公主岭分厂", 配置词="中粮公主岭")
                 if (normalizedTerm.length >= 2 && normalizedKeyword.includes(normalizedTerm)) {
                     candidates.push({
                         point,
                         score: 100 + term.length,
-                        matchType: 'contains',
+                        matchType: 'contains_term',
+                        matchTerm: term
+                    });
+                }
+                // Case B: 配置词包含输入 (e.g. 输入="宝鸡阜丰", 配置词="宝鸡阜丰生物科技有限公司")
+                // 要求输入词长度至少为 3 (避免匹配到 "山东" 这种泛词)
+                else if (normalizedKeyword.length >= 3 && normalizedTerm.includes(normalizedKeyword)) {
+                    candidates.push({
+                        point,
+                        score: 80 + normalizedKeyword.length, // 分数略低于正向包含
+                        matchType: 'term_contains',
                         matchTerm: term
                     });
                 }

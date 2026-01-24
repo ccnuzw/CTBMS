@@ -17,6 +17,7 @@ import {
     Switch,
     InputNumber,
     Tooltip,
+    Input,
 } from 'antd';
 import {
     ArrowUpOutlined,
@@ -138,7 +139,12 @@ export const ComparisonPanel: React.FC<ComparisonPanelProps> = ({
     const [deviationThreshold, setDeviationThreshold] = useState(5);
     const [changeThreshold, setChangeThreshold] = useState(20);
     const [showDebug, setShowDebug] = useState(false);
-    const [regionSort, setRegionSort] = useState<'avg' | 'count' | 'delta'>('avg');
+    const [regionSort, setRegionSort] = useState<'avg' | 'count' | 'delta' | 'volatility'>('avg');
+    const [regionWindow, setRegionWindow] = useState<'7' | '30' | '90' | 'all'>('30');
+    const [regionView, setRegionView] = useState<'all' | 'top' | 'bottom'>('all');
+    const [regionKeyword, setRegionKeyword] = useState('');
+    const [regionLevel, setRegionLevel] = useState<'province' | 'city' | 'district'>('city');
+    const [regionDetail, setRegionDetail] = useState<'compact' | 'detail'>('compact');
 
     const expectedDays = useMemo(() => {
         if (!startDate || !endDate) return null;
@@ -346,56 +352,153 @@ export const ComparisonPanel: React.FC<ComparisonPanelProps> = ({
             .slice(0, 12);
     }, [multiPointData, sortedItems]);
 
-    const regionStats = useMemo(() => {
-        const stats: Record<string, { count: number; avgPrice: number; prices: number[] }> = {};
+    const regionSummary = useMemo(() => {
+        if (!priceDataList || priceDataList.length === 0) {
+            return {
+                list: [],
+                overallAvg: null as number | null,
+                minAvg: 0,
+                maxAvg: 0,
+                rangeMin: 0,
+                rangeMax: 0,
+                windowLabel: '',
+                expectedDays: 0,
+            };
+        }
+
+        let latestDate: dayjs.Dayjs | null = null;
+        let earliestDate: dayjs.Dayjs | null = null;
+        const grouped: Record<string, Array<{ ts: number; price: number }>> = {};
 
         priceDataList.forEach((item) => {
-            const regionName = item.province || item.region?.[0] || '其他';
+            const regionName = (() => {
+                if (regionLevel === 'province') {
+                    return item.province || item.region?.[0] || item.location || '其他';
+                }
+                if (regionLevel === 'district') {
+                    return item.district || item.region?.[2] || item.region?.[1] || item.location || '其他';
+                }
+                return item.city || item.region?.[1] || item.region?.[0] || item.location || '其他';
+            })();
+            const day = dayjs(item.effectiveDate).startOf('day');
+            if (!latestDate || day.isAfter(latestDate)) latestDate = day;
+            if (!earliestDate || day.isBefore(earliestDate)) earliestDate = day;
+            if (!grouped[regionName]) grouped[regionName] = [];
+            grouped[regionName].push({ ts: day.valueOf(), price: item.price });
+        });
 
-            if (!stats[regionName]) {
-                stats[regionName] = { count: 0, avgPrice: 0, prices: [] };
+        const windowEnd = (endDate ? dayjs(endDate).startOf('day') : latestDate) ?? dayjs();
+        const windowDays = regionWindow === 'all' ? null : Number(regionWindow);
+        const windowStart = windowDays
+            ? windowEnd.subtract(windowDays - 1, 'day')
+            : (startDate ? dayjs(startDate).startOf('day') : earliestDate ?? windowEnd.subtract(29, 'day'));
+        const expectedDays = windowEnd.diff(windowStart, 'day') + 1;
+
+        const prevWindowEnd = windowDays ? windowStart.subtract(1, 'day') : null;
+        const prevWindowStart = windowDays ? prevWindowEnd!.subtract(windowDays - 1, 'day') : null;
+
+        const windowStartTs = windowStart.valueOf();
+        const windowEndTs = windowEnd.valueOf();
+        const prevStartTs = prevWindowStart?.valueOf() ?? 0;
+        const prevEndTs = prevWindowEnd?.valueOf() ?? 0;
+
+        const list = Object.entries(grouped).map(([region, entries]) => {
+            const windowItems = entries.filter((e) => e.ts >= windowStartTs && e.ts <= windowEndTs);
+            if (windowItems.length === 0) {
+                return null;
             }
-            stats[regionName].count++;
-            stats[regionName].prices.push(item.price);
-        });
 
-        Object.keys(stats).forEach((r) => {
-            const prices = stats[r].prices;
-            stats[r].avgPrice = prices.length > 0 ? prices.reduce((a, b) => a + b, 0) / prices.length : 0;
-        });
+            const prices = windowItems.map((e) => e.price);
+            const sorted = [...prices].sort((a, b) => a - b);
+            const avgPrice = prices.reduce((sum, v) => sum + v, 0) / prices.length;
+            const minPrice = sorted[0];
+            const maxPrice = sorted[sorted.length - 1];
+            const q1 = computeQuantile(sorted, 0.25);
+            const median = computeQuantile(sorted, 0.5);
+            const q3 = computeQuantile(sorted, 0.75);
+            const variance = prices.reduce((sum, v) => sum + Math.pow(v - avgPrice, 2), 0) / prices.length;
+            const std = Math.sqrt(variance);
+            const volatility = avgPrice ? (maxPrice - minPrice) / avgPrice : 0;
+            const uniqueDays = new Set(windowItems.map((e) => dayjs(e.ts).format('YYYY-MM-DD'))).size;
+            const missingRate = expectedDays > 0 ? 1 - uniqueDays / expectedDays : 0;
+            const latestTs = Math.max(...windowItems.map((e) => e.ts));
 
-        return stats;
-    }, [priceDataList]);
+            let prevAvg = null as number | null;
+            if (windowDays && prevWindowStart && prevWindowEnd) {
+                const prevItems = entries.filter((e) => e.ts >= prevStartTs && e.ts <= prevEndTs);
+                if (prevItems.length > 0) {
+                    prevAvg = prevItems.reduce((sum, v) => sum + v.price, 0) / prevItems.length;
+                }
+            }
+            const hasPrev = prevAvg !== null;
+            const delta = hasPrev ? avgPrice - (prevAvg as number) : 0;
+            const deltaPct = hasPrev && prevAvg ? (delta / prevAvg) * 100 : 0;
 
-    const overallRegionAvg = useMemo(() => {
-        const allPrices = Object.values(regionStats).flatMap((stat) => stat.prices);
-        if (allPrices.length === 0) return null;
-        return allPrices.reduce((sum, v) => sum + v, 0) / allPrices.length;
-    }, [regionStats]);
-
-    const regionList = useMemo(() => {
-        const list = Object.entries(regionStats).map(([region, stat]) => {
-            const delta = overallRegionAvg ? stat.avgPrice - overallRegionAvg : 0;
-            const deltaPct = overallRegionAvg ? (delta / overallRegionAvg) * 100 : 0;
             return {
                 region,
-                avgPrice: stat.avgPrice,
-                count: stat.count,
+                avgPrice,
+                count: windowItems.length,
+                minPrice,
+                maxPrice,
+                q1,
+                median,
+                q3,
+                std,
+                volatility,
+                missingRate,
+                latestTs,
+                hasPrev,
                 delta,
                 deltaPct,
             };
+        }).filter((item): item is NonNullable<typeof item> => Boolean(item));
+
+        const overallAvg = list.length > 0
+            ? list.reduce((sum, item) => sum + item.avgPrice, 0) / list.length
+            : null;
+
+        const minAvg = list.length > 0 ? Math.min(...list.map((item) => item.avgPrice)) : 0;
+        const maxAvg = list.length > 0 ? Math.max(...list.map((item) => item.avgPrice)) : 0;
+        const rangeMin = list.length > 0 ? Math.min(...list.map((item) => item.minPrice)) : 0;
+        const rangeMax = list.length > 0 ? Math.max(...list.map((item) => item.maxPrice)) : 0;
+        const windowLabel = regionWindow === 'all' ? '当前筛选区间' : `近 ${regionWindow} 天`;
+
+        return {
+            list,
+            overallAvg,
+            minAvg,
+            maxAvg,
+            rangeMin,
+            rangeMax,
+            windowLabel,
+            expectedDays,
+        };
+    }, [priceDataList, startDate, endDate, regionWindow, regionLevel]);
+
+    const regionList = useMemo(() => {
+        const keyword = regionKeyword.trim();
+        const filtered = regionSummary.list.filter((item) => {
+            if (!keyword) return true;
+            return item.region.includes(keyword);
         });
 
         if (regionSort === 'count') {
-            list.sort((a, b) => b.count - a.count);
+            filtered.sort((a, b) => b.count - a.count);
         } else if (regionSort === 'delta') {
-            list.sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta));
+            filtered.sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta));
+        } else if (regionSort === 'volatility') {
+            filtered.sort((a, b) => b.volatility - a.volatility);
         } else {
-            list.sort((a, b) => b.avgPrice - a.avgPrice);
+            filtered.sort((a, b) => b.avgPrice - a.avgPrice);
         }
 
-        return list;
-    }, [regionStats, overallRegionAvg, regionSort]);
+        if (regionView === 'all') return filtered;
+        const topN = 8;
+        if (regionView === 'top') {
+            return filtered.slice(0, topN);
+        }
+        return filtered.slice(-topN);
+    }, [regionSummary.list, regionSort, regionKeyword, regionView]);
 
     const quality = useMemo(() => {
         if (!priceDataList || priceDataList.length === 0) return null;
@@ -1032,27 +1135,86 @@ export const ComparisonPanel: React.FC<ComparisonPanelProps> = ({
                                 <span>各省/区域均价对比 (参考)</span>
                             </Flex>
                         }
-                        extra={(
-                            <Flex align="center" gap={12}>
-                                {overallRegionAvg !== null && (
-                                    <Text type="secondary" style={{ fontSize: 12 }}>
-                                        全局均价 {overallRegionAvg.toFixed(0)} 元/吨
-                                    </Text>
-                                )}
+                        bodyStyle={{ padding: '16px 20px' }}
+                    >
+                        <div
+                            style={{
+                                background: token.colorFillQuaternary,
+                                borderRadius: 12,
+                                padding: '12px 14px',
+                                border: `1px solid ${token.colorBorderSecondary}`,
+                                marginBottom: 16,
+                            }}
+                        >
+                            <Flex justify="space-between" align="center" wrap="wrap" gap={12}>
+                                <Input
+                                    allowClear
+                                    size="small"
+                                    placeholder="搜索区域"
+                                    value={regionKeyword}
+                                    onChange={(e) => setRegionKeyword(e.target.value)}
+                                    style={{ width: 220 }}
+                                />
+                                <Text type="secondary" style={{ fontSize: 12 }}>
+                                    {regionSummary.windowLabel}
+                                    {regionSummary.overallAvg !== null ? ` · 全局均价 ${regionSummary.overallAvg.toFixed(0)} 元/吨` : ''}
+                                    · 共 {regionSummary.list.length} 个区域
+                                </Text>
+                            </Flex>
+                            <Flex align="center" gap={10} wrap="wrap" style={{ marginTop: 10 }}>
+                                <Segmented
+                                    size="small"
+                                    value={regionWindow}
+                                    onChange={(val) => setRegionWindow(val as '7' | '30' | '90' | 'all')}
+                                    options={[
+                                        { label: '近7天', value: '7' },
+                                        { label: '近30天', value: '30' },
+                                        { label: '近90天', value: '90' },
+                                        { label: '全量', value: 'all' },
+                                    ]}
+                                />
+                                <Segmented
+                                    size="small"
+                                    value={regionLevel}
+                                    onChange={(val) => setRegionLevel(val as 'province' | 'city' | 'district')}
+                                    options={[
+                                        { label: '省', value: 'province' },
+                                        { label: '市', value: 'city' },
+                                        { label: '区县', value: 'district' },
+                                    ]}
+                                />
                                 <Segmented
                                     size="small"
                                     value={regionSort}
-                                    onChange={(val) => setRegionSort(val as 'avg' | 'count' | 'delta')}
+                                    onChange={(val) => setRegionSort(val as 'avg' | 'count' | 'delta' | 'volatility')}
                                     options={[
                                         { label: '按均价', value: 'avg' },
                                         { label: '按样本', value: 'count' },
                                         { label: '偏离度', value: 'delta' },
+                                        { label: '波动率', value: 'volatility' },
+                                    ]}
+                                />
+                                <Segmented
+                                    size="small"
+                                    value={regionView}
+                                    onChange={(val) => setRegionView(val as 'all' | 'top' | 'bottom')}
+                                    options={[
+                                        { label: '全部', value: 'all' },
+                                        { label: 'Top', value: 'top' },
+                                        { label: 'Bottom', value: 'bottom' },
+                                    ]}
+                                />
+                                <Segmented
+                                    size="small"
+                                    value={regionDetail}
+                                    onChange={(val) => setRegionDetail(val as 'compact' | 'detail')}
+                                    options={[
+                                        { label: '简洁', value: 'compact' },
+                                        { label: '详情', value: 'detail' },
                                     ]}
                                 />
                             </Flex>
-                        )}
-                        bodyStyle={{ padding: '16px 20px' }}
-                    >
+                        </div>
                         <Row gutter={[16, 16]}>
                             {regionList.map((item, index) => {
                                 const deltaColor = Math.abs(item.deltaPct) < 0.3
@@ -1065,21 +1227,50 @@ export const ComparisonPanel: React.FC<ComparisonPanelProps> = ({
                                     : item.count < 10
                                         ? '样本较少'
                                         : null;
+                                const missingHint = item.missingRate > 0.3
+                                    ? '缺失偏高'
+                                    : item.missingRate > 0.15
+                                        ? '缺失较高'
+                                        : null;
                                 const rankTone = index < 3 ? token.colorPrimary : token.colorBorderSecondary;
+                                const rangeSpan = regionSummary.rangeMax - regionSummary.rangeMin || 1;
+                                const clampPct = (value: number) => Math.max(0, Math.min(100, value));
+                                const minPct = clampPct(((item.minPrice - regionSummary.rangeMin) / rangeSpan) * 100);
+                                const maxPct = clampPct(((item.maxPrice - regionSummary.rangeMin) / rangeSpan) * 100);
+                                const q1Pct = clampPct(((item.q1 - regionSummary.rangeMin) / rangeSpan) * 100);
+                                const q3Pct = clampPct(((item.q3 - regionSummary.rangeMin) / rangeSpan) * 100);
+                                const medianPct = clampPct(((item.median - regionSummary.rangeMin) / rangeSpan) * 100);
+                                const cardAccent = index < 3 ? token.colorPrimary : token.colorBorderSecondary;
 
                                 return (
-                                    <Col key={item.region} xs={12} sm={8} md={6} lg={4} xl={4}>
+                                    <Col key={item.region} xs={24} sm={12} md={8} lg={6} xl={6} style={{ display: 'flex' }}>
                                         <div
                                             style={{
-                                                borderRadius: 12,
+                                                borderRadius: 14,
                                                 border: `1px solid ${token.colorBorderSecondary}`,
-                                                padding: '10px 12px',
+                                                padding: '12px 14px',
                                                 background: token.colorBgContainer,
-                                                boxShadow: index < 3 ? `0 0 0 1px ${token.colorPrimaryBorder}` : 'none',
+                                                boxShadow: index < 3 ? `0 8px 24px rgba(22, 119, 255, 0.08)` : 'none',
+                                                position: 'relative',
+                                                overflow: 'hidden',
+                                                width: '100%',
+                                                display: 'flex',
+                                                flexDirection: 'column',
                                             }}
                                         >
-                                            <Flex justify="space-between" align="center">
-                                                <Text style={{ fontWeight: 600, fontSize: 12 }} ellipsis>
+                                            <div
+                                                style={{
+                                                    position: 'absolute',
+                                                    top: 0,
+                                                    left: 0,
+                                                    height: 3,
+                                                    width: '100%',
+                                                    background: cardAccent,
+                                                    opacity: index < 3 ? 1 : 0.5,
+                                                }}
+                                            />
+                                            <Flex justify="space-between" align="center" style={{ marginBottom: 6 }}>
+                                                <Text style={{ fontWeight: 600, fontSize: 13 }} ellipsis>
                                                     {item.region}
                                                 </Text>
                                                 <span
@@ -1087,8 +1278,8 @@ export const ComparisonPanel: React.FC<ComparisonPanelProps> = ({
                                                         fontSize: 11,
                                                         color: rankTone,
                                                         border: `1px solid ${rankTone}`,
-                                                        borderRadius: 10,
-                                                        padding: '0 6px',
+                                                        borderRadius: 999,
+                                                        padding: '0 8px',
                                                         lineHeight: '18px',
                                                     }}
                                                 >
@@ -1096,27 +1287,125 @@ export const ComparisonPanel: React.FC<ComparisonPanelProps> = ({
                                                 </span>
                                             </Flex>
                                             <Flex align="baseline" gap={6} style={{ marginTop: 6 }}>
-                                                <Text style={{ fontSize: 18, fontWeight: 600 }}>
+                                                <Text style={{ fontSize: 20, fontWeight: 600 }}>
                                                     {Number(item.avgPrice).toLocaleString()}
                                                 </Text>
                                                 <Text type="secondary" style={{ fontSize: 12 }}>
                                                     元/吨
                                                 </Text>
                                             </Flex>
-                                            <Flex justify="space-between" align="center" style={{ marginTop: 4 }}>
-                                                <Text type="secondary" style={{ fontSize: 11 }}>
-                                                    {item.count} 个样本{sampleHint ? ` · ${sampleHint}` : ''}
-                                                </Text>
-                                                <Text style={{ fontSize: 11, color: deltaColor }}>
-                                                    {item.delta >= 0 ? <ArrowUpOutlined /> : <ArrowDownOutlined />}
-                                                    {Math.abs(item.delta).toFixed(0)} ({Math.abs(item.deltaPct).toFixed(1)}%)
-                                                </Text>
+                                            <Tooltip
+                                                overlayStyle={{ maxWidth: 260 }}
+                                                title={(
+                                                    <div style={{ fontSize: 12, lineHeight: 1.6 }}>
+                                                        <div style={{ fontWeight: 600, marginBottom: 6 }}>{item.region}</div>
+                                                        <div>最小值：{item.minPrice.toFixed(0)}</div>
+                                                        <div>P25：{item.q1.toFixed(0)}</div>
+                                                        <div>中位数：{item.median.toFixed(0)}</div>
+                                                        <div>P75：{item.q3.toFixed(0)}</div>
+                                                        <div>最大值：{item.maxPrice.toFixed(0)}</div>
+                                                    </div>
+                                                )}
+                                            >
+                                                <div style={{ marginTop: 10, cursor: 'help' }}>
+                                                    <div style={{ position: 'relative', height: 8, borderRadius: 999, background: token.colorFillSecondary }}>
+                                                        <div
+                                                            style={{
+                                                                position: 'absolute',
+                                                                left: `${minPct}%`,
+                                                                width: `${Math.max(2, maxPct - minPct)}%`,
+                                                            top: 3,
+                                                            height: 2,
+                                                            background: token.colorPrimary,
+                                                            opacity: 0.8,
+                                                        }}
+                                                    />
+                                                    <div
+                                                        style={{
+                                                            position: 'absolute',
+                                                            left: `${q1Pct}%`,
+                                                            width: `${Math.max(2, q3Pct - q1Pct)}%`,
+                                                            top: 1,
+                                                            height: 6,
+                                                            borderRadius: 6,
+                                                            background: token.colorPrimaryBg,
+                                                            border: `1px solid ${token.colorPrimary}`,
+                                                        }}
+                                                    />
+                                                    <div
+                                                        style={{
+                                                            position: 'absolute',
+                                                            left: `${medianPct}%`,
+                                                            width: 2,
+                                                            top: 0,
+                                                            height: 8,
+                                                            borderRadius: 2,
+                                                            background: token.colorPrimary,
+                                                        }}
+                                                        />
+                                                    </div>
+                                                    <Text type="secondary" style={{ fontSize: 11 }}>
+                                                        min {Math.round(item.minPrice)} · median {Math.round(item.median)} · max {Math.round(item.maxPrice)}
+                                                    </Text>
+                                                </div>
+                                            </Tooltip>
+                                            <Flex justify="space-between" align="center" style={{ marginTop: 10 }}>
+                                                <Flex gap={6} align="center" wrap="wrap">
+                                                    <Tag color="blue" style={{ margin: 0, borderRadius: 999 }}>
+                                                        {item.count} 样本
+                                                    </Tag>
+                                                    {sampleHint && (
+                                                        <Tag color="orange" style={{ margin: 0, borderRadius: 999 }}>
+                                                            {sampleHint}
+                                                        </Tag>
+                                                    )}
+                                                    {missingHint && (
+                                                        <Tag color="orange" style={{ margin: 0, borderRadius: 999 }}>
+                                                            {missingHint}
+                                                        </Tag>
+                                                    )}
+                                                </Flex>
+                                                {item.hasPrev ? (
+                                                    <Text style={{ fontSize: 11, color: deltaColor }}>
+                                                        {item.delta >= 0 ? <ArrowUpOutlined /> : <ArrowDownOutlined />}
+                                                        {Math.abs(item.delta).toFixed(0)} ({Math.abs(item.deltaPct).toFixed(1)}%)
+                                                    </Text>
+                                                ) : (
+                                                    <Text type="secondary" style={{ fontSize: 11 }}>—</Text>
+                                                )}
                                             </Flex>
+                                            {regionDetail === 'detail' && (
+                                                <>
+                                                    <Flex justify="space-between" align="center" style={{ marginTop: 8 }}>
+                                                        <Text type="secondary" style={{ fontSize: 11 }}>
+                                                            P25 {item.q1.toFixed(0)} / P50 {item.median.toFixed(0)} / P75 {item.q3.toFixed(0)}
+                                                        </Text>
+                                                    </Flex>
+                                                    <div
+                                                        style={{
+                                                            display: 'grid',
+                                                            gridTemplateColumns: '1fr 1fr',
+                                                            columnGap: 10,
+                                                            rowGap: 6,
+                                                            marginTop: 6,
+                                                            fontSize: 11,
+                                                            color: token.colorTextSecondary,
+                                                        }}
+                                                    >
+                                                        <div>波动率 {(item.volatility * 100).toFixed(1)}%</div>
+                                                        <div>区间 {Math.round(item.maxPrice - item.minPrice)}</div>
+                                                        <div>箱体高度 {Math.round(item.q3 - item.q1)}</div>
+                                                        <div>更新 {dayjs(item.latestTs).format('MM-DD')}</div>
+                                                        <div>{regionWindow === 'all' ? '对比上期 —' : '对比上期'}</div>
+                                                        <div>{item.hasPrev ? '有上期' : '无上期'}</div>
+                                                    </div>
+                                                </>
+                                            )}
                                         </div>
                                     </Col>
                                 );
                             })}
-                            {Object.keys(regionStats).length === 0 && (
+                            {regionSummary.list.length === 0 && (
                                 <Col span={24}>
                                     <Empty description="暂无区域统计数据" />
                                 </Col>
