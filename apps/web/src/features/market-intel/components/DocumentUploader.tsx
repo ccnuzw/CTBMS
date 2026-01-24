@@ -35,6 +35,8 @@ interface DocumentUploaderProps {
     sourceType?: IntelSourceType;
     location?: string;
     onUploadSuccess?: (result: UploadResult) => void;
+    onStartAnalysis?: (content: string) => void;
+    onViewDetail?: (intelId: string) => void;
     onCancel?: () => void;
 }
 
@@ -75,6 +77,8 @@ export const DocumentUploader: React.FC<DocumentUploaderProps> = ({
     sourceType,
     location,
     onUploadSuccess,
+    onStartAnalysis,
+    onViewDetail,
     onCancel,
 }) => {
     const { token } = theme.useToken();
@@ -166,7 +170,7 @@ export const DocumentUploader: React.FC<DocumentUploaderProps> = ({
             </Title>
 
             {/* 上传区域 */}
-            {!uploadResult && (
+            {!uploadResult && fileList.length === 0 && (
                 <Dragger {...uploadProps} style={{ marginBottom: 24 }}>
                     <p className="ant-upload-drag-icon">
                         <InboxOutlined style={{ color: token.colorPrimary, fontSize: 48 }} />
@@ -246,7 +250,7 @@ export const DocumentUploader: React.FC<DocumentUploaderProps> = ({
 
             {/* 操作按钮 */}
             <Flex justify="flex-end" gap={12}>
-                {onCancel && (
+                {onCancel && !uploadResult && (
                     <Button onClick={onCancel}>
                         取消
                     </Button>
@@ -262,15 +266,29 @@ export const DocumentUploader: React.FC<DocumentUploaderProps> = ({
                         {uploading ? '上传中...' : '上传文档'}
                     </Button>
                 ) : (
-                    <Button
-                        type="primary"
-                        onClick={() => {
-                            setFileList([]);
-                            setUploadResult(null);
-                        }}
-                    >
-                        继续上传
-                    </Button>
+                    <Space>
+                        <Button
+                            onClick={() => {
+                                setFileList([]);
+                                setUploadResult(null);
+                            }}
+                        >
+                            继续上传
+                        </Button>
+                        {onViewDetail && (
+                            <Button onClick={() => onViewDetail(uploadResult.intel.id)}>
+                                查看详情
+                            </Button>
+                        )}
+                        {onStartAnalysis && uploadResult.intel.rawContent && (
+                            <Button
+                                type="primary"
+                                onClick={() => onStartAnalysis(uploadResult.intel.rawContent)}
+                            >
+                                开始 AI 分析
+                            </Button>
+                        )}
+                    </Space>
                 )}
             </Flex>
         </Card>

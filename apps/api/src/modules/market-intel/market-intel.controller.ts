@@ -134,11 +134,17 @@ export class MarketIntelController {
         @Param('id') collectionPointId: string,
         @Query('commodity') commodity?: string,
         @Query('days') days = '30',
+        @Query('startDate') startDate?: string,
+        @Query('endDate') endDate?: string,
+        @Query('subTypes') subTypes?: string,
     ) {
         return this.priceDataService.getByCollectionPoint(
             collectionPointId,
             commodity,
             parseInt(days, 10),
+            startDate ? new Date(startDate) : undefined,
+            endDate ? new Date(endDate) : undefined,
+            subTypes,
         );
     }
 
@@ -150,11 +156,17 @@ export class MarketIntelController {
         @Param('code') regionCode: string,
         @Query('commodity') commodity?: string,
         @Query('days') days = '30',
+        @Query('startDate') startDate?: string,
+        @Query('endDate') endDate?: string,
+        @Query('subTypes') subTypes?: string,
     ) {
         return this.priceDataService.getByRegion(
             regionCode,
             commodity,
             parseInt(days, 10),
+            startDate ? new Date(startDate) : undefined,
+            endDate ? new Date(endDate) : undefined,
+            subTypes,
         );
     }
 
@@ -166,12 +178,18 @@ export class MarketIntelController {
         @Query('ids') ids: string,
         @Query('commodity') commodity: string,
         @Query('days') days = '30',
+        @Query('startDate') startDate?: string,
+        @Query('endDate') endDate?: string,
+        @Query('subTypes') subTypes?: string,
     ) {
         const collectionPointIds = ids.split(',').filter(id => id.trim());
         return this.priceDataService.getMultiPointTrend(
             collectionPointIds,
             commodity,
             parseInt(days, 10),
+            startDate ? new Date(startDate) : undefined,
+            endDate ? new Date(endDate) : undefined,
+            subTypes,
         );
     }
 
@@ -180,6 +198,43 @@ export class MarketIntelController {
     @Get('filter-options')
     async getFilterOptions() {
         return this.marketIntelService.getFilterOptions();
+    }
+
+    @Get('dashboard/stats')
+    async getDashboardStats(
+        @Query('startDate') startDate?: string,
+        @Query('endDate') endDate?: string,
+        @Query('sourceTypes') sourceTypes?: string,
+        @Query('regionCodes') regionCodes?: string,
+        @Query('commodities') commodities?: string,
+        @Query('processingStatus') processingStatus?: string,
+        @Query('qualityLevel') qualityLevel?: string,
+        @Query('keyword') keyword?: string,
+        @Query('minScore') minScore?: string,
+        @Query('maxScore') maxScore?: string,
+    ) {
+        const split = (s?: string) => s ? s.split(',').filter(Boolean) : undefined;
+        return this.marketIntelService.getDashboardStats({
+            startDate: startDate ? new Date(startDate) : undefined,
+            endDate: endDate ? new Date(endDate) : undefined,
+            sourceTypes: split(sourceTypes),
+            regionCodes: split(regionCodes),
+            commodities: split(commodities),
+            processingStatus: split(processingStatus),
+            qualityLevel: split(qualityLevel),
+            keyword,
+            minScore: minScore ? parseInt(minScore) : undefined,
+            maxScore: maxScore ? parseInt(maxScore) : undefined,
+        });
+    }
+
+    @Post('dashboard/briefing')
+    async generateSmartBriefing(@Body() body: any) {
+        return this.marketIntelService.generateSmartBriefing({
+            ...body,
+            startDate: body.startDate ? new Date(body.startDate) : undefined,
+            endDate: body.endDate ? new Date(body.endDate) : undefined,
+        });
     }
 
     @Get('trend-analysis')
@@ -455,6 +510,9 @@ export class MarketIntelController {
             throw new BadRequestException('请上传文件');
         }
 
+        // Fix Chinese filename encoding (Multer often defaults to latin1)
+        file.originalname = Buffer.from(file.originalname, 'latin1').toString('utf8');
+
         const authorId = 'system-user-placeholder';
 
         // 1. 解析文档内容
@@ -467,19 +525,7 @@ export class MarketIntelController {
             parseError = error instanceof Error ? error.message : '文档解析失败';
         }
 
-        // 2. 保存文件并创建附件记录（带 OCR 文本）
-        const attachment = await this.intelAttachmentService.saveFile(
-            {
-                buffer: file.buffer,
-                originalname: file.originalname,
-                mimetype: file.mimetype,
-                size: file.size,
-            },
-            '', // intelId 稍后关联
-            extractedText, // 存储提取的文本作为 ocrText
-        );
-
-        // 3. 创建 MarketIntel 记录
+        // 2. 准备内容并创建 MarketIntel 记录
         const rawContent = extractedText
             ? `[文档上传] ${file.originalname}\n\n--- 提取内容 ---\n${extractedText.substring(0, 5000)}${extractedText.length > 5000 ? '...(已截断)' : ''}`
             : `[文档上传] ${file.originalname}${parseError ? `\n\n[解析警告] ${parseError}` : ''}`;
@@ -508,8 +554,17 @@ export class MarketIntelController {
             isFlagged: false,
         }, authorId);
 
-        // 4. 更新附件关联
-        await this.intelAttachmentService.updateIntelId(attachment.id, intel.id);
+        // 3. 保存文件并创建附件记录（关联 intelId）
+        const attachment = await this.intelAttachmentService.saveFile(
+            {
+                buffer: file.buffer,
+                originalname: file.originalname,
+                mimetype: file.mimetype,
+                size: file.size,
+            },
+            intel.id, // 关联已创建的情报 ID
+            extractedText, // 存储提取的文本作为 ocrText
+        );
 
         return {
             success: true,

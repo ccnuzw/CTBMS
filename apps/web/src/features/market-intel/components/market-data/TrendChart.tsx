@@ -1,14 +1,11 @@
 import React, { useMemo, useState } from 'react';
-import { Card, Typography, Flex, Segmented, Empty, Spin, Statistic, Space, Tag, theme, Button } from 'antd';
+import dayjs from 'dayjs';
+import { Card, Typography, Flex, Segmented, Empty, Spin, Statistic, Tag, theme, Button } from 'antd';
 import {
     LineChartOutlined,
-    ArrowUpOutlined,
-    ArrowDownOutlined,
-    MinusOutlined,
 } from '@ant-design/icons';
 import {
     ResponsiveContainer,
-    LineChart,
     Line,
     CartesianGrid,
     XAxis,
@@ -17,12 +14,12 @@ import {
     Legend,
     Area,
     ComposedChart,
-    ReferenceLine,
 } from 'recharts';
 import { useMultiPointCompare, usePriceByRegion } from '../../api/hooks';
 import { ChartContainer } from '../ChartContainer';
+import type { PriceSubType } from '@packages/types';
 
-const { Title, Text } = Typography;
+const { Text } = Typography;
 
 // 图表颜色
 const LINE_COLORS = [
@@ -40,19 +37,27 @@ type ViewMode = 'line' | 'area' | 'comparison';
 
 interface TrendChartProps {
     commodity: string;
-    days: number;
+    startDate?: Date;
+    endDate?: Date;
     selectedPointIds: string[];
     selectedRegionCode?: string;
+    subTypes?: PriceSubType[];
+    highlightPointId?: string | null;
 }
 
 export const TrendChart: React.FC<TrendChartProps> = ({
     commodity,
-    days,
+    startDate,
+    endDate,
     selectedPointIds,
     selectedRegionCode,
+    subTypes,
+    highlightPointId,
 }) => {
     const { token } = theme.useToken();
     const [viewMode, setViewMode] = useState<ViewMode>('line');
+    const [hiddenKeys, setHiddenKeys] = useState<string[]>([]);
+    const regionKey = '区域均价';
 
     // 多采集点对比数据
     const {
@@ -60,13 +65,23 @@ export const TrendChart: React.FC<TrendChartProps> = ({
         isLoading: isLoadingPoints,
         isError,
         error,
-    } = useMultiPointCompare(selectedPointIds, commodity, days);
+    } = useMultiPointCompare(selectedPointIds, commodity, {
+        startDate,
+        endDate,
+        subTypes,
+    });
+
+    const highlightName = useMemo(() => {
+        if (!highlightPointId || !multiPointData) return null;
+        const match = multiPointData.find((item) => item.point.id === highlightPointId);
+        return match?.point.name ?? null;
+    }, [highlightPointId, multiPointData]);
 
     // 区域聚合数据
     const { data: regionData, isLoading: isLoadingRegion } = usePriceByRegion(
         selectedRegionCode || '',
         commodity,
-        days,
+        { startDate, endDate, subTypes },
     );
 
     // 只有当实际上正在请求区域数据时，才计入 loading
@@ -111,13 +126,13 @@ export const TrendChart: React.FC<TrendChartProps> = ({
             if (regionData?.trend) {
                 const regionPoint = regionData.trend.find((rt) => rt.date === dateStr);
                 if (regionPoint) {
-                    entry['区域均价'] = Math.round(regionPoint.avgPrice);
+                    entry[regionKey] = Math.round(regionPoint.avgPrice);
                 }
             }
 
             return entry;
         });
-    }, [multiPointData, regionData]);
+    }, [multiPointData, regionData, regionKey]);
 
     // 统计信息
     const stats = useMemo(() => {
@@ -155,6 +170,106 @@ export const TrendChart: React.FC<TrendChartProps> = ({
             topLoser,
         };
     }, [multiPointData]);
+
+    const latestMap = useMemo(() => {
+        const map = new Map<string, { price: number; change: number | null; date: Date }>();
+        if (multiPointData) {
+            multiPointData.forEach((item) => {
+                const latest = item.data[item.data.length - 1];
+                if (latest) {
+                    map.set(item.point.name, {
+                        price: latest.price,
+                        change: latest.change ?? null,
+                        date: new Date(latest.date),
+                    });
+                }
+            });
+        }
+        if (regionData?.trend?.length) {
+            const last = regionData.trend[regionData.trend.length - 1];
+            if (last) {
+                map.set(regionKey, {
+                    price: Math.round(last.avgPrice),
+                    change: null,
+                    date: new Date(last.date),
+                });
+            }
+        }
+        return map;
+    }, [multiPointData, regionData, regionKey]);
+
+    const quality = useMemo(() => {
+        if (!multiPointData || multiPointData.length === 0) return null;
+        const dateSet = new Set<string>();
+        let latestDate: Date | null = null;
+        let totalSamples = 0;
+
+        multiPointData.forEach((item) => {
+            totalSamples += item.data.length;
+            item.data.forEach((d) => {
+                const date = new Date(d.date);
+                const key = dayjs(date).format('YYYY-MM-DD');
+                dateSet.add(key);
+                if (!latestDate || date > latestDate) latestDate = date;
+            });
+        });
+
+        let missingDays: number | null = null;
+        if (startDate && endDate) {
+            const expectedDays =
+                dayjs(endDate).startOf('day').diff(dayjs(startDate).startOf('day'), 'day') + 1;
+            missingDays = Math.max(0, expectedDays - dateSet.size);
+        }
+
+        return { totalSamples, latestDate, missingDays, uniqueDays: dateSet.size };
+    }, [multiPointData, startDate, endDate]);
+
+    const toggleLegend = (dataKey: string) => {
+        setHiddenKeys((prev) =>
+            prev.includes(dataKey) ? prev.filter((key) => key !== dataKey) : [...prev, dataKey],
+        );
+    };
+
+    const renderLegend = (props: any) => {
+        const { payload } = props;
+        if (!payload || payload.length === 0) return null;
+        return (
+            <Flex wrap="wrap" gap={12} style={{ fontSize: 12 }}>
+                {payload.map((entry: any) => {
+                    const dataKey = entry.dataKey as string;
+                    const latest = latestMap.get(dataKey);
+                    const isHidden = hiddenKeys.includes(dataKey);
+                    return (
+                        <Flex
+                            key={dataKey}
+                            align="center"
+                            gap={6}
+                            onClick={() => toggleLegend(dataKey)}
+                            style={{ cursor: 'pointer', opacity: isHidden ? 0.4 : 1 }}
+                        >
+                            <span
+                                style={{
+                                    width: 8,
+                                    height: 8,
+                                    borderRadius: 2,
+                                    background: entry.color,
+                                    display: 'inline-block',
+                                }}
+                            />
+                            <Text>{dataKey}</Text>
+                            {latest && (
+                                <Text type="secondary">
+                                    {latest.price.toLocaleString()}
+                                    {latest.change !== null &&
+                                        ` (${latest.change > 0 ? '+' : ''}${latest.change})`}
+                                </Text>
+                            )}
+                        </Flex>
+                    );
+                })}
+            </Flex>
+        );
+    };
 
     if (selectedPointIds.length === 0) {
         return (
@@ -245,6 +360,21 @@ export const TrendChart: React.FC<TrendChartProps> = ({
                     )}
                 </Flex>
             )}
+            {quality && (
+                <Flex align="center" gap={8} style={{ marginBottom: 12 }}>
+                    <Tag color="blue">样本 {quality.totalSamples}</Tag>
+                    {quality.latestDate && (
+                        <Tag color="default">
+                            最后更新 {dayjs(quality.latestDate).format('YYYY-MM-DD')}
+                        </Tag>
+                    )}
+                    {quality.missingDays !== null && (
+                        <Tag color={quality.missingDays > 0 ? 'orange' : 'green'}>
+                            缺失 {quality.missingDays} 天
+                        </Tag>
+                    )}
+                </Flex>
+            )}
 
             {/* 图表 */}
             {isError ? (
@@ -316,18 +446,19 @@ export const TrendChart: React.FC<TrendChartProps> = ({
                                         `${Number(value).toLocaleString()} 元/吨`
                                     }
                                 />
-                                <Legend wrapperStyle={{ paddingTop: 10 }} />
+                                <Legend content={renderLegend} wrapperStyle={{ paddingTop: 10 }} />
 
                                 {/* 区域均价参考线 */}
                                 {regionData?.trend && (
                                     <Line
                                         type="monotone"
-                                        dataKey="区域均价"
+                                        dataKey={regionKey}
                                         name={`区域聚合均价${regionData.summary?.uniqueLocations ? ` (${regionData.summary.uniqueLocations}个采集点)` : ''}`}
                                         stroke={token.colorTextQuaternary}
                                         strokeWidth={2}
                                         strokeDasharray="5 5"
                                         dot={false}
+                                        hide={hiddenKeys.includes(regionKey)}
                                     />
                                 )}
 
@@ -340,8 +471,9 @@ export const TrendChart: React.FC<TrendChartProps> = ({
                                                 dataKey={item.point.name}
                                                 stroke={LINE_COLORS[index % LINE_COLORS.length]}
                                                 fill={`url(#gradient-${item.point.id})`}
-                                                strokeWidth={2}
+                                                strokeWidth={highlightName === item.point.name ? 3 : 2}
                                                 connectNulls
+                                                hide={hiddenKeys.includes(item.point.name)}
                                             />
                                         )}
                                         {viewMode === 'line' && (
@@ -349,10 +481,15 @@ export const TrendChart: React.FC<TrendChartProps> = ({
                                                 type="monotone"
                                                 dataKey={item.point.name}
                                                 stroke={LINE_COLORS[index % LINE_COLORS.length]}
-                                                strokeWidth={2}
-                                                dot={{ r: 3, strokeWidth: 2, fill: '#fff' }}
-                                                activeDot={{ r: 6 }}
+                                                strokeWidth={highlightName === item.point.name ? 3 : 2}
+                                                dot={{
+                                                    r: highlightName === item.point.name ? 4 : 3,
+                                                    strokeWidth: 2,
+                                                    fill: '#fff',
+                                                }}
+                                                activeDot={{ r: highlightName === item.point.name ? 7 : 6 }}
                                                 connectNulls
+                                                hide={hiddenKeys.includes(item.point.name)}
                                             />
                                         )}
                                     </React.Fragment>

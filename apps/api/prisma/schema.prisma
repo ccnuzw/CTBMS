@@ -506,6 +506,7 @@ enum IntelSourceType {
   OFFICIAL      // 官方发布
   RESEARCH_INST // 第三方研究机构
   MEDIA         // 媒体报道
+  INTERNAL_REPORT // 内部研报
 }
 
 // 内容类型（统一入口）

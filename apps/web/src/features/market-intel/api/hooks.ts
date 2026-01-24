@@ -71,6 +71,71 @@ export const useIntelligenceFeed = (query?: Partial<IntelligenceFeedQuery>) => {
 };
 
 // =============================================
+// 仪表盘聚合统计 (Real-time Dashboard)
+// =============================================
+
+export interface IntelDashboardStats {
+    overview: {
+        total: number;
+        today: number;
+        highValue: number;
+        pending: number;
+        confirmed: number;
+        avgQuality: number;
+    };
+    trend: Array<{ date: string; daily: number; research: number; policy: number }>;
+    sourceDistribution: Array<{ name: string; value: number }>;
+    commodityHeat: Array<{ name: string; count: number; change: number }>;
+    regionHeat: Array<{ region: string; count: number }>;
+}
+
+export const useIntelDashboardStats = (query?: Partial<IntelligenceFeedQuery>) => {
+    return useQuery<IntelDashboardStats>({
+        queryKey: ['intel-dashboard-stats', query],
+        queryFn: async () => {
+            const params = new URLSearchParams();
+            if (query) {
+                Object.entries(query).forEach(([key, value]) => {
+                    if (value !== undefined && value !== null) {
+                        if (Array.isArray(value)) {
+                            params.append(key, value.join(','));
+                        } else if (value instanceof Date) {
+                            params.append(key, value.toISOString());
+                        } else {
+                            params.append(key, String(value));
+                        }
+                    }
+                });
+            }
+            const res = await apiClient.get<IntelDashboardStats>(`/market-intel/dashboard/stats?${params.toString()}`);
+            return res.data;
+        },
+    });
+};
+
+// =============================================
+// AI 智能简报
+// =============================================
+
+export const useIntelSmartBriefing = () => {
+    return useMutation({
+        mutationFn: async (query?: Partial<IntelligenceFeedQuery>) => {
+            // Filter logic identical to feed query
+            const payload: any = {};
+            if (query) {
+                Object.entries(query).forEach(([key, value]) => {
+                    if (value !== undefined && value !== null) {
+                        payload[key] = value;
+                    }
+                });
+            }
+            const res = await apiClient.post<{ summary: string }>('/market-intel/dashboard/briefing', payload);
+            return res.data;
+        },
+    });
+};
+
+// =============================================
 // 情报列表查询
 // =============================================
 
@@ -351,7 +416,11 @@ interface PriceHeatmapPoint {
     change: number | null;
 }
 
-export const usePriceData = (query?: Partial<PriceDataQuery>) => {
+interface UsePriceDataOptions {
+    enabled?: boolean;
+}
+
+export const usePriceData = (query?: Partial<PriceDataQuery>, options?: UsePriceDataOptions) => {
     return useQuery<PaginatedResponse<PriceDataResponse>>({
         queryKey: ['price-data', query],
         queryFn: async () => {
@@ -362,6 +431,10 @@ export const usePriceData = (query?: Partial<PriceDataQuery>) => {
                         // 日期对象转换为 ISO 字符串
                         if (value instanceof Date) {
                             params.append(key, value.toISOString());
+                        } else if (Array.isArray(value)) {
+                            if (value.length > 0) {
+                                params.append(key, value.join(','));
+                            }
                         } else {
                             params.append(key, String(value));
                         }
@@ -373,6 +446,7 @@ export const usePriceData = (query?: Partial<PriceDataQuery>) => {
             );
             return res.data;
         },
+        enabled: options?.enabled ?? true,
     });
 };
 
@@ -453,14 +527,28 @@ interface CollectionPointPriceData {
 export const usePriceByCollectionPoint = (
     collectionPointId: string,
     commodity?: string,
-    days = 30,
+    daysOrParams: number | { startDate?: Date; endDate?: Date; days?: number; subTypes?: string[] } = 30,
 ) => {
+    const paramsValue = typeof daysOrParams === 'number' ? { days: daysOrParams } : daysOrParams;
     return useQuery<CollectionPointPriceData>({
-        queryKey: ['price-by-collection-point', collectionPointId, commodity, days],
+        queryKey: [
+            'price-by-collection-point',
+            collectionPointId,
+            commodity,
+            paramsValue?.days,
+            paramsValue?.startDate?.toISOString(),
+            paramsValue?.endDate?.toISOString(),
+            paramsValue?.subTypes?.join(','),
+        ],
         queryFn: async () => {
             const params = new URLSearchParams();
             if (commodity) params.append('commodity', commodity);
-            params.append('days', String(days));
+            if (paramsValue?.startDate) params.append('startDate', paramsValue.startDate.toISOString());
+            if (paramsValue?.endDate) params.append('endDate', paramsValue.endDate.toISOString());
+            if (paramsValue?.days) params.append('days', String(paramsValue.days));
+            if (paramsValue?.subTypes && paramsValue.subTypes.length > 0) {
+                params.append('subTypes', paramsValue.subTypes.join(','));
+            }
             const res = await apiClient.get<CollectionPointPriceData>(
                 `/market-intel/price-data/by-collection-point/${collectionPointId}?${params.toString()}`,
             );
@@ -504,13 +592,31 @@ interface RegionPriceData {
     };
 }
 
-export const usePriceByRegion = (regionCode: string, commodity?: string, days = 30) => {
+export const usePriceByRegion = (
+    regionCode: string,
+    commodity?: string,
+    daysOrParams: number | { startDate?: Date; endDate?: Date; days?: number; subTypes?: string[] } = 30,
+) => {
+    const paramsValue = typeof daysOrParams === 'number' ? { days: daysOrParams } : daysOrParams;
     return useQuery<RegionPriceData>({
-        queryKey: ['price-by-region', regionCode, commodity, days],
+        queryKey: [
+            'price-by-region',
+            regionCode,
+            commodity,
+            paramsValue?.days,
+            paramsValue?.startDate?.toISOString(),
+            paramsValue?.endDate?.toISOString(),
+            paramsValue?.subTypes?.join(','),
+        ],
         queryFn: async () => {
             const params = new URLSearchParams();
             if (commodity) params.append('commodity', commodity);
-            params.append('days', String(days));
+            if (paramsValue?.startDate) params.append('startDate', paramsValue.startDate.toISOString());
+            if (paramsValue?.endDate) params.append('endDate', paramsValue.endDate.toISOString());
+            if (paramsValue?.days) params.append('days', String(paramsValue.days));
+            if (paramsValue?.subTypes && paramsValue.subTypes.length > 0) {
+                params.append('subTypes', paramsValue.subTypes.join(','));
+            }
             const res = await apiClient.get<RegionPriceData>(
                 `/market-intel/price-data/by-region/${regionCode}?${params.toString()}`,
             );
@@ -530,6 +636,9 @@ interface MultiPointTrendItem {
         code: string;
         name: string;
         shortName: string | null;
+        type?: string;
+        regionCode?: string | null;
+        region?: { code: string; name: string; shortName: string | null } | null;
     };
     data: Array<{
         date: Date;
@@ -541,13 +650,31 @@ interface MultiPointTrendItem {
 export const useMultiPointCompare = (
     collectionPointIds: string[],
     commodity: string,
-    days = 30,
+    daysOrParams: number | { startDate?: Date; endDate?: Date; days?: number; subTypes?: string[] } = 30,
 ) => {
+    const paramsValue = typeof daysOrParams === 'number' ? { days: daysOrParams } : daysOrParams;
     return useQuery<MultiPointTrendItem[]>({
-        queryKey: ['multi-point-compare', collectionPointIds, commodity, days],
+        queryKey: [
+            'multi-point-compare',
+            collectionPointIds,
+            commodity,
+            paramsValue?.days,
+            paramsValue?.startDate?.toISOString(),
+            paramsValue?.endDate?.toISOString(),
+            paramsValue?.subTypes?.join(','),
+        ],
         queryFn: async () => {
+            const params = new URLSearchParams();
+            params.append('ids', collectionPointIds.join(','));
+            params.append('commodity', commodity);
+            if (paramsValue?.startDate) params.append('startDate', paramsValue.startDate.toISOString());
+            if (paramsValue?.endDate) params.append('endDate', paramsValue.endDate.toISOString());
+            if (paramsValue?.days) params.append('days', String(paramsValue.days));
+            if (paramsValue?.subTypes && paramsValue.subTypes.length > 0) {
+                params.append('subTypes', paramsValue.subTypes.join(','));
+            }
             const res = await apiClient.get<MultiPointTrendItem[]>(
-                `/market-intel/price-data/compare?ids=${collectionPointIds.join(',')}&commodity=${encodeURIComponent(commodity)}&days=${days}`,
+                `/market-intel/price-data/compare?${params.toString()}`,
             );
             return res.data;
         },

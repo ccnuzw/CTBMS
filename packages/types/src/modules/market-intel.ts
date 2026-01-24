@@ -11,12 +11,14 @@ export enum IntelCategory {
   D_ENTITY = 'D_ENTITY',
 }
 
+
 export enum IntelSourceType {
   FIRST_LINE = 'FIRST_LINE',
   COMPETITOR = 'COMPETITOR',
   OFFICIAL = 'OFFICIAL',
   RESEARCH_INST = 'RESEARCH_INST',  // 第三方研究机构
   MEDIA = 'MEDIA',                   // 媒体报道
+  INTERNAL_REPORT = 'INTERNAL_REPORT', // 内部研报
 }
 
 // 枚举标签映射
@@ -33,7 +35,10 @@ export const INTEL_SOURCE_TYPE_LABELS: Record<IntelSourceType, string> = {
   [IntelSourceType.OFFICIAL]: '官方发布',
   [IntelSourceType.RESEARCH_INST]: '第三方研究机构',
   [IntelSourceType.MEDIA]: '媒体报道',
+  [IntelSourceType.INTERNAL_REPORT]: '内部研报',
 };
+
+// ... existing code ...
 
 // 统一入口：内容类型
 export enum ContentType {
@@ -57,7 +62,7 @@ export const CONTENT_TYPE_DESCRIPTIONS: Record<ContentType, string> = {
 // 内容类型对应的可选信源
 export const CONTENT_TYPE_SOURCE_OPTIONS: Record<ContentType, IntelSourceType[]> = {
   [ContentType.DAILY_REPORT]: [IntelSourceType.FIRST_LINE, IntelSourceType.COMPETITOR, IntelSourceType.OFFICIAL],
-  [ContentType.RESEARCH_REPORT]: [IntelSourceType.RESEARCH_INST, IntelSourceType.OFFICIAL, IntelSourceType.MEDIA],
+  [ContentType.RESEARCH_REPORT]: [IntelSourceType.INTERNAL_REPORT, IntelSourceType.RESEARCH_INST, IntelSourceType.OFFICIAL],
   [ContentType.POLICY_DOC]: [IntelSourceType.OFFICIAL],
 };
 
@@ -575,6 +580,7 @@ export const PriceDataResponseSchema = z.object({
 export const PriceDataQuerySchema = z.object({
   sourceType: z.nativeEnum(PriceSourceType).optional(),
   subType: z.nativeEnum(PriceSubType).optional(),
+  subTypes: z.array(z.nativeEnum(PriceSubType)).optional(),
   geoLevel: z.nativeEnum(GeoLevel).optional(),
   commodity: z.string().optional(),
   location: z.string().optional(),
@@ -583,7 +589,9 @@ export const PriceDataQuerySchema = z.object({
   enterpriseId: z.string().optional(),
   // 新增：采集点和行政区划查询
   collectionPointId: z.string().optional(),
+  collectionPointIds: z.array(z.string()).optional(),
   regionCode: z.string().optional(),
+  pointTypes: z.array(z.string()).optional(),
   startDate: z.coerce.date().optional(),
   endDate: z.coerce.date().optional(),
   keyword: z.string().optional(),

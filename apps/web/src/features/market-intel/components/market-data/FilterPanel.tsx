@@ -1,10 +1,11 @@
-import React, { useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
     Card,
     Typography,
     Input,
     Select,
     Segmented,
+    DatePicker,
     Checkbox,
     Space,
     Tag,
@@ -29,6 +30,8 @@ import {
     ShrinkOutlined,
     AppstoreOutlined,
 } from '@ant-design/icons';
+import dayjs, { Dayjs } from 'dayjs';
+import type { PriceSubType } from '@packages/types';
 import { useCollectionPoints, useProvinces } from '../../api/hooks';
 import { AdvancedPointSelector } from './AdvancedPointSelector';
 
@@ -59,6 +62,18 @@ const POINT_TYPE_COLORS: Record<string, string> = {
     STATION: 'cyan',
 };
 
+const PRICE_SUB_TYPE_LABELS: Record<string, string> = {
+    LISTED: '挂牌价',
+    TRANSACTION: '成交价',
+    ARRIVAL: '到港价',
+    FOB: '平舱价',
+    STATION_ORIGIN: '产区站台',
+    STATION_DEST: '销区站台',
+    PURCHASE: '收购价',
+    WHOLESALE: '批发价',
+    OTHER: '其他',
+};
+
 const COMMODITIES = ['玉米', '大豆', '小麦', '高粱', '豆粕'];
 
 const TIME_RANGES = [
@@ -72,37 +87,50 @@ const TIME_RANGES = [
 interface FilterPanelProps {
     commodity: string;
     onCommodityChange: (value: string) => void;
-    days: number;
-    onDaysChange: (value: number) => void;
+    dateRange: [Dayjs, Dayjs] | null;
+    onDateRangeChange: (range: [Dayjs, Dayjs] | null) => void;
     selectedPointIds: string[];
     onSelectedPointIdsChange: (ids: string[]) => void;
     selectedProvince?: string;
     onSelectedProvinceChange: (code: string | undefined) => void;
     pointTypeFilter: string[];
     onPointTypeFilterChange: (types: string[]) => void;
+    selectedSubTypes: PriceSubType[];
+    onSelectedSubTypesChange: (types: PriceSubType[]) => void;
 }
 
 export const FilterPanel: React.FC<FilterPanelProps> = ({
     commodity,
     onCommodityChange,
-    days,
-    onDaysChange,
+    dateRange,
+    onDateRangeChange,
     selectedPointIds,
     onSelectedPointIdsChange,
     selectedProvince,
     onSelectedProvinceChange,
     pointTypeFilter,
     onPointTypeFilterChange,
+    selectedSubTypes,
+    onSelectedSubTypesChange,
 }) => {
     const { token } = theme.useToken();
     const [searchKeyword, setSearchKeyword] = useState('');
+    const [debouncedKeyword, setDebouncedKeyword] = useState('');
     const [selectorVisible, setSelectorVisible] = useState(false);
     const [expanded, setExpanded] = useState(false);
     const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({}); // 新增：控制每个类型组的展开/收起
 
+    useEffect(() => {
+        const handler = setTimeout(() => {
+            setDebouncedKeyword(searchKeyword.trim());
+        }, 400);
+        return () => clearTimeout(handler);
+    }, [searchKeyword]);
+
     // 获取采集点列表
     // 只有当有类型过滤或有搜索关键词时才加载数据
-    const shouldFetch = pointTypeFilter.length > 0 || !!searchKeyword;
+    const keywordReady = debouncedKeyword.length >= 2;
+    const shouldFetch = pointTypeFilter.length > 0 || keywordReady;
     const { data: collectionPointsData, isLoading: isLoadingPoints } = useCollectionPoints(
         undefined,
         undefined,
@@ -121,8 +149,8 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
                 return false;
             }
             // 关键词过滤
-            if (searchKeyword) {
-                const keyword = searchKeyword.toLowerCase();
+            if (keywordReady) {
+                const keyword = debouncedKeyword.toLowerCase();
                 return (
                     point.name.toLowerCase().includes(keyword) ||
                     (point.shortName?.toLowerCase().includes(keyword) ?? false) ||
@@ -142,7 +170,14 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
         });
 
         return groups;
-    }, [collectionPoints, pointTypeFilter, searchKeyword]);
+    }, [collectionPoints, pointTypeFilter, debouncedKeyword, keywordReady]);
+
+    const presetValue = useMemo(() => {
+        if (!dateRange) return null;
+        const days = dateRange[1].startOf('day').diff(dateRange[0].startOf('day'), 'day') + 1;
+        const preset = TIME_RANGES.find((item) => item.value === days);
+        return preset?.value ?? null;
+    }, [dateRange]);
 
     const togglePoint = (id: string) => {
         if (selectedPointIds.includes(id)) {
@@ -217,10 +252,64 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
                     <Segmented
                         block
                         options={TIME_RANGES}
-                        value={days}
-                        onChange={(val) => onDaysChange(Number(val))}
-                        style={{ marginTop: 8 }}
+                        value={presetValue ?? undefined}
+                        onChange={(val) => {
+                            const days = Number(val);
+                            const end = dayjs();
+                            const start = end.subtract(days - 1, 'day');
+                            onDateRangeChange([start, end]);
+                        }}
+                        style={{ marginTop: 8, marginBottom: 8 }}
                         size="small"
+                    />
+                    <DatePicker.RangePicker
+                        value={dateRange ?? undefined}
+                        onChange={(val) => {
+                            if (!val || val.length !== 2 || !val[0] || !val[1]) {
+                                onDateRangeChange(null);
+                                return;
+                            }
+                            onDateRangeChange([val[0], val[1]]);
+                        }}
+                        presets={TIME_RANGES.map((item) => ({
+                            label: item.label,
+                            value: [dayjs().subtract(item.value - 1, 'day'), dayjs()],
+                        }))}
+                        size="small"
+                        style={{ width: '100%' }}
+                        allowClear
+                    />
+                </div>
+
+                {/* ===== 价格类型 ===== */}
+                <div
+                    style={{
+                        marginBottom: 16,
+                        padding: 12,
+                        background: token.colorFillQuaternary,
+                        borderRadius: token.borderRadius,
+                    }}
+                >
+                    <Flex align="center" gap={6} style={{ marginBottom: 8 }}>
+                        <FilterOutlined style={{ color: token.colorPrimary }} />
+                        <Text strong style={{ fontSize: 12 }}>价格类型</Text>
+                    </Flex>
+                    <Text type="secondary" style={{ fontSize: 11, display: 'block', marginBottom: 8 }}>
+                        可多选，留空表示全部类型
+                    </Text>
+                    <Select
+                        mode="multiple"
+                        allowClear
+                        placeholder="选择价格类型"
+                        style={{ width: '100%' }}
+                        value={selectedSubTypes}
+                        onChange={(vals) => onSelectedSubTypesChange(vals as PriceSubType[])}
+                        options={Object.entries(PRICE_SUB_TYPE_LABELS).map(([value, label]) => ({
+                            label,
+                            value,
+                        }))}
+                        size="small"
+                        maxTagCount="responsive"
                     />
                 </div>
 
@@ -320,7 +409,7 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
                 {/* 采集点搜索 */}
                 <Input
                     prefix={<SearchOutlined />}
-                    placeholder="搜索采集点..."
+                    placeholder="搜索采集点（至少2个字）..."
                     value={searchKeyword}
                     onChange={(e) => setSearchKeyword(e.target.value)}
                     size="small"

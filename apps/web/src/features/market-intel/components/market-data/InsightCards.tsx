@@ -8,14 +8,17 @@ import {
     SwapOutlined,
     ThunderboltOutlined,
 } from '@ant-design/icons';
-import { useMultiPointCompare, usePriceData } from '../../api/hooks';
+import { useMultiPointCompare } from '../../api/hooks';
+import type { PriceSubType } from '@packages/types';
 
 const { Text } = Typography;
 
 interface InsightCardsProps {
     commodity: string;
-    days: number;
+    startDate?: Date;
+    endDate?: Date;
     selectedPointIds: string[];
+    subTypes?: PriceSubType[];
 }
 
 interface InsightItem {
@@ -27,13 +30,19 @@ interface InsightItem {
 
 export const InsightCards: React.FC<InsightCardsProps> = ({
     commodity,
-    days,
+    startDate,
+    endDate,
     selectedPointIds,
+    subTypes,
 }) => {
     const { token } = theme.useToken();
 
     // 多采集点数据
-    const { data: multiPointData } = useMultiPointCompare(selectedPointIds, commodity, days);
+    const { data: multiPointData } = useMultiPointCompare(selectedPointIds, commodity, {
+        startDate,
+        endDate,
+        subTypes,
+    });
 
     // 生成智能洞察
     const insights = useMemo<InsightItem[]>(() => {

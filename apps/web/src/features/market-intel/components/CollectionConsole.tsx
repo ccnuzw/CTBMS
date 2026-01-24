@@ -416,13 +416,26 @@ export const CollectionConsole: React.FC<CollectionConsoleProps> = ({
                                 </span>
                             ),
                             children: (
-                                <div style={{ marginTop: 24 }}>
+                                <div style={{ marginTop: 0 }}>
                                     <DocumentUploader
                                         contentType={contentType}
                                         sourceType={sourceType}
                                         location={undefined}
                                         onUploadSuccess={() => {
                                             message.success('文档已成功入库');
+                                        }}
+                                        onStartAnalysis={(extractedText) => {
+                                            if (extractedText) {
+                                                setContent(extractedText);
+                                                setActiveTab('text');
+                                                message.success('已提取文档内容，准备进行 AI 分析');
+                                            } else {
+                                                message.warning('文档未提取到文本内容');
+                                            }
+                                        }}
+                                        onViewDetail={(intelId) => {
+                                            message.info(`即将跳转到详情页: ${intelId}`);
+                                            // TODO: Navigate to detail view
                                         }}
                                     />
                                 </div>

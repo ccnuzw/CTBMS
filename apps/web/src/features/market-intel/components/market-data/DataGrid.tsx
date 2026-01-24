@@ -1,4 +1,5 @@
 import React, { useMemo } from 'react';
+import dayjs from 'dayjs';
 import { Table, Tag, Typography, Flex, Button, Space, Tooltip, theme, Empty } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import {
@@ -10,7 +11,7 @@ import {
     EnvironmentOutlined,
 } from '@ant-design/icons';
 import { usePriceData } from '../../api/hooks';
-import type { PriceDataResponse } from '@packages/types';
+import type { PriceDataResponse, PriceSubType } from '@packages/types';
 
 const { Text } = Typography;
 
@@ -21,6 +22,14 @@ const POINT_TYPE_ICONS: Record<string, React.ReactNode> = {
     MARKET: <ShopOutlined style={{ color: '#faad14' }} />,
     REGION: <GlobalOutlined style={{ color: '#722ed1' }} />,
     STATION: <EnvironmentOutlined style={{ color: '#13c2c2' }} />,
+};
+
+const POINT_TYPE_LABELS: Record<string, string> = {
+    PORT: '港口',
+    ENTERPRISE: '企业',
+    MARKET: '市场',
+    REGION: '地域',
+    STATION: '站台',
 };
 
 const PRICE_SUB_TYPE_LABELS: Record<string, string> = {
@@ -37,83 +46,117 @@ const PRICE_SUB_TYPE_LABELS: Record<string, string> = {
 
 interface DataGridProps {
     commodity: string;
-    days: number;
+    startDate?: Date;
+    endDate?: Date;
     selectedPointIds: string[];
     selectedProvince?: string;
     pointTypeFilter?: string[];
+    subTypes?: PriceSubType[];
 }
 
 export const DataGrid: React.FC<DataGridProps> = ({
     commodity,
-    days,
+    startDate,
+    endDate,
     selectedPointIds,
     selectedProvince,
     pointTypeFilter,
+    subTypes,
 }) => {
     const { token } = theme.useToken();
-
-    // 计算日期范围
-    const startDate = useMemo(() => {
-        const d = new Date();
-        d.setDate(d.getDate() - days);
-        return d;
-    }, [days]);
 
     // 获取价格数据
     const { data: priceDataResult, isLoading } = usePriceData({
         commodity,
         startDate,
+        endDate,
         regionCode: selectedProvince, // 服务端区域过滤
+        collectionPointIds: selectedPointIds,
+        pointTypes: pointTypeFilter,
+        subTypes: subTypes as PriceSubType[],
         pageSize: 1000, // 扩大以支持足够的本地过滤
+    }, {
+        enabled: selectedPointIds.length > 0,
     });
 
     const priceDataList = priceDataResult?.data || [];
 
-    // 过滤数据
-    const filteredData = useMemo(() => {
-        let filtered = priceDataList;
+    const filteredData = priceDataList;
 
-        // 1. 按采集点ID过滤（如果选中了特定采集点）
-        if (selectedPointIds.length > 0) {
-            filtered = filtered.filter(item => {
-                // 如果是采集点产生的价格 (item.collectionPointId 或 item.collectionPoint.id)
-                const cpId = item.collectionPointId || item.collectionPoint?.id;
-                if (cpId && selectedPointIds.includes(cpId)) {
-                    return true;
-                }
-                return false;
-            });
+    const quality = useMemo(() => {
+        if (!filteredData || filteredData.length === 0) return null;
+        const dateSet = new Set<string>();
+        let latestDate: Date | null = null;
+
+        filteredData.forEach((item) => {
+            const date = new Date(item.effectiveDate);
+            dateSet.add(dayjs(date).format('YYYY-MM-DD'));
+            if (!latestDate || date > latestDate) latestDate = date;
+        });
+
+        let missingDays: number | null = null;
+        if (startDate && endDate) {
+            const expectedDays =
+                dayjs(endDate).startOf('day').diff(dayjs(startDate).startOf('day'), 'day') + 1;
+            missingDays = Math.max(0, expectedDays - dateSet.size);
         }
 
-        // 2. 按采集点类型过滤 (如果选中了特定类型，如港口/企业)
-        if (pointTypeFilter && pointTypeFilter.length > 0) {
-            filtered = filtered.filter(item => {
-                const pointType = item.collectionPoint?.type ||
-                    (item.sourceType === 'REGIONAL' ? 'REGION' : item.sourceType);
+        return {
+            totalSamples: filteredData.length,
+            latestDate,
+            missingDays,
+        };
+    }, [filteredData, startDate, endDate]);
 
-                // 如果有类型且匹配
-                if (pointType && pointTypeFilter.includes(pointType)) {
-                    return true;
-                }
-                // 特殊处理：如果没有明确类型但选择了 Region，且原数据是 REGIONAL
-                if (!pointType && item.sourceType === 'REGIONAL' && pointTypeFilter.includes('REGION')) {
-                    return true;
-                }
-                return false;
-            });
+    const csvEscape = (value: unknown) => {
+        const text = value === null || value === undefined ? '' : String(value);
+        if (text.includes('"') || text.includes(',') || text.includes('\n')) {
+            return `"${text.replace(/"/g, '""')}"`;
         }
-
-        return filtered;
-    }, [priceDataList, selectedPointIds, pointTypeFilter]);
+        return text;
+    };
 
     // 导出 CSV
     const handleExport = () => {
-        const headers = '日期,地点,品种,价格类型,价格(元/吨),日涨跌,水分(%)\n';
+        const headers = [
+            '日期',
+            '地点',
+            '采集点类型',
+            '品种',
+            '价格类型',
+            '价格(元/吨)',
+            '日涨跌',
+            '水分(%)',
+            '省份',
+            '城市',
+            '地理层级',
+            '行政区划',
+            '来源类型',
+            '备注',
+        ].join(',') + '\n';
+
         const csvContent = filteredData
-            .map(
-                (item) =>
-                    `${new Date(item.effectiveDate).toLocaleDateString()},${item.location},${item.commodity},${PRICE_SUB_TYPE_LABELS[item.subType] || item.subType},${item.price},${item.dayChange || ''},${item.moisture || ''}`,
-            )
+            .map((item) => {
+                const pointType =
+                    item.collectionPoint?.type ||
+                    (item.sourceType === 'REGIONAL' ? 'REGION' : item.sourceType);
+                return [
+                    new Date(item.effectiveDate).toLocaleDateString(),
+                    item.location,
+                    POINT_TYPE_LABELS[pointType] || pointType || '-',
+                    item.commodity,
+                    PRICE_SUB_TYPE_LABELS[item.subType] || item.subType,
+                    item.price,
+                    item.dayChange ?? '',
+                    item.moisture ?? '',
+                    item.province ?? '',
+                    item.city ?? '',
+                    item.geoLevel ?? '',
+                    item.regionCode ?? '',
+                    item.sourceType ?? '',
+                    item.note ?? '',
+                ].map(csvEscape).join(',');
+            })
             .join('\n');
         const blob = new Blob(['\uFEFF' + headers + csvContent], { type: 'text/csv;charset=utf-8;' });
         const link = document.createElement('a');
@@ -140,7 +183,9 @@ export const DataGrid: React.FC<DataGridProps> = ({
             key: 'location',
             width: 150,
             render: (location: string, record: any) => {
-                const pointType = record.collectionPoint?.type || record.sourceType;
+                const pointType =
+                    record.collectionPoint?.type ||
+                    (record.sourceType === 'REGIONAL' ? 'REGION' : record.sourceType);
                 return (
                     <Flex align="center" gap={6}>
                         {POINT_TYPE_ICONS[pointType] || POINT_TYPE_ICONS['REGION']}
@@ -263,10 +308,25 @@ export const DataGrid: React.FC<DataGridProps> = ({
 
     return (
         <div>
-            <Flex justify="space-between" align="center" style={{ marginBottom: 16 }}>
-                <Text type="secondary">
-                    共 {filteredData.length} 条记录
-                </Text>
+            <Flex justify="space-between" align="center" style={{ marginBottom: 12 }}>
+                <Space size={8}>
+                    <Text type="secondary">共 {filteredData.length} 条记录</Text>
+                    {quality && (
+                        <Space size={6}>
+                            <Tag color="blue">样本 {quality.totalSamples}</Tag>
+                            {quality.latestDate && (
+                                <Tag color="default">
+                                    最后更新 {dayjs(quality.latestDate).format('YYYY-MM-DD')}
+                                </Tag>
+                            )}
+                            {quality.missingDays !== null && (
+                                <Tag color={quality.missingDays > 0 ? 'orange' : 'green'}>
+                                    缺失 {quality.missingDays} 天
+                                </Tag>
+                            )}
+                        </Space>
+                    )}
+                </Space>
                 <Button icon={<DownloadOutlined />} onClick={handleExport} size="small">
                     导出 CSV
                 </Button>

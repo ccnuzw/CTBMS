@@ -1,11 +1,29 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma';
-import { CreatePriceDataDto, PriceDataQuery } from '@packages/types';
+import { CreatePriceDataDto, PriceDataQuery, PriceSubType } from '@packages/types';
 import { Decimal } from '@prisma/client/runtime/library';
 
 @Injectable()
 export class PriceDataService {
     constructor(private prisma: PrismaService) { }
+
+    private parseCsv(value?: string | string[]) {
+        if (!value) return [];
+        if (Array.isArray(value)) return value.filter(Boolean);
+        return value.split(',').map((item) => item.trim()).filter(Boolean);
+    }
+
+    private resolveDateRange(days = 30, startDate?: Date | string, endDate?: Date | string) {
+        const resolvedStart = startDate ? new Date(startDate) : undefined;
+        const resolvedEnd = endDate ? new Date(endDate) : undefined;
+        if (!resolvedStart && days) {
+            const end = resolvedEnd ?? new Date();
+            const start = new Date(end);
+            start.setDate(start.getDate() - days);
+            return { startDate: start, endDate: resolvedEnd ?? end };
+        }
+        return { startDate: resolvedStart, endDate: resolvedEnd };
+    }
 
     /**
      * 创建价格数据
@@ -70,37 +88,91 @@ export class PriceDataService {
      * 增强版：支持按采集点和行政区划过滤
      */
     async findAll(query: PriceDataQuery) {
-        const { commodity, location, startDate, endDate, keyword, collectionPointId, regionCode } = query;
+        const {
+            sourceType,
+            subType,
+            subTypes,
+            geoLevel,
+            commodity,
+            location,
+            province,
+            city,
+            enterpriseId,
+            startDate,
+            endDate,
+            keyword,
+            collectionPointId,
+            collectionPointIds,
+            regionCode,
+            pointTypes,
+        } = query;
         // Query 参数从 URL 传入时都是字符串，需要转换
         const page = Number(query.page) || 1;
         const pageSize = Number(query.pageSize) || 20;
 
-        const where: any = {};
-        if (commodity) where.commodity = commodity;
-        if (location) where.location = { contains: location, mode: 'insensitive' };
+        const andFilters: any[] = [];
+        if (commodity) andFilters.push({ commodity });
+        if (location) andFilters.push({ location: { contains: location, mode: 'insensitive' } });
+        if (province) andFilters.push({ province });
+        if (city) andFilters.push({ city });
+        if (enterpriseId) andFilters.push({ enterpriseId });
+        if (sourceType) andFilters.push({ sourceType });
+        const subTypeList = this.parseCsv(subTypes);
+        if (subTypeList.length === 0 && subType) {
+            andFilters.push({ subType });
+        }
+        if (geoLevel) andFilters.push({ geoLevel });
+        if (subTypeList.length > 0) {
+            andFilters.push({ subType: { in: subTypeList } });
+        }
 
-        // 新增：按采集点过滤
-        if (collectionPointId) where.collectionPointId = collectionPointId;
+        // 采集点过滤
+        if (collectionPointId) {
+            andFilters.push({ collectionPointId });
+        }
+        const collectionPointIdList = this.parseCsv(collectionPointIds);
+        if (collectionPointIdList.length > 0) {
+            andFilters.push({ collectionPointId: { in: collectionPointIdList } });
+        }
 
-        // 新增：按行政区划过滤
-        if (regionCode) where.regionCode = regionCode;
+        // 行政区划过滤
+        if (regionCode) {
+            andFilters.push({ regionCode });
+        }
 
+        // 采集点类型过滤（含 REGIONAL 类型）
+        const pointTypeList = this.parseCsv(pointTypes);
+        if (pointTypeList.length > 0) {
+            const orConditions: any[] = [];
+            orConditions.push({ collectionPoint: { type: { in: pointTypeList } } });
+            if (pointTypeList.includes('REGION')) {
+                orConditions.push({ sourceType: 'REGIONAL' });
+            }
+            if (orConditions.length > 0) {
+                andFilters.push({ OR: orConditions });
+            }
+        }
+
+        // 日期范围
         if (startDate || endDate) {
-            where.effectiveDate = {};
-            // 将字符串转换为 Date 对象
-            if (startDate) where.effectiveDate.gte = new Date(startDate);
-            if (endDate) where.effectiveDate.lte = new Date(endDate);
+            const range: any = {};
+            if (startDate) range.gte = new Date(startDate);
+            if (endDate) range.lte = new Date(endDate);
+            andFilters.push({ effectiveDate: range });
         }
 
         // Keyword Search
         if (keyword) {
-            where.OR = [
-                { commodity: { contains: keyword, mode: 'insensitive' } },
-                { location: { contains: keyword, mode: 'insensitive' } },
-                // Region is string[], we can check if it contains the exact keyword
-                { region: { has: keyword } },
-            ];
+            andFilters.push({
+                OR: [
+                    { commodity: { contains: keyword, mode: 'insensitive' } },
+                    { location: { contains: keyword, mode: 'insensitive' } },
+                    { region: { has: keyword } },
+                ],
+            });
         }
+
+        const where = andFilters.length > 0 ? { AND: andFilters } : {};
 
         const [data, total] = await Promise.all([
             this.prisma.priceData.findMany({
@@ -193,15 +265,33 @@ export class PriceDataService {
      * 按采集点查询历史价格（时间序列）
      * 用于连续性数据分析
      */
-    async getByCollectionPoint(collectionPointId: string, commodity?: string, days = 30) {
-        const startDate = new Date();
-        startDate.setDate(startDate.getDate() - days);
+    async getByCollectionPoint(
+        collectionPointId: string,
+        commodity?: string,
+        days = 30,
+        startDate?: Date,
+        endDate?: Date,
+        subTypes?: string | string[],
+    ) {
+        const { startDate: resolvedStart, endDate: resolvedEnd } = this.resolveDateRange(
+            days,
+            startDate,
+            endDate,
+        );
 
         const where: any = {
             collectionPointId,
-            effectiveDate: { gte: startDate },
         };
         if (commodity) where.commodity = commodity;
+        const subTypeList = this.parseCsv(subTypes);
+        if (subTypeList.length > 0) {
+            where.subType = { in: subTypeList };
+        }
+        if (resolvedStart || resolvedEnd) {
+            where.effectiveDate = {};
+            if (resolvedStart) where.effectiveDate.gte = resolvedStart;
+            if (resolvedEnd) where.effectiveDate.lte = resolvedEnd;
+        }
 
         const data = await this.prisma.priceData.findMany({
             where,
@@ -249,15 +339,33 @@ export class PriceDataService {
      * 按行政区划查询价格数据（支持聚合）
      * 用于区域连续性分析
      */
-    async getByRegion(regionCode: string, commodity?: string, days = 30) {
-        const startDate = new Date();
-        startDate.setDate(startDate.getDate() - days);
+    async getByRegion(
+        regionCode: string,
+        commodity?: string,
+        days = 30,
+        startDate?: Date,
+        endDate?: Date,
+        subTypes?: string | string[],
+    ) {
+        const { startDate: resolvedStart, endDate: resolvedEnd } = this.resolveDateRange(
+            days,
+            startDate,
+            endDate,
+        );
 
         const where: any = {
             regionCode,
-            effectiveDate: { gte: startDate },
         };
         if (commodity) where.commodity = commodity;
+        const subTypeList = this.parseCsv(subTypes);
+        if (subTypeList.length > 0) {
+            where.subType = { in: subTypeList };
+        }
+        if (resolvedStart || resolvedEnd) {
+            where.effectiveDate = {};
+            if (resolvedStart) where.effectiveDate.gte = resolvedStart;
+            if (resolvedEnd) where.effectiveDate.lte = resolvedEnd;
+        }
 
         const data = await this.prisma.priceData.findMany({
             where,
@@ -327,20 +435,46 @@ export class PriceDataService {
     /**
      * 获取多采集点对比趋势
      */
-    async getMultiPointTrend(collectionPointIds: string[], commodity: string, days = 30) {
-        const startDate = new Date();
-        startDate.setDate(startDate.getDate() - days);
+    async getMultiPointTrend(
+        collectionPointIds: string[],
+        commodity: string,
+        days = 30,
+        startDate?: Date,
+        endDate?: Date,
+        subTypes?: string | string[],
+    ) {
+        const { startDate: resolvedStart, endDate: resolvedEnd } = this.resolveDateRange(
+            days,
+            startDate,
+            endDate,
+        );
+
+        const subTypeList = this.parseCsv(subTypes);
 
         const data = await this.prisma.priceData.findMany({
             where: {
                 collectionPointId: { in: collectionPointIds },
                 commodity,
-                effectiveDate: { gte: startDate },
+                ...(subTypeList.length > 0 ? { subType: { in: subTypeList as PriceSubType[] } } : {}),
+                effectiveDate: {
+                    ...(resolvedStart ? { gte: resolvedStart } : {}),
+                    ...(resolvedEnd ? { lte: resolvedEnd } : {}),
+                },
             },
             orderBy: { effectiveDate: 'asc' },
             include: {
                 collectionPoint: {
-                    select: { id: true, code: true, name: true, shortName: true },
+                    select: {
+                        id: true,
+                        code: true,
+                        name: true,
+                        shortName: true,
+                        type: true,
+                        regionCode: true,
+                        region: {
+                            select: { code: true, name: true, shortName: true },
+                        },
+                    },
                 },
             },
         });

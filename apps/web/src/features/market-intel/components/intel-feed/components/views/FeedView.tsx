@@ -4,6 +4,7 @@ import { IntelFilterState, IntelItem } from '../../types';
 import { DailyReportCard } from '../cards/DailyReportCard';
 import { ResearchReportCard } from '../cards/ResearchReportCard';
 import { PolicyDocCard } from '../cards/PolicyDocCard';
+import { SmartBriefingCard } from '../SmartBriefingCard';
 import { ContentType } from '../../../../types';
 
 interface FeedViewProps {
@@ -11,6 +12,7 @@ interface FeedViewProps {
     loading: boolean;
     onIntelSelect: (intel: IntelItem | null) => void;
     selectedIntelId?: string;
+    filterState?: IntelFilterState;
 }
 
 export const FeedView: React.FC<FeedViewProps> = ({
@@ -18,6 +20,7 @@ export const FeedView: React.FC<FeedViewProps> = ({
     loading,
     onIntelSelect,
     selectedIntelId,
+    filterState,
 }) => {
     const { token } = theme.useToken();
 
@@ -91,6 +94,9 @@ export const FeedView: React.FC<FeedViewProps> = ({
 
     return (
         <div style={{ maxWidth: 900 }}>
+            {filterState && (
+                <SmartBriefingCard filterState={filterState} />
+            )}
             {items.map(renderCard)}
         </div>
     );

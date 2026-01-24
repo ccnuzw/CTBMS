@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
+import dayjs, { Dayjs } from 'dayjs';
 import {
     Typography,
     Flex,
@@ -24,6 +25,7 @@ import {
 import { useQueryClient } from '@tanstack/react-query';
 import { FilterPanel, TrendChart, ComparisonPanel, DataGrid, InsightCards } from './market-data';
 import { useModalAutoFocus } from '@/hooks/useModalAutoFocus';
+import type { PriceSubType } from '@packages/types';
 
 const { Title, Text, Paragraph } = Typography;
 
@@ -35,13 +37,26 @@ export const MarketData: React.FC = () => {
 
     // 筛选状态
     const [commodity, setCommodity] = useState('玉米');
-    const [days, setDays] = useState(30);
+    const [dateRange, setDateRange] = useState<[Dayjs, Dayjs] | null>(() => [
+        dayjs().subtract(29, 'day'),
+        dayjs(),
+    ]);
     const [selectedPointIds, setSelectedPointIds] = useState<string[]>([]);
     const [selectedProvince, setSelectedProvince] = useState<string | undefined>();
     const [pointTypeFilter, setPointTypeFilter] = useState<string[]>([]);
+    const [selectedSubTypes, setSelectedSubTypes] = useState<PriceSubType[]>([]);
     const [activeTab, setActiveTab] = useState<TabKey>('trend');
+    const [focusedPointId, setFocusedPointId] = useState<string | null>(null);
     const [helpVisible, setHelpVisible] = useState(false);
     const { containerRef, modalProps, focusRef } = useModalAutoFocus();
+
+    const { startDate, endDate } = useMemo(() => {
+        if (!dateRange) return { startDate: undefined, endDate: undefined };
+        return {
+            startDate: dateRange[0].startOf('day').toDate(),
+            endDate: dateRange[1].endOf('day').toDate(),
+        };
+    }, [dateRange]);
 
     // 刷新数据
     const handleRefresh = () => {
@@ -65,15 +80,20 @@ export const MarketData: React.FC = () => {
                     {/* 智能洞察 */}
                     <InsightCards
                         commodity={commodity}
-                        days={days}
+                        startDate={startDate}
+                        endDate={endDate}
                         selectedPointIds={selectedPointIds}
+                        subTypes={selectedSubTypes}
                     />
                     {/* 趋势图表 */}
                     <TrendChart
                         commodity={commodity}
-                        days={days}
+                        startDate={startDate}
+                        endDate={endDate}
                         selectedPointIds={selectedPointIds}
                         selectedRegionCode={selectedProvince}
+                        subTypes={selectedSubTypes}
+                        highlightPointId={focusedPointId}
                     />
                 </Space>
             ),
@@ -89,10 +109,16 @@ export const MarketData: React.FC = () => {
             children: (
                 <ComparisonPanel
                     commodity={commodity}
-                    days={days}
+                    startDate={startDate}
+                    endDate={endDate}
                     selectedPointIds={selectedPointIds}
                     selectedProvince={selectedProvince}
                     pointTypeFilter={pointTypeFilter}
+                    subTypes={selectedSubTypes}
+                    onFocusPoint={(id) => {
+                        setFocusedPointId(id);
+                        setActiveTab('trend');
+                    }}
                 />
             ),
         },
@@ -107,10 +133,12 @@ export const MarketData: React.FC = () => {
             children: (
                 <DataGrid
                     commodity={commodity}
-                    days={days}
+                    startDate={startDate}
+                    endDate={endDate}
                     selectedPointIds={selectedPointIds}
                     selectedProvince={selectedProvince}
                     pointTypeFilter={pointTypeFilter}
+                    subTypes={selectedSubTypes}
                 />
             ),
         },
@@ -120,7 +148,7 @@ export const MarketData: React.FC = () => {
     const helpSteps = [
         {
             title: '1. 选择品种和时间范围',
-            description: '在左侧筛选器中选择您关注的品种（玉米、大豆等）和分析时间范围（7天~1年）。',
+            description: '在左侧筛选器中选择您关注的品种（玉米、大豆等）和分析时间范围（支持自定义日期区间）。',
         },
         {
             title: '2. 设置区域参考',
@@ -157,14 +185,16 @@ export const MarketData: React.FC = () => {
             <FilterPanel
                 commodity={commodity}
                 onCommodityChange={setCommodity}
-                days={days}
-                onDaysChange={setDays}
+                dateRange={dateRange}
+                onDateRangeChange={setDateRange}
                 selectedPointIds={selectedPointIds}
                 onSelectedPointIdsChange={setSelectedPointIds}
                 selectedProvince={selectedProvince}
                 onSelectedProvinceChange={setSelectedProvince}
                 pointTypeFilter={pointTypeFilter}
                 onPointTypeFilterChange={setPointTypeFilter}
+                selectedSubTypes={selectedSubTypes}
+                onSelectedSubTypesChange={setSelectedSubTypes}
             />
 
             {/* 主内容区 */}
@@ -272,5 +302,3 @@ export const MarketData: React.FC = () => {
         </Flex >
     );
 };
-
-
