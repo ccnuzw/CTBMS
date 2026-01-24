@@ -293,6 +293,13 @@ export const MarketIntelQuerySchema = z.object({
   keyword: z.string().optional(),
   page: z.coerce.number().min(1).default(1),
   pageSize: z.coerce.number().min(1).max(1000).default(20),
+  // 高级筛选参数
+  sourceTypes: z.array(z.nativeEnum(IntelSourceType)).optional(),
+  regionCodes: z.array(z.string()).optional(),
+  minScore: z.coerce.number().optional(),
+  maxScore: z.coerce.number().optional(),
+  processingStatus: z.array(z.string()).optional(), // pending, confirmed, flagged, archived
+  qualityLevel: z.array(z.string()).optional(),    // high, medium, low
 });
 
 // =============================================
@@ -614,6 +621,79 @@ export const IntelAttachmentResponseSchema = z.object({
 
 export type CreateIntelAttachmentDto = z.infer<typeof CreateIntelAttachmentSchema>;
 export type IntelAttachmentResponse = z.infer<typeof IntelAttachmentResponseSchema>;
+
+// =============================================
+// C类增强：研究报告 (ResearchReport)
+// =============================================
+
+export const CreateResearchReportSchema = z.object({
+  title: z.string().min(1, '标题不能为空'),
+  reportType: z.nativeEnum(ReportType),
+  publishDate: z.coerce.date().optional(),
+  source: z.string().optional(),
+  summary: z.string().min(1, '摘要不能为空'),
+
+  // JSON 字段结构化验证
+  keyPoints: z.array(z.object({
+    point: z.string(),
+    sentiment: z.string().optional(),
+    confidence: z.number().optional(),
+  })).optional(),
+
+  prediction: z.object({
+    direction: z.string().optional(),
+    timeframe: z.string().optional(),
+    reasoning: z.string().optional(),
+  }).optional(),
+
+  dataPoints: z.array(z.object({
+    metric: z.string(),
+    value: z.string(),
+    period: z.string(),
+  })).optional(),
+
+  commodities: z.array(z.string()).optional(),
+  regions: z.array(z.string()).optional(),
+  timeframe: z.string().optional(),
+  intelId: z.string().uuid('关联情报ID无效'),
+});
+
+export const UpdateResearchReportSchema = CreateResearchReportSchema.partial().omit({ intelId: true });
+
+export const ResearchReportResponseSchema = z.object({
+  id: z.string(),
+  title: z.string(),
+  reportType: z.nativeEnum(ReportType),
+  publishDate: z.date().nullable(),
+  source: z.string().nullable(),
+  summary: z.string(),
+  keyPoints: z.any().nullable(),
+  prediction: z.any().nullable(),
+  dataPoints: z.any().nullable(),
+  commodities: z.array(z.string()),
+  regions: z.array(z.string()),
+  timeframe: z.string().nullable(),
+  intelId: z.string(),
+  createdAt: z.date(),
+  updatedAt: z.date(),
+});
+
+export const ResearchReportQuerySchema = z.object({
+  reportType: z.nativeEnum(ReportType).optional(),
+  commodity: z.string().optional(),
+  region: z.string().optional(),
+  startDate: z.coerce.date().optional(),
+  endDate: z.coerce.date().optional(),
+  keyword: z.string().optional(),
+  page: z.coerce.number().min(1).default(1),
+  pageSize: z.coerce.number().min(1).max(100).default(20),
+});
+
+export type CreateResearchReportDto = z.infer<typeof CreateResearchReportSchema>;
+export type UpdateResearchReportDto = z.infer<typeof UpdateResearchReportSchema>;
+export type ResearchReportResponse = z.infer<typeof ResearchReportResponseSchema>;
+export type ResearchReportQuery = z.infer<typeof ResearchReportQuerySchema>;
+
 
 // =============================================
 // D类：实体关联 (IntelEntityLink)

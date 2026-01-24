@@ -32,6 +32,7 @@ import {
     BulbOutlined,
     CheckCircleOutlined,
     TrophyOutlined,
+    CalendarOutlined,
 } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import { IntelFilterState, DEFAULT_FILTER_STATE, BUILT_IN_PRESETS, FilterPreset } from '../types';
@@ -63,12 +64,12 @@ const SOURCE_TYPE_OPTIONS = [
 const COMMODITY_OPTIONS = ['玉米', '大豆', '小麦', '高粱', '豆粕', '稻谷', '油菜籽'];
 
 const TIME_RANGE_OPTIONS = [
-    { label: '今日', value: '1D' },
-    { label: '7天', value: '7D' },
-    { label: '30天', value: '30D' },
-    { label: '季度', value: '90D' },
-    { label: '年度', value: 'YTD' },
-    { label: '自定义', value: 'CUSTOM' },
+    { label: '日', value: '1D' },
+    { label: '周', value: '7D' },
+    { label: '月', value: '30D' },
+    { label: '季', value: '90D' },
+    { label: '年', value: 'YTD' },
+    { label: <CalendarOutlined />, value: 'CUSTOM' },
 ];
 
 const STATUS_OPTIONS = [

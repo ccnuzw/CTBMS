@@ -9,6 +9,10 @@ import {
     LeaderboardEntry,
     AnalyzeContentDto,
     AIAnalysisResult,
+    CreateResearchReportDto,
+    UpdateResearchReportDto,
+    ResearchReportResponse,
+    ResearchReportQuery,
 } from '@packages/types';
 
 // 分页响应类型
@@ -19,6 +23,52 @@ interface PaginatedResponse<T> {
     pageSize: number;
     totalPages: number;
 }
+
+// =============================================
+// 情报流查询 (B类聚合)
+// =============================================
+
+export interface IntelligenceFeedQuery {
+    startDate?: Date;
+    endDate?: Date;
+    eventTypeIds?: string[];
+    insightTypeIds?: string[];
+    sentiments?: string[];
+    commodities?: string[];
+    keyword?: string;
+    limit?: number;
+    sourceTypes?: string[];
+    regionCodes?: string[];
+    minScore?: number;
+    maxScore?: number;
+    processingStatus?: string[];
+    qualityLevel?: string[];
+    contentTypes?: string[];
+}
+
+export const useIntelligenceFeed = (query?: Partial<IntelligenceFeedQuery>) => {
+    return useQuery<any[]>({
+        queryKey: ['intelligence-feed', query],
+        queryFn: async () => {
+            const params = new URLSearchParams();
+            if (query) {
+                Object.entries(query).forEach(([key, value]) => {
+                    if (value !== undefined && value !== null) {
+                        if (Array.isArray(value)) {
+                            params.append(key, value.join(','));
+                        } else if (value instanceof Date) {
+                            params.append(key, value.toISOString());
+                        } else {
+                            params.append(key, String(value));
+                        }
+                    }
+                });
+            }
+            const res = await apiClient.get<any[]>(`/market-intel/feed?${params.toString()}`);
+            return res.data;
+        },
+    });
+};
 
 // =============================================
 // 情报列表查询
@@ -172,6 +222,100 @@ export const useTestAI = () => {
     return useMutation({
         mutationFn: async () => {
             const res = await apiClient.get<AITestResult>('/market-intel/test-ai');
+            return res.data;
+        },
+    });
+};
+
+// =============================================
+// C类增强：研究报告 hooks
+// =============================================
+
+export const useResearchReports = (query?: Partial<ResearchReportQuery>) => {
+    return useQuery<PaginatedResponse<ResearchReportResponse>>({
+        queryKey: ['research-reports', query],
+        queryFn: async () => {
+            const params = new URLSearchParams();
+            if (query) {
+                Object.entries(query).forEach(([key, value]) => {
+                    if (value !== undefined && value !== null) {
+                        if (value instanceof Date) {
+                            params.append(key, value.toISOString());
+                        } else {
+                            params.append(key, String(value));
+                        }
+                    }
+                });
+            }
+            const res = await apiClient.get<PaginatedResponse<ResearchReportResponse>>(
+                `/market-intel/research-reports?${params.toString()}`,
+            );
+            return res.data;
+        },
+    });
+};
+
+export const useResearchReport = (id: string) => {
+    return useQuery<ResearchReportResponse>({
+        queryKey: ['research-reports', id],
+        queryFn: async () => {
+            const res = await apiClient.get<ResearchReportResponse>(`/market-intel/research-reports/${id}`);
+            return res.data;
+        },
+        enabled: !!id,
+    });
+};
+
+export const useCreateResearchReport = () => {
+    const queryClient = useQueryClient();
+
+    return useMutation({
+        mutationFn: async (data: CreateResearchReportDto) => {
+            const res = await apiClient.post<ResearchReportResponse>('/market-intel/research-reports', data);
+            return res.data;
+        },
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['research-reports'] });
+            queryClient.invalidateQueries({ queryKey: ['research-report-stats'] });
+        },
+    });
+};
+
+export const useUpdateResearchReport = () => {
+    const queryClient = useQueryClient();
+
+    return useMutation({
+        mutationFn: async ({ id, data }: { id: string; data: UpdateResearchReportDto }) => {
+            const res = await apiClient.put<ResearchReportResponse>(`/market-intel/research-reports/${id}`, data);
+            return res.data;
+        },
+        onSuccess: (_, variables) => {
+            queryClient.invalidateQueries({ queryKey: ['research-reports'] });
+            queryClient.invalidateQueries({ queryKey: ['research-reports', variables.id] });
+        },
+    });
+};
+
+export const useDeleteResearchReport = () => {
+    const queryClient = useQueryClient();
+
+    return useMutation({
+        mutationFn: async (id: string) => {
+            const res = await apiClient.delete(`/market-intel/research-reports/${id}`);
+            return res.data;
+        },
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['research-reports'] });
+            queryClient.invalidateQueries({ queryKey: ['research-report-stats'] });
+        },
+    });
+};
+
+export const useResearchReportStats = () => {
+    return useQuery<any>({
+        queryKey: ['research-report-stats'],
+        queryFn: async () => {
+            const res = await apiClient.get<any>('/market-intel/research-reports/stats');
             return res.data;
         },
     });
@@ -1053,45 +1197,7 @@ export const useInsightStats = () => {
 // 综合情报流 (Intelligence Feed)
 // =============================================
 
-export interface FeedItem {
-    type: 'EVENT' | 'INSIGHT';
-    id: string;
-    createdAt: Date;
-    data: MarketEventResponse | MarketInsightResponse;
-}
-
-export interface FeedQuery {
-    startDate?: Date;
-    endDate?: Date;
-    eventTypeIds?: string[];
-    insightTypeIds?: string[];
-    sentiments?: string[];
-    commodities?: string[];
-    keyword?: string;
-    limit?: number;
-}
-
-export const useIntelligenceFeed = (query?: FeedQuery) => {
-    return useQuery<FeedItem[]>({
-        queryKey: ['intelligence-feed', query],
-        queryFn: async () => {
-            const params = new URLSearchParams();
-            if (query) {
-                if (query.startDate) params.append('startDate', query.startDate.toISOString());
-                if (query.endDate) params.append('endDate', query.endDate.toISOString());
-                if (query.eventTypeIds?.length) params.append('eventTypeIds', query.eventTypeIds.join(','));
-                if (query.insightTypeIds?.length) params.append('insightTypeIds', query.insightTypeIds.join(','));
-                if (query.sentiments?.length) params.append('sentiments', query.sentiments.join(','));
-                if (query.commodities?.length) params.append('commodities', query.commodities.join(','));
-                if (query.keyword) params.append('keyword', query.keyword);
-                if (query.limit) params.append('limit', String(query.limit));
-            }
-            const res = await apiClient.get<FeedItem[]>(`/market-intel/feed?${params.toString()}`);
-            return res.data;
-        },
-        refetchInterval: 30000,
-    });
-};
+// 移除重复定义的 useIntelligenceFeed
 
 // =============================================
 // 热门话题

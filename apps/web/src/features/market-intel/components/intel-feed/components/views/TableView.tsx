@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useMemo, useLayoutEffect, useRef, useState } from 'react';
 import {
     Table,
     Tag,
@@ -10,7 +10,6 @@ import {
     Badge,
     Flex,
     theme,
-    Popconfirm,
 } from 'antd';
 import type { ColumnsType, TableRowSelection } from 'antd/es/table/interface';
 import type { MenuProps } from 'antd';
@@ -31,37 +30,11 @@ const { Text } = Typography;
 
 interface TableViewProps {
     filterState: IntelFilterState;
+    items: IntelItem[];
+    loading: boolean;
     onIntelSelect: (intel: IntelItem | null) => void;
     selectedIntelId?: string;
 }
-
-// 模拟数据
-const MOCK_TABLE_DATA: IntelItem[] = [
-    {
-        id: '1', type: 'intel', contentType: ContentType.DAILY_REPORT, sourceType: 'FIRST_LINE' as any,
-        category: 'B_SEMI_STRUCTURED' as any, title: '锦州港玉米价格异动', summary: '锦州港玉米收购价上涨20元/吨',
-        rawContent: '', effectiveTime: new Date(), createdAt: new Date(), location: '锦州港',
-        region: ['辽宁省'], confidence: 92, qualityScore: 85, status: 'confirmed',
-    },
-    {
-        id: '2', type: 'intel', contentType: ContentType.DAILY_REPORT, sourceType: 'FIRST_LINE' as any,
-        category: 'B_SEMI_STRUCTURED' as any, title: '大连港玉米到港量下降', summary: '大连港今日玉米到港车辆较昨日减少15%',
-        rawContent: '', effectiveTime: new Date(), createdAt: new Date(Date.now() - 3600000), location: '大连港',
-        region: ['辽宁省'], confidence: 89, qualityScore: 80, status: 'pending',
-    },
-    {
-        id: '3', type: 'intel', contentType: ContentType.RESEARCH_REPORT, sourceType: 'RESEARCH_INST' as any,
-        category: 'C_DOCUMENT' as any, title: '2024年Q1玉米市场回顾与展望', summary: '本报告对2024年第一季度玉米市场进行了全面分析',
-        rawContent: '', effectiveTime: new Date(Date.now() - 86400000), createdAt: new Date(Date.now() - 86400000),
-        location: 'XX期货研究院', confidence: 88, qualityScore: 90, status: 'confirmed',
-    },
-    {
-        id: '4', type: 'intel', contentType: ContentType.POLICY_DOC, sourceType: 'OFFICIAL_GOV' as any,
-        category: 'C_DOCUMENT' as any, title: '关于加强粮食市场监管的通知', summary: '国家粮食和物资储备局发布通知',
-        rawContent: '', effectiveTime: new Date(Date.now() - 172800000), createdAt: new Date(Date.now() - 172800000),
-        location: '国家粮食局', confidence: 100, qualityScore: 95, status: 'confirmed',
-    },
-];
 
 const CONTENT_TYPE_CONFIG: Record<ContentType, { label: string; color: string }> = {
     [ContentType.DAILY_REPORT]: { label: '日报', color: 'blue' },
@@ -77,12 +50,51 @@ const STATUS_CONFIG: Record<string, { label: string; color: string }> = {
 };
 
 export const TableView: React.FC<TableViewProps> = ({
-    filterState,
+    filterState: _filterState,
+    items,
+    loading,
     onIntelSelect,
     selectedIntelId,
 }) => {
     const { token } = theme.useToken();
     const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([]);
+    const containerRef = useRef<HTMLDivElement>(null);
+    const [scrollY, setScrollY] = useState<number>(360);
+
+    const dataSource = useMemo(
+        () =>
+            [...(items || [])].sort(
+                (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+            ),
+        [items],
+    );
+
+    useLayoutEffect(() => {
+        if (!containerRef.current) return;
+
+        const updateScroll = () => {
+            if (!containerRef.current) return;
+            const rect = containerRef.current.getBoundingClientRect();
+            const reserved = (selectedRowKeys.length > 0 ? 48 : 0) + 72;
+            const nextHeight = Math.max(240, Math.floor(rect.height - reserved));
+            setScrollY(nextHeight);
+        };
+
+        updateScroll();
+
+        if (typeof ResizeObserver !== 'undefined') {
+            const observer = new ResizeObserver(updateScroll);
+            observer.observe(containerRef.current);
+            window.addEventListener('resize', updateScroll);
+            return () => {
+                observer.disconnect();
+                window.removeEventListener('resize', updateScroll);
+            };
+        }
+
+        window.addEventListener('resize', updateScroll);
+        return () => window.removeEventListener('resize', updateScroll);
+    }, [selectedRowKeys.length]);
 
     const columns: ColumnsType<IntelItem> = [
         {
@@ -134,11 +146,14 @@ export const TableView: React.FC<TableViewProps> = ({
             key: 'confidence',
             width: 100,
             sorter: (a, b) => (a.confidence || 0) - (b.confidence || 0),
-            render: (confidence) => confidence ? (
-                <Tag color={confidence >= 80 ? 'green' : confidence >= 60 ? 'orange' : 'red'}>
-                    {confidence}%
-                </Tag>
-            ) : '-',
+            render: (confidence, record) => {
+                const value = confidence ?? record.qualityScore;
+                return value ? (
+                    <Tag color={value >= 80 ? 'green' : value >= 60 ? 'orange' : 'red'}>
+                        {value}%
+                    </Tag>
+                ) : '-';
+            },
         },
         {
             title: '状态',
@@ -207,7 +222,15 @@ export const TableView: React.FC<TableViewProps> = ({
     ];
 
     return (
-        <div>
+        <Flex
+            ref={containerRef}
+            vertical
+            style={{
+                height: '100%',
+                minHeight: 520,
+                paddingBottom: 4,
+            }}
+        >
             {/* 批量操作栏 */}
             {selectedRowKeys.length > 0 && (
                 <Flex
@@ -229,26 +252,31 @@ export const TableView: React.FC<TableViewProps> = ({
             )}
 
             {/* 表格 */}
-            <Table
-                rowKey="id"
-                columns={columns}
-                dataSource={MOCK_TABLE_DATA}
-                rowSelection={rowSelection}
-                pagination={{
-                    showSizeChanger: true,
-                    showQuickJumper: true,
-                    showTotal: (total) => `共 ${total} 条`,
-                }}
-                scroll={{ x: 1000 }}
-                size="middle"
+            <div style={{ flex: 1, minHeight: 0 }}>
+                <Table
+                    rowKey="id"
+                    columns={columns}
+                    dataSource={dataSource}
+                    rowSelection={rowSelection}
+                    loading={loading}
+                    pagination={{
+                        showSizeChanger: true,
+                        showQuickJumper: true,
+                        showTotal: (total) => `共 ${total} 条`,
+                        pageSize: 10,
+                    }}
+                    scroll={{ x: 1000, y: scrollY }}
+                    size="middle"
                 onRow={(record) => ({
                     onClick: () => onIntelSelect(record),
                     style: {
                         cursor: 'pointer',
                         background: selectedIntelId === record.id ? token.colorPrimaryBg : undefined,
                     },
+                    'data-intel-id': record.intelId || record.id,
                 })}
             />
-        </div>
+            </div>
+        </Flex>
     );
 };

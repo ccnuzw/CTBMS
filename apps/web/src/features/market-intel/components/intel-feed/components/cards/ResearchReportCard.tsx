@@ -30,18 +30,13 @@ export const ResearchReportCard: React.FC<ResearchReportCardProps> = ({
 }) => {
     const { token } = theme.useToken();
 
-    // 模拟研报特有信息
-    const reportMeta = {
-        pages: 12,
-        fileSize: '3.2MB',
-        institution: 'XX期货研究院',
-        author: '张三',
-        keyPoints: [
-            '东北港口库存处于历史低位',
-            '预计Q2价格震荡上行',
-            '关注进口玉米到港节奏',
-        ],
-    };
+    // 获取研报关联数据
+    const reportData = intel.researchReport || {};
+
+    // 解析关键观点
+    const keyPoints = Array.isArray(reportData.keyPoints)
+        ? reportData.keyPoints.map((k: any) => typeof k === 'string' ? k : k.point)
+        : [];
 
     return (
         <Card
@@ -57,7 +52,7 @@ export const ResearchReportCard: React.FC<ResearchReportCardProps> = ({
             <Flex justify="space-between" align="start" style={{ marginBottom: 12 }}>
                 <Flex align="center" gap={8}>
                     <FilePdfOutlined style={{ color: '#52c41a', fontSize: 18 }} />
-                    <Title level={5} style={{ margin: 0 }}>{intel.title}</Title>
+                    <Title level={5} style={{ margin: 0 }}>{reportData.title || intel.title || '无标题研报'}</Title>
                 </Flex>
                 <Tag color="green" bordered={false}>研报</Tag>
             </Flex>
@@ -66,16 +61,20 @@ export const ResearchReportCard: React.FC<ResearchReportCardProps> = ({
             <Flex gap={16} wrap="wrap" style={{ marginBottom: 12, fontSize: 12, color: token.colorTextSecondary }}>
                 <Flex align="center" gap={4}>
                     <TeamOutlined />
-                    <span>{reportMeta.institution}</span>
+                    <span>{reportData.source || '未知机构'}</span>
                 </Flex>
                 <Flex align="center" gap={4}>
                     <CalendarOutlined />
-                    <span>{dayjs(intel.effectiveTime).format('YYYY-MM-DD')}</span>
+                    <span>
+                        {dayjs(reportData.publishDate || intel.effectiveTime).format('YYYY-MM-DD')}
+                    </span>
                 </Flex>
+                {/* 暂时没有页数和大小信息，先隐藏或显示默认 */}
                 <Flex align="center" gap={4}>
                     <BookOutlined />
-                    <span>{reportMeta.pages} 页 · {reportMeta.fileSize}</span>
+                    <span>PDF文档</span>
                 </Flex>
+
                 {intel.confidence && (
                     <Flex align="center" gap={4}>
                         <span>质量评分</span>
@@ -95,23 +94,25 @@ export const ResearchReportCard: React.FC<ResearchReportCardProps> = ({
                 ellipsis={{ rows: 2 }}
                 style={{ marginBottom: 12, color: token.colorText }}
             >
-                {intel.summary}
+                {reportData.summary || intel.summary || '暂无摘要'}
             </Paragraph>
 
             {/* 核心观点 */}
-            <div style={{ marginBottom: 12, padding: 12, background: token.colorFillQuaternary, borderRadius: token.borderRadius }}>
-                <Flex align="center" gap={6} style={{ marginBottom: 8 }}>
-                    <FileTextOutlined style={{ color: '#52c41a' }} />
-                    <Text type="secondary" style={{ fontSize: 12 }}>核心观点</Text>
-                </Flex>
-                <ul style={{ margin: 0, paddingLeft: 20 }}>
-                    {reportMeta.keyPoints.map((point, idx) => (
-                        <li key={idx} style={{ fontSize: 13, marginBottom: 4 }}>
-                            {point}
-                        </li>
-                    ))}
-                </ul>
-            </div>
+            {keyPoints.length > 0 && (
+                <div style={{ marginBottom: 12, padding: 12, background: token.colorFillQuaternary, borderRadius: token.borderRadius }}>
+                    <Flex align="center" gap={6} style={{ marginBottom: 8 }}>
+                        <FileTextOutlined style={{ color: '#52c41a' }} />
+                        <Text type="secondary" style={{ fontSize: 12 }}>核心观点</Text>
+                    </Flex>
+                    <ul style={{ margin: 0, paddingLeft: 20 }}>
+                        {keyPoints.slice(0, 3).map((point: string, idx: number) => (
+                            <li key={idx} style={{ fontSize: 13, marginBottom: 4 }}>
+                                {point}
+                            </li>
+                        ))}
+                    </ul>
+                </div>
+            )}
 
             <Divider style={{ margin: '12px 0' }} />
 

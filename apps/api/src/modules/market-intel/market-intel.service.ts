@@ -7,6 +7,7 @@ import {
     MarketIntelQuery,
     AIAnalysisResult,
     IntelCategory,
+    ContentType,
 } from '@packages/types';
 
 @Injectable()
@@ -1057,6 +1058,189 @@ export class MarketIntelService {
     }
 
     /**
+     * 关联情报推荐（时间/品种/区域等）
+     */
+    async getRelatedIntel(intelId: string, limit = 8) {
+        const baseIntel = await this.prisma.marketIntel.findUnique({
+            where: { id: intelId },
+            include: {
+                marketEvents: {
+                    select: { commodity: true, regionCode: true, subject: true, action: true },
+                },
+                marketInsights: {
+                    select: { commodity: true, regionCode: true, title: true },
+                },
+                researchReport: {
+                    select: { title: true, commodities: true, regions: true },
+                },
+            },
+        });
+
+        if (!baseIntel) {
+            throw new NotFoundException('Intel not found');
+        }
+
+        const baseTime = baseIntel.effectiveTime || baseIntel.createdAt;
+        const startTime = new Date(baseTime.getTime() - 7 * 24 * 60 * 60 * 1000);
+        const endTime = new Date(baseTime.getTime() + 7 * 24 * 60 * 60 * 1000);
+
+        const baseCommodities = new Set<string>();
+        baseIntel.marketEvents.forEach((event) => {
+            if (event.commodity) baseCommodities.add(event.commodity);
+        });
+        baseIntel.marketInsights.forEach((insight) => {
+            if (insight.commodity) baseCommodities.add(insight.commodity);
+        });
+        baseIntel.researchReport?.commodities?.forEach((commodity) => {
+            if (commodity) baseCommodities.add(commodity);
+        });
+
+        const baseRegions = new Set<string>();
+        baseIntel.region?.forEach((region) => {
+            if (region) baseRegions.add(region);
+        });
+        baseIntel.marketEvents.forEach((event) => {
+            if (event.regionCode) baseRegions.add(event.regionCode);
+        });
+        baseIntel.marketInsights.forEach((insight) => {
+            if (insight.regionCode) baseRegions.add(insight.regionCode);
+        });
+        baseIntel.researchReport?.regions?.forEach((region) => {
+            if (region) baseRegions.add(region);
+        });
+
+        const orConditions: any[] = [
+            { effectiveTime: { gte: startTime, lte: endTime } },
+        ];
+
+        if (baseCommodities.size > 0) {
+            const commodities = Array.from(baseCommodities);
+            orConditions.push({ marketEvents: { some: { commodity: { in: commodities } } } });
+            orConditions.push({ marketInsights: { some: { commodity: { in: commodities } } } });
+            orConditions.push({ researchReport: { is: { commodities: { hasSome: commodities } } } });
+        }
+
+        if (baseRegions.size > 0) {
+            const regions = Array.from(baseRegions);
+            orConditions.push({ region: { hasSome: regions } });
+            orConditions.push({ marketEvents: { some: { regionCode: { in: regions } } } });
+            orConditions.push({ marketInsights: { some: { regionCode: { in: regions } } } });
+            orConditions.push({ researchReport: { is: { regions: { hasSome: regions } } } });
+        }
+
+        const candidates = await this.prisma.marketIntel.findMany({
+            where: {
+                id: { not: intelId },
+                OR: orConditions,
+            },
+            take: Math.max(limit * 3, 12),
+            orderBy: { createdAt: 'desc' },
+            include: {
+                researchReport: {
+                    select: { title: true, commodities: true, regions: true },
+                },
+                marketEvents: {
+                    take: 3,
+                    orderBy: { createdAt: 'desc' },
+                    select: { commodity: true, regionCode: true, subject: true, action: true, content: true },
+                },
+                marketInsights: {
+                    take: 3,
+                    orderBy: { createdAt: 'desc' },
+                    select: { commodity: true, regionCode: true, title: true, content: true },
+                },
+            },
+        });
+
+        const buildTitle = (intel: typeof candidates[number]) => {
+            if (intel.researchReport?.title) return intel.researchReport.title;
+            const insight = intel.marketInsights.find((item) => item.title);
+            if (insight?.title) return insight.title;
+            const event = intel.marketEvents.find((item) => item.subject || item.action || item.content);
+            if (event?.subject || event?.action) {
+                return `${event.subject || ''}${event.action || ''}`.trim();
+            }
+            if (event?.content) return event.content.slice(0, 30);
+            if (intel.summary) return intel.summary.slice(0, 30);
+            if (intel.rawContent) return intel.rawContent.slice(0, 30);
+            return '未命名情报';
+        };
+
+        const intersectCount = (setA: Set<string>, setB: Set<string>) => {
+            let count = 0;
+            setA.forEach((item) => {
+                if (setB.has(item)) count += 1;
+            });
+            return count;
+        };
+
+        const related = candidates.map((candidate) => {
+            const candidateCommodities = new Set<string>();
+            candidate.marketEvents.forEach((event) => {
+                if (event.commodity) candidateCommodities.add(event.commodity);
+            });
+            candidate.marketInsights.forEach((insight) => {
+                if (insight.commodity) candidateCommodities.add(insight.commodity);
+            });
+            candidate.researchReport?.commodities?.forEach((commodity) => {
+                if (commodity) candidateCommodities.add(commodity);
+            });
+
+            const candidateRegions = new Set<string>();
+            candidate.region?.forEach((region) => {
+                if (region) candidateRegions.add(region);
+            });
+            candidate.marketEvents.forEach((event) => {
+                if (event.regionCode) candidateRegions.add(event.regionCode);
+            });
+            candidate.marketInsights.forEach((insight) => {
+                if (insight.regionCode) candidateRegions.add(insight.regionCode);
+            });
+            candidate.researchReport?.regions?.forEach((region) => {
+                if (region) candidateRegions.add(region);
+            });
+
+            const commodityMatches = intersectCount(baseCommodities, candidateCommodities);
+            const regionMatches = intersectCount(baseRegions, candidateRegions);
+
+            const candidateTime = candidate.effectiveTime || candidate.createdAt;
+            const timeDiffDays = Math.abs(candidateTime.getTime() - baseTime.getTime()) / (24 * 60 * 60 * 1000);
+
+            let similarity = 0;
+            if (commodityMatches > 0) similarity += 50 + Math.min(15, commodityMatches * 5);
+            if (regionMatches > 0) similarity += 25 + Math.min(10, regionMatches * 3);
+            if (timeDiffDays <= 1) similarity += 20;
+            else if (timeDiffDays <= 3) similarity += 15;
+            else if (timeDiffDays <= 7) similarity += 10;
+            if (candidate.contentType && candidate.contentType === baseIntel.contentType) similarity += 5;
+
+            similarity = Math.min(99, Math.round(similarity));
+
+            let relationType: 'commodity' | 'region' | 'time' | 'chain' | 'citation' = 'citation';
+            if (commodityMatches > 0) relationType = 'commodity';
+            else if (regionMatches > 0) relationType = 'region';
+            else if (timeDiffDays <= 7) relationType = 'time';
+
+            const contentType =
+                candidate.contentType ||
+                (candidate.researchReport ? ContentType.RESEARCH_REPORT : ContentType.DAILY_REPORT);
+
+            return {
+                id: candidate.id,
+                title: buildTitle(candidate),
+                contentType,
+                relationType,
+                similarity,
+                createdAt: candidate.createdAt,
+            };
+        });
+
+        return related
+            .sort((a, b) => (b.similarity || 0) - (a.similarity || 0))
+            .slice(0, limit);
+    }
+
+    /**
      * 综合情报流数据（事件 + 洞察 + 情报混合）
      */
     async getIntelligenceFeed(query: {
@@ -1068,6 +1252,13 @@ export class MarketIntelService {
         commodities?: string[];
         keyword?: string;
         limit?: number;
+        sourceTypes?: any[];
+        regionCodes?: string[];
+        minScore?: number;
+        maxScore?: number;
+        processingStatus?: string[];
+        qualityLevel?: string[];
+        contentTypes?: string[];
     }) {
         const {
             startDate,
@@ -1078,22 +1269,86 @@ export class MarketIntelService {
             commodities,
             keyword,
             limit = 50,
+            sourceTypes,
+            regionCodes,
+            minScore,
+            maxScore,
+            processingStatus,
+            qualityLevel,
+            contentTypes,
         } = query;
+
+        // 构建 Intel 查询条件 (用于关联过滤)
+        const intelWhere: any = {};
+
+        if (sourceTypes && sourceTypes.length > 0) {
+            intelWhere.sourceType = { in: sourceTypes };
+        }
+        if (regionCodes && regionCodes.length > 0) {
+            intelWhere.region = { hasSome: regionCodes };
+        }
+        if (contentTypes && contentTypes.length > 0) {
+            intelWhere.contentType = { in: contentTypes as any[] };
+        }
+
+        // 分数过滤
+        if (minScore !== undefined || maxScore !== undefined) {
+            intelWhere.totalScore = {};
+            if (minScore !== undefined) intelWhere.totalScore.gte = minScore;
+            if (maxScore !== undefined) intelWhere.totalScore.lte = maxScore;
+        }
+
+        // 状态和质量的多重条件
+        const intelAndConditions: any[] = [];
+
+        // 处理状态
+        if (processingStatus && processingStatus.length > 0) {
+            const statusOR: any[] = [];
+            if (processingStatus.includes('flagged')) statusOR.push({ isFlagged: true });
+            // confirmed: 非 flagged 且有分析结果 (简化为非 flagged)
+            if (processingStatus.includes('confirmed')) statusOR.push({ isFlagged: false });
+            if (processingStatus.includes('pending')) statusOR.push({ isFlagged: false }); // 暂无法精确区分 pending, 视为普通
+            // 优化: 如果同时选了 confirmed 和 pending，其实就是 isFlagged: false
+
+            if (statusOR.length > 0) {
+                intelAndConditions.push({ OR: statusOR });
+            }
+        }
+
+        // 质量评级
+        if (qualityLevel && qualityLevel.length > 0) {
+            const qualityOR: any[] = [];
+            if (qualityLevel.includes('high')) qualityOR.push({ totalScore: { gte: 80 } });
+            if (qualityLevel.includes('medium')) qualityOR.push({ totalScore: { gte: 50, lt: 80 } });
+            if (qualityLevel.includes('low')) qualityOR.push({ totalScore: { lt: 50 } });
+
+            if (qualityOR.length > 0) {
+                intelAndConditions.push({ OR: qualityOR });
+            }
+        }
+
+        if (intelAndConditions.length > 0) {
+            intelWhere.AND = intelAndConditions;
+        }
 
         // 构建查询条件
         const eventWhere: any = {};
         const insightWhere: any = {};
+        const reportWhere: any = {};
 
         if (startDate || endDate) {
             eventWhere.createdAt = {};
             insightWhere.createdAt = {};
+            reportWhere.publishDate = {};
             if (startDate) {
                 eventWhere.createdAt.gte = startDate;
                 insightWhere.createdAt.gte = startDate;
+                reportWhere.publishDate.gte = startDate;
             }
             if (endDate) {
                 eventWhere.createdAt.lte = endDate;
                 insightWhere.createdAt.lte = endDate;
+                reportWhere.publishDate.lte = endDate;
             }
         }
         if (eventTypeIds && eventTypeIds.length > 0) {
@@ -1108,6 +1363,7 @@ export class MarketIntelService {
         if (commodities && commodities.length > 0) {
             eventWhere.commodity = { in: commodities };
             insightWhere.commodity = { in: commodities };
+            reportWhere.commodities = { hasSome: commodities };
         }
         if (keyword) {
             eventWhere.OR = [
@@ -1118,10 +1374,25 @@ export class MarketIntelService {
                 { title: { contains: keyword, mode: 'insensitive' } },
                 { content: { contains: keyword, mode: 'insensitive' } },
             ];
+            reportWhere.OR = [
+                { title: { contains: keyword, mode: 'insensitive' } },
+                { summary: { contains: keyword, mode: 'insensitive' } },
+            ];
         }
 
-        // 并行查询事件和洞察
-        const [events, insights] = await Promise.all([
+        // 将 Intel 过滤条件应用到 Event 和 Insight
+        // 将 Intel 过滤条件应用到 Event 和 Insight 和 Report
+        if (Object.keys(intelWhere).length > 0) {
+            eventWhere.intel = intelWhere;
+            insightWhere.intel = intelWhere;
+            reportWhere.intel = intelWhere;
+        }
+
+
+
+        // 并行查询事件、洞察和研报
+        // @ts-ignore
+        const [events, insights, reports] = await Promise.all([
             this.prisma.marketEvent.findMany({
                 where: eventWhere,
                 take: limit,
@@ -1134,7 +1405,17 @@ export class MarketIntelService {
                         select: { id: true, name: true, shortName: true },
                     },
                     intel: {
-                        select: { id: true, location: true, effectiveTime: true },
+                        select: {
+                            id: true,
+                            location: true,
+                            effectiveTime: true,
+                            contentType: true,
+                            sourceType: true,
+                            category: true,
+                            region: true,
+                            totalScore: true,
+                            isFlagged: true,
+                        },
                     },
                 },
             }),
@@ -1147,11 +1428,43 @@ export class MarketIntelService {
                         select: { id: true, code: true, name: true, icon: true, color: true },
                     },
                     intel: {
-                        select: { id: true, location: true, effectiveTime: true },
+                        select: {
+                            id: true,
+                            location: true,
+                            effectiveTime: true,
+                            contentType: true,
+                            sourceType: true,
+                            category: true,
+                            region: true,
+                            totalScore: true,
+                            isFlagged: true,
+                        },
+                    },
+                },
+            }),
+            this.prisma.researchReport.findMany({
+                where: reportWhere,
+                take: limit,
+                orderBy: { publishDate: 'desc' },
+                include: {
+                    intel: {
+                        select: {
+                            id: true,
+                            location: true,
+                            effectiveTime: true,
+                            contentType: true,
+                            sourceType: true,
+                            category: true,
+                            region: true,
+                            totalScore: true,
+                            isFlagged: true,
+                        },
                     },
                 },
             }),
         ]);
+
+
 
         // 合并并按时间排序
         const feedItems = [
@@ -1166,6 +1479,12 @@ export class MarketIntelService {
                 id: i.id,
                 createdAt: i.createdAt,
                 data: i,
+            })),
+            ...reports.map((r) => ({
+                type: 'RESEARCH_REPORT' as const,
+                id: r.id,
+                createdAt: r.publishDate || r.createdAt,
+                data: r,
             })),
         ].sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
 

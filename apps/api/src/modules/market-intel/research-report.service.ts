@@ -2,20 +2,7 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma';
 import { ReportType } from '@prisma/client';
 
-export interface CreateResearchReportDto {
-    title: string;
-    reportType: ReportType;
-    publishDate?: Date;
-    source?: string;
-    summary: string;
-    keyPoints?: { point: string; sentiment: string; confidence: number }[];
-    prediction?: { direction: string; timeframe: string; reasoning: string };
-    dataPoints?: { metric: string; value: string; period: string }[];
-    commodities?: string[];
-    regions?: string[];
-    timeframe?: string;
-    intelId: string;
-}
+import { CreateResearchReportDto, CreateResearchReportSchema, UpdateResearchReportDto } from '@packages/types';
 
 @Injectable()
 export class ResearchReportService {

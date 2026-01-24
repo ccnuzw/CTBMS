@@ -15,6 +15,7 @@ import { FileInterceptor } from '@nestjs/platform-express';
 import { MarketIntelService } from './market-intel.service';
 import { PriceDataService } from './price-data.service';
 import { IntelTaskService } from './intel-task.service';
+import { ResearchReportService } from './research-report.service';
 import {
     CreateMarketIntelRequest,
     UpdateMarketIntelRequest,
@@ -29,6 +30,9 @@ import {
     IntelTaskQuery,
     ContentType,
     IntelCategory,
+    CreateResearchReportDto,
+    UpdateResearchReportDto,
+    ResearchReportQuery,
 } from '@packages/types';
 import { IntelAttachmentService } from './intel-attachment.service';
 import { IntelEntityService } from './intel-entity.service';
@@ -40,6 +44,7 @@ export class MarketIntelController {
         private readonly marketIntelService: MarketIntelService,
         private readonly priceDataService: PriceDataService,
         private readonly intelTaskService: IntelTaskService,
+        private readonly researchReportService: ResearchReportService,
         private readonly intelAttachmentService: IntelAttachmentService,
         private readonly intelEntityService: IntelEntityService,
         private readonly documentParserService: DocumentParserService,
@@ -278,6 +283,46 @@ export class MarketIntelController {
         return this.marketIntelService.findInsightById(id);
     }
 
+    // --- C类增强：研究报告 ---
+
+    @Post('research-reports')
+    async createResearchReport(@Body() dto: CreateResearchReportDto) {
+        return this.researchReportService.create(dto);
+    }
+
+    @Get('research-reports')
+    async findAllResearchReports(@Query() query: ResearchReportQuery) {
+        // 转换日期字符串为 Date 对象
+        const options = {
+            ...query,
+            startDate: query.startDate ? new Date(query.startDate) : undefined,
+            endDate: query.endDate ? new Date(query.endDate) : undefined,
+            page: query.page ? parseInt(query.page as any, 10) : 1,
+            pageSize: query.pageSize ? parseInt(query.pageSize as any, 10) : 20,
+        };
+        return this.researchReportService.findAll(options);
+    }
+
+    @Get('research-reports/stats')
+    async getResearchReportStats() {
+        return this.researchReportService.getStats();
+    }
+
+    @Get('research-reports/:id')
+    async findResearchReportById(@Param('id') id: string) {
+        return this.researchReportService.findOne(id);
+    }
+
+    @Put('research-reports/:id')
+    async updateResearchReport(@Param('id') id: string, @Body() dto: UpdateResearchReportDto) {
+        return this.researchReportService.update(id, dto);
+    }
+
+    @Delete('research-reports/:id')
+    async removeResearchReport(@Param('id') id: string) {
+        return this.researchReportService.remove(id);
+    }
+
     // --- 综合情报流 ---
 
     @Get('feed')
@@ -290,16 +335,38 @@ export class MarketIntelController {
         @Query('commodities') commodities?: string,
         @Query('keyword') keyword?: string,
         @Query('limit') limit = '50',
+        // 新增高级筛选
+        @Query('sourceTypes') sourceTypes?: string,
+        @Query('regionCodes') regionCodes?: string,
+        @Query('minScore') minScore?: string,
+        @Query('maxScore') maxScore?: string,
+        @Query('processingStatus') processingStatus?: string,
+        @Query('qualityLevel') qualityLevel?: string,
+        @Query('contentTypes') contentTypes?: string,
     ) {
+        // 辅助函数：将空字符串转为 undefined，非空字符串进行 split 并过滤空值
+        const splitOrUndefined = (str: string | undefined): string[] | undefined => {
+            if (!str || str.trim() === '') return undefined;
+            const arr = str.split(',').map(s => s.trim()).filter(s => s.length > 0);
+            return arr.length > 0 ? arr : undefined;
+        };
+
         return this.marketIntelService.getIntelligenceFeed({
             startDate: startDate ? new Date(startDate) : undefined,
             endDate: endDate ? new Date(endDate) : undefined,
-            eventTypeIds: eventTypeIds ? eventTypeIds.split(',') : undefined,
-            insightTypeIds: insightTypeIds ? insightTypeIds.split(',') : undefined,
-            sentiments: sentiments ? sentiments.split(',') : undefined,
-            commodities: commodities ? commodities.split(',') : undefined,
-            keyword,
+            eventTypeIds: splitOrUndefined(eventTypeIds),
+            insightTypeIds: splitOrUndefined(insightTypeIds),
+            sentiments: splitOrUndefined(sentiments),
+            commodities: splitOrUndefined(commodities),
+            keyword: keyword?.trim() || undefined,
             limit: parseInt(limit, 10),
+            sourceTypes: splitOrUndefined(sourceTypes) as any[] | undefined,
+            regionCodes: splitOrUndefined(regionCodes),
+            minScore: minScore ? parseInt(minScore, 10) : undefined,
+            maxScore: maxScore ? parseInt(maxScore, 10) : undefined,
+            processingStatus: splitOrUndefined(processingStatus),
+            qualityLevel: splitOrUndefined(qualityLevel),
+            contentTypes: splitOrUndefined(contentTypes),
         });
     }
 
@@ -492,6 +559,14 @@ export class MarketIntelController {
     // =============================================
     // 动态路由 (必须放在最后)
     // =============================================
+
+    @Get(':id/related')
+    async getRelatedIntel(
+        @Param('id') intelId: string,
+        @Query('limit') limit = '8',
+    ) {
+        return this.marketIntelService.getRelatedIntel(intelId, parseInt(limit, 10));
+    }
 
     @Get(':id')
     async findOne(@Param('id') id: string) {

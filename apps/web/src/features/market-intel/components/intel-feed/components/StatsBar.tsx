@@ -1,30 +1,51 @@
-import React from 'react';
-import { Card, Flex, Statistic, Space, Tag, Divider, theme } from 'antd';
+import React, { useMemo } from 'react';
+import { Card, Flex, Space, Tag, Divider, theme } from 'antd';
 import {
     FileTextOutlined,
     RiseOutlined,
     CheckCircleOutlined,
     ClockCircleOutlined,
 } from '@ant-design/icons';
-import { IntelFilterState } from '../types';
+import { IntelItem } from '../types';
+import { ContentType } from '../../../types';
 
 interface StatsBarProps {
-    filterState: IntelFilterState;
+    items: IntelItem[];
 }
 
-export const StatsBar: React.FC<StatsBarProps> = ({ filterState }) => {
+export const StatsBar: React.FC<StatsBarProps> = ({ items }) => {
     const { token } = theme.useToken();
 
-    // 模拟统计数据
-    const stats = {
-        total: 156,
-        dailyReport: 89,
-        researchReport: 43,
-        policyDoc: 24,
-        highValue: 42,
-        pending: 18,
-        confirmed: 138,
-    };
+    // 实时统计数据
+    const stats = useMemo(() => {
+        const result = {
+            total: items.length,
+            dailyReport: 0,
+            researchReport: 0,
+            policyDoc: 0,
+            highValue: 0,
+            pending: 0,
+            confirmed: 0,
+        };
+
+        items.forEach(item => {
+            // 内容类型
+            if (item.contentType === ContentType.DAILY_REPORT) result.dailyReport++;
+            else if (item.contentType === ContentType.RESEARCH_REPORT) result.researchReport++;
+            else if (item.contentType === ContentType.POLICY_DOC) result.policyDoc++;
+
+            // 高价值 (质量高或可信度高)
+            if ((item.qualityScore || 0) >= 80 || (item.confidence || 0) >= 90) {
+                result.highValue++;
+            }
+
+            // 状态
+            if (item.status === 'pending') result.pending++;
+            else if (item.status === 'confirmed') result.confirmed++;
+        });
+
+        return result;
+    }, [items]);
 
     return (
         <Card

@@ -47,7 +47,9 @@ export const DailyReportCard: React.FC<DailyReportCardProps> = ({
             hoverable
             style={{
                 ...style,
-                borderLeft: `3px solid ${token.colorPrimary}`,
+                borderLeftWidth: 3,
+                borderLeftStyle: 'solid',
+                borderLeftColor: token.colorPrimary,
             }}
             bodyStyle={{ padding: 16 }}
             onClick={onClick}

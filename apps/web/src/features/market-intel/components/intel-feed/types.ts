@@ -106,7 +106,8 @@ export const BUILT_IN_PRESETS: FilterPreset[] = [
 // 情报项（统一类型）
 export interface IntelItem {
     id: string;
-    type: 'intel' | 'event' | 'insight';
+    intelId?: string;
+    type: 'intel' | 'event' | 'insight' | 'research_report';
     contentType: ContentType;
     sourceType: IntelSourceType;
     category: IntelCategory;
@@ -141,6 +142,9 @@ export interface IntelItem {
 
     // 关联
     relatedIntelIds?: string[];
+
+    // 研报数据
+    researchReport?: any;
 }
 
 // 统计数据

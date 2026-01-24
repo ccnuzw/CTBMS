@@ -90,7 +90,7 @@ export const DocumentUploader: React.FC<DocumentUploaderProps> = ({
 
         const file = fileList[0];
         const formData = new FormData();
-        formData.append('file', file.originFileObj as Blob);
+        formData.append('file', (file.originFileObj || file) as Blob);
         if (sourceType) formData.append('sourceType', sourceType);
         if (contentType) formData.append('contentType', contentType);
         formData.append('location', location || '文档上传');
