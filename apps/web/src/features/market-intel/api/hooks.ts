@@ -250,11 +250,11 @@ export const useMarketIntelStats = () => {
 // 排行榜
 // =============================================
 
-export const useLeaderboard = (limit = 10) => {
+export const useLeaderboard = (limit = 10, timeframe: 'day' | 'week' | 'month' | 'year' = 'month') => {
     return useQuery<LeaderboardEntry[]>({
-        queryKey: ['market-intel-leaderboard', limit],
+        queryKey: ['market-intel-leaderboard', limit, timeframe],
         queryFn: async () => {
-            const res = await apiClient.get<LeaderboardEntry[]>(`/market-intel/leaderboard?limit=${limit}`);
+            const res = await apiClient.get<LeaderboardEntry[]>(`/market-intel/leaderboard?limit=${limit}&timeframe=${timeframe}`);
             return res.data;
         },
     });

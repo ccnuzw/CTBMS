@@ -442,37 +442,108 @@ export class MarketIntelService {
     }
 
     /**
-     * 获取排行榜
+     * 获取排行榜 (支持多周期：日/周/月/年)
      */
-    async getLeaderboard(limit = 10) {
-        const stats = await this.prisma.userIntelStats.findMany({
-            take: limit,
-            orderBy: { monthlyPoints: 'desc' },
-            include: {
-                user: {
-                    select: {
-                        id: true,
-                        name: true,
-                        avatar: true,
-                        position: true,
-                        organization: { select: { name: true } },
-                    },
-                },
+    async getLeaderboard(limit = 10, timeframe: 'day' | 'week' | 'month' | 'year' = 'month') {
+        // 1. 确定时间范围
+        const now = new Date();
+        let startDate: Date;
+
+        switch (timeframe) {
+            case 'day':
+                startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+                break;
+            case 'week':
+                // 获取本周一 (假设周一为一周开始)
+                const day = now.getDay() || 7; // Sunday is 0, make it 7
+                const diff = now.getDate() - day + (day === 0 ? -6 : 1); // Adjust when day is Sunday
+                // Actually simply: set to last Monday
+                const tempDate = new Date(now);
+                const currentDay = tempDate.getDay();
+                const distanceToMonday = currentDay === 0 ? 6 : currentDay - 1;
+                tempDate.setDate(tempDate.getDate() - distanceToMonday);
+                startDate = new Date(tempDate.getFullYear(), tempDate.getMonth(), tempDate.getDate());
+                break;
+            case 'month':
+                startDate = new Date(now.getFullYear(), now.getMonth(), 1);
+                break;
+            case 'year':
+                startDate = new Date(now.getFullYear(), 0, 1);
+                break;
+            default:
+                startDate = new Date(now.getFullYear(), now.getMonth(), 1);
+        }
+
+        // 2. 实时聚合统计 (基于 MarketIntel 表)
+        // 注意：Prisma groupBy 无法直接关联 User 表，需要分步查询
+        const groups = await this.prisma.marketIntel.groupBy({
+            by: ['authorId'],
+            where: {
+                createdAt: { gte: startDate },
+                authorId: { not: undefined } // Ensure we have author
+            },
+            _sum: {
+                totalScore: true,
+            },
+            _count: {
+                id: true, // submission count
+            },
+            _avg: {
+                totalScore: true, // Used as proxy for accuracy/quality in realtime view
             },
         });
 
-        return stats.map((stat, index) => ({
+        // 3. 获取用户信息
+        const authorIds = groups.map((g) => g.authorId);
+        const users = await this.prisma.user.findMany({
+            where: { id: { in: authorIds } },
+            select: {
+                id: true,
+                name: true,
+                avatar: true,
+                position: true,
+                organization: { select: { name: true } },
+                department: { select: { name: true } },
+            },
+        });
+
+        // 4. 组装数据
+        const leaderboard = groups.map((g) => {
+            const user = users.find((u) => u.id === g.authorId);
+            const score = g._sum.totalScore || 0;
+            const submissionCount = g._count.id || 0;
+            const avgScore = Math.round(g._avg.totalScore || 0);
+
+            return {
+                userId: g.authorId,
+                name: user?.name || 'Unknown',
+                avatar: user?.avatar || null,
+                role: user?.position || null,
+                region: user?.organization?.name || null,
+                organizationName: user?.organization?.name,
+                departmentName: user?.department?.name,
+
+                // 核心指标
+                score,
+                submissionCount,
+                accuracyRate: avgScore, // 暂用平均分作为质量/准确率参考
+                highValueCount: 0, // 实时聚合暂不计算此复杂指标
+
+                // 兼容旧字段
+                creditCoefficient: 3.0,
+                monthlyPoints: score,
+            };
+        });
+
+        // 5. 排序与截取 (按分数降序 -> 提交数降序)
+        leaderboard.sort((a, b) => {
+            if (b.score !== a.score) return b.score - a.score;
+            return b.submissionCount - a.submissionCount;
+        });
+
+        return leaderboard.slice(0, limit).map((entry, index) => ({
             rank: index + 1,
-            userId: stat.userId,
-            name: stat.user.name,
-            avatar: stat.user.avatar,
-            role: stat.user.position,
-            region: stat.user.organization?.name || null,
-            creditCoefficient: stat.creditCoefficient,
-            monthlyPoints: stat.monthlyPoints,
-            submissionCount: stat.submissionCount,
-            accuracyRate: stat.accuracyRate,
-            highValueCount: stat.highValueCount,
+            ...entry,
         }));
     }
 
@@ -1476,6 +1547,16 @@ export class MarketIntelService {
                             region: true,
                             totalScore: true,
                             isFlagged: true,
+                            author: {
+                                select: {
+                                    id: true,
+                                    name: true,
+                                    avatar: true,
+                                    organization: {
+                                        select: { name: true }
+                                    }
+                                },
+                            },
                         },
                     },
                 },
@@ -1499,6 +1580,16 @@ export class MarketIntelService {
                             region: true,
                             totalScore: true,
                             isFlagged: true,
+                            author: {
+                                select: {
+                                    id: true,
+                                    name: true,
+                                    avatar: true,
+                                    organization: {
+                                        select: { name: true }
+                                    }
+                                },
+                            },
                         },
                     },
                 },
@@ -1519,6 +1610,16 @@ export class MarketIntelService {
                             region: true,
                             totalScore: true,
                             isFlagged: true,
+                            author: {
+                                select: {
+                                    id: true,
+                                    name: true,
+                                    avatar: true,
+                                    organization: {
+                                        select: { name: true }
+                                    }
+                                },
+                            },
                         },
                     },
                 },

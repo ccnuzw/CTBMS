@@ -73,8 +73,11 @@ export class MarketIntelController {
     }
 
     @Get('leaderboard')
-    async getLeaderboard(@Query('limit') limit = '10') {
-        return this.marketIntelService.getLeaderboard(parseInt(limit, 10));
+    async getLeaderboard(
+        @Query('limit') limit = '10',
+        @Query('timeframe') timeframe: 'day' | 'week' | 'month' | 'year' = 'month',
+    ) {
+        return this.marketIntelService.getLeaderboard(parseInt(limit, 10), timeframe);
     }
 
     @Post('analyze')

@@ -96,6 +96,12 @@ export const IntelFeedDashboard: React.FC = () => {
                 qualityScore: intelInfo.totalScore || 0,
 
                 status: intelInfo.isFlagged ? 'flagged' : 'confirmed', // 简单映射
+                author: intelInfo.author ? {
+                    id: intelInfo.author.id,
+                    name: intelInfo.author.name,
+                    avatar: intelInfo.author.avatar,
+                    organizationName: intelInfo.author.organization?.name,
+                } : undefined,
 
                 // 仅为了兼容 UI 显示，保留 event/insight 结构
                 events: isEvent ? [data] : [],

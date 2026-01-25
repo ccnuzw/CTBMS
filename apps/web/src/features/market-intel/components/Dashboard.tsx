@@ -36,6 +36,7 @@ import { SmartBriefingCard } from './intel-feed/components/SmartBriefingCard';
 import { PriceAnomalyList } from './dashboard/widgets/PriceAnomalyList';
 import { IntelCompositionChart } from './dashboard/widgets/IntelCompositionChart';
 import { DEFAULT_FILTER_STATE } from './intel-feed/types';
+import { Leaderboard } from './Leaderboard';
 
 const { Title, Text } = Typography;
 
@@ -348,6 +349,13 @@ export const Dashboard: React.FC = () => {
                             <Empty description="暂无情绪数据" />
                         )}
                     </Card>
+                </Col>
+            </Row>
+
+            {/* Row 5: Performance Leaderboard */}
+            <Row style={{ marginTop: 24 }}>
+                <Col span={24}>
+                    <Leaderboard />
                 </Col>
             </Row>
         </div>

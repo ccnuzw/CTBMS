@@ -319,9 +319,41 @@ export const AnalyzeContentSchema = z.object({
   mimeType: z.string().optional(),
 });
 
+
 // =============================================
-// 情报员统计 Schema
+// 排行榜相关 Schema
 // =============================================
+
+export enum LeaderboardTimeframe {
+  DAY = 'day',
+  WEEK = 'week',
+  MONTH = 'month',
+  YEAR = 'year',
+}
+
+export const LeaderboardEntrySchema = z.object({
+  rank: z.number(),
+  userId: z.string(),
+  name: z.string(), // 显示名称
+  avatar: z.string().nullable(),
+  role: z.string().nullable(),
+  region: z.string().nullable(),
+
+  // 组织信息
+  organizationName: z.string().optional(),
+  departmentName: z.string().optional(),
+
+  // 核心指标 (根据 timeframe 动态计算)
+  score: z.number(),           // 当前周期得分/积分
+  submissionCount: z.number(), // 当前周期提交数
+  accuracyRate: z.number(),    // 准确率
+  highValueCount: z.number(),  // 高价值引用数
+
+  // 兼容旧字段 (可选)
+  creditCoefficient: z.number().optional(),
+  monthlyPoints: z.number().optional(),
+});
+
 
 export const UserIntelStatsSchema = z.object({
   id: z.string(),
@@ -335,20 +367,9 @@ export const UserIntelStatsSchema = z.object({
   updatedAt: z.date(),
 });
 
+
 // 排行榜响应
-export const LeaderboardEntrySchema = z.object({
-  rank: z.number(),
-  userId: z.string(),
-  name: z.string(),
-  avatar: z.string().nullable(),
-  role: z.string().nullable(),
-  region: z.string().nullable(),
-  creditCoefficient: z.number(),
-  monthlyPoints: z.number(),
-  submissionCount: z.number(),
-  accuracyRate: z.number(),
-  highValueCount: z.number(),
-});
+// (moved up)
 
 // =============================================
 // 统计数据 Schema

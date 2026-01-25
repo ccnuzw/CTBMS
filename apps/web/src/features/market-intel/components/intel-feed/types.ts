@@ -138,6 +138,14 @@ export interface IntelItem {
     // 质量
     qualityScore?: number;
 
+    // Author info
+    author?: {
+        id: string;
+        name: string;
+        avatar?: string | null;
+        organizationName?: string;
+    };
+
     // 状态
     status: 'pending' | 'confirmed' | 'flagged' | 'archived';
 
