@@ -159,15 +159,15 @@ export const SuperDashboard: React.FC = () => {
             aCards.length > 1 ? ((aCards[aCards.length - 2].aiAnalysis as any).extractedData?.price as number) : 0;
         const priceChange = latestPrice && prevPrice ? ((latestPrice - prevPrice) / prevPrice) * 100 : 0;
 
-        const pos = bCards.filter((c) => (c.aiAnalysis as any).sentiment === 'positive').length;
-        const neg = bCards.filter((c) => (c.aiAnalysis as any).sentiment === 'negative').length;
+        const pos = bCards.filter((c) => (c.aiAnalysis as any)?.sentiment === 'positive').length;
+        const neg = bCards.filter((c) => (c.aiAnalysis as any)?.sentiment === 'negative').length;
         const totalSent = bCards.length;
         const sentimentScore = totalSent
             ? Math.round(((pos + 0.5 * (totalSent - pos - neg)) / totalSent) * 100)
             : 50;
 
         // 这里仅作为演示，真实场景应该有一个 explicitly 的 isFlagged 字段，暂时用 negative 来模拟
-        const riskCount = bCards.filter((c) => (c.aiAnalysis as any).sentiment === 'negative').length;
+        const riskCount = bCards.filter((c) => (c.aiAnalysis as any)?.sentiment === 'negative').length;
 
         return { latestPrice, priceChange, sentimentScore, riskCount, totalVolume: filteredCards.length };
     }, [filteredCards]);

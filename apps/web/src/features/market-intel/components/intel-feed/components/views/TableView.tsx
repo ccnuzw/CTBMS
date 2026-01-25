@@ -134,8 +134,13 @@ export const TableView: React.FC<TableViewProps> = ({
                 const labels: Record<string, string> = {
                     FIRST_LINE: '一线采集',
                     OFFICIAL_GOV: '官方发布',
+                    OFFICIAL: '官方渠道',
                     RESEARCH_INST: '研究机构',
                     MEDIA: '媒体报道',
+                    INTERNAL_REPORT: '内部报告',
+                    INDUSTRY_ASSOC: '行业协会',
+                    THIRD_PARTY: '第三方数据',
+                    COMPETITOR: '竞对情报',
                 };
                 return <Text style={{ fontSize: 12 }}>{labels[type] || type}</Text>;
             },
@@ -267,15 +272,15 @@ export const TableView: React.FC<TableViewProps> = ({
                     }}
                     scroll={{ x: 1000, y: scrollY }}
                     size="middle"
-                onRow={(record) => ({
-                    onClick: () => onIntelSelect(record),
-                    style: {
-                        cursor: 'pointer',
-                        background: selectedIntelId === record.id ? token.colorPrimaryBg : undefined,
-                    },
-                    'data-intel-id': record.intelId || record.id,
-                })}
-            />
+                    onRow={(record) => ({
+                        onClick: () => onIntelSelect(record),
+                        style: {
+                            cursor: 'pointer',
+                            background: selectedIntelId === record.id ? token.colorPrimaryBg : undefined,
+                        },
+                        'data-intel-id': record.intelId || record.id,
+                    })}
+                />
             </div>
         </Flex>
     );

@@ -17,6 +17,11 @@ import {
 import { IntelFilterState, IntelItem } from '../../types';
 import { ChartContainer } from '../../../ChartContainer';
 import { useIntelDashboardStats } from '../../../../api/hooks';
+import { SmartBriefingCard } from '../SmartBriefingCard';
+import { PriceMonitorWidget } from '../widgets/PriceMonitorWidget';
+import { SentimentGaugeWidget } from '../widgets/SentimentGaugeWidget';
+import { AIStatsWidget } from '../widgets/AIStatsWidget';
+import { RecentEventsWidget } from '../widgets/RecentEventsWidget';
 import dayjs from 'dayjs';
 
 const { Title, Text } = Typography;
@@ -98,10 +103,17 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ filterState }) => 
 
     return (
         <div style={{ padding: 16 }}>
-            {/* 核心指标 */}
-            <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
+            {/* 1. 智能简报 (AI Driven) - Top Priority */}
+            <SmartBriefingCard
+                filterState={filterState}
+                startDate={startDate}
+                endDate={endDate}
+            />
+
+            {/* 2. 核心指标 (Core Metrics) */}
+            <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
                 <Col xs={12} sm={8} lg={4}>
-                    <Card size="small">
+                    <Card size="small" bordered={false} hoverable>
                         <Statistic
                             title="总情报数"
                             value={stats.overview.total}
@@ -111,7 +123,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ filterState }) => 
                     </Card>
                 </Col>
                 <Col xs={12} sm={8} lg={4}>
-                    <Card size="small">
+                    <Card size="small" bordered={false} hoverable>
                         <Statistic
                             title="今日新增"
                             value={stats.overview.today}
@@ -120,7 +132,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ filterState }) => 
                     </Card>
                 </Col>
                 <Col xs={12} sm={8} lg={4}>
-                    <Card size="small">
+                    <Card size="small" bordered={false} hoverable>
                         <Statistic
                             title="高价值"
                             value={stats.overview.highValue || '-'}
@@ -130,7 +142,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ filterState }) => 
                     </Card>
                 </Col>
                 <Col xs={12} sm={8} lg={4}>
-                    <Card size="small">
+                    <Card size="small" bordered={false} hoverable>
                         <Statistic
                             title="待处理"
                             value={stats.overview.pending || '-'}
@@ -140,7 +152,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ filterState }) => 
                     </Card>
                 </Col>
                 <Col xs={12} sm={8} lg={4}>
-                    <Card size="small">
+                    <Card size="small" bordered={false} hoverable>
                         <Statistic
                             title="已确认"
                             value={stats.overview.confirmed || '-'}
@@ -150,7 +162,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ filterState }) => 
                     </Card>
                 </Col>
                 <Col xs={12} sm={8} lg={4}>
-                    <Card size="small">
+                    <Card size="small" bordered={false} hoverable>
                         <Statistic
                             title="平均质量分"
                             value={stats.overview.avgQuality}
@@ -162,10 +174,23 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ filterState }) => 
                 </Col>
             </Row>
 
-            {/* 图表区域 */}
+            {/* 3. 核心功能区 (Key Features) - Price & Sentiment */}
+            <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
+                <Col xs={24} lg={15}>
+                    <PriceMonitorWidget
+                        defaultCommodity={filterState.commodities?.[0] || '玉米'}
+                        defaultLocation={filterState.regions?.[0] ? undefined : '锦州港'}
+                    />
+                </Col>
+                <Col xs={24} lg={9}>
+                    <SentimentGaugeWidget />
+                </Col>
+            </Row>
+
+            {/* 4. 数据分布区 (Analytics) */}
             <Row gutter={[16, 16]}>
-                {/* 情报趋势 */}
-                <Col xs={24} lg={14}>
+                {/* A. 情报趋势 */}
+                <Col xs={24} lg={12}>
                     <Card title="情报趋势 (近7天)" bordered={false}>
                         <ChartContainer height={280}>
                             <ResponsiveContainer width="100%" height="100%">
@@ -187,74 +212,88 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ filterState }) => 
                     </Card>
                 </Col>
 
-                {/* 来源分布 */}
+                {/* B. 来源分布 & AI效能 */}
+                <Col xs={24} lg={12}>
+                    <Row gutter={[16, 16]}>
+                        <Col span={12}>
+                            <Card title="信源分布" bordered={false} bodyStyle={{ padding: 10 }}>
+                                <ChartContainer height={280}>
+                                    <ResponsiveContainer width="100%" height="100%">
+                                        <PieChart>
+                                            <Pie
+                                                data={sourceData}
+                                                cx="50%"
+                                                cy="50%"
+                                                innerRadius={40}
+                                                outerRadius={70}
+                                                paddingAngle={2}
+                                                dataKey="value"
+                                                label={({ name, percent }: any) => `${name} ${((percent ?? 0) * 100).toFixed(0)}%`}
+                                            >
+                                                {sourceData.map((entry, index) => (
+                                                    <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                                                ))}
+                                            </Pie>
+                                            <Tooltip />
+                                        </PieChart>
+                                    </ResponsiveContainer>
+                                </ChartContainer>
+                            </Card>
+                        </Col>
+                        <Col span={12}>
+                            <AIStatsWidget />
+                        </Col>
+                    </Row>
+                </Col>
+
+                {/* C. 品种热度 & 活跃区域 */}
+                <Col xs={24} lg={14}>
+                    <Row gutter={[16, 16]}>
+                        <Col span={12}>
+                            <Card title="热门关注品种" bordered={false}>
+                                <Space direction="vertical" style={{ width: '100%' }}>
+                                    {stats.commodityHeat.slice(0, 5).map((item, index) => {
+                                        const maxVal = Math.max(...stats.commodityHeat.map(i => i.count));
+                                        return (
+                                            <Flex key={item.name} align="center" gap={12}>
+                                                <Text style={{ width: 60, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                                    {index + 1}. {item.name}
+                                                </Text>
+                                                <Progress
+                                                    percent={maxVal > 0 ? (item.count / maxVal) * 100 : 0}
+                                                    showInfo={false}
+                                                    strokeColor={token.colorPrimary}
+                                                    style={{ flex: 1 }}
+                                                />
+                                                <Text style={{ width: 40, textAlign: 'right' }}>{item.count}</Text>
+                                            </Flex>
+                                        );
+                                    })}
+                                    {stats.commodityHeat.length === 0 && <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无品种数据" />}
+                                </Space>
+                            </Card>
+                        </Col>
+                        <Col span={12}>
+                            <Card title="活跃区域分布" bordered={false}>
+                                <ChartContainer height={250}>
+                                    <ResponsiveContainer width="100%" height="100%">
+                                        <BarChart data={stats.regionHeat} layout="vertical">
+                                            <CartesianGrid strokeDasharray="3 3" />
+                                            <XAxis type="number" />
+                                            <YAxis dataKey="region" type="category" width={80} />
+                                            <Tooltip />
+                                            <Bar dataKey="count" fill={token.colorPrimary} radius={[0, 4, 4, 0]} name="情报量" />
+                                        </BarChart>
+                                    </ResponsiveContainer>
+                                </ChartContainer>
+                            </Card>
+                        </Col>
+                    </Row>
+                </Col>
+
+                {/* D. 实时事件流 */}
                 <Col xs={24} lg={10}>
-                    <Card title="信源分布" bordered={false}>
-                        <ChartContainer height={280}>
-                            <ResponsiveContainer width="100%" height="100%">
-                                <PieChart>
-                                    <Pie
-                                        data={sourceData}
-                                        cx="50%"
-                                        cy="50%"
-                                        innerRadius={60}
-                                        outerRadius={100}
-                                        paddingAngle={2}
-                                        dataKey="value"
-                                        label={({ name, percent }) => `${name} ${((percent ?? 0) * 100).toFixed(0)}%`}
-                                    >
-                                        {sourceData.map((entry, index) => (
-                                            <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                                        ))}
-                                    </Pie>
-                                    <Tooltip />
-                                </PieChart>
-                            </ResponsiveContainer>
-                        </ChartContainer>
-                    </Card>
-                </Col>
-
-                {/* 品种热度 */}
-                <Col xs={24} lg={12}>
-                    <Card title="热门关注品种" bordered={false}>
-                        <Space direction="vertical" style={{ width: '100%' }}>
-                            {stats.commodityHeat.map((item, index) => {
-                                const maxVal = Math.max(...stats.commodityHeat.map(i => i.count));
-                                return (
-                                    <Flex key={item.name} align="center" gap={12}>
-                                        <Text style={{ width: 60, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                                            {index + 1}. {item.name}
-                                        </Text>
-                                        <Progress
-                                            percent={maxVal > 0 ? (item.count / maxVal) * 100 : 0}
-                                            showInfo={false}
-                                            strokeColor={token.colorPrimary}
-                                            style={{ flex: 1 }}
-                                        />
-                                        <Text style={{ width: 40, textAlign: 'right' }}>{item.count}</Text>
-                                    </Flex>
-                                );
-                            })}
-                            {stats.commodityHeat.length === 0 && <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无品种数据" />}
-                        </Space>
-                    </Card>
-                </Col>
-
-                {/* 区域分布 */}
-                <Col xs={24} lg={12}>
-                    <Card title="活跃区域分布" bordered={false}>
-                        <ChartContainer height={250}>
-                            <ResponsiveContainer width="100%" height="100%">
-                                <BarChart data={stats.regionHeat} layout="vertical">
-                                    <CartesianGrid strokeDasharray="3 3" />
-                                    <XAxis type="number" />
-                                    <YAxis dataKey="region" type="category" width={80} />
-                                    <Tooltip />
-                                    <Bar dataKey="count" fill={token.colorPrimary} radius={[0, 4, 4, 0]} name="情报量" />
-                                </BarChart>
-                            </ResponsiveContainer>
-                        </ChartContainer>
-                    </Card>
+                    <RecentEventsWidget />
                 </Col>
             </Row>
         </div>

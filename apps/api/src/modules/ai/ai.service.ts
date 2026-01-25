@@ -29,6 +29,7 @@ export class AIService implements OnModuleInit {
     // 采集点缓存（从数据库加载）
     // 使用 any[] 避免 Prisma 枚举与 types 枚举不兼容问题
     private collectionPointCache: any[] = [];
+    private eventTypeCache: any[] = []; // [NEW] 事件类型缓存
     private cacheLastUpdated: Date | null = null;
     private readonly CACHE_TTL_MS = 5 * 60 * 1000; // 5分钟缓存
 
@@ -72,6 +73,7 @@ export class AIService implements OnModuleInit {
      */
     async onModuleInit() {
         await this.refreshCollectionPointCache();
+        await this.refreshEventTypeCache(); // [NEW] 加载事件类型
     }
 
     /**
@@ -101,6 +103,22 @@ export class AIService implements OnModuleInit {
             this.logger.log(`采集点缓存已刷新，共 ${this.collectionPointCache.length} 条数据`);
         } catch (error) {
             this.logger.warn('加载采集点缓存失败，将使用后备数据');
+        }
+    }
+
+
+    /**
+     * [NEW] 刷新事件类型缓存
+     */
+    async refreshEventTypeCache() {
+        try {
+            this.eventTypeCache = await this.prisma.eventTypeConfig.findMany({
+                where: { isActive: true },
+                select: { code: true, name: true, description: true },
+            });
+            this.logger.log(`事件类型缓存已刷新，共 ${this.eventTypeCache.length} 条数据`);
+        } catch (error) {
+            this.logger.warn('加载事件类型缓存失败');
         }
     }
 
@@ -426,11 +444,39 @@ export class AIService implements OnModuleInit {
         throw new Error('Max retries exceeded for Gemini API call');
     }
 
-    /**
-     * 延迟工具函数
-     */
     private sleep(ms: number): Promise<void> {
         return new Promise(resolve => setTimeout(resolve, ms));
+    }
+
+    /**
+     * [NEW] 生成智能简报
+     */
+    async generateBriefing(context: string): Promise<string> {
+        if (!this.apiKey) {
+            return `【本地模拟简报】\n由于未配置 AI Key，启用模拟模式。\n\n当前市场关注点主要集中在：\n1. 东北产区玉米价格小幅波动；\n2. 港口集港量维持低位；\n3. 深加工企业收购意愿一般。\n\n(请配置 GEMINI_API_KEY 以获得真实 AI 分析)`;
+        }
+
+        const systemPrompt = `你是一名资深的大宗商品市场分析师。请根据提供的市场情报片段，撰写一份【每日市场动态简报】。
+要求：
+1. 宏观视角：先概述整体市场情绪（看涨/看跌/持稳）。
+2. 核心矛盾：提炼当前市场的主要矛盾点（如：供强需弱、政策利好落地等）。
+3. 分类综述：分别从【价格趋势】、【企业动态】、【物流库存】三个维度进行简述。
+4. 语言风格：专业、简练、客观，避免废话。
+5. 字数控制：300-500字。
+6. 格式：使用 Markdown，重点内容加粗。`;
+
+        const userPrompt = `基于以下情报数据生成简报：\n\n${context}`;
+
+        try {
+            const genAI = new GoogleGenerativeAI(this.apiKey);
+            const model = genAI.getGenerativeModel({ model: this.modelId }, { baseUrl: this.apiUrl });
+            const result = await model.generateContent([systemPrompt, userPrompt]);
+            const response = await result.response;
+            return response.text();
+        } catch (error) {
+            this.logger.error('Failed to generate briefing', error);
+            throw new Error('智能简报生成失败，请稍后重试。');
+        }
     }
 
     /**
@@ -450,7 +496,10 @@ export class AIService implements OnModuleInit {
 重点任务：提取市场事件和市场心态
 - 市场事件：企业动态、供需变化、政策影响、物流运输等
 - 市场心态：贸易商、加工企业、农户的心态倾向
-- 识别事件的影响程度(HIGH/MEDIUM/LOW)和市场情绪(bullish/bearish/neutral)`,
+- 识别事件的影响程度(HIGH/MEDIUM/LOW)和市场情绪(bullish/bearish/neutral)
+- [重要] 根据以下事件类型代码表，准确标记 eventTypeCode：
+${this.eventTypeCache.map(t => `  * ${t.code} (${t.name})`).join('\n')}`,
+
 
             [IntelCategory.C_DOCUMENT]: `
 重点任务：提取市场洞察和预判
@@ -705,6 +754,8 @@ ${content}
                     sentiment: e.sentiment,
                     commodity: e.commodity,
                     sourceText: e.sourceText,
+                    // [NEW] 传递 AI 识别的 eventTypeCode
+                    eventTypeCode: (e as any).eventTypeCode,
                 }))
                 : localResult.events;
 

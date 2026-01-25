@@ -1,19 +1,16 @@
-import React, { useMemo, useState, useEffect } from 'react';
+import React, { useMemo } from 'react';
 import {
     Card,
     Typography,
     Row,
     Col,
     Flex,
-    Statistic,
     theme,
-    Spin,
     Tag,
     Empty,
 } from 'antd';
 import {
     RiseOutlined,
-    FallOutlined,
     LineChartOutlined,
     ThunderboltOutlined,
     DatabaseOutlined,
@@ -29,31 +26,33 @@ import {
     YAxis,
     CartesianGrid,
     Tooltip,
-    Legend,
     BarChart,
     Bar,
-    Cell,
 } from 'recharts';
 import { useMarketIntels, useMyTasks, usePriceData } from '../api';
 import { IntelCategory, IntelTaskStatus } from '@packages/types';
+import { ChartContainer } from './ChartContainer';
+import { SmartBriefingCard } from './intel-feed/components/SmartBriefingCard';
+import { PriceAnomalyList } from './dashboard/widgets/PriceAnomalyList';
+import { IntelCompositionChart } from './dashboard/widgets/IntelCompositionChart';
+import { DEFAULT_FILTER_STATE } from './intel-feed/types';
 
 const { Title, Text } = Typography;
 
-import { ChartContainer } from './ChartContainer';
-
 /**
  * 决策驾驶舱 (Strategic Dashboard)
+ * 升级版：集成 AI 简报、价格异动监测与多维情报分析
  */
 export const Dashboard: React.FC = () => {
     const { token } = theme.useToken();
     const currentUserId = 'system-user-placeholder'; // 暂时硬编码
 
     // 获取真实数据
-    const { data: aData } = useMarketIntels({
+    const { data: aData, isLoading: aLoading } = useMarketIntels({
         category: IntelCategory.A_STRUCTURED,
         pageSize: 100,
     });
-    const { data: bData } = useMarketIntels({
+    const { data: bData, isLoading: bLoading } = useMarketIntels({
         category: IntelCategory.B_SEMI_STRUCTURED,
         pageSize: 100,
     });
@@ -160,7 +159,14 @@ export const Dashboard: React.FC = () => {
                 <Text type="secondary" style={{ fontSize: 12 }}>数据更新于: {new Date().toLocaleTimeString()}</Text>
             </Flex>
 
-            {/* KPI Cards */}
+            {/* Row 1: AI Smart Briefing */}
+            <Row style={{ marginBottom: 24 }}>
+                <Col span={24}>
+                    <SmartBriefingCard filterState={DEFAULT_FILTER_STATE} />
+                </Col>
+            </Row>
+
+            {/* Row 2: KPI Cards */}
             <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
                 <Col xs={24} md={6}>
                     <Card size="small" bodyStyle={{ padding: 20 }}>
@@ -238,30 +244,41 @@ export const Dashboard: React.FC = () => {
                 </Col>
             </Row>
 
-            <Row gutter={[24, 24]}>
-                {/* Left Column */}
+            {/* Row 3: Deep Dive Widgets (New Features) */}
+            <Row gutter={[24, 24]} style={{ marginBottom: 24 }}>
+                {/* 1. Price Anomalies (Class A) */}
                 <Col xs={24} lg={8}>
-                    {/* Tasks */}
+                    <PriceAnomalyList data={aData?.data || []} loading={aLoading} />
+                </Col>
+
+                {/* 2. Intel Composition (Class B) */}
+                <Col xs={24} lg={8}>
+                    <IntelCompositionChart data={bData?.data || []} loading={bLoading} />
+                </Col>
+
+                {/* 3. My Tasks (System Push) */}
+                <Col xs={24} lg={8}>
                     <Card
                         title={<><ClockCircleOutlined style={{ color: token.colorPrimary, marginRight: 8 }} />今日任务 (System Push)</>}
-                        style={{ marginBottom: 24, height: 320, overflow: 'auto' }}
-                        bodyStyle={{ padding: '12px 24px' }}
+                        style={{ height: '100%', minHeight: 300, overflow: 'auto' }}
+                        bodyStyle={{ padding: '12px 16px' }}
+                        size="small"
                     >
                         {myTasks && myTasks.length > 0 ? (
                             myTasks.map(task => (
                                 <div
                                     key={task.id}
                                     style={{
-                                        padding: 16,
+                                        padding: 12,
                                         background: task.status === IntelTaskStatus.OVERDUE ? '#fff1f0' : '#f6ffed',
                                         border: `1px solid ${task.status === IntelTaskStatus.OVERDUE ? '#ffccc7' : '#b7eb8f'}`,
                                         borderRadius: 6,
-                                        marginBottom: 12
+                                        marginBottom: 8
                                     }}
                                 >
-                                    <Flex justify="space-between" align="center" style={{ marginBottom: 8 }}>
-                                        <Text strong>{task.title}</Text>
-                                        <Tag color={task.status === IntelTaskStatus.OVERDUE ? "red" : "green"}>
+                                    <Flex justify="space-between" align="center" style={{ marginBottom: 4 }}>
+                                        <Text strong style={{ fontSize: 13 }}>{task.title}</Text>
+                                        <Tag color={task.status === IntelTaskStatus.OVERDUE ? "red" : "green"} style={{ margin: 0 }}>
                                             {task.status === IntelTaskStatus.OVERDUE ? '超时' : '进行中'}
                                         </Tag>
                                     </Flex>
@@ -273,62 +290,33 @@ export const Dashboard: React.FC = () => {
                                 </div>
                             ))
                         ) : (
-                            <Empty description="暂无待办任务" />
+                            <Empty description="暂无待办任务" image={Empty.PRESENTED_IMAGE_SIMPLE} />
                         )}
-                        <Text type="secondary" style={{ fontSize: 11, display: 'block', marginTop: 24 }}>
-                            系统规则: 早9点未报送自动记录违规，关联绩效扣分。
+                        <Text type="secondary" style={{ fontSize: 11, display: 'block', marginTop: 12, textAlign: 'center' }}>
+                            系统规则: 早9点未报送自动记录违规
                         </Text>
                     </Card>
-
-                    {/* Sentiment Chart */}
-                    <Card
-                        title={<><ThunderboltOutlined style={{ color: '#fa8c16', marginRight: 8 }} />情绪风向标</>}
-                        style={{ height: 360 }}
-                    >
-                        {sentimentTrendData.length > 0 ? (
-                            <ChartContainer height={260}>
-                                <ResponsiveContainer width="100%" height="100%" minWidth={100} minHeight={100}>
-                                    <BarChart data={sentimentTrendData} barSize={20}>
-                                        <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                                        <XAxis dataKey="day" tick={{ fontSize: 10 }} axisLine={false} tickLine={false} />
-                                        <YAxis hide />
-                                        <Tooltip cursor={{ fill: 'transparent' }} />
-                                        <Bar dataKey="neg" stackId="a" fill={token.colorError} />
-                                        <Bar dataKey="pos" stackId="a" fill={token.colorSuccess} radius={[4, 4, 0, 0]} />
-                                    </BarChart>
-                                </ResponsiveContainer>
-                            </ChartContainer>
-                        ) : (
-                            <Empty description="暂无情绪数据" />
-                        )}
-                    </Card>
                 </Col>
+            </Row>
 
-                {/* Right Column */}
-                <Col xs={24} lg={16}>
-                    {/* Arbitrage Window */}
+            {/* Row 4: Trending Charts (Legacy upgraded) */}
+            <Row gutter={[24, 24]}>
+                <Col xs={24} lg={12}>
                     <Card
                         title={<><LineChartOutlined style={{ color: '#9333ea', marginRight: 8 }} />产销区价差监测 (Arbitrage Window)</>}
-                        style={{ marginBottom: 24, height: 320 }}
-                        extra={
-                            <Flex gap={16}>
-                                <Flex align="center" gap={4}><div style={{ width: 8, height: 8, borderRadius: '50%', background: token.colorError }} />南方销区</Flex>
-                                <Flex align="center" gap={4}><div style={{ width: 8, height: 8, borderRadius: '50%', background: token.colorPrimary }} />北方产区</Flex>
-                                <Flex align="center" gap={4}><div style={{ width: 8, height: 8, borderRadius: '50%', background: '#d9d9d9' }} />理论运费线</Flex>
-                            </Flex>
-                        }
+                        style={{ height: 360 }}
                     >
                         {arbitrageData.length > 0 ? (
-                            <ChartContainer height={220}>
+                            <ChartContainer height={280}>
                                 <ResponsiveContainer width="100%" height="100%" minWidth={100} minHeight={100}>
                                     <LineChart data={arbitrageData}>
                                         <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f0f0f0" />
                                         <XAxis dataKey="date" tick={{ fontSize: 12, fill: '#8c8c8c' }} axisLine={false} tickLine={false} />
                                         <YAxis domain={['auto', 'auto']} tick={{ fontSize: 12, fill: '#8c8c8c' }} axisLine={false} tickLine={false} />
                                         <Tooltip />
-                                        <Line type="monotone" dataKey="south" stroke={token.colorError} strokeWidth={2} dot={false} />
-                                        <Line type="monotone" dataKey="north" stroke={token.colorPrimary} strokeWidth={2} dot={false} />
-                                        <Line type="monotone" dataKey="freight" stroke="#d9d9d9" strokeWidth={1} strokeDasharray="5 5" dot={false} />
+                                        <Line type="monotone" dataKey="south" stroke={token.colorError} strokeWidth={2} dot={false} name="南方销区" />
+                                        <Line type="monotone" dataKey="north" stroke={token.colorPrimary} strokeWidth={2} dot={false} name="北方产区" />
+                                        <Line type="monotone" dataKey="freight" stroke="#d9d9d9" strokeWidth={1} strokeDasharray="5 5" dot={false} name="理论运费" />
                                     </LineChart>
                                 </ResponsiveContainer>
                             </ChartContainer>
@@ -336,26 +324,28 @@ export const Dashboard: React.FC = () => {
                             <Empty description="暂无价差数据" />
                         )}
                     </Card>
+                </Col>
 
-                    {/* Inventory Chart */}
+                <Col xs={24} lg={12}>
                     <Card
-                        title={<><DatabaseOutlined style={{ color: token.colorSuccess, marginRight: 8 }} />核心库存水位对比 (Strategic Inventory)</>}
+                        title={<><ThunderboltOutlined style={{ color: '#fa8c16', marginRight: 8 }} />情绪风向标趋势 (Sentiment Trend)</>}
                         style={{ height: 360 }}
                     >
-                        {inventoryChartData.length > 0 ? (
-                            <ChartContainer height={260}>
+                        {sentimentTrendData.length > 0 ? (
+                            <ChartContainer height={280}>
                                 <ResponsiveContainer width="100%" height="100%" minWidth={100} minHeight={100}>
-                                    <BarChart data={inventoryChartData} layout="vertical" barSize={32}>
-                                        <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#f0f0f0" />
-                                        <XAxis type="number" hide />
-                                        <YAxis dataKey="name" type="category" width={100} tick={{ fontSize: 12 }} axisLine={false} tickLine={false} />
+                                    <BarChart data={sentimentTrendData} barSize={20}>
+                                        <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                                        <XAxis dataKey="day" tick={{ fontSize: 10 }} axisLine={false} tickLine={false} />
+                                        <YAxis hide />
                                         <Tooltip cursor={{ fill: 'transparent' }} />
-                                        <Bar dataKey="value" fill={token.colorPrimary} radius={[0, 4, 4, 0]} background={{ fill: '#f5f5f5' }} />
+                                        <Bar dataKey="neg" stackId="a" fill={token.colorError} name="负面" />
+                                        <Bar dataKey="pos" stackId="a" fill={token.colorSuccess} radius={[4, 4, 0, 0]} name="正面" />
                                     </BarChart>
                                 </ResponsiveContainer>
                             </ChartContainer>
                         ) : (
-                            <Empty description="暂无库存数据" />
+                            <Empty description="暂无情绪数据" />
                         )}
                     </Card>
                 </Col>

@@ -22,6 +22,7 @@ import {
     EnvironmentOutlined,
     ClockCircleOutlined,
     EyeOutlined,
+    RiseOutlined,
 } from '@ant-design/icons';
 import { IntelItem } from '../types';
 import { ContentType } from '../../../types';
@@ -44,12 +45,14 @@ const RELATION_TYPE_LABELS: Record<string, { label: string; color: string }> = {
     region: { label: '区域关联', color: 'purple' },
     chain: { label: '因果关联', color: 'orange' },
     citation: { label: '引用关联', color: 'cyan' },
+    price_fluctuation: { label: '价格异动', color: 'red' },
 };
 
-const CONTENT_TYPE_ICONS: Record<ContentType, React.ReactNode> = {
+const CONTENT_TYPE_ICONS: Record<string, React.ReactNode> = {
     [ContentType.DAILY_REPORT]: <FileTextOutlined style={{ color: '#1890ff' }} />,
     [ContentType.RESEARCH_REPORT]: <FileTextOutlined style={{ color: '#52c41a' }} />,
     [ContentType.POLICY_DOC]: <FileTextOutlined style={{ color: '#722ed1' }} />,
+    'PRICE_DATA': <RiseOutlined style={{ color: '#f5222d' }} />,
 };
 
 export const RelationPanel: React.FC<RelationPanelProps> = ({
@@ -71,6 +74,7 @@ export const RelationPanel: React.FC<RelationPanelProps> = ({
             [ContentType.DAILY_REPORT]: '日报',
             [ContentType.RESEARCH_REPORT]: '研报',
             [ContentType.POLICY_DOC]: '政策',
+            'PRICE_DATA': '价格',
         };
     }, []);
 
@@ -215,7 +219,7 @@ export const RelationPanel: React.FC<RelationPanelProps> = ({
                                             <Flex justify="space-between" align="start">
                                                 <div style={{ flex: 1 }}>
                                                     <Flex align="center" gap={6} style={{ marginBottom: 4 }}>
-                                                        {CONTENT_TYPE_ICONS[related.contentType as ContentType]}
+                                                        {CONTENT_TYPE_ICONS[related.contentType as string] || <FileTextOutlined />}
                                                         <Text
                                                             ellipsis={{ tooltip: true }}
                                                             style={{ fontSize: 13, maxWidth: 180 }}

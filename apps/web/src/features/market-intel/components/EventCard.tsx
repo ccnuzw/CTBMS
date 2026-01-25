@@ -33,6 +33,8 @@ export const EventCard: React.FC<EventCardProps> = ({
 }) => {
     const { token } = theme.useToken();
 
+    if (!event) return null;
+
     // 情绪配置
     const getSentimentConfig = (sentiment: string | null) => {
         switch (sentiment?.toLowerCase()) {

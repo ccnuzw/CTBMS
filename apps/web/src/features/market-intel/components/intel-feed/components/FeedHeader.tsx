@@ -11,7 +11,13 @@ import {
     Flex,
     theme,
     Typography,
+    Modal,
+    Spin,
+    message
 } from 'antd';
+import Markdown from 'react-markdown';
+import { useDebounce } from '@/hooks/useDebounce';
+import { useIntelSmartBriefing } from '../../../api/hooks';
 import {
     SearchOutlined,
     FilterOutlined,
@@ -26,6 +32,7 @@ import {
     MenuFoldOutlined,
     MenuUnfoldOutlined,
     LinkOutlined,
+    RobotOutlined,
 } from '@ant-design/icons';
 import type { MenuProps } from 'antd';
 import { IntelViewType, IntelFilterState } from '../types';
@@ -61,9 +68,58 @@ export const FeedHeader: React.FC<FeedHeaderProps> = ({
     onRelationPanelToggle,
 }) => {
     const { token } = theme.useToken();
+
+    // ... (existing code)
+
     const [searchValue, setSearchValue] = useState(filterState.keyword || '');
+    const debouncedSearchValue = useDebounce(searchValue, 600); // 600ms delays
+
+    // AI 简报相关状态
+    const [briefingModalVisible, setBriefingModalVisible] = useState(false);
+    const [briefingResult, setBriefingResult] = useState<string>('');
+    const { mutate: generateBriefing, isPending: isGeneratingBriefing } = useIntelSmartBriefing();
+
+    // 自动触发搜索
+    React.useEffect(() => {
+        // 防止初始加载时的重复触发（如果在父组件已有初始值，这里相等就不会触发）
+        // 或者如果需求是只有输入变了才变，这已经满足
+        if (debouncedSearchValue !== filterState.keyword && (debouncedSearchValue || filterState.keyword)) {
+            onFilterChange({ keyword: debouncedSearchValue || undefined });
+        }
+    }, [debouncedSearchValue]);
+
+    const handleGenerateBriefing = () => {
+        setBriefingModalVisible(true);
+        // 如果已有结果且未改变筛选，可能不需要重新生成？这里简化为每次打开都重新生成或显示加载
+        // 实际上最好有一个 "生成" 按钮在 Modal 里，或者打开 Modal 自动生成
+        if (!briefingResult) {
+            doGenerate();
+        }
+    };
+
+    const doGenerate = () => {
+        generateBriefing(
+            {
+                startDate: filterState.timeRange === 'CUSTOM' && filterState.customDateRange ? filterState.customDateRange[0] : undefined,
+                // Converting filterState to API query format
+                commodities: filterState.commodities,
+                regionCodes: filterState.regions,
+                limit: 20
+            },
+            {
+                onSuccess: (data) => {
+                    setBriefingResult(data.summary);
+                },
+                onError: () => {
+                    message.error('生成简报失败');
+                    setBriefingModalVisible(false);
+                }
+            }
+        );
+    };
 
     const handleSearch = () => {
+        // 立即触发（点击按钮或回车）
         onFilterChange({ keyword: searchValue || undefined });
     };
 
@@ -134,6 +190,20 @@ export const FeedHeader: React.FC<FeedHeaderProps> = ({
                             </Button>
                         </Badge>
                     )}
+
+                    <Tooltip title="AI 智能分析">
+                        <Button
+                            icon={<RobotOutlined />}
+                            style={{
+                                background: 'linear-gradient(135deg, #6253E1, #04BEFE)',
+                                color: 'white',
+                                border: 'none'
+                            }}
+                            onClick={handleGenerateBriefing}
+                        >
+                            生成简报
+                        </Button>
+                    </Tooltip>
                 </Flex>
 
                 {/* 中间: 视图切换 */}
@@ -174,6 +244,51 @@ export const FeedHeader: React.FC<FeedHeaderProps> = ({
                     </Tooltip>
                 </Space>
             </Flex>
-        </Card>
+
+            {/* AI 简报 Modal */}
+            <Modal
+                title={
+                    <Flex align="center" gap={8}>
+                        <RobotOutlined style={{ color: '#1890ff' }} />
+                        <span>市场动态智能简报</span>
+                    </Flex>
+                }
+                open={briefingModalVisible}
+                onCancel={() => setBriefingModalVisible(false)}
+                footer={null}
+                width={700}
+                styles={{ body: { maxHeight: '70vh', overflow: 'auto' } }}
+            >
+                {isGeneratingBriefing ? (
+                    <Flex justify="center" align="center" style={{ padding: 40 }} vertical gap={16}>
+                        <Spin size="large" />
+                        <Typography.Text type="secondary">正在分析最新市场情报...</Typography.Text>
+                    </Flex>
+                ) : (
+                    <div style={{ lineHeight: 1.6 }}>
+                        {briefingResult ? (
+                            <Markdown components={{
+                                h1: ({ node, ...props }) => <h3 style={{ marginTop: 16, marginBottom: 8 }} {...props} />,
+                                h2: ({ node, ...props }) => <h4 style={{ marginTop: 12, marginBottom: 8 }} {...props} />,
+                                ul: ({ node, ...props }) => <ul style={{ paddingLeft: 20 }} {...props} />,
+                                li: ({ node, ...props }) => <li style={{ marginBottom: 4 }} {...props} />,
+                            }}>
+                                {briefingResult}
+                            </Markdown>
+                        ) : (
+                            <Flex justify="center" style={{ padding: 20 }}>
+                                <Button type="primary" onClick={doGenerate}>开始生成</Button>
+                            </Flex>
+                        )}
+                        <div style={{ marginTop: 24, textAlign: 'right' }}>
+                            <Space>
+                                <Button onClick={() => setBriefingResult('')} size="small">重新生成</Button>
+                                <Button type="primary" onClick={() => setBriefingModalVisible(false)}>关闭</Button>
+                            </Space>
+                        </div>
+                    </div>
+                )}
+            </Modal>
+        </Card >
     );
 };

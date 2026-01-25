@@ -1,6 +1,7 @@
 // 情报流模块类型定义
 
 import { ContentType, IntelSourceType, IntelCategory } from '../../types';
+export { ContentType, IntelSourceType, IntelCategory };
 
 // 视图类型
 export type IntelViewType = 'FEED' | 'DASHBOARD' | 'TIMELINE' | 'TABLE';

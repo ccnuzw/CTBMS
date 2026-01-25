@@ -194,8 +194,16 @@ export class MarketIntelService {
         const effectiveDate = new Date(effectiveTime);
 
         for (const event of aiAnalysis.events) {
-            // 简单的类型映射逻辑，未来可由 AI 返回 eventTypeCode
-            const eventTypeId = defaultEventType.id;
+            // 增强类型映射：优先使用 AI 返回的 eventTypeCode，否则使用默认
+            let eventTypeId = defaultEventType.id;
+            if ((event as any).eventTypeCode) {
+                const matchedType = await this.prisma.eventTypeConfig.findUnique({
+                    where: { code: (event as any).eventTypeCode }
+                });
+                if (matchedType) {
+                    eventTypeId = matchedType.id;
+                }
+            }
 
             await this.prisma.marketEvent.create({
                 data: {
@@ -1081,8 +1089,9 @@ export class MarketIntelService {
         }
 
         const baseTime = baseIntel.effectiveTime || baseIntel.createdAt;
-        const startTime = new Date(baseTime.getTime() - 7 * 24 * 60 * 60 * 1000);
-        const endTime = new Date(baseTime.getTime() + 7 * 24 * 60 * 60 * 1000);
+        // [MODIFIED] 扩大到 30 天关联范围 (原 7 天)
+        const startTime = new Date(baseTime.getTime() - 30 * 24 * 60 * 60 * 1000);
+        const endTime = new Date(baseTime.getTime() + 7 * 24 * 60 * 60 * 1000); // 未来也看 7 天 (如预判验证)
 
         const baseCommodities = new Set<string>();
         baseIntel.marketEvents.forEach((event) => {
@@ -1128,29 +1137,48 @@ export class MarketIntelService {
             orConditions.push({ researchReport: { is: { regions: { hasSome: regions } } } });
         }
 
-        const candidates = await this.prisma.marketIntel.findMany({
-            where: {
-                id: { not: intelId },
-                OR: orConditions,
-            },
-            take: Math.max(limit * 3, 12),
-            orderBy: { createdAt: 'desc' },
-            include: {
-                researchReport: {
-                    select: { title: true, commodities: true, regions: true },
+        // [NEW] 扩展：同时查询相关的价格异动 (PriceData)
+        const [relatedIntels, relatedPrices] = await Promise.all([
+            this.prisma.marketIntel.findMany({
+                where: {
+                    id: { not: intelId },
+                    OR: orConditions,
                 },
-                marketEvents: {
-                    take: 3,
-                    orderBy: { createdAt: 'desc' },
-                    select: { commodity: true, regionCode: true, subject: true, action: true, content: true },
+                take: Math.max(limit * 3, 12),
+                orderBy: { effectiveTime: 'desc' }, // Use effectiveTime preferentially
+                include: {
+                    researchReport: {
+                        select: { title: true, commodities: true, regions: true },
+                    },
+                    marketEvents: {
+                        take: 3,
+                        orderBy: { createdAt: 'desc' },
+                        select: { commodity: true, regionCode: true, subject: true, action: true, content: true },
+                    },
+                    marketInsights: {
+                        take: 3,
+                        orderBy: { createdAt: 'desc' },
+                        select: { commodity: true, regionCode: true, title: true, content: true },
+                    },
                 },
-                marketInsights: {
-                    take: 3,
-                    orderBy: { createdAt: 'desc' },
-                    select: { commodity: true, regionCode: true, title: true, content: true },
+            }),
+            // 查询相关价格数据（大幅波动的）
+            this.prisma.priceData.findMany({
+                where: {
+                    effectiveDate: { gte: startTime, lte: endTime },
+                    commodity: baseCommodities.size > 0 ? { in: Array.from(baseCommodities) } : undefined,
+                    OR: [
+                        { dayChange: { gte: 20 } }, // 涨幅 > 20
+                        { dayChange: { lte: -20 } } // 跌幅 < -20
+                    ]
                 },
-            },
-        });
+                take: 5,
+                orderBy: { effectiveDate: 'desc' },
+                include: { collectionPoint: true }
+            })
+        ]);
+
+        const candidates = relatedIntels;
 
         const buildTitle = (intel: typeof candidates[number]) => {
             if (intel.researchReport?.title) return intel.researchReport.title;
@@ -1233,9 +1261,29 @@ export class MarketIntelService {
                 similarity,
                 createdAt: candidate.createdAt,
             };
+            return {
+                id: candidate.id,
+                title: buildTitle(candidate),
+                contentType,
+                relationType,
+                similarity,
+                createdAt: candidate.createdAt,
+            };
         });
 
-        return related
+        // [NEW] 混入价格数据到关联列表
+        const priceItems = relatedPrices.map(p => ({
+            id: p.id,
+            title: `${p.location} ${p.commodity} ${p.price} (${p.dayChange && p.dayChange.toNumber() > 0 ? '+' : ''}${p.dayChange})`,
+            contentType: 'PRICE_DATA', // New virtual type for UI
+            relationType: 'price_fluctuation', // distinct type
+            similarity: 90, // High relevance for big fluctuations
+            createdAt: p.effectiveDate,
+            raw: p
+        }));
+
+        // @ts-ignore
+        return [...related, ...priceItems]
             .sort((a, b) => (b.similarity || 0) - (a.similarity || 0))
             .slice(0, limit);
     }
@@ -1366,17 +1414,30 @@ export class MarketIntelService {
             reportWhere.commodities = { hasSome: commodities };
         }
         if (keyword) {
+            const keywordLower = keyword.toLowerCase();
             eventWhere.OR = [
                 { subject: { contains: keyword, mode: 'insensitive' } },
+                { action: { contains: keyword, mode: 'insensitive' } },
                 { content: { contains: keyword, mode: 'insensitive' } },
+                { commodity: { contains: keyword, mode: 'insensitive' } },
+                { regionCode: { contains: keyword, mode: 'insensitive' } },
             ];
             insightWhere.OR = [
                 { title: { contains: keyword, mode: 'insensitive' } },
                 { content: { contains: keyword, mode: 'insensitive' } },
+                { commodity: { contains: keyword, mode: 'insensitive' } },
+                { regionCode: { contains: keyword, mode: 'insensitive' } },
+                // JSONB/Array search in Prisma is tricky with simple contains, 
+                // but if factors is string[], 'has' might work for exact match. 
+                // For 'contains', we stick to text fields for now or use raw query if needed.
+                // Keeping it simple for MVP as requested in plan.
             ];
             reportWhere.OR = [
                 { title: { contains: keyword, mode: 'insensitive' } },
                 { summary: { contains: keyword, mode: 'insensitive' } },
+                // Report commodities/regions are scalar lists (text[]), cannot use 'contains' easily in OR with strings.
+                // We'd need to use 'has' for exact match or separate check.
+                // Adding basic text search for now.
             ];
         }
 
@@ -1764,20 +1825,12 @@ ${lines}
             const commodities = [...new Set(items.map(i => (i.data as any).commodity).filter(Boolean))];
             const regions = [...new Set(items.map(i => (i.data as any).region || (i.data as any).regionCode).filter(Boolean))];
 
-            const summary = `**自动生成简报 (Beta)**
-             
-在当前筛选范围内，共检索到 **${items.length}** 条情报。
-             
-- **主要关注品种**: ${commodities.join(', ') || '多品种'}
-- **涉及区域**: ${regions.join(', ') || '全国'}
-- **最新动态**: ${lines.split('\n')[0].substring(0, 50)}...
-             
-(注：完整 AI 摘要功能需连接 LLM 服务)`;
-
+            const summary = await this.aiService.generateBriefing(lines);
             return { summary };
 
         } catch (e) {
-            return { summary: "生成简报失败，请稍后重试。" };
+            console.error('Smart Briefing Error:', e);
+            return { summary: "生成简报失败，请确保 AI 服务已连接。" };
         }
     }
 }
