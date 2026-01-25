@@ -19,6 +19,7 @@ import {
     AppstoreOutlined,
     ShopOutlined,
     GlobalOutlined,
+    ScheduleOutlined,
 } from '@ant-design/icons';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { ThemeSwitcher } from '../components/ThemeSwitcher';
@@ -247,6 +248,11 @@ export const MainLayout: React.FC = () => {
                                                 label: '绩效排行',
                                             },
                                             {
+                                                key: '/intel/tasks',
+                                                icon: <ScheduleOutlined />,
+                                                label: '任务分配',
+                                            },
+                                            {
                                                 key: '/intel/collection-points',
                                                 icon: <SettingOutlined />,
                                                 label: '采集点配置',
@@ -459,6 +465,11 @@ export const MainLayout: React.FC = () => {
                                             key: '/intel/leaderboard',
                                             icon: <TeamOutlined />,
                                             label: '绩效排行',
+                                        },
+                                        {
+                                            key: '/intel/tasks',
+                                            icon: <ScheduleOutlined />,
+                                            label: '任务分配',
                                         },
                                     ]
                                 },

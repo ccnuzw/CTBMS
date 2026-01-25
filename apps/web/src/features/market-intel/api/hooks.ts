@@ -779,87 +779,9 @@ export const useProvinces = () => {
 // 任务调度
 // =============================================
 
-export const useIntelTasks = (query?: Partial<IntelTaskQuery>) => {
-    return useQuery<PaginatedResponse<IntelTaskResponse>>({
-        queryKey: ['intel-tasks', query],
-        queryFn: async () => {
-            const params = new URLSearchParams();
-            if (query) {
-                Object.entries(query).forEach(([key, value]) => {
-                    if (value !== undefined && value !== null) {
-                        params.append(key, String(value));
-                    }
-                });
-            }
-            const res = await apiClient.get<PaginatedResponse<IntelTaskResponse>>(
-                `/market-intel/tasks?${params.toString()}`,
-            );
-            return res.data;
-        },
-    });
-};
 
-export const useMyTasks = (userId: string) => {
-    return useQuery<IntelTaskResponse[]>({
-        queryKey: ['my-tasks', userId],
-        queryFn: async () => {
-            const res = await apiClient.get<IntelTaskResponse[]>(
-                `/market-intel/tasks/my?userId=${userId}`,
-            );
-            return res.data;
-        },
-        enabled: !!userId,
-        refetchInterval: 60000, // 每分钟刷新
-    });
-};
 
-export const useCreateIntelTask = () => {
-    const queryClient = useQueryClient();
 
-    return useMutation({
-        mutationFn: async (data: CreateIntelTaskDto) => {
-            const res = await apiClient.post<IntelTaskResponse>('/market-intel/tasks', data);
-            return res.data;
-        },
-        onSuccess: () => {
-            queryClient.invalidateQueries({ queryKey: ['intel-tasks'] });
-            queryClient.invalidateQueries({ queryKey: ['my-tasks'] });
-        },
-    });
-};
-
-export const useUpdateIntelTask = () => {
-    const queryClient = useQueryClient();
-
-    return useMutation({
-        mutationFn: async ({ id, data }: { id: string; data: UpdateIntelTaskDto }) => {
-            const res = await apiClient.put<IntelTaskResponse>(`/market-intel/tasks/${id}`, data);
-            return res.data;
-        },
-        onSuccess: () => {
-            queryClient.invalidateQueries({ queryKey: ['intel-tasks'] });
-            queryClient.invalidateQueries({ queryKey: ['my-tasks'] });
-        },
-    });
-};
-
-export const useCompleteTask = () => {
-    const queryClient = useQueryClient();
-
-    return useMutation({
-        mutationFn: async ({ id, intelId }: { id: string; intelId?: string }) => {
-            const res = await apiClient.post<IntelTaskResponse>(
-                `/market-intel/tasks/${id}/complete`,
-                { intelId },
-            );
-            return res.data;
-        },
-        onSuccess: () => {
-            queryClient.invalidateQueries({ queryKey: ['intel-tasks'] });
-            queryClient.invalidateQueries({ queryKey: ['my-tasks'] });
-        },
-    });
-};
 
 // =============================================
 // C类：附件管理

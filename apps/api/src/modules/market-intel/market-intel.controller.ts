@@ -14,7 +14,7 @@ import {
 import { FileInterceptor } from '@nestjs/platform-express';
 import { MarketIntelService } from './market-intel.service';
 import { PriceDataService } from './price-data.service';
-import { IntelTaskService } from './intel-task.service';
+
 import { ResearchReportService } from './research-report.service';
 import {
     CreateMarketIntelRequest,
@@ -25,9 +25,6 @@ import {
 import {
     CreatePriceDataDto,
     PriceDataQuery,
-    CreateIntelTaskDto,
-    UpdateIntelTaskDto,
-    IntelTaskQuery,
     ContentType,
     IntelCategory,
     CreateResearchReportDto,
@@ -43,7 +40,6 @@ export class MarketIntelController {
     constructor(
         private readonly marketIntelService: MarketIntelService,
         private readonly priceDataService: PriceDataService,
-        private readonly intelTaskService: IntelTaskService,
         private readonly researchReportService: ResearchReportService,
         private readonly intelAttachmentService: IntelAttachmentService,
         private readonly intelEntityService: IntelEntityService,
@@ -433,46 +429,7 @@ export class MarketIntelController {
         return this.marketIntelService.getHotTopics(parseInt(limit, 10));
     }
 
-    // --- 任务调度 ---
-
-
-    @Post('tasks')
-    async createTask(@Body() dto: CreateIntelTaskDto) {
-        return this.intelTaskService.create(dto);
-    }
-
-    @Get('tasks')
-    async findAllTasks(@Query() query: IntelTaskQuery) {
-        return this.intelTaskService.findAll(query);
-    }
-
-    @Get('tasks/my')
-    async getMyTasks(@Query('userId') userId: string) {
-        return this.intelTaskService.getMyTasks(userId);
-    }
-
-    @Post('tasks/check-overdue')
-    async checkOverdueTasks() {
-        return this.intelTaskService.checkOverdueTasks();
-    }
-
-    @Put('tasks/:id')
-    async updateTask(@Param('id') id: string, @Body() dto: UpdateIntelTaskDto) {
-        return this.intelTaskService.update(id, dto);
-    }
-
-    @Post('tasks/:id/complete')
-    async completeTask(
-        @Param('id') id: string,
-        @Body('intelId') intelId?: string,
-    ) {
-        return this.intelTaskService.complete(id, intelId);
-    }
-
-    @Delete('tasks/:id')
-    async removeTask(@Param('id') id: string) {
-        return this.intelTaskService.remove(id);
-    }
+    // --- 任务调度 --- (已迁移至 IntelTaskController)
 
     // --- C类：附件/文档管理 ---
 

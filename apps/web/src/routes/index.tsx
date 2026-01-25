@@ -22,6 +22,7 @@ import {
     UniversalSearch,
     CollectionPointManager,
     RegionManager,
+    TaskDistributionPage,
 } from '../features/market-intel';
 import { ExtractionConfigPage } from '../features/extraction-config';
 
@@ -92,6 +93,7 @@ export const router = createBrowserRouter([
                     { path: 'entity', element: <EntityProfile /> },
                     { path: 'leaderboard', element: <Leaderboard /> },
                     { path: 'collection-points', element: <CollectionPointManager /> },
+                    { path: 'tasks', element: <TaskDistributionPage /> },
                     { path: 'extraction-config', element: <ExtractionConfigPage /> },
                 ]
             },

@@ -30,16 +30,14 @@ export const INTEL_CATEGORY_LABELS: Record<IntelCategory, string> = {
 };
 
 export const INTEL_SOURCE_TYPE_LABELS: Record<IntelSourceType, string> = {
-  [IntelSourceType.FIRST_LINE]: '一线采集',
+  [IntelSourceType.FIRST_LINE]: '市场信息',
   [IntelSourceType.COMPETITOR]: '竞对情报',
   [IntelSourceType.OFFICIAL]: '官方发布',
   [IntelSourceType.RESEARCH_INST]: '第三方研究机构',
   [IntelSourceType.MEDIA]: '媒体报道',
   [IntelSourceType.INTERNAL_REPORT]: '内部研报',
 };
-
-// ... existing code ...
-
+// ...
 // 统一入口：内容类型
 export enum ContentType {
   DAILY_REPORT = 'DAILY_REPORT',     // 市场日报（提取价格/事件/洞察）
@@ -48,7 +46,7 @@ export enum ContentType {
 }
 
 export const CONTENT_TYPE_LABELS: Record<ContentType, string> = {
-  [ContentType.DAILY_REPORT]: '市场日报',
+  [ContentType.DAILY_REPORT]: '市场信息',
   [ContentType.RESEARCH_REPORT]: '研究报告',
   [ContentType.POLICY_DOC]: '政策文件',
 };
@@ -768,10 +766,27 @@ export type IntelEntityLinkResponse = z.infer<typeof IntelEntityLinkResponseSche
 // 任务调度 (IntelTask)
 // =============================================
 
+// 任务类型枚举 (12种)
 export enum IntelTaskType {
-  PRICE_REPORT = 'PRICE_REPORT',
-  FIELD_CHECK = 'FIELD_CHECK',
-  DOCUMENT_SCAN = 'DOCUMENT_SCAN',
+  // 1. 常规汇报
+  DAILY_REPORT = 'DAILY_REPORT',       // 市场日报
+  WEEKLY_REPORT = 'WEEKLY_REPORT',     // 周报
+  MONTHLY_REPORT = 'MONTHLY_REPORT',   // 月报
+  RESEARCH_REPORT = 'RESEARCH_REPORT', // 深度研报
+
+  // 2. 一线采集
+  PRICE_COLLECTION = 'PRICE_COLLECTION', // 价格采集
+  INVENTORY_CHECK = 'INVENTORY_CHECK',   // 库存盘点
+  FIELD_VISIT = 'FIELD_VISIT',           // 实地走访
+  COMPETITOR_INFO = 'COMPETITOR_INFO',   // 竞对情报
+
+  // 3. 特定事件
+  POLICY_ANALYSIS = 'POLICY_ANALYSIS',   // 政策解读
+  URGENT_VERIFICATION = 'URGENT_VERIFICATION', // 紧急核实
+  EXHIBITION_REPORT = 'EXHIBITION_REPORT', // 会议/展会纪要
+
+  // 4. 数据维护
+  RESOURCE_UPDATE = 'RESOURCE_UPDATE',   // 客商/档案更新
 }
 
 export enum IntelTaskStatus {
@@ -780,10 +795,33 @@ export enum IntelTaskStatus {
   OVERDUE = 'OVERDUE',
 }
 
+export enum IntelTaskPriority {
+  LOW = 'LOW',
+  MEDIUM = 'MEDIUM',
+  HIGH = 'HIGH',
+  URGENT = 'URGENT',
+}
+
+export enum TaskCycleType {
+  DAILY = 'DAILY',     // 每日
+  WEEKLY = 'WEEKLY',   // 每周
+  MONTHLY = 'MONTHLY', // 每月
+  ONE_TIME = 'ONE_TIME', // 一次性
+}
+
 export const INTEL_TASK_TYPE_LABELS: Record<IntelTaskType, string> = {
-  [IntelTaskType.PRICE_REPORT]: '价格上报',
-  [IntelTaskType.FIELD_CHECK]: '现场确认',
-  [IntelTaskType.DOCUMENT_SCAN]: '文档采集',
+  [IntelTaskType.DAILY_REPORT]: '市场日报',
+  [IntelTaskType.WEEKLY_REPORT]: '周报',
+  [IntelTaskType.MONTHLY_REPORT]: '月报',
+  [IntelTaskType.RESEARCH_REPORT]: '深度研报',
+  [IntelTaskType.PRICE_COLLECTION]: '价格采集',
+  [IntelTaskType.INVENTORY_CHECK]: '库存盘点',
+  [IntelTaskType.FIELD_VISIT]: '实地走访',
+  [IntelTaskType.COMPETITOR_INFO]: '竞对情报',
+  [IntelTaskType.POLICY_ANALYSIS]: '政策解读',
+  [IntelTaskType.URGENT_VERIFICATION]: '紧急核实',
+  [IntelTaskType.EXHIBITION_REPORT]: '会议/展会纪要',
+  [IntelTaskType.RESOURCE_UPDATE]: '客商/档案更新',
 };
 
 export const INTEL_TASK_STATUS_LABELS: Record<IntelTaskStatus, string> = {
@@ -792,14 +830,35 @@ export const INTEL_TASK_STATUS_LABELS: Record<IntelTaskStatus, string> = {
   [IntelTaskStatus.OVERDUE]: '已超时',
 };
 
+export const INTEL_TASK_PRIORITY_LABELS: Record<IntelTaskPriority, string> = {
+  [IntelTaskPriority.LOW]: '低',
+  [IntelTaskPriority.MEDIUM]: '中',
+  [IntelTaskPriority.HIGH]: '高',
+  [IntelTaskPriority.URGENT]: '紧急',
+};
+
+export const TASK_CYCLE_TYPE_LABELS: Record<TaskCycleType, string> = {
+  [TaskCycleType.DAILY]: '每日',
+  [TaskCycleType.WEEKLY]: '每周',
+  [TaskCycleType.MONTHLY]: '每月',
+  [TaskCycleType.ONE_TIME]: '单次',
+};
+
+// 任务 Schema
 export const CreateIntelTaskSchema = z.object({
   title: z.string().min(1, '任务标题不能为空'),
+  description: z.string().optional(),
   type: z.nativeEnum(IntelTaskType),
+  priority: z.nativeEnum(IntelTaskPriority).optional().default(IntelTaskPriority.MEDIUM),
   deadline: z.coerce.date(),
   assigneeId: z.string(),
 });
 
 export const UpdateIntelTaskSchema = z.object({
+  title: z.string().optional(),
+  description: z.string().optional(),
+  priority: z.nativeEnum(IntelTaskPriority).optional(),
+  deadline: z.coerce.date().optional(),
   status: z.nativeEnum(IntelTaskStatus).optional(),
   completedAt: z.coerce.date().optional(),
   intelId: z.string().optional(),
@@ -808,9 +867,13 @@ export const UpdateIntelTaskSchema = z.object({
 export const IntelTaskResponseSchema = z.object({
   id: z.string(),
   title: z.string(),
+  description: z.string().nullable(),
   type: z.nativeEnum(IntelTaskType),
+  priority: z.nativeEnum(IntelTaskPriority),
   deadline: z.date(),
   assigneeId: z.string(),
+  templateId: z.string().nullable(),
+  createdById: z.string().nullable(),
   status: z.nativeEnum(IntelTaskStatus),
   completedAt: z.date().nullable(),
   intelId: z.string().nullable(),
@@ -829,11 +892,71 @@ export const IntelTaskQuerySchema = z.object({
   assigneeId: z.string().optional(),
   status: z.nativeEnum(IntelTaskStatus).optional(),
   type: z.nativeEnum(IntelTaskType).optional(),
+  priority: z.nativeEnum(IntelTaskPriority).optional(),
+  startDate: z.coerce.date().optional(),
+  endDate: z.coerce.date().optional(),
   page: z.coerce.number().min(1).default(1),
   pageSize: z.coerce.number().min(1).max(100).default(20),
+});
+
+// 任务模板 Schema
+export const CreateIntelTaskTemplateSchema = z.object({
+  name: z.string().min(1, '模板名称不能为空'),
+  description: z.string().optional(),
+  taskType: z.nativeEnum(IntelTaskType),
+  priority: z.nativeEnum(IntelTaskPriority).default(IntelTaskPriority.MEDIUM),
+
+  // 周期配置
+  cycleType: z.nativeEnum(TaskCycleType).default(TaskCycleType.ONE_TIME),
+  // cycleConfig: { weekDay?: number, monthDay?: number, hour: number, minute: number }
+  cycleConfig: z.record(z.any()).optional(),
+  deadlineOffset: z.number().min(1).default(24), // 截止时间偏移（小时）
+
+  // 分配规则
+  assigneeMode: z.enum(['MANUAL', 'ALL_ACTIVE', 'BY_DEPARTMENT', 'BY_ORGANIZATION']).default('MANUAL'),
+  assigneeIds: z.array(z.string()).default([]),
+  departmentIds: z.array(z.string()).default([]),
+  organizationIds: z.array(z.string()).default([]),
+
+  isActive: z.boolean().default(true),
+});
+
+export const UpdateIntelTaskTemplateSchema = CreateIntelTaskTemplateSchema.partial();
+
+export const IntelTaskTemplateResponseSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  description: z.string().nullable(),
+  taskType: z.nativeEnum(IntelTaskType),
+  priority: z.nativeEnum(IntelTaskPriority),
+  cycleType: z.nativeEnum(TaskCycleType),
+  cycleConfig: z.any().nullable(),
+  deadlineOffset: z.number(),
+  assigneeMode: z.string(),
+  assigneeIds: z.array(z.string()),
+  departmentIds: z.array(z.string()),
+  organizationIds: z.array(z.string()),
+  isActive: z.boolean(),
+  lastRunAt: z.date().nullable(),
+  nextRunAt: z.date().nullable(),
+  createdById: z.string(),
+  createdAt: z.date(),
+  updatedAt: z.date(),
+});
+
+// 批量分发 Schema
+export const BatchDistributeTasksSchema = z.object({
+  templateId: z.string(),
+  assigneeIds: z.array(z.string()).optional(), // 如果不传，则使用模板定义的规则
+  overrideDeadline: z.coerce.date().optional(), // 覆盖模板计算的截止时间
 });
 
 export type CreateIntelTaskDto = z.infer<typeof CreateIntelTaskSchema>;
 export type UpdateIntelTaskDto = z.infer<typeof UpdateIntelTaskSchema>;
 export type IntelTaskResponse = z.infer<typeof IntelTaskResponseSchema>;
 export type IntelTaskQuery = z.infer<typeof IntelTaskQuerySchema>;
+
+export type CreateIntelTaskTemplateDto = z.infer<typeof CreateIntelTaskTemplateSchema>;
+export type UpdateIntelTaskTemplateDto = z.infer<typeof UpdateIntelTaskTemplateSchema>;
+export type IntelTaskTemplateResponse = z.infer<typeof IntelTaskTemplateResponseSchema>;
+export type BatchDistributeTasksDto = z.infer<typeof BatchDistributeTasksSchema>;

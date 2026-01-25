@@ -797,10 +797,48 @@ model IntelEntityLink {
 // =============================================
 
 // 任务类型枚举
+// 任务类型枚举 (12种)
 enum IntelTaskType {
-  PRICE_REPORT   // 价格上报
-  FIELD_CHECK    // 现场确认
-  DOCUMENT_SCAN  // 文档采集
+  // 1. 常规汇报
+  DAILY_REPORT       // 市场日报
+  WEEKLY_REPORT      // 周报
+  MONTHLY_REPORT     // 月报
+  RESEARCH_REPORT    // 深度研报
+
+  // 2. 一线采集
+  PRICE_COLLECTION   // 价格采集
+  INVENTORY_CHECK    // 库存盘点
+  FIELD_VISIT        // 实地走访
+  COMPETITOR_INFO    // 竞对情报
+
+  // 3. 特定事件
+  POLICY_ANALYSIS    // 政策解读
+  URGENT_VERIFICATION // 紧急核实
+  EXHIBITION_REPORT  // 会议/展会纪要
+
+  // 4. 数据维护
+  RESOURCE_UPDATE    // 客商/档案更新
+  
+  // 兼容旧枚举 (如果需要)
+  PRICE_REPORT       // @deprecated
+  FIELD_CHECK        // @deprecated
+  DOCUMENT_SCAN      // @deprecated
+}
+
+// 任务优先级枚举
+enum IntelTaskPriority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+// 任务周期类型
+enum TaskCycleType {
+  DAILY
+  WEEKLY
+  MONTHLY
+  ONE_TIME
 }
 
 // 任务状态枚举
@@ -813,13 +851,21 @@ enum IntelTaskStatus {
 model IntelTask {
   id          String          @id @default(uuid())
   
+  // 基本信息
   title       String
+  description String?             // 任务描述
   type        IntelTaskType
+  priority    IntelTaskPriority   @default(MEDIUM)
   deadline    DateTime
   
   // 分配对象
   assigneeId  String
   assignee    User            @relation(fields: [assigneeId], references: [id])
+  createdById String?             // 创建人
+  
+  // 关联模板
+  templateId  String?
+  template    IntelTaskTemplate?  @relation(fields: [templateId], references: [id])
   
   // 状态
   status      IntelTaskStatus @default(PENDING)
@@ -834,6 +880,43 @@ model IntelTask {
   
   @@index([assigneeId, status])
   @@index([deadline])
+  @@index([templateId])
+}
+
+// 任务模板模型
+model IntelTaskTemplate {
+  id              String           @id @default(uuid())
+  
+  // 基本信息
+  name            String           // 模板名称
+  description     String?          // 任务描述模板
+  taskType        IntelTaskType    // 生成的任务类型
+  priority        IntelTaskPriority @default(MEDIUM)
+  
+  // 周期配置
+  cycleType       TaskCycleType    @default(ONE_TIME)
+  cycleConfig     Json?            // 周期详细配置 { weekDay: 1, monthDay: 15, hour: 9 }
+  deadlineOffset  Int              @default(24)  // 截止时间偏移（小时）
+  
+  // 分配规则
+  assigneeMode    String           @default("MANUAL")  // MANUAL | ALL_ACTIVE | BY_DEPARTMENT | BY_ORGANIZATION
+  assigneeIds     String[]         // 手动指定的分配人列表
+  departmentIds   String[]         // 按部门分配
+  organizationIds String[]         // 按组织分配
+  
+  // 状态
+  isActive        Boolean          @default(true)
+  lastRunAt       DateTime?
+  nextRunAt       DateTime?
+  
+  // 关联
+  tasks           IntelTask[]
+  createdById     String
+  
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+  
+  @@index([isActive, nextRunAt])
 }
 
 // =============================================

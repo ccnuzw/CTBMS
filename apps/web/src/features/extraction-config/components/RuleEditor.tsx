@@ -102,7 +102,18 @@ export const RuleEditor: React.FC<RuleEditorProps> = ({ rule, onSave, onCancel, 
                 isActive: rule.isActive,
             });
             setTargetType(rule.targetType as 'EVENT' | 'INSIGHT');
-            setConditions(rule.conditions || []);
+
+            // Fix: Handle legacy condition format (object) vs new format (array)
+            if (Array.isArray(rule.conditions)) {
+                setConditions(rule.conditions);
+            } else if (rule.conditions && typeof rule.conditions === 'object' && 'rules' in rule.conditions) {
+                // Determine if we can migrate or just fallback
+                // For now prevent crash by defaulting to empty or logging
+                console.warn('Legacy rule format detected:', rule.conditions);
+                setConditions([]);
+            } else {
+                setConditions([]);
+            }
         } else {
             // 新建时添加一个空条件
             setConditions([createEmptyCondition()]);

@@ -12,3 +12,4 @@ export { UniversalSearch } from './UniversalSearch';
 export { CollectionPointManager } from './CollectionPointManager';
 export { CollectionPointEditor } from './CollectionPointEditor';
 export { RegionManager } from './RegionManager';
+export * from './task-distribution';

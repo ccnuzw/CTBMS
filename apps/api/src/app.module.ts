@@ -17,6 +17,7 @@ import { CollectionPointModule } from './modules/collection-point';
 import { RegionModule } from './modules/region';
 import { ExtractionConfigModule } from './modules/extraction-config';
 import { LoggerMiddleware } from './common/middleware/logger.middleware';
+import { IntelTaskModule } from './modules/intel-task';
 
 @Module({
     imports: [
@@ -32,10 +33,11 @@ import { LoggerMiddleware } from './common/middleware/logger.middleware';
         TagsModule,
         TagGroupsModule,
         EnterpriseModule,
-        MarketIntelModule,
+        MarketIntelModule, // Keep this, even if we removed Task from it, it has other providers (though we might have removed too much from it? No, we kept services)
         CollectionPointModule,
         RegionModule,
         ExtractionConfigModule,
+        IntelTaskModule,
     ],
     controllers: [AppController],
     providers: [],
