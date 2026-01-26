@@ -76,7 +76,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ filterState }) => 
     const sourceData = useMemo(() => {
         if (!stats) return [];
         const nameMap: Record<string, string> = {
-            'FIRST_LINE': '一线采集',
+            'FIRST_LINE': '市场信息',
             'OFFICIAL': '官方发布',
             'RESEARCH_INST': '研究机构',
             'MEDIA': '媒体报道',

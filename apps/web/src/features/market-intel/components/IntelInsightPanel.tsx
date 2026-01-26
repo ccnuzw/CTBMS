@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Card, Empty, Skeleton, Typography, Tag, Descriptions, Space, Divider, Alert, Steps, theme } from 'antd';
+import { Card, Empty, Skeleton, Typography, Tag, Descriptions, Space, Divider, Alert, Steps, theme, Button } from 'antd';
 import {
     BarChartOutlined,
     LineChartOutlined,
@@ -8,6 +8,8 @@ import {
     SyncOutlined,
     BulbOutlined,
     ClockCircleOutlined,
+    BugOutlined,
+    CodeOutlined,
 } from '@ant-design/icons';
 import {
     type AIAnalysisResult,
@@ -17,6 +19,7 @@ import {
     IntelSourceType,
 } from '../types';
 import { DailyReportInsight } from './DailyReportInsight';
+import { Timeline, Drawer, Collapse } from 'antd';
 
 const { Title, Text, Paragraph } = Typography;
 
@@ -47,6 +50,7 @@ export const IntelInsightPanel: React.FC<IntelInsightPanelProps> = ({
     const [elapsedSeconds, setElapsedSeconds] = useState(0);
     const [tipIndex, setTipIndex] = useState(0);
     const [currentStep, setCurrentStep] = useState(1);
+    const [logVisible, setLogVisible] = useState(false);
     const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
     // 计时器和动态提示
@@ -130,84 +134,164 @@ export const IntelInsightPanel: React.FC<IntelInsightPanelProps> = ({
     // 2. Result State
     if (aiResult) {
         return (
-            <Card
-                title={
-                    <Space>
-                        <BulbOutlined style={{ color: '#faad14' }} />
-                        <span>情报透视</span>
-                    </Space>
-                }
-                extra={<Tag color="green">解析成功</Tag>}
-                style={{ height: '100%', minHeight: 600, overflow: 'auto' }}
-            >
-                {/* 校验信息 - Common for all types */}
-                {aiResult.validationMessage && (
-                    <Alert
-                        message="异常检测"
-                        description={aiResult.validationMessage}
-                        type="warning"
-                        showIcon
-                        style={{ marginBottom: 24 }}
-                    />
-                )}
+            <>
+                <Card
+                    title={
+                        <Space>
+                            <BulbOutlined style={{ color: '#faad14' }} />
+                            <span>情报透视</span>
+                        </Space>
+                    }
+                    extra={
+                        <Space>
+                            <Tag color="green">解析成功</Tag>
+                            <Button
+                                type="text"
+                                icon={<BugOutlined />}
+                                size="small"
+                                onClick={() => setLogVisible(true)}
+                                title="上帝视角日志"
+                            />
+                        </Space>
+                    }
+                    style={{ height: '100%', minHeight: 600, overflow: 'auto' }}
+                >
+                    {/* 校验信息 - Common for all types */}
+                    {aiResult.validationMessage && (
+                        <Alert
+                            message="异常检测"
+                            description={aiResult.validationMessage}
+                            type="warning"
+                            showIcon
+                            style={{ marginBottom: 24 }}
+                        />
+                    )}
 
-                {/* Specialized View for Daily Reports */}
-                {contentType === ContentType.DAILY_REPORT ? (
-                    <DailyReportInsight aiResult={aiResult} />
-                ) : (
-                    // Generic View for other types (Research Report / Policy)
-                    <>
-                        <Card type="inner" title="核心摘要" size="small" style={{ marginBottom: 16 }}>
-                            <Paragraph>{aiResult.summary}</Paragraph>
-                            <Space size={[0, 8]} wrap>
-                                {aiResult.tags.map((tag) => (
-                                    <Tag key={tag} color="blue">#{tag}</Tag>
-                                ))}
-                            </Space>
-                        </Card>
+                    {/* Specialized View for Daily Reports */}
+                    {contentType === ContentType.DAILY_REPORT ? (
+                        <DailyReportInsight aiResult={aiResult} />
+                    ) : (
+                        // Generic View for other types (Research Report / Policy)
+                        <>
+                            <Card type="inner" title="核心摘要" size="small" style={{ marginBottom: 16 }}>
+                                <Paragraph>{aiResult.summary}</Paragraph>
+                                <Space size={[0, 8]} wrap>
+                                    {aiResult.tags.map((tag) => (
+                                        <Tag key={tag} color="blue">#{tag}</Tag>
+                                    ))}
+                                </Space>
+                            </Card>
 
-                        <Descriptions
-                            title="结构化提取"
-                            bordered
-                            column={{ xs: 1, sm: 2, lg: 2 }}
-                            size="small"
-                        >
-                            <Descriptions.Item label="置信度">
-                                <Text type={aiResult.confidenceScore > 80 ? 'success' : 'warning'}>
-                                    {aiResult.confidenceScore}分
-                                </Text>
-                            </Descriptions.Item>
-                            <Descriptions.Item label="情感倾向">
-                                <Tag color={
-                                    aiResult.sentiment === 'positive' ? 'green' :
-                                        aiResult.sentiment === 'negative' ? 'red' : 'default'
-                                }>
-                                    {aiResult.sentiment === 'positive' ? '利多' :
-                                        aiResult.sentiment === 'negative' ? '利空' : '中性'}
-                                </Tag>
-                            </Descriptions.Item>
-
-                            {/* 实体识别 */}
-                            {aiResult.entities && aiResult.entities.length > 0 && (
-                                <Descriptions.Item label="关联实体" span={2}>
-                                    <Space wrap>
-                                        {aiResult.entities.map(e => <Tag key={e}>{e}</Tag>)}
-                                    </Space>
+                            <Descriptions
+                                title="结构化提取"
+                                bordered
+                                column={{ xs: 1, sm: 2, lg: 2 }}
+                                size="small"
+                            >
+                                <Descriptions.Item label="置信度">
+                                    <Text type={aiResult.confidenceScore > 80 ? 'success' : 'warning'}>
+                                        {aiResult.confidenceScore}分
+                                    </Text>
                                 </Descriptions.Item>
-                            )}
-
-                            {/* 提取数据 */}
-                            {aiResult.extractedData && (
-                                <Descriptions.Item label="关键数据" span={2}>
-                                    <pre style={{ maxHeight: 200, overflow: 'auto', fontSize: 12, margin: 0 }}>
-                                        {JSON.stringify(aiResult.extractedData, null, 2)}
-                                    </pre>
+                                <Descriptions.Item label="情感倾向">
+                                    <Tag color={
+                                        aiResult.sentiment === 'positive' ? 'green' :
+                                            aiResult.sentiment === 'negative' ? 'red' : 'default'
+                                    }>
+                                        {aiResult.sentiment === 'positive' ? '利多' :
+                                            aiResult.sentiment === 'negative' ? '利空' : '中性'}
+                                    </Tag>
                                 </Descriptions.Item>
-                            )}
-                        </Descriptions>
-                    </>
-                )}
-            </Card>
+
+                                {/* 实体识别 */}
+                                {aiResult.entities && aiResult.entities.length > 0 && (
+                                    <Descriptions.Item label="关联实体" span={2}>
+                                        <Space wrap>
+                                            {aiResult.entities.map(e => <Tag key={e}>{e}</Tag>)}
+                                        </Space>
+                                    </Descriptions.Item>
+                                )}
+
+                                {/* 提取数据 */}
+                                {aiResult.extractedData && (
+                                    <Descriptions.Item label="关键数据" span={2}>
+                                        <pre style={{ maxHeight: 200, overflow: 'auto', fontSize: 12, margin: 0 }}>
+                                            {JSON.stringify(aiResult.extractedData, null, 2)}
+                                        </pre>
+                                    </Descriptions.Item>
+                                )}
+                            </Descriptions>
+                        </>
+                    )}
+                </Card>
+
+                <Drawer
+                    title={
+                        <Space>
+                            <BugOutlined />
+                            <span>上帝视角 - 全链路追踪</span>
+                        </Space>
+                    }
+                    placement="right"
+                    width={800}
+                    onClose={() => setLogVisible(false)}
+                    open={logVisible}
+                >
+                    {(aiResult as any).traceLogs && (aiResult as any).traceLogs.length > 0 ? (
+                        <Timeline
+                            items={(aiResult as any).traceLogs.map((log: any, index: number) => {
+                                const isError = log.level === 'error';
+                                const isWarn = log.level === 'warn';
+                                const color = isError ? 'red' : isWarn ? 'orange' : 'blue';
+
+                                return {
+                                    color,
+                                    children: (
+                                        <div style={{ marginBottom: 20 }}>
+                                            <Space split={<Divider type="vertical" />}>
+                                                <Text type="secondary" style={{ fontSize: 12 }}>
+                                                    {new Date(log.timestamp).toLocaleTimeString()}
+                                                </Text>
+                                                <Tag color={color}>{log.stage}</Tag>
+                                                <Text strong={isError}>{log.message}</Text>
+                                            </Space>
+                                            {log.detail && (
+                                                <div style={{ marginTop: 8 }}>
+                                                    <Collapse
+                                                        ghost
+                                                        size="small"
+                                                        items={[{
+                                                            key: '1',
+                                                            label: <Space><CodeOutlined /> <span style={{ fontSize: 12 }}>查看详情</span></Space>,
+                                                            children: (
+                                                                <pre style={{
+                                                                    maxHeight: 300,
+                                                                    overflow: 'auto',
+                                                                    fontSize: 12,
+                                                                    background: token.colorFillAlter,
+                                                                    padding: 8,
+                                                                    borderRadius: 4,
+                                                                    margin: 0
+                                                                }}>
+                                                                    {typeof log.detail === 'string'
+                                                                        ? log.detail
+                                                                        : JSON.stringify(log.detail, null, 2)}
+                                                                </pre>
+                                                            )
+                                                        }]}
+                                                    />
+                                                </div>
+                                            )}
+                                        </div>
+                                    )
+                                };
+                            })}
+                        />
+                    ) : (
+                        <Empty description="暂无追踪日志" />
+                    )}
+                </Drawer>
+            </>
         );
     }
 

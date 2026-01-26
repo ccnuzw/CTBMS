@@ -1,105 +1,92 @@
-import { Injectable, Logger } from '@nestjs/common';
-import { PrismaService } from '../../prisma';
+
+import { Injectable, OnModuleInit, Logger } from '@nestjs/common';
+import { PrismaService } from '../../prisma/prisma.service';
 
 @Injectable()
-export class InitService {
+export class InitService implements OnModuleInit {
+    // Init service for seeding data
     private readonly logger = new Logger(InitService.name);
 
-    constructor(private prisma: PrismaService) { }
+    constructor(private readonly prisma: PrismaService) { }
 
-    /**
-     * 检查系统是否已初始化
-     */
-    async isInitialized(): Promise<boolean> {
-        const adminRole = await this.prisma.role.findFirst({
-            where: { code: 'SUPER_ADMIN' },
-        });
-        return !!adminRole;
+    async onModuleInit() {
+        await this.measureTime('Seed Business Rules', () => this.seedBusinessRules());
+        await this.measureTime('Seed AI Config', () => this.seedAIConfig());
     }
 
-    /**
-     * 初始化系统数据
-     */
-    async initialize(): Promise<{
-        success: boolean;
-        message: string;
-        data?: {
-            roles: string[];
-            adminUser: string;
-        };
-    }> {
-        // 检查是否已初始化
-        const initialized = await this.isInitialized();
-        if (initialized) {
-            return {
-                success: false,
-                message: '系统已初始化，无需重复执行',
-            };
+    async isInitialized(): Promise<boolean> {
+        const count = await this.prisma.businessMappingRule.count();
+        return count > 0;
+    }
+
+    async initialize() {
+        await this.onModuleInit();
+        return { success: true, message: 'Initialization executed' };
+    }
+
+    private async measureTime(label: string, fn: () => Promise<void>) {
+        const start = Date.now();
+        await fn();
+        this.logger.log(`${label} completed in ${Date.now() - start}ms`);
+    }
+
+    private async seedBusinessRules() {
+        // Only seed if empty to avoid overwriting user changes
+        const count = await this.prisma.businessMappingRule.count();
+        if (count > 0) return;
+
+        const rules = [
+            // PRICE_SUB_TYPE mappings
+            { domain: 'PRICE_SUB_TYPE', matchMode: 'CONTAINS', pattern: '平舱', targetValue: 'FOB' },
+            { domain: 'PRICE_SUB_TYPE', matchMode: 'CONTAINS', pattern: 'FOB', targetValue: 'FOB' },
+            { domain: 'PRICE_SUB_TYPE', matchMode: 'CONTAINS', pattern: '到港', targetValue: 'ARRIVAL' },
+            { domain: 'PRICE_SUB_TYPE', matchMode: 'CONTAINS', pattern: '到货', targetValue: 'ARRIVAL' },
+            { domain: 'PRICE_SUB_TYPE', matchMode: 'CONTAINS', pattern: '成交', targetValue: 'TRANSACTION' },
+            { domain: 'PRICE_SUB_TYPE', matchMode: 'CONTAINS', pattern: '收购', targetValue: 'PURCHASE' },
+            { domain: 'PRICE_SUB_TYPE', matchMode: 'CONTAINS', pattern: '站台', targetValue: 'STATION_ORIGIN' },
+
+            // PRICE_SOURCE_TYPE mappings
+            { domain: 'PRICE_SOURCE_TYPE', matchMode: 'CONTAINS', pattern: '港务', targetValue: 'PORT' },
+            { domain: 'PRICE_SOURCE_TYPE', matchMode: 'CONTAINS', pattern: '码头', targetValue: 'PORT' },
+            { domain: 'PRICE_SOURCE_TYPE', matchMode: 'CONTAINS', pattern: '生物', targetValue: 'ENTERPRISE' },
+            { domain: 'PRICE_SOURCE_TYPE', matchMode: 'CONTAINS', pattern: '化工', targetValue: 'ENTERPRISE' },
+            { domain: 'PRICE_SOURCE_TYPE', matchMode: 'CONTAINS', pattern: '淀粉', targetValue: 'ENTERPRISE' },
+            { domain: 'PRICE_SOURCE_TYPE', matchMode: 'CONTAINS', pattern: '酒精', targetValue: 'ENTERPRISE' },
+
+            // SENTIMENT mappings
+            { domain: 'SENTIMENT', matchMode: 'CONTAINS', pattern: 'positive', targetValue: 'positive' },
+            { domain: 'SENTIMENT', matchMode: 'CONTAINS', pattern: 'bullish', targetValue: 'positive' },
+            { domain: 'SENTIMENT', matchMode: 'CONTAINS', pattern: 'strong', targetValue: 'positive' },
+            { domain: 'SENTIMENT', matchMode: 'CONTAINS', pattern: 'negative', targetValue: 'negative' },
+            { domain: 'SENTIMENT', matchMode: 'CONTAINS', pattern: 'bearish', targetValue: 'negative' },
+            { domain: 'SENTIMENT', matchMode: 'CONTAINS', pattern: 'weak', targetValue: 'negative' },
+
+            // GEO_LEVEL mappings
+            { domain: 'GEO_LEVEL', matchMode: 'CONTAINS', pattern: '港', targetValue: 'PORT' },
+            { domain: 'GEO_LEVEL', matchMode: 'CONTAINS', pattern: '市', targetValue: 'CITY' },
+            { domain: 'GEO_LEVEL', matchMode: 'CONTAINS', pattern: '省', targetValue: 'PROVINCE' },
+        ];
+
+        for (const rule of rules) {
+            await this.prisma.businessMappingRule.create({ data: rule });
         }
+        this.logger.log(`Seeded ${rules.length} business rules.`);
+    }
 
-        try {
-            // 在事务中创建初始数据
-            const result = await this.prisma.$transaction(async (tx) => {
-                // 1. 创建系统管理员角色
-                const superAdminRole = await tx.role.create({
-                    data: {
-                        name: '系统管理员',
-                        code: 'SUPER_ADMIN',
-                        description: '系统超级管理员，拥有所有权限',
-                        isSystem: true,
-                        sortOrder: 0,
-                        status: 'ACTIVE',
-                    },
-                });
-                this.logger.log('创建角色: 系统管理员');
+    private async seedAIConfig() {
+        const count = await this.prisma.aIModelConfig.count();
+        if (count > 0) return;
 
-                // 2. 创建普通员工角色
-                const staffRole = await tx.role.create({
-                    data: {
-                        name: '普通员工',
-                        code: 'STAFF',
-                        description: '普通员工角色',
-                        isSystem: true,
-                        sortOrder: 100,
-                        status: 'ACTIVE',
-                    },
-                });
-                this.logger.log('创建角色: 普通员工');
-
-                // 3. 创建默认管理员用户
-                const adminUser = await tx.user.create({
-                    data: {
-                        username: 'admin',
-                        email: 'admin@example.com',
-                        name: '系统管理员',
-                        status: 'ACTIVE',
-                    },
-                });
-                this.logger.log('创建用户: admin');
-
-                // 4. 分配管理员角色
-                await tx.userRole.create({
-                    data: {
-                        userId: adminUser.id,
-                        roleId: superAdminRole.id,
-                    },
-                });
-                this.logger.log('分配角色: admin -> 系统管理员');
-
-                return {
-                    roles: [superAdminRole.name, staffRole.name],
-                    adminUser: adminUser.username,
-                };
-            });
-
-            return {
-                success: true,
-                message: '系统初始化成功',
-                data: result,
-            };
-        } catch (error) {
-            this.logger.error('初始化失败', error);
-            throw error;
-        }
+        await this.prisma.aIModelConfig.create({
+            data: {
+                configKey: 'DEFAULT',
+                provider: 'google',
+                modelName: 'gemini-1.5-pro',
+                apiKeyEnvVar: 'GEMINI_API_KEY',
+                temperature: 0.3,
+                maxTokens: 8192,
+            }
+        });
+        this.logger.log('Seeded default AI config.');
     }
 }

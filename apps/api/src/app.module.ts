@@ -19,6 +19,7 @@ import { RegionModule } from './modules/region';
 import { ExtractionConfigModule } from './modules/extraction-config';
 import { LoggerMiddleware } from './common/middleware/logger.middleware';
 import { IntelTaskModule } from './modules/intel-task';
+import { ConfigModule } from './modules/config/config.module';
 
 @Module({
     imports: [
@@ -40,6 +41,7 @@ import { IntelTaskModule } from './modules/intel-task';
         RegionModule,
         ExtractionConfigModule,
         IntelTaskModule,
+        ConfigModule,
     ],
     controllers: [AppController],
     providers: [],

@@ -501,7 +501,7 @@ enum IntelCategory {
 
 // 信源类型枚举
 enum IntelSourceType {
-  FIRST_LINE    // 一线采集
+  FIRST_LINE    // 市场信息
   COMPETITOR    // 竞对情报
   OFFICIAL      // 官方发布
   RESEARCH_INST // 第三方研究机构
@@ -1113,4 +1113,75 @@ model MarketInsight {
   @@index([insightTypeId])
   @@index([intelId])
   @@index([commodity])
+}
+// =============================================
+// AI 提示词模板 (Prompt Templates)
+// =============================================
+model PromptTemplate {
+  id           String        @id @default(uuid())
+  code         String        @unique // e.g., "MARKET_INTEL_DAILY_REPORT"
+  name         String
+  category     IntelCategory // 关联的情报分类
+  
+  systemPrompt String        @db.Text
+  userPrompt   String        @db.Text
+  
+  variables    Json?         // 定义可用的变量说明
+  version      Int           @default(1)
+  isActive     Boolean       @default(true)
+  
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+  
+  @@index([category])
+  @@index([isActive])
+}
+// =============================================
+// 系统配置子系统 (System Configuration)
+// =============================================
+
+// 业务映射规则 (Generic Mapping Rules)
+// 用于替代代码中的 hardcoded mapLogic
+model BusinessMappingRule {
+  id          String   @id @default(uuid())
+  domain      String   // 业务域 (e.g. "PRICE_SOURCE", "PRICE_SUB_TYPE", "SENTIMENT")
+  
+  matchMode   String   @default("CONTAINS") // 匹配模式: CONTAINS, EXACT, REGEX
+  pattern     String   // 匹配范式 (e.g. "平舱", "Positive")
+  targetValue String   // 目标值 (e.g. "FOB", "positive")
+  
+  priority    Int      @default(0) // 优先级 (高优先)
+  description String?
+  isActive    Boolean  @default(true)
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([domain, priority])
+}
+
+// AI 模型配置 (AI Model Configuration)
+model AIModelConfig {
+  id           String   @id @default(uuid())
+  configKey    String   @unique // 配置键 (e.g. "DEFAULT", "GEMINI_PRO")
+  
+  provider     String   // "google", "openai"
+  modelName    String   // "gemini-1.5-pro"
+  apiUrl       String?  // [NEW] Custom API Endpoint
+  
+  apiKeyEnvVar String?  // 环境变量名 (推荐)
+  apiKey       String?  // 直接存储 (仅供测试或私有部署，需加密)
+  
+  temperature  Float    @default(0.3)
+  maxTokens    Int      @default(8192)
+  topP         Float?
+  topK         Int?
+  
+  maxRetries   Int      @default(3)
+  timeoutMs    Int      @default(30000)
+  
+  isActive     Boolean  @default(true)
+  
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 }

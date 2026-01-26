@@ -97,7 +97,7 @@ export const BUILT_IN_PRESETS: FilterPreset[] = [
     },
     {
         id: 'first-line',
-        name: '一线采集',
+        name: '市场信息',
         filter: { sourceTypes: ['FIRST_LINE' as IntelSourceType] },
         isBuiltIn: true,
         createdAt: new Date(),

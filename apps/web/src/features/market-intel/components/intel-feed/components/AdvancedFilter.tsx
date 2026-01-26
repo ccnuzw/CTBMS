@@ -55,7 +55,7 @@ const CONTENT_TYPE_OPTIONS = [
 ];
 
 const SOURCE_TYPE_OPTIONS = [
-    { label: '一线采集', value: IntelSourceType.FIRST_LINE },
+    { label: '市场信息', value: IntelSourceType.FIRST_LINE },
     { label: '官方发布', value: IntelSourceType.OFFICIAL },
     { label: '研究机构', value: IntelSourceType.RESEARCH_INST },
     { label: '媒体报道', value: IntelSourceType.MEDIA },

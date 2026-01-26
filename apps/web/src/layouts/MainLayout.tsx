@@ -64,6 +64,12 @@ export const MainLayout: React.FC = () => {
                 return '全局标签管理';
             case '/system/tag-groups':
                 return '标签组管理';
+            case '/system/config/rules':
+                return '业务规则配置';
+            case '/system/config/ai-models':
+                return 'AI 模型配置';
+            case '/system/config/prompts':
+                return '提示词模板管理';
             default:
                 return 'CTBMS 系统管理';
         }
@@ -285,6 +291,25 @@ export const MainLayout: React.FC = () => {
                                                 label: '行政区划',
                                             },
                                             {
+                                                key: 'config-center',
+                                                icon: <AppstoreOutlined />,
+                                                label: '配置中心',
+                                                children: [
+                                                    {
+                                                        key: '/system/config/rules',
+                                                        label: '业务规则',
+                                                    },
+                                                    {
+                                                        key: '/system/config/ai-models',
+                                                        label: 'AI 模型',
+                                                    },
+                                                    {
+                                                        key: '/system/config/prompts',
+                                                        label: '提示词库',
+                                                    }
+                                                ]
+                                            },
+                                            {
                                                 key: 'settings',
                                                 icon: <SettingOutlined />,
                                                 label: '设置中心',
@@ -487,6 +512,21 @@ export const MainLayout: React.FC = () => {
                                             key: '/system/tag-groups',
                                             icon: <AppstoreOutlined />,
                                             label: '标签组',
+                                        },
+                                        {
+                                            key: 'config-center',
+                                            icon: <AppstoreOutlined />,
+                                            label: '配置中心',
+                                            children: [
+                                                {
+                                                    key: '/system/config/rules',
+                                                    label: '业务规则',
+                                                },
+                                                {
+                                                    key: '/system/config/ai-models',
+                                                    label: 'AI 模型',
+                                                }
+                                            ]
                                         },
                                         {
                                             key: 'settings',

@@ -205,6 +205,15 @@ export const AIAnalysisResultSchema = z.object({
 
   // 提取的事件列表（B类扩展）
   events: z.array(StructuredEventSchema).optional(),
+
+  // 上帝视角日志 (God Mode Trace Logs)
+  traceLogs: z.array(z.object({
+    timestamp: z.number(),
+    stage: z.string(),
+    message: z.string(),
+    level: z.enum(['info', 'warn', 'error', 'debug']).optional(),
+    detail: z.any().optional(),
+  })).optional(),
 });
 
 // =============================================

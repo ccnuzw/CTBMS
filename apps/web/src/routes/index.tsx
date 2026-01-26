@@ -25,6 +25,7 @@ import {
     TaskDistributionPage,
 } from '../features/market-intel';
 import { ExtractionConfigPage } from '../features/extraction-config';
+import { systemConfigRoutes } from '../features/system-config';
 
 export const router = createBrowserRouter([
     {
@@ -77,6 +78,7 @@ export const router = createBrowserRouter([
                     { path: 'tags', element: <GlobalTagList /> },
                     { path: 'tag-groups', element: <TagGroupList /> },
                     { path: 'regions', element: <RegionManager /> },
+                    ...systemConfigRoutes, // [NEW] Add System Config Routes
                 ]
             },
             {
