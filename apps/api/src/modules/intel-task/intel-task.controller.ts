@@ -13,11 +13,11 @@ import { IntelTaskTemplateService } from './intel-task-template.service';
 import {
     CreateIntelTaskDto,
     UpdateIntelTaskDto,
-    IntelTaskQuery,
+    IntelTaskQueryDto,
     CreateIntelTaskTemplateDto,
     UpdateIntelTaskTemplateDto,
     BatchDistributeTasksDto,
-} from '@packages/types';
+} from './dto';
 
 @Controller('intel-tasks')
 export class IntelTaskController {
@@ -37,14 +37,23 @@ export class IntelTaskController {
     }
 
     @Get()
-    async findAll(@Query() query: IntelTaskQuery) {
-        // Handle numeric conversion for pages if needed (NestJS usually stringifies query params)
-        const opts = {
-            ...query,
-            page: query.page ? parseInt(query.page as any, 10) : 1,
-            pageSize: query.pageSize ? parseInt(query.pageSize as any, 10) : 20,
-        };
-        return this.itemTaskService.findAll(opts);
+    async findAll(@Query() query: IntelTaskQueryDto) {
+        return this.itemTaskService.findAll(query);
+    }
+
+    @Get('metrics')
+    async getMetrics(@Query() query: IntelTaskQueryDto) {
+        return this.itemTaskService.getMetrics(query);
+    }
+
+    @Get('metrics/org')
+    async getOrgMetrics(@Query() query: IntelTaskQueryDto) {
+        return this.itemTaskService.getOrgMetrics(query);
+    }
+
+    @Get('metrics/dept')
+    async getDeptMetrics(@Query() query: IntelTaskQueryDto) {
+        return this.itemTaskService.getDeptMetrics(query);
     }
 
     @Get('my')

@@ -1,77 +1,75 @@
 import React, { useState } from 'react';
-import { Tabs, theme, Button, FloatButton } from 'antd';
-import {
-    CalendarOutlined,
-    UnorderedListOutlined,
-    AppstoreOutlined,
-    FileTextOutlined,
-    PlusOutlined
-} from '@ant-design/icons';
+import { Popover, Button } from 'antd';
+import { InfoCircleOutlined } from '@ant-design/icons';
+import { PageContainer, ProCard } from '@ant-design/pro-components';
 import { TaskCalendarView } from './components/TaskCalendarView';
 import { TaskList } from './components/TaskList';
 import { TaskTemplateList } from './components/TaskTemplateList';
 import { MyTaskBoard } from './components/MyTaskBoard';
 
-import { CreateTaskModal } from './components/CreateTaskModal';
-
 export const TaskDistributionPage: React.FC = () => {
-    const { token } = theme.useToken();
     const [activeTab, setActiveTab] = useState('calendar');
-    const [isModalOpen, setIsModalOpen] = useState(false);
-
-    const handleCreateTask = (values: any) => {
-        console.log('Creating task:', values);
-        setIsModalOpen(false);
-        // TODO: Call API
-    };
-
-    const renderTabBarExtraContent = () => {
-        return (
-            <Button type="primary" icon={<PlusOutlined />} onClick={() => setIsModalOpen(true)}>
-                创建任务
-            </Button>
-        );
-    };
-
-    const items = [
-        {
-            key: 'calendar',
-            label: (<span><CalendarOutlined /> 任务日历</span>),
-            children: <TaskCalendarView />,
-        },
-        {
-            key: 'list',
-            label: (<span><UnorderedListOutlined /> 任务管理</span>),
-            children: <TaskList />,
-        },
-        {
-            key: 'templates',
-            label: (<span><AppstoreOutlined /> 任务模板</span>),
-            children: <TaskTemplateList />,
-        },
-        {
-            key: 'my-tasks',
-            label: (<span><FileTextOutlined /> 我的任务</span>),
-            children: <MyTaskBoard />,
-        }
-    ];
 
     return (
-        <div style={{ height: '100%', padding: 24, background: token.colorBgLayout }}>
-            <div style={{ background: token.colorBgContainer, padding: 24, borderRadius: 8, height: '100%', display: 'flex', flexDirection: 'column' }}>
-                <Tabs
-                    activeKey={activeTab}
-                    onChange={setActiveTab}
-                    items={items.map(item => ({ ...item, style: { height: '100%' } }))}
-                    tabBarExtraContent={renderTabBarExtraContent()}
-                    style={{ flex: 1, display: 'flex', flexDirection: 'column' }}
-                />
-            </div>
-            <CreateTaskModal
-                open={isModalOpen}
-                onCancel={() => setIsModalOpen(false)}
-                onCreate={handleCreateTask}
-            />
-        </div>
+        <PageContainer
+            header={{
+                title: null,
+                breadcrumb: undefined,
+            }}
+            tabList={[
+                {
+                    tab: '任务日历',
+                    key: 'calendar',
+                },
+                {
+                    tab: '任务管理',
+                    key: 'list',
+                },
+                {
+                    tab: '任务模板',
+                    key: 'templates',
+                },
+                {
+                    tab: '我的任务',
+                    key: 'my-tasks',
+                },
+            ]}
+            tabActiveKey={activeTab}
+            onTabChange={setActiveTab}
+            token={{
+                paddingInlinePageContainerContent: 16,
+                paddingBlockPageContainerContent: 16,
+            }}
+            tabBarExtraContent={
+                <Popover
+                    content={
+                        <div style={{ maxWidth: 320 }}>
+                            创建任务 = 一次性任务；任务模板 = 周期任务规则。
+                            <br />
+                            模板不直接生成任务，需要等待自动调度或手动分发。
+                        </div>
+                    }
+                    title="功能说明"
+                >
+                    <Button type="link" icon={<InfoCircleOutlined />}>
+                        规则说明
+                    </Button>
+                </Popover>
+            }
+        >
+            <ProCard
+                direction="column"
+                ghost
+                gutter={[0, 16]}
+                style={{ minHeight: '85vh', marginTop: -16 }}
+            >
+
+
+                {activeTab === 'calendar' && <TaskCalendarView />}
+                {activeTab === 'list' && <TaskList />}
+                {activeTab === 'templates' && <TaskTemplateList />}
+                {activeTab === 'my-tasks' && <MyTaskBoard />}
+            </ProCard>
+        </PageContainer>
     );
 };

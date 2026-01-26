@@ -24,11 +24,108 @@ export const useTasks = (query: IntelTaskQuery) => {
             const params = { ...query };
             if (params.startDate) (params as any).startDate = params.startDate.toISOString();
             if (params.endDate) (params as any).endDate = params.endDate.toISOString();
+            if ((params as any).periodStart) (params as any).periodStart = (params as any).periodStart.toISOString();
+            if ((params as any).periodEnd) (params as any).periodEnd = (params as any).periodEnd.toISOString();
+            if ((params as any).dueStart) (params as any).dueStart = (params as any).dueStart.toISOString();
+            if ((params as any).dueEnd) (params as any).dueEnd = (params as any).dueEnd.toISOString();
+            if ((params as any).metricsStart) (params as any).metricsStart = (params as any).metricsStart.toISOString();
+            if ((params as any).metricsEnd) (params as any).metricsEnd = (params as any).metricsEnd.toISOString();
 
             const { data } = await apiClient.get<{
                 data: IntelTaskResponse[];
                 total: number;
             }>(BASE_URL, { params });
+            return data;
+        },
+    });
+};
+
+export const useTaskMetrics = (query: IntelTaskQuery) => {
+    return useQuery({
+        queryKey: ['intel-tasks-metrics', query],
+        queryFn: async () => {
+            const params = { ...query };
+            if (params.startDate) (params as any).startDate = params.startDate.toISOString();
+            if (params.endDate) (params as any).endDate = params.endDate.toISOString();
+            if ((params as any).periodStart) (params as any).periodStart = (params as any).periodStart.toISOString();
+            if ((params as any).periodEnd) (params as any).periodEnd = (params as any).periodEnd.toISOString();
+            if ((params as any).dueStart) (params as any).dueStart = (params as any).dueStart.toISOString();
+            if ((params as any).dueEnd) (params as any).dueEnd = (params as any).dueEnd.toISOString();
+            if ((params as any).metricsStart) (params as any).metricsStart = (params as any).metricsStart.toISOString();
+            if ((params as any).metricsEnd) (params as any).metricsEnd = (params as any).metricsEnd.toISOString();
+
+            const { data } = await apiClient.get<{
+                total: number;
+                pending: number;
+                completed: number;
+                overdue: number;
+                late: number;
+                completionRate: number;
+                overdueRate: number;
+                lateRate: number;
+            }>(`${BASE_URL}/metrics`, { params });
+            return data;
+        },
+    });
+};
+
+export const useTaskMetricsByOrg = (query: IntelTaskQuery) => {
+    return useQuery({
+        queryKey: ['intel-tasks-metrics-org', query],
+        queryFn: async () => {
+            const params = { ...query };
+            if (params.startDate) (params as any).startDate = params.startDate.toISOString();
+            if (params.endDate) (params as any).endDate = params.endDate.toISOString();
+            if ((params as any).periodStart) (params as any).periodStart = (params as any).periodStart.toISOString();
+            if ((params as any).periodEnd) (params as any).periodEnd = (params as any).periodEnd.toISOString();
+            if ((params as any).dueStart) (params as any).dueStart = (params as any).dueStart.toISOString();
+            if ((params as any).dueEnd) (params as any).dueEnd = (params as any).dueEnd.toISOString();
+            if ((params as any).metricsStart) (params as any).metricsStart = (params as any).metricsStart.toISOString();
+            if ((params as any).metricsEnd) (params as any).metricsEnd = (params as any).metricsEnd.toISOString();
+
+            const { data } = await apiClient.get<Array<{
+                orgId: string;
+                orgName: string;
+                total: number;
+                pending: number;
+                completed: number;
+                overdue: number;
+                late: number;
+                completionRate: number;
+                overdueRate: number;
+                lateRate: number;
+            }>>(`${BASE_URL}/metrics/org`, { params });
+            return data;
+        },
+    });
+};
+
+export const useTaskMetricsByDept = (query: IntelTaskQuery) => {
+    return useQuery({
+        queryKey: ['intel-tasks-metrics-dept', query],
+        queryFn: async () => {
+            const params = { ...query };
+            if (params.startDate) (params as any).startDate = params.startDate.toISOString();
+            if (params.endDate) (params as any).endDate = params.endDate.toISOString();
+            if ((params as any).periodStart) (params as any).periodStart = (params as any).periodStart.toISOString();
+            if ((params as any).periodEnd) (params as any).periodEnd = (params as any).periodEnd.toISOString();
+            if ((params as any).dueStart) (params as any).dueStart = (params as any).dueStart.toISOString();
+            if ((params as any).dueEnd) (params as any).dueEnd = (params as any).dueEnd.toISOString();
+            if ((params as any).metricsStart) (params as any).metricsStart = (params as any).metricsStart.toISOString();
+            if ((params as any).metricsEnd) (params as any).metricsEnd = (params as any).metricsEnd.toISOString();
+
+            const { data } = await apiClient.get<Array<{
+                deptId: string;
+                deptName: string;
+                total: number;
+                pending: number;
+                completed: number;
+                overdue: number;
+                late: number;
+                completionRate: number;
+                overdueRate: number;
+                lateRate: number;
+            }>>(`${BASE_URL}/metrics/dept`, { params });
             return data;
         },
     });
@@ -130,7 +227,7 @@ export const useUpdateTaskTemplate = () => {
     const queryClient = useQueryClient();
     return useMutation({
         mutationFn: async ({ id, data }: { id: string; data: UpdateIntelTaskTemplateDto }) => {
-            const { data: res } = await apiClient.put<IntelTaskTemplateResponse>(`${BASE_URL}/templates}/${id}`, data);
+            const { data: res } = await apiClient.put<IntelTaskTemplateResponse>(`${BASE_URL}/templates/${id}`, data);
             return res;
         },
         onSuccess: () => {

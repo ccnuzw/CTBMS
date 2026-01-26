@@ -8,6 +8,7 @@ import {
     IntelTaskType,
     IntelTaskPriority,
 } from '@packages/types';
+import { computePeriodInfo } from './intel-task-schedule.utils';
 
 @Injectable()
 export class IntelTaskTemplateService {
@@ -80,55 +81,80 @@ export class IntelTaskTemplateService {
             throw new NotFoundException('任务模板不存在');
         }
 
-        let targetAssigneeIds: string[] = [];
-
-        // 1. 确定分发对象
-        if (dto.assigneeIds && dto.assigneeIds.length > 0) {
-            // 优先使用手动指定的 ID
-            targetAssigneeIds = dto.assigneeIds;
-        } else {
-            // 使用模板定义的规则
-            targetAssigneeIds = await this.resolveAssignees(template);
-        }
-
-        if (targetAssigneeIds.length === 0) {
-            return { count: 0, message: '未找到符合条件的分发对象' };
-        }
-
-        // 2. 计算截止时间
-        let deadline = new Date();
-        if (dto.overrideDeadline) {
-            deadline = new Date(dto.overrideDeadline);
-        } else {
-            // 默认：当前时间 + 偏移量
-            deadline.setHours(deadline.getHours() + template.deadlineOffset);
-        }
-
-        // 3. 生成任务
-        const tasksToCreate = targetAssigneeIds.map(userId => ({
-            title: this.generateTaskTitle(template.name), // 可以加上日期后缀
-            description: template.description || undefined,
-            type: template.taskType,
-            priority: template.priority,
-            deadline: deadline,
-            assigneeId: userId,
-            createdById: triggeredById,
-            templateId: template.id,
-        }));
-
-        await this.taskService.createMany(tasksToCreate as any);
-
-        // 4. 更新模板最后运行时间
-        await this.prisma.intelTaskTemplate.update({
-            where: { id: template.id },
-            data: { lastRunAt: new Date() },
+        const result = await this.createTasksFromTemplate(template, {
+            assigneeIds: dto.assigneeIds,
+            overrideDeadline: dto.overrideDeadline ? new Date(dto.overrideDeadline) : undefined,
+            triggeredById,
+            runAt: new Date(),
         });
 
         return {
-            count: tasksToCreate.length,
-            message: `成功分发 ${tasksToCreate.length} 个任务`,
-            assigneeIds: targetAssigneeIds,
+            count: result.count,
+            message: `成功分发 ${result.count} 个任务`,
+            assigneeIds: result.assigneeIds,
         };
+    }
+
+    async createTasksFromTemplate(
+        template: any,
+        opts: {
+            assigneeIds?: string[];
+            overrideDeadline?: Date;
+            triggeredById?: string;
+            runAt: Date;
+        },
+    ) {
+        const targetAssigneeIds = await this.resolveAssigneesWithOverride(template, opts.assigneeIds);
+
+        if (targetAssigneeIds.length === 0) {
+            return { count: 0, assigneeIds: [] as string[] };
+        }
+
+        const assigneeSnapshots = await this.prisma.user.findMany({
+            where: { id: { in: targetAssigneeIds } },
+            select: { id: true, organizationId: true, departmentId: true },
+        });
+        const assigneeMap = new Map(
+            assigneeSnapshots.map(item => [
+                item.id,
+                { organizationId: item.organizationId, departmentId: item.departmentId },
+            ]),
+        );
+
+        const anchorDate = opts.overrideDeadline || opts.runAt;
+        const periodInfo = computePeriodInfo(template, anchorDate, opts.overrideDeadline);
+        const legacyDeadline = new Date(anchorDate);
+        legacyDeadline.setHours(legacyDeadline.getHours() + template.deadlineOffset);
+        const effectiveDeadline = opts.overrideDeadline || periodInfo.dueAt || legacyDeadline;
+
+        const tasksToCreate = targetAssigneeIds.map(userId => {
+            const snapshot = assigneeMap.get(userId);
+            return {
+                title: this.generateTaskTitle(template.name, periodInfo.periodKey || undefined),
+                description: template.description || undefined,
+                type: template.taskType,
+                priority: template.priority,
+                deadline: effectiveDeadline,
+                periodStart: periodInfo.periodStart || undefined,
+                periodEnd: periodInfo.periodEnd || undefined,
+                dueAt: periodInfo.dueAt || undefined,
+                periodKey: periodInfo.periodKey || undefined,
+                assigneeId: userId,
+                assigneeOrgId: snapshot?.organizationId || undefined,
+                assigneeDeptId: snapshot?.departmentId || undefined,
+                createdById: opts.triggeredById,
+                templateId: template.id,
+            };
+        });
+
+        await this.taskService.createMany(tasksToCreate as any);
+
+        await this.prisma.intelTaskTemplate.update({
+            where: { id: template.id },
+            data: { lastRunAt: opts.runAt },
+        });
+
+        return { count: tasksToCreate.length, assigneeIds: targetAssigneeIds };
     }
 
     // --- Helpers ---
@@ -177,9 +203,15 @@ export class IntelTaskTemplateService {
         return Array.from(targetIds);
     }
 
-    private generateTaskTitle(templateName: string): string {
-        const dateStr = new Date().toLocaleDateString();
-        // 如果模板名称中已包含日期格式占位符，可以处理 (简化处理：直接追加日期)
+    private async resolveAssigneesWithOverride(template: any, assigneeIdsOverride?: string[]) {
+        if (assigneeIdsOverride && assigneeIdsOverride.length > 0) {
+            return assigneeIdsOverride;
+        }
+        return this.resolveAssignees(template);
+    }
+
+    private generateTaskTitle(templateName: string, periodKey?: string): string {
+        const dateStr = periodKey || new Date().toLocaleDateString();
         return `${templateName} [${dateStr}]`;
     }
 }
