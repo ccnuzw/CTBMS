@@ -37,10 +37,10 @@ import { useModalAutoFocus } from '../../../hooks/useModalAutoFocus';
 const { Text } = Typography;
 
 const CATEGORY_OPTIONS = [
-    { label: '预判', value: 'forecast', color: '#1890ff' },
-    { label: '分析', value: 'analysis', color: '#52c41a' },
-    { label: '数据', value: 'data', color: '#13c2c2' },
-    { label: '逻辑', value: 'logic', color: '#eb2f96' },
+    { label: '预判', value: 'Forecast', color: '#1890ff' },
+    { label: '分析', value: 'Analysis', color: '#52c41a' },
+    { label: '数据', value: 'Data', color: '#13c2c2' },
+    { label: '逻辑', value: 'Logic', color: '#eb2f96' },
 ];
 
 export const InsightTypeManager: React.FC = () => {

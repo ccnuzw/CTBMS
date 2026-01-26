@@ -70,6 +70,14 @@
 - **信息维护**：集成 Tiptap 富文本编辑器，支持图文混排
 - **文件中心**：支持多格式文件上传、管理与在线预览 (PDF/Office)
 
+### 📉 商情中心 (Smart Market Intelligence)
+- **智能配置中心 (Configuration Center)**：
+    - **事件类型管理**：标准化市场事件定义（如价格异动、供应冲击），支持中文分类与全生命周期管理
+    - **洞察多维分析**：预置“后市预判”、“供需分析”等核心分析维度，赋能 AI 深度研判
+    - **提取规则引擎**：可视化配置关键词提取规则，支持“左词+右词+距离约束”的精准提取逻辑
+- **AI 智能分析**：集成 LLM 大模型，自动解析非结构化日报，提取结构化价格与事件数据
+- **看板可视化**：基于标准化数据的实时市场情绪看板与价格趋势图
+
 ### 📈 数据仪表盘
 - 可视化统计图表
 - 关键指标展示
@@ -102,20 +110,19 @@ pnpm install
 DATABASE_URL="postgresql://user:password@localhost:5432/ctbms_dev"
 ```
 
-### 数据库初始化
+### 数据库初始化 (One-Click Deployment)
+
+推荐使用以下命令一次性完成 Schema 同步与全量数据初始化（包含行政区划、组织架构、配置规则及测试数据）：
 
 ```bash
-# 1. 运行数据库迁移
-cd apps/api
-npx prisma migrate dev
+# 1. 同步数据库结构
+pnpm --filter api exec prisma db push
 
-# 2. 初始化核心系统数据（用户、角色）
-npx prisma db seed 
-# 或者手动运行: psql $DATABASE_URL -f prisma/seed.sql
-
-# 3. 导入行政区划数据 (重要: 包含2800+城市数据)
-npx ts-node prisma/seed-regions-master.ts
+# 2. 一键播种所有测试数据
+pnpm --filter api exec prisma db seed
 ```
+
+> 详细配置说明请参考 [配置中心使用说明](./docs/CONFIGURATION_CENTER_GUIDE.md)
 
 ### 启动开发服务器
 

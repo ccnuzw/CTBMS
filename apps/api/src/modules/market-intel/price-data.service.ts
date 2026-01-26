@@ -97,7 +97,7 @@ export class PriceDataService {
             location,
             province,
             city,
-            enterpriseId,
+            // enterpriseId, [REMOVED]
             startDate,
             endDate,
             keyword,
@@ -115,7 +115,8 @@ export class PriceDataService {
         if (location) andFilters.push({ location: { contains: location, mode: 'insensitive' } });
         if (province) andFilters.push({ province });
         if (city) andFilters.push({ city });
-        if (enterpriseId) andFilters.push({ enterpriseId });
+        // if (enterpriseId) andFilters.push({ enterpriseId }); [REMOVED]
+        if (sourceType) andFilters.push({ sourceType });
         if (sourceType) andFilters.push({ sourceType });
         const subTypeList = this.parseCsv(subTypes);
         if (subTypeList.length === 0 && subType) {

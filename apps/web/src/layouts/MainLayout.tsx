@@ -24,6 +24,7 @@ import {
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { ThemeSwitcher } from '../components/ThemeSwitcher';
 import { UserDropdown } from '../components/UserDropdown';
+import { FullScreenButton } from '../components/FullScreenButton';
 
 const { Header, Sider, Content } = Layout;
 const { Title, Text } = Typography;
@@ -243,11 +244,7 @@ export const MainLayout: React.FC = () => {
                                                 icon: <FileTextOutlined />,
                                                 label: 'C类知识库',
                                             },
-                                            {
-                                                key: '/intel/entity',
-                                                icon: <ShopOutlined />,
-                                                label: 'D类企业档案',
-                                            },
+
                                             {
                                                 key: '/intel/leaderboard',
                                                 icon: <TeamOutlined />,
@@ -620,6 +617,7 @@ export const MainLayout: React.FC = () => {
                                 </Badge>
                             }
                         />
+                        <FullScreenButton style={{ marginRight: isMobile ? 0 : 8 }} />
                         <ThemeSwitcher />
                         <UserDropdown />
                     </div>

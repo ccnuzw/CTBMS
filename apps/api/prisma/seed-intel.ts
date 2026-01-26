@@ -15,24 +15,59 @@ function randomPick<T>(arr: T[]): T {
     return arr[Math.floor(Math.random() * arr.length)];
 }
 
-// 事件类型配置
-const EVENT_TYPES = [
-    { code: 'PRICE_CHANGE', name: '价格变动', category: 'supply', icon: 'DollarOutlined', color: '#1890ff' },
-    { code: 'SUPPLY_CHANGE', name: '供应变化', category: 'supply', icon: 'ShopOutlined', color: '#52c41a' },
-    { code: 'DEMAND_SHIFT', name: '需求变化', category: 'demand', icon: 'RiseOutlined', color: '#faad14' },
-    { code: 'POLICY_UPDATE', name: '政策变动', category: 'policy', icon: 'FileTextOutlined', color: '#722ed1' },
-    { code: 'ENTERPRISE_ACTION', name: '企业动态', category: 'supply', icon: 'BankOutlined', color: '#13c2c2' },
-    { code: 'WEATHER_IMPACT', name: '天气影响', category: 'weather', icon: 'CloudOutlined', color: '#eb2f96' },
-    { code: 'LOGISTICS_INFO', name: '物流动态', category: 'supply', icon: 'CarOutlined', color: '#fa8c16' },
+// 事件类型配置 (引用自 seed-event-types.ts 的标准定义，此处仅保留 Codes 用于生成数据)
+const EVENT_TYPE_CODES = [
+    'PRICE_CHANGE',
+    'SUPPLY_SHOCK',
+    'DEMAND_SHIFT',
+    'POLICY_UPDATE',
+    'ENTERPRISE_ACTION',
+    'WEATHER_IMPACT',
+    'LOGISTICS_ISSUE'
 ];
 
-// 洞察类型配置
+// 洞察类型配置 (Enriched)
 const INSIGHT_TYPES = [
-    { code: 'FORECAST', name: '后市预判', category: 'forecast', icon: 'LineChartOutlined', color: '#1890ff' },
-    { code: 'SUPPLY_ANALYSIS', name: '供给分析', category: 'analysis', icon: 'AreaChartOutlined', color: '#52c41a' },
-    { code: 'DEMAND_ANALYSIS', name: '需求分析', category: 'analysis', icon: 'BarChartOutlined', color: '#faad14' },
-    { code: 'MARKET_LOGIC', name: '市场逻辑', category: 'logic', icon: 'NodeIndexOutlined', color: '#722ed1' },
-    { code: 'DATA_HIGHLIGHT', name: '数据亮点', category: 'data', icon: 'HighlightOutlined', color: '#13c2c2' },
+    {
+        code: 'FORECAST',
+        name: '后市预判',
+        category: 'Forecast',
+        description: '对未来价格趋势或市场走向的预测',
+        icon: 'LineChartOutlined',
+        color: '#1890ff'
+    },
+    {
+        code: 'SUPPLY_ANALYSIS',
+        name: '供给分析',
+        category: 'Analysis',
+        description: '对供应端（产量、库存、发运）的深度剖析',
+        icon: 'AreaChartOutlined',
+        color: '#52c41a'
+    },
+    {
+        code: 'DEMAND_ANALYSIS',
+        name: '需求分析',
+        category: 'Analysis',
+        description: '对需求端（采购、消费、替代）的深度剖析',
+        icon: 'BarChartOutlined',
+        color: '#faad14'
+    },
+    {
+        code: 'MARKET_LOGIC',
+        name: '市场逻辑',
+        category: 'Logic',
+        description: '梳理支撑当前行情的核心逻辑链条',
+        icon: 'NodeIndexOutlined',
+        color: '#722ed1'
+    },
+    {
+        code: 'DATA_HIGHLIGHT',
+        name: '数据亮点',
+        category: 'Data',
+        description: '研报中提及的关键数据指标',
+        icon: 'HighlightOutlined',
+        color: '#13c2c2'
+    },
 ];
 
 // 模拟情报原始内容
@@ -157,40 +192,58 @@ const SOURCE_TYPES = ['FIRST_LINE', 'COMPETITOR', 'OFFICIAL', 'RESEARCH_INST', '
 async function main() {
     console.log('🌱 开始播种情报测试数据 (Seed Intel)...');
 
-    // 1. 检查或创建测试用户
-    let testUser = await prisma.user.findFirst({ where: { username: 'test_user' } });
-    if (!testUser) {
-        console.log('   - 创建测试用户...');
-        testUser = await prisma.user.create({
+    // 1. 获取现有员工用户 (用于随机分配作者)
+    const allUsers = await prisma.user.findMany({
+        where: { status: 'ACTIVE' }
+    });
+
+    // 如果没有用户，创建一个兜底用户
+    let defaultUser;
+    if (allUsers.length === 0) {
+        console.log('   - 未找到现有用户，创建测试用户...');
+        defaultUser = await prisma.user.create({
             data: {
-                username: 'test_user',
-                email: 'test@example.com',
+                username: 'test_user_' + Date.now(),
+                email: `test_${Date.now()}@example.com`,
                 name: '测试用户',
             },
         });
+        allUsers.push(defaultUser);
     }
-    console.log(`   ✅ 测试用户: ${testUser.username}`);
 
-    // 2. 创建事件类型配置
-    console.log('   - 创建事件类型配置...');
-    const eventTypeMap: Record<string, string> = {};
-    for (const et of EVENT_TYPES) {
-        const existing = await prisma.eventTypeConfig.findUnique({ where: { code: et.code } });
-        if (existing) {
-            eventTypeMap[et.code] = existing.id;
-        } else {
-            const created = await prisma.eventTypeConfig.create({ data: et });
-            eventTypeMap[et.code] = created.id;
-        }
-    }
-    console.log(`   ✅ 事件类型: ${Object.keys(eventTypeMap).length}个`);
+    // 清理旧的 Mock 数据 (可选，虽然现在也是随机ID，但为了保持整洁，可以清理特定标记的数据)
+    // 但由于现在是用随机用户，不好精准定位“旧数据”，除非全量清除市场情报？
+    // 或者我们只清除本次主要使用的几个用户的？
+    // 简单起见，这里不进行全量清除，依靠 effectiveTime 倒序在前端展示最新数据。
+    // 如果必须幂等，可以考虑清除所有 INTEL_SOURCE_TYPE 为 MOCK 的数据（如果支持），或者简单略过。
+    // 鉴于用户刚才要求幂等，我们可以清除所有 category=B_SEMI_STRUCTURED 且 isFlagged=true (模拟的一部分特征) 或者...
+    // 最好的办法： seed-intel 专门产生一批带有特殊标记的数据，或者清除所有 Intelligence。
+    // 让我们清除所有 MarketIntel 数据作为重置 (开发环境通常可以接受)
+    console.log('   - [Reset] 清除旧的情报数据...');
+    await prisma.marketEvent.deleteMany({});
+    await prisma.marketInsight.deleteMany({});
+    await prisma.marketIntel.deleteMany({}); // Cloud be aggressive
 
-    // 3. 创建洞察类型配置
+    console.log(`   ✅ 加载潜在作报告人: ${allUsers.length} 人`);
+
+    // 2. 创建洞察类型配置
     console.log('   - 创建洞察类型配置...');
     const insightTypeMap: Record<string, string> = {};
     for (const it of INSIGHT_TYPES) {
+        // Upsert logic manually
         const existing = await prisma.insightTypeConfig.findUnique({ where: { code: it.code } });
         if (existing) {
+            // Update description/category if needed
+            await prisma.insightTypeConfig.update({
+                where: { id: existing.id },
+                data: {
+                    name: it.name,
+                    category: it.category,
+                    description: it.description,
+                    icon: it.icon,
+                    color: it.color
+                }
+            });
             insightTypeMap[it.code] = existing.id;
         } else {
             const created = await prisma.insightTypeConfig.create({ data: it });
@@ -198,6 +251,18 @@ async function main() {
         }
     }
     console.log(`   ✅ 洞察类型: ${Object.keys(insightTypeMap).length}个`);
+
+    // 2.5 为 mock 数据准备事件类型 ID 映射
+    // 注意：事件类型现在由 seed-event-types.ts 统一管理，这里只查 ID
+    const eventTypeMap: Record<string, string> = {};
+    for (const code of EVENT_TYPE_CODES) {
+        const et = await prisma.eventTypeConfig.findUnique({ where: { code } });
+        if (et) {
+            eventTypeMap[code] = et.id;
+        } else {
+            console.warn(`⚠️ Warning: Event type ${code} not found in DB. Make sure seed-event-types.ts runs first.`);
+        }
+    }
 
     // 4. 生成情报数据
     console.log('   - 开始生成情报数据...');
@@ -229,30 +294,33 @@ async function main() {
                 validationScore: 70 + Math.floor(Math.random() * 30),
                 totalScore: 60 + Math.floor(Math.random() * 40),
                 isFlagged: Math.random() < 0.1, // 10% flagged
-                authorId: testUser.id,
+                authorId: randomPick(allUsers).id, // [FIX] Random real user
             },
         });
         intelCount++;
 
         // 创建关联事件
         for (const evt of template.events) {
-            const eventTypeCode = randomPick(['PRICE_CHANGE', 'SUPPLY_CHANGE', 'ENTERPRISE_ACTION', 'DEMAND_SHIFT']);
-            await prisma.marketEvent.create({
-                data: {
-                    intelId: intel.id,
-                    eventTypeId: eventTypeMap[eventTypeCode],
-                    sourceText: evt.content,
-                    subject: evt.subject,
-                    action: evt.action,
-                    content: evt.content,
-                    impact: evt.impact,
-                    impactLevel: randomPick(['HIGH', 'MEDIUM', 'LOW']),
-                    sentiment: evt.sentiment,
-                    commodity: randomPick(COMMODITIES),
-                    eventDate: effectiveTime,
-                },
-            });
-            eventCount++;
+            // 使用新标准 Code
+            const eventTypeCode = randomPick(['PRICE_CHANGE', 'SUPPLY_SHOCK', 'ENTERPRISE_ACTION', 'DEMAND_SHIFT']);
+            if (eventTypeMap[eventTypeCode]) {
+                await prisma.marketEvent.create({
+                    data: {
+                        intelId: intel.id,
+                        eventTypeId: eventTypeMap[eventTypeCode],
+                        sourceText: evt.content,
+                        subject: evt.subject,
+                        action: evt.action,
+                        content: evt.content,
+                        impact: evt.impact,
+                        impactLevel: randomPick(['HIGH', 'MEDIUM', 'LOW']),
+                        sentiment: evt.sentiment,
+                        commodity: randomPick(COMMODITIES),
+                        eventDate: effectiveTime,
+                    },
+                });
+                eventCount++;
+            }
         }
 
         // 创建关联洞察

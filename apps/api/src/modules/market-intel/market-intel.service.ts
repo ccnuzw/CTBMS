@@ -6,9 +6,9 @@ import {
     UpdateMarketIntelDto,
     MarketIntelQuery,
     AIAnalysisResult,
-    IntelCategory,
     ContentType,
 } from '@packages/types';
+import { IntelCategory } from '@prisma/client';
 
 @Injectable()
 export class MarketIntelService {
@@ -52,6 +52,9 @@ export class MarketIntelService {
         const intel = await this.prisma.marketIntel.create({
             data: {
                 ...dto,
+                category: dto.category as IntelCategory,
+                sourceType: dto.sourceType as any,
+                contentType: dto.contentType as any,
                 totalScore,
                 authorId,
             },
@@ -99,16 +102,10 @@ export class MarketIntelService {
 
         // 逐条处理价格数据
         for (const point of pricePoints) {
-            // 优先使用 AI 解析时匹配到的企业ID，否则尝试查询
-            let enterpriseId: string | null = point.enterpriseId || null;
-            if (!enterpriseId && point.sourceType === 'ENTERPRISE' && point.enterpriseName) {
-                const enterprise = await this.prisma.enterprise.findFirst({
-                    where: { name: { contains: point.enterpriseName, mode: 'insensitive' } },
-                });
-                enterpriseId = enterprise?.id ?? null;
-            }
+            // [MODIFIED] 不再尝试创建或查找 Enterprise
+            // 而是确保 collectionPointId 存在 (AI 应该返回，或者在前端确认)
 
-            // 构建价格数据（增强版：包含采集点和行政区划关联）
+            // 构建价格数据
             const priceData = {
                 // 价格分类
                 sourceType: (point.sourceType || 'REGIONAL') as any,
@@ -124,9 +121,9 @@ export class MarketIntelService {
                 longitude: point.longitude || null,
                 latitude: point.latitude || null,
 
-                // 企业关联
-                enterpriseId,
-                enterpriseName: point.enterpriseName || null,
+                // 企业关联 [REMOVED for Decoupling]
+                // enterpriseId: null, 
+                // enterpriseName: null, 
 
                 // ===== 新增：采集点关联 =====
                 collectionPointId: point.collectionPointId || null,
@@ -164,7 +161,7 @@ export class MarketIntelService {
                     price: priceData.price,
                     dayChange: priceData.dayChange,
                     intelId: priceData.intelId,
-                    enterpriseId: priceData.enterpriseId,
+                    // enterpriseId: priceData.enterpriseId, [REMOVED]
                     // 更新关联信息
                     collectionPointId: priceData.collectionPointId,
                     regionCode: priceData.regionCode,
@@ -359,6 +356,9 @@ export class MarketIntelService {
             where: { id },
             data: {
                 ...dto,
+                category: dto.category as IntelCategory | undefined,
+                sourceType: dto.sourceType as any,
+                contentType: dto.contentType as any,
                 totalScore,
             },
             include: {
@@ -599,7 +599,7 @@ export class MarketIntelService {
      */
     async findEvents(query: {
         eventTypeId?: string;
-        enterpriseId?: string;
+        // enterpriseId?: string; [REMOVED]
         collectionPointId?: string;
         commodity?: string;
         sentiment?: string;
@@ -612,7 +612,7 @@ export class MarketIntelService {
     }) {
         const {
             eventTypeId,
-            enterpriseId,
+            // enterpriseId, [REMOVED]
             collectionPointId,
             commodity,
             sentiment,
@@ -626,7 +626,7 @@ export class MarketIntelService {
 
         const where: any = {};
         if (eventTypeId) where.eventTypeId = eventTypeId;
-        if (enterpriseId) where.enterpriseId = enterpriseId;
+        // if (enterpriseId) where.enterpriseId = enterpriseId; [REMOVED]
         if (collectionPointId) where.collectionPointId = collectionPointId;
         if (commodity) where.commodity = commodity;
         if (sentiment) where.sentiment = sentiment;
@@ -654,9 +654,9 @@ export class MarketIntelService {
                     eventType: {
                         select: { id: true, code: true, name: true, icon: true, color: true, category: true },
                     },
-                    enterprise: {
-                        select: { id: true, name: true, shortName: true },
-                    },
+                    // enterprise: { [REMOVED]
+                    //    select: { id: true, name: true, shortName: true },
+                    // },
                     collectionPoint: {
                         select: { id: true, code: true, name: true, type: true },
                     },
@@ -685,7 +685,7 @@ export class MarketIntelService {
             where: { id },
             include: {
                 eventType: true,
-                enterprise: true,
+                // enterprise: true, [REMOVED]
                 collectionPoint: true,
                 intel: {
                     include: {
@@ -1532,9 +1532,6 @@ export class MarketIntelService {
                 include: {
                     eventType: {
                         select: { id: true, code: true, name: true, icon: true, color: true },
-                    },
-                    enterprise: {
-                        select: { id: true, name: true, shortName: true },
                     },
                     intel: {
                         select: {

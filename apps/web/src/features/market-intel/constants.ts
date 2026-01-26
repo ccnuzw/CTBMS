@@ -15,7 +15,7 @@ interface CategoryGuideline {
   items: GuidelineItem[];
 }
 
-export const INTEL_CATEGORY_GUIDELINES: Record<IntelCategory, CategoryGuideline> = {
+export const INTEL_CATEGORY_GUIDELINES: Partial<Record<IntelCategory, CategoryGuideline>> = {
   [IntelCategory.A_STRUCTURED]: {
     title: 'AB类：文本采集 (价格/事件/洞察) 规范',
     color: 'blue',
@@ -44,14 +44,6 @@ export const INTEL_CATEGORY_GUIDELINES: Record<IntelCategory, CategoryGuideline>
       { label: '表格处理', desc: '文中的Excel表格或图片表格，AI会自动识别OCR并结构化，无需人工拆解。' },
       { label: '来源标注', desc: '必须注明会议时间、参会方或研报发布机构（如：XX咨询周报）。' },
       { label: '归档原则', desc: '原始文件归档在C类库，但提取出的数据会分发至全系统。' },
-    ],
-  },
-  [IntelCategory.D_ENTITY]: {
-    title: 'D类：实体档案 (Entity Profile) 维护规范',
-    color: 'default',
-    items: [
-      { label: '名称规范', desc: '必须使用工商注册全称，系统自动关联统一社会信用代码。' },
-      { label: '信用记录', desc: '违约/拒收事件需附带合同编号或通话录音作为证据链。' },
     ],
   },
 };

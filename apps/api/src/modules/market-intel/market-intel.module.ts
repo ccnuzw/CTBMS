@@ -4,7 +4,7 @@ import { MarketIntelService } from './market-intel.service';
 import { PriceDataService } from './price-data.service';
 
 import { IntelAttachmentService } from './intel-attachment.service';
-import { IntelEntityService } from './intel-entity.service';
+
 import { DocumentParserService } from './document-parser.service';
 import { ResearchReportService } from './research-report.service';
 
@@ -15,7 +15,7 @@ import { ResearchReportService } from './research-report.service';
         PriceDataService,
 
         IntelAttachmentService,
-        IntelEntityService,
+
         DocumentParserService,
         ResearchReportService,
     ],
@@ -24,7 +24,7 @@ import { ResearchReportService } from './research-report.service';
         PriceDataService,
 
         IntelAttachmentService,
-        IntelEntityService,
+
         DocumentParserService,
         ResearchReportService,
     ],

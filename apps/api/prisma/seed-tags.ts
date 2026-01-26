@@ -3,137 +3,106 @@ import { PrismaClient, TagScope } from '@prisma/client';
 
 const prisma = new PrismaClient();
 
+// ==========================================
+// 1. Tag Groups Definition
+// ==========================================
 const TAG_GROUPS = [
-    {
-        name: '客户等级',
-        description: '客户重要性评级',
-        isExclusive: true,
-        tags: [
-            { name: 'KA客户', color: '#f5222d', scopes: [TagScope.CUSTOMER] },
-            { name: '重点客户', color: '#fa8c16', scopes: [TagScope.CUSTOMER] },
-            { name: '普通客户', color: '#1890ff', scopes: [TagScope.CUSTOMER] },
-            { name: '潜在客户', color: '#bfbfbf', scopes: [TagScope.CUSTOMER] },
-        ]
-    },
-    {
-        name: '信用状态',
-        description: '企业信用风险标识',
-        isExclusive: true,
-        tags: [
-            { name: '信用极好', color: '#52c41a', scopes: [TagScope.CUSTOMER, TagScope.SUPPLIER] },
-            { name: '信用良好', color: '#13c2c2', scopes: [TagScope.CUSTOMER, TagScope.SUPPLIER] },
-            { name: '风险关注', color: '#faad14', scopes: [TagScope.CUSTOMER, TagScope.SUPPLIER] },
-            { name: '失信黑名单', color: '#f5222d', scopes: [TagScope.CUSTOMER, TagScope.SUPPLIER] },
-        ]
-    },
-    {
-        name: '合作阶段',
-        description: '与我司的合作深度',
-        isExclusive: true,
-        tags: [
-            { name: '初次接触', color: '#1890ff', scopes: [TagScope.CUSTOMER] },
-            { name: '意向沟通', color: '#722ed1', scopes: [TagScope.CUSTOMER] },
-            { name: '试单', color: '#eb2f96', scopes: [TagScope.CUSTOMER] },
-            { name: '稳定合作', color: '#52c41a', scopes: [TagScope.CUSTOMER] },
-        ]
-    },
-    {
-        name: '产品偏好',
-        description: '客户主要采购的产品',
-        isExclusive: false,
-        tags: [
-            { name: '玉米', color: '#faad14', scopes: [TagScope.CUSTOMER, TagScope.MARKET_INFO] },
-            { name: '大豆', color: '#d4b106', scopes: [TagScope.CUSTOMER, TagScope.MARKET_INFO] },
-            { name: '豆粕', color: '#8c8c8c', scopes: [TagScope.CUSTOMER, TagScope.MARKET_INFO] },
-            { name: '小麦', color: '#fadb14', scopes: [TagScope.CUSTOMER, TagScope.MARKET_INFO] },
-        ]
-    },
+    { name: '合作评级', code: 'COOP_RATING', isExclusive: true, sortOrder: 1, description: '客户/供应商合作等级分类' },
+    { name: '信用风险', code: 'RISK_LEVEL', isExclusive: true, sortOrder: 2, description: '企业信用风险评级' },
+    { name: '业务偏好', code: 'BIZ_PREF', isExclusive: false, sortOrder: 3, description: '主要经营品种或模式' },
+    { name: '区域属性', code: 'REGION_TYPE', isExclusive: true, sortOrder: 4, description: '企业所属区域类型' },
 ];
 
+// ==========================================
+// 2. Global Tags Definition
+// ==========================================
 const GLOBAL_TAGS = [
-    { name: '紧急', color: '#f5222d', scopes: [TagScope.GLOBAL] },
-    { name: '已核实', color: '#52c41a', scopes: [TagScope.MARKET_INFO] },
-    { name: '待核实', color: '#faad14', scopes: [TagScope.MARKET_INFO] },
-    { name: '市场传闻', color: '#722ed1', scopes: [TagScope.MARKET_INFO] },
+    // Group: 合作评级 (COOP_RATING)
+    { name: '战略核心', groupCode: 'COOP_RATING', color: '#f5222d', sortOrder: 1, scopes: [TagScope.CUSTOMER, TagScope.SUPPLIER] },
+    { name: '优质伙伴', groupCode: 'COOP_RATING', color: '#fa8c16', sortOrder: 2, scopes: [TagScope.CUSTOMER, TagScope.SUPPLIER] },
+    { name: '普通合作', groupCode: 'COOP_RATING', color: '#1890ff', sortOrder: 3, scopes: [TagScope.CUSTOMER, TagScope.SUPPLIER] },
+    { name: '考察期', groupCode: 'COOP_RATING', color: '#bfbfbf', sortOrder: 4, scopes: [TagScope.CUSTOMER, TagScope.SUPPLIER] },
+
+    // Group: 信用风险 (RISK_LEVEL)
+    { name: '信用极好', groupCode: 'RISK_LEVEL', color: '#52c41a', sortOrder: 1, icon: 'SafetyCertificateOutlined' },
+    { name: '风险可控', groupCode: 'RISK_LEVEL', color: '#13c2c2', sortOrder: 2 },
+    { name: '预付受限', groupCode: 'RISK_LEVEL', color: '#722ed1', sortOrder: 3, description: '禁止预付货款' },
+    { name: '失信黑名单', groupCode: 'RISK_LEVEL', color: '#cf1322', sortOrder: 4, icon: 'StopOutlined', description: '禁止交易' },
+
+    // Group: 业务偏好 (BIZ_PREF)
+    { name: '玉米主力', groupCode: 'BIZ_PREF', color: '#fadb14', scopes: [TagScope.CUSTOMER, TagScope.SUPPLIER, TagScope.MARKET_INFO] },
+    { name: '大豆主力', groupCode: 'BIZ_PREF', color: '#a0d911', scopes: [TagScope.CUSTOMER, TagScope.SUPPLIER, TagScope.MARKET_INFO] },
+    { name: '进口粮', groupCode: 'BIZ_PREF', color: '#1890ff', scopes: [TagScope.MARKET_INFO, TagScope.CONTRACT] },
+    { name: '北粮南运', groupCode: 'BIZ_PREF', color: '#eb2f96', scopes: [TagScope.LOGISTICS] },
+    { name: '饲料加工', groupCode: 'BIZ_PREF', color: '#fa541c' },
+    { name: '深加工', groupCode: 'BIZ_PREF', color: '#722ed1' },
+
+    // Group: 区域属性 (REGION_TYPE)
+    { name: '产区直采', groupCode: 'REGION_TYPE', color: '#52c41a' },
+    { name: '港口贸易', groupCode: 'REGION_TYPE', color: '#1890ff' },
+    { name: '销区渠道', groupCode: 'REGION_TYPE', color: '#fa8c16' },
 ];
 
-async function main() {
-    console.log('🌱 开始播种全局标签数据 (Seed Tags)...');
+async function seedTags() {
+    console.log('🌱 开始全量标签数据播种 (Redesigned Tags Seed)...');
 
-    // 1. 创建标签组和组内标签
-    for (const group of TAG_GROUPS) {
-        const existingGroup = await prisma.tagGroup.findUnique({
-            where: { name: group.name },
+    // 1. Groups
+    const groupMap: Record<string, string> = {}; // code -> id
+
+    for (const g of TAG_GROUPS) {
+        const result = await prisma.tagGroup.upsert({
+            where: { name: g.name },
+            update: {
+                description: g.description,
+                isExclusive: g.isExclusive,
+                sortOrder: g.sortOrder,
+            },
+            create: {
+                name: g.name,
+                description: g.description,
+                isExclusive: g.isExclusive,
+                sortOrder: g.sortOrder,
+            },
         });
-
-        let groupId = existingGroup?.id;
-
-        if (!existingGroup) {
-            const createdGroup = await prisma.tagGroup.create({
-                data: {
-                    name: group.name,
-                    description: group.description,
-                    isExclusive: group.isExclusive,
-                }
-            });
-            groupId = createdGroup.id;
-            console.log(`✅ 创建标签组: ${group.name}`);
-        } else {
-            console.log(`⏭️  标签组已存在: ${group.name}`);
-        }
-
-        if (groupId) {
-            for (const tag of group.tags) {
-                // Check if tag exists within group
-                const existingTag = await prisma.tag.findFirst({
-                    where: {
-                        name: tag.name,
-                        groupId: groupId,
-                    }
-                });
-
-                if (!existingTag) {
-                    await prisma.tag.create({
-                        data: {
-                            name: tag.name,
-                            color: tag.color,
-                            scopes: tag.scopes,
-                            groupId: groupId,
-                        }
-                    });
-                    console.log(`   - 创建组内标签: ${tag.name}`);
-                }
-            }
-        }
+        groupMap[g.code] = result.id;
+        console.log(`   ✅ 标签组: ${g.name}`);
     }
 
-    // 2. 创建独立全局标签
-    for (const tag of GLOBAL_TAGS) {
-        const existingTag = await prisma.tag.findFirst({
-            where: {
-                name: tag.name,
-                groupId: null,
+    // 2. Tags
+    for (const t of GLOBAL_TAGS) {
+        // Find group ID
+        const groupId = groupMap[t.groupCode];
+
+        await prisma.tag.upsert({
+            where: { name_groupId: { name: t.name, groupId: groupId || '' } }, // Assuming name+group unique composite or logic
+            // Note: Schema has @@unique([name, groupId]). If groupId is undefined, it might fail if we assume it exists.
+            // For safety, we use findFirst or name+groupId if valid. 
+            // Prisma upsert needs a unique key. 
+            // Let's use name+groupId. If groupId is null, it's global global. 这里都是有组的.
+            update: {
+                color: t.color,
+                icon: t.icon,
+                sortOrder: t.sortOrder,
+                scopes: t.scopes || [TagScope.GLOBAL],
+                description: t.description,
+            },
+            create: {
+                name: t.name,
+                groupId: groupId,
+                color: t.color,
+                icon: t.icon || null,
+                sortOrder: t.sortOrder || 0,
+                scopes: t.scopes || [TagScope.GLOBAL],
+                description: t.description,
             }
         });
-
-        if (!existingTag) {
-            await prisma.tag.create({
-                data: {
-                    name: tag.name,
-                    color: tag.color,
-                    scopes: tag.scopes,
-                }
-            });
-            console.log(`✅ 创建独立标签: ${tag.name}`);
-        } else {
-            console.log(`⏭️  独立标签已存在: ${tag.name}`);
-        }
+        console.log(`      🏷️ 标签: ${t.name}`);
     }
 
-    console.log('🎉 标签数据播种完成。');
+    console.log('🎉 标签体系重构完成。');
 }
 
-main()
+seedTags()
     .catch((e) => {
         console.error(e);
         process.exit(1);

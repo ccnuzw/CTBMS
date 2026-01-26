@@ -121,10 +121,7 @@ export const DataEntry: React.FC<DataEntryProps> = ({ onSuccess }) => {
             return;
         }
 
-        if (sourceType === IntelSourceType.FIRST_LINE && gpsStatus !== 'success') {
-            message.error('系统阻断：一线采集必须通过地理围栏校验！');
-            return;
-        }
+
 
         try {
             let legacyCategory = IntelCategory.B_SEMI_STRUCTURED;

@@ -86,15 +86,26 @@ export const RuleManager: React.FC = () => {
             render: (name: string) => <Text strong>{name}</Text>,
         },
         {
-            title: '类型',
-            key: 'type',
+            title: '规则类型',
+            dataIndex: 'targetType',
+            key: 'targetType',
+            width: 100,
+            render: (type: string) => (
+                <Tag color={type === 'EVENT' ? 'blue' : 'purple'}>
+                    {type === 'EVENT' ? '事件提取' : '洞察提取'}
+                </Tag>
+            ),
+        },
+        {
+            title: '详细分类',
+            key: 'detailType',
             width: 120,
             render: (_, record: ExtractionRule) => {
                 const isEvent = record.targetType === 'EVENT';
                 const typeConfig = isEvent ? record.eventType : record.insightType;
                 return (
-                    <Tag color={typeConfig?.color || (isEvent ? 'blue' : 'gold')}>
-                        {typeConfig?.name || (isEvent ? '事件' : '洞察')}
+                    <Tag bordered={false} color={typeConfig?.color}>
+                        {typeConfig?.name || '-'}
                     </Tag>
                 );
             },

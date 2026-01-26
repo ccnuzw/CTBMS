@@ -101,7 +101,7 @@ export const PromptTemplatePage = () => {
                 A_STRUCTURED: { text: 'A类-结构化', status: 'Processing' },
                 B_SEMI_STRUCTURED: { text: 'B类-半结构化', status: 'Warning' },
                 C_DOCUMENT: { text: 'C类-文档', status: 'Success' },
-                D_ENTITY: { text: 'D类-实体', status: 'Default' },
+
             },
             width: 150,
         },
@@ -218,7 +218,7 @@ export const PromptTemplatePage = () => {
                         A_STRUCTURED: 'A类-结构化',
                         B_SEMI_STRUCTURED: 'B类-半结构化',
                         C_DOCUMENT: 'C类-文档',
-                        D_ENTITY: 'D类-实体',
+
                     }}
                     rules={[{ required: true }]}
                 />

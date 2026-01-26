@@ -1,0 +1,311 @@
+[
+  {
+    "id": "259d8fb3-c692-4609-838a-bbb057a51e99",
+    "name": "KA客户",
+    "color": "#f5222d",
+    "icon": null,
+    "description": null,
+    "scopes": [
+      "CUSTOMER"
+    ],
+    "groupId": "dfb2d6ef-d47c-4d57-b595-cc9a2442a742",
+    "sortOrder": 0,
+    "status": "ACTIVE",
+    "createdAt": "2026-01-25T12:06:59.461Z",
+    "updatedAt": "2026-01-25T12:06:59.461Z"
+  },
+  {
+    "id": "a3ffa017-f9a0-4752-9a1a-4ad8c7a89b2f",
+    "name": "重点客户",
+    "color": "#fa8c16",
+    "icon": null,
+    "description": null,
+    "scopes": [
+      "CUSTOMER"
+    ],
+    "groupId": "dfb2d6ef-d47c-4d57-b595-cc9a2442a742",
+    "sortOrder": 0,
+    "status": "ACTIVE",
+    "createdAt": "2026-01-25T12:06:59.466Z",
+    "updatedAt": "2026-01-25T12:06:59.466Z"
+  },
+  {
+    "id": "d5b9190e-ba4b-47f5-87c6-26d2b415679c",
+    "name": "普通客户",
+    "color": "#1890ff",
+    "icon": null,
+    "description": null,
+    "scopes": [
+      "CUSTOMER"
+    ],
+    "groupId": "dfb2d6ef-d47c-4d57-b595-cc9a2442a742",
+    "sortOrder": 0,
+    "status": "ACTIVE",
+    "createdAt": "2026-01-25T12:06:59.470Z",
+    "updatedAt": "2026-01-25T12:06:59.470Z"
+  },
+  {
+    "id": "d37f50b9-a144-4e76-8194-378dd54f839b",
+    "name": "潜在客户",
+    "color": "#bfbfbf",
+    "icon": null,
+    "description": null,
+    "scopes": [
+      "CUSTOMER"
+    ],
+    "groupId": "dfb2d6ef-d47c-4d57-b595-cc9a2442a742",
+    "sortOrder": 0,
+    "status": "ACTIVE",
+    "createdAt": "2026-01-25T12:06:59.474Z",
+    "updatedAt": "2026-01-25T12:06:59.474Z"
+  },
+  {
+    "id": "3e204f5e-076a-4e23-b803-8d4f0ff3fc02",
+    "name": "信用极好",
+    "color": "#52c41a",
+    "icon": null,
+    "description": null,
+    "scopes": [
+      "CUSTOMER",
+      "SUPPLIER"
+    ],
+    "groupId": "01faa373-1c63-441a-adc5-2f20cbdea5ab",
+    "sortOrder": 0,
+    "status": "ACTIVE",
+    "createdAt": "2026-01-25T12:06:59.481Z",
+    "updatedAt": "2026-01-25T12:06:59.481Z"
+  },
+  {
+    "id": "a90cffde-44b8-49fd-bebc-736b6c48f534",
+    "name": "信用良好",
+    "color": "#13c2c2",
+    "icon": null,
+    "description": null,
+    "scopes": [
+      "CUSTOMER",
+      "SUPPLIER"
+    ],
+    "groupId": "01faa373-1c63-441a-adc5-2f20cbdea5ab",
+    "sortOrder": 0,
+    "status": "ACTIVE",
+    "createdAt": "2026-01-25T12:06:59.485Z",
+    "updatedAt": "2026-01-25T12:06:59.485Z"
+  },
+  {
+    "id": "b9ee397a-6d94-4155-a274-bc9eef979b8f",
+    "name": "风险关注",
+    "color": "#faad14",
+    "icon": null,
+    "description": null,
+    "scopes": [
+      "CUSTOMER",
+      "SUPPLIER"
+    ],
+    "groupId": "01faa373-1c63-441a-adc5-2f20cbdea5ab",
+    "sortOrder": 0,
+    "status": "ACTIVE",
+    "createdAt": "2026-01-25T12:06:59.489Z",
+    "updatedAt": "2026-01-25T12:06:59.489Z"
+  },
+  {
+    "id": "5008648b-8b7f-4377-a149-efa25e9399f6",
+    "name": "失信黑名单",
+    "color": "#f5222d",
+    "icon": null,
+    "description": null,
+    "scopes": [
+      "CUSTOMER",
+      "SUPPLIER"
+    ],
+    "groupId": "01faa373-1c63-441a-adc5-2f20cbdea5ab",
+    "sortOrder": 0,
+    "status": "ACTIVE",
+    "createdAt": "2026-01-25T12:06:59.493Z",
+    "updatedAt": "2026-01-25T12:06:59.493Z"
+  },
+  {
+    "id": "6d59e7cd-374b-433e-866a-164322136ff8",
+    "name": "初次接触",
+    "color": "#1890ff",
+    "icon": null,
+    "description": null,
+    "scopes": [
+      "CUSTOMER"
+    ],
+    "groupId": "d51ef2ff-a0f5-4697-b096-ec8891b21dee",
+    "sortOrder": 0,
+    "status": "ACTIVE",
+    "createdAt": "2026-01-25T12:06:59.499Z",
+    "updatedAt": "2026-01-25T12:06:59.499Z"
+  },
+  {
+    "id": "68649bed-0711-4569-8b24-5749007c5f6f",
+    "name": "意向沟通",
+    "color": "#722ed1",
+    "icon": null,
+    "description": null,
+    "scopes": [
+      "CUSTOMER"
+    ],
+    "groupId": "d51ef2ff-a0f5-4697-b096-ec8891b21dee",
+    "sortOrder": 0,
+    "status": "ACTIVE",
+    "createdAt": "2026-01-25T12:06:59.502Z",
+    "updatedAt": "2026-01-25T12:06:59.502Z"
+  },
+  {
+    "id": "82029aae-76f9-4866-95f8-5b6bf3413cec",
+    "name": "试单",
+    "color": "#eb2f96",
+    "icon": null,
+    "description": null,
+    "scopes": [
+      "CUSTOMER"
+    ],
+    "groupId": "d51ef2ff-a0f5-4697-b096-ec8891b21dee",
+    "sortOrder": 0,
+    "status": "ACTIVE",
+    "createdAt": "2026-01-25T12:06:59.505Z",
+    "updatedAt": "2026-01-25T12:06:59.505Z"
+  },
+  {
+    "id": "7d5f84fc-f047-47bd-9bf8-40cbf25adce5",
+    "name": "玉米",
+    "color": "#faad14",
+    "icon": null,
+    "description": null,
+    "scopes": [
+      "CUSTOMER",
+      "MARKET_INFO"
+    ],
+    "groupId": "1673fc9b-991e-4fc2-9e32-e6f9d1bcab9f",
+    "sortOrder": 0,
+    "status": "ACTIVE",
+    "createdAt": "2026-01-25T12:06:59.515Z",
+    "updatedAt": "2026-01-25T12:06:59.515Z"
+  },
+  {
+    "id": "79fa8287-6e30-4bf3-be18-a526dc9ea842",
+    "name": "大豆",
+    "color": "#d4b106",
+    "icon": null,
+    "description": null,
+    "scopes": [
+      "CUSTOMER",
+      "MARKET_INFO"
+    ],
+    "groupId": "1673fc9b-991e-4fc2-9e32-e6f9d1bcab9f",
+    "sortOrder": 0,
+    "status": "ACTIVE",
+    "createdAt": "2026-01-25T12:06:59.518Z",
+    "updatedAt": "2026-01-25T12:06:59.518Z"
+  },
+  {
+    "id": "967dd163-a437-45c5-b3f9-48d09326fc36",
+    "name": "豆粕",
+    "color": "#8c8c8c",
+    "icon": null,
+    "description": null,
+    "scopes": [
+      "CUSTOMER",
+      "MARKET_INFO"
+    ],
+    "groupId": "1673fc9b-991e-4fc2-9e32-e6f9d1bcab9f",
+    "sortOrder": 0,
+    "status": "ACTIVE",
+    "createdAt": "2026-01-25T12:06:59.522Z",
+    "updatedAt": "2026-01-25T12:06:59.522Z"
+  },
+  {
+    "id": "1c1c0411-bdd9-4134-9d3a-5516f0d670cf",
+    "name": "小麦",
+    "color": "#fadb14",
+    "icon": null,
+    "description": null,
+    "scopes": [
+      "CUSTOMER",
+      "MARKET_INFO"
+    ],
+    "groupId": "1673fc9b-991e-4fc2-9e32-e6f9d1bcab9f",
+    "sortOrder": 0,
+    "status": "ACTIVE",
+    "createdAt": "2026-01-25T12:06:59.525Z",
+    "updatedAt": "2026-01-25T12:06:59.525Z"
+  },
+  {
+    "id": "d1edd183-ccfa-44af-befc-f3bda4289ba9",
+    "name": "紧急",
+    "color": "#f5222d",
+    "icon": null,
+    "description": null,
+    "scopes": [
+      "GLOBAL"
+    ],
+    "groupId": null,
+    "sortOrder": 0,
+    "status": "ACTIVE",
+    "createdAt": "2026-01-25T12:06:59.530Z",
+    "updatedAt": "2026-01-25T12:06:59.530Z"
+  },
+  {
+    "id": "414519e8-f924-43e8-8d0a-510ded35a3e6",
+    "name": "已核实",
+    "color": "#52c41a",
+    "icon": null,
+    "description": null,
+    "scopes": [
+      "MARKET_INFO"
+    ],
+    "groupId": null,
+    "sortOrder": 0,
+    "status": "ACTIVE",
+    "createdAt": "2026-01-25T12:06:59.535Z",
+    "updatedAt": "2026-01-25T12:06:59.535Z"
+  },
+  {
+    "id": "84777f7c-2c0d-48e5-bfa2-20a7fdb42dda",
+    "name": "待核实",
+    "color": "#faad14",
+    "icon": null,
+    "description": null,
+    "scopes": [
+      "MARKET_INFO"
+    ],
+    "groupId": null,
+    "sortOrder": 0,
+    "status": "ACTIVE",
+    "createdAt": "2026-01-25T12:06:59.538Z",
+    "updatedAt": "2026-01-25T12:06:59.538Z"
+  },
+  {
+    "id": "09323cfd-bed6-48ce-89d5-e73001dca0d3",
+    "name": "市场传闻",
+    "color": "#722ed1",
+    "icon": null,
+    "description": null,
+    "scopes": [
+      "MARKET_INFO"
+    ],
+    "groupId": null,
+    "sortOrder": 0,
+    "status": "ACTIVE",
+    "createdAt": "2026-01-25T12:06:59.542Z",
+    "updatedAt": "2026-01-25T12:06:59.542Z"
+  },
+  {
+    "id": "394d6c1c-b502-43f2-91f6-17c1d53fe7fc",
+    "name": "稳定合作",
+    "color": "#52c41a",
+    "icon": null,
+    "description": null,
+    "scopes": [
+      "CUSTOMER",
+      "LOGISTICS"
+    ],
+    "groupId": "d51ef2ff-a0f5-4697-b096-ec8891b21dee",
+    "sortOrder": 0,
+    "status": "ACTIVE",
+    "createdAt": "2026-01-25T12:06:59.509Z",
+    "updatedAt": "2026-01-25T14:01:14.465Z"
+  }
+]

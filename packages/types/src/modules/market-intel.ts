@@ -8,7 +8,6 @@ export enum IntelCategory {
   A_STRUCTURED = 'A_STRUCTURED',
   B_SEMI_STRUCTURED = 'B_SEMI_STRUCTURED',
   C_DOCUMENT = 'C_DOCUMENT',
-  D_ENTITY = 'D_ENTITY',
 }
 
 
@@ -26,7 +25,6 @@ export const INTEL_CATEGORY_LABELS: Record<IntelCategory, string> = {
   [IntelCategory.A_STRUCTURED]: 'AB类：文本采集 (价格/事件/洞察)',
   [IntelCategory.B_SEMI_STRUCTURED]: 'AB类：文本采集 (价格/事件/洞察)',
   [IntelCategory.C_DOCUMENT]: 'C类：文档与图表 (研报/政策)',
-  [IntelCategory.D_ENTITY]: 'D类：实体档案 (企业画像)',
 };
 
 export const INTEL_SOURCE_TYPE_LABELS: Record<IntelSourceType, string> = {
@@ -124,7 +122,7 @@ export const ExtractedPricePointSchema = z.object({
 
   // 企业信息（企业价格时填充）
   enterpriseName: z.string().optional(),  // 企业名称
-  enterpriseId: z.string().optional(),    // 系统中的企业ID（如果能匹配）
+  // [REMOVED] enterpriseId: z.string().optional(),    
 
   // 地理信息
   province: z.string().optional(),        // 省份
@@ -293,8 +291,7 @@ export const MarketIntelQuerySchema = z.object({
   category: z.enum([
     IntelCategory.A_STRUCTURED,
     IntelCategory.B_SEMI_STRUCTURED,
-    IntelCategory.C_DOCUMENT,
-    IntelCategory.D_ENTITY
+    IntelCategory.C_DOCUMENT
   ]).optional(),
   sourceType: z.nativeEnum(IntelSourceType).optional(),
   startDate: z.coerce.date().optional(),
@@ -509,8 +506,8 @@ export const CreatePriceDataSchema = z.object({
   latitude: z.number().optional(),
 
   // 企业关联
-  enterpriseId: z.string().optional(),
-  enterpriseName: z.string().optional(),
+  // [REMOVED] enterpriseId: z.string().optional(),
+  // [REMOVED] enterpriseName: z.string().optional(),
 
   // 采集点关联（新增）
   collectionPointId: z.string().optional(),
@@ -555,9 +552,9 @@ export const PriceDataResponseSchema = z.object({
   longitude: z.number().nullable(),
   latitude: z.number().nullable(),
 
-  // 企业关联
-  enterpriseId: z.string().nullable(),
-  enterpriseName: z.string().nullable(),
+  // 企业关联 [REMOVED]
+  enterpriseId: z.string().nullable().optional(),
+  enterpriseName: z.string().nullable().optional(),
   enterprise: z.object({
     id: z.string(),
     name: z.string(),
@@ -614,7 +611,8 @@ export const PriceDataQuerySchema = z.object({
   location: z.string().optional(),
   province: z.string().optional(),
   city: z.string().optional(),
-  enterpriseId: z.string().optional(),
+  priority: z.number().int().optional(),
+  // enterpriseId: z.string().optional(), [REMOVED]
   // 新增：采集点和行政区划查询
   collectionPointId: z.string().optional(),
   collectionPointIds: z.array(z.string()).optional(),
@@ -732,44 +730,44 @@ export type ResearchReportQuery = z.infer<typeof ResearchReportQuerySchema>;
 
 
 // =============================================
-// D类：实体关联 (IntelEntityLink)
+// D类：实体关联 -> [RENAMED] 采集点关联 (IntelPointLink)
 // =============================================
 
-export enum IntelEntityLinkType {
+export enum IntelPointLinkType {
   MENTIONED = 'MENTIONED',
   SUBJECT = 'SUBJECT',
   SOURCE = 'SOURCE',
 }
 
-export const INTEL_ENTITY_LINK_TYPE_LABELS: Record<IntelEntityLinkType, string> = {
-  [IntelEntityLinkType.MENTIONED]: '被提及',
-  [IntelEntityLinkType.SUBJECT]: '情报主体',
-  [IntelEntityLinkType.SOURCE]: '情报来源',
+export const INTEL_POINT_LINK_TYPE_LABELS: Record<IntelPointLinkType, string> = {
+  [IntelPointLinkType.MENTIONED]: '被提及',
+  [IntelPointLinkType.SUBJECT]: '情报主体',
+  [IntelPointLinkType.SOURCE]: '情报来源',
 };
 
-export const CreateIntelEntityLinkSchema = z.object({
+export const CreateIntelPointLinkSchema = z.object({
   intelId: z.string(),
-  enterpriseId: z.string(),
-  linkType: z.nativeEnum(IntelEntityLinkType).optional().default(IntelEntityLinkType.MENTIONED),
+  collectionPointId: z.string(),
+  linkType: z.nativeEnum(IntelPointLinkType).optional().default(IntelPointLinkType.MENTIONED),
 });
 
-export const IntelEntityLinkResponseSchema = z.object({
+export const IntelPointLinkResponseSchema = z.object({
   id: z.string(),
   intelId: z.string(),
-  enterpriseId: z.string(),
-  linkType: z.nativeEnum(IntelEntityLinkType),
+  collectionPointId: z.string(),
+  linkType: z.nativeEnum(IntelPointLinkType),
   createdAt: z.date(),
-  enterprise: z
+  collectionPoint: z
     .object({
       id: z.string(),
       name: z.string(),
-      shortName: z.string().nullable(),
+      code: z.string(),
     })
     .optional(),
 });
 
-export type CreateIntelEntityLinkDto = z.infer<typeof CreateIntelEntityLinkSchema>;
-export type IntelEntityLinkResponse = z.infer<typeof IntelEntityLinkResponseSchema>;
+export type CreateIntelPointLinkDto = z.infer<typeof CreateIntelPointLinkSchema>;
+export type IntelPointLinkResponse = z.infer<typeof IntelPointLinkResponseSchema>;
 
 // =============================================
 // 任务调度 (IntelTask)

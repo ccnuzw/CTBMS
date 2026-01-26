@@ -372,10 +372,33 @@ model CollectionPoint {
   priceSubTypes String[]                      // 支持的价格类型列表
   defaultSubType String?                      // 默认价格子类型（如 FOB、LISTED）
   isDataSource  Boolean              @default(true) // 是否作为数据来源点
-  
-  // 关联企业（如果是企业类型）
+
+  // [NEW] 市场经营主体属性 (替代原企业关联)
+  isMarketEntity Boolean             @default(false)
+  contactInfo    Json?               // 简易联系人信息 {name, phone, role}
+  capacity       Int?                // 产能/规模
+
+  // 关联企业（如果是企业类型）- [REMOVED for Decoupling]
+  // enterpriseId  String?
+  // enterprise    Enterprise?          @relation(fields: [enterpriseId], references: [id])
+  // [KEEPING FOR CRM BUT REMOVING FROM INTELLIGENCE CONTEXT - Wait, user said remove relation in intelligence, but keep Enterprise table.
+  // Actually, if we want to decouple, CollectionPoint should not depend on Enterprise ID for intel purposes.
+  // But CollectionPoint might still link to Enterprise for "which enterprise owns this point".
+  // However, the prompt said "intelligence mainly relates to CollectionPoint... Enterprise module I don't want it (in this context)".
+  // For safety and clean separation, I will remove the relation here to enforce the split.]
   enterpriseId  String?
-  enterprise    Enterprise?          @relation(fields: [enterpriseId], references: [id])
+  enterprise    Enterprise?          @relation(fields: [enterpriseId], references: [id]) 
+  // Wait, I should probably keep this link for the "Trading Side" to know which point belongs to which enterprise, 
+  // BUT the PriceData/MarketEvent will NOT link to Enterprise directly.
+  // The user said "Enterprise module I don't want...". 
+  // Re-reading: "Enterprise module I don't want it (in intelligence context)... Intelligence mainly relates to CollectionPoint".
+  // So `CollectionPoint` -> `Enterprise` link is probably fine for master data, but `PriceData` -> `Enterprise` must go.
+  // Let's keep `enterpriseId` in `CollectionPoint` as a loose/master-data link, but NOT use it for Intel lookups.
+  // Actually, previously I proposed removing `enterpriseId` from `CollectionPoint` in the DECOUPLE plan, but in the UPDATE plan I didn't explicitly say I'd remove it from CollectionPoint, only PriceData/MarketEvent.
+  // Let's check the plan `decouple_enterprise_plan_cn.md`.
+  // It says "Intel/Price/Event only link to CollectionPoint". It does NOT say CollectionPoint cannot link to Enterprise.
+  // But logically, if we decouple, we might want CollectionPoint to stand alone.
+  // Let's keep it for now as it doesn't hurt the "Intel Pivot", but enables "Trading Pivot".
   
   // 优先级与状态
   priority      Int                  @default(0)  // 匹配优先级（高优先匹配）
@@ -391,6 +414,9 @@ model CollectionPoint {
   priceData     PriceData[]
   // 关联的市场事件
   marketEvents  MarketEvent[]
+
+  // [NEW] 关联的情报点链接
+  intelLinks    IntelPointLink[]
   
   @@index([type])
   @@index([regionCode])
@@ -443,10 +469,14 @@ model Enterprise {
   // 关联
   contacts     Contact[]
   bankAccounts BankAccount[]
-  intelLinks   IntelEntityLink[]  // 关联的商情情报
-  priceData    PriceData[]        // 关联的价格数据（企业价格）
-  collectionPoints CollectionPoint[]  // 关联的采集点配置
-  marketEvents MarketEvent[]      // 关联的市场事件
+  
+  // 移除直接关联的情报/价格/事件
+  // intelLinks   IntelEntityLink[] 
+  // priceData    PriceData[]        
+  // marketEvents MarketEvent[]      
+  
+  // 保留与采集点的关联（作为资产归属关系）
+  collectionPoints CollectionPoint[] 
   
   status      EntityStatus     @default(ACTIVE)
   createdAt   DateTime         @default(now())
@@ -496,7 +526,7 @@ enum IntelCategory {
   A_STRUCTURED      // 标准化硬数据 (价格/库存)
   B_SEMI_STRUCTURED // 半结构化情报 (心态/事件)
   C_DOCUMENT        // 文档与图表 (研报/政策)
-  D_ENTITY          // 实体档案 (企业画像)
+
 }
 
 // 信源类型枚举
@@ -564,7 +594,10 @@ model MarketIntel {
   // 扩展关联
   priceData       PriceData[]       // A类：提取的价格数据
   attachments     IntelAttachment[] // C类：附件
-  entityLinks     IntelEntityLink[] // D类：关联实体
+  
+  // [NEW] 关联采集点 (D类替代品)
+  intelLinks      IntelPointLink[]  
+
   tasks           IntelTask[]       // 关联任务
   marketEvents    MarketEvent[]     // B类：提取的市场事件
   marketInsights  MarketInsight[]   // C类：提取的市场洞察
@@ -687,9 +720,9 @@ model PriceData {
   latitude      Float?                              // 纬度（用于地图展示）
   
   // ===== 企业关联（仅企业价格有值）=====
-  enterpriseId  String?
-  enterprise    Enterprise? @relation(fields: [enterpriseId], references: [id])
-  enterpriseName String?                            // 冗余存储企业名称（便于查询）
+  // [REMOVED] enterpriseId  String?
+  // [REMOVED] enterprise    Enterprise? @relation(fields: [enterpriseId], references: [id])
+  // [REMOVED] enterpriseName String?                            // 冗余存储企业名称（便于查询）
   
   // ===== 采集点关联（支持连续性数据分析）=====
   collectionPointId  String?
@@ -731,7 +764,7 @@ model PriceData {
   @@unique([effectiveDate, commodity, location, sourceType, subType])
   @@index([sourceType, commodity, effectiveDate])
   @@index([geoLevel, effectiveDate])
-  @@index([enterpriseId, effectiveDate])
+  // @@index([enterpriseId, effectiveDate])
   @@index([commodity, effectiveDate])
   @@index([location, effectiveDate])
   @@index([province, city, effectiveDate])
@@ -764,39 +797,39 @@ model IntelAttachment {
 }
 
 // =============================================
-// D类：情报-实体关联表
+// D类：情报-实体关联表 -> [RENAMED] 情报-采集点关联表
 // =============================================
 
 // 关联类型枚举
-enum IntelEntityLinkType {
+enum IntelPointLinkType {
   MENTIONED   // 在情报中被提及
   SUBJECT     // 情报主体
   SOURCE      // 情报来源
 }
 
-model IntelEntityLink {
+// [RENAMED] IntelEntityLink -> IntelPointLink
+model IntelPointLink {
   id           String              @id @default(uuid())
   
   intelId      String
   intel        MarketIntel         @relation(fields: [intelId], references: [id], onDelete: Cascade)
   
-  enterpriseId String
-  enterprise   Enterprise          @relation(fields: [enterpriseId], references: [id], onDelete: Cascade)
+  collectionPointId String
+  collectionPoint   CollectionPoint @relation(fields: [collectionPointId], references: [id], onDelete: Cascade)
   
   // 关联类型
-  linkType     IntelEntityLinkType @default(MENTIONED)
+  linkType     IntelPointLinkType @default(MENTIONED)
   
   createdAt    DateTime            @default(now())
   
-  @@unique([intelId, enterpriseId])
-  @@index([enterpriseId])
+  @@unique([intelId, collectionPointId])
+  @@index([collectionPointId])
 }
 
 // =============================================
 // 任务调度系统
 // =============================================
 
-// 任务类型枚举
 // 任务类型枚举 (12种)
 enum IntelTaskType {
   // 1. 常规汇报
@@ -1059,8 +1092,8 @@ model MarketEvent {
   // 关联
   collectionPointId String?
   collectionPoint   CollectionPoint? @relation(fields: [collectionPointId], references: [id])
-  enterpriseId  String?
-  enterprise    Enterprise?       @relation(fields: [enterpriseId], references: [id])
+  // [REMOVED] enterpriseId  String?
+  // [REMOVED] enterprise    Enterprise?       @relation(fields: [enterpriseId], references: [id])
   regionCode    String?
   commodity     String?
   
@@ -1069,7 +1102,7 @@ model MarketEvent {
   
   @@index([eventTypeId, eventDate])
   @@index([intelId])
-  @@index([enterpriseId])
+  // @@index([enterpriseId])
   @@index([collectionPointId])
 }
 

@@ -37,11 +37,16 @@ import { useModalAutoFocus } from '../../../hooks/useModalAutoFocus';
 const { Title, Text } = Typography;
 
 const CATEGORY_OPTIONS = [
-    { label: '供给', value: 'supply', color: '#52c41a' },
-    { label: '需求', value: 'demand', color: '#faad14' },
-    { label: '政策', value: 'policy', color: '#eb2f96' },
-    { label: '天气', value: 'weather', color: '#13c2c2' },
-    { label: '情绪', value: 'sentiment', color: '#fa541c' },
+    { label: '市场', value: 'Market', color: '#f5222d' },
+    { label: '供给', value: 'Supply', color: '#fa8c16' },
+    { label: '需求', value: 'Demand', color: '#1890ff' },
+    { label: '库存', value: 'Inventory', color: '#eb2f96' },
+    { label: '物流', value: 'Logistics', color: '#722ed1' },
+    { label: '政策', value: 'Policy', color: '#faad14' },
+    { label: '天气', value: 'Weather', color: '#13c2c2' },
+    { label: '情绪', value: 'Sentiment', color: '#52c41a' },
+    { label: '企业', value: 'Enterprise', color: '#2f54eb' },
+    { label: '成本', value: 'Cost', color: '#fa541c' },
 ];
 
 export const EventTypeManager: React.FC = () => {

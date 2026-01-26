@@ -32,7 +32,7 @@ import {
     ResearchReportQuery,
 } from '@packages/types';
 import { IntelAttachmentService } from './intel-attachment.service';
-import { IntelEntityService } from './intel-entity.service';
+
 import { DocumentParserService } from './document-parser.service';
 
 @Controller('market-intel')
@@ -42,7 +42,6 @@ export class MarketIntelController {
         private readonly priceDataService: PriceDataService,
         private readonly researchReportService: ResearchReportService,
         private readonly intelAttachmentService: IntelAttachmentService,
-        private readonly intelEntityService: IntelEntityService,
         private readonly documentParserService: DocumentParserService,
     ) { }
 
@@ -80,7 +79,7 @@ export class MarketIntelController {
     async analyze(@Body() dto: AnalyzeContentRequest) {
         return this.marketIntelService.analyze(
             dto.content as string,
-            dto.category,
+            dto.category as any,
             dto.location,
             dto.base64Image,
             dto.mimeType
@@ -267,7 +266,6 @@ export class MarketIntelController {
     ) {
         return this.marketIntelService.findEvents({
             eventTypeId,
-            enterpriseId,
             collectionPointId,
             commodity,
             sentiment,
@@ -556,21 +554,6 @@ export class MarketIntelController {
         return this.intelAttachmentService.remove(id);
     }
 
-    // --- 企业关联 ---
-
-    @Get('enterprises/:id/intels')
-    async getEnterpriseIntels(
-        @Param('id') enterpriseId: string,
-        @Query('limit') limit = '20',
-    ) {
-        return this.intelEntityService.findByEnterprise(enterpriseId, parseInt(limit, 10));
-    }
-
-    @Get('enterprises/:id/timeline')
-    async getEnterpriseTimeline(@Param('id') enterpriseId: string) {
-        return this.intelEntityService.getEnterpriseTimeline(enterpriseId);
-    }
-
     // =============================================
     // 动态路由 (必须放在最后)
     // =============================================
@@ -603,29 +586,5 @@ export class MarketIntelController {
         return this.intelAttachmentService.findByIntel(intelId);
     }
 
-    @Get(':id/entities')
-    async getIntelEntities(@Param('id') intelId: string) {
-        return this.intelEntityService.findByIntel(intelId);
-    }
 
-    @Post(':id/entities')
-    async linkEntity(
-        @Param('id') intelId: string,
-        @Body('enterpriseId') enterpriseId: string,
-        @Body('linkType') linkType?: string,
-    ) {
-        return this.intelEntityService.createLink({
-            intelId,
-            enterpriseId,
-            linkType: linkType as any,
-        });
-    }
-
-    @Delete(':intelId/entities/:enterpriseId')
-    async unlinkEntity(
-        @Param('intelId') intelId: string,
-        @Param('enterpriseId') enterpriseId: string,
-    ) {
-        return this.intelEntityService.removeLink(intelId, enterpriseId);
-    }
 }

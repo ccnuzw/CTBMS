@@ -1,0 +1,24 @@
+[
+  {
+    "id": "a0000000-0000-0000-0000-000000000001",
+    "name": "系统管理员",
+    "code": "SUPER_ADMIN",
+    "description": "系统超级管理员，拥有所有权限",
+    "isSystem": true,
+    "sortOrder": 0,
+    "status": "ACTIVE",
+    "createdAt": "2026-01-25T12:01:02.906Z",
+    "updatedAt": "2026-01-25T12:01:02.906Z"
+  },
+  {
+    "id": "a0000000-0000-0000-0000-000000000002",
+    "name": "普通员工",
+    "code": "STAFF",
+    "description": "普通员工角色",
+    "isSystem": true,
+    "sortOrder": 100,
+    "status": "ACTIVE",
+    "createdAt": "2026-01-25T12:01:02.909Z",
+    "updatedAt": "2026-01-25T12:01:02.909Z"
+  }
+]

@@ -181,20 +181,7 @@ export class PromptService implements OnModuleInit {
 {{content}}
 ===== 原文结束 =====`
             },
-            {
-                code: 'MARKET_INTEL_ENTITY_D',
-                name: 'D类-实体档案提取',
-                category: 'D_ENTITY' as IntelCategory,
-                system: `你是 CTBMS 的专业农产品市场分析师。
-重点任务：识别企业实体信息和产能动态。
 
-## 输出 JSON 格式
-{{jsonSchema}}`,
-                user: `请从以下内容中提取企业档案信息。
-===== 原文内容 =====
-{{content}}
-===== 原文结束 =====`
-            },
             {
                 code: 'MARKET_INTEL_BRIEFING',
                 name: '智能简报生成',

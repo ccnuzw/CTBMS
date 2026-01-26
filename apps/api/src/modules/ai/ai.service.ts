@@ -1,9 +1,9 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import {
     AIAnalysisResult,
-    IntelCategory,
     CollectionPointForRecognition,
 } from '@packages/types';
+import { IntelCategory } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { PromptService } from './prompt.service';
 import { RuleEngineService } from './rule-engine.service';
@@ -410,8 +410,6 @@ export class AIService implements OnModuleInit {
                 return 'MARKET_INTEL_SEMI_STRUCTURED_B';
             case IntelCategory.C_DOCUMENT:
                 return 'MARKET_INTEL_DOCUMENT_C';
-            case IntelCategory.D_ENTITY:
-                return 'MARKET_INTEL_ENTITY_D';
             default:
                 return 'MARKET_INTEL_SEMI_STRUCTURED_B';
         }
@@ -495,18 +493,7 @@ export class AIService implements OnModuleInit {
     "risks": "风险点"
   }
 }`;
-            case IntelCategory.D_ENTITY:
-                return `{
-  ${commonFields},
-  "entities": [
-    {
-      "name": "企业名",
-      "type": "类型",
-      "capacity": "产能",
-      "status": "开机率/运营状态"
-    }
-  ]
-}`;
+
             default:
                 return `{ ${commonFields} }`;
         }
@@ -559,11 +546,11 @@ export class AIService implements OnModuleInit {
             templateCode: promptCode,
             systemPrompt,
             userPrompt,
-            fullPrompt: `${systemPrompt}\n\n${userPrompt}`,
+            fullPrompt: `${systemPrompt}\n\n${userPrompt} `,
             targetModel // Add to trace log
         });
 
-        const fullPrompt = `${systemPrompt}\n\n${userPrompt}`;
+        const fullPrompt = `${systemPrompt} \n\n${userPrompt} `;
 
         // [FIX] Log the ACTUAL model being used
         this.logger.debug(`[AI] Preparing request for model: ${targetModel} (Provider: Google)`);
@@ -602,7 +589,7 @@ export class AIService implements OnModuleInit {
 
         for (let attempt = 1; attempt <= maxRetries; attempt++) {
             if (attempt > 1) {
-                traceLogger?.log('AI', `API 调用重试 (${attempt}/${maxRetries})`, null, 'warn');
+                traceLogger?.log('AI', `API 调用重试(${attempt} / ${maxRetries})`, null, 'warn');
             }
             const startTime = Date.now();
 
@@ -697,7 +684,7 @@ export class AIService implements OnModuleInit {
             traceLogger?.log('Parse', '开始解析 AI JSON 响应', { rawResponse: aiResponse });
 
             // 1. 移除 Markdown 代码块标记（包括可能的语言标识）
-            cleanJson = cleanJson.replace(/```[a-zA-Z]*\n?/g, '').replace(/```/g, '');
+            cleanJson = cleanJson.replace(/```[a - zA - Z] *\n ? /g, '').replace(/```/g, '');
 
             // 2. 使用括号匹配找到完整的 JSON 对象
             const firstBrace = cleanJson.indexOf('{');
