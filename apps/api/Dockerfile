@@ -27,6 +27,9 @@ COPY --from=builder /app/out/full/ .
 COPY turbo.json turbo.json
 COPY packages/types/tsconfig.json packages/types/tsconfig.json
 
+# Generate Prisma Client
+RUN cd apps/api && npx prisma generate
+
 # Build the project
 RUN pnpm turbo run build --filter=api...
 
