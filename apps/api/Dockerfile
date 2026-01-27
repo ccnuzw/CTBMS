@@ -58,4 +58,5 @@ COPY --from=installer /app/apps/api/prisma ./apps/api/prisma
 
 EXPOSE 3000
 
-CMD ["node", "apps/api/dist/src/main.js"]
+# Auto-run migrations before starting the app
+CMD ["/bin/sh", "-c", "npx prisma migrate deploy --schema=apps/api/prisma/schema.prisma && node apps/api/dist/src/main.js"]
