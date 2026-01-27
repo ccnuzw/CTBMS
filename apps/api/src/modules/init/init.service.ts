@@ -57,13 +57,17 @@ export class InitService implements OnModuleInit {
             let command: string;
             let args: string[];
 
-            if (fs.existsSync(tsSeedPath)) {
-                // Dev Environment: Run TS directly
+            const isProduction = process.env.NODE_ENV === 'production';
+
+            if (!isProduction && fs.existsSync(tsSeedPath)) {
+                // Dev/Local Environment: Run TS directly
                 command = 'npx';
                 args = ['ts-node', 'prisma/seed.ts'];
                 this.logger.log(`Starting seed process (Source TS detected): ${command} ${args.join(' ')}`);
             } else {
-                // Prod Environment: Run JS from dist
+                // Prod Environment (or TS missing): Run JS from dist
+                // In production Docker, NODE_ENV is 'production', so we force this path
+                // even if seed.ts exists (copied for schema reference)
                 const jsSeedPath = path.resolve(projectRoot, 'dist/prisma/seed.js');
                 command = 'node';
                 args = [jsSeedPath];
