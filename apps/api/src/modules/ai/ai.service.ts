@@ -294,17 +294,28 @@ export class AIService implements OnModuleInit {
         try {
             // [NEW] Get Configuration from DB
             const aiConfig = await this.configService.getAIModelConfig('DEFAULT');
-            const currentApiKey = aiConfig?.apiKey || this.apiKey; // DB config takes precedence
-            // [MODIFIED] Prefer DB config URL, then ENV, then default
+
+            // Resolve Config Priority: DB > ENV > Default
+            const currentApiKey = aiConfig?.apiKey || this.apiKey;
             const currentApiUrl = aiConfig?.apiUrl || this.apiUrl;
             const currentModelId = aiConfig?.modelName || this.modelId;
+
+            // Log Configuration Source for Transparency
+            if (aiConfig?.apiKey) {
+                this.logger.log(`[AI Configuration] Using DATABASE settings (Model: ${currentModelId}, URL: ${currentApiUrl})`);
+            } else {
+                this.logger.warn(`[AI Configuration] Using ENVIRONMENT/DEFAULT settings (Source: .env). Please configure in System Settings for better control.`);
+            }
 
             if (!currentApiKey) {
                 throw new Error('Valid API Key not found in Config (DEFAULT) or ENV.');
             }
 
             // 调用真实的 Gemini API
-            traceLogger.log('AI', '准备调用 Gemini API', { model: currentModelId, isConfigDB: !!aiConfig });
+            traceLogger.log('AI', '准备调用 Gemini API', {
+                model: currentModelId,
+                configSource: aiConfig?.apiKey ? 'DATABASE' : 'ENVIRONMENT'
+            });
             const aiResponse = await this.callGeminiAPI(content, category, base64Image, mimeType, traceLogger, aiConfig, currentApiUrl);
 
             // [NEW] 调用规则引擎进行补充分析
@@ -362,18 +373,29 @@ export class AIService implements OnModuleInit {
         response?: string;
         error?: string;
     }> {
-        if (!this.apiKey) {
-            return { success: false, message: 'GEMINI_API_KEY 未配置' };
+        // [NEW] Get Configuration from DB for testing
+        const aiConfig = await this.configService.getAIModelConfig('DEFAULT');
+        const currentApiKey = aiConfig?.apiKey || this.apiKey;
+        const currentApiUrl = aiConfig?.apiUrl || this.apiUrl;
+        const currentModelId = aiConfig?.modelName || this.modelId;
+
+        if (!currentApiKey) {
+            return { success: false, message: 'GEMINI_API_KEY 未配置 (Config/ENV)' };
         }
-        if (!this.apiUrl) {
-            return { success: false, message: 'GEMINI_API_URL 未配置' };
+        if (!currentApiUrl) {
+            return { success: false, message: 'GEMINI_API_URL 未配置 (Config/ENV)' };
         }
 
         try {
-            const genAI = new GoogleGenerativeAI(this.apiKey);
-            const model = genAI.getGenerativeModel({ model: this.modelId }, {
-                baseUrl: this.apiUrl,
-            });
+            const genAI = new GoogleGenerativeAI(currentApiKey);
+            const requestOptions: any = {};
+            if (currentApiUrl) {
+                requestOptions.baseUrl = currentApiUrl;
+            }
+
+            const model = genAI.getGenerativeModel({
+                model: currentModelId
+            }, requestOptions);
 
             const result = await model.generateContent('Hello');
             const response = await result.response;
@@ -382,8 +404,8 @@ export class AIService implements OnModuleInit {
             return {
                 success: true,
                 message: 'AI 连接测试成功！',
-                apiUrl: this.apiUrl,
-                modelId: this.modelId,
+                apiUrl: currentApiUrl,
+                modelId: currentModelId,
                 response: text.substring(0, 200),
             };
         } catch (error) {
@@ -392,8 +414,8 @@ export class AIService implements OnModuleInit {
             return {
                 success: false,
                 message: `连接错误: ${errorMessage}`,
-                apiUrl: this.apiUrl,
-                modelId: this.modelId,
+                apiUrl: currentApiUrl,
+                modelId: currentModelId,
                 error: errorMessage,
             };
         }
