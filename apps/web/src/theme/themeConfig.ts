@@ -3,7 +3,13 @@ import type { ThemeConfig } from 'antd';
 const theme: ThemeConfig = {
     token: {
         fontSize: 14,
-        colorPrimary: '#1677ff', // Customize as needed
+        colorPrimary: '#0A74DA',
+        borderRadius: 6,
+    },
+    components: {
+        Menu: {
+            itemSelectedColor: '#0A74DA',
+        },
     },
 };
 

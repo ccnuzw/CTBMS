@@ -53,3 +53,11 @@
 ## 5. 审查与质量
 - **自我审查**: 开发者在请求 Review 前必须先自我审查 PR。
 - **CI 检查**: Lint, Test, 和 Build 必须全部通过。
+
+## 6. 前端可访问性与弹窗焦点
+- **Modal/ModalForm 必须自动聚焦**: 统一使用 `useModalAutoFocus` 处理弹窗打开后的焦点转移，避免 `aria-hidden` 警告。
+- **首字段标记**: 在弹窗表单内给首个输入添加 `fieldProps={autoFocusFieldProps}`，并将表单内容包在 `div ref={containerRef}` 下。
+- **特定控件聚焦**: 若需要聚焦到特定控件（如 `Select`），使用 `focusRef` 直接绑定到该控件。
+- **避免禁用聚焦**: 不要随意设置 `autoFocusFirstInput={false}`，除非有明确原因。
+- **避免聚焦失效**: 自动聚焦目标必须是可聚焦且可编辑的控件；若首字段在编辑态被 `disabled`，需切换到下一个可用字段（例如编辑态改聚焦 `name`）。
+- **兜底聚焦**: `useModalAutoFocus` 必须跳过 `disabled`/`aria-hidden`/`tabindex<0` 的元素，并在标记字段不可用时回退到弹窗内第一个可聚焦控件，避免焦点落到 `focus-guard`。

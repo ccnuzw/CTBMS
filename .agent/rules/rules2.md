@@ -51,14 +51,20 @@ trigger: always_on
 │       ├── src
 │       │   ├── common          # 🌐 全局守卫, 拦截器, 过滤器
 │       │   ├── config          # ⚙️ 环境变量配置
-│       │   ├── modules         # 🧱 业务模块 (Controller/Service)
-│       │   │   └── [module]    # e.g., "users"
-│       │   │       ├── dto/            # 数据传输对象 (Zod based)
+│       │   ├── prisma          # 💾 全局 PrismaModule (@Global)
+│       │   │   ├── prisma.module.ts
+│       │   │   ├── prisma.service.ts
+│       │   │   └── index.ts
+│       │   ├── modules         # 🧱 业务模块 (一个功能 = 一个模块)
+│       │   │   └── [module]    # e.g., "users", "market-category"
+│       │   │       ├── dto/            # 使用 createZodDto 封装
 │       │   │       ├── *.controller.ts # 路由处理
 │       │   │       ├── *.service.ts    # 业务逻辑
-│       │   │       └── *.module.ts     # 依赖注入
-│       │   ├── prisma          # 💾 Prisma Service & Schema
+│       │   │       ├── *.module.ts     # 依赖注入
+│       │   │       └── index.ts        # 模块导出
 │       │   └── main.ts         # 入口文件
+│       ├── prisma              # Prisma Schema 目录
+│       │   └── schema.prisma
 │       └── package.json
 │
 ├── packages
@@ -68,8 +74,6 @@ trigger: always_on
 │
 ├── package.json (Root)
 └── pnpm-workspace.yaml
-```
-
 ---
 
 ## 3. 🛡️ 全局开发法则 (Global Rules)
@@ -132,6 +136,14 @@ trigger: always_on
     *   必须抛出 NestJS 标准异常 (e.g., `new BadRequestException('Invalid ID')`)。
     *   ❌ 禁止 `console.log` 错误后不做处理。
 
+### 5.4 模块拆分原则
+*   **高内聚**: 一个模块只负责一个业务领域。
+*   **低耦合**: 模块间通过 `exports` 暴露 Service，禁止直接导入其他模块的内部文件。
+*   **PrismaModule 特例**: 作为全局基础设施，放在 `src/prisma/` 而非 `src/modules/`。
+
+示例：
+*   ✅ `market-category/`, `market-tag/`, `market-info/` (分开)
+*   ❌ `market-info/` 包含 category + tag + info (合并)
 ---
 
 ## 6. 📝 命名规范 (Naming Convention)

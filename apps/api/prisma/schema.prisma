@@ -7,16 +7,1214 @@ generator client {
   provider = "prisma-client-js"
 }
 
-model User {
-  id    String @id @default(uuid())
-  email String @unique
-  name  String?
-  role  Role   @default(USER)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+// =============================================
+// 用户状态枚举（原 EmployeeStatus）
+// =============================================
+enum UserStatus {
+  ACTIVE      // 在职
+  PROBATION   // 试用期
+  RESIGNED    // 离职
+  SUSPENDED   // 停职
 }
 
-enum Role {
-  USER
-  ADMIN
+// 性别枚举
+enum Gender {
+  MALE
+  FEMALE
+  OTHER
+}
+
+// =============================================
+// 用户模型 (合并原 User + Employee)
+// =============================================
+model User {
+  id             String       @id @default(uuid())
+  
+  // 登录凭证
+  username       String       @unique   // 登录用户名
+  email          String       @unique
+  
+  // 基本信息
+  name           String                 // 姓名（显示名称）
+  gender         Gender?                // 性别
+  birthday       DateTime?              // 生日
+  employeeNo     String?      @unique   // 工号（可选）
+  phone          String?                // 电话
+  avatar         String?                // 头像 URL
+  
+  // 归属组织/部门（可选，有归属即为员工）
+  organizationId String?
+  organization   Organization? @relation(fields: [organizationId], references: [id])
+  departmentId   String?
+  department     Department?   @relation(fields: [departmentId], references: [id])
+  
+  // 职位信息
+  position       String?      // 职位名称
+  hireDate       DateTime?    // 入职日期
+  
+  // 员工状态
+  status         UserStatus   @default(ACTIVE)
+  
+  // 角色（通过 UserRole 关联）
+  roles          UserRole[]
+  
+  // 商情情报关联
+  marketIntels   MarketIntel[]
+  intelStats     UserIntelStats?
+  intelTasks     IntelTask[]       // 分配的采集任务
+  
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+}
+
+// =============================================
+// 角色模型
+// =============================================
+model Role {
+  id          String       @id @default(uuid())
+  name        String
+  code        String       @unique   // 角色代码，如 "MANAGER", "STAFF"
+  description String?
+  isSystem    Boolean      @default(false) // 系统内置角色不可删除
+  
+  sortOrder   Int          @default(0)
+  status      EntityStatus @default(ACTIVE)
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+  
+  users       UserRole[]
+}
+
+// 用户-角色关联表 (多对多)
+model UserRole {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  roleId    String
+  role      Role     @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  
+  createdAt DateTime @default(now())
+  
+  @@unique([userId, roleId])
+}
+
+// =============================================
+// 全局标签系统 (Global Tag System)
+// =============================================
+
+// 标签作用域枚举
+enum TagScope {
+  GLOBAL       // 全局可用
+  CUSTOMER     // 客户
+  SUPPLIER     // 供应商
+  LOGISTICS    // 物流供应商
+  CONTRACT     // 合同单据
+  MARKET_INFO  // 信息采集（兼容旧数据）
+}
+
+// 可挂载标签的实体类型
+enum TaggableEntityType {
+  CUSTOMER
+  SUPPLIER
+  LOGISTICS
+  CONTRACT
+  MARKET_INFO
+}
+
+// 标签组模型 (用于互斥逻辑)
+model TagGroup {
+  id           String       @id @default(uuid())
+  name         String       @unique
+  description  String?
+  isExclusive  Boolean      @default(true)  // 组内互斥
+  sortOrder    Int          @default(0)
+  status       EntityStatus @default(ACTIVE)
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+  
+  tags         Tag[]
+}
+
+// 全局标签模型
+model Tag {
+  id          String       @id @default(uuid())
+  name        String
+  color       String?      // HEX 颜色
+  icon        String?      // 图标标识符
+  description String?
+  
+  // 作用域 (决定该标签可挂载到哪些实体)
+  scopes      TagScope[]   @default([GLOBAL])
+  
+  // 所属标签组 (可选)
+  groupId     String?
+  group       TagGroup?    @relation(fields: [groupId], references: [id])
+  
+  sortOrder   Int          @default(0)
+  status      EntityStatus @default(ACTIVE)
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+  
+  // 关联实体
+  entityTags  EntityTag[]
+  
+  @@unique([name, groupId]) // 同组内标签名唯一
+}
+
+// 多态关联表 (标签 <-> 业务实体)
+model EntityTag {
+  id         String             @id @default(uuid())
+  tagId      String
+  tag        Tag                @relation(fields: [tagId], references: [id], onDelete: Cascade)
+  
+  // 多态字段
+  entityType TaggableEntityType
+  entityId   String             // 目标实体ID
+  
+  createdAt  DateTime           @default(now())
+  
+  @@unique([tagId, entityType, entityId]) // 防止重复关联
+  @@index([entityType, entityId])         // 按实体查询优化
+}
+
+// =============================================
+// 信息采集子系统 (Market Info Subsystem)
+// =============================================
+model MarketCategory {
+  id          String   @id @default(uuid())
+  name        String
+  code        String   @unique
+  description String?
+  sortOrder   Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  infos       MarketInfo[]
+}
+
+// MarketTag 已迁移到全局 Tag 系统，通过 EntityTag 关联
+
+model MarketInfo {
+  id          String   @id @default(uuid())
+  title       String
+  content     String   @db.Text
+  summary     String?
+  status      InfoStatus @default(DRAFT)
+  publishedAt DateTime?
+  
+  categoryId  String
+  category    MarketCategory @relation(fields: [categoryId], references: [id])
+  // 标签关联已迁移到 EntityTag 表
+  
+  attachments Json?      
+  
+  authorId    String     
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+}
+
+enum InfoStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+}
+
+// =============================================
+// 组织架构管理 (Organization Structure)
+// =============================================
+
+// 组织类型枚举
+enum OrganizationType {
+  HEADQUARTERS  // 总部
+  REGION        // 大区/分公司
+  BRANCH        // 经营部/办事处
+  SUBSIDIARY    // 子公司
+}
+
+// 通用状态枚举
+enum EntityStatus {
+  ACTIVE
+  INACTIVE
+}
+
+// 组织/公司模型 (支持多层级自引用)
+model Organization {
+  id          String           @id @default(uuid())
+  name        String
+  code        String           @unique   // 组织代码，如 "HQ", "REGION_EAST"
+  type        OrganizationType @default(BRANCH)
+  description String?
+  
+  // 自引用关系 (实现无限层级)
+  parentId    String?
+  parent      Organization?    @relation("OrgHierarchy", fields: [parentId], references: [id])
+  children    Organization[]   @relation("OrgHierarchy")
+  
+  // 关联部门
+  departments Department[]
+  
+  // 关联用户（员工）
+  users       User[]
+  
+  sortOrder   Int              @default(0)
+  status      EntityStatus     @default(ACTIVE)
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+}
+
+// 部门模型 (支持多层级自引用)
+model Department {
+  id             String        @id @default(uuid())
+  name           String
+  code           String
+  description    String?
+  
+  // 所属组织
+  organizationId String
+  organization   Organization  @relation(fields: [organizationId], references: [id])
+  
+  // 自引用关系 (实现无限层级部门)
+  parentId       String?
+  parent         Department?   @relation("DeptHierarchy", fields: [parentId], references: [id])
+  children       Department[]  @relation("DeptHierarchy")
+  
+  // 关联用户（员工）
+  users          User[]
+  
+  sortOrder      Int           @default(0)
+  status         EntityStatus  @default(ACTIVE)
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+  
+  @@unique([organizationId, code]) // 同一组织内部门代码唯一
+}
+
+// =============================================
+// 基础数据：行政区划 (国标编码)
+// =============================================
+
+// 行政区划层级
+enum RegionLevel {
+  COUNTRY       // 国家
+  PROVINCE      // 省级（省/直辖市/自治区）
+  CITY          // 地级市
+  DISTRICT      // 区/县
+  TOWN          // 乡镇/街道（可选）
+}
+
+// 行政区划表（采用国家统计局标准编码）
+model AdministrativeRegion {
+  id            String       @id @default(uuid())
+  
+  code          String       @unique  // 国标行政区划代码（如 110000 北京市）
+  name          String                // 名称
+  shortName     String?               // 简称（如 京、沪）
+  level         RegionLevel           // 层级
+  
+  // 层级关系
+  parentCode    String?               // 上级区划代码
+  parent        AdministrativeRegion?  @relation("RegionHierarchy", fields: [parentCode], references: [code])
+  children      AdministrativeRegion[] @relation("RegionHierarchy")
+  
+  // 地理信息
+  longitude     Float?                // 中心经度
+  latitude      Float?                // 中心纬度
+  
+  // 排序与状态
+  sortOrder     Int          @default(0)
+  isActive      Boolean      @default(true)
+  
+  // 关联
+  collectionPoints CollectionPoint[]
+  
+  @@index([level])
+  @@index([parentCode])
+}
+
+// =============================================
+// 基础数据：采集点配置
+// =============================================
+
+// 采集点类型
+enum CollectionPointType {
+  ENTERPRISE    // 企业（深加工、贸易商等）
+  PORT          // 港口
+  STATION       // 站台
+  REGION        // 地域（大区级别，如"东北"）
+  MARKET        // 批发市场
+}
+
+// 采集点配置表
+model CollectionPoint {
+  id            String               @id @default(uuid())
+  
+  // 基本信息
+  code          String               @unique  // 唯一编码（如 JINZHOU_PORT）
+  name          String                        // 显示名称
+  shortName     String?                       // 简称
+  aliases       String[]                      // 别名列表（用于 AI 模糊匹配）
+  type          CollectionPointType           // 采集点类型
+  
+  // ===== 增强：地域匹配（松耦合） =====
+  matchRegionCodes  String[]                  // 匹配的行政区划列表
+  
+  // 行政区划关联
+  regionCode    String?                       // 关联的行政区划代码
+  region        AdministrativeRegion? @relation(fields: [regionCode], references: [code])
+  
+  // 详细地理信息（可覆盖行政区划的坐标）
+  address       String?                       // 详细地址
+  longitude     Float?                        // 经度
+  latitude      Float?                        // 纬度
+  
+  // 业务属性
+  commodities   String[]                      // 主营品种
+  priceSubTypes String[]                      // 支持的价格类型列表
+  defaultSubType String?                      // 默认价格子类型（如 FOB、LISTED）
+  isDataSource  Boolean              @default(true) // 是否作为数据来源点
+
+  // [NEW] 市场经营主体属性 (替代原企业关联)
+  isMarketEntity Boolean             @default(false)
+  contactInfo    Json?               // 简易联系人信息 {name, phone, role}
+  capacity       Int?                // 产能/规模
+
+  // 关联企业（如果是企业类型）- [REMOVED for Decoupling]
+  // enterpriseId  String?
+  // enterprise    Enterprise?          @relation(fields: [enterpriseId], references: [id])
+  // [KEEPING FOR CRM BUT REMOVING FROM INTELLIGENCE CONTEXT - Wait, user said remove relation in intelligence, but keep Enterprise table.
+  // Actually, if we want to decouple, CollectionPoint should not depend on Enterprise ID for intel purposes.
+  // But CollectionPoint might still link to Enterprise for "which enterprise owns this point".
+  // However, the prompt said "intelligence mainly relates to CollectionPoint... Enterprise module I don't want it (in this context)".
+  // For safety and clean separation, I will remove the relation here to enforce the split.]
+  enterpriseId  String?
+  enterprise    Enterprise?          @relation(fields: [enterpriseId], references: [id]) 
+  // Wait, I should probably keep this link for the "Trading Side" to know which point belongs to which enterprise, 
+  // BUT the PriceData/MarketEvent will NOT link to Enterprise directly.
+  // The user said "Enterprise module I don't want...". 
+  // Re-reading: "Enterprise module I don't want it (in intelligence context)... Intelligence mainly relates to CollectionPoint".
+  // So `CollectionPoint` -> `Enterprise` link is probably fine for master data, but `PriceData` -> `Enterprise` must go.
+  // Let's keep `enterpriseId` in `CollectionPoint` as a loose/master-data link, but NOT use it for Intel lookups.
+  // Actually, previously I proposed removing `enterpriseId` from `CollectionPoint` in the DECOUPLE plan, but in the UPDATE plan I didn't explicitly say I'd remove it from CollectionPoint, only PriceData/MarketEvent.
+  // Let's check the plan `decouple_enterprise_plan_cn.md`.
+  // It says "Intel/Price/Event only link to CollectionPoint". It does NOT say CollectionPoint cannot link to Enterprise.
+  // But logically, if we decouple, we might want CollectionPoint to stand alone.
+  // Let's keep it for now as it doesn't hurt the "Intel Pivot", but enables "Trading Pivot".
+  
+  // 优先级与状态
+  priority      Int                  @default(0)  // 匹配优先级（高优先匹配）
+  isActive      Boolean              @default(true)
+  
+  // 元数据
+  description   String?
+  createdAt     DateTime             @default(now())
+  updatedAt     DateTime             @updatedAt
+  createdById   String?              // 创建人
+  
+  // 关联的价格数据（反向关联）
+  priceData     PriceData[]
+  // 关联的市场事件
+  marketEvents  MarketEvent[]
+
+  // [NEW] 关联的情报点链接
+  intelLinks    IntelPointLink[]
+  
+  @@index([type])
+  @@index([regionCode])
+  @@index([isActive, priority])
+}
+
+// =============================================
+// 客商管理系统 (Enterprise Management System)
+// =============================================
+
+// 企业/客商类型枚举
+enum EnterpriseType {
+  SUPPLIER         // 供应商
+  CUSTOMER         // 客户
+  LOGISTICS        // 物流商
+  GROUP            // 集团
+}
+
+// 联系人角色枚举
+enum ContactRole {
+  PROCUREMENT      // 采购决策线
+  EXECUTION        // 执行运营线
+  FINANCE          // 财务结算线
+  MANAGEMENT       // 高层管理线
+}
+
+// 企业/客商模型
+model Enterprise {
+  id          String           @id @default(uuid())
+  name        String           // 企业全称
+  shortName   String?          // 简称
+  taxId       String           @unique  // 统一社会信用代码
+  types       EnterpriseType[] // 业务身份（可多选）
+  
+  // 集团层级关系 (自引用)
+  parentId    String?
+  parent      Enterprise?      @relation("EnterpriseHierarchy", fields: [parentId], references: [id])
+  children    Enterprise[]     @relation("EnterpriseHierarchy")
+  
+  // 地址信息
+  province    String?
+  city        String?
+  address     String?
+  longitude   Float?           // 经度
+  latitude    Float?           // 纬度
+  
+  description String?          @db.Text  // 企业描述
+  riskScore   Int              @default(80)  // 信用评分 0-100
+  
+  // 关联
+  contacts     Contact[]
+  bankAccounts BankAccount[]
+  
+  // 移除直接关联的情报/价格/事件
+  // intelLinks   IntelEntityLink[] 
+  // priceData    PriceData[]        
+  // marketEvents MarketEvent[]      
+  
+  // 保留与采集点的关联（作为资产归属关系）
+  collectionPoints CollectionPoint[] 
+  
+  status      EntityStatus     @default(ACTIVE)
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+}
+
+// 联系人模型
+model Contact {
+  id           String       @id @default(uuid())
+  name         String       // 姓名
+  title        String?      // 职位
+  role         ContactRole  // 职能角色
+  phone        String       // 电话
+  email        String?      // 邮箱
+  notes        String?      // 备注（如：决策人、响应快等）
+  
+  enterpriseId String
+  enterprise   Enterprise   @relation(fields: [enterpriseId], references: [id], onDelete: Cascade)
+  
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+}
+
+// 银行账户模型
+model BankAccount {
+  id            String     @id @default(uuid())
+  bankName      String     // 开户行
+  accountNumber String     // 账号
+  accountName   String     // 户名
+  branch        String?    // 支行
+  isDefault     Boolean    @default(false)  // 默认账户
+  isWhitelisted Boolean    @default(false)  // 是否白名单验证
+  
+  enterpriseId  String
+  enterprise    Enterprise @relation(fields: [enterpriseId], references: [id], onDelete: Cascade)
+  
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+}
+
+// =============================================
+// 商情情报子系统 (Market Intelligence Subsystem)
+// =============================================
+
+// 情报分类枚举
+enum IntelCategory {
+  A_STRUCTURED      // 标准化硬数据 (价格/库存)
+  B_SEMI_STRUCTURED // 半结构化情报 (心态/事件)
+  C_DOCUMENT        // 文档与图表 (研报/政策)
+
+}
+
+// 信源类型枚举
+enum IntelSourceType {
+  FIRST_LINE    // 市场信息
+  COMPETITOR    // 竞对情报
+  OFFICIAL      // 官方发布
+  RESEARCH_INST // 第三方研究机构
+  MEDIA         // 媒体报道
+  INTERNAL_REPORT // 内部研报
+}
+
+// 内容类型（统一入口）
+enum ContentType {
+  DAILY_REPORT     // 市场日报
+  RESEARCH_REPORT  // 研究报告
+  POLICY_DOC       // 政策文件
+}
+
+// 研报类型
+enum ReportType {
+  WEEKLY     // 周报
+  MONTHLY    // 月报
+  QUARTERLY  // 季报
+  ANNUAL     // 年报
+  POLICY     // 政策文件
+  RESEARCH   // 第三方研报
+  OTHER      // 其他
+}
+
+// 商情情报主表
+model MarketIntel {
+  id            String          @id @default(uuid())
+  category      IntelCategory
+  sourceType    IntelSourceType
+  
+  // 元数据
+  effectiveTime DateTime        // 业务生效时间
+  location      String          // 地理位置
+  region        String[]        // 行政区划层级
+  gpsLat        Float?          // GPS 纬度
+  gpsLng        Float?          // GPS 经度
+  gpsVerified   Boolean         @default(false)  // 地理围栏验证
+  
+  // 内容
+  rawContent    String          @db.Text
+  summary       String?         @db.Text
+  
+  // AI 分析结果 (JSON)
+  aiAnalysis    Json?
+  
+  // 质量评分
+  completenessScore Int         @default(0)  // 完整度
+  scarcityScore     Int         @default(0)  // 稀缺度
+  validationScore   Int         @default(0)  // 验证分
+  totalScore        Int         @default(0)  // 总分
+  
+  // 标记
+  isFlagged     Boolean         @default(false)  // 风控标记
+  
+  // 关联
+  authorId      String
+  author        User            @relation(fields: [authorId], references: [id])
+  
+  // 扩展关联
+  priceData       PriceData[]       // A类：提取的价格数据
+  attachments     IntelAttachment[] // C类：附件
+  
+  // [NEW] 关联采集点 (D类替代品)
+  intelLinks      IntelPointLink[]  
+
+  tasks           IntelTask[]       // 关联任务
+  marketEvents    MarketEvent[]     // B类：提取的市场事件
+  marketInsights  MarketInsight[]   // C类：提取的市场洞察
+  researchReport  ResearchReport?   // 研报档案（一对一）
+  
+  // 统一入口：内容类型
+  contentType     ContentType?      // 内容类型（日报/研报/政策）
+  
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+  
+  @@index([category])
+  @@index([sourceType])
+  @@index([effectiveTime])
+  @@index([authorId])
+  @@index([contentType])
+}
+
+// =============================================
+// C类增强：研究报告档案
+// =============================================
+model ResearchReport {
+  id            String     @id @default(uuid())
+  
+  // 基础信息
+  title         String                       // 报告标题
+  reportType    ReportType                   // 报告类型
+  publishDate   DateTime?                    // 发布日期
+  source        String?                      // 来源机构
+  
+  // AI 生成内容
+  summary       String     @db.Text          // AI 生成摘要
+  keyPoints     Json?                        // 关键观点 [{point, sentiment, confidence}]
+  prediction    Json?                        // 预测信息 {direction, timeframe, reasoning}
+  dataPoints    Json?                        // 提及的数据点 [{metric, value, period}]
+  
+  // 覆盖范围
+  commodities   String[]                     // 涉及品种
+  regions       String[]                     // 涉及区域
+  timeframe     String?                      // 预测周期
+  
+  // 关联
+  intelId       String     @unique           // 关联 MarketIntel
+  intel         MarketIntel @relation(fields: [intelId], references: [id], onDelete: Cascade)
+  
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+  
+  @@index([reportType])
+  @@index([publishDate])
+}
+
+// 情报员统计表
+model UserIntelStats {
+  id                String   @id @default(uuid())
+  userId            String   @unique
+  user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  creditCoefficient Float    @default(3.0)   // 信用系数 0-5
+  monthlyPoints     Int      @default(0)     // 月度积分
+  submissionCount   Int      @default(0)     // 提交数量
+  accuracyRate      Float    @default(0)     // 准确率 %
+  highValueCount    Int      @default(0)     // 高价值引用数
+  
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+}
+
+// =============================================
+// A类：结构化价格数据（宽表存储）
+// =============================================
+
+// 价格主体类型（谁的价格）
+enum PriceSourceType {
+  ENTERPRISE    // 企业收购价（具体企业的挂牌/成交价）
+  REGIONAL      // 地域市场价（区域综合价格）
+  PORT          // 港口价格（港口到港/平舱价）
+}
+
+// 价格子类型（什么性质的价格）
+enum PriceSubType {
+  LISTED        // 挂牌价（企业对外公布）
+  TRANSACTION   // 成交价（实际成交）
+  ARRIVAL       // 到港价（到达港口的价格）
+  FOB           // 平舱价（船舱交货价）
+  STATION_ORIGIN    // 站台价-产区（东北站台发货价）
+  STATION_DEST      // 站台价-销区（销区站台到货价）
+  PURCHASE      // 收购价（向农户/贸易商收购）
+  WHOLESALE     // 批发价（批发市场价格）
+  OTHER         // 其他
+}
+
+// 地理层级
+enum GeoLevel {
+  COUNTRY       // 国家级
+  REGION        // 大区（东北/华北等）
+  PROVINCE      // 省级
+  CITY          // 市级
+  DISTRICT      // 区县级
+  PORT          // 港口
+  STATION       // 站台
+  ENTERPRISE    // 企业点位
+}
+
+model PriceData {
+  id            String   @id @default(uuid())
+  
+  // ===== 价格分类 =====
+  sourceType    PriceSourceType @default(REGIONAL)  // 价格主体类型
+  subType       PriceSubType    @default(LISTED)    // 价格子类型
+  
+  // ===== 地理维度 =====
+  geoLevel      GeoLevel        @default(CITY)      // 地理层级
+  location      String                              // 采集点名称（锦州港/梅花味精）
+  province      String?                             // 省份
+  city          String?                             // 城市
+  district      String?                             // 区县
+  region        String[]                            // 行政区划数组（向后兼容）
+  longitude     Float?                              // 经度（用于地图展示）
+  latitude      Float?                              // 纬度（用于地图展示）
+  
+  // ===== 企业关联（仅企业价格有值）=====
+  // [REMOVED] enterpriseId  String?
+  // [REMOVED] enterprise    Enterprise? @relation(fields: [enterpriseId], references: [id])
+  // [REMOVED] enterpriseName String?                            // 冗余存储企业名称（便于查询）
+  
+  // ===== 采集点关联（支持连续性数据分析）=====
+  collectionPointId  String?
+  collectionPoint    CollectionPoint? @relation(fields: [collectionPointId], references: [id])
+  
+  // ===== 标准化行政区划代码（松耦合）=====
+  regionCode         String?                        // 关联的行政区划代码（如 210700 锦州市）
+  
+  // ===== 品种维度 =====
+  effectiveDate DateTime @db.Date                   // 价格日期
+  commodity     String                              // 品种（玉米/大豆等）
+  grade         String?                             // 等级（二等/三等）
+  
+  // ===== 价格指标 =====
+  price         Decimal  @db.Decimal(10, 2)         // 价格（元/吨）
+  moisture      Decimal? @db.Decimal(5, 2)          // 水分 %
+  bulkDensity   Int?                                // 容重 g/L
+  toxin         Decimal? @db.Decimal(5, 2)          // 毒素
+  freight       Decimal? @db.Decimal(10, 2)         // 运费
+  inventory     Int?                                // 库存量（吨）
+  
+  // ===== 计算列 =====
+  foldPrice     Decimal? @db.Decimal(10, 2)         // 折标价格
+  dayChange     Decimal? @db.Decimal(10, 2)         // 较昨日涨跌
+  yearChange    Decimal? @db.Decimal(10, 2)         // 较去年同期涨跌
+  
+  // ===== 备注 =====
+  note          String?                             // 附加说明
+  
+  // ===== 关联 =====
+  intelId       String?
+  intel         MarketIntel? @relation(fields: [intelId], references: [id])
+  authorId      String
+  
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  
+  // 唯一约束：同一天同一地点同一品种同一来源类型同一子类型
+  @@unique([effectiveDate, commodity, location, sourceType, subType])
+  @@index([sourceType, commodity, effectiveDate])
+  @@index([geoLevel, effectiveDate])
+  // @@index([enterpriseId, effectiveDate])
+  @@index([commodity, effectiveDate])
+  @@index([location, effectiveDate])
+  @@index([province, city, effectiveDate])
+  @@index([collectionPointId, effectiveDate])       // 按采集点查询连续性数据
+  @@index([regionCode, effectiveDate])              // 按行政区划聚合查询
+}
+
+// =============================================
+// C类：文档附件存储
+// =============================================
+model IntelAttachment {
+  id          String   @id @default(uuid())
+  
+  // 文件信息
+  filename    String
+  mimeType    String
+  fileSize    Int
+  storagePath String               // 存储路径（OSS/本地）
+  
+  // 索引内容
+  ocrText     String?  @db.Text    // OCR 提取的全文
+  
+  // 关联
+  intelId     String
+  intel       MarketIntel @relation(fields: [intelId], references: [id], onDelete: Cascade)
+  
+  createdAt   DateTime @default(now())
+  
+  @@index([intelId])
+}
+
+// =============================================
+// D类：情报-实体关联表 -> [RENAMED] 情报-采集点关联表
+// =============================================
+
+// 关联类型枚举
+enum IntelPointLinkType {
+  MENTIONED   // 在情报中被提及
+  SUBJECT     // 情报主体
+  SOURCE      // 情报来源
+}
+
+// [RENAMED] IntelEntityLink -> IntelPointLink
+model IntelPointLink {
+  id           String              @id @default(uuid())
+  
+  intelId      String
+  intel        MarketIntel         @relation(fields: [intelId], references: [id], onDelete: Cascade)
+  
+  collectionPointId String
+  collectionPoint   CollectionPoint @relation(fields: [collectionPointId], references: [id], onDelete: Cascade)
+  
+  // 关联类型
+  linkType     IntelPointLinkType @default(MENTIONED)
+  
+  createdAt    DateTime            @default(now())
+  
+  @@unique([intelId, collectionPointId])
+  @@index([collectionPointId])
+}
+
+// =============================================
+// 任务调度系统
+// =============================================
+
+// 任务类型枚举 (12种)
+enum IntelTaskType {
+  // 1. 常规汇报
+  DAILY_REPORT       // 市场日报
+  WEEKLY_REPORT      // 周报
+  MONTHLY_REPORT     // 月报
+  RESEARCH_REPORT    // 深度研报
+
+  // 2. 一线采集
+  PRICE_COLLECTION   // 价格采集
+  INVENTORY_CHECK    // 库存盘点
+  FIELD_VISIT        // 实地走访
+  COMPETITOR_INFO    // 竞对情报
+
+  // 3. 特定事件
+  POLICY_ANALYSIS    // 政策解读
+  URGENT_VERIFICATION // 紧急核实
+  EXHIBITION_REPORT  // 会议/展会纪要
+
+  // 4. 数据维护
+  RESOURCE_UPDATE    // 客商/档案更新
+  
+  // 兼容旧枚举 (如果需要)
+  PRICE_REPORT       // @deprecated
+  FIELD_CHECK        // @deprecated
+  DOCUMENT_SCAN      // @deprecated
+}
+
+// 任务优先级枚举
+enum IntelTaskPriority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+// 任务周期类型
+enum TaskCycleType {
+  DAILY
+  WEEKLY
+  MONTHLY
+  ONE_TIME
+}
+
+// 任务状态枚举
+enum IntelTaskStatus {
+  PENDING
+  COMPLETED
+  OVERDUE
+}
+
+model IntelTask {
+  id          String          @id @default(uuid())
+  
+  // 基本信息
+  title       String
+  description String?             // 任务描述
+  requirements String?            // 任务要求
+  attachmentUrls String[]         // 附件链接
+  notifyConfig Json?              // 通知配置 { methods: [], userIds: [] }
+  type        IntelTaskType
+  priority    IntelTaskPriority   @default(MEDIUM)
+  deadline    DateTime
+
+  // 周期信息
+  periodStart DateTime?
+  periodEnd   DateTime?
+  dueAt       DateTime?
+  periodKey   String?
+  
+  // 分配对象
+  assigneeId  String
+  assignee    User            @relation(fields: [assigneeId], references: [id])
+  assigneeOrgId  String?
+  assigneeDeptId String?
+  createdById String?             // 创建人
+  
+  // 关联模板
+  templateId  String?
+  template    IntelTaskTemplate?  @relation(fields: [templateId], references: [id])
+  
+  // 状态
+  status      IntelTaskStatus @default(PENDING)
+  completedAt DateTime?
+  isLate      Boolean         @default(false)
+  
+  // 关联完成的情报
+  intelId     String?
+  intel       MarketIntel?    @relation(fields: [intelId], references: [id])
+  
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+  
+  @@index([assigneeId, status])
+  @@index([deadline])
+  @@index([templateId])
+  @@index([periodKey])
+  @@unique([templateId, assigneeId, periodStart])
+}
+
+// 任务模板模型
+model IntelTaskTemplate {
+  id              String           @id @default(uuid())
+  
+  // 基本信息
+  name            String           // 模板名称
+  description     String?          // 任务描述模板
+  taskType        IntelTaskType    // 生成的任务类型
+  priority        IntelTaskPriority @default(MEDIUM)
+  
+  // 周期配置
+  cycleType       TaskCycleType    @default(ONE_TIME)
+  cycleConfig     Json?            // 兼容旧周期配置（逐步弃用）
+  deadlineOffset  Int              @default(24)  // 截止时间偏移（小时）
+
+  // 周期调度配置
+  activeFrom      DateTime         @default(now())
+  activeUntil     DateTime?
+  timezone        String           @default("Asia/Shanghai")
+  runAtMinute     Int              @default(540)   // 分发时间 (09:00)
+  runDayOfWeek    Int?             // 分发日：1-7 (仅 WEEKLY)
+  runDayOfMonth   Int?             // 分发日：1-31, 0=月末 (仅 MONTHLY)
+  dueAtMinute     Int              @default(1080)  // 截止时间 (18:00)
+  dueDayOfWeek    Int?             // 周期截止日：1-7 (仅 WEEKLY)
+  dueDayOfMonth   Int?             // 周期截止日：1-31, 0=月末 (仅 MONTHLY)
+  allowLate       Boolean          @default(true)
+  maxBackfillPeriods Int           @default(3)
+  
+  // 分配规则
+  assigneeMode    String           @default("MANUAL")  // MANUAL | ALL_ACTIVE | BY_DEPARTMENT | BY_ORGANIZATION
+  assigneeIds     String[]         // 手动指定的分配人列表
+  departmentIds   String[]         // 按部门分配
+  organizationIds String[]         // 按组织分配
+  
+  // 状态
+  isActive        Boolean          @default(true)
+  lastRunAt       DateTime?
+  nextRunAt       DateTime?
+  
+  // 关联
+  tasks           IntelTask[]
+  createdById     String
+  
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+  
+  @@index([isActive, nextRunAt])
+}
+
+// =============================================
+// 提取规则配置系统
+// =============================================
+
+// 事件类型配置表
+model EventTypeConfig {
+  id          String   @id @default(uuid())
+  code        String   @unique    // ENTERPRISE_ACTION
+  name        String              // 企业动态
+  description String?
+  category    String              // supply | demand | policy | weather | sentiment
+  icon        String?
+  color       String?
+  isActive    Boolean  @default(true)
+  sortOrder   Int      @default(0)
+  
+  // 关联
+  events          MarketEvent[]
+  extractionRules ExtractionRule[]
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  @@index([isActive, sortOrder])
+}
+
+// 洞察类型配置表
+model InsightTypeConfig {
+  id          String   @id @default(uuid())
+  code        String   @unique    // FORECAST
+  name        String              // 后市预判
+  description String?
+  category    String              // forecast | analysis | data | logic
+  icon        String?
+  color       String?
+  isActive    Boolean  @default(true)
+  sortOrder   Int      @default(0)
+  
+  // 关联
+  insights        MarketInsight[]
+  extractionRules ExtractionRule[]
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  @@index([isActive, sortOrder])
+}
+
+// 提取规则配置表（可视化编辑器存储）
+model ExtractionRule {
+  id          String   @id @default(uuid())
+  name        String              // 规则名称
+  description String?
+  isActive    Boolean  @default(true)
+  priority    Int      @default(0)
+  
+  // 规则类型
+  targetType  String              // EVENT | INSIGHT
+  
+  // 关联类型
+  eventTypeId   String?
+  eventType     EventTypeConfig?    @relation(fields: [eventTypeId], references: [id])
+  insightTypeId String?
+  insightType   InsightTypeConfig?  @relation(fields: [insightTypeId], references: [id])
+  
+  // 可视化规则配置（JSON）
+  conditions    Json              // RuleCondition[] 结构
+  outputConfig  Json?             // 输出配置
+  
+  // 适用范围
+  commodities   String[]  @default([])
+  regions       String[]  @default([])
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  @@index([targetType, isActive])
+}
+
+// =============================================
+// B类：市场事件（从日报中提取）
+// =============================================
+
+model MarketEvent {
+  id            String   @id @default(uuid())
+  
+  // 来源关联
+  intelId       String
+  intel         MarketIntel @relation(fields: [intelId], references: [id], onDelete: Cascade)
+  
+  // 原文追溯
+  sourceText    String   @db.Text    // 提取的原文片段
+  sourceStart   Int?                 // 原文起始位置
+  sourceEnd     Int?                 // 原文结束位置
+  sectionIndex  Int?                 // 段落索引
+  
+  // 事件类型
+  eventTypeId   String
+  eventType     EventTypeConfig   @relation(fields: [eventTypeId], references: [id])
+  
+  // 事件内容
+  subject       String            // 主体（企业/港口）
+  action        String            // 动作
+  content       String  @db.Text  // 完整描述
+  
+  // 影响评估
+  impact        String?           // 影响描述
+  impactLevel   String?           // HIGH/MEDIUM/LOW
+  sentiment     String?           // bullish/bearish/neutral
+  
+  // 关联
+  collectionPointId String?
+  collectionPoint   CollectionPoint? @relation(fields: [collectionPointId], references: [id])
+  // [REMOVED] enterpriseId  String?
+  // [REMOVED] enterprise    Enterprise?       @relation(fields: [enterpriseId], references: [id])
+  regionCode    String?
+  commodity     String?
+  
+  eventDate     DateTime?
+  createdAt     DateTime @default(now())
+  
+  @@index([eventTypeId, eventDate])
+  @@index([intelId])
+  // @@index([enterpriseId])
+  @@index([collectionPointId])
+}
+
+// =============================================
+// C类：市场洞察（从日报中提取）
+// =============================================
+
+model MarketInsight {
+  id            String   @id @default(uuid())
+  
+  // 来源关联
+  intelId       String
+  intel         MarketIntel @relation(fields: [intelId], references: [id], onDelete: Cascade)
+  
+  // 原文追溯
+  sourceText    String   @db.Text    // 提取的原文片段
+  sourceStart   Int?                 // 原文起始位置
+  sourceEnd     Int?                 // 原文结束位置
+  sectionTitle  String?              // 段落标题
+  sectionIndex  Int?                 // 段落索引
+  
+  // 洞察类型
+  insightTypeId String
+  insightType   InsightTypeConfig @relation(fields: [insightTypeId], references: [id])
+  
+  // 内容
+  title         String
+  content       String  @db.Text
+  
+  // 预判属性
+  direction     String?           // up/down/stable
+  timeframe     String?           // short/medium/long
+  confidence    Int?              // 0-100
+  factors       String[]          // 关键因素
+  
+  commodity     String?
+  regionCode    String?
+  
+  createdAt     DateTime @default(now())
+  
+  @@index([insightTypeId])
+  @@index([intelId])
+  @@index([commodity])
+}
+// =============================================
+// AI 提示词模板 (Prompt Templates)
+// =============================================
+model PromptTemplate {
+  id           String        @id @default(uuid())
+  code         String        @unique // e.g., "MARKET_INTEL_DAILY_REPORT"
+  name         String
+  category     IntelCategory // 关联的情报分类
+  
+  systemPrompt String        @db.Text
+  userPrompt   String        @db.Text
+  
+  variables    Json?         // 定义可用的变量说明
+  version      Int           @default(1)
+  isActive     Boolean       @default(true)
+  
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+  
+  @@index([category])
+  @@index([isActive])
+}
+// =============================================
+// 系统配置子系统 (System Configuration)
+// =============================================
+
+// 业务映射规则 (Generic Mapping Rules)
+// 用于替代代码中的 hardcoded mapLogic
+model BusinessMappingRule {
+  id          String   @id @default(uuid())
+  domain      String   // 业务域 (e.g. "PRICE_SOURCE", "PRICE_SUB_TYPE", "SENTIMENT")
+  
+  matchMode   String   @default("CONTAINS") // 匹配模式: CONTAINS, EXACT, REGEX
+  pattern     String   // 匹配范式 (e.g. "平舱", "Positive")
+  targetValue String   // 目标值 (e.g. "FOB", "positive")
+  
+  priority    Int      @default(0) // 优先级 (高优先)
+  description String?
+  isActive    Boolean  @default(true)
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([domain, priority])
+}
+
+// AI 模型配置 (AI Model Configuration)
+model AIModelConfig {
+  id           String   @id @default(uuid())
+  configKey    String   @unique // 配置键 (e.g. "DEFAULT", "GEMINI_PRO")
+  
+  provider     String   // "google", "openai"
+  modelName    String   // "gemini-1.5-pro"
+  apiUrl       String?  // [NEW] Custom API Endpoint
+  
+  apiKeyEnvVar String?  // 环境变量名 (推荐)
+  apiKey       String?  // 直接存储 (仅供测试或私有部署，需加密)
+  
+  temperature  Float    @default(0.3)
+  maxTokens    Int      @default(8192)
+  topP         Float?
+  topK         Int?
+  
+  maxRetries   Int      @default(3)
+  timeoutMs    Int      @default(30000)
+  
+  isActive     Boolean  @default(true)
+  
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 }

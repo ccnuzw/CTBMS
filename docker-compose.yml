@@ -1,0 +1,17 @@
+version: '3.8'
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: ctbms_postgres
+    ports:
+      - "5433:5432"
+    environment:
+      POSTGRES_USER: ctbms
+      POSTGRES_PASSWORD: ctbms_password
+      POSTGRES_DB: ctbms_dev
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    restart: always
+
+volumes:
+  postgres_data:

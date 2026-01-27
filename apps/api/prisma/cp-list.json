@@ -1,0 +1,2030 @@
+[
+  {
+    "id": "82aebfbe-d801-4d85-934e-34f4fb0e30b7",
+    "code": "CP_REGION_CC",
+    "name": "长春市",
+    "shortName": "长春",
+    "aliases": [
+      "长春"
+    ],
+    "type": "REGION",
+    "matchRegionCodes": [],
+    "regionCode": "220100",
+    "address": null,
+    "longitude": 125.3235,
+    "latitude": 43.8171,
+    "commodities": [
+      "玉米"
+    ],
+    "priceSubTypes": [],
+    "defaultSubType": "LISTED",
+    "isDataSource": true,
+    "enterpriseId": null,
+    "priority": 0,
+    "isActive": true,
+    "description": null,
+    "createdAt": "2026-01-25T12:14:23.923Z",
+    "updatedAt": "2026-01-25T13:08:24.409Z",
+    "createdById": null
+  },
+  {
+    "id": "f86e8d80-2405-4ae3-a024-6de312e2b001",
+    "code": "CP_MARKET_XJ",
+    "name": "上海西郊国际",
+    "shortName": "西郊国际",
+    "aliases": [
+      "西郊国际"
+    ],
+    "type": "MARKET",
+    "matchRegionCodes": [],
+    "regionCode": "310000",
+    "address": null,
+    "longitude": 121.2828,
+    "latitude": 31.1891,
+    "commodities": [
+      "玉米",
+      "大豆",
+      "肉类"
+    ],
+    "priceSubTypes": [],
+    "defaultSubType": "WHOLESALE",
+    "isDataSource": true,
+    "enterpriseId": null,
+    "priority": 0,
+    "isActive": true,
+    "description": null,
+    "createdAt": "2026-01-25T12:05:53.964Z",
+    "updatedAt": "2026-01-25T12:26:55.927Z",
+    "createdById": null
+  },
+  {
+    "id": "36383986-c7bd-45aa-aace-3f7f6ad7b112",
+    "code": "CP_REGION_SY",
+    "name": "松原市",
+    "shortName": "松原",
+    "aliases": [
+      "松原"
+    ],
+    "type": "REGION",
+    "matchRegionCodes": [],
+    "regionCode": "220700",
+    "address": null,
+    "longitude": 124.8236,
+    "latitude": 45.1419,
+    "commodities": [
+      "玉米"
+    ],
+    "priceSubTypes": [],
+    "defaultSubType": "LISTED",
+    "isDataSource": true,
+    "enterpriseId": null,
+    "priority": 0,
+    "isActive": true,
+    "description": null,
+    "createdAt": "2026-01-25T12:14:23.942Z",
+    "updatedAt": "2026-01-25T13:08:24.412Z",
+    "createdById": null
+  },
+  {
+    "id": "424a9bdf-d603-45f9-8b8e-31b87ce0cbd2",
+    "code": "CP_REGION_SYG",
+    "name": "沈阳市",
+    "shortName": "沈阳",
+    "aliases": [
+      "沈阳"
+    ],
+    "type": "REGION",
+    "matchRegionCodes": [],
+    "regionCode": "210100",
+    "address": null,
+    "longitude": 123.4315,
+    "latitude": 41.8057,
+    "commodities": [
+      "玉米"
+    ],
+    "priceSubTypes": [],
+    "defaultSubType": "LISTED",
+    "isDataSource": true,
+    "enterpriseId": null,
+    "priority": 0,
+    "isActive": true,
+    "description": null,
+    "createdAt": "2026-01-25T12:14:23.963Z",
+    "updatedAt": "2026-01-25T13:08:24.416Z",
+    "createdById": null
+  },
+  {
+    "id": "cdc4e23b-6471-4766-b690-d69664b8142c",
+    "code": "PORT_BEILIANG",
+    "name": "北良港",
+    "shortName": null,
+    "aliases": [
+      "北良港"
+    ],
+    "type": "PORT",
+    "matchRegionCodes": [
+      "210000"
+    ],
+    "regionCode": "210200",
+    "address": "辽宁省大连市",
+    "longitude": 121.614,
+    "latitude": 38.914,
+    "commodities": [
+      "玉米",
+      "小麦",
+      "大豆"
+    ],
+    "priceSubTypes": [
+      "平舱价",
+      "港口价",
+      "集港价"
+    ],
+    "defaultSubType": "平舱价",
+    "isDataSource": true,
+    "enterpriseId": null,
+    "priority": 0,
+    "isActive": true,
+    "description": "港口",
+    "createdAt": "2026-01-25T13:16:12.087Z",
+    "updatedAt": "2026-01-25T13:18:38.365Z",
+    "createdById": null
+  },
+  {
+    "id": "cb23e3d9-5666-4c3c-9e49-fb174d199a78",
+    "code": "PORT_DALIAN",
+    "name": "大连港",
+    "shortName": null,
+    "aliases": [
+      "大连港"
+    ],
+    "type": "PORT",
+    "matchRegionCodes": [
+      "210000"
+    ],
+    "regionCode": "210200",
+    "address": "辽宁省大连市",
+    "longitude": 121.6,
+    "latitude": 38.9,
+    "commodities": [
+      "玉米",
+      "大豆"
+    ],
+    "priceSubTypes": [
+      "平舱价",
+      "港口价",
+      "集港价"
+    ],
+    "defaultSubType": "平舱价",
+    "isDataSource": true,
+    "enterpriseId": null,
+    "priority": 0,
+    "isActive": true,
+    "description": "港口",
+    "createdAt": "2026-01-25T13:16:12.093Z",
+    "updatedAt": "2026-01-25T13:18:38.372Z",
+    "createdById": null
+  },
+  {
+    "id": "20ea1369-f9dd-48b6-b6fe-46760d605d87",
+    "code": "CP_PORT_SK",
+    "name": "深圳蛇口港",
+    "shortName": "蛇口港",
+    "aliases": [
+      "深圳蛇口",
+      "赤湾港"
+    ],
+    "type": "PORT",
+    "matchRegionCodes": [],
+    "regionCode": "440300",
+    "address": null,
+    "longitude": 113.9056,
+    "latitude": 22.4795,
+    "commodities": [
+      "玉米",
+      "大豆",
+      "高粱",
+      "大麦"
+    ],
+    "priceSubTypes": [],
+    "defaultSubType": "ARRIVAL",
+    "isDataSource": true,
+    "enterpriseId": null,
+    "priority": 0,
+    "isActive": true,
+    "description": null,
+    "createdAt": "2026-01-25T12:05:53.924Z",
+    "updatedAt": "2026-01-25T12:26:55.802Z",
+    "createdById": null
+  },
+  {
+    "id": "bc85993c-1b5a-4b54-b23d-0d2c85299c6d",
+    "code": "PORT_JINZHOU",
+    "name": "锦州港",
+    "shortName": null,
+    "aliases": [
+      "锦州港"
+    ],
+    "type": "PORT",
+    "matchRegionCodes": [
+      "210000"
+    ],
+    "regionCode": "210700",
+    "address": "辽宁省锦州市",
+    "longitude": 121.1,
+    "latitude": 40.8,
+    "commodities": [
+      "玉米"
+    ],
+    "priceSubTypes": [
+      "平舱价",
+      "港口价",
+      "集港价"
+    ],
+    "defaultSubType": "平舱价",
+    "isDataSource": true,
+    "enterpriseId": null,
+    "priority": 0,
+    "isActive": true,
+    "description": "港口",
+    "createdAt": "2026-01-25T13:16:12.096Z",
+    "updatedAt": "2026-01-25T13:18:38.376Z",
+    "createdById": null
+  },
+  {
+    "id": "e5ad540c-8f7a-494e-81d6-6b0de463aebf",
+    "code": "PORT_HUANGPU",
+    "name": "广东黄埔港",
+    "shortName": "黄埔港",
+    "aliases": [
+      "广州黄埔",
+      "黄埔老港",
+      "黄埔新港"
+    ],
+    "type": "PORT",
+    "matchRegionCodes": [],
+    "regionCode": "440100",
+    "address": null,
+    "longitude": 113.4503,
+    "latitude": 23.0906,
+    "commodities": [
+      "玉米",
+      "大豆",
+      "高粱",
+      "大麦",
+      "木薯干"
+    ],
+    "priceSubTypes": [
+      "平舱价",
+      "到港价"
+    ],
+    "defaultSubType": "ARRIVAL",
+    "isDataSource": true,
+    "enterpriseId": null,
+    "priority": 0,
+    "isActive": true,
+    "description": null,
+    "createdAt": "2026-01-25T12:05:53.914Z",
+    "updatedAt": "2026-01-25T13:30:38.541Z",
+    "createdById": null
+  },
+  {
+    "id": "753474ef-1078-467e-8fe1-5105c04d23e1",
+    "code": "PORT_NANTONG",
+    "name": "南通港",
+    "shortName": "南通港",
+    "aliases": [
+      "南通通常"
+    ],
+    "type": "PORT",
+    "matchRegionCodes": [],
+    "regionCode": "320600",
+    "address": null,
+    "longitude": 120.88,
+    "latitude": 31.98,
+    "commodities": [
+      "玉米",
+      "大豆"
+    ],
+    "priceSubTypes": [
+      "平舱价",
+      "到港价"
+    ],
+    "defaultSubType": "ARRIVAL",
+    "isDataSource": true,
+    "enterpriseId": null,
+    "priority": 0,
+    "isActive": true,
+    "description": "长江下游重要江海联运港",
+    "createdAt": "2026-01-25T12:21:09.108Z",
+    "updatedAt": "2026-01-25T13:30:38.557Z",
+    "createdById": null
+  },
+  {
+    "id": "71a58b7e-dbe4-4776-89a0-9a343ba3b851",
+    "code": "ENT_XINGMAO_ZHUCHENG",
+    "name": "诸城兴贸玉米开发有限公司",
+    "shortName": "兴贸玉米",
+    "aliases": [
+      "诸城兴贸玉米开发"
+    ],
+    "type": "ENTERPRISE",
+    "matchRegionCodes": [
+      "370000"
+    ],
+    "regionCode": "370700",
+    "address": null,
+    "longitude": null,
+    "latitude": null,
+    "commodities": [
+      "玉米"
+    ],
+    "priceSubTypes": [],
+    "defaultSubType": "PURCHASE",
+    "isDataSource": true,
+    "enterpriseId": "582f66af-b918-490a-a7ba-41a88699ad67",
+    "priority": 0,
+    "isActive": true,
+    "description": null,
+    "createdAt": "2026-01-25T12:05:53.975Z",
+    "updatedAt": "2026-01-25T13:31:48.303Z",
+    "createdById": null
+  },
+  {
+    "id": "02ece159-46b1-476d-a2e2-cfbf7c76b4d6",
+    "code": "ENT_NEWHOPE_SHENYANG",
+    "name": "新希望六和饲料（沈阳）有限公司",
+    "shortName": "新希望沈阳",
+    "aliases": [
+      "新希望六和饲料（沈阳）"
+    ],
+    "type": "ENTERPRISE",
+    "matchRegionCodes": [
+      "210000"
+    ],
+    "regionCode": "210100",
+    "address": null,
+    "longitude": null,
+    "latitude": null,
+    "commodities": [
+      "玉米"
+    ],
+    "priceSubTypes": [],
+    "defaultSubType": "PURCHASE",
+    "isDataSource": true,
+    "enterpriseId": "2e6e9e3a-6b23-49ac-b457-05d58343e5ec",
+    "priority": 0,
+    "isActive": true,
+    "description": null,
+    "createdAt": "2026-01-25T12:05:53.984Z",
+    "updatedAt": "2026-01-25T13:31:48.308Z",
+    "createdById": null
+  },
+  {
+    "id": "b8b04def-d4ba-4fb7-bd12-975d9fe1a38a",
+    "code": "ENT_XIWANG_ZOUPING",
+    "name": "西王食品股份有限公司",
+    "shortName": "西王食品",
+    "aliases": [
+      "西王食品"
+    ],
+    "type": "ENTERPRISE",
+    "matchRegionCodes": [
+      "370000"
+    ],
+    "regionCode": "371600",
+    "address": null,
+    "longitude": null,
+    "latitude": null,
+    "commodities": [
+      "玉米"
+    ],
+    "priceSubTypes": [],
+    "defaultSubType": "PURCHASE",
+    "isDataSource": true,
+    "enterpriseId": "bf087c12-0247-4404-851f-32fcf131fa5c",
+    "priority": 0,
+    "isActive": true,
+    "description": null,
+    "createdAt": "2026-01-25T12:05:54.023Z",
+    "updatedAt": "2026-01-25T13:31:48.310Z",
+    "createdById": null
+  },
+  {
+    "id": "d0aa0c3f-676b-4def-92d7-42ad83abaa12",
+    "code": "CP_REGION_JL",
+    "name": "吉林市",
+    "shortName": "吉林",
+    "aliases": [
+      "吉林"
+    ],
+    "type": "REGION",
+    "matchRegionCodes": [],
+    "regionCode": "220200",
+    "address": null,
+    "longitude": 126.5714,
+    "latitude": 43.8436,
+    "commodities": [
+      "玉米"
+    ],
+    "priceSubTypes": [],
+    "defaultSubType": "LISTED",
+    "isDataSource": true,
+    "enterpriseId": null,
+    "priority": 0,
+    "isActive": true,
+    "description": null,
+    "createdAt": "2026-01-25T12:14:23.932Z",
+    "updatedAt": "2026-01-25T12:26:55.889Z",
+    "createdById": null
+  },
+  {
+    "id": "5cc65547-f435-4e09-a76b-334b52a0e248",
+    "code": "CP_REGION_JNZ",
+    "name": "锦州市",
+    "shortName": "锦州",
+    "aliases": [
+      "锦州"
+    ],
+    "type": "REGION",
+    "matchRegionCodes": [],
+    "regionCode": "210700",
+    "address": null,
+    "longitude": 121.127,
+    "latitude": 41.0949,
+    "commodities": [
+      "玉米"
+    ],
+    "priceSubTypes": [],
+    "defaultSubType": "LISTED",
+    "isDataSource": true,
+    "enterpriseId": null,
+    "priority": 0,
+    "isActive": true,
+    "description": null,
+    "createdAt": "2026-01-25T12:14:23.973Z",
+    "updatedAt": "2026-01-25T13:08:24.394Z",
+    "createdById": null
+  },
+  {
+    "id": "ca0fc62c-9bcd-4b3b-8dd7-2f4b47691b1c",
+    "code": "CP_REGION_QQHR",
+    "name": "齐齐哈尔市",
+    "shortName": "齐齐哈尔",
+    "aliases": [
+      "齐齐哈尔"
+    ],
+    "type": "REGION",
+    "matchRegionCodes": [],
+    "regionCode": "230200",
+    "address": null,
+    "longitude": 123.9181,
+    "latitude": 47.3543,
+    "commodities": [
+      "玉米",
+      "大豆"
+    ],
+    "priceSubTypes": [],
+    "defaultSubType": "LISTED",
+    "isDataSource": true,
+    "enterpriseId": null,
+    "priority": 0,
+    "isActive": true,
+    "description": null,
+    "createdAt": "2026-01-25T12:14:23.880Z",
+    "updatedAt": "2026-01-25T13:08:24.399Z",
+    "createdById": null
+  },
+  {
+    "id": "b50ad977-c1e9-4e61-9806-bb676283e018",
+    "code": "CP_REGION_JMS",
+    "name": "佳木斯市",
+    "shortName": "佳木斯",
+    "aliases": [
+      "佳木斯"
+    ],
+    "type": "REGION",
+    "matchRegionCodes": [],
+    "regionCode": "230800",
+    "address": null,
+    "longitude": 130.3198,
+    "latitude": 46.802,
+    "commodities": [
+      "玉米",
+      "大豆",
+      "水稻"
+    ],
+    "priceSubTypes": [],
+    "defaultSubType": "LISTED",
+    "isDataSource": true,
+    "enterpriseId": null,
+    "priority": 0,
+    "isActive": true,
+    "description": null,
+    "createdAt": "2026-01-25T12:14:23.891Z",
+    "updatedAt": "2026-01-25T13:08:24.402Z",
+    "createdById": null
+  },
+  {
+    "id": "70791d82-4cc6-4e99-8040-3ded9276192e",
+    "code": "CP_REGION_SH",
+    "name": "绥化市",
+    "shortName": "绥化",
+    "aliases": [
+      "绥化"
+    ],
+    "type": "REGION",
+    "matchRegionCodes": [],
+    "regionCode": "231200",
+    "address": null,
+    "longitude": 126.9897,
+    "latitude": 46.6439,
+    "commodities": [
+      "玉米",
+      "大豆"
+    ],
+    "priceSubTypes": [],
+    "defaultSubType": "LISTED",
+    "isDataSource": true,
+    "enterpriseId": null,
+    "priority": 0,
+    "isActive": true,
+    "description": null,
+    "createdAt": "2026-01-25T12:14:23.902Z",
+    "updatedAt": "2026-01-25T13:08:24.405Z",
+    "createdById": null
+  },
+  {
+    "id": "edea926e-9030-4d8f-b43f-49e628c59f34",
+    "code": "ENT_LONGFENG_QINGGANG",
+    "name": "黑龙江龙凤玉米开发有限公司",
+    "shortName": "龙凤玉米",
+    "aliases": [
+      "青冈龙凤",
+      "京粮龙凤",
+      "龙凤淀粉",
+      "黑龙江龙凤玉米开发"
+    ],
+    "type": "ENTERPRISE",
+    "matchRegionCodes": [
+      "230000"
+    ],
+    "regionCode": "231200",
+    "address": null,
+    "longitude": 126.113,
+    "latitude": 46.6853,
+    "commodities": [
+      "玉米"
+    ],
+    "priceSubTypes": [],
+    "defaultSubType": "PURCHASE",
+    "isDataSource": true,
+    "enterpriseId": null,
+    "priority": 0,
+    "isActive": true,
+    "description": "京粮集团旗下大型淀粉企业",
+    "createdAt": "2026-01-25T12:18:15.970Z",
+    "updatedAt": "2026-01-25T13:31:48.316Z",
+    "createdById": null
+  },
+  {
+    "id": "12e5b2a7-e9c6-4f60-8e64-f248dd36f195",
+    "code": "ENT_YIPIN_CHIFENG",
+    "name": "内蒙古伊品生物科技有限公司",
+    "shortName": "赤峰伊品",
+    "aliases": [
+      "伊品生物",
+      "赤峰伊品",
+      "内蒙伊品",
+      "内蒙古伊品生物科技"
+    ],
+    "type": "ENTERPRISE",
+    "matchRegionCodes": [
+      "150000"
+    ],
+    "regionCode": "150400",
+    "address": null,
+    "longitude": 118.961,
+    "latitude": 42.2612,
+    "commodities": [
+      "玉米"
+    ],
+    "priceSubTypes": [],
+    "defaultSubType": "PURCHASE",
+    "isDataSource": true,
+    "enterpriseId": null,
+    "priority": 0,
+    "isActive": true,
+    "description": "大型赖氨酸、苏氨酸生产基地",
+    "createdAt": "2026-01-25T12:18:15.980Z",
+    "updatedAt": "2026-01-25T13:31:48.319Z",
+    "createdById": null
+  },
+  {
+    "id": "ed4d4beb-b91d-49dc-9512-c512e9742761",
+    "code": "ENT_TIANLI_SHOUGUANG",
+    "name": "山东天力药业有限公司",
+    "shortName": "天力药业",
+    "aliases": [
+      "寿光天力",
+      "天力药业",
+      "山东天力",
+      "山东天力药业"
+    ],
+    "type": "ENTERPRISE",
+    "matchRegionCodes": [
+      "370000"
+    ],
+    "regionCode": "370700",
+    "address": null,
+    "longitude": 118.73,
+    "latitude": 36.877,
+    "commodities": [
+      "玉米"
+    ],
+    "priceSubTypes": [],
+    "defaultSubType": "PURCHASE",
+    "isDataSource": true,
+    "enterpriseId": null,
+    "priority": 0,
+    "isActive": true,
+    "description": "山东地区维生素C和玉米淀粉大厂",
+    "createdAt": "2026-01-25T12:18:16.019Z",
+    "updatedAt": "2026-01-25T13:31:48.322Z",
+    "createdById": null
+  },
+  {
+    "id": "3ecdec55-1fe8-473b-bf79-06d1ada6c428",
+    "code": "ENT_NEWHOPE_QINGDAO",
+    "name": "新希望六和饲料（青岛）有限公司",
+    "shortName": "新希望青岛",
+    "aliases": [
+      "新希望六和饲料（青岛）"
+    ],
+    "type": "ENTERPRISE",
+    "matchRegionCodes": [
+      "370000"
+    ],
+    "regionCode": "370200",
+    "address": null,
+    "longitude": null,
+    "latitude": null,
+    "commodities": [
+      "玉米"
+    ],
+    "priceSubTypes": [],
+    "defaultSubType": "PURCHASE",
+    "isDataSource": true,
+    "enterpriseId": "daa596c2-c7e2-4381-bfb4-75f64f6af69e",
+    "priority": 0,
+    "isActive": true,
+    "description": null,
+    "createdAt": "2026-01-25T12:05:53.980Z",
+    "updatedAt": "2026-01-25T13:31:48.325Z",
+    "createdById": null
+  },
+  {
+    "id": "9757b80c-4cf2-4dbb-a211-09d4fa9cefc5",
+    "code": "ENT_XINTIANLONG_LISHU",
+    "name": "吉林省新天龙实业股份有限公司",
+    "shortName": "新天龙",
+    "aliases": [
+      "梨树新天龙",
+      "天龙酒精",
+      "新天龙实业",
+      "吉林省新天龙实业"
+    ],
+    "type": "ENTERPRISE",
+    "matchRegionCodes": [
+      "220000"
+    ],
+    "regionCode": "220300",
+    "address": null,
+    "longitude": 124.3503,
+    "latitude": 43.1668,
+    "commodities": [
+      "玉米"
+    ],
+    "priceSubTypes": [],
+    "defaultSubType": "PURCHASE",
+    "isDataSource": true,
+    "enterpriseId": null,
+    "priority": 0,
+    "isActive": true,
+    "description": "大型酒精生产企业",
+    "createdAt": "2026-01-25T12:18:15.936Z",
+    "updatedAt": "2026-01-25T13:31:48.330Z",
+    "createdById": null
+  },
+  {
+    "id": "e1da92e0-4bb7-4704-abf7-cfdf80ed1420",
+    "code": "ENT_CARGILL_SONGYUAN",
+    "name": "松原嘉吉生化有限公司",
+    "shortName": "松原嘉吉",
+    "aliases": [
+      "嘉吉生化",
+      "松原嘉吉",
+      "吉林嘉吉",
+      "松原嘉吉生化"
+    ],
+    "type": "ENTERPRISE",
+    "matchRegionCodes": [
+      "220000"
+    ],
+    "regionCode": "220700",
+    "address": null,
+    "longitude": 124.8236,
+    "latitude": 45.1419,
+    "commodities": [
+      "玉米"
+    ],
+    "priceSubTypes": [],
+    "defaultSubType": "PURCHASE",
+    "isDataSource": true,
+    "enterpriseId": null,
+    "priority": 0,
+    "isActive": true,
+    "description": "嘉吉在东北的重要加工基地",
+    "createdAt": "2026-01-25T12:18:15.948Z",
+    "updatedAt": "2026-01-25T13:31:48.332Z",
+    "createdById": null
+  },
+  {
+    "id": "5648b4f2-93c3-4d35-a973-ee069b8f58b4",
+    "code": "CP_REGION_HRB",
+    "name": "哈尔滨市",
+    "shortName": "哈尔滨",
+    "aliases": [
+      "哈尔滨"
+    ],
+    "type": "REGION",
+    "matchRegionCodes": [],
+    "regionCode": "230100",
+    "address": null,
+    "longitude": 126.535,
+    "latitude": 45.8038,
+    "commodities": [
+      "玉米",
+      "大豆"
+    ],
+    "priceSubTypes": [],
+    "defaultSubType": "LISTED",
+    "isDataSource": true,
+    "enterpriseId": null,
+    "priority": 0,
+    "isActive": true,
+    "description": null,
+    "createdAt": "2026-01-25T12:14:23.867Z",
+    "updatedAt": "2026-01-25T13:08:24.419Z",
+    "createdById": null
+  },
+  {
+    "id": "11a24fe8-1848-4843-babb-8043ed3b2905",
+    "code": "PORT_FANGCHENGGANG",
+    "name": "广西防城港",
+    "shortName": "防城港",
+    "aliases": [
+      "北部湾防城港"
+    ],
+    "type": "PORT",
+    "matchRegionCodes": [],
+    "regionCode": "450600",
+    "address": null,
+    "longitude": 108.34,
+    "latitude": 21.61,
+    "commodities": [
+      "玉米",
+      "大豆",
+      "油菜籽"
+    ],
+    "priceSubTypes": [
+      "平舱价",
+      "到港价"
+    ],
+    "defaultSubType": "ARRIVAL",
+    "isDataSource": true,
+    "enterpriseId": null,
+    "priority": 0,
+    "isActive": true,
+    "description": "西部地区主要出海口",
+    "createdAt": "2026-01-25T12:21:09.087Z",
+    "updatedAt": "2026-01-25T13:30:38.548Z",
+    "createdById": null
+  },
+  {
+    "id": "2c208c3f-7d22-4a72-bb5e-eefb6e85b6c5",
+    "code": "PORT_ZHANGZHOU",
+    "name": "福建漳州港",
+    "shortName": "漳州港",
+    "aliases": [
+      "漳州招商局"
+    ],
+    "type": "PORT",
+    "matchRegionCodes": [],
+    "regionCode": "350600",
+    "address": null,
+    "longitude": 118.06,
+    "latitude": 24.41,
+    "commodities": [
+      "玉米",
+      "大豆"
+    ],
+    "priceSubTypes": [
+      "平舱价",
+      "到港价"
+    ],
+    "defaultSubType": "ARRIVAL",
+    "isDataSource": true,
+    "enterpriseId": null,
+    "priority": 0,
+    "isActive": true,
+    "description": "福建主要粮食接卸港",
+    "createdAt": "2026-01-25T12:21:09.094Z",
+    "updatedAt": "2026-01-25T13:30:38.551Z",
+    "createdById": null
+  },
+  {
+    "id": "75494999-8052-43a1-b6d3-c99d7db80dc2",
+    "code": "PORT_QINZHOU",
+    "name": "钦州港",
+    "shortName": "钦州港",
+    "aliases": [
+      "钦州保税港"
+    ],
+    "type": "PORT",
+    "matchRegionCodes": [],
+    "regionCode": "450700",
+    "address": null,
+    "longitude": 108.61,
+    "latitude": 21.73,
+    "commodities": [
+      "大豆",
+      "油菜籽"
+    ],
+    "priceSubTypes": [
+      "平舱价",
+      "到港价"
+    ],
+    "defaultSubType": "ARRIVAL",
+    "isDataSource": true,
+    "enterpriseId": null,
+    "priority": 0,
+    "isActive": true,
+    "description": "北部湾重要港口",
+    "createdAt": "2026-01-25T12:21:09.101Z",
+    "updatedAt": "2026-01-25T13:30:38.554Z",
+    "createdById": null
+  },
+  {
+    "id": "7a9c9fe8-2d4a-4401-8b17-2c31a0d09ced",
+    "code": "PORT_ZHANGJIAGANG",
+    "name": "张家港",
+    "shortName": "张家港",
+    "aliases": [
+      "苏州张家港"
+    ],
+    "type": "PORT",
+    "matchRegionCodes": [],
+    "regionCode": "320500",
+    "address": null,
+    "longitude": 120.44,
+    "latitude": 31.87,
+    "commodities": [
+      "大豆",
+      "油菜籽",
+      "木薯干"
+    ],
+    "priceSubTypes": [
+      "平舱价",
+      "到港价"
+    ],
+    "defaultSubType": "ARRIVAL",
+    "isDataSource": true,
+    "enterpriseId": null,
+    "priority": 0,
+    "isActive": true,
+    "description": "全球最大的木薯干和硬木进口港之一，重要粮油港",
+    "createdAt": "2026-01-25T12:21:09.114Z",
+    "updatedAt": "2026-01-25T13:30:38.560Z",
+    "createdById": null
+  },
+  {
+    "id": "838a5e9c-7483-489c-80aa-52d000ceac0d",
+    "code": "PORT_ZHENJIANG",
+    "name": "镇江港",
+    "shortName": "镇江港",
+    "aliases": [
+      "镇江大港"
+    ],
+    "type": "PORT",
+    "matchRegionCodes": [],
+    "regionCode": "321100",
+    "address": null,
+    "longitude": 119.46,
+    "latitude": 32.2,
+    "commodities": [
+      "大豆",
+      "玉米"
+    ],
+    "priceSubTypes": [
+      "平舱价",
+      "到港价"
+    ],
+    "defaultSubType": "ARRIVAL",
+    "isDataSource": true,
+    "enterpriseId": null,
+    "priority": 0,
+    "isActive": true,
+    "description": "长江与京杭大运河交汇处",
+    "createdAt": "2026-01-25T12:21:09.121Z",
+    "updatedAt": "2026-01-25T13:30:38.562Z",
+    "createdById": null
+  },
+  {
+    "id": "a720dd6d-8796-4f40-b1b2-d71e87ba50d9",
+    "code": "PORT_NANJING",
+    "name": "南京港",
+    "shortName": "南京港",
+    "aliases": [
+      "南京新生圩"
+    ],
+    "type": "PORT",
+    "matchRegionCodes": [],
+    "regionCode": "320100",
+    "address": null,
+    "longitude": 118.94,
+    "latitude": 32.17,
+    "commodities": [
+      "玉米",
+      "小麦"
+    ],
+    "priceSubTypes": [
+      "平舱价",
+      "到港价"
+    ],
+    "defaultSubType": "ARRIVAL",
+    "isDataSource": true,
+    "enterpriseId": null,
+    "priority": 0,
+    "isActive": true,
+    "description": "长江中下游枢纽港",
+    "createdAt": "2026-01-25T12:21:09.128Z",
+    "updatedAt": "2026-01-25T13:30:38.565Z",
+    "createdById": null
+  },
+  {
+    "id": "aa05f2fc-b098-4b78-90b0-49252c5899c7",
+    "code": "PORT_DANDONG",
+    "name": "丹东港",
+    "shortName": "丹东港",
+    "aliases": [
+      "丹东大东港"
+    ],
+    "type": "PORT",
+    "matchRegionCodes": [],
+    "regionCode": "210600",
+    "address": null,
+    "longitude": 124.15,
+    "latitude": 39.86,
+    "commodities": [
+      "玉米"
+    ],
+    "priceSubTypes": [
+      "平舱价",
+      "到港价"
+    ],
+    "defaultSubType": "FOB",
+    "isDataSource": true,
+    "enterpriseId": null,
+    "priority": 0,
+    "isActive": true,
+    "description": "辽宁东部重要港口",
+    "createdAt": "2026-01-25T12:21:09.061Z",
+    "updatedAt": "2026-01-25T13:30:38.568Z",
+    "createdById": null
+  },
+  {
+    "id": "a5a04198-2f2f-40ee-b3f0-b86c53ea9b9e",
+    "code": "ENT_COFCO_YUSHU",
+    "name": "中粮生物科技（榆树）有限公司",
+    "shortName": "中粮榆树",
+    "aliases": [
+      "榆树中粮",
+      "中粮生化榆树",
+      "吉林榆树中粮",
+      "中粮生物科技（榆树）"
+    ],
+    "type": "ENTERPRISE",
+    "matchRegionCodes": [
+      "220000"
+    ],
+    "regionCode": "220100",
+    "address": null,
+    "longitude": 126.535,
+    "latitude": 44.8256,
+    "commodities": [
+      "玉米"
+    ],
+    "priceSubTypes": [],
+    "defaultSubType": "PURCHASE",
+    "isDataSource": true,
+    "enterpriseId": null,
+    "priority": 0,
+    "isActive": true,
+    "description": "吉林地区重要深加工企业",
+    "createdAt": "2026-01-25T12:18:15.923Z",
+    "updatedAt": "2026-01-25T13:31:48.328Z",
+    "createdById": null
+  },
+  {
+    "id": "2f234347-573a-4dd2-adf6-53e268748720",
+    "code": "CP_REGION_DQ",
+    "name": "大庆市",
+    "shortName": "大庆",
+    "aliases": [
+      "大庆"
+    ],
+    "type": "REGION",
+    "matchRegionCodes": [],
+    "regionCode": "230600",
+    "address": null,
+    "longitude": 125.103,
+    "latitude": 46.5843,
+    "commodities": [
+      "玉米"
+    ],
+    "priceSubTypes": [],
+    "defaultSubType": "LISTED",
+    "isDataSource": true,
+    "enterpriseId": null,
+    "priority": 0,
+    "isActive": true,
+    "description": null,
+    "createdAt": "2026-01-25T12:14:23.913Z",
+    "updatedAt": "2026-01-25T13:08:24.423Z",
+    "createdById": null
+  },
+  {
+    "id": "bfa79814-bb6a-431f-a1d8-8e04ca6e60dc",
+    "code": "CP_REGION_SP",
+    "name": "四平市",
+    "shortName": "四平",
+    "aliases": [
+      "四平"
+    ],
+    "type": "REGION",
+    "matchRegionCodes": [],
+    "regionCode": "220300",
+    "address": null,
+    "longitude": 124.3503,
+    "latitude": 43.1668,
+    "commodities": [
+      "玉米"
+    ],
+    "priceSubTypes": [],
+    "defaultSubType": "LISTED",
+    "isDataSource": true,
+    "enterpriseId": null,
+    "priority": 0,
+    "isActive": true,
+    "description": null,
+    "createdAt": "2026-01-25T12:14:23.950Z",
+    "updatedAt": "2026-01-25T13:08:24.426Z",
+    "createdById": null
+  },
+  {
+    "id": "273743ea-49ef-4c2a-baf2-2fdf25ca177b",
+    "code": "CP_MARKET_XFD",
+    "name": "北京新发地市场",
+    "shortName": "新发地",
+    "aliases": [
+      "新发地"
+    ],
+    "type": "MARKET",
+    "matchRegionCodes": [],
+    "regionCode": "110000",
+    "address": null,
+    "longitude": 116.3458,
+    "latitude": 39.8071,
+    "commodities": [
+      "玉米",
+      "蔬菜",
+      "水果"
+    ],
+    "priceSubTypes": [],
+    "defaultSubType": "WHOLESALE",
+    "isDataSource": true,
+    "enterpriseId": null,
+    "priority": 0,
+    "isActive": true,
+    "description": null,
+    "createdAt": "2026-01-25T12:05:53.955Z",
+    "updatedAt": "2026-01-25T12:26:55.923Z",
+    "createdById": null
+  },
+  {
+    "id": "add9b9fe-10f7-4b73-a8ee-37285b10ba0d",
+    "code": "PORT_ZHANJIANG",
+    "name": "湛江港",
+    "shortName": "湛江港",
+    "aliases": [
+      "湛江港区"
+    ],
+    "type": "PORT",
+    "matchRegionCodes": [],
+    "regionCode": "440800",
+    "address": null,
+    "longitude": 110.4,
+    "latitude": 21.19,
+    "commodities": [
+      "玉米",
+      "大豆"
+    ],
+    "priceSubTypes": [
+      "平舱价",
+      "到港价"
+    ],
+    "defaultSubType": "ARRIVAL",
+    "isDataSource": true,
+    "enterpriseId": null,
+    "priority": 0,
+    "isActive": true,
+    "description": "粤西重要散粮港口",
+    "createdAt": "2026-01-25T12:21:09.080Z",
+    "updatedAt": "2026-01-25T13:30:38.545Z",
+    "createdById": null
+  },
+  {
+    "id": "8000b038-f976-4013-a98c-69c6ed4c87ec",
+    "code": "CP_REGION_TL",
+    "name": "铁岭市",
+    "shortName": "铁岭",
+    "aliases": [
+      "铁岭"
+    ],
+    "type": "REGION",
+    "matchRegionCodes": [],
+    "regionCode": "211200",
+    "address": null,
+    "longitude": 123.8443,
+    "latitude": 42.223,
+    "commodities": [
+      "玉米"
+    ],
+    "priceSubTypes": [],
+    "defaultSubType": "LISTED",
+    "isDataSource": true,
+    "enterpriseId": null,
+    "priority": 0,
+    "isActive": true,
+    "description": null,
+    "createdAt": "2026-01-25T12:14:23.982Z",
+    "updatedAt": "2026-01-25T13:08:24.429Z",
+    "createdById": null
+  },
+  {
+    "id": "b3ebc5ad-83cf-4076-ac83-52a7b3d379c0",
+    "code": "CP_REGION_CY",
+    "name": "朝阳市",
+    "shortName": "朝阳",
+    "aliases": [
+      "朝阳"
+    ],
+    "type": "REGION",
+    "matchRegionCodes": [],
+    "regionCode": "211300",
+    "address": null,
+    "longitude": 120.4508,
+    "latitude": 41.5768,
+    "commodities": [
+      "玉米",
+      "高粱"
+    ],
+    "priceSubTypes": [],
+    "defaultSubType": "LISTED",
+    "isDataSource": true,
+    "enterpriseId": null,
+    "priority": 0,
+    "isActive": true,
+    "description": null,
+    "createdAt": "2026-01-25T12:14:23.993Z",
+    "updatedAt": "2026-01-25T13:08:24.434Z",
+    "createdById": null
+  },
+  {
+    "id": "f08172c4-007f-4a36-88dd-bd71feb2d80a",
+    "code": "ENT_CHENGFU_ZHAODONG",
+    "name": "黑龙江成福食品集团有限公司",
+    "shortName": "成福集团",
+    "aliases": [
+      "肇东成福",
+      "成福食品",
+      "黑龙江成福",
+      "黑龙江成福食品"
+    ],
+    "type": "ENTERPRISE",
+    "matchRegionCodes": [
+      "230000"
+    ],
+    "regionCode": "231200",
+    "address": null,
+    "longitude": 125.968,
+    "latitude": 46.069,
+    "commodities": [
+      "玉米"
+    ],
+    "priceSubTypes": [],
+    "defaultSubType": "PURCHASE",
+    "isDataSource": true,
+    "enterpriseId": null,
+    "priority": 0,
+    "isActive": true,
+    "description": "黑龙江大型氨基酸生产企业",
+    "createdAt": "2026-01-25T12:18:15.960Z",
+    "updatedAt": "2026-01-25T13:31:48.313Z",
+    "createdById": null
+  },
+  {
+    "id": "f5d895f2-dd87-4cf3-a89f-cd3ef25220eb",
+    "code": "ENT_JINCHENG_DALIAN",
+    "name": "锦程国际物流集团股份有限公司",
+    "shortName": "锦程物流",
+    "aliases": [
+      "锦程国际物流"
+    ],
+    "type": "ENTERPRISE",
+    "matchRegionCodes": [
+      "210000"
+    ],
+    "regionCode": "210200",
+    "address": null,
+    "longitude": null,
+    "latitude": null,
+    "commodities": [
+      "玉米"
+    ],
+    "priceSubTypes": [],
+    "defaultSubType": "PURCHASE",
+    "isDataSource": true,
+    "enterpriseId": "e7d06665-9dc9-444d-a909-4ff315f42388",
+    "priority": 0,
+    "isActive": true,
+    "description": null,
+    "createdAt": "2026-01-25T12:24:51.709Z",
+    "updatedAt": "2026-01-25T13:31:48.337Z",
+    "createdById": null
+  },
+  {
+    "id": "267ad342-bbbb-4f15-abf4-1dd6a3ba7458",
+    "code": "ENT_JINYUMI_SHOUGUANG",
+    "name": "山东寿光巨能金玉米开发有限公司",
+    "shortName": "金玉米",
+    "aliases": [
+      "寿光金玉米",
+      "巨能金玉米",
+      "金玉米",
+      "山东寿光巨能金玉米开发"
+    ],
+    "type": "ENTERPRISE",
+    "matchRegionCodes": [
+      "370000"
+    ],
+    "regionCode": "370700",
+    "address": null,
+    "longitude": 118.745,
+    "latitude": 36.865,
+    "commodities": [
+      "玉米"
+    ],
+    "priceSubTypes": [],
+    "defaultSubType": "PURCHASE",
+    "isDataSource": true,
+    "enterpriseId": null,
+    "priority": 0,
+    "isActive": true,
+    "description": "山东大型淀粉加工企业",
+    "createdAt": "2026-01-25T12:18:16.027Z",
+    "updatedAt": "2026-01-25T13:31:48.339Z",
+    "createdById": null
+  },
+  {
+    "id": "2614e661-8391-46e1-9c97-6a7925769193",
+    "code": "STATION_NONGAN",
+    "name": "农安站",
+    "shortName": null,
+    "aliases": [
+      "农安站台"
+    ],
+    "type": "STATION",
+    "matchRegionCodes": [
+      "220000"
+    ],
+    "regionCode": "220122",
+    "address": "吉林省长春市农安县",
+    "longitude": 125.184,
+    "latitude": 44.432,
+    "commodities": [
+      "玉米",
+      "大豆"
+    ],
+    "priceSubTypes": [
+      "站台价-产区",
+      "收购价",
+      "潮粮价"
+    ],
+    "defaultSubType": "站台价-产区",
+    "isDataSource": true,
+    "enterpriseId": null,
+    "priority": 0,
+    "isActive": true,
+    "description": "产区站台",
+    "createdAt": "2026-01-25T13:00:55.390Z",
+    "updatedAt": "2026-01-25T13:18:38.380Z",
+    "createdById": null
+  },
+  {
+    "id": "6a388c40-f515-4f4b-ae49-22937d87b1b2",
+    "code": "STATION_ULANHOT_N",
+    "name": "乌兰浩特北站",
+    "shortName": null,
+    "aliases": [
+      "乌兰浩特北站台"
+    ],
+    "type": "STATION",
+    "matchRegionCodes": [
+      "150000"
+    ],
+    "regionCode": "152201",
+    "address": "内蒙古自治区兴安盟乌兰浩特市",
+    "longitude": 122.093,
+    "latitude": 46.064,
+    "commodities": [
+      "玉米"
+    ],
+    "priceSubTypes": [
+      "站台价-产区",
+      "收购价",
+      "潮粮价"
+    ],
+    "defaultSubType": "站台价-产区",
+    "isDataSource": true,
+    "enterpriseId": null,
+    "priority": 0,
+    "isActive": true,
+    "description": "产区站台",
+    "createdAt": "2026-01-25T13:00:55.399Z",
+    "updatedAt": "2026-01-25T13:18:38.386Z",
+    "createdById": null
+  },
+  {
+    "id": "480fda57-28e1-4e6f-aa30-eda274246d75",
+    "code": "STATION_SONGYUAN",
+    "name": "松原站",
+    "shortName": null,
+    "aliases": [
+      "松原站台"
+    ],
+    "type": "STATION",
+    "matchRegionCodes": [
+      "220000"
+    ],
+    "regionCode": "220702",
+    "address": "吉林省松原市宁江区",
+    "longitude": 124.823,
+    "latitude": 45.141,
+    "commodities": [
+      "玉米",
+      "大豆",
+      "稻谷"
+    ],
+    "priceSubTypes": [
+      "站台价-产区",
+      "收购价",
+      "潮粮价"
+    ],
+    "defaultSubType": "站台价-产区",
+    "isDataSource": true,
+    "enterpriseId": null,
+    "priority": 0,
+    "isActive": true,
+    "description": "产区站台",
+    "createdAt": "2026-01-25T13:00:55.402Z",
+    "updatedAt": "2026-01-25T13:18:38.390Z",
+    "createdById": null
+  },
+  {
+    "id": "ff3f2f51-09f9-4c0e-9093-f3030c810634",
+    "code": "STATION_HUAJIA",
+    "name": "华家站",
+    "shortName": null,
+    "aliases": [
+      "华家站台"
+    ],
+    "type": "STATION",
+    "matchRegionCodes": [
+      "220000"
+    ],
+    "regionCode": "220122",
+    "address": "吉林省长春市农安县华家镇",
+    "longitude": 125.45,
+    "latitude": 44.2,
+    "commodities": [
+      "玉米"
+    ],
+    "priceSubTypes": [
+      "站台价-产区",
+      "收购价",
+      "潮粮价"
+    ],
+    "defaultSubType": "站台价-产区",
+    "isDataSource": true,
+    "enterpriseId": null,
+    "priority": 0,
+    "isActive": true,
+    "description": "产区站台",
+    "createdAt": "2026-01-25T13:00:55.406Z",
+    "updatedAt": "2026-01-25T13:18:38.397Z",
+    "createdById": null
+  },
+  {
+    "id": "b02b807c-0d47-4d84-ba21-8fdfe7eddae8",
+    "code": "STATION_SHATUJI",
+    "name": "沙土集站",
+    "shortName": null,
+    "aliases": [
+      "沙土集站台"
+    ],
+    "type": "STATION",
+    "matchRegionCodes": [
+      "370000"
+    ],
+    "regionCode": "371702",
+    "address": "山东省菏泽市牡丹区沙土镇",
+    "longitude": 115.65,
+    "latitude": 35.35,
+    "commodities": [
+      "小麦",
+      "玉米",
+      "大豆"
+    ],
+    "priceSubTypes": [
+      "站台价-销区",
+      "到站价",
+      "分销价"
+    ],
+    "defaultSubType": "站台价-销区",
+    "isDataSource": true,
+    "enterpriseId": null,
+    "priority": 0,
+    "isActive": true,
+    "description": "销区站台",
+    "createdAt": "2026-01-25T13:00:55.420Z",
+    "updatedAt": "2026-01-25T13:18:38.416Z",
+    "createdById": null
+  },
+  {
+    "id": "59c1bbd0-aaec-4797-a29f-be9a15796d03",
+    "code": "STATION_LIHE",
+    "name": "溧河站",
+    "shortName": null,
+    "aliases": [
+      "溧河站台"
+    ],
+    "type": "STATION",
+    "matchRegionCodes": [
+      "410000"
+    ],
+    "regionCode": "411302",
+    "address": "河南省南阳市宛城区溧河乡",
+    "longitude": 112.58,
+    "latitude": 32.95,
+    "commodities": [
+      "小麦",
+      "玉米"
+    ],
+    "priceSubTypes": [
+      "站台价-销区",
+      "到站价",
+      "分销价"
+    ],
+    "defaultSubType": "站台价-销区",
+    "isDataSource": true,
+    "enterpriseId": null,
+    "priority": 0,
+    "isActive": true,
+    "description": "销区站台",
+    "createdAt": "2026-01-25T13:00:55.424Z",
+    "updatedAt": "2026-01-25T13:18:38.419Z",
+    "createdById": null
+  },
+  {
+    "id": "7cb89f1d-74fc-46dc-9626-6ffc25a2ea13",
+    "code": "PORT_BAYUQUAN",
+    "name": "鲅鱼圈港",
+    "shortName": null,
+    "aliases": [
+      "鲅鱼圈港"
+    ],
+    "type": "PORT",
+    "matchRegionCodes": [
+      "210000"
+    ],
+    "regionCode": "210800",
+    "address": "辽宁省营口市鲅鱼圈区",
+    "longitude": 122.13,
+    "latitude": 40.26,
+    "commodities": [
+      "玉米",
+      "大豆"
+    ],
+    "priceSubTypes": [
+      "平舱价",
+      "到港价",
+      "集港价"
+    ],
+    "defaultSubType": "平舱价",
+    "isDataSource": true,
+    "enterpriseId": null,
+    "priority": 0,
+    "isActive": true,
+    "description": "港口",
+    "createdAt": "2026-01-25T13:24:11.331Z",
+    "updatedAt": "2026-01-25T13:24:11.331Z",
+    "createdById": null
+  },
+  {
+    "id": "738f1491-a698-461b-9527-1b2cdd31c1eb",
+    "code": "PORT_YINGKOU",
+    "name": "营口港",
+    "shortName": null,
+    "aliases": [
+      "营口港"
+    ],
+    "type": "PORT",
+    "matchRegionCodes": [
+      "210000"
+    ],
+    "regionCode": "210800",
+    "address": "辽宁省营口市",
+    "longitude": 122.22,
+    "latitude": 40.66,
+    "commodities": [
+      "玉米"
+    ],
+    "priceSubTypes": [
+      "到港价"
+    ],
+    "defaultSubType": "到港价",
+    "isDataSource": true,
+    "enterpriseId": null,
+    "priority": 0,
+    "isActive": true,
+    "description": "港口",
+    "createdAt": "2026-01-25T13:24:11.337Z",
+    "updatedAt": "2026-01-25T13:24:11.337Z",
+    "createdById": null
+  },
+  {
+    "id": "fbbfe316-5825-4010-b745-1307d1b5e860",
+    "code": "STATION_HARBIN",
+    "name": "哈尔滨站台",
+    "shortName": null,
+    "aliases": [
+      "哈尔滨站台",
+      "哈尔滨"
+    ],
+    "type": "STATION",
+    "matchRegionCodes": [
+      "230000"
+    ],
+    "regionCode": "230100",
+    "address": "黑龙江省哈尔滨市",
+    "longitude": 126.63,
+    "latitude": 45.75,
+    "commodities": [
+      "玉米"
+    ],
+    "priceSubTypes": [
+      "发货价",
+      "收购价"
+    ],
+    "defaultSubType": "发货价",
+    "isDataSource": true,
+    "enterpriseId": null,
+    "priority": 0,
+    "isActive": true,
+    "description": "产区站台",
+    "createdAt": "2026-01-25T13:24:11.340Z",
+    "updatedAt": "2026-01-25T13:24:11.340Z",
+    "createdById": null
+  },
+  {
+    "id": "bf143e83-ba80-4e79-9bf5-97c0d50e3f60",
+    "code": "STATION_CHANGCHUN",
+    "name": "长春站台",
+    "shortName": null,
+    "aliases": [
+      "长春站台",
+      "长春"
+    ],
+    "type": "STATION",
+    "matchRegionCodes": [
+      "220000"
+    ],
+    "regionCode": "220100",
+    "address": "吉林省长春市",
+    "longitude": 125.32,
+    "latitude": 43.81,
+    "commodities": [
+      "玉米"
+    ],
+    "priceSubTypes": [
+      "发货价",
+      "收购价"
+    ],
+    "defaultSubType": "发货价",
+    "isDataSource": true,
+    "enterpriseId": null,
+    "priority": 0,
+    "isActive": true,
+    "description": "产区站台",
+    "createdAt": "2026-01-25T13:24:11.343Z",
+    "updatedAt": "2026-01-25T13:24:11.343Z",
+    "createdById": null
+  },
+  {
+    "id": "dbc97095-267d-4125-9a50-726789683c80",
+    "code": "STATION_SHENYANG",
+    "name": "沈阳站台",
+    "shortName": null,
+    "aliases": [
+      "沈阳站台",
+      "沈阳"
+    ],
+    "type": "STATION",
+    "matchRegionCodes": [
+      "210000"
+    ],
+    "regionCode": "210100",
+    "address": "辽宁省沈阳市",
+    "longitude": 123.43,
+    "latitude": 41.8,
+    "commodities": [
+      "玉米"
+    ],
+    "priceSubTypes": [
+      "发货价",
+      "收购价"
+    ],
+    "defaultSubType": "发货价",
+    "isDataSource": true,
+    "enterpriseId": null,
+    "priority": 0,
+    "isActive": true,
+    "description": "产区站台",
+    "createdAt": "2026-01-25T13:24:11.346Z",
+    "updatedAt": "2026-01-25T13:24:11.346Z",
+    "createdById": null
+  },
+  {
+    "id": "561117a2-37a1-45ad-ba22-6a2137388d62",
+    "code": "ENT_MEIHUA_TONGLIAO",
+    "name": "梅花味精（通辽）",
+    "shortName": null,
+    "aliases": [
+      "通辽梅花",
+      "梅花生物",
+      "梅花味精（通辽）"
+    ],
+    "type": "ENTERPRISE",
+    "matchRegionCodes": [
+      "150000"
+    ],
+    "regionCode": "150500",
+    "address": "内蒙古通辽市",
+    "longitude": 122.26,
+    "latitude": 43.61,
+    "commodities": [
+      "玉米"
+    ],
+    "priceSubTypes": [
+      "挂牌价",
+      "收购价"
+    ],
+    "defaultSubType": "挂牌价",
+    "isDataSource": true,
+    "enterpriseId": null,
+    "priority": 0,
+    "isActive": true,
+    "description": "深加工企业 - 氨基酸龙头",
+    "createdAt": "2026-01-25T13:24:11.349Z",
+    "updatedAt": "2026-01-25T13:24:11.349Z",
+    "createdById": null
+  },
+  {
+    "id": "0ed731b7-f4df-47b7-abf4-b7b2be1be5be",
+    "code": "ENT_FUEL_JILIN",
+    "name": "吉燃",
+    "shortName": null,
+    "aliases": [
+      "吉林燃料乙醇",
+      "吉燃"
+    ],
+    "type": "ENTERPRISE",
+    "matchRegionCodes": [
+      "220000"
+    ],
+    "regionCode": "220000",
+    "address": "吉林省吉林市",
+    "longitude": 126.55,
+    "latitude": 43.83,
+    "commodities": [
+      "玉米"
+    ],
+    "priceSubTypes": [
+      "收购价"
+    ],
+    "defaultSubType": "收购价",
+    "isDataSource": true,
+    "enterpriseId": null,
+    "priority": 0,
+    "isActive": true,
+    "description": "燃料乙醇企业",
+    "createdAt": "2026-01-25T13:24:11.361Z",
+    "updatedAt": "2026-01-25T13:31:48.342Z",
+    "createdById": null
+  },
+  {
+    "id": "56692125-c97f-4656-b4fd-3db7a2cc1cf0",
+    "code": "STATION_ZHENLAI",
+    "name": "镇赉站",
+    "shortName": null,
+    "aliases": [
+      "镇赉站台"
+    ],
+    "type": "STATION",
+    "matchRegionCodes": [
+      "220000"
+    ],
+    "regionCode": "220821",
+    "address": "吉林省白城市镇赉县",
+    "longitude": 123.199,
+    "latitude": 45.848,
+    "commodities": [
+      "玉米",
+      "稻谷"
+    ],
+    "priceSubTypes": [
+      "站台价-产区",
+      "收购价",
+      "潮粮价"
+    ],
+    "defaultSubType": "站台价-产区",
+    "isDataSource": true,
+    "enterpriseId": null,
+    "priority": 0,
+    "isActive": true,
+    "description": "产区站台",
+    "createdAt": "2026-01-25T13:00:55.409Z",
+    "updatedAt": "2026-01-25T13:18:38.402Z",
+    "createdById": null
+  },
+  {
+    "id": "2dcce806-7217-4886-90bb-cfb1c322d470",
+    "code": "ENT_COFCO_GONGZHULING",
+    "name": "中粮公主岭",
+    "shortName": null,
+    "aliases": [
+      "中粮生化（公主岭）",
+      "公主岭中粮",
+      "中粮公主岭"
+    ],
+    "type": "ENTERPRISE",
+    "matchRegionCodes": [
+      "220000"
+    ],
+    "regionCode": "220100",
+    "address": "吉林省公主岭市",
+    "longitude": 124.81,
+    "latitude": 43.51,
+    "commodities": [
+      "玉米"
+    ],
+    "priceSubTypes": [
+      "收购价"
+    ],
+    "defaultSubType": "收购价",
+    "isDataSource": true,
+    "enterpriseId": null,
+    "priority": 0,
+    "isActive": true,
+    "description": "深加工企业",
+    "createdAt": "2026-01-25T13:24:11.352Z",
+    "updatedAt": "2026-01-25T13:24:11.352Z",
+    "createdById": null
+  },
+  {
+    "id": "bbc93018-73f8-4a3e-a715-8b76281eb2c7",
+    "code": "ENT_YIHAI_JIAMUSI",
+    "name": "佳木斯益海",
+    "shortName": null,
+    "aliases": [
+      "益海嘉里（佳木斯）",
+      "佳木斯益海"
+    ],
+    "type": "ENTERPRISE",
+    "matchRegionCodes": [
+      "230000"
+    ],
+    "regionCode": "230800",
+    "address": "黑龙江省佳木斯市",
+    "longitude": 130.36,
+    "latitude": 46.8,
+    "commodities": [
+      "玉米",
+      "大豆",
+      "稻谷"
+    ],
+    "priceSubTypes": [
+      "收购价"
+    ],
+    "defaultSubType": "收购价",
+    "isDataSource": true,
+    "enterpriseId": null,
+    "priority": 0,
+    "isActive": true,
+    "description": "粮油加工",
+    "createdAt": "2026-01-25T13:24:11.356Z",
+    "updatedAt": "2026-01-25T13:24:11.356Z",
+    "createdById": null
+  },
+  {
+    "id": "0f14297b-da85-4f08-9e72-c5c3b3d28fee",
+    "code": "STATION_YINAN",
+    "name": "沂南站",
+    "shortName": null,
+    "aliases": [
+      "沂南站台"
+    ],
+    "type": "STATION",
+    "matchRegionCodes": [
+      "370000"
+    ],
+    "regionCode": "371321",
+    "address": "山东省临沂市沂南县",
+    "longitude": 118.47,
+    "latitude": 35.551,
+    "commodities": [
+      "小麦",
+      "玉米"
+    ],
+    "priceSubTypes": [
+      "站台价-销区",
+      "到站价",
+      "分销价"
+    ],
+    "defaultSubType": "站台价-销区",
+    "isDataSource": true,
+    "enterpriseId": null,
+    "priority": 0,
+    "isActive": true,
+    "description": "销区站台",
+    "createdAt": "2026-01-25T13:00:55.413Z",
+    "updatedAt": "2026-01-25T13:18:38.406Z",
+    "createdById": null
+  },
+  {
+    "id": "baa82a49-0e11-4b13-8cc0-c932d70d7b48",
+    "code": "STATION_TAPU",
+    "name": "塔铺站",
+    "shortName": null,
+    "aliases": [
+      "塔铺站台"
+    ],
+    "type": "STATION",
+    "matchRegionCodes": [
+      "410000"
+    ],
+    "regionCode": "410726",
+    "address": "河南省新乡市延津县塔铺街道",
+    "longitude": 114.2,
+    "latitude": 35.25,
+    "commodities": [
+      "小麦",
+      "玉米"
+    ],
+    "priceSubTypes": [
+      "站台价-销区",
+      "到站价",
+      "分销价"
+    ],
+    "defaultSubType": "站台价-销区",
+    "isDataSource": true,
+    "enterpriseId": null,
+    "priority": 0,
+    "isActive": true,
+    "description": "销区站台",
+    "createdAt": "2026-01-25T13:00:55.417Z",
+    "updatedAt": "2026-01-25T13:18:38.410Z",
+    "createdById": null
+  },
+  {
+    "id": "d8439d0a-09a0-438a-bbfc-767c75ef8760",
+    "code": "ENT_XIANGYU_SUIHUA",
+    "name": "绥化象屿",
+    "shortName": null,
+    "aliases": [
+      "象屿绥化",
+      "黑龙江象屿",
+      "绥化象屿"
+    ],
+    "type": "ENTERPRISE",
+    "matchRegionCodes": [
+      "230000"
+    ],
+    "regionCode": "231200",
+    "address": "黑龙江省绥化市",
+    "longitude": 126.98,
+    "latitude": 46.63,
+    "commodities": [
+      "玉米"
+    ],
+    "priceSubTypes": [
+      "收购价"
+    ],
+    "defaultSubType": "收购价",
+    "isDataSource": true,
+    "enterpriseId": null,
+    "priority": 0,
+    "isActive": true,
+    "description": "深加工企业",
+    "createdAt": "2026-01-25T13:24:11.358Z",
+    "updatedAt": "2026-01-25T13:24:11.358Z",
+    "createdById": null
+  },
+  {
+    "id": "4e9f864e-9f5c-4106-bf59-49c6d8d65b9b",
+    "code": "ENT_GUOTOU_TIELING",
+    "name": "铁岭国投",
+    "shortName": null,
+    "aliases": [
+      "国投生物（铁岭）",
+      "铁岭国投"
+    ],
+    "type": "ENTERPRISE",
+    "matchRegionCodes": [
+      "210000"
+    ],
+    "regionCode": "211200",
+    "address": "辽宁省铁岭市",
+    "longitude": 123.84,
+    "latitude": 42.29,
+    "commodities": [
+      "玉米"
+    ],
+    "priceSubTypes": [
+      "收购价"
+    ],
+    "defaultSubType": "收购价",
+    "isDataSource": true,
+    "enterpriseId": null,
+    "priority": 0,
+    "isActive": true,
+    "description": "能源/深加工",
+    "createdAt": "2026-01-25T13:24:11.364Z",
+    "updatedAt": "2026-01-25T13:24:11.364Z",
+    "createdById": null
+  },
+  {
+    "id": "1e413391-e383-468b-9f5c-d44c69636726",
+    "code": "ENT_DACHENG_CHANGCHUN",
+    "name": "长春大成",
+    "shortName": null,
+    "aliases": [
+      "大成生化",
+      "长春大成"
+    ],
+    "type": "ENTERPRISE",
+    "matchRegionCodes": [
+      "220000"
+    ],
+    "regionCode": "220100",
+    "address": "吉林省长春市",
+    "longitude": 125.32,
+    "latitude": 43.88,
+    "commodities": [
+      "玉米"
+    ],
+    "priceSubTypes": [
+      "收购价"
+    ],
+    "defaultSubType": "收购价",
+    "isDataSource": true,
+    "enterpriseId": null,
+    "priority": 0,
+    "isActive": true,
+    "description": "深加工企业",
+    "createdAt": "2026-01-25T13:24:11.366Z",
+    "updatedAt": "2026-01-25T13:24:11.366Z",
+    "createdById": null
+  }
+]

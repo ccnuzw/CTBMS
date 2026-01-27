@@ -1,0 +1,521 @@
+[
+  {
+    "id": "c24acc80-12c2-41f8-a5ba-fcc13abcee8d",
+    "name": "价格下跌监测",
+    "description": "监测市场价格出现下跌、回落的情况",
+    "isActive": true,
+    "priority": 10,
+    "targetType": "EVENT",
+    "eventTypeCode": "PRICE_CHANGE",
+    "insightTypeCode": null,
+    "conditions": [
+      {
+        "id": "176934748802816",
+        "leftType": "KEYWORD",
+        "connector": "FOLLOWED_BY",
+        "leftValue": [
+          "价格",
+          "报价",
+          "挂牌价",
+          "收购价",
+          "平舱价",
+          "出库价",
+          "到港价",
+          "发货价",
+          "批发价",
+          "车板价",
+          "站台价"
+        ],
+        "rightType": "KEYWORD",
+        "rightValue": [
+          "下跌",
+          "下调",
+          "回落",
+          "跌",
+          "低开",
+          "跌势",
+          "走低",
+          "跳水"
+        ],
+        "extractFields": {
+          "action": "RIGHT",
+          "subject": "LEFT"
+        }
+      }
+    ],
+    "outputConfig": {
+      "direction": "down"
+    },
+    "commodities": [
+      "玉米",
+      "大豆",
+      "小麦",
+      "稻谷"
+    ],
+    "regions": []
+  },
+  {
+    "id": "fb5182c4-c4ad-4a21-9627-5d754891a5d5",
+    "name": "企业停机检修监测",
+    "description": "监测加工企业停机、检修、放假等导致需求减少的事件",
+    "isActive": true,
+    "priority": 8,
+    "targetType": "EVENT",
+    "eventTypeCode": "SUPPLY_SHOCK",
+    "insightTypeCode": null,
+    "conditions": [
+      {
+        "id": "1769347488028369",
+        "leftType": "KEYWORD",
+        "connector": "FOLLOWED_BY",
+        "leftValue": [
+          "深加工",
+          "工厂",
+          "企业",
+          "烘干塔",
+          "生产线",
+          "港口",
+          "泊位"
+        ],
+        "rightType": "KEYWORD",
+        "rightValue": [
+          "检修",
+          "停机",
+          "停收",
+          "停工",
+          "停产",
+          "放假"
+        ],
+        "extractFields": {
+          "action": "RIGHT",
+          "subject": "LEFT"
+        }
+      }
+    ],
+    "outputConfig": null,
+    "commodities": [],
+    "regions": []
+  },
+  {
+    "id": "fda7f760-42f9-41a2-8079-4e55bd76cb34",
+    "name": "后市看涨观点提取",
+    "description": "提取分析师或市场对后市看涨的观点",
+    "isActive": true,
+    "priority": 9,
+    "targetType": "INSIGHT",
+    "eventTypeCode": null,
+    "insightTypeCode": "FORECAST",
+    "conditions": [
+      {
+        "id": "1769347488028644",
+        "leftType": "KEYWORD",
+        "connector": "FOLLOWED_BY",
+        "leftValue": [
+          "后市",
+          "预期",
+          "观点",
+          "分析",
+          "预测"
+        ],
+        "rightType": "KEYWORD",
+        "rightValue": [
+          "看涨",
+          "走强",
+          "乐观",
+          "新高",
+          "坚挺",
+          "强劲",
+          "利好"
+        ],
+        "extractFields": {
+          "action": "RIGHT"
+        }
+      }
+    ],
+    "outputConfig": {
+      "direction": "up"
+    },
+    "commodities": [],
+    "regions": []
+  },
+  {
+    "id": "6dcf0339-f125-40b7-9ee0-31cefe5924c2",
+    "name": "后市看空观点提取",
+    "description": "提取分析师或市场对后市看空的观点",
+    "isActive": true,
+    "priority": 9,
+    "targetType": "INSIGHT",
+    "eventTypeCode": null,
+    "insightTypeCode": "FORECAST",
+    "conditions": [
+      {
+        "id": "1769347488028305",
+        "leftType": "KEYWORD",
+        "connector": "FOLLOWED_BY",
+        "leftValue": [
+          "后市",
+          "预期",
+          "观点",
+          "分析",
+          "预测"
+        ],
+        "rightType": "KEYWORD",
+        "rightValue": [
+          "看空",
+          "弱势",
+          "回落",
+          "悲观",
+          "利空",
+          "下行",
+          "承压"
+        ],
+        "extractFields": {
+          "action": "RIGHT"
+        }
+      }
+    ],
+    "outputConfig": {
+      "direction": "down"
+    },
+    "commodities": [],
+    "regions": []
+  },
+  {
+    "id": "93789fe4-92df-4473-a454-4b41eac1c51c",
+    "name": "天气灾害预警",
+    "description": "监测台风、暴雨等恶劣天气",
+    "isActive": true,
+    "priority": 10,
+    "targetType": "EVENT",
+    "eventTypeCode": "WEATHER_IMPACT",
+    "insightTypeCode": null,
+    "conditions": [
+      {
+        "id": "1769347488028114",
+        "leftType": "KEYWORD",
+        "connector": "FOLLOWED_BY",
+        "leftValue": [
+          "遭遇",
+          "受",
+          "未来",
+          "预计",
+          "持续"
+        ],
+        "rightType": "KEYWORD",
+        "rightValue": [
+          "暴雨",
+          "大雪",
+          "台风",
+          "洪涝",
+          "干旱",
+          "冰雹",
+          "霜冻",
+          "强降雨"
+        ],
+        "extractFields": {
+          "action": "RIGHT"
+        }
+      }
+    ],
+    "outputConfig": null,
+    "commodities": [
+      "玉米",
+      "大豆"
+    ],
+    "regions": []
+  },
+  {
+    "id": "a294c653-30ea-4d71-9b61-3d08cd4d3ea1",
+    "name": "物流运输监测",
+    "description": "监测物流紧张、运费上涨或停运等情况",
+    "isActive": true,
+    "priority": 7,
+    "targetType": "EVENT",
+    "eventTypeCode": "LOGISTICS_ISSUE",
+    "insightTypeCode": null,
+    "conditions": [
+      {
+        "id": "176934748802877",
+        "leftType": "KEYWORD",
+        "connector": "FOLLOWED_BY",
+        "leftValue": [
+          "运费",
+          "车辆",
+          "汽运",
+          "火运",
+          "船运"
+        ],
+        "rightType": "KEYWORD",
+        "rightValue": [
+          "上涨",
+          "紧张",
+          "稀少",
+          "困难",
+          "堵港",
+          "停运",
+          "受阻",
+          "滞留",
+          "积压",
+          "排队"
+        ],
+        "extractFields": {
+          "action": "RIGHT",
+          "subject": "LEFT"
+        }
+      }
+    ],
+    "outputConfig": null,
+    "commodities": [],
+    "regions": []
+  },
+  {
+    "id": "529485b4-7e5b-4cf2-a57d-6d3a3195ba79",
+    "name": "政策发布监测",
+    "description": "监测官方发布的收储、补贴等政策",
+    "isActive": true,
+    "priority": 10,
+    "targetType": "EVENT",
+    "eventTypeCode": "POLICY_UPDATE",
+    "insightTypeCode": null,
+    "conditions": [
+      {
+        "id": "1769347488028903",
+        "leftType": "KEYWORD",
+        "connector": "FOLLOWED_BY",
+        "leftValue": [
+          "国粮局",
+          "中储粮",
+          "储备",
+          "发改委",
+          "农业部"
+        ],
+        "rightType": "KEYWORD",
+        "rightValue": [
+          "发布",
+          "启动",
+          "调整",
+          "轮换",
+          "补贴",
+          "收购",
+          "拍卖"
+        ],
+        "extractFields": {
+          "action": "RIGHT",
+          "subject": "LEFT"
+        }
+      }
+    ],
+    "outputConfig": null,
+    "commodities": [],
+    "regions": []
+  },
+  {
+    "id": "c7a91a4f-a526-4b7e-9511-909d51996811",
+    "name": "库存变化监测",
+    "description": "监测库存水平的增减变化",
+    "isActive": true,
+    "priority": 8,
+    "targetType": "EVENT",
+    "eventTypeCode": "INVENTORY_ALERT",
+    "insightTypeCode": null,
+    "conditions": [
+      {
+        "id": "1769347488028907",
+        "leftType": "KEYWORD",
+        "connector": "FOLLOWED_BY",
+        "leftValue": [
+          "库存",
+          "余粮",
+          "结转"
+        ],
+        "rightType": "KEYWORD",
+        "rightValue": [
+          "下降",
+          "累积",
+          "不足",
+          "增加",
+          "减少",
+          "低位",
+          "高位"
+        ],
+        "extractFields": {
+          "action": "RIGHT",
+          "subject": "LEFT"
+        }
+      }
+    ],
+    "outputConfig": null,
+    "commodities": [
+      "玉米",
+      "大豆"
+    ],
+    "regions": []
+  },
+  {
+    "id": "3deea59c-a779-4ef8-9363-4502ea5eaa79",
+    "name": "企业采购意愿增强",
+    "description": "监测需求端采购积极性",
+    "isActive": true,
+    "priority": 8,
+    "targetType": "EVENT",
+    "eventTypeCode": "DEMAND_SHIFT",
+    "insightTypeCode": null,
+    "conditions": [
+      {
+        "id": "1769347488028141",
+        "leftType": "KEYWORD",
+        "connector": "FOLLOWED_BY",
+        "leftValue": [
+          "企业",
+          "饲料厂",
+          "深加工",
+          "养殖场"
+        ],
+        "rightType": "KEYWORD",
+        "rightValue": [
+          "补库",
+          "采购",
+          "收购",
+          "建库",
+          "备货"
+        ],
+        "extractFields": {
+          "action": "RIGHT",
+          "subject": "LEFT"
+        }
+      }
+    ],
+    "outputConfig": null,
+    "commodities": [],
+    "regions": []
+  },
+  {
+    "id": "e0b3bca9-2863-4117-82b2-4c3bf803db66",
+    "name": "供应压力分析",
+    "description": "分析市场供应压力",
+    "isActive": true,
+    "priority": 7,
+    "targetType": "INSIGHT",
+    "eventTypeCode": null,
+    "insightTypeCode": "SUPPLY_ANALYSIS",
+    "conditions": [
+      {
+        "id": "1769347488028800",
+        "leftType": "KEYWORD",
+        "connector": "FOLLOWED_BY",
+        "leftValue": [
+          "基层",
+          "农户",
+          "产区"
+        ],
+        "rightType": "KEYWORD",
+        "rightValue": [
+          "集中上市",
+          "售粮",
+          "上量",
+          "卖粮",
+          "变现"
+        ],
+        "extractFields": {
+          "action": "RIGHT",
+          "subject": "LEFT"
+        }
+      }
+    ],
+    "outputConfig": {},
+    "commodities": [],
+    "regions": []
+  },
+  {
+    "id": "345447a5-1c2d-4e29-b9ef-99d8dcfed3b8",
+    "name": "需求疲软分析",
+    "description": "分析市场需求不振情况",
+    "isActive": true,
+    "priority": 7,
+    "targetType": "INSIGHT",
+    "eventTypeCode": null,
+    "insightTypeCode": "DEMAND_ANALYSIS",
+    "conditions": [
+      {
+        "id": "1769347488028696",
+        "leftType": "KEYWORD",
+        "connector": "FOLLOWED_BY",
+        "leftValue": [
+          "下游",
+          "终端",
+          "贸易商"
+        ],
+        "rightType": "KEYWORD",
+        "rightValue": [
+          "观望",
+          "停收",
+          "疲软",
+          "走货慢",
+          "谨慎"
+        ],
+        "extractFields": {
+          "action": "RIGHT",
+          "subject": "LEFT"
+        }
+      }
+    ],
+    "outputConfig": {},
+    "commodities": [],
+    "regions": []
+  },
+  {
+    "id": "f4c3489d-650c-4976-95aa-ce3cbc965ae0",
+    "name": "价格上涨监测",
+    "description": "监测市场价格出现上涨的情况",
+    "isActive": true,
+    "priority": 10,
+    "targetType": "EVENT",
+    "eventTypeCode": "PRICE_CHANGE",
+    "insightTypeCode": null,
+    "conditions": [
+      {
+        "id": "1769347488028951",
+        "leftType": "KEYWORD",
+        "connector": "FOLLOWED_BY",
+        "leftValue": [
+          "价格",
+          "报价",
+          "挂牌价",
+          "收购价",
+          "平舱价",
+          "出库价",
+          "到港价",
+          "发货价",
+          "批发价",
+          "车板价",
+          "站台价"
+        ],
+        "rightType": "KEYWORD",
+        "rightValue": [
+          "上涨",
+          "上调",
+          "走高",
+          "涨",
+          "高开",
+          "涨势",
+          "回升",
+          "反弹"
+        ],
+        "extractFields": {
+          "action": "RIGHT",
+          "subject": "LEFT"
+        }
+      }
+    ],
+    "outputConfig": {
+      "direction": "up"
+    },
+    "commodities": [
+      "玉米",
+      "大豆",
+      "小麦",
+      "稻谷"
+    ],
+    "regions": []
+  }
+]

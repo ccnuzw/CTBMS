@@ -1,0 +1,72 @@
+version: '3.8'
+
+services:
+  # Database Service
+  postgres:
+    image: postgres:15-alpine
+    container_name: ctbms_postgres
+    restart: always
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-ctbms}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-ctbms_password}
+      POSTGRES_DB: ${POSTGRES_DB:-ctbms_prod}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - ctbms_network
+
+  # Backend API Service
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    container_name: ctbms_api
+    restart: always
+    depends_on:
+      - postgres
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-ctbms}:${POSTGRES_PASSWORD:-ctbms_password}@postgres:5432/${POSTGRES_DB:-ctbms_prod}?schema=public
+      PORT: 3000
+      # Add other necessary env vars here, passed from .env
+      GEMINI_API_KEY: ${GEMINI_API_KEY}
+    networks:
+      - ctbms_network
+
+  # Frontend Web Service
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+    container_name: ctbms_web
+    restart: always
+    environment:
+      # If the frontend needs build-time env vars, they must be build args or injected here if the app supports runtime config
+      # For Vite/React, they are usually build-time, so we might need ARGS in Dockerfile if we want to change them.
+      # However, if we reverse proxy /api, we can rely on relative paths.
+      VITE_GOOGLE_GENAI_API_KEY: ${VITE_GOOGLE_GENAI_API_KEY}
+    networks:
+      - ctbms_network
+
+  # Nginx Reverse Proxy (Entry Point)
+  proxy:
+    image: nginx:alpine
+    container_name: ctbms_proxy
+    restart: always
+    depends_on:
+      - api
+      - web
+    ports:
+      - "8000:8000"
+      # - "443:443" # Uncomment if setting up SSL
+    volumes:
+      - ./docker/nginx/default.conf:/etc/nginx/conf.d/default.conf
+    networks:
+      - ctbms_network
+
+volumes:
+  postgres_data:
+
+
+networks:
+  ctbms_network:
+    driver: bridge

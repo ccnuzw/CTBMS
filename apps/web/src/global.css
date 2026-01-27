@@ -1,0 +1,45 @@
+/* Global Custom Scrollbar (Default / Light Mode) */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #bfbfbf; /* Standard Gray for Light Mode */
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #999;
+}
+
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+/* Custom Scrollbar for Dark Mode */
+body.dark ::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+body.dark ::-webkit-scrollbar-track {
+  background: #141414; /* Ant Design dark background */
+}
+
+body.dark ::-webkit-scrollbar-thumb {
+  background: #434343; /* Ant Design dark border */
+  border-radius: 4px;
+}
+
+body.dark ::-webkit-scrollbar-thumb:hover {
+  background: #595959; /* Slightly lighter on hover */
+}
+
+body.dark ::-webkit-scrollbar-corner {
+  background: #141414;
+}

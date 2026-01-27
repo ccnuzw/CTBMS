@@ -1,0 +1,42 @@
+[
+  {
+    "id": "dfb2d6ef-d47c-4d57-b595-cc9a2442a742",
+    "name": "客户等级",
+    "description": "客户重要性评级",
+    "isExclusive": true,
+    "sortOrder": 0,
+    "status": "ACTIVE",
+    "createdAt": "2026-01-25T12:06:59.454Z",
+    "updatedAt": "2026-01-25T12:06:59.454Z"
+  },
+  {
+    "id": "01faa373-1c63-441a-adc5-2f20cbdea5ab",
+    "name": "信用状态",
+    "description": "企业信用风险标识",
+    "isExclusive": true,
+    "sortOrder": 0,
+    "status": "ACTIVE",
+    "createdAt": "2026-01-25T12:06:59.478Z",
+    "updatedAt": "2026-01-25T12:06:59.478Z"
+  },
+  {
+    "id": "d51ef2ff-a0f5-4697-b096-ec8891b21dee",
+    "name": "合作阶段",
+    "description": "与我司的合作深度",
+    "isExclusive": true,
+    "sortOrder": 0,
+    "status": "ACTIVE",
+    "createdAt": "2026-01-25T12:06:59.496Z",
+    "updatedAt": "2026-01-25T12:06:59.496Z"
+  },
+  {
+    "id": "1673fc9b-991e-4fc2-9e32-e6f9d1bcab9f",
+    "name": "产品偏好",
+    "description": "客户主要采购的产品",
+    "isExclusive": false,
+    "sortOrder": 0,
+    "status": "ACTIVE",
+    "createdAt": "2026-01-25T12:06:59.512Z",
+    "updatedAt": "2026-01-25T12:06:59.512Z"
+  }
+]
