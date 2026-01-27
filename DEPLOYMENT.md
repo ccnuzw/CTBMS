@@ -44,7 +44,10 @@ docker-compose -f docker-compose-full.yml up -d --build
 ```
 
 ### 4. 数据库迁移
-容器成功启动后，您需要执行数据库迁移和初始化数据。
+**前提**：容器必须处于运行状态 (`docker ps` 能看到 `ctbms_api`)。
+**执行目录**：VPS 的任意目录均可 (因为 `docker exec` 是针对全局容器的命令)。
+
+您需要执行数据库迁移和初始化数据：
 
 ```bash
 # 运行数据库迁移 (创建表结构)
@@ -70,8 +73,10 @@ docker exec -it ctbms_api npx prisma db seed
   ```
 - **更新代码**: 
   ```bash
-  # 拉取最新代码
-  git pull origin main
+  # 务必在 VPS 的项目目录内执行 (例如 /opt/ctbms)
+  
+  # 拉取最新代码 (如果是 master 分支)
+  git pull origin master
   
   # 重新构建并重启
   docker-compose -f docker-compose-full.yml up -d --build
