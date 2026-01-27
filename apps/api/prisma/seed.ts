@@ -9,10 +9,31 @@ const prisma = new PrismaClient();
 function runSeedScript(scriptName: string) {
     console.log(`\n▶️  Running ${scriptName}...`);
     try {
-        const scriptPath = path.join(__dirname, scriptName);
-        execSync(`npx ts-node ${scriptPath}`, { stdio: 'inherit', cwd: __dirname });
+        // Detect if we are running in a JS environment (production build)
+        const isJsEnv = __filename.endsWith('.js');
+
+        let command = '';
+        if (isJsEnv) {
+            // In production, we run the compiled .js files from the same directory
+            // Replace .ts with .js
+            const jsScriptName = scriptName.replace('.ts', '.js');
+            const scriptPath = path.join(__dirname, jsScriptName);
+            if (!fs.existsSync(scriptPath)) {
+                console.warn(`⚠️  Skipping ${scriptName}: Corresponding .js file not found at ${scriptPath}`);
+                return;
+            }
+            // Execute directly with node
+            command = `node ${scriptPath}`;
+        } else {
+            // In dev, use ts-node
+            const scriptPath = path.join(__dirname, scriptName);
+            command = `npx ts-node ${scriptPath}`;
+        }
+
+        execSync(command, { stdio: 'inherit', cwd: __dirname });
     } catch (e) {
         console.error(`❌ ${scriptName} failed.`);
+        console.error(e);
         // Don't throw to allow other scripts to try, unless critical
     }
 }

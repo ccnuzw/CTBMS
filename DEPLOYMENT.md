@@ -52,10 +52,12 @@ docker compose -f docker-compose-full.yml up -d --build
 
 ```bash
 # 运行数据库迁移 (创建表结构)
-docker exec -it ctbms_api npx prisma migrate deploy
+# 注意：必须指定 @5.22.0 版本，避免 npx 自动下载不兼容的 v7 版本
+docker exec -it ctbms_api npx prisma@5.22.0 migrate deploy
 
 # 填充种子数据 (可选/初始化时使用)
-docker exec -it ctbms_api npx prisma db seed
+# 直接运行编译后的 JS 文件 (最稳定，无需 ts-node)
+docker exec -it -w /app/apps/api ctbms_api node dist/prisma/seed.js
 ```
 
 ### 5. 访问应用程序

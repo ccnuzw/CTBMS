@@ -1,5 +1,6 @@
-import { Controller, Get, Post } from '@nestjs/common';
+import { Controller, Get, Post, Sse, MessageEvent } from '@nestjs/common';
 import { InitService } from './init.service';
+import { Observable } from 'rxjs';
 
 @Controller('init')
 export class InitController {
@@ -27,5 +28,14 @@ export class InitController {
     @Post()
     async initialize() {
         return this.initService.initialize();
+    }
+
+    /**
+     * Stream seeding process logs via SSE
+     * GET /init/seed
+     */
+    @Sse('seed')
+    streamSeed(): Observable<MessageEvent> {
+        return this.initService.streamSeed();
     }
 }
