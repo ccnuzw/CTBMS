@@ -39,6 +39,10 @@ WORKDIR /app
 # Don't run production as root
 RUN addgroup --system --gid 1001 nodejs
 RUN adduser --system --uid 1001 nestjs
+
+# Create uploads directory and set permissions (must be done as root)
+RUN mkdir -p /app/uploads && chown nestjs:nodejs /app/uploads
+
 USER nestjs
 
 COPY --from=installer /app/apps/api/dist ./apps/api/dist
@@ -50,8 +54,7 @@ COPY --from=installer /app/packages ./packages
 # Copy Prisma schema and migrations if needed for runtime
 COPY --from=installer /app/apps/api/prisma ./apps/api/prisma
 
-# Create uploads directory and set permissions
-RUN mkdir -p ./uploads && chown nestjs:nodejs ./uploads
+
 
 EXPOSE 3000
 
