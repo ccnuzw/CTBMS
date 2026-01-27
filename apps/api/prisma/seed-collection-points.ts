@@ -9,11 +9,23 @@ async function seedCollectionPoints() {
     console.log('🚉 开始全量采集点数据播种 (CP Seed)...');
 
     // Helper to read JSON
+    // Helper to read JSON with robust path resolution
     const readJson = (filename: string) => {
-        const filePath = path.join(__dirname, filename);
-        if (fs.existsSync(filePath)) {
-            return JSON.parse(fs.readFileSync(filePath, 'utf-8'));
+        const currentDir = process.cwd();
+        const possiblePaths = [
+            path.join(__dirname, filename), // Same dir (Dev or copied)
+            path.join(__dirname, '../../prisma', filename), // Back to source prisma from dist (Prod)
+            path.join(currentDir, filename), // CWD root
+            path.join(currentDir, 'prisma', filename), // CWD/prisma
+        ];
+
+        for (const p of possiblePaths) {
+            if (fs.existsSync(p)) {
+                return JSON.parse(fs.readFileSync(p, 'utf-8'));
+            }
         }
+
+        console.warn(`⚠️ Warning: Could not find ${filename} in any search path.`);
         return [];
     };
 

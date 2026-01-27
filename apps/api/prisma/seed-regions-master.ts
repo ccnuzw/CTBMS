@@ -20,17 +20,27 @@ async function seedRegionsMaster() {
 
     // 使用 process.cwd() 确保路径准确，兼容不同执行环境
     const currentDir = process.cwd();
-    console.log(`📂 当前工作目录: ${currentDir}`);
+    // console.log(`📂 当前工作目录: ${currentDir}`);
+    // console.log(`📂 脚本所在目录: ${__dirname}`);
 
-    // 尝试自动定位文件 (兼容在 apps/api 下运行或在 prisma 下运行)
-    let jsonPath = path.join(currentDir, 'prisma', 'regions-data.json');
-    if (!fs.existsSync(jsonPath)) {
-        // 尝试备用路径
-        jsonPath = path.join(currentDir, 'regions-data.json');
+    // 多策略寻找数据文件
+    const possiblePaths = [
+        path.join(__dirname, 'regions-data.json'), // 同级目录 (Dev 或已复制)
+        path.join(__dirname, '../../prisma/regions-data.json'), // 从 dist/prisma 回溯到源码 prisma (Prod)
+        path.join(currentDir, 'regions-data.json'), // CWD 根目录备用
+        path.join(currentDir, 'prisma', 'regions-data.json'), // CWD/prisma 备用
+    ];
+
+    let jsonPath = '';
+    for (const p of possiblePaths) {
+        if (fs.existsSync(p)) {
+            jsonPath = p;
+            break;
+        }
     }
 
-    if (!fs.existsSync(jsonPath)) {
-        console.error('❌ 数据文件未找到，请检查路径:', jsonPath);
+    if (!jsonPath) {
+        console.error('❌ 数据文件未找到，已尝试路径:', possiblePaths.join('\n'));
         console.log('💡 请先运行: npx ts-node prisma/export-regions.ts');
         return;
     }
