@@ -64,6 +64,23 @@ docker exec -it -w /app/apps/api ctbms_api node dist/prisma/seed.js
 - **前端页面**: http://your-vps-ip:8000
 - **后端 API**: http://your-vps-ip:8000/api
 
+#### 常用管理命令 (Management Commands)
+
+- **重启所有服务**:
+  ```bash
+  docker compose -f docker-compose-full.yml restart
+  ```
+
+- **仅启动服务** (如果已停止):
+  ```bash
+  docker compose -f docker-compose-full.yml start
+  ```
+
+- **重启 Nginx 代理** (修改配置后):
+  ```bash
+  docker compose -f docker-compose-full.yml restart proxy
+  ```
+
 ## 维护 (Maintenance)
 
 - **查看日志**: 
