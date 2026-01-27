@@ -53,6 +53,8 @@ export class MarketIntelController {
 
     @Post()
     async create(@Body() dto: CreateMarketIntelRequest) {
+        console.log('>>> [Backend] MarketIntelController.create called');
+        console.log('>>> [Backend] DTO received:', JSON.stringify(dto, null, 2));
         const authorId = 'system-user-placeholder';
         return this.marketIntelService.create(dto, authorId);
     }

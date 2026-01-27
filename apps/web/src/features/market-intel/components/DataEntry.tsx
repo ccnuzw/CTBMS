@@ -131,7 +131,7 @@ export const DataEntry: React.FC<DataEntryProps> = ({ onSuccess }) => {
 
             const totalScore = Math.round(previewScore * 0.4 + 80 * 0.3 + 0 * 0.3); // Simple formula
 
-            await createMutation.mutateAsync({
+            const payload = {
                 category: legacyCategory,
                 contentType,
                 sourceType,
@@ -148,7 +148,12 @@ export const DataEntry: React.FC<DataEntryProps> = ({ onSuccess }) => {
                 validationScore: 0,
                 totalScore,
                 isFlagged: !!aiResult.validationMessage,
-            });
+            };
+
+            console.log('>>> [DEBUG] Submitting Payload:', JSON.stringify(payload, null, 2));
+            console.log('>>> [DEBUG] AI Result Structure:', JSON.stringify(aiResult, null, 2));
+
+            await createMutation.mutateAsync(payload);
             message.success('情报提交成功');
             onSuccess?.();
             handleReset();

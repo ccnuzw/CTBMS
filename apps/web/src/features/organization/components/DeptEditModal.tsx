@@ -64,7 +64,7 @@ export const DeptEditModal: React.FC<DeptEditModalProps> = ({
     useEffect(() => {
         if (open) {
             form.resetFields();
-            form.setFieldsValue(initialValues || { status: 'ACTIVE' });
+            form.setFieldsValue(initialValues || { status: 'ACTIVE', sortOrder: 0 });
         }
     }, [open, initialValues, form]);
 
@@ -76,7 +76,7 @@ export const DeptEditModal: React.FC<DeptEditModalProps> = ({
             onOpenChange={onOpenChange}
             form={form}
             onFinish={onFinish}
-            initialValues={initialValues || { status: 'ACTIVE' }}
+            initialValues={initialValues || { status: 'ACTIVE', sortOrder: 0 }}
             modalProps={{
                 ...modalProps,
                 destroyOnClose: true,

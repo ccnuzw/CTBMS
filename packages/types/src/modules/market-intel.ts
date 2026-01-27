@@ -96,13 +96,18 @@ export const StructuredEventSchema = z.object({
   sourceText: z.string().optional(),
   sourceStart: z.number().optional(),
   sourceEnd: z.number().optional(),
+
+  // 新增：AI 分析扩展字段
+  impactLevel: z.enum(['HIGH', 'MEDIUM', 'LOW']).optional(),
+  sentiment: z.enum(['positive', 'negative', 'neutral']).optional(),
+  eventTypeCode: z.string().optional(),
 });
 
 // 提取的价格点（从日报中批量提取）
 export const ExtractedPricePointSchema = z.object({
   location: z.string(),           // 采集点名称（锦州港/梅花味精等）
   price: z.number(),              // 价格
-  change: z.number().nullable(),  // 涨跌幅
+  change: z.number().or(z.nan()).nullable(),  // 涨跌幅 (Nan handled)
   unit: z.string().default('元/吨'),
   commodity: z.string().optional(), // 品种（默认从上下文推断）
   grade: z.string().optional(),     // 等级

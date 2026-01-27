@@ -75,7 +75,6 @@ export const DeptFormFields: React.FC<DeptFormFieldsProps> = ({
                 name="sortOrder"
                 label="排序"
                 placeholder="请输入排序号"
-                initialValue={0}
                 min={0}
             />
             {!hideStatus && (

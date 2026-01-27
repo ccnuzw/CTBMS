@@ -427,7 +427,7 @@ export class AIService implements OnModuleInit {
   "sentiment": "overall sentiment (positive/negative/neutral)",
   "tags": ["tag1", "tag2"],
   "marketSentiment": {
-    "overall": "neutral",
+    "overall": "neutral (allowed: bullish, bearish, neutral, mixed)",
     "score": 50,
     "traders": "贸易商心态",
     "processors": "加工企业心态",
@@ -684,7 +684,7 @@ export class AIService implements OnModuleInit {
             traceLogger?.log('Parse', '开始解析 AI JSON 响应', { rawResponse: aiResponse });
 
             // 1. 移除 Markdown 代码块标记（包括可能的语言标识）
-            cleanJson = cleanJson.replace(/```[a - zA - Z] *\n ? /g, '').replace(/```/g, '');
+            cleanJson = cleanJson.replace(/```[a-zA-Z]*\n?/g, '').replace(/```/g, '');
 
             // 2. 使用括号匹配找到完整的 JSON 对象
             const firstBrace = cleanJson.indexOf('{');
@@ -737,6 +737,21 @@ export class AIService implements OnModuleInit {
 
             cleanJson = cleanJson.trim();
             const aiResult = JSON.parse(cleanJson);
+
+
+
+            // 更新 localResult
+            localResult.summary = aiResult.summary || localResult.summary;
+            localResult.tags = aiResult.tags || localResult.tags;
+            localResult.sentiment = aiResult.sentiment || localResult.sentiment;
+            localResult.marketSentiment = {
+                overall: this.normalizeSentiment(aiResult.marketSentiment?.overall),
+                score: aiResult.marketSentiment?.score || 50,
+                traders: aiResult.marketSentiment?.traders || '',
+                processors: aiResult.marketSentiment?.processors || '',
+                farmers: aiResult.marketSentiment?.farmers || '',
+                summary: aiResult.marketSentiment?.summary || ''
+            };
 
             // 处理价格点：保留 AI 提取的增强字段，同时进行采集点匹配和标准化
             const pricePoints = aiResult.pricePoints?.length > 0
@@ -806,7 +821,7 @@ export class AIService implements OnModuleInit {
 
             // 处理市场心态
             const marketSentiment = aiResult.marketSentiment ? {
-                overall: aiResult.marketSentiment.overall || 'neutral',
+                overall: this.normalizeSentiment(aiResult.marketSentiment.overall),
                 score: aiResult.marketSentiment.score,
                 traders: aiResult.marketSentiment.traders,
                 processors: aiResult.marketSentiment.processors,
@@ -848,6 +863,18 @@ export class AIService implements OnModuleInit {
     /**
      * 映射价格主体类型
      */
+    /**
+     * 映射价格主体类型 (Config Driven)
+     */
+    private normalizeSentiment(value: string): 'bullish' | 'bearish' | 'neutral' | 'mixed' {
+        if (!value) return 'neutral';
+        const v = value.toLowerCase();
+        if (v === 'positive' || v === 'bullish') return 'bullish';
+        if (v === 'negative' || v === 'bearish') return 'bearish';
+        if (v === 'mixed') return 'mixed';
+        return 'neutral';
+    }
+
     /**
      * 映射价格主体类型 (Config Driven)
      */

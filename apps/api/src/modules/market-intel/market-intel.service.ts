@@ -42,6 +42,7 @@ export class MarketIntelService {
      * 支持从 C 类日报自动提取 A 类价格数据
      */
     async create(dto: CreateMarketIntelDto, authorId: string) {
+        console.log('[MarketIntelService.create] Start', { dto, authorId });
         // 计算总分
         const totalScore = Math.round(
             (dto.completenessScore || 0) * 0.4 +
@@ -49,39 +50,49 @@ export class MarketIntelService {
             (dto.validationScore || 0) * 0.3,
         );
 
-        const intel = await this.prisma.marketIntel.create({
-            data: {
-                ...dto,
-                category: dto.category as IntelCategory,
-                sourceType: dto.sourceType as any,
-                contentType: dto.contentType as any,
-                totalScore,
-                authorId,
-            },
-            include: {
-                author: {
-                    select: { id: true, name: true, avatar: true },
+        console.log('[MarketIntelService.create] Creating Main Record...');
+        try {
+            const intel = await this.prisma.marketIntel.create({
+                data: {
+                    ...dto,
+                    category: dto.category as IntelCategory,
+                    sourceType: dto.sourceType as any,
+                    contentType: dto.contentType as any,
+                    totalScore,
+                    authorId,
                 },
-            },
-        });
+                include: {
+                    author: {
+                        select: { id: true, name: true, avatar: true },
+                    },
+                },
+            });
+            console.log('[MarketIntelService.create] Main Record Created', intel.id);
 
+            // 如果 aiAnalysis 包含 pricePoints，自动批量写入 PriceData
+            const aiAnalysis = dto.aiAnalysis as AIAnalysisResult | undefined;
+            if (aiAnalysis?.pricePoints && aiAnalysis.pricePoints.length > 0) {
+                console.log('[MarketIntelService.create] Creating PriceData...', aiAnalysis.pricePoints.length);
+                await this.batchCreatePriceData(intel.id, authorId, dto.effectiveTime, aiAnalysis);
+            }
 
-        // 如果 aiAnalysis 包含 pricePoints，自动批量写入 PriceData
-        const aiAnalysis = dto.aiAnalysis as AIAnalysisResult | undefined;
-        if (aiAnalysis?.pricePoints && aiAnalysis.pricePoints.length > 0) {
-            await this.batchCreatePriceData(intel.id, authorId, dto.effectiveTime, aiAnalysis);
+            // 自动批量写入 MarketEvent (B类)和 MarketInsight (C类)
+            if (aiAnalysis) {
+                console.log('[MarketIntelService.create] Creating Events/Insights...');
+                await this.batchCreateEvents(intel.id, dto.effectiveTime, aiAnalysis);
+                await this.batchCreateInsights(intel.id, dto.effectiveTime, aiAnalysis);
+            }
+
+            // 更新情报员统计
+            console.log('[MarketIntelService.create] Updating Stats...');
+            await this.updateAuthorStats(authorId);
+
+            console.log('[MarketIntelService.create] Done');
+            return intel;
+        } catch (error) {
+            console.error('[MarketIntelService.create] FAILED', error);
+            throw error;
         }
-
-        // 自动批量写入 MarketEvent (B类)和 MarketInsight (C类)
-        if (aiAnalysis) {
-            await this.batchCreateEvents(intel.id, dto.effectiveTime, aiAnalysis);
-            await this.batchCreateInsights(intel.id, dto.effectiveTime, aiAnalysis);
-        }
-
-        // 更新情报员统计
-        await this.updateAuthorStats(authorId);
-
-        return intel;
     }
 
     /**

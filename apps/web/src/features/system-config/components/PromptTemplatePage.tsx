@@ -5,6 +5,7 @@ import { ActionType, ProColumns, ProTable, ModalForm, ProFormText, ProFormTextAr
 import { usePrompts, useCreatePrompt, useUpdatePrompt, useDeletePrompt, usePreviewPrompt } from '../api';
 import { PromptTemplate } from '../types';
 import { PlusOutlined, EditOutlined, DeleteOutlined, EyeOutlined } from '@ant-design/icons';
+import { useModalAutoFocus } from '../../../hooks/useModalAutoFocus';
 
 const GENERIC_PROMPT_VARS = {
     content: "这是一个测试内容...",
@@ -29,6 +30,10 @@ export const PromptTemplatePage = () => {
     // State for Preview Drawer
     const [previewVisible, setPreviewVisible] = useState(false);
     const [previewData, setPreviewData] = useState<{ system: string, user: string } | null>(null);
+
+    // Auto Focus Hook
+    const { containerRef, autoFocusFieldProps, modalProps } = useModalAutoFocus();
+    const isEditMode = !!currentRow;
 
     const handleEdit = (record: PromptTemplate) => {
         setCurrentRow(record);
@@ -191,58 +196,62 @@ export const PromptTemplatePage = () => {
                     version: 1,
                     category: 'B_SEMI_STRUCTURED'
                 }}
-                modalProps={{ destroyOnClose: true, width: 800 }}
+                modalProps={{ destroyOnClose: true, width: 800, ...modalProps }}
             >
-                <div style={{ display: 'flex', gap: 16 }}>
-                    <ProFormText
-                        name="code"
-                        label="模板代码 (Code)"
-                        placeholder="e.g. MARKET_INTEL_NEW"
+                {/* [New] Wrap content with simple div for focus trap containment */}
+                <div ref={containerRef}>
+                    <div style={{ display: 'flex', gap: 16 }}>
+                        <ProFormText
+                            name="code"
+                            label="模板代码 (Code)"
+                            placeholder="e.g. MARKET_INTEL_NEW"
+                            rules={[{ required: true }]}
+                            disabled={!!currentRow} // Code immutable after create
+                            fieldProps={isEditMode ? undefined : (autoFocusFieldProps as any)}
+                            width="md"
+                        />
+                        <ProFormText
+                            name="name"
+                            label="模板名称"
+                            placeholder="e.g. 新版行情分析"
+                            rules={[{ required: true }]}
+                            fieldProps={isEditMode ? (autoFocusFieldProps as any) : undefined}
+                            width="md"
+                        />
+                    </div>
+
+                    <ProFormSelect
+                        name="category"
+                        label="业务分类"
+                        valueEnum={{
+                            A_STRUCTURED: 'A类-结构化',
+                            B_SEMI_STRUCTURED: 'B类-半结构化',
+                            C_DOCUMENT: 'C类-文档',
+                        }}
                         rules={[{ required: true }]}
-                        disabled={!!currentRow} // Code immutable after create
-                        width="md"
                     />
-                    <ProFormText
-                        name="name"
-                        label="模板名称"
-                        placeholder="e.g. 新版行情分析"
+
+                    <ProFormTextArea
+                        name="systemPrompt"
+                        label="System Prompt"
+                        tooltip="系统预设指令，支持 {{variables}}"
+                        fieldProps={{ rows: 6, style: { fontFamily: 'monospace' } }}
                         rules={[{ required: true }]}
-                        width="md"
+                    />
+
+                    <ProFormTextArea
+                        name="userPrompt"
+                        label="User Prompt"
+                        tooltip="用户输入指令，支持 {{variables}}"
+                        fieldProps={{ rows: 4, style: { fontFamily: 'monospace' } }}
+                        rules={[{ required: true }]}
+                    />
+
+                    <ProFormSwitch
+                        name="isActive"
+                        label="启用状态"
                     />
                 </div>
-
-                <ProFormSelect
-                    name="category"
-                    label="业务分类"
-                    valueEnum={{
-                        A_STRUCTURED: 'A类-结构化',
-                        B_SEMI_STRUCTURED: 'B类-半结构化',
-                        C_DOCUMENT: 'C类-文档',
-
-                    }}
-                    rules={[{ required: true }]}
-                />
-
-                <ProFormTextArea
-                    name="systemPrompt"
-                    label="System Prompt"
-                    tooltip="系统预设指令，支持 {{variables}}"
-                    fieldProps={{ rows: 6, style: { fontFamily: 'monospace' } }}
-                    rules={[{ required: true }]}
-                />
-
-                <ProFormTextArea
-                    name="userPrompt"
-                    label="User Prompt"
-                    tooltip="用户输入指令，支持 {{variables}}"
-                    fieldProps={{ rows: 4, style: { fontFamily: 'monospace' } }}
-                    rules={[{ required: true }]}
-                />
-
-                <ProFormSwitch
-                    name="isActive"
-                    label="启用状态"
-                />
             </ModalForm>
 
             <Drawer

@@ -152,6 +152,7 @@ export class RuleEngineService implements OnModuleInit {
      */
     async applyRules(text: string): Promise<RuleMatchResult[]> {
         await this.ensureCache();
+        this.logger.log(`[RuleEngine] Starting rule application on text length: ${text.length}`);
 
         const results: RuleMatchResult[] = [];
 
@@ -181,6 +182,7 @@ export class RuleEngineService implements OnModuleInit {
         const matches = this.matchCondition(condition, text);
 
         for (const match of matches) {
+            this.logger.log(`[RuleEngine] Rule Matched: ${rule.name} (Type: ${rule.targetType}) -> ${match.matchedText}`);
             results.push({
                 ruleId: rule.id,
                 ruleName: rule.name,

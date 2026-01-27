@@ -243,7 +243,9 @@ export const Leaderboard: React.FC = () => {
 
             {isLoading ? (
                 <Flex justify="center" align="center" style={{ height: 400 }}>
-                    <Spin size="large" tip="计算排名中..." />
+                    <Spin size="large" tip="计算排名中...">
+                        <div style={{ padding: 50 }} />
+                    </Spin>
                 </Flex>
             ) : (!leaderboard || leaderboard.length === 0) ? (
                 <Empty description="当前周期暂无数据，快去提交第一条情报吧！" image={Empty.PRESENTED_IMAGE_SIMPLE} />

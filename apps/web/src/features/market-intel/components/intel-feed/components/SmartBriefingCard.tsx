@@ -66,7 +66,9 @@ export const SmartBriefingCard: React.FC<SmartBriefingCardProps> = ({ filterStat
 
                 {isPending ? (
                     <div style={{ textAlign: 'center', padding: '20px 0' }}>
-                        <Spin tip="AI 正在分析市场数据..." />
+                        <Spin tip="AI 正在分析市场数据...">
+                            <div style={{ padding: '20px' }} />
+                        </Spin>
                     </div>
                 ) : summary ? (
                     <div style={{ background: 'rgba(255,255,255,0.6)', padding: 12, borderRadius: 8, maxHeight: 400, overflowY: 'auto' }}>

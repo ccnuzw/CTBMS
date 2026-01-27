@@ -18,6 +18,7 @@ import dayjs from 'dayjs';
 import { CreateUserDto, UpdateUserDto } from '@packages/types';
 import { useCreateUser, useUpdateUser, UserWithRelations } from '../api/users';
 import { useRoles } from '../api/roles';
+import { useModalAutoFocus } from '../../../hooks/useModalAutoFocus';
 
 const { Text } = Typography;
 
@@ -115,6 +116,7 @@ export const UserFormModal: React.FC<UserFormModalProps> = ({
     const { message } = App.useApp();
 
     const isEdit = !!user;
+    const { containerRef, autoFocusFieldProps, modalProps } = useModalAutoFocus();
 
     // 获取角色列表
     const { data: roles } = useRoles();
@@ -180,167 +182,171 @@ export const UserFormModal: React.FC<UserFormModalProps> = ({
             modalProps={{
                 destroyOnClose: true,
                 focusTriggerAfterClose: false,
+                ...modalProps,
             }}
             width={680}
             layout="vertical"
             grid
             rowProps={{ gutter: [16, 0] }}
         >
-            {/* 提示信息 */}
-            {hint && (
+            <div ref={containerRef}>
+                {/* 提示信息 */}
+                {hint && (
+                    <Col span={24}>
+                        <div
+                            style={{
+                                padding: '12px 16px',
+                                background: `linear-gradient(135deg, ${token.colorInfoBg} 0%, ${token.colorBgElevated} 100%)`,
+                                borderRadius: token.borderRadiusLG,
+                                marginBottom: 20,
+                                fontSize: 13,
+                                border: `1px solid ${token.colorInfoBorder}`,
+                            }}
+                        >
+                            {hint}
+                        </div>
+                    </Col>
+                )}
+
+                {/* ===== 账号信息 ===== */}
                 <Col span={24}>
-                    <div
-                        style={{
-                            padding: '12px 16px',
-                            background: `linear-gradient(135deg, ${token.colorInfoBg} 0%, ${token.colorBgElevated} 100%)`,
-                            borderRadius: token.borderRadiusLG,
-                            marginBottom: 20,
-                            fontSize: 13,
-                            border: `1px solid ${token.colorInfoBorder}`,
-                        }}
-                    >
-                        {hint}
-                    </div>
+                    <SectionHeader icon={<UserOutlined />} title="账号信息" />
                 </Col>
-            )}
 
-            {/* ===== 账号信息 ===== */}
-            <Col span={24}>
-                <SectionHeader icon={<UserOutlined />} title="账号信息" />
-            </Col>
+                <ProFormText
+                    name="username"
+                    label="用户名"
+                    placeholder="用于系统登录"
+                    rules={[
+                        { required: true, message: '请输入用户名' },
+                        { pattern: /^[a-zA-Z0-9_]+$/, message: '仅支持字母、数字和下划线' },
+                    ]}
+                    disabled={isEdit}
+                    colProps={{ xs: 24, sm: 12 }}
+                    fieldProps={{
+                        prefix: <UserOutlined style={{ color: token.colorTextQuaternary }} />,
+                        ...(isEdit ? {} : autoFocusFieldProps),
+                    }}
+                />
+                <ProFormText
+                    name="name"
+                    label="姓名"
+                    placeholder="请输入真实姓名"
+                    rules={[{ required: true, message: '请输入姓名' }]}
+                    colProps={{ xs: 24, sm: 12 }}
+                    fieldProps={isEdit ? autoFocusFieldProps : undefined}
+                />
+                <ProFormText
+                    name="email"
+                    label="邮箱"
+                    placeholder="user@example.com"
+                    rules={[
+                        { required: true, message: '请输入邮箱' },
+                        { type: 'email', message: '邮箱格式不正确' },
+                    ]}
+                    disabled={isEdit}
+                    colProps={{ xs: 24, sm: 12 }}
+                    fieldProps={{
+                        prefix: <MailOutlined style={{ color: token.colorTextQuaternary }} />,
+                    }}
+                />
+                <ProFormText
+                    name="phone"
+                    label="电话"
+                    placeholder="请输入手机号码"
+                    colProps={{ xs: 24, sm: 12 }}
+                    fieldProps={{
+                        prefix: <PhoneOutlined style={{ color: token.colorTextQuaternary }} />,
+                    }}
+                />
 
-            <ProFormText
-                name="username"
-                label="用户名"
-                placeholder="用于系统登录"
-                rules={[
-                    { required: true, message: '请输入用户名' },
-                    { pattern: /^[a-zA-Z0-9_]+$/, message: '仅支持字母、数字和下划线' },
-                ]}
-                disabled={isEdit}
-                colProps={{ xs: 24, sm: 12 }}
-                fieldProps={{
-                    prefix: <UserOutlined style={{ color: token.colorTextQuaternary }} />,
-                }}
-            />
-            <ProFormText
-                name="name"
-                label="姓名"
-                placeholder="请输入真实姓名"
-                rules={[{ required: true, message: '请输入姓名' }]}
-                colProps={{ xs: 24, sm: 12 }}
-            />
-            <ProFormText
-                name="email"
-                label="邮箱"
-                placeholder="user@example.com"
-                rules={[
-                    { required: true, message: '请输入邮箱' },
-                    { type: 'email', message: '邮箱格式不正确' },
-                ]}
-                disabled={isEdit}
-                colProps={{ xs: 24, sm: 12 }}
-                fieldProps={{
-                    prefix: <MailOutlined style={{ color: token.colorTextQuaternary }} />,
-                }}
-            />
-            <ProFormText
-                name="phone"
-                label="电话"
-                placeholder="请输入手机号码"
-                colProps={{ xs: 24, sm: 12 }}
-                fieldProps={{
-                    prefix: <PhoneOutlined style={{ color: token.colorTextQuaternary }} />,
-                }}
-            />
+                <Col span={24}>
+                    <Divider style={{ margin: '8px 0 20px' }} />
+                </Col>
 
-            <Col span={24}>
-                <Divider style={{ margin: '8px 0 20px' }} />
-            </Col>
+                {/* ===== 个人信息 ===== */}
+                <Col span={24}>
+                    <SectionHeader icon={<IdcardOutlined />} title="个人信息" />
+                </Col>
 
-            {/* ===== 个人信息 ===== */}
-            <Col span={24}>
-                <SectionHeader icon={<IdcardOutlined />} title="个人信息" />
-            </Col>
+                <ProFormSelect
+                    name="gender"
+                    label="性别"
+                    options={[...GENDER_OPTIONS]}
+                    colProps={{ xs: 24, sm: 8 }}
+                    fieldProps={{ allowClear: true }}
+                />
+                <ProFormDatePicker
+                    name="birthday"
+                    label="生日"
+                    colProps={{ xs: 24, sm: 8 }}
+                    fieldProps={{ style: { width: '100%' } }}
+                />
+                <ProFormText
+                    name="employeeNo"
+                    label="工号"
+                    placeholder="如: EMP-001"
+                    colProps={{ xs: 24, sm: 8 }}
+                />
 
-            <ProFormSelect
-                name="gender"
-                label="性别"
-                options={[...GENDER_OPTIONS]}
-                colProps={{ xs: 24, sm: 8 }}
-                fieldProps={{ allowClear: true }}
-            />
-            <ProFormDatePicker
-                name="birthday"
-                label="生日"
-                colProps={{ xs: 24, sm: 8 }}
-                fieldProps={{ style: { width: '100%' } }}
-            />
-            <ProFormText
-                name="employeeNo"
-                label="工号"
-                placeholder="如: EMP-001"
-                colProps={{ xs: 24, sm: 8 }}
-            />
+                <Col span={24}>
+                    <Divider style={{ margin: '8px 0 20px' }} />
+                </Col>
 
-            <Col span={24}>
-                <Divider style={{ margin: '8px 0 20px' }} />
-            </Col>
+                {/* ===== 职位信息 ===== */}
+                <Col span={24}>
+                    <SectionHeader icon={<CalendarOutlined />} title="职位信息" />
+                </Col>
 
-            {/* ===== 职位信息 ===== */}
-            <Col span={24}>
-                <SectionHeader icon={<CalendarOutlined />} title="职位信息" />
-            </Col>
+                <ProFormText
+                    name="position"
+                    label="职位"
+                    placeholder="如: 高级开发工程师"
+                    colProps={{ xs: 24, sm: 8 }}
+                />
+                <ProFormDatePicker
+                    name="hireDate"
+                    label="入职日期"
+                    colProps={{ xs: 24, sm: 8 }}
+                    fieldProps={{ style: { width: '100%' } }}
+                />
+                <ProFormSelect
+                    name="status"
+                    label="状态"
+                    options={
+                        isEdit
+                            ? [...STATUS_OPTIONS]
+                            : [
+                                { value: 'ACTIVE', label: '在职' },
+                                { value: 'PROBATION', label: '试用期' },
+                            ]
+                    }
+                    colProps={{ xs: 24, sm: 8 }}
+                />
 
-            <ProFormText
-                name="position"
-                label="职位"
-                placeholder="如: 高级开发工程师"
-                colProps={{ xs: 24, sm: 8 }}
-            />
-            <ProFormDatePicker
-                name="hireDate"
-                label="入职日期"
-                colProps={{ xs: 24, sm: 8 }}
-                fieldProps={{ style: { width: '100%' } }}
-            />
-            <ProFormSelect
-                name="status"
-                label="状态"
-                options={
-                    isEdit
-                        ? [...STATUS_OPTIONS]
-                        : [
-                            { value: 'ACTIVE', label: '在职' },
-                            { value: 'PROBATION', label: '试用期' },
-                        ]
-                }
-                colProps={{ xs: 24, sm: 8 }}
-            />
+                <Col span={24}>
+                    <Divider style={{ margin: '8px 0 20px' }} />
+                </Col>
 
-            <Col span={24}>
-                <Divider style={{ margin: '8px 0 20px' }} />
-            </Col>
+                {/* ===== 权限设置 ===== */}
+                <Col span={24}>
+                    <SectionHeader icon={<SafetyCertificateOutlined />} title="权限设置" />
+                </Col>
 
-            {/* ===== 权限设置 ===== */}
-            <Col span={24}>
-                <SectionHeader icon={<SafetyCertificateOutlined />} title="权限设置" />
-            </Col>
-
-            <ProFormSelect
-                name="roleIds"
-                label="分配角色"
-                mode="multiple"
-                options={roleOptions}
-                placeholder="选择角色（可多选）"
-                colProps={{ span: 24 }}
-                fieldProps={{
-                    maxTagCount: 'responsive',
-                }}
-            />
+                <ProFormSelect
+                    name="roleIds"
+                    label="分配角色"
+                    mode="multiple"
+                    options={roleOptions}
+                    placeholder="选择角色（可多选）"
+                    colProps={{ span: 24 }}
+                    fieldProps={{
+                        maxTagCount: 'responsive',
+                    }}
+                />
+            </div>
         </ModalForm>
     );
 };
 
 export default UserFormModal;
-
