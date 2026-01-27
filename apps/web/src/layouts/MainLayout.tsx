@@ -318,6 +318,10 @@ export const MainLayout: React.FC = () => {
                                                     {
                                                         key: '/settings/security',
                                                         label: '安全设置',
+                                                    },
+                                                    {
+                                                        key: '/system/config/seeding',
+                                                        label: '数据初始化',
                                                     }
                                                 ]
                                             }
@@ -537,6 +541,10 @@ export const MainLayout: React.FC = () => {
                                                 {
                                                     key: '/settings/security',
                                                     label: '安全设置',
+                                                },
+                                                {
+                                                    key: '/system/config/seeding',
+                                                    label: '数据初始化',
                                                 }
                                             ]
                                         }
