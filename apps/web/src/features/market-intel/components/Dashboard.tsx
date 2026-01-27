@@ -182,8 +182,8 @@ export const Dashboard: React.FC = () => {
                                     <Text type="danger" style={{ fontSize: 12 }}>较离初缩窄 {spreadInfo.change}元</Text>
                                 </Flex>
                             </div>
-                            <div style={{ padding: 8, background: '#f0f5ff', borderRadius: 8 }}>
-                                <LineChartOutlined style={{ color: '#2f54eb', fontSize: 20 }} />
+                            <div style={{ padding: 8, background: token.colorInfoBg, borderRadius: 8 }}>
+                                <LineChartOutlined style={{ color: token.colorInfo, fontSize: 20 }} />
                             </div>
                         </Flex>
                     </Card>
@@ -200,8 +200,8 @@ export const Dashboard: React.FC = () => {
                                     负面情绪占比升至 {sentimentInfo.ratio}%
                                 </Text>
                             </div>
-                            <div style={{ padding: 8, background: '#fff7e6', borderRadius: 8 }}>
-                                <ThunderboltOutlined style={{ color: '#fa8c16', fontSize: 20 }} />
+                            <div style={{ padding: 8, background: token.colorWarningBg, borderRadius: 8 }}>
+                                <ThunderboltOutlined style={{ color: token.colorWarning, fontSize: 20 }} />
                             </div>
                         </Flex>
                     </Card>
@@ -218,8 +218,8 @@ export const Dashboard: React.FC = () => {
                                     库容利用率 72% (估)
                                 </Text>
                             </div>
-                            <div style={{ padding: 8, background: '#f6ffed', borderRadius: 8 }}>
-                                <DatabaseOutlined style={{ color: '#52c41a', fontSize: 20 }} />
+                            <div style={{ padding: 8, background: token.colorSuccessBg, borderRadius: 8 }}>
+                                <DatabaseOutlined style={{ color: token.colorSuccess, fontSize: 20 }} />
                             </div>
                         </Flex>
                     </Card>
@@ -237,8 +237,8 @@ export const Dashboard: React.FC = () => {
                                     <Text type="success" style={{ fontSize: 12 }}>今日新增 {bData?.data.length || 0} 条</Text>
                                 </Flex>
                             </div>
-                            <div style={{ padding: 8, background: '#e6f7ff', borderRadius: 8 }}>
-                                <ContainerOutlined style={{ color: '#1890ff', fontSize: 20 }} />
+                            <div style={{ padding: 8, background: token.colorPrimaryBg, borderRadius: 8 }}>
+                                <ContainerOutlined style={{ color: token.colorPrimary, fontSize: 20 }} />
                             </div>
                         </Flex>
                     </Card>
@@ -271,8 +271,8 @@ export const Dashboard: React.FC = () => {
                                     key={task.id}
                                     style={{
                                         padding: 12,
-                                        background: task.status === IntelTaskStatus.OVERDUE ? '#fff1f0' : '#f6ffed',
-                                        border: `1px solid ${task.status === IntelTaskStatus.OVERDUE ? '#ffccc7' : '#b7eb8f'}`,
+                                        background: task.status === IntelTaskStatus.OVERDUE ? token.colorErrorBg : token.colorSuccessBg,
+                                        border: `1px solid ${task.status === IntelTaskStatus.OVERDUE ? token.colorErrorBorder : token.colorSuccessBorder}`,
                                         borderRadius: 6,
                                         marginBottom: 8
                                     }}
@@ -304,7 +304,7 @@ export const Dashboard: React.FC = () => {
             <Row gutter={[24, 24]}>
                 <Col xs={24} lg={12}>
                     <Card
-                        title={<><LineChartOutlined style={{ color: '#9333ea', marginRight: 8 }} />产销区价差监测 (Arbitrage Window)</>}
+                        title={<><LineChartOutlined style={{ color: token.colorInfo, marginRight: 8 }} />产销区价差监测 (Arbitrage Window)</>}
                         style={{ height: 360 }}
                     >
                         {arbitrageData.length > 0 ? (
@@ -312,12 +312,12 @@ export const Dashboard: React.FC = () => {
                                 <ResponsiveContainer width="100%" height="100%" minWidth={100} minHeight={100}>
                                     <LineChart data={arbitrageData}>
                                         <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f0f0f0" />
-                                        <XAxis dataKey="date" tick={{ fontSize: 12, fill: '#8c8c8c' }} axisLine={false} tickLine={false} />
-                                        <YAxis domain={['auto', 'auto']} tick={{ fontSize: 12, fill: '#8c8c8c' }} axisLine={false} tickLine={false} />
+                                        <XAxis dataKey="date" tick={{ fontSize: 12, fill: token.colorTextSecondary }} axisLine={false} tickLine={false} />
+                                        <YAxis domain={['auto', 'auto']} tick={{ fontSize: 12, fill: token.colorTextSecondary }} axisLine={false} tickLine={false} />
                                         <Tooltip />
                                         <Line type="monotone" dataKey="south" stroke={token.colorError} strokeWidth={2} dot={false} name="南方销区" />
                                         <Line type="monotone" dataKey="north" stroke={token.colorPrimary} strokeWidth={2} dot={false} name="北方产区" />
-                                        <Line type="monotone" dataKey="freight" stroke="#d9d9d9" strokeWidth={1} strokeDasharray="5 5" dot={false} name="理论运费" />
+                                        <Line type="monotone" dataKey="freight" stroke={token.colorTextQuaternary} strokeWidth={1} strokeDasharray="5 5" dot={false} name="理论运费" />
                                     </LineChart>
                                 </ResponsiveContainer>
                             </ChartContainer>
@@ -329,7 +329,7 @@ export const Dashboard: React.FC = () => {
 
                 <Col xs={24} lg={12}>
                     <Card
-                        title={<><ThunderboltOutlined style={{ color: '#fa8c16', marginRight: 8 }} />情绪风向标趋势 (Sentiment Trend)</>}
+                        title={<><ThunderboltOutlined style={{ color: token.colorWarning, marginRight: 8 }} />情绪风向标趋势 (Sentiment Trend)</>}
                         style={{ height: 360 }}
                     >
                         {sentimentTrendData.length > 0 ? (

@@ -1,7 +1,7 @@
 import axios, { AxiosError } from 'axios';
 
 export const apiClient = axios.create({
-    baseURL: 'http://localhost:3000', // Should be env variable ideally
+    baseURL: '/api', // Use relative path to work with Vite proxy and Nginx
     timeout: 120000, // 120秒超时，复杂日报 AI 分析可能需要较长时间
 });
 
