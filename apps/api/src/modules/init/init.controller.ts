@@ -34,6 +34,11 @@ export class InitController {
      * Stream seeding process logs via SSE
      * GET /init/seed
      */
+    @Post('clear')
+    async clearData() {
+        return this.initService.clearData();
+    }
+
     @Sse('seed')
     streamSeed(): Observable<MessageEvent> {
         return this.initService.streamSeed();

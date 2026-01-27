@@ -1,6 +1,5 @@
-
 import React, { useState, useRef, useEffect } from 'react';
-import { Card, Button, Typography, Space, Alert } from 'antd';
+import { Card, Button, Typography, Space, Alert, Popconfirm, message } from 'antd';
 import { PlayCircleOutlined, LoadingOutlined, CheckCircleOutlined, ConsoleSqlOutlined } from '@ant-design/icons';
 
 const { Title, Text } = Typography;
@@ -27,6 +26,26 @@ export const DataSeeding: React.FC = () => {
         };
     }, []);
 
+    const handleClear = async () => {
+        try {
+            setLoading(true);
+            setLogs(prev => [...prev, { type: 'stdout', message: '🧹 Initiating data cleanup...' }]);
+
+            const res = await fetch('/api/init/clear', { method: 'POST' });
+            if (!res.ok) throw new Error('Clear failed');
+
+            const data = await res.json();
+            setLogs(prev => [...prev, { type: 'stdout', message: '✅ ' + data.message }]);
+            message.success('数据清理完成，请重新初始化');
+        } catch (error) {
+            console.error(error);
+            setLogs(prev => [...prev, { type: 'stderr', message: '❌ Data cleanup failed.' }]);
+            message.error('清理失败');
+        } finally {
+            setLoading(false);
+        }
+    };
+
     const startSeeding = () => {
         setLoading(true);
         setStatus('running');
@@ -42,12 +61,6 @@ export const DataSeeding: React.FC = () => {
                 const payload = JSON.parse(event.data);
                 if (payload && payload.type && payload.message) {
                     setLogs(prev => [...prev, payload]);
-
-                    // Basic completion detection based on typical log messages
-                    // The backend sends a specific success message, we can check for that
-                    // Or we check if the stream closes. 
-                    // SSE standards don't close automatically unless server closes or we close.
-                    // The backend implementation completes the observer, which usually closes the connection from server side in NestJS.
 
                     if (payload.message.includes('Seeding completed successfully')) {
                         setStatus('completed');
@@ -91,15 +104,28 @@ export const DataSeeding: React.FC = () => {
                 </Space>
             }
             extra={
-                <Button
-                    type="primary"
-                    icon={loading ? <LoadingOutlined /> : <PlayCircleOutlined />}
-                    onClick={startSeeding}
-                    loading={loading}
-                    danger
-                >
-                    {loading ? '正在初始化...' : '开始重新初始化数据库'}
-                </Button>
+                <Space>
+                    <Popconfirm
+                        title="确定清空业务数据?"
+                        description="这将删除所有行情、情报、客商、采集点和配置规则数据（包含用户和组织架构）。此操作不可逆！"
+                        onConfirm={handleClear}
+                        okText="确定删除"
+                        cancelText="取消"
+                        okButtonProps={{ danger: true }}
+                    >
+                        <Button danger disabled={loading}>
+                            一键清空旧数据
+                        </Button>
+                    </Popconfirm>
+                    <Button
+                        type="primary"
+                        icon={loading ? <LoadingOutlined /> : <PlayCircleOutlined />}
+                        onClick={startSeeding}
+                        loading={loading}
+                    >
+                        {loading ? '正在初始化...' : '开始重新初始化数据库'}
+                    </Button>
+                </Space>
             }
         >
             <Space direction="vertical" style={{ width: '100%' }} size="large">
@@ -131,10 +157,10 @@ export const DataSeeding: React.FC = () => {
                     border: '1px solid #333',
                     lineHeight: '1.5'
                 }}>
-                    {logs.length === 0 && <div style={{ color: '#666' }}>Waiting to start...</div>}
+                    {logs.length === 0 && <div style={{ color: '#666' }}>等待操作... 点击"开始初始化"执行种子数据脚本</div>}
                     {logs.map((log, index) => (
                         <div key={index} style={{
-                            color: log.type === 'stderr' ? '#ff6b6b' : '#00ff00',
+                            color: log.type === 'stderr' ? '#ff4d4f' : '#52c41a',
                             whiteSpace: 'pre-wrap',
                             wordBreak: 'break-all'
                         }}>

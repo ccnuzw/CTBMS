@@ -11,7 +11,6 @@ export class InitService implements OnModuleInit {
     constructor(private readonly prisma: PrismaService) { }
 
     async onModuleInit() {
-        await this.measureTime('Seed Business Rules', () => this.seedBusinessRules());
         await this.measureTime('Seed AI Config', () => this.seedAIConfig());
     }
 
@@ -120,53 +119,88 @@ export class InitService implements OnModuleInit {
         });
     }
 
-    private async measureTime(label: string, fn: () => Promise<void>) {
+    private async measureTime(label: string, fn: () => Promise<any>) {
         const start = Date.now();
         await fn();
         this.logger.log(`${label} completed in ${Date.now() - start}ms`);
     }
 
-    private async seedBusinessRules() {
-        // Only seed if empty to avoid overwriting user changes
-        const count = await this.prisma.businessMappingRule.count();
-        if (count > 0) return;
+    async clearData() {
+        this.logger.warn('⚠️ Starting Data Cleansing - This will wipe seeded tables!');
+        try {
+            // 1. Transaction Data (Leaves)
+            await this.measureTime('Clear PriceData', () => this.prisma.priceData.deleteMany());
 
-        const rules = [
-            // PRICE_SUB_TYPE mappings
-            { domain: 'PRICE_SUB_TYPE', matchMode: 'CONTAINS', pattern: '平舱', targetValue: 'FOB' },
-            { domain: 'PRICE_SUB_TYPE', matchMode: 'CONTAINS', pattern: 'FOB', targetValue: 'FOB' },
-            { domain: 'PRICE_SUB_TYPE', matchMode: 'CONTAINS', pattern: '到港', targetValue: 'ARRIVAL' },
-            { domain: 'PRICE_SUB_TYPE', matchMode: 'CONTAINS', pattern: '到货', targetValue: 'ARRIVAL' },
-            { domain: 'PRICE_SUB_TYPE', matchMode: 'CONTAINS', pattern: '成交', targetValue: 'TRANSACTION' },
-            { domain: 'PRICE_SUB_TYPE', matchMode: 'CONTAINS', pattern: '收购', targetValue: 'PURCHASE' },
-            { domain: 'PRICE_SUB_TYPE', matchMode: 'CONTAINS', pattern: '站台', targetValue: 'STATION_ORIGIN' },
+            // 2. Intelligence Data
+            await this.measureTime('Clear MarketInsight', () => this.prisma.marketInsight.deleteMany());
+            await this.measureTime('Clear MarketEvent', () => this.prisma.marketEvent.deleteMany());
 
-            // PRICE_SOURCE_TYPE mappings
-            { domain: 'PRICE_SOURCE_TYPE', matchMode: 'CONTAINS', pattern: '港务', targetValue: 'PORT' },
-            { domain: 'PRICE_SOURCE_TYPE', matchMode: 'CONTAINS', pattern: '码头', targetValue: 'PORT' },
-            { domain: 'PRICE_SOURCE_TYPE', matchMode: 'CONTAINS', pattern: '生物', targetValue: 'ENTERPRISE' },
-            { domain: 'PRICE_SOURCE_TYPE', matchMode: 'CONTAINS', pattern: '化工', targetValue: 'ENTERPRISE' },
-            { domain: 'PRICE_SOURCE_TYPE', matchMode: 'CONTAINS', pattern: '淀粉', targetValue: 'ENTERPRISE' },
-            { domain: 'PRICE_SOURCE_TYPE', matchMode: 'CONTAINS', pattern: '酒精', targetValue: 'ENTERPRISE' },
+            // [NEW] Clear Tasks (Depends on User, blocks User deletion)
+            // IntelTask references User, so it must be gone before User.
+            await this.measureTime('Clear IntelTask', () => this.prisma.intelTask.deleteMany());
+            await this.measureTime('Clear IntelTaskTemplate', () => this.prisma.intelTaskTemplate.deleteMany());
 
-            // SENTIMENT mappings
-            { domain: 'SENTIMENT', matchMode: 'CONTAINS', pattern: 'positive', targetValue: 'positive' },
-            { domain: 'SENTIMENT', matchMode: 'CONTAINS', pattern: 'bullish', targetValue: 'positive' },
-            { domain: 'SENTIMENT', matchMode: 'CONTAINS', pattern: 'strong', targetValue: 'positive' },
-            { domain: 'SENTIMENT', matchMode: 'CONTAINS', pattern: 'negative', targetValue: 'negative' },
-            { domain: 'SENTIMENT', matchMode: 'CONTAINS', pattern: 'bearish', targetValue: 'negative' },
-            { domain: 'SENTIMENT', matchMode: 'CONTAINS', pattern: 'weak', targetValue: 'negative' },
+            // 3. Main Intel (Depends on User - authorId)
+            await this.measureTime('Clear MarketIntel', () => this.prisma.marketIntel.deleteMany());
 
-            // GEO_LEVEL mappings
-            { domain: 'GEO_LEVEL', matchMode: 'CONTAINS', pattern: '港', targetValue: 'PORT' },
-            { domain: 'GEO_LEVEL', matchMode: 'CONTAINS', pattern: '市', targetValue: 'CITY' },
-            { domain: 'GEO_LEVEL', matchMode: 'CONTAINS', pattern: '省', targetValue: 'PROVINCE' },
-        ];
+            // 4. Collection Points (Depends on Region)
+            await this.measureTime('Clear CollectionPoints', () => this.prisma.collectionPoint.deleteMany());
 
-        for (const rule of rules) {
-            await this.prisma.businessMappingRule.create({ data: rule });
+            // 5. Enterprises & Tags
+            await this.measureTime('Clear EntityTags', () => this.prisma.entityTag.deleteMany());
+            await this.measureTime('Clear Enterprises', () => this.prisma.enterprise.deleteMany());
+            await this.measureTime('Clear Tags', () => this.prisma.tag.deleteMany());
+            await this.measureTime('Clear TagGroups', () => this.prisma.tagGroup.deleteMany());
+
+            // 6. Configs
+            await this.measureTime('Clear MarketCategories', () => this.prisma.marketCategory.deleteMany());
+            await this.measureTime('Clear EventTypes', () => this.prisma.eventTypeConfig.deleteMany());
+            await this.measureTime('Clear InsightTypes', () => this.prisma.insightTypeConfig.deleteMany());
+            await this.measureTime('Clear ExtractionRules', () => this.prisma.extractionRule.deleteMany());
+            await this.measureTime('Clear BusinessMappingRules', () => this.prisma.businessMappingRule.deleteMany());
+            await this.measureTime('Clear PromptTemplates', () => this.prisma.promptTemplate.deleteMany());
+            await this.measureTime('Clear AIModelConfigs', () => this.prisma.aIModelConfig.deleteMany());
+
+            // 7. Master Data (Regions)
+            // Use TRUNCATE fallback for self-referencing table
+            try {
+                await this.measureTime('Clear AdministrativeRegions', () => this.prisma.administrativeRegion.deleteMany());
+            } catch (e: any) {
+                this.logger.warn(`Failed to clear AdministrativeRegions via deleteMany (${e.message}). Trying raw TRUNCATE...`);
+                // Use TRUNCATE CASCADE to force wipe.
+                await this.measureTime('Truncate AdministrativeRegions', () =>
+                    this.prisma.$executeRawUnsafe('TRUNCATE TABLE "AdministrativeRegion" CASCADE;')
+                );
+            }
+
+            // 8. Org Structure (Full Wipe)
+            // Order matters for FK constraints: Users -> Depts -> Orgs -> Roles
+            // But Users are also referenced by everything above.
+
+            await this.measureTime('Clear Users', () => this.prisma.user.deleteMany());
+
+            // Self-referencing tables again: Dept & Org
+            try {
+                await this.measureTime('Clear Departments', () => this.prisma.department.deleteMany());
+            } catch (e) {
+                await this.prisma.$executeRawUnsafe('TRUNCATE TABLE "Department" CASCADE;');
+            }
+
+            try {
+                await this.measureTime('Clear Organizations', () => this.prisma.organization.deleteMany());
+            } catch (e) {
+                await this.prisma.$executeRawUnsafe('TRUNCATE TABLE "Organization" CASCADE;');
+            }
+
+            await this.measureTime('Clear Roles', () => this.prisma.role.deleteMany());
+
+            this.logger.log('✅ Data Cleansing Completed (Full System Wipe).');
+            return { success: true, message: 'Full system data cleared successfully.' };
+
+        } catch (error: any) {
+            this.logger.error(`❌ Data Cleansing Failed: ${error.message}`, error.stack);
+            throw error;
         }
-        this.logger.log(`Seeded ${rules.length} business rules.`);
     }
 
     private async seedAIConfig() {
