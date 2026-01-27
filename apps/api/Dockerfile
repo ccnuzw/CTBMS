@@ -50,6 +50,9 @@ COPY --from=installer /app/packages ./packages
 # Copy Prisma schema and migrations if needed for runtime
 COPY --from=installer /app/apps/api/prisma ./apps/api/prisma
 
+# Create uploads directory and set permissions
+RUN mkdir -p ./uploads && chown nestjs:nodejs ./uploads
+
 EXPOSE 3000
 
 CMD ["node", "apps/api/dist/src/main.js"]

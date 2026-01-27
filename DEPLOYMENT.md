@@ -5,7 +5,9 @@
 ## 先决条件 (Prerequisites)
 
 - 一台 VPS (推荐 Ubuntu 20.04/22.04)
-- VPS 上必须要安装 Docker 和 Docker Compose
+- **必须安装 Docker Compose V2** (命令是 `docker compose`，不是 `docker-compose`)
+  - 验证方法: 输入 `docker compose version`，如果显示版本号则正常。
+  - 安装方法(Ubuntu): `sudo apt-get update && sudo apt-get install docker-compose-plugin`
 - VPS 上必须要安装 Git (`sudo apt-get install git`)
 - 确保你的 VPS 能够访问你的代码仓库 (GitHub/GitLab)
 
@@ -37,10 +39,9 @@ GEMINI_API_KEY=your_google_key
 ```
 
 ### 3. 构建并启动
-运行以下命令以构建并启动容器：
 
 ```bash
-docker-compose -f docker-compose-full.yml up -d --build
+docker compose -f docker-compose-full.yml up -d --build
 ```
 
 ### 4. 数据库迁移
@@ -65,11 +66,11 @@ docker exec -it ctbms_api npx prisma db seed
 
 - **查看日志**: 
   ```bash
-  docker-compose -f docker-compose-full.yml logs -f
+  docker compose -f docker-compose-full.yml logs -f
   ```
 - **停止服务**: 
   ```bash
-  docker-compose -f docker-compose-full.yml down
+  docker compose -f docker-compose-full.yml down
   ```
 - **更新代码**: 
   ```bash
@@ -79,5 +80,5 @@ docker exec -it ctbms_api npx prisma db seed
   git pull origin master
   
   # 重新构建并重启
-  docker-compose -f docker-compose-full.yml up -d --build
+  docker compose -f docker-compose-full.yml up -d --build
   ```
