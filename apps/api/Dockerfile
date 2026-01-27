@@ -43,6 +43,8 @@ RUN adduser --system --uid 1001 nestjs
 # Create uploads directory and set permissions (must be done as root)
 RUN mkdir -p /app/uploads && chown nestjs:nodejs /app/uploads
 
+ENV NODE_ENV=production
+
 USER nestjs
 
 COPY --from=installer /app/apps/api/dist ./apps/api/dist
