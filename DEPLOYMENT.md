@@ -17,7 +17,7 @@
 # 进入你想要的目录 (例如 /opt)
 cd /opt
 
-# 克隆代码 (请替换为你的仓库地址)
+# 克隆代码 (由于是公开库，直接 HTTPS 克隆即可)
 git clone https://github.com/your-username/ctbms.git
 
 # 进入项目目录
