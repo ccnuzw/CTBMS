@@ -10,7 +10,7 @@ export const useModalAutoFocus = (options: UseModalAutoFocusOptions = {}) => {
     const { delay = 0, afterOpenChange } = options;
     const focusRef = useRef<any>(null);
     const containerRef = useRef<HTMLDivElement | null>(null);
-    const autoFocusFieldProps = useMemo(() => ({ 'data-auto-focus': true }), []);
+    const autoFocusFieldProps = useMemo(() => ({ 'data-auto-focus': 'true' }), []);
 
     const isFocusable = (el: HTMLElement | null | undefined) => {
         if (!el || typeof el.focus !== 'function') {
@@ -63,12 +63,12 @@ export const useModalAutoFocus = (options: UseModalAutoFocusOptions = {}) => {
         const container = containerRef.current;
         const autoFocusEl = container?.querySelector<HTMLElement>('[data-auto-focus]');
         if (isFocusable(autoFocusEl)) {
-            autoFocusEl.focus();
+            autoFocusEl?.focus();
             return;
         }
         const fallbackEl = findFirstFocusable(container);
         if (isFocusable(fallbackEl)) {
-            fallbackEl.focus();
+            fallbackEl?.focus();
         }
     };
 
