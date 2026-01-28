@@ -244,6 +244,16 @@ export const MainLayout: React.FC = () => {
                                                 icon: <FileTextOutlined />,
                                                 label: 'C类知识库',
                                             },
+                                            {
+                                                key: '/intel/research-reports',
+                                                icon: <FileTextOutlined />,
+                                                label: '研报管理',
+                                            },
+                                            {
+                                                key: '/intel/research-reports/dashboard',
+                                                icon: <DashboardOutlined />,
+                                                label: '研报仪表盘',
+                                            },
 
                                             {
                                                 key: '/intel/leaderboard',
@@ -486,6 +496,16 @@ export const MainLayout: React.FC = () => {
                                             key: '/intel/feed',
                                             icon: <FileTextOutlined />,
                                             label: '情报流',
+                                        },
+                                        {
+                                            key: '/intel/research-reports',
+                                            icon: <FileTextOutlined />,
+                                            label: '研报管理',
+                                        },
+                                        {
+                                            key: '/intel/research-reports/dashboard',
+                                            icon: <DashboardOutlined />,
+                                            label: '研报仪表盘',
                                         },
                                         {
                                             key: '/intel/leaderboard',

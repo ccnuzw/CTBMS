@@ -2,6 +2,7 @@ import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import {
     AIAnalysisResult,
     CollectionPointForRecognition,
+    ContentType,
 } from '@packages/types';
 import { IntelCategory } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -271,6 +272,7 @@ export class AIService implements OnModuleInit {
         location?: string,
         base64Image?: string,
         mimeType?: string,
+        contentType?: ContentType,
     ): Promise<AIAnalysisResult> {
         await this.ensureCache(); // [NEW] 确保缓存是最新的 (5分钟 TTL)
 
@@ -316,7 +318,7 @@ export class AIService implements OnModuleInit {
                 model: currentModelId,
                 configSource: aiConfig?.apiKey ? 'DATABASE' : 'ENVIRONMENT'
             });
-            const aiResponse = await this.callGeminiAPI(content, category, base64Image, mimeType, traceLogger, aiConfig, currentApiUrl);
+            const aiResponse = await this.callGeminiAPI(content, category, base64Image, mimeType, traceLogger, aiConfig, currentApiUrl, contentType);
 
             // [NEW] 调用规则引擎进行补充分析
             const ruleMatches = await this.ruleEngineService.applyRules(content);
@@ -326,8 +328,9 @@ export class AIService implements OnModuleInit {
             });
 
             // 使用 AI 返回的结果增强本地解析，并合并规则匹配结果
-            const result = this.enhanceWithAIResponse(content, category, aiResponse, traceLogger);
+            const result = this.enhanceWithAIResponse(content, category, aiResponse, traceLogger, contentType);
 
+            // 合并规则匹配到事件列表
             // 合并规则匹配到事件列表
             if (ruleMatches.length > 0) {
                 const ruleEvents = ruleMatches
@@ -337,13 +340,36 @@ export class AIService implements OnModuleInit {
                         action: r.extractedData.action || '规则触发',
                         content: r.sourceText,
                         impact: '规则提取事件',
-                        impactLevel: 'MEDIUM',
-                        sentiment: 'neutral',
+                        impactLevel: 'MEDIUM' as const,
+                        sentiment: 'neutral' as const,
                         sourceText: r.sourceText,
                         eventTypeCode: r.typeId
                     }));
+
                 // @ts-ignore
-                result.events.push(...ruleEvents);
+                if (ruleEvents.length > 0) {
+                    result.events = result.events || [];
+                    result.events.push(...ruleEvents);
+                }
+
+                // 处理规则匹配的洞察 (INSIGHT)
+                const ruleInsights = ruleMatches
+                    .filter(r => r.targetType === 'INSIGHT')
+                    .map(r => ({
+                        title: r.ruleName,
+                        content: r.sourceText,
+                        direction: 'Neutral', // 默认值
+                        timeframe: 'medium',  // 默认值
+                        confidence: 85,       // 规则匹配通常置信度较高
+                        factors: r.extractedData.value ? [r.extractedData.value] : []
+                    }));
+
+                if (ruleInsights.length > 0) {
+                    // @ts-ignore
+                    result.insights = result.insights || [];
+                    // @ts-ignore
+                    result.insights.push(...ruleInsights);
+                }
             }
 
             traceLogger.log('Done', '分析任务完成', { confidence: result.confidenceScore });
@@ -424,7 +450,11 @@ export class AIService implements OnModuleInit {
     /**
      * 获取分类对应的 Prompt Code
      */
-    private getPromptCodeForCategory(category: IntelCategory): string {
+    private getPromptCodeForCategory(category: IntelCategory, contentType?: ContentType): string {
+        if (contentType === ContentType.RESEARCH_REPORT) {
+            return 'MARKET_INTEL_RESEARCH_REPORT';
+        }
+
         switch (category) {
             case IntelCategory.A_STRUCTURED:
                 return 'MARKET_INTEL_STRUCTURED_A';
@@ -443,7 +473,7 @@ export class AIService implements OnModuleInit {
     /**
      * JSON Schema 定义
      */
-    private getJsonSchemaForCategory(category: IntelCategory): string {
+    private getJsonSchemaForCategory(category: IntelCategory, contentType?: ContentType): string {
         const commonFields = `
   "summary": "内容摘要",
   "sentiment": "overall sentiment (positive/negative/neutral)",
@@ -457,6 +487,28 @@ export class AIService implements OnModuleInit {
     "summary": "心态综述"
   }
 `;
+
+        // 研报专用 Schema
+        if (contentType === ContentType.RESEARCH_REPORT) {
+            return `{
+  ${commonFields},
+  "reportType": "POLICY | MARKET | RESEARCH | INDUSTRY",
+  "reportPeriod": "DAILY | WEEKLY | MONTHLY | QUARTERLY | ANNUAL | ADHOC",
+  "keyPoints": [
+    { "point": "核心观点1", "sentiment": "bullish", "confidence": 90 }
+  ],
+  "prediction": {
+    "direction": "bullish",
+    "timeframe": "short_term",
+    "logic": "预测逻辑"
+  },
+  "dataPoints": [
+    { "metric": "指标名", "value": "数值", "unit": "单位" }
+  ],
+  "commodities": ["品种1"],
+  "regions": ["区域1"]
+}`;
+        }
 
         const pricePointSchema = `
     {
@@ -524,14 +576,14 @@ export class AIService implements OnModuleInit {
     /**
      * 构建 Prompt 变量
      */
-    private buildPromptVariables(content: string, category: IntelCategory): Record<string, any> {
+    private buildPromptVariables(content: string, category: IntelCategory, contentType?: ContentType): Record<string, any> {
         return {
             content,
             categoryInstructions: '',
             knownLocations: this.getKnownLocations().join('、'),
             knownCommodities: this.KNOWN_COMMODITIES.join('、'),
             eventTypeCodes: this.eventTypeCache.map(t => `- ${t.code}: ${t.name}`).join('\n'),
-            jsonSchema: this.getJsonSchemaForCategory(category),
+            jsonSchema: this.getJsonSchemaForCategory(category, contentType),
         };
     }
 
@@ -546,10 +598,11 @@ export class AIService implements OnModuleInit {
         traceLogger?: TraceLogger,
         aiConfig?: any, // Pass config object
         currentApiUrl?: string, // [NEW] Pass specific URL
+        contentType?: ContentType,
     ): Promise<string> {
         // [NEW] 动态获取 Prompt
-        const promptCode = this.getPromptCodeForCategory(category);
-        const variables = this.buildPromptVariables(content, category);
+        const promptCode = this.getPromptCodeForCategory(category, contentType);
+        const variables = this.buildPromptVariables(content, category, contentType);
 
         const prompt = await this.promptService.getRenderedPrompt(promptCode, variables);
 
@@ -703,6 +756,7 @@ export class AIService implements OnModuleInit {
         category: IntelCategory,
         aiResponse: string,
         traceLogger?: TraceLogger,
+        contentType?: ContentType,
     ): AIAnalysisResult {
         const localResult: AIAnalysisResult = {
             summary: 'AI Analysis',
@@ -795,6 +849,15 @@ export class AIService implements OnModuleInit {
                 farmers: aiResult.marketSentiment?.farmers || '',
                 summary: aiResult.marketSentiment?.summary || ''
             };
+
+            // C类增强：研报提取字段
+            if (aiResult.reportType) localResult.reportType = aiResult.reportType;
+            if (aiResult.reportPeriod) localResult.reportPeriod = aiResult.reportPeriod;
+            if (aiResult.keyPoints) localResult.keyPoints = aiResult.keyPoints;
+            if (aiResult.prediction) localResult.prediction = aiResult.prediction;
+            if (aiResult.dataPoints) localResult.dataPoints = aiResult.dataPoints;
+            if (aiResult.commodities) localResult.commodities = aiResult.commodities;
+            if (aiResult.regions) localResult.regions = aiResult.regions;
 
             // 处理价格点：保留 AI 提取的增强字段，同时进行采集点匹配和标准化
             const pricePoints = aiResult.pricePoints?.length > 0

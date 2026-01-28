@@ -13,6 +13,7 @@ import {
     UpdateResearchReportDto,
     ResearchReportResponse,
     ResearchReportQuery,
+    CreateManualResearchReportDto,
 } from '@packages/types';
 
 // 分页响应类型
@@ -346,6 +347,21 @@ export const useCreateResearchReport = () => {
     });
 };
 
+export const useCreateManualResearchReport = () => {
+    const queryClient = useQueryClient();
+
+    return useMutation({
+        mutationFn: async (data: CreateManualResearchReportDto) => {
+            const res = await apiClient.post<ResearchReportResponse>('/market-intel/research-reports/manual', data);
+            return res.data;
+        },
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['research-reports'] });
+            queryClient.invalidateQueries({ queryKey: ['research-report-stats'] });
+        },
+    });
+};
+
 export const useUpdateResearchReport = () => {
     const queryClient = useQueryClient();
 
@@ -385,6 +401,87 @@ export const useResearchReportStats = () => {
         },
     });
 };
+
+export const useIncrementViewCount = () => {
+    const queryClient = useQueryClient();
+
+    return useMutation({
+        mutationFn: async (id: string) => {
+            const res = await apiClient.post<any>(`/market-intel/research-reports/${id}/view`);
+            return res.data;
+        },
+        onSuccess: (_, id) => {
+            queryClient.invalidateQueries({ queryKey: ['research-reports', id] });
+        },
+    });
+};
+
+export const useIncrementDownloadCount = () => {
+    const queryClient = useQueryClient();
+
+    return useMutation({
+        mutationFn: async (id: string) => {
+            const res = await apiClient.post<any>(`/market-intel/research-reports/${id}/download`);
+            return res.data;
+        },
+        onSuccess: (_, id) => {
+            queryClient.invalidateQueries({ queryKey: ['research-reports', id] });
+        },
+    });
+};
+
+export const useUpdateReviewStatus = () => {
+    const queryClient = useQueryClient();
+
+    return useMutation({
+        mutationFn: async ({ id, status, reviewerId }: { id: string; status: 'PENDING' | 'APPROVED' | 'REJECTED'; reviewerId: string }) => {
+            const res = await apiClient.put<any>(`/market-intel/research-reports/${id}/review`, { status, reviewerId });
+            return res.data;
+        },
+        onSuccess: (_, variables) => {
+            queryClient.invalidateQueries({ queryKey: ['research-reports'] });
+            queryClient.invalidateQueries({ queryKey: ['research-reports', variables.id] });
+            queryClient.invalidateQueries({ queryKey: ['research-report-stats'] });
+        },
+    });
+};
+
+export const useBatchDeleteResearchReports = () => {
+    const queryClient = useQueryClient();
+
+    return useMutation({
+        mutationFn: async (ids: string[]) => {
+            const res = await apiClient.post('/market-intel/research-reports/batch-delete', { ids });
+            return res.data;
+        },
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['research-reports'] });
+            queryClient.invalidateQueries({ queryKey: ['research-report-stats'] });
+        },
+    });
+};
+
+export const useExportResearchReports = () => {
+    return useMutation({
+        mutationFn: async ({ ids, query }: { ids?: string[]; query?: any }) => {
+            const res = await apiClient.post('/market-intel/research-reports/export', { ids, query }, {
+                responseType: 'blob',
+            });
+
+            // 自动触发下载
+            const url = window.URL.createObjectURL(new Blob([res.data]));
+            const link = document.createElement('a');
+            link.href = url;
+            link.setAttribute('download', `research-reports-export-${new Date().getTime()}.xlsx`);
+            document.body.appendChild(link);
+            link.click();
+            link.remove();
+
+            return true;
+        },
+    });
+};
+
 
 // =============================================
 // A类：价格数据

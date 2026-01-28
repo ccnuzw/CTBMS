@@ -20,11 +20,12 @@ import { MobileToolbar } from './MobileToolbar';
 import './styles.css';
 
 export interface TiptapEditorProps {
-    value: string;
-    onChange: (value: string) => void;
+    value?: string;
+    onChange?: (value: string) => void;
     placeholder?: string;
     minHeight?: number;
     isMobile?: boolean;
+    readOnly?: boolean;
 }
 
 export const TiptapEditor: React.FC<TiptapEditorProps> = ({
@@ -33,6 +34,7 @@ export const TiptapEditor: React.FC<TiptapEditorProps> = ({
     placeholder = '请输入内容...',
     minHeight = 300,
     isMobile = false,
+    readOnly = false,
 }) => {
     const { token } = theme.useToken();
     const [counts, setCounts] = React.useState({ words: 0, characters: 0 });
@@ -96,15 +98,16 @@ export const TiptapEditor: React.FC<TiptapEditorProps> = ({
                     class: 'tiptap-editor',
                 },
             },
+            editable: !readOnly,
             onUpdate: ({ editor }) => {
                 setCounts({
                     words: editor.storage.characterCount.words(),
                     characters: editor.storage.characterCount.characters(),
                 });
-                onChange(editor.getHTML());
+                onChange?.(editor.getHTML()); // Safe call
             },
         },
-        [],
+        [readOnly],
     );
 
     // 更新 placeholder (如果需要)
@@ -120,7 +123,8 @@ export const TiptapEditor: React.FC<TiptapEditorProps> = ({
 
     // Sync external value changes
     React.useEffect(() => {
-        if (editor && value !== editor.getHTML()) {
+        if (editor && value !== undefined && value !== editor.getHTML()) {
+
             editor.commands.setContent(value, { emitUpdate: false });
         }
     }, [value, editor]);
@@ -142,6 +146,9 @@ export const TiptapEditor: React.FC<TiptapEditorProps> = ({
     // 容器样式 - 使用 theme token
     const wrapperStyle: React.CSSProperties = {
         minHeight,
+        height: '100%',
+        display: 'flex',
+        flexDirection: 'column',
         border: `1px solid ${token.colorBorder}`,
         borderRadius: token.borderRadius,
         background: token.colorBgContainer,
@@ -193,9 +200,9 @@ export const TiptapEditor: React.FC<TiptapEditorProps> = ({
     // 桌面端布局：工具栏在顶部
     return (
         <div className="tiptap-editor-wrapper" style={wrapperStyle}>
-            <Toolbar editor={editor} />
+            {!readOnly && <Toolbar editor={editor} />}
             <EditorContent editor={editor} className="tiptap-editor-content" />
-            <EditorFooter />
+            {!readOnly && <EditorFooter />}
         </div>
     );
 };

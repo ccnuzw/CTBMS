@@ -9,7 +9,7 @@ import {
     Button,
     Alert,
     theme,
-    message,
+    App,
     Space,
     Descriptions,
 } from 'antd';
@@ -38,9 +38,10 @@ interface DocumentUploaderProps {
     onStartAnalysis?: (content: string) => void;
     onViewDetail?: (intelId: string) => void;
     onCancel?: () => void;
+    isAnalyzing?: boolean;
 }
 
-interface UploadResult {
+export interface UploadResult {
     success: boolean;
     intel: {
         id: string;
@@ -80,8 +81,10 @@ export const DocumentUploader: React.FC<DocumentUploaderProps> = ({
     onStartAnalysis,
     onViewDetail,
     onCancel,
+    isAnalyzing = false,
 }) => {
     const { token } = theme.useToken();
+    const { message } = App.useApp();
     const [fileList, setFileList] = useState<UploadFile[]>([]);
     const [uploading, setUploading] = useState(false);
     const [uploadResult, setUploadResult] = useState<UploadResult | null>(null);
@@ -163,29 +166,24 @@ export const DocumentUploader: React.FC<DocumentUploaderProps> = ({
     };
 
     return (
-        <Card>
-            <Title level={4} style={{ marginBottom: 24 }}>
-                <FileTextOutlined style={{ marginRight: 8, color: token.colorPrimary }} />
-                文档上传
-            </Title>
-
+        <div style={{ overflow: 'hidden' }}>
             {/* 上传区域 */}
             {!uploadResult && fileList.length === 0 && (
-                <Dragger {...uploadProps} style={{ marginBottom: 24 }}>
-                    <p className="ant-upload-drag-icon">
-                        <InboxOutlined style={{ color: token.colorPrimary, fontSize: 48 }} />
+                <Dragger {...uploadProps} style={{ marginBottom: 16 }}>
+                    <p className="ant-upload-drag-icon" style={{ marginBottom: 8 }}>
+                        <InboxOutlined style={{ color: token.colorPrimary, fontSize: 36 }} />
                     </p>
-                    <p className="ant-upload-text">
-                        点击或拖拽文件到此区域上传
+                    <p className="ant-upload-text" style={{ fontSize: 13, marginBottom: 4 }}>
+                        点击或拖拽文件上传
                     </p>
-                    <p className="ant-upload-hint" style={{ color: token.colorTextSecondary }}>
-                        支持 PDF、Word、Excel、图片（JPG/PNG）
+                    <p className="ant-upload-hint" style={{ color: token.colorTextSecondary, fontSize: 12, marginBottom: 8 }}>
+                        支持 PDF、Word、Excel、图片
                     </p>
-                    <Flex justify="center" gap={8} style={{ marginTop: 16 }}>
-                        <Tag icon={<FilePdfOutlined />}>PDF</Tag>
-                        <Tag icon={<FileWordOutlined />}>Word</Tag>
-                        <Tag icon={<FileExcelOutlined />}>Excel</Tag>
-                        <Tag icon={<PictureOutlined />}>图片</Tag>
+                    <Flex justify="center" gap={4} wrap="wrap">
+                        <Tag style={{ margin: 2, fontSize: 11 }}>PDF</Tag>
+                        <Tag style={{ margin: 2, fontSize: 11 }}>Word</Tag>
+                        <Tag style={{ margin: 2, fontSize: 11 }}>Excel</Tag>
+                        <Tag style={{ margin: 2, fontSize: 11 }}>图片</Tag>
                     </Flex>
                 </Dragger>
             )}
@@ -195,19 +193,21 @@ export const DocumentUploader: React.FC<DocumentUploaderProps> = ({
                 <Card
                     size="small"
                     style={{
-                        marginBottom: 24,
+                        marginBottom: 16,
                         background: token.colorBgContainerDisabled,
                     }}
+                    bodyStyle={{ padding: 12 }}
                 >
-                    <Flex align="center" justify="space-between">
-                        <Flex align="center" gap={12}>
-                            <div style={{ fontSize: 32 }}>
+                    <Flex align="center" justify="space-between" gap={8}>
+                        <Flex align="center" gap={8} style={{ minWidth: 0, flex: 1 }}>
+                            <div style={{ fontSize: 24, flexShrink: 0 }}>
                                 {MIME_TYPE_ICONS[fileList[0].type || ''] || <FileTextOutlined />}
                             </div>
-                            <div>
-                                <Text strong>{fileList[0].name}</Text>
-                                <br />
-                                <Text type="secondary" style={{ fontSize: 12 }}>
+                            <div style={{ minWidth: 0, flex: 1 }}>
+                                <Text strong ellipsis style={{ display: 'block', fontSize: 13 }}>
+                                    {fileList[0].name}
+                                </Text>
+                                <Text type="secondary" style={{ fontSize: 11 }}>
                                     {formatFileSize(fileList[0].size || 0)}
                                 </Text>
                             </div>
@@ -215,6 +215,7 @@ export const DocumentUploader: React.FC<DocumentUploaderProps> = ({
                         <Button
                             type="text"
                             danger
+                            size="small"
                             icon={<DeleteOutlined />}
                             onClick={() => setFileList([])}
                         />
@@ -228,46 +229,47 @@ export const DocumentUploader: React.FC<DocumentUploaderProps> = ({
                     type="success"
                     showIcon
                     icon={<CheckCircleOutlined />}
-                    message="文档上传成功"
+                    message="上传成功"
                     description={
-                        <Descriptions size="small" column={1} style={{ marginTop: 8 }}>
-                            <Descriptions.Item label="文件名">
-                                {uploadResult.attachment.filename}
-                            </Descriptions.Item>
-                            <Descriptions.Item label="文件大小">
-                                {formatFileSize(uploadResult.attachment.fileSize)}
-                            </Descriptions.Item>
-                            <Descriptions.Item label="情报ID">
-                                <Text copyable={{ text: uploadResult.intel.id }}>
-                                    {uploadResult.intel.id.substring(0, 8)}...
+                        <div style={{ marginTop: 8, fontSize: 12 }}>
+                            <div style={{ marginBottom: 4 }}>
+                                <Text type="secondary">文件：</Text>
+                                <Text ellipsis style={{ maxWidth: 150, display: 'inline-block', verticalAlign: 'bottom' }}>
+                                    {uploadResult.attachment.filename}
                                 </Text>
-                            </Descriptions.Item>
-                        </Descriptions>
+                            </div>
+                            <div>
+                                <Text type="secondary">大小：</Text>
+                                <Text>{formatFileSize(uploadResult.attachment.fileSize)}</Text>
+                            </div>
+                        </div>
                     }
-                    style={{ marginBottom: 24 }}
+                    style={{ marginBottom: 16 }}
                 />
             )}
 
             {/* 操作按钮 */}
-            <Flex justify="flex-end" gap={12}>
+            <Flex justify="flex-end" gap={8} wrap="wrap">
                 {onCancel && !uploadResult && (
-                    <Button onClick={onCancel}>
+                    <Button size="small" onClick={onCancel}>
                         取消
                     </Button>
                 )}
                 {!uploadResult ? (
                     <Button
                         type="primary"
+                        size="small"
                         onClick={handleUpload}
                         loading={uploading}
                         disabled={fileList.length === 0}
                         icon={uploading ? <LoadingOutlined /> : undefined}
                     >
-                        {uploading ? '上传中...' : '上传文档'}
+                        {uploading ? '上传中...' : '上传'}
                     </Button>
                 ) : (
-                    <Space>
+                    <Space size={8} wrap>
                         <Button
+                            size="small"
                             onClick={() => {
                                 setFileList([]);
                                 setUploadResult(null);
@@ -275,23 +277,20 @@ export const DocumentUploader: React.FC<DocumentUploaderProps> = ({
                         >
                             继续上传
                         </Button>
-                        {onViewDetail && (
-                            <Button onClick={() => onViewDetail(uploadResult.intel.id)}>
-                                查看详情
-                            </Button>
-                        )}
                         {onStartAnalysis && uploadResult.intel.rawContent && (
                             <Button
                                 type="primary"
+                                size="small"
                                 onClick={() => onStartAnalysis(uploadResult.intel.rawContent)}
+                                loading={isAnalyzing}
                             >
-                                开始 AI 分析
+                                {isAnalyzing ? '分析中...' : 'AI 分析'}
                             </Button>
                         )}
                     </Space>
                 )}
             </Flex>
-        </Card>
+        </div>
     );
 };
 

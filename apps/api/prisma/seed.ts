@@ -93,6 +93,9 @@ async function main() {
     // 注意: 依赖于采集点数据优先初始化
     runSeedScript('seed-price-history.ts');
 
+    // 11. 研报测试数据 (Research Reports - 测试数据)
+    runSeedScript('seed-research-reports.ts');
+
     console.log('\n✅ Full Seeding Completed Successfully.');
 }
 

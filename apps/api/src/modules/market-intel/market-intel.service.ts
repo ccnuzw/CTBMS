@@ -26,8 +26,9 @@ export class MarketIntelService {
         location?: string,
         base64Image?: string,
         mimeType?: string,
+        contentType?: ContentType,
     ) {
-        return this.aiService.analyzeContent(content, category, location, base64Image, mimeType);
+        return this.aiService.analyzeContent(content, category, location, base64Image, mimeType, contentType);
     }
 
     /**

@@ -1,16 +1,5 @@
-import {
-    Controller,
-    Get,
-    Post,
-    Put,
-    Delete,
-    Body,
-    Param,
-    Query,
-    UseInterceptors,
-    UploadedFile,
-    BadRequestException,
-} from '@nestjs/common';
+import { Controller, Get, Post, Body, Patch, Param, Delete, Query, Put, UseInterceptors, UploadedFile, ParseFilePipe, MaxFileSizeValidator, FileTypeValidator, Res, BadRequestException } from '@nestjs/common';
+import { Response } from 'express';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { MarketIntelService } from './market-intel.service';
 import { PriceDataService } from './price-data.service';
@@ -21,6 +10,7 @@ import {
     UpdateMarketIntelRequest,
     MarketIntelQueryRequest,
     AnalyzeContentRequest,
+    CreateManualResearchReportRequest,
 } from './dto';
 import {
     CreatePriceDataDto,
@@ -84,7 +74,8 @@ export class MarketIntelController {
             dto.category as any,
             dto.location,
             dto.base64Image,
-            dto.mimeType
+            dto.mimeType,
+            dto.contentType
         );
     }
 
@@ -357,6 +348,13 @@ export class MarketIntelController {
         return this.researchReportService.findAll(options);
     }
 
+
+
+    @Post('research-reports/manual')
+    async createManualResearchReport(@Body() dto: CreateManualResearchReportRequest) {
+        return this.researchReportService.createManual(dto);
+    }
+
     @Get('research-reports/stats')
     async getResearchReportStats() {
         return this.researchReportService.getStats();
@@ -376,6 +374,41 @@ export class MarketIntelController {
     async removeResearchReport(@Param('id') id: string) {
         return this.researchReportService.remove(id);
     }
+
+    @Post('research-reports/batch-delete')
+    async batchRemoveResearchReports(@Body() body: { ids: string[] }) {
+        return this.researchReportService.batchRemove(body.ids);
+    }
+
+    @Post('research-reports/export')
+    async exportResearchReports(@Body() body: { ids?: string[], query?: any }, @Res() res: Response) {
+        const buffer = await this.researchReportService.export(body.ids, body.query);
+        res.set({
+            'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            'Content-Disposition': 'attachment; filename="research-reports-export.xlsx"',
+            'Content-Length': buffer.length,
+        });
+        res.end(buffer);
+    }
+
+    @Post('research-reports/:id/view')
+    async incrementResearchReportView(@Param('id') id: string) {
+        return this.researchReportService.incrementViewCount(id);
+    }
+
+    @Post('research-reports/:id/download')
+    async incrementResearchReportDownload(@Param('id') id: string) {
+        return this.researchReportService.incrementDownloadCount(id);
+    }
+
+    @Put('research-reports/:id/review')
+    async updateResearchReportReview(
+        @Param('id') id: string,
+        @Body() body: { status: 'PENDING' | 'APPROVED' | 'REJECTED'; reviewerId: string },
+    ) {
+        return this.researchReportService.updateReviewStatus(id, body.status, body.reviewerId);
+    }
+
 
     // --- 综合情报流 ---
 
@@ -477,17 +510,21 @@ export class MarketIntelController {
 
         // 1. 解析文档内容
         let extractedText = '';
+        let extractedHtml = '';
         let parseError = '';
         try {
             const parseResult = await this.documentParserService.parse(file.buffer, file.mimetype);
             extractedText = parseResult.text || '';
+            extractedHtml = parseResult.html || '';
         } catch (error) {
             parseError = error instanceof Error ? error.message : '文档解析失败';
         }
 
         // 2. 准备内容并创建 MarketIntel 记录
-        const rawContent = extractedText
-            ? `[文档上传] ${file.originalname}\n\n--- 提取内容 ---\n${extractedText.substring(0, 5000)}${extractedText.length > 5000 ? '...(已截断)' : ''}`
+        // 优先使用 HTML (保留排版)，否则使用纯文本。不再进行 5000 字符截断。
+        const contentToSave = extractedHtml || extractedText;
+        const rawContent = contentToSave
+            ? contentToSave
             : `[文档上传] ${file.originalname}${parseError ? `\n\n[解析警告] ${parseError}` : ''}`;
 
 
@@ -554,6 +591,39 @@ export class MarketIntelController {
     @Delete('attachments/:id')
     async removeAttachment(@Param('id') id: string) {
         return this.intelAttachmentService.remove(id);
+    }
+
+    @Get('attachments/:id/download')
+    async downloadAttachment(
+        @Param('id') id: string,
+        @Query('inline') inline: string,
+        @Res() res: Response
+    ) {
+        const attachment = await this.intelAttachmentService.findOne(id);
+
+        // Since we are not using a dedicated file storage service (S3/MinIO), we assume local fs
+        // and we need to verify the file exists.
+        // NOTE: In a real app, abstract this into `StorageProvider`.
+
+        const disposition = inline === 'true' ? 'inline' : 'attachment';
+
+        // Set headers manually for inline to ensure correct mime type handling by browser
+        if (inline === 'true') {
+            res.setHeader('Content-Type', attachment.mimeType);
+            res.setHeader('Content-Disposition', `${disposition}; filename="${encodeURIComponent(attachment.filename)}"`);
+            return res.sendFile(attachment.storagePath);
+        }
+
+        // We defer to express's res.download which handles streams and headers
+        return res.download(attachment.storagePath, attachment.filename, (err) => {
+            if (err) {
+                // Handle error, but response might have started
+                console.error('Download error:', err);
+                if (!res.headersSent) {
+                    res.status(500).send('Download failed');
+                }
+            }
+        });
     }
 
     // =============================================

@@ -22,6 +22,10 @@ import {
     CollectionPointManager,
     RegionManager,
     TaskDistributionPage,
+    ResearchReportListPage,
+    ResearchReportDetailPage,
+    ResearchReportDashboard,
+    ResearchReportCreatePage,
 } from '../features/market-intel';
 import { ExtractionConfigPage } from '../features/extraction-config';
 import { systemConfigRoutes } from '../features/system-config';
@@ -87,9 +91,14 @@ export const router = createBrowserRouter([
                     { path: 'dashboard', element: <Dashboard /> },
                     { path: 'workbench', element: <OperationalWorkbench /> },
                     { path: 'search', element: <UniversalSearch /> },
+                    { path: 'research-reports/dashboard', element: <ResearchReportDashboard /> },
+                    { path: 'research-reports/create', element: <ResearchReportCreatePage /> },
+                    { path: 'research-reports', element: <ResearchReportListPage /> },
+                    { path: 'research-reports/:id', element: <ResearchReportDetailPage /> },
                     { path: 'entry', element: <DataEntry /> },
                     { path: 'market-data', element: <MarketData /> },
                     { path: 'feed', element: <IntelligenceFeed /> },
+                    { path: 'feed/:id', element: <IntelligenceFeed /> },
                     { path: 'knowledge', element: <KnowledgeBase /> },
                     { path: 'leaderboard', element: <Leaderboard /> },
                     { path: 'collection-points', element: <CollectionPointManager /> },

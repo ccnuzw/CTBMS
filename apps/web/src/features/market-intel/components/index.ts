@@ -12,4 +12,8 @@ export { UniversalSearch } from './UniversalSearch';
 export { CollectionPointManager } from './CollectionPointManager';
 export { CollectionPointEditor } from './CollectionPointEditor';
 export { RegionManager } from './RegionManager';
+export { ResearchReportListPage } from './ResearchReportListPage';
+export { ResearchReportDetailPage } from './ResearchReportDetailPage';
+export { ResearchReportDashboard } from './ResearchReportDashboard';
+export { ResearchReportCreatePage } from './ResearchReportCreatePage';
 export * from './task-distribution';
