@@ -74,9 +74,7 @@ async function main() {
     runSeedScript('seed-tags.ts');
 
     // 5. 市场分类 (Market Categories)
-    if (fs.existsSync(path.join(__dirname, 'seed-market-categories.ts'))) {
-        runSeedScript('seed-market-categories.ts');
-    }
+    runSeedScript('seed-market-categories.ts');
 
     // 6. 配置与情报数据 (Configs & Intel) 
     runSeedScript('seed-event-types.ts');
@@ -93,9 +91,7 @@ async function main() {
 
     // 10. 历史价格数据 (Historical Price Data - 图表演示)
     // 注意: 依赖于采集点数据优先初始化
-    if (fs.existsSync(path.join(__dirname, 'seed-price-history.ts'))) {
-        runSeedScript('seed-price-history.ts');
-    }
+    runSeedScript('seed-price-history.ts');
 
     console.log('\n✅ Full Seeding Completed Successfully.');
 }

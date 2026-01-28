@@ -1883,18 +1883,7 @@ export class MarketIntelService {
             return `${i + 1}. [${date}] ${title}: ${content}`;
         }).join('\n');
 
-        const prompt = `
-请作为一名资深农业市场分析师，根据以下 ${items.length} 条市场情报，生成一份简短的【市场动态简报】。
-要求：
-1. 提炼核心市场趋势（如价格波动、政策影响、供需变化）。
-2. 语言专业、精炼，适合决策者快速阅读。
-3. 如果有相互矛盾的情报，请指出。
-4. 字数控制在 300 字以内。
-5. 使用 Markdown 格式，包含 *关键点*。
 
-情报列表：
-${lines}
-        `;
 
         // 3. 调用 AI
         // 这里的 category 仅用于 AI 内部归类，传 B_SEMI_STRUCTURED 即可

@@ -179,3 +179,22 @@ export const useUpdateAIConfig = () => {
         },
     });
 };
+
+const AI_API_BASE = '/api/ai';
+
+export const useTestAIConnection = () => {
+    return useMutation({
+        mutationFn: async () => {
+            const res = await fetch(`${AI_API_BASE}/test-connection`);
+            if (!res.ok) throw new Error('Network error during connection test');
+            return res.json() as Promise<{
+                success: boolean;
+                message: string;
+                response?: string;
+                error?: string;
+                apiUrl?: string;
+                modelId?: string;
+            }>;
+        },
+    });
+};

@@ -651,20 +651,41 @@ export class AIService implements OnModuleInit {
      * [NEW] 生成智能简报
      */
     async generateBriefing(context: string): Promise<string> {
-        if (!this.apiKey) {
-            return `【系统错误】未配置 GEMINI_API_KEY，无法生成简报。`;
+        // [NEW] Get Configuration from DB
+        const aiConfig = await this.configService.getAIModelConfig('DEFAULT');
+
+        // Resolve Config Priority: DB > ENV > Default
+        const currentApiKey = aiConfig?.apiKey || this.apiKey;
+        const currentApiUrl = aiConfig?.apiUrl || this.apiUrl;
+        const currentModelId = aiConfig?.modelName || this.modelId;
+
+        // Log Configuration Source for Briefing
+        if (aiConfig?.apiKey) {
+            this.logger.log(`[Briefing Gen] Using DATABASE settings (Model: ${currentModelId}, URL: ${currentApiUrl})`);
+        } else {
+            this.logger.warn(`[Briefing Gen] Using ENVIRONMENT/DEFAULT settings. verify system config if logic is unexpected.`);
+        }
+
+        if (!currentApiKey) {
+            return `【系统错误】未配置 AI API Key (Database or ENV)，无法生成简报。`;
         }
 
         try {
             const prompt = await this.promptService.getRenderedPrompt('MARKET_INTEL_BRIEFING', { content: context });
             if (!prompt) {
-                // 如果没有找到模板，使用硬编码兜底，或者直接报错
-                // 既然要求去除硬编码，这里报错更合适，但在 PromptService 已经初始化 default，理论上不会空
                 throw new Error('简报模板 MARKET_INTEL_BRIEFING 未找到');
             }
 
-            const genAI = new GoogleGenerativeAI(this.apiKey);
-            const model = genAI.getGenerativeModel({ model: this.modelId }, { baseUrl: this.apiUrl });
+            const genAI = new GoogleGenerativeAI(currentApiKey);
+            const requestOptions: any = {};
+            if (currentApiUrl) {
+                requestOptions.baseUrl = currentApiUrl;
+            }
+
+            const model = genAI.getGenerativeModel({
+                model: currentModelId
+            }, requestOptions);
+
             const result = await model.generateContent([prompt.system, prompt.user]);
             const response = await result.response;
             return response.text();

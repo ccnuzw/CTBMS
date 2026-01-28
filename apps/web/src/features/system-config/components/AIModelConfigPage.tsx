@@ -1,7 +1,6 @@
-
 import { PageContainer, ProForm, ProFormText, ProFormDigit, ProFormSwitch, ProFormSelect } from '@ant-design/pro-components';
-import { Card, App, Alert, Space, Button } from 'antd';
-import { useAIConfig, useUpdateAIConfig } from '../api';
+import { Card, App, Alert, Space, Button, Modal } from 'antd';
+import { useAIConfig, useUpdateAIConfig, useTestAIConnection } from '../api';
 import { useEffect } from 'react';
 import { Form } from 'antd';
 
@@ -9,6 +8,7 @@ export const AIModelConfigPage = () => {
     const { message } = App.useApp();
     const { data: config, isLoading } = useAIConfig('DEFAULT');
     const updateMutation = useUpdateAIConfig();
+    const testConnectionMutation = useTestAIConnection();
     const [form] = Form.useForm();
 
     useEffect(() => {
@@ -20,9 +20,75 @@ export const AIModelConfigPage = () => {
     const handleFinish = async (values: any) => {
         try {
             await updateMutation.mutateAsync({ ...values, configKey: 'DEFAULT' });
-            message.success('配置已保存');
+            message.success('配置已保存 (Configuration Saved)');
         } catch (error) {
-            message.error('保存失败');
+            message.error('保存失败 (Save Failed)');
+        }
+    };
+
+    const handleTestConnection = async () => {
+        try {
+            // Ensure we save first? Or just test current DB config?
+            // User requested "Test connection with DB config".
+            // Ideally user should save first to test NEW values. 
+            // So we might warn if form is dirty? For now, simple.
+
+            const result = await testConnectionMutation.mutateAsync();
+
+            if (result.success) {
+                Modal.success({
+                    title: '✅ Connection Successful',
+                    content: (
+                        <div>
+                            <p>{result.message}</p>
+                            <div style={{ marginBottom: 10 }}>
+                                <p style={{ margin: 0 }}><strong>API URL:</strong> {result.apiUrl}</p>
+                                <p style={{ margin: 0 }}><strong>Model:</strong> {result.modelId}</p>
+                            </div>
+                            <div style={{
+                                background: '#f5f5f5',
+                                padding: '8px 12px',
+                                borderRadius: 6,
+                                border: '1px solid #d9d9d9',
+                                fontSize: 12,
+                                fontFamily: 'monospace',
+                                maxHeight: 150,
+                                overflow: 'auto'
+                            }}>
+                                {result.response}
+                            </div>
+                        </div>
+                    ),
+                    width: 500,
+                });
+            } else {
+                Modal.error({
+                    title: '❌ Connection Failed',
+                    content: (
+                        <div>
+                            <p style={{ fontWeight: 500 }}>{result.message}</p>
+                            {result.error && (
+                                <div style={{
+                                    background: '#fff1f0',
+                                    border: '1px solid #ffa39e',
+                                    padding: 8,
+                                    borderRadius: 4,
+                                    marginTop: 8,
+                                    color: '#cf1322',
+                                    fontSize: 12
+                                }}>
+                                    {result.error}
+                                </div>
+                            )}
+                            <p style={{ marginTop: 8, fontSize: 12, color: '#888' }}>
+                                Target: {result.apiUrl || 'Unknown URL'}
+                            </p>
+                        </div>
+                    )
+                });
+            }
+        } catch (error) {
+            message.error('Test request failed (Network Error)');
         }
     };
 
@@ -35,8 +101,8 @@ export const AIModelConfigPage = () => {
         >
             <Space direction="vertical" size="large" style={{ width: '100%' }}>
                 <Alert
-                    message="配置即时生效"
-                    description="在此处的修改将立即应用于所有新的 AI 分析任务。请确保 API 密钥的有效性，否则 AI 服务将无法工作。"
+                    message="配置即时生效 (Live Configuration)"
+                    description="在此处的修改保存后将立即应用于所有 AI 分析任务。可以先点击 'Test Connection' 验证连通性。"
                     type="info"
                     showIcon
                 />
@@ -47,8 +113,18 @@ export const AIModelConfigPage = () => {
                         onFinish={handleFinish}
                         loading={isLoading}
                         submitter={{
-                            searchConfig: {
-                                submitText: 'Save Changes',
+                            render: (props, doms) => {
+                                return [
+                                    <Button
+                                        key="test"
+                                        onClick={handleTestConnection}
+                                        loading={testConnectionMutation.isPending}
+                                        style={{ marginRight: 8 }}
+                                    >
+                                        📡 Test Connection
+                                    </Button>,
+                                    ...doms
+                                ];
                             },
                         }}
                     >
