@@ -95,6 +95,7 @@ export const DataEntry: React.FC<DataEntryProps> = ({ onSuccess }) => {
             const result = await analyzeMutation.mutateAsync({
                 content,
                 category: legacyCategory,
+                contentType, // Pass explicitly for specific AI handling
                 location: '锦州港物流园区',
                 base64Image: imageData?.data,
                 mimeType: imageData?.mimeType,

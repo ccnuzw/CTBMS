@@ -1,19 +1,26 @@
-import React from 'react';
-import { Card, Typography, Tag, Flex, Space, Button, Tooltip, Divider, theme, Progress } from 'antd';
+import React, { useState } from 'react';
+import { Card, Typography, Tag, Flex, Space, Button, Tooltip, Divider, theme, Progress, Modal, Dropdown, message } from 'antd';
+import type { MenuProps } from 'antd';
 import {
     FileTextOutlined,
     FilePdfOutlined,
     DownloadOutlined,
     EyeOutlined,
     StarOutlined,
+    StarFilled,
     LinkOutlined,
     MoreOutlined,
     CalendarOutlined,
     TeamOutlined,
     BookOutlined,
+    EditOutlined,
+    DeleteOutlined,
+    ShareAltOutlined,
 } from '@ant-design/icons';
 import dayjs from 'dayjs';
+import { useNavigate } from 'react-router-dom';
 import { IntelItem } from '../../types';
+import { useIncrementViewCount, useIncrementDownloadCount } from '../../../../api/hooks';
 
 const { Text, Paragraph, Title } = Typography;
 
@@ -29,14 +36,103 @@ export const ResearchReportCard: React.FC<ResearchReportCardProps> = ({
     onClick,
 }) => {
     const { token } = theme.useToken();
+    const navigate = useNavigate();
+    const [isFavorited, setIsFavorited] = useState(false);
+
+    const { mutate: incrementView } = useIncrementViewCount();
+    const { mutate: incrementDownload } = useIncrementDownloadCount();
 
     // 获取研报关联数据
     const reportData = intel.researchReport || {};
+    const reportId = reportData.id;
 
     // 解析关键观点
     const keyPoints = Array.isArray(reportData.keyPoints)
         ? reportData.keyPoints.map((k: any) => typeof k === 'string' ? k : k.point)
         : [];
+
+    // 预览功能
+    const handlePreview = (e: React.MouseEvent) => {
+        e.stopPropagation();
+        if (reportId) {
+            incrementView(reportId);
+            navigate(`/intel/research-reports/${reportId}`);
+        } else {
+            message.warning('研报ID不存在,无法预览');
+        }
+    };
+
+    // 下载功能
+    const handleDownload = (e: React.MouseEvent) => {
+        e.stopPropagation();
+        if (reportId) {
+            incrementDownload(reportId);
+            // TODO: 实际下载逻辑需要从后端获取文件URL
+            message.info('下载功能开发中,请从详情页下载');
+        } else {
+            message.warning('研报ID不存在,无法下载');
+        }
+    };
+
+    // 引用来源功能
+    const handleViewSource = (e: React.MouseEvent) => {
+        e.stopPropagation();
+        if (intel.id) {
+            // 跳转到原始情报详情页
+            navigate(`/intel/feed/${intel.intelId || intel.id}`);
+        } else {
+            message.warning('无法定位原始情报');
+        }
+    };
+
+    // 收藏功能
+    const handleFavorite = (e: React.MouseEvent) => {
+        e.stopPropagation();
+        setIsFavorited(!isFavorited);
+        message.success(isFavorited ? '已取消收藏' : '已收藏到个人知识库');
+        // TODO: 调用收藏API
+    };
+
+    // 更多操作菜单
+    const moreMenuItems: MenuProps['items'] = [
+        {
+            key: 'edit',
+            label: '编辑',
+            icon: <EditOutlined />,
+            onClick: () => {
+                navigate(`/intel/entry?id=${intel.id}`);
+            },
+        },
+        {
+            key: 'share',
+            label: '分享',
+            icon: <ShareAltOutlined />,
+            onClick: () => {
+                message.info('分享功能开发中...');
+            },
+        },
+        {
+            type: 'divider',
+        },
+        {
+            key: 'delete',
+            label: '删除',
+            icon: <DeleteOutlined />,
+            danger: true,
+            onClick: () => {
+                Modal.confirm({
+                    title: '确认删除',
+                    content: '确定要删除这篇研报吗?此操作不可恢复。',
+                    okText: '确认',
+                    cancelText: '取消',
+                    onOk: () => {
+                        message.success('删除成功');
+                        // TODO: 调用删除API
+                    },
+                });
+            },
+        },
+    ];
 
     return (
         <Card
@@ -69,7 +165,6 @@ export const ResearchReportCard: React.FC<ResearchReportCardProps> = ({
                         {dayjs(reportData.publishDate || intel.effectiveTime).format('YYYY-MM-DD')}
                     </span>
                 </Flex>
-                {/* 暂时没有页数和大小信息，先隐藏或显示默认 */}
                 <Flex align="center" gap={4}>
                     <BookOutlined />
                     <span>PDF文档</span>
@@ -119,23 +214,48 @@ export const ResearchReportCard: React.FC<ResearchReportCardProps> = ({
             {/* 操作栏 */}
             <Flex justify="space-between" align="center">
                 <Space>
-                    <Button type="primary" size="small" icon={<EyeOutlined />}>
+                    <Button
+                        type="primary"
+                        size="small"
+                        icon={<EyeOutlined />}
+                        onClick={handlePreview}
+                    >
                         预览
                     </Button>
-                    <Button size="small" icon={<DownloadOutlined />}>
+                    <Button
+                        size="small"
+                        icon={<DownloadOutlined />}
+                        onClick={handleDownload}
+                    >
                         下载
                     </Button>
-                    <Button type="link" size="small" icon={<LinkOutlined />} style={{ padding: 0 }}>
+                    <Button
+                        type="link"
+                        size="small"
+                        icon={<LinkOutlined />}
+                        style={{ padding: 0 }}
+                        onClick={handleViewSource}
+                    >
                         引用来源
                     </Button>
                 </Space>
                 <Space>
-                    <Tooltip title="收藏">
-                        <Button type="text" size="small" icon={<StarOutlined />} />
+                    <Tooltip title={isFavorited ? '取消收藏' : '收藏'}>
+                        <Button
+                            type="text"
+                            size="small"
+                            icon={isFavorited ? <StarFilled style={{ color: '#faad14' }} /> : <StarOutlined />}
+                            onClick={handleFavorite}
+                        />
                     </Tooltip>
-                    <Tooltip title="更多">
-                        <Button type="text" size="small" icon={<MoreOutlined />} />
-                    </Tooltip>
+                    <Dropdown menu={{ items: moreMenuItems }} trigger={['click']}>
+                        <Button
+                            type="text"
+                            size="small"
+                            icon={<MoreOutlined />}
+                            onClick={(e) => e.stopPropagation()}
+                        />
+                    </Dropdown>
                 </Space>
             </Flex>
         </Card>

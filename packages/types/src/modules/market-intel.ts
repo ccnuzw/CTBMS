@@ -63,25 +63,55 @@ export const CONTENT_TYPE_SOURCE_OPTIONS: Record<ContentType, IntelSourceType[]>
 };
 
 // 研报类型
+// 报告内容类型
 export enum ReportType {
+  POLICY = 'POLICY',       // 政策解读、政策影响分析
+  MARKET = 'MARKET',       // 市场行情、价格走势分析
+  RESEARCH = 'RESEARCH',   // 深度研究、专题报告
+  INDUSTRY = 'INDUSTRY',   // 产业链分析、行业报告
+}
+
+export const REPORT_TYPE_LABELS: Record<ReportType, string> = {
+  [ReportType.POLICY]: '政策研究',
+  [ReportType.MARKET]: '市场研究',
+  [ReportType.RESEARCH]: '深度研究',
+  [ReportType.INDUSTRY]: '行业研究',
+};
+
+// 报告发布周期
+export enum ReportPeriod {
+  DAILY = 'DAILY',         // 日报
   WEEKLY = 'WEEKLY',       // 周报
   MONTHLY = 'MONTHLY',     // 月报
   QUARTERLY = 'QUARTERLY', // 季报
   ANNUAL = 'ANNUAL',       // 年报
-  POLICY = 'POLICY',       // 政策文件
-  RESEARCH = 'RESEARCH',   // 第三方研报
-  OTHER = 'OTHER',         // 其他
+  ADHOC = 'ADHOC',         // 不定期/专题
 }
 
-export const REPORT_TYPE_LABELS: Record<ReportType, string> = {
-  [ReportType.WEEKLY]: '周报',
-  [ReportType.MONTHLY]: '月报',
-  [ReportType.QUARTERLY]: '季报',
-  [ReportType.ANNUAL]: '年报',
-  [ReportType.POLICY]: '政策文件',
-  [ReportType.RESEARCH]: '第三方研报',
-  [ReportType.OTHER]: '其他',
+export const REPORT_PERIOD_LABELS: Record<ReportPeriod, string> = {
+  [ReportPeriod.DAILY]: '日报',
+  [ReportPeriod.WEEKLY]: '周报',
+  [ReportPeriod.MONTHLY]: '月报',
+  [ReportPeriod.QUARTERLY]: '季报',
+  [ReportPeriod.ANNUAL]: '年报',
+  [ReportPeriod.ADHOC]: '不定期',
 };
+
+// 研报审核状态
+export enum ReviewStatus {
+  PENDING = 'PENDING',     // 待审核
+  APPROVED = 'APPROVED',   // 已通过
+  REJECTED = 'REJECTED',   // 已拒绝
+  ARCHIVED = 'ARCHIVED',   // 已归档
+}
+
+export const REVIEW_STATUS_LABELS: Record<ReviewStatus, string> = {
+  [ReviewStatus.PENDING]: '待审核',
+  [ReviewStatus.APPROVED]: '已通过',
+  [ReviewStatus.REJECTED]: '已拒绝',
+  [ReviewStatus.ARCHIVED]: '已归档',
+};
+
 
 // =============================================
 // AI 分析结果 Schema
@@ -158,7 +188,16 @@ export const ForecastSchema = z.object({
   riskLevel: z.enum(['low', 'medium', 'high']).optional(), // 风险等级
 });
 
-// 日报分段（保留原始结构）
+// 市场洞察 (B/C类通用)
+export const InsightSchema = z.object({
+  title: z.string(),
+  content: z.string(),
+  direction: z.enum(['Bullish', 'Bearish', 'Neutral']).optional(),
+  timeframe: z.enum(['short', 'medium', 'long']).optional(),
+  confidence: z.number().min(0).max(100).optional(),
+  factors: z.array(z.string()).optional(),
+});
+
 export const ReportSectionSchema = z.object({
   title: z.string(),              // 段落标题
   content: z.string(),            // 段落内容
@@ -203,8 +242,28 @@ export const AIAnalysisResultSchema = z.object({
   // 后市预判
   forecast: ForecastSchema.optional(),
 
+  // 市场洞察列表 (包括 AI 提取和规则引擎匹配)
+  insights: z.array(InsightSchema).optional(),
+
   // 原文分段（便于检索和展示）
   sections: z.array(ReportSectionSchema).optional(),
+
+  // C类增强：研报提取
+  reportType: z.nativeEnum(ReportType).optional(), // 自动识别的报告类型
+  reportPeriod: z.nativeEnum(ReportPeriod).optional(), // 自动识别的报告周期
+  keyPoints: z.array(z.object({
+    point: z.string(),
+    sentiment: z.string().optional(),
+    confidence: z.number().optional(),
+  })).optional(),
+  prediction: z.record(z.any()).optional(), // 灵活结构
+  dataPoints: z.array(z.object({
+    metric: z.string(),
+    value: z.string(),
+    unit: z.string().optional(),
+  })).optional(),
+  commodities: z.array(z.string()).optional(),
+  regions: z.array(z.string()).optional(),
 
   // 提取的事件列表（B类扩展）
   events: z.array(StructuredEventSchema).optional(),
@@ -323,6 +382,7 @@ export const MarketIntelQuerySchema = z.object({
 export const AnalyzeContentSchema = z.object({
   content: z.string().optional(),
   category: z.nativeEnum(IntelCategory),
+  contentType: z.nativeEnum(ContentType).optional(), // 明确内容类型
   location: z.string().optional(),
   base64Image: z.string().optional(),
   mimeType: z.string().optional(),
@@ -668,6 +728,7 @@ export type IntelAttachmentResponse = z.infer<typeof IntelAttachmentResponseSche
 export const CreateResearchReportSchema = z.object({
   title: z.string().min(1, '标题不能为空'),
   reportType: z.nativeEnum(ReportType),
+  reportPeriod: z.nativeEnum(ReportPeriod).optional(), // 新增字段
   publishDate: z.coerce.date().optional(),
   source: z.string().optional(),
   summary: z.string().min(1, '摘要不能为空'),
@@ -688,13 +749,19 @@ export const CreateResearchReportSchema = z.object({
   dataPoints: z.array(z.object({
     metric: z.string(),
     value: z.string(),
-    period: z.string(),
+    unit: z.string().optional(),
+    period: z.string().optional(),
   })).optional(),
 
   commodities: z.array(z.string()).optional(),
   regions: z.array(z.string()).optional(),
   timeframe: z.string().optional(),
   intelId: z.string().uuid('关联情报ID无效'),
+});
+
+// 手工创建研报 Schema
+export const CreateManualResearchReportSchema = CreateResearchReportSchema.omit({ intelId: true }).extend({
+  intelId: z.string().optional(),
 });
 
 export const UpdateResearchReportSchema = CreateResearchReportSchema.partial().omit({ intelId: true });
@@ -712,6 +779,20 @@ export const ResearchReportResponseSchema = z.object({
   commodities: z.array(z.string()),
   regions: z.array(z.string()),
   timeframe: z.string().nullable(),
+
+  // 版本管理
+  version: z.number().default(1),
+  previousVersionId: z.string().nullable(),
+
+  // 审核状态
+  reviewStatus: z.nativeEnum(ReviewStatus).default(ReviewStatus.PENDING),
+  reviewedById: z.string().nullable(),
+  reviewedAt: z.date().nullable(),
+
+  // 阅读统计
+  viewCount: z.number().default(0),
+  downloadCount: z.number().default(0),
+
   intelId: z.string(),
   createdAt: z.date(),
   updatedAt: z.date(),
@@ -719,6 +800,7 @@ export const ResearchReportResponseSchema = z.object({
 
 export const ResearchReportQuerySchema = z.object({
   reportType: z.nativeEnum(ReportType).optional(),
+  reviewStatus: z.nativeEnum(ReviewStatus).optional(),
   commodity: z.string().optional(),
   region: z.string().optional(),
   startDate: z.coerce.date().optional(),
@@ -729,6 +811,7 @@ export const ResearchReportQuerySchema = z.object({
 });
 
 export type CreateResearchReportDto = z.infer<typeof CreateResearchReportSchema>;
+export type CreateManualResearchReportDto = z.infer<typeof CreateManualResearchReportSchema>;
 export type UpdateResearchReportDto = z.infer<typeof UpdateResearchReportSchema>;
 export type ResearchReportResponse = z.infer<typeof ResearchReportResponseSchema>;
 export type ResearchReportQuery = z.infer<typeof ResearchReportQuerySchema>;

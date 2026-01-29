@@ -9,8 +9,9 @@ import { DashboardView } from './components/views/DashboardView';
 import { TimelineView } from './components/views/TimelineView';
 import { TableView } from './components/views/TableView';
 import { IntelViewType, IntelFilterState, DEFAULT_FILTER_STATE, IntelItem } from './types';
-import { useIntelligenceFeed } from '../../api/hooks';
+import { useIntelligenceFeed, useMarketIntel } from '../../api/hooks';
 import dayjs from 'dayjs';
+import { useParams } from 'react-router-dom';
 
 export const IntelFeedDashboard: React.FC = () => {
     const { token } = theme.useToken();
@@ -21,6 +22,42 @@ export const IntelFeedDashboard: React.FC = () => {
     const [filterPanelVisible, setFilterPanelVisible] = useState(true);
     const [relationDrawerVisible, setRelationDrawerVisible] = useState(false);
     const [selectedIntel, setSelectedIntel] = useState<IntelItem | null>(null);
+
+    // URL 参数处理 (详情页模式)
+    const { id: routeIntelId } = useParams<{ id: string }>();
+    const { data: detailIntel } = useMarketIntel(routeIntelId || '');
+
+    // 当通过 URL 访问详情时，自动打开抽屉
+    React.useEffect(() => {
+        if (routeIntelId && detailIntel) {
+            // 将后端数据转换为组件所需的 IntelItem 格式
+            const mappedItem: IntelItem = {
+                id: detailIntel.id,
+                intelId: detailIntel.id,
+                type: detailIntel.contentType === 'RESEARCH_REPORT' ? 'research_report' : 'insight',
+                contentType: detailIntel.contentType,
+                sourceType: detailIntel.sourceType,
+                category: detailIntel.category,
+                title: (detailIntel as any).title || (detailIntel as any).researchReport?.title || detailIntel.summary?.slice(0, 30) || '未命名情报',
+                summary: detailIntel.summary || detailIntel.rawContent,
+                rawContent: detailIntel.rawContent,
+                effectiveTime: new Date(detailIntel.effectiveTime),
+                createdAt: new Date(detailIntel.createdAt),
+                location: detailIntel.location,
+                region: detailIntel.region,
+                confidence: detailIntel.totalScore || 80,
+                qualityScore: detailIntel.totalScore || 0,
+                status: detailIntel.isFlagged ? 'flagged' : 'confirmed',
+                author: detailIntel.author,
+                // 研报特定数据可能不完整，但足够用于展示基础关联
+                events: [],
+                insights: [],
+            } as any;
+
+            setSelectedIntel(mappedItem);
+            setRelationDrawerVisible(true);
+        }
+    }, [routeIntelId, detailIntel]);
 
     // 筛选条件转换
     const { startDate, endDate }: { startDate: Date; endDate: Date } = useMemo(() => {

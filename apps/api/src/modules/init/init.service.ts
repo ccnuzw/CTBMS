@@ -121,8 +121,16 @@ export class InitService implements OnModuleInit {
 
     private async measureTime(label: string, fn: () => Promise<any>) {
         const start = Date.now();
-        await fn();
-        this.logger.log(`${label} completed in ${Date.now() - start}ms`);
+        const result = await fn();
+        const duration = Date.now() - start;
+
+        let extraInfo = '';
+        if (result && typeof result === 'object' && 'count' in result) {
+            extraInfo = ` (${result.count} deleted)`;
+        }
+
+        this.logger.log(`${label} completed${extraInfo} in ${duration}ms`);
+        return result;
     }
 
     async clearData() {

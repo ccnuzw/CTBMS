@@ -2,6 +2,9 @@
 .tiptap-editor-wrapper {
   overflow: hidden;
   transition: border-color 0.3s;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
 }
 
 .tiptap-editor-wrapper:hover {
@@ -10,15 +13,21 @@
 
 /* Editor Content Area */
 .tiptap-editor-content {
-  padding: 16px;
-  min-height: 250px;
-  max-height: 500px;
+  display: flex;
+  flex-direction: column;
+  flex: 1;
   overflow-y: auto;
+  cursor: text;
+  /* Clicking anywhere focuses editor logic needs JS usually, but this helps cursor */
 }
 
 .tiptap-editor-content .tiptap {
   outline: none;
-  min-height: inherit;
+  flex: 1;
+  /* Allow it to grow */
+  padding: 16px;
+  /* Move padding here */
+  box-sizing: border-box;
 }
 
 /* Placeholder */

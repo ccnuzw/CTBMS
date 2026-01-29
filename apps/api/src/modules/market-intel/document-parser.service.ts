@@ -10,7 +10,8 @@ import * as XLSX from 'xlsx';
  * 文档解析结果
  */
 export interface ParseResult {
-    text: string;                    // 提取的纯文本
+    text: string;                    // 提取的纯文本 (用于搜索)
+    html?: string;                   // 提取的HTML (用于编辑器展示)
     tables?: TableData[];            // 提取的表格
     metadata?: DocumentMetadata;     // 文档元信息
     pageCount?: number;              // 页数（PDF）
@@ -94,10 +95,13 @@ export class DocumentParserService {
     private async parseWord(buffer: Buffer): Promise<ParseResult> {
         try {
             // mammoth 提取纯文本
-            const result = await mammoth.extractRawText({ buffer });
+            const rawResult = await mammoth.extractRawText({ buffer });
+            // mammoth 提取 HTML (保留标题、列表等格式)
+            const htmlResult = await mammoth.convertToHtml({ buffer });
 
             return {
-                text: result.value,
+                text: rawResult.value,
+                html: htmlResult.value,
             };
         } catch (error) {
             this.logger.error('Failed to parse Word document', error);
@@ -113,6 +117,7 @@ export class DocumentParserService {
             const workbook = XLSX.read(buffer, { type: 'buffer' });
             const tables: TableData[] = [];
             const textParts: string[] = [];
+            const htmlParts: string[] = [];
 
             for (const sheetName of workbook.SheetNames) {
                 const sheet = workbook.Sheets[sheetName];
@@ -134,18 +139,39 @@ export class DocumentParserService {
 
                 // 转换为文本格式（便于 AI 分析）
                 textParts.push(`## ${sheetName}\n`);
+                textParts.push(`## ${sheetName}\n`);
+
+                // Construct HTML Table
+                const tableRows: string[] = [];
+                tableRows.push(`<p><strong>${sheetName}</strong></p>`);
+                tableRows.push('<table border="1" style="border-collapse: collapse; width: 100%;">');
+
                 if (headers.length > 0) {
                     textParts.push(headers.join(' | '));
                     textParts.push('-'.repeat(40));
+
+                    tableRows.push('<thead><tr>');
+                    headers.forEach(h => tableRows.push(`<th style="padding: 8px; background-color: #f0f0f0;">${h}</th>`));
+                    tableRows.push('</tr></thead>');
                 }
+
+                tableRows.push('<tbody>');
                 rows.forEach(row => {
                     textParts.push(row.join(' | '));
+                    tableRows.push('<tr>');
+                    row.forEach(cell => tableRows.push(`<td style="padding: 8px;">${cell}</td>`));
+                    tableRows.push('</tr>');
                 });
                 textParts.push('');
+                tableRows.push('</tbody></table><br/>');
+
+                // Append this sheet's HTML to the full HTML list
+                htmlParts.push(tableRows.join(''));
             }
 
             return {
                 text: textParts.join('\n'),
+                html: htmlParts.join('\n'),
                 tables,
             };
         } catch (error) {
