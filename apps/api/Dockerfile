@@ -33,6 +33,9 @@ RUN cd apps/api && npx prisma generate
 # Build the project
 RUN pnpm turbo run build --filter=api...
 
+# Compile seed scripts for production initialization
+RUN cd apps/api && npx tsc prisma/*.ts --outDir dist/prisma --esModuleInterop --skipLibCheck --resolveJsonModule --module commonjs --target es2017
+
 FROM base AS runner
 WORKDIR /app
 
@@ -55,6 +58,9 @@ COPY --from=installer /app/packages ./packages
 
 # Copy Prisma schema and migrations if needed for runtime
 COPY --from=installer /app/apps/api/prisma ./apps/api/prisma
+
+# Copy seed.sql for production initialization (tsc doesn't copy .sql files)
+COPY --from=installer /app/apps/api/prisma/seed.sql ./apps/api/dist/prisma/seed.sql
 
 
 
