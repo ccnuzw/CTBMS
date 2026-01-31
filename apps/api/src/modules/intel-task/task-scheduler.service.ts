@@ -83,10 +83,17 @@ export class TaskSchedulerService implements OnModuleInit, OnModuleDestroy {
                 break;
             }
 
-            await this.templateService.createTasksFromTemplate(template, {
-                runAt: nextRunAt,
-                triggeredById: undefined,
-            });
+            // 使用统一的执行入口，支持按采集点类型批量生成
+            if (template.targetPointType) {
+                // 按采集点类型批量生成任务
+                await this.templateService.executeTemplateByPointType(template.id, undefined as any);
+            } else {
+                // 原有逻辑：按分配规则生成任务
+                await this.templateService.createTasksFromTemplate(template, {
+                    runAt: nextRunAt,
+                    triggeredById: undefined,
+                });
+            }
 
             lastRunAt = nextRunAt;
             nextRunAt = computeNextRunAt(template, new Date(nextRunAt.getTime() + 1000));

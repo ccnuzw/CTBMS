@@ -17,7 +17,7 @@ export class IntelTaskService {
     /**
      * 创建采集任务
      */
-    async create(dto: CreateIntelTaskDto & { createdById?: string, templateId?: string, description?: string }) {
+    async create(dto: CreateIntelTaskDto & { createdById?: string, templateId?: string, description?: string, collectionPointId?: string }) {
         return this.prisma.intelTask.create({
             data: {
                 title: dto.title,
@@ -38,10 +38,14 @@ export class IntelTaskService {
                 createdById: dto.createdById,
                 templateId: dto.templateId,
                 isLate: dto.isLate,
+                collectionPointId: dto.collectionPointId,
             },
             include: {
                 assignee: {
                     select: { id: true, name: true, avatar: true },
+                },
+                collectionPoint: {
+                    select: { id: true, code: true, name: true, type: true },
                 },
             },
         });
@@ -50,7 +54,7 @@ export class IntelTaskService {
     /**
      * 批量创建任务 (用于直接分发)
      */
-    async createMany(tasks: (CreateIntelTaskDto & { createdById?: string, templateId?: string, description?: string })[]) {
+    async createMany(tasks: (CreateIntelTaskDto & { createdById?: string, templateId?: string, description?: string, collectionPointId?: string })[]) {
         // Prisma createMany 不支持 include，所以如果需要返回完整对象，可能需要循环创建或者 createMany 后再查询
         // 这里为了性能使用 createMany，但无法返回关联对象
         return this.prisma.intelTask.createMany({
@@ -73,6 +77,7 @@ export class IntelTaskService {
                 createdById: t.createdById,
                 templateId: t.templateId,
                 isLate: t.isLate,
+                collectionPointId: t.collectionPointId,
             })),
             skipDuplicates: true,
         });

@@ -10,6 +10,9 @@ import {
     StarOutlined,
     LinkOutlined,
     MoreOutlined,
+    HeartOutlined,
+    DollarOutlined,
+    FundOutlined,
 } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import relativeTime from 'dayjs/plugin/relativeTime';
@@ -33,6 +36,28 @@ const SOURCE_TYPE_LABELS: Record<string, { label: string; color: string }> = {
     RESEARCH_INST: { label: '研究机构', color: 'purple' },
     MEDIA: { label: '媒体报道', color: 'orange' },
 };
+
+// 市场心态常量
+const SENTIMENT_LABELS: Record<string, string> = {
+    bullish: '看涨',
+    bearish: '看跌',
+    neutral: '中性',
+    mixed: '分歧',
+};
+
+const getSentimentColor = (sentiment: string): string => {
+    switch (sentiment) {
+        case 'bullish': return '#f5222d';
+        case 'bearish': return '#52c41a';
+        case 'neutral': return '#1890ff';
+        case 'mixed': return '#faad14';
+        default: return '#1890ff';
+    }
+};
+
+// 风险等级常量
+const RISK_LABELS: Record<string, string> = { low: '低', medium: '中', high: '高' };
+const RISK_COLORS: Record<string, string> = { low: 'green', medium: 'orange', high: 'red' };
 
 export const DailyReportCard: React.FC<DailyReportCardProps> = ({
     intel,
@@ -153,6 +178,72 @@ export const DailyReportCard: React.FC<DailyReportCardProps> = ({
                             <strong>{insight.title}</strong>: {insight.content}
                         </Text>
                     ))}
+                </div>
+            )}
+
+            {/* 市场心态区块 (新增) */}
+            {intel.marketSentiment && (
+                <div style={{ marginBottom: 12, padding: 10, background: token.colorFillQuaternary, borderRadius: token.borderRadius }}>
+                    <Flex align="center" gap={6} style={{ marginBottom: 6 }}>
+                        <HeartOutlined style={{ color: getSentimentColor(intel.marketSentiment.overall) }} />
+                        <Text type="secondary" style={{ fontSize: 12 }}>市场心态</Text>
+                        <Tag color={getSentimentColor(intel.marketSentiment.overall)} style={{ margin: 0 }}>
+                            {SENTIMENT_LABELS[intel.marketSentiment.overall] || intel.marketSentiment.overall}
+                        </Tag>
+                        {intel.marketSentiment.score !== undefined && (
+                            <Text style={{ fontSize: 12 }}>情绪值: {intel.marketSentiment.score}</Text>
+                        )}
+                    </Flex>
+                    {intel.marketSentiment.summary && (
+                        <Text style={{ fontSize: 13 }}>{intel.marketSentiment.summary}</Text>
+                    )}
+                </div>
+            )}
+
+            {/* 价格变动摘要 (新增) */}
+            {intel.pricePoints && intel.pricePoints.length > 0 && (
+                <div style={{ marginBottom: 12 }}>
+                    <Flex align="center" gap={6} style={{ marginBottom: 6 }}>
+                        <DollarOutlined style={{ color: token.colorPrimary }} />
+                        <Text type="secondary" style={{ fontSize: 12 }}>价格变动</Text>
+                    </Flex>
+                    <Space wrap>
+                        {intel.pricePoints.slice(0, 5).map((pp, idx) => (
+                            <Tag
+                                key={idx}
+                                color={pp.change && pp.change > 0 ? 'red' : pp.change && pp.change < 0 ? 'green' : 'default'}
+                            >
+                                {pp.location}: {pp.price}{pp.unit || '元'}
+                                {pp.change !== null && pp.change !== 0 && (
+                                    <span>({pp.change > 0 ? '+' : ''}{pp.change})</span>
+                                )}
+                            </Tag>
+                        ))}
+                        {intel.pricePoints.length > 5 && (
+                            <Tag>+{intel.pricePoints.length - 5} 更多</Tag>
+                        )}
+                    </Space>
+                </div>
+            )}
+
+            {/* 后市预判 (新增) */}
+            {intel.forecast && (
+                <div style={{ marginBottom: 12, padding: 10, background: token.colorInfoBg, borderRadius: token.borderRadius }}>
+                    <Flex align="center" gap={6} style={{ marginBottom: 6 }}>
+                        <FundOutlined style={{ color: token.colorInfo }} />
+                        <Text type="secondary" style={{ fontSize: 12 }}>后市预判</Text>
+                        {intel.forecast.riskLevel && (
+                            <Tag color={RISK_COLORS[intel.forecast.riskLevel]} style={{ margin: 0 }}>
+                                风险: {RISK_LABELS[intel.forecast.riskLevel]}
+                            </Tag>
+                        )}
+                    </Flex>
+                    {intel.forecast.shortTerm && (
+                        <Text style={{ fontSize: 13, display: 'block' }}>短期: {intel.forecast.shortTerm}</Text>
+                    )}
+                    {intel.forecast.mediumTerm && (
+                        <Text style={{ fontSize: 13, display: 'block' }}>中期: {intel.forecast.mediumTerm}</Text>
+                    )}
                 </div>
             )}
 

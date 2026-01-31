@@ -104,6 +104,46 @@ export const BUILT_IN_PRESETS: FilterPreset[] = [
     },
 ];
 
+// 市场心态类型
+export interface MarketSentiment {
+    overall: 'bullish' | 'bearish' | 'neutral' | 'mixed';
+    score?: number;
+    traders?: string;
+    processors?: string;
+    farmers?: string;
+    summary?: string;
+}
+
+// 价格点类型
+export interface ExtractedPricePoint {
+    location: string;
+    price: number;
+    change: number | null;
+    unit?: string;
+    commodity?: string;
+    grade?: string;
+    note?: string;
+}
+
+// 后市预判类型
+export interface Forecast {
+    shortTerm?: string;
+    mediumTerm?: string;
+    longTerm?: string;
+    keyFactors?: string[];
+    riskLevel?: 'low' | 'medium' | 'high';
+}
+
+// 洞察类型
+export interface Insight {
+    title: string;
+    content: string;
+    direction?: 'Bullish' | 'Bearish' | 'Neutral';
+    timeframe?: 'short' | 'medium' | 'long';
+    confidence?: number;
+    factors?: string[];
+}
+
 // 情报项（统一类型）
 export interface IntelItem {
     id: string;
@@ -133,7 +173,12 @@ export interface IntelItem {
     // AI 分析
     confidence?: number;
     events?: any[];
-    insights?: any[];
+    insights?: Insight[];
+
+    // 新增：AI 分析扩展字段
+    pricePoints?: ExtractedPricePoint[];
+    marketSentiment?: MarketSentiment;
+    forecast?: Forecast;
 
     // 质量
     qualityScore?: number;

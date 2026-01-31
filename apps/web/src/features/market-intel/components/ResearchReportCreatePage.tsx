@@ -1,8 +1,8 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { PageContainer, ProForm, ProCard, ProFormText, ProFormSelect, ProFormDatePicker, ProFormList, ProFormGroup, ProFormDigit, ProFormTextArea, ProFormItem } from '@ant-design/pro-components';
 import { App, Form, Space, Typography, Button, Badge, Row, Col, Empty, Result, Modal, Tag, theme } from 'antd';
 import { FileWordOutlined, ThunderboltOutlined, FileSearchOutlined, RobotOutlined, CheckCircleOutlined, EyeOutlined, BulbOutlined, LineChartOutlined, BarChartOutlined } from '@ant-design/icons';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import {
     ReportType,
     ReportPeriod,
@@ -12,7 +12,7 @@ import {
     IntelCategory,
     ContentType,
 } from '@packages/types';
-import { useCreateManualResearchReport, useResearchReportStats, useAnalyzeContent } from '../api/hooks';
+import { useCreateManualResearchReport, useUpdateResearchReport, useResearchReport, useResearchReportStats, useAnalyzeContent } from '../api/hooks';
 import { useProvinces } from '../api/region';
 import TiptapEditor from '@/components/TiptapEditor';
 import { DocumentUploader } from './DocumentUploader';
@@ -68,11 +68,18 @@ const cssStyles = `
 export const ResearchReportCreatePage = () => {
     const { message } = App.useApp();
     const navigate = useNavigate();
+    const { id: editId } = useParams<{ id?: string }>();
+    const isEditMode = Boolean(editId);
+
     const [form] = Form.useForm<CreateManualResearchReportDto>();
     const keyPointsWatch = Form.useWatch('keyPoints', form);
     const predictionWatch = Form.useWatch('prediction', form);
     const dataPointsWatch = Form.useWatch('dataPoints', form);
     const createMutation = useCreateManualResearchReport();
+    const updateMutation = useUpdateResearchReport();
+
+    // Fetch existing report for edit mode
+    const { data: existingReport, isLoading: isLoadingReport } = useResearchReport(editId || '');
 
     // Theme
     const { token } = theme.useToken();
@@ -96,6 +103,24 @@ export const ResearchReportCreatePage = () => {
         value: p.name,
     })) || [];
 
+    // Pre-fill form in edit mode
+    useEffect(() => {
+        if (isEditMode && existingReport) {
+            form.setFieldsValue({
+                title: existingReport.title,
+                reportType: existingReport.reportType,
+                publishDate: existingReport.publishDate || undefined,
+                source: existingReport.source || undefined,
+                commodities: existingReport.commodities,
+                regions: existingReport.regions,
+                summary: existingReport.summary,
+                keyPoints: existingReport.keyPoints,
+                prediction: existingReport.prediction,
+                dataPoints: existingReport.dataPoints,
+            });
+        }
+    }, [isEditMode, existingReport, form]);
+
     // Check if has AI analysis data
     const hasAiData = (keyPointsWatch?.length || 0) > 0 || predictionWatch?.direction || (dataPointsWatch?.length || 0) > 0;
 
@@ -112,14 +137,22 @@ export const ResearchReportCreatePage = () => {
         }
 
         try {
-            await createMutation.mutateAsync({
-                ...values,
-                intelId: uploadedIntelId || undefined,
-            });
-            message.success('研报创建成功');
-            navigate('/intel/research-reports');
+            if (isEditMode && editId) {
+                await updateMutation.mutateAsync({
+                    id: editId,
+                    data: values,
+                });
+                message.success('研报更新成功');
+            } else {
+                await createMutation.mutateAsync({
+                    ...values,
+                    intelId: uploadedIntelId || undefined,
+                });
+                message.success('研报创建成功');
+            }
+            navigate('/intel/knowledge?tab=library&content=reports');
         } catch (error) {
-            message.error('创建失败，请重试');
+            message.error(isEditMode ? '更新失败，请重试' : '创建失败，请重试');
             console.error(error);
         }
     };
@@ -341,7 +374,7 @@ export const ResearchReportCreatePage = () => {
                 header={{
                     title: '智能研报工作台',
                     subTitle: 'Intelligent Research Workbench',
-                    onBack: () => navigate('/intel/research-reports'),
+                    onBack: () => navigate(-1),
                     extra: [
                         <Button
                             key="ai"

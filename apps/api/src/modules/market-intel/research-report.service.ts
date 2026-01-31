@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { Prisma, ReportType as PrismaReportType, ReviewStatus as PrismaReviewStatus } from '@prisma/client';
 import { PrismaService } from '../../prisma';
 import {
@@ -12,6 +12,7 @@ import {
     IntelCategory,
     ContentType,
     IntelSourceType,
+    PromoteToReportDto,
 } from '@packages/types';
 
 @Injectable()
@@ -126,7 +127,7 @@ export class ResearchReportService {
      */
     async findAll(options?: Partial<ResearchReportQuery>) {
         // ... (lines 123-163 unchanged)
-        const { reportType, reviewStatus, commodity, region, startDate, endDate, keyword, page = 1, pageSize = 20 } = options || {};
+        const { reportType, reviewStatus, commodity, region, startDate, endDate, keyword, title, source, page = 1, pageSize = 20 } = options || {};
 
         const where: Prisma.ResearchReportWhereInput = {};
 
@@ -139,6 +140,10 @@ export class ResearchReportService {
             if (startDate) where.publishDate.gte = startDate;
             if (endDate) where.publishDate.lte = endDate;
         }
+
+        // Specific fields search
+        if (title) where.title = { contains: title, mode: 'insensitive' };
+        if (source) where.source = { contains: source, mode: 'insensitive' };
 
         // 全文搜索：在标题、摘要、来源中搜索
         if (keyword) {
@@ -344,6 +349,117 @@ export class ResearchReportService {
                 reviewedAt: new Date(),
             },
         });
+    }
+
+    /**
+     * 批量更新审核状态
+     */
+    async batchUpdateReviewStatus(ids: string[], status: TypesReviewStatus, reviewerId: string) {
+        if (!ids || ids.length === 0) {
+            return { updatedCount: 0 };
+        }
+
+        const prismaStatus = this.toPrismaReviewStatus(status) || (status as PrismaReviewStatus);
+
+        const result = await this.prisma.researchReport.updateMany({
+            where: { id: { in: ids } },
+            data: {
+                reviewStatus: prismaStatus,
+                reviewedById: reviewerId,
+                reviewedAt: new Date(),
+            },
+        });
+
+        return { updatedCount: result.count };
+    }
+
+    /**
+     * 将文档升级为研报 (Promote to Report)
+     * 核心接口：从已有的 MarketIntel 文档生成结构化研报
+     */
+    async promoteToReport(intelId: string, dto: PromoteToReportDto) {
+        // 1. 查找源文档
+        const intel = await this.prisma.marketIntel.findUnique({
+            where: { id: intelId },
+            include: {
+                attachments: true,
+                researchReport: true,
+            },
+        });
+
+        if (!intel) {
+            throw new NotFoundException(`文档 ID ${intelId} 不存在`);
+        }
+
+        // 2. 检查是否已有关联研报
+        if (intel.researchReport) {
+            throw new BadRequestException('该文档已生成研报，无法重复生成');
+        }
+
+        // 3. 从 AI 分析结果中提取结构化数据
+        const aiAnalysis = intel.aiAnalysis as any || {};
+
+        // 构建研报数据
+        const title = aiAnalysis.extractedData?.title ||
+                      aiAnalysis.summary?.substring(0, 50) ||
+                      intel.summary?.substring(0, 50) ||
+                      '未命名研报';
+
+        const keyPoints = aiAnalysis.keyPoints || aiAnalysis.insights?.map((i: any) => ({
+            point: i.title || i.content,
+            sentiment: i.direction === 'Bullish' ? 'positive' :
+                       i.direction === 'Bearish' ? 'negative' : 'neutral',
+            confidence: i.confidence || 70,
+        })) || [];
+
+        const prediction = aiAnalysis.prediction || (aiAnalysis.forecast ? {
+            direction: aiAnalysis.forecast.shortTerm?.includes('涨') ? 'UP' :
+                       aiAnalysis.forecast.shortTerm?.includes('跌') ? 'DOWN' : 'STABLE',
+            timeframe: 'SHORT_TERM',
+            reasoning: aiAnalysis.forecast.shortTerm || aiAnalysis.forecast.mediumTerm,
+        } : undefined);
+
+        const dataPoints = aiAnalysis.dataPoints || aiAnalysis.pricePoints?.slice(0, 5).map((p: any) => ({
+            metric: `${p.location} ${p.commodity || '玉米'}价格`,
+            value: String(p.price),
+            unit: p.unit || '元/吨',
+        })) || [];
+
+        const commodities = aiAnalysis.commodities ||
+                           (aiAnalysis.reportMeta?.commodity ? [aiAnalysis.reportMeta.commodity] : []);
+
+        const regions = aiAnalysis.regions || intel.region || [];
+
+        // 4. 创建研报
+        const report = await this.prisma.researchReport.create({
+            data: {
+                title,
+                reportType: this.toPrismaReportType(dto.reportType as TypesReportType),
+                publishDate: intel.effectiveTime || new Date(),
+                source: intel.sourceType || 'INTERNAL_REPORT',
+                summary: intel.rawContent || intel.summary || '',
+                keyPoints: keyPoints.length > 0 ? keyPoints : undefined,
+                prediction: prediction || undefined,
+                dataPoints: dataPoints.length > 0 ? dataPoints : undefined,
+                commodities,
+                regions,
+                intelId: intel.id,
+                reviewStatus: 'PENDING',
+            },
+            include: {
+                intel: {
+                    include: {
+                        attachments: true,
+                    },
+                },
+            },
+        });
+
+        return {
+            success: true,
+            reportId: report.id,
+            report,
+        };
     }
 
     /**

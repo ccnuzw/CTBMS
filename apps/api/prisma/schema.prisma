@@ -62,7 +62,13 @@ model User {
   marketIntels   MarketIntel[]
   intelStats     UserIntelStats?
   intelTasks     IntelTask[]       // 分配的采集任务
-  
+
+  // [NEW] 采集点分配关系
+  collectionPointAllocations CollectionPointAllocation[]
+
+  // [NEW] 价格填报批次
+  priceSubmissions PriceSubmission[]
+
   createdAt      DateTime     @default(now())
   updatedAt      DateTime     @updatedAt
 }
@@ -417,6 +423,18 @@ model CollectionPoint {
 
   // [NEW] 关联的情报点链接
   intelLinks    IntelPointLink[]
+
+  // [NEW] 采集点分配关系
+  allocations   CollectionPointAllocation[]
+
+  // [NEW] 价格填报批次
+  priceSubmissions PriceSubmission[]
+
+  // [NEW] 关联的任务
+  intelTasks    IntelTask[]
+
+  // [NEW] 关联的任务模板
+  taskTemplates IntelTaskTemplate[]
   
   @@index([type])
   @@index([regionCode])
@@ -788,7 +806,20 @@ model PriceData {
   intelId       String?
   intel         MarketIntel? @relation(fields: [intelId], references: [id])
   authorId      String
-  
+
+  // ===== [NEW] 填报来源追踪 =====
+  inputMethod   PriceInputMethod  @default(AI_EXTRACTED)  // 录入方式
+
+  // ===== [NEW] 关联填报批次 =====
+  submissionId  String?
+  submission    PriceSubmission?  @relation(fields: [submissionId], references: [id])
+
+  // ===== [NEW] 审核流程 =====
+  reviewStatus  PriceReviewStatus @default(PENDING)       // 审核状态
+  reviewedById  String?                                    // 审核人ID
+  reviewedAt    DateTime?                                  // 审核时间
+  reviewNote    String?                                    // 审核备注
+
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
   
@@ -802,6 +833,9 @@ model PriceData {
   @@index([province, city, effectiveDate])
   @@index([collectionPointId, effectiveDate])       // 按采集点查询连续性数据
   @@index([regionCode, effectiveDate])              // 按行政区划聚合查询
+  @@index([inputMethod, effectiveDate])             // 按录入方式查询
+  @@index([reviewStatus])                           // 按审核状态查询
+  @@index([submissionId])                           // 按填报批次查询
 }
 
 // =============================================
@@ -859,6 +893,76 @@ model IntelPointLink {
 }
 
 // =============================================
+// 采集点-员工分配关系表
+// =============================================
+model CollectionPointAllocation {
+  id                String          @id @default(uuid())
+
+  // 关联用户
+  userId            String
+  user              User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // 关联采集点
+  collectionPointId String
+  collectionPoint   CollectionPoint @relation(fields: [collectionPointId], references: [id], onDelete: Cascade)
+
+  // 注：角色字段已移除，简化为统一"负责人"
+
+  // 分配信息
+  assignedById      String?         // 分配人
+  assignedAt        DateTime        @default(now())
+  remark            String?         // 备注
+
+  // 状态
+  isActive          Boolean         @default(true)
+
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+
+  @@unique([userId, collectionPointId])
+  @@index([userId, isActive])
+  @@index([collectionPointId, isActive])
+}
+
+// =============================================
+// 价格填报批次
+// =============================================
+model PriceSubmission {
+  id                 String            @id @default(uuid())
+  batchCode          String            @unique  // 批次编号 PS-20260201-001
+
+  // 填报人
+  submittedById      String
+  submittedBy        User              @relation(fields: [submittedById], references: [id])
+
+  // 采集点
+  collectionPointId  String
+  collectionPoint    CollectionPoint   @relation(fields: [collectionPointId], references: [id])
+
+  // 时间
+  effectiveDate      DateTime          @db.Date
+  submittedAt        DateTime?
+
+  // 状态
+  status             SubmissionStatus  @default(DRAFT)
+  itemCount          Int               @default(0)
+  approvedCount      Int               @default(0)
+
+  // 关联任务（从任务入口创建时填充）
+  taskId             String?           @unique
+  task               IntelTask?
+
+  // 价格条目
+  priceData          PriceData[]
+
+  createdAt          DateTime          @default(now())
+  updatedAt          DateTime          @updatedAt
+
+  @@index([collectionPointId, effectiveDate])
+  @@index([submittedById, status])
+}
+
+// =============================================
 // 任务调度系统
 // =============================================
 
@@ -913,6 +1017,36 @@ enum IntelTaskStatus {
   OVERDUE
 }
 
+// =============================================
+// 采集点分配与价格填报枚举
+// =============================================
+
+// 注：AllocationRole 已简化移除，采集点分配统一为"负责人"角色
+
+// 价格录入方式
+enum PriceInputMethod {
+  AI_EXTRACTED      // 智能采集（AI从日报提取）
+  MANUAL_ENTRY      // 手动填报（业务人员录入）
+  BULK_IMPORT       // 批量导入（Excel/CSV）
+}
+
+// 价格审核状态
+enum PriceReviewStatus {
+  PENDING           // 待审核
+  APPROVED          // 已通过
+  REJECTED          // 已拒绝
+  AUTO_APPROVED     // 自动通过
+}
+
+// 填报批次状态
+enum SubmissionStatus {
+  DRAFT             // 草稿
+  SUBMITTED         // 已提交待审核
+  PARTIAL_APPROVED  // 部分通过
+  APPROVED          // 全部通过
+  REJECTED          // 已拒绝
+}
+
 model IntelTask {
   id          String          @id @default(uuid())
   
@@ -942,6 +1076,14 @@ model IntelTask {
   // 关联模板
   templateId  String?
   template    IntelTaskTemplate?  @relation(fields: [templateId], references: [id])
+
+  // [NEW] 关联采集点（明确任务地点）
+  collectionPointId String?
+  collectionPoint   CollectionPoint? @relation(fields: [collectionPointId], references: [id])
+
+  // [NEW] 关联填报批次（任务完成时自动关联）
+  priceSubmissionId String?           @unique
+  priceSubmission   PriceSubmission?  @relation(fields: [priceSubmissionId], references: [id])
   
   // 状态
   status      IntelTaskStatus @default(PENDING)
@@ -991,10 +1133,16 @@ model IntelTaskTemplate {
   maxBackfillPeriods Int           @default(3)
   
   // 分配规则
-  assigneeMode    String           @default("MANUAL")  // MANUAL | ALL_ACTIVE | BY_DEPARTMENT | BY_ORGANIZATION
+  assigneeMode    String           @default("MANUAL")  // MANUAL | ALL_ACTIVE | BY_DEPARTMENT | BY_ORGANIZATION | BY_COLLECTION_POINT
   assigneeIds     String[]         // 手动指定的分配人列表
   departmentIds   String[]         // 按部门分配
   organizationIds String[]         // 按组织分配
+
+  // [NEW] 采集点分配规则
+  collectionPointIds    String[]                 // 绑定的采集点列表
+  targetPointType       CollectionPointType?     // 按采集点类型批量生成
+  collectionPointId     String?                  // 单个采集点关联
+  collectionPoint       CollectionPoint?         @relation(fields: [collectionPointId], references: [id])
   
   // 状态
   isActive        Boolean          @default(true)

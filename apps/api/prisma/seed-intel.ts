@@ -70,7 +70,7 @@ const INSIGHT_TYPES = [
     },
 ];
 
-// 模拟情报原始内容
+// 模拟情报原始内容 (增强版：包含 AI 分析字段)
 const INTEL_TEMPLATES = [
     {
         location: '锦州港',
@@ -80,8 +80,25 @@ const INTEL_TEMPLATES = [
             { subject: '锦州港', action: '价格上涨', content: '玉米收购价上涨20元至2350元/吨', impact: '利好收购方', sentiment: 'bullish' },
         ],
         insights: [
-            { title: '短期看涨', content: '预计短期内价格有望继续上涨', direction: 'up', timeframe: 'short' },
+            { title: '短期看涨', content: '预计短期内价格有望继续上涨', direction: 'Bullish', timeframe: 'short', confidence: 85 },
         ],
+        // 新增：价格点数据
+        pricePoints: [
+            { location: '锦州港', price: 2350, change: 20, unit: '元/吨', commodity: '玉米', note: '收购价' },
+        ],
+        // 新增：市场心态
+        marketSentiment: {
+            overall: 'bullish',
+            score: 65,
+            traders: '贸易商收购积极性较高，看涨心态明显',
+            summary: '港口收购活跃，市场情绪偏乐观',
+        },
+        // 新增：后市预判
+        forecast: {
+            shortTerm: '短期内价格有望继续上涨',
+            riskLevel: 'low',
+            keyFactors: ['到港量', '库存变化', '下游需求'],
+        },
     },
     {
         location: '大连港',
@@ -91,8 +108,21 @@ const INTEL_TEMPLATES = [
             { subject: '大连港', action: '到港减少', content: '到港车辆减少18车至62车', impact: '库存压力缓解', sentiment: 'neutral' },
         ],
         insights: [
-            { title: '价格稳定预期', content: '北方港口价格短期维持稳定', direction: 'stable', timeframe: 'short' },
+            { title: '价格稳定预期', content: '北方港口价格短期维持稳定', direction: 'Neutral', timeframe: 'short', confidence: 75 },
         ],
+        pricePoints: [
+            { location: '大连港', price: 2340, change: 0, unit: '元/吨', commodity: '玉米', note: '平舱价' },
+        ],
+        marketSentiment: {
+            overall: 'neutral',
+            score: 5,
+            traders: '贸易商报价稳定，观望情绪浓厚',
+            summary: '市场心态平稳，以观望为主',
+        },
+        forecast: {
+            shortTerm: '短期价格稳定，关注南方接货节奏',
+            riskLevel: 'low',
+        },
     },
     {
         location: '梅花味精（通辽）',
@@ -102,8 +132,24 @@ const INTEL_TEMPLATES = [
             { subject: '梅花味精', action: '降价收购', content: '挂牌价下调20元至2760元/吨', impact: '压制当地价格', sentiment: 'bearish' },
         ],
         insights: [
-            { title: '短期承压', content: '深加工备货充裕，短期价格下行压力较大', direction: 'down', timeframe: 'short' },
+            { title: '短期承压', content: '深加工备货充裕，短期价格下行压力较大', direction: 'Bearish', timeframe: 'short', confidence: 80 },
         ],
+        pricePoints: [
+            { location: '梅花味精（通辽）', price: 2760, change: -20, unit: '元/吨', commodity: '玉米', note: '挂牌价' },
+        ],
+        marketSentiment: {
+            overall: 'bearish',
+            score: -35,
+            processors: '深加工企业库存充裕，采购意愿下降',
+            farmers: '农户卖粮积极性上升',
+            summary: '供应充足，价格承压',
+        },
+        forecast: {
+            shortTerm: '短期价格下行压力较大',
+            mediumTerm: '中期需关注下游消费启动情况',
+            riskLevel: 'medium',
+            keyFactors: ['库存天数', '收购量', '下游开工率'],
+        },
     },
     {
         location: '象屿生化（绥化）',
@@ -113,6 +159,15 @@ const INTEL_TEMPLATES = [
             { subject: '象屿生化', action: '维持收购', content: '收购价2700元/吨持稳', impact: '稳定当地价格', sentiment: 'neutral' },
         ],
         insights: [],
+        pricePoints: [
+            { location: '象屿生化（绥化）', price: 2700, change: 0, unit: '元/吨', commodity: '玉米', note: '收购价' },
+        ],
+        marketSentiment: {
+            overall: 'neutral',
+            score: 0,
+            summary: '市场平稳运行',
+        },
+        forecast: null,
     },
     {
         location: '中储粮锦州库',
@@ -122,8 +177,23 @@ const INTEL_TEMPLATES = [
             { subject: '中储粮锦州库', action: '开始收购', content: '启动2024年度玉米轮换收购', impact: '增加区域需求', sentiment: 'bullish' },
         ],
         insights: [
-            { title: '需求增量', content: '中储粮轮换收购将增加区域需求支撑', direction: 'up', timeframe: 'medium' },
+            { title: '需求增量', content: '中储粮轮换收购将增加区域需求支撑', direction: 'Bullish', timeframe: 'medium', confidence: 90 },
         ],
+        pricePoints: [
+            { location: '中储粮锦州库', price: 2320, change: null, unit: '元/吨', commodity: '玉米', note: '轮换收购价' },
+        ],
+        marketSentiment: {
+            overall: 'bullish',
+            score: 45,
+            traders: '贸易商对政策性收购持积极态度',
+            summary: '政策性收购启动，提振市场信心',
+        },
+        forecast: {
+            shortTerm: '短期区域价格有支撑',
+            mediumTerm: '收购期内价格稳中偏强',
+            riskLevel: 'low',
+            keyFactors: ['收购进度', '质量标准', '市场供应'],
+        },
     },
     {
         location: '山东潍坊',
@@ -133,8 +203,23 @@ const INTEL_TEMPLATES = [
             { subject: '潍坊饲料企业', action: '补库增加', content: '饲料企业采购量明显增加', impact: '提振需求', sentiment: 'bullish' },
         ],
         insights: [
-            { title: '销区看涨', content: '销区补库积极，后期价格有望继续走高', direction: 'up', timeframe: 'short' },
+            { title: '销区看涨', content: '销区补库积极，后期价格有望继续走高', direction: 'Bullish', timeframe: 'short', confidence: 82 },
         ],
+        pricePoints: [
+            { location: '山东潍坊', price: 2450, change: 10, unit: '元/吨', commodity: '玉米', note: '到站价' },
+        ],
+        marketSentiment: {
+            overall: 'bullish',
+            score: 55,
+            traders: '贸易商报价坚挺，看涨心态较浓',
+            processors: '饲料企业补库积极',
+            summary: '销区需求旺盛，看涨氛围浓厚',
+        },
+        forecast: {
+            shortTerm: '后期价格有望继续走高',
+            riskLevel: 'low',
+            keyFactors: ['到货量', '饲料需求', '库存水平'],
+        },
     },
     {
         location: '广东黄埔港',
@@ -144,8 +229,24 @@ const INTEL_TEMPLATES = [
             { subject: '黄埔港', action: '库存下降', content: '港口库存较上周下降2万吨', impact: '有利于价格', sentiment: 'bullish' },
         ],
         insights: [
-            { title: '内外价差收窄', content: '进口玉米与内贸价差缩小，关注替代效应', direction: 'stable', timeframe: 'medium' },
+            { title: '内外价差收窄', content: '进口玉米与内贸价差缩小，关注替代效应', direction: 'Neutral', timeframe: 'medium', confidence: 70 },
         ],
+        pricePoints: [
+            { location: '黄埔港(内贸)', price: 2520, change: 0, unit: '元/吨', commodity: '玉米', note: '内贸价' },
+            { location: '黄埔港(进口)', price: 2480, change: null, unit: '元/吨', commodity: '玉米', note: '进口到港价' },
+        ],
+        marketSentiment: {
+            overall: 'neutral',
+            score: 10,
+            traders: '采购商多观望为主',
+            summary: '南方港口供需平衡，价格稳定',
+        },
+        forecast: {
+            shortTerm: '短期价格稳定',
+            mediumTerm: '关注进口替代效应',
+            riskLevel: 'medium',
+            keyFactors: ['进口到港量', '内外价差', '下游需求'],
+        },
     },
     {
         location: '国粮局官网',
@@ -155,8 +256,19 @@ const INTEL_TEMPLATES = [
             { subject: '国粮局', action: '发布新政', content: '发布加强粮食收购监管通知', impact: '规范市场秩序', sentiment: 'neutral' },
         ],
         insights: [
-            { title: '政策利好农户', content: '监管加强将有利于保护种粮农民利益', direction: 'stable', timeframe: 'long' },
+            { title: '政策利好农户', content: '监管加强将有利于保护种粮农民利益', direction: 'Neutral', timeframe: 'long', confidence: 88 },
         ],
+        pricePoints: [],
+        marketSentiment: {
+            overall: 'neutral',
+            score: 15,
+            farmers: '农户利益得到政策保护',
+            summary: '政策环境向好，市场秩序规范',
+        },
+        forecast: {
+            longTerm: '长期有利于市场健康发展',
+            riskLevel: 'low',
+        },
     },
     {
         location: 'XX期货研究院',
@@ -164,8 +276,23 @@ const INTEL_TEMPLATES = [
         content: `【研报摘要】2024年一季度玉米市场回顾：受东北产区上量节奏影响，1月份玉米价格整体承压运行。预计2月份随着农户惜售增强及下游补库需求启动，价格有望企稳反弹。核心观点：关注春节前后贸易商建库节奏。`,
         events: [],
         insights: [
-            { title: 'Q1市场展望', content: '预计2月份价格企稳反弹，关注春节前后贸易商建库', direction: 'up', timeframe: 'medium' },
+            { title: 'Q1市场展望', content: '预计2月份价格企稳反弹，关注春节前后贸易商建库', direction: 'Bullish', timeframe: 'medium', confidence: 78 },
+            { title: '供需格局', content: '东北产区上量节奏是当前主要影响因素', direction: 'Neutral', timeframe: 'short', confidence: 85 },
         ],
+        pricePoints: [],
+        marketSentiment: {
+            overall: 'mixed',
+            score: 25,
+            traders: '贸易商建库意愿逐步增强',
+            farmers: '农户惜售情绪上升',
+            summary: '市场分歧中偏乐观，关注节后走势',
+        },
+        forecast: {
+            shortTerm: '1月份价格承压运行',
+            mediumTerm: '2月份有望企稳反弹',
+            riskLevel: 'medium',
+            keyFactors: ['农户售粮节奏', '贸易商建库', '下游需求启动'],
+        },
     },
     {
         location: '吉林长春',
@@ -175,8 +302,86 @@ const INTEL_TEMPLATES = [
             { subject: '长春收购商', action: '下调挂牌', content: '挂牌价下调10元至2280元/吨', impact: '压制收购价', sentiment: 'bearish' },
         ],
         insights: [
-            { title: '农户惜售', content: '农户惜售心态浓厚，节前售粮压力有限', direction: 'stable', timeframe: 'short' },
+            { title: '农户惜售', content: '农户惜售心态浓厚，节前售粮压力有限', direction: 'Bullish', timeframe: 'short', confidence: 75 },
         ],
+        pricePoints: [
+            { location: '长春地区', price: 2280, change: -10, unit: '元/吨', commodity: '玉米', note: '收购商挂牌价' },
+        ],
+        marketSentiment: {
+            overall: 'mixed',
+            score: -5,
+            traders: '收购商压价意愿明显',
+            farmers: '农户惜售心态浓厚',
+            summary: '产区购销博弈，价格小幅承压',
+        },
+        forecast: {
+            shortTerm: '节前售粮压力有限',
+            mediumTerm: '关注节后售粮高峰',
+            riskLevel: 'medium',
+            keyFactors: ['农户售粮节奏', '烘干塔开工', '收购价格'],
+        },
+    },
+    // 新增：多价格点异动数据（用于测试 PriceAlertCard）
+    {
+        location: '东北产区',
+        region: ['辽宁省', '吉林省', '黑龙江省'],
+        content: `【东北产区价格异动】今日东北主产区玉米价格普遍上涨，锦州港涨15元至2355元/吨，大连港涨20元至2360元/吨，营口港涨18元至2345元/吨。深加工企业同步提价，象屿生化涨25元，嘉吉涨20元，中粮涨15元。市场看涨情绪升温，贸易商建库意愿增强。`,
+        events: [
+            { subject: '东北产区', action: '集体涨价', content: '主产区价格普遍上涨15-25元', impact: '提振市场信心', sentiment: 'bullish' },
+        ],
+        insights: [
+            { title: '涨价潮来袭', content: '产区和港口集体涨价，短期看涨', direction: 'Bullish', timeframe: 'short', confidence: 88 },
+        ],
+        pricePoints: [
+            { location: '锦州港', price: 2355, change: 15, unit: '元/吨', commodity: '玉米', note: '收购价' },
+            { location: '大连港', price: 2360, change: 20, unit: '元/吨', commodity: '玉米', note: '平舱价' },
+            { location: '营口港', price: 2345, change: 18, unit: '元/吨', commodity: '玉米', note: '收购价' },
+            { location: '象屿生化', price: 2725, change: 25, unit: '元/吨', commodity: '玉米', note: '挂牌价' },
+            { location: '嘉吉生化', price: 2710, change: 20, unit: '元/吨', commodity: '玉米', note: '挂牌价' },
+            { location: '中粮生化', price: 2695, change: 15, unit: '元/吨', commodity: '玉米', note: '挂牌价' },
+        ],
+        marketSentiment: {
+            overall: 'bullish',
+            score: 72,
+            traders: '贸易商建库意愿明显增强',
+            processors: '深加工同步提价抢粮',
+            farmers: '农户惜售情绪加重',
+            summary: '市场看涨情绪升温，多方抢粮',
+        },
+        forecast: {
+            shortTerm: '短期价格继续上行',
+            mediumTerm: '中期关注到港量变化',
+            riskLevel: 'low',
+            keyFactors: ['到港节奏', '深加工需求', '贸易商库存'],
+        },
+    },
+    // 新增：纯洞察类数据（用于测试 MarketInsightCard）
+    {
+        location: '行业研究',
+        region: ['全国'],
+        content: `【市场深度分析】当前玉米市场呈现三大特征：一是产区惜售情绪浓厚，基层余粮约6成，高于去年同期；二是港口库存处于相对低位，对价格形成支撑；三是下游需求启动偏慢，饲料企业采购节奏放缓。综合来看，短期价格以稳为主，中期关注节后售粮节奏。`,
+        events: [],
+        insights: [
+            { title: '基层余粮偏高', content: '产区基层余粮约6成，高于去年同期', direction: 'Bearish', timeframe: 'medium', confidence: 82, factors: ['余粮水平', '售粮节奏'] },
+            { title: '港口库存偏低', content: '港口库存处于相对低位，对价格形成支撑', direction: 'Bullish', timeframe: 'short', confidence: 85, factors: ['库存', '到港量'] },
+            { title: '需求启动偏慢', content: '下游需求启动偏慢，饲料企业采购节奏放缓', direction: 'Bearish', timeframe: 'short', confidence: 78, factors: ['饲料需求', '采购节奏'] },
+        ],
+        pricePoints: [],
+        marketSentiment: {
+            overall: 'mixed',
+            score: 5,
+            traders: '贸易商持观望态度',
+            processors: '饲料企业采购节奏放缓',
+            farmers: '农户惜售情绪浓厚',
+            summary: '多空因素交织，市场分歧明显',
+        },
+        forecast: {
+            shortTerm: '短期价格以稳为主',
+            mediumTerm: '中期关注节后售粮节奏',
+            longTerm: '长期看供需格局改善',
+            riskLevel: 'medium',
+            keyFactors: ['基层售粮', '港口库存', '下游需求'],
+        },
     },
 ];
 
@@ -270,8 +475,8 @@ async function main() {
     let eventCount = 0;
     let insightCount = 0;
 
-    // 生成50条情报记录
-    for (let i = 0; i < 50; i++) {
+    // 生成100条情报记录
+    for (let i = 0; i < 100; i++) {
         const template = randomPick(INTEL_TEMPLATES);
         const daysAgo = Math.floor(Math.random() * 30); // 最近30天
         const effectiveTime = randomDate(daysAgo);

@@ -28,9 +28,19 @@ export const ReportDistributionCharts: React.FC<ReportDistributionChartsProps> =
         angleField: 'value',
         colorField: 'type',
         radius: 0.8,
+        innerRadius: 0.6, // Donut chart
         label: {
-            type: 'outer',
-            content: '{name} {percentage}',
+            text: 'value',
+            style: {
+                fontWeight: 'bold',
+            },
+        },
+        legend: {
+            color: {
+                title: false,
+                position: 'right',
+                rowPadding: 5,
+            },
         },
         interactions: [
             {
@@ -44,6 +54,9 @@ export const ReportDistributionCharts: React.FC<ReportDistributionChartsProps> =
         xField: 'source',
         yField: 'count',
         label: {
+            text: (originData: SourceData) => {
+                return `${originData.count}`;
+            },
             position: 'top' as const,
             style: {
                 fill: '#000000',
@@ -55,6 +68,9 @@ export const ReportDistributionCharts: React.FC<ReportDistributionChartsProps> =
                 autoRotate: false,
                 autoHide: true,
             },
+        },
+        style: {
+            fill: 'l(270) 0:#ffffff 0.5:#7ec2f3 1:#1890ff',
         },
         meta: {
             source: {
@@ -70,12 +86,16 @@ export const ReportDistributionCharts: React.FC<ReportDistributionChartsProps> =
         <Row gutter={[16, 16]}>
             <Col xs={24} lg={12}>
                 <Card title="研报类型分布" bordered={false} loading={loading}>
-                    <Pie {...pieConfig} />
+                    <div style={{ height: 300 }}>
+                        <Pie {...pieConfig} />
+                    </div>
                 </Card>
             </Col>
             <Col xs={24} lg={12}>
                 <Card title="来源机构排行" bordered={false} loading={loading}>
-                    <Column {...columnConfig} />
+                    <div style={{ height: 300 }}>
+                        <Column {...columnConfig} />
+                    </div>
                 </Card>
             </Col>
         </Row>

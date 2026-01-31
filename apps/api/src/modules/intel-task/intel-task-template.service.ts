@@ -163,7 +163,7 @@ export class IntelTaskTemplateService {
      * 解析分发规则，获取目标用户 ID 列表
      */
     private async resolveAssignees(template: any): Promise<string[]> {
-        const { assigneeMode, assigneeIds, departmentIds, organizationIds } = template;
+        const { assigneeMode, assigneeIds, departmentIds, organizationIds, collectionPointId, collectionPointIds } = template;
 
         // 简单去重集合
         const targetIds = new Set<string>();
@@ -200,6 +200,32 @@ export class IntelTaskTemplateService {
             users.forEach(u => targetIds.add(u.id));
         }
 
+        // 5. 按采集点分配 (新增)
+        if (assigneeMode === 'BY_COLLECTION_POINT') {
+            // 如果指定了单个采集点
+            if (collectionPointId) {
+                const allocations = await this.prisma.collectionPointAllocation.findMany({
+                    where: {
+                        collectionPointId,
+                        isActive: true,
+                    },
+                    select: { userId: true },
+                });
+                allocations.forEach(a => targetIds.add(a.userId));
+            }
+            // 如果指定了多个采集点
+            if (collectionPointIds && collectionPointIds.length > 0) {
+                const allocations = await this.prisma.collectionPointAllocation.findMany({
+                    where: {
+                        collectionPointId: { in: collectionPointIds },
+                        isActive: true,
+                    },
+                    select: { userId: true },
+                });
+                allocations.forEach(a => targetIds.add(a.userId));
+            }
+        }
+
         return Array.from(targetIds);
     }
 
@@ -213,5 +239,124 @@ export class IntelTaskTemplateService {
     private generateTaskTitle(templateName: string, periodKey?: string): string {
         const dateStr = periodKey || new Date().toLocaleDateString();
         return `${templateName} [${dateStr}]`;
+    }
+
+    /**
+     * 按采集点类型批量执行模板 (新增)
+     * 为指定类型的所有采集点生成任务，分配给各自的负责人
+     */
+    async executeTemplateByPointType(templateId: string, triggeredById: string) {
+        const template = await this.prisma.intelTaskTemplate.findUnique({
+            where: { id: templateId },
+        });
+
+        if (!template) {
+            throw new NotFoundException('任务模板不存在');
+        }
+
+        if (!template.targetPointType) {
+            throw new BadRequestException('模板未配置目标采集点类型');
+        }
+
+        // 查找该类型的所有活跃采集点及其负责人
+        const points = await this.prisma.collectionPoint.findMany({
+            where: {
+                type: template.targetPointType,
+                isActive: true,
+            },
+            include: {
+                allocations: {
+                    where: { isActive: true },
+                    select: { userId: true },
+                },
+            },
+        });
+
+        if (points.length === 0) {
+            return { count: 0, message: '未找到符合条件的采集点' };
+        }
+
+        const runAt = new Date();
+        const periodInfo = computePeriodInfo(template, runAt, undefined);
+        const legacyDeadline = new Date(runAt);
+        legacyDeadline.setHours(legacyDeadline.getHours() + template.deadlineOffset);
+        const effectiveDeadline = periodInfo.dueAt || legacyDeadline;
+
+        // 获取所有相关用户的组织/部门信息
+        const allUserIds = [...new Set(points.flatMap(p => p.allocations.map(a => a.userId)))];
+        const assigneeSnapshots = await this.prisma.user.findMany({
+            where: { id: { in: allUserIds } },
+            select: { id: true, organizationId: true, departmentId: true },
+        });
+        const assigneeMap = new Map(
+            assigneeSnapshots.map(item => [
+                item.id,
+                { organizationId: item.organizationId, departmentId: item.departmentId },
+            ]),
+        );
+
+        // 为每个采集点的每个负责人创建任务
+        const tasksToCreate: any[] = [];
+        for (const point of points) {
+            for (const allocation of point.allocations) {
+                const snapshot = assigneeMap.get(allocation.userId);
+                tasksToCreate.push({
+                    title: this.generateTaskTitle(template.name, periodInfo.periodKey || undefined),
+                    description: template.description || undefined,
+                    type: template.taskType,
+                    priority: template.priority,
+                    deadline: effectiveDeadline,
+                    periodStart: periodInfo.periodStart || undefined,
+                    periodEnd: periodInfo.periodEnd || undefined,
+                    dueAt: periodInfo.dueAt || undefined,
+                    periodKey: periodInfo.periodKey || undefined,
+                    assigneeId: allocation.userId,
+                    assigneeOrgId: snapshot?.organizationId || undefined,
+                    assigneeDeptId: snapshot?.departmentId || undefined,
+                    createdById: triggeredById,
+                    templateId: template.id,
+                    collectionPointId: point.id,
+                });
+            }
+        }
+
+        if (tasksToCreate.length === 0) {
+            return { count: 0, message: '采集点均未分配负责人' };
+        }
+
+        await this.taskService.createMany(tasksToCreate);
+
+        await this.prisma.intelTaskTemplate.update({
+            where: { id: template.id },
+            data: { lastRunAt: runAt },
+        });
+
+        return {
+            count: tasksToCreate.length,
+            pointCount: points.length,
+            message: `成功为 ${points.length} 个采集点创建 ${tasksToCreate.length} 个任务`,
+        };
+    }
+
+    /**
+     * 执行模板 (统一入口)
+     * 根据模板配置自动选择执行方式
+     */
+    async executeTemplate(templateId: string, triggeredById: string) {
+        const template = await this.prisma.intelTaskTemplate.findUnique({
+            where: { id: templateId },
+        });
+
+        if (!template) {
+            throw new NotFoundException('任务模板不存在');
+        }
+
+        // 如果配置了采集点类型，按类型批量生成
+        if (template.targetPointType) {
+            return this.executeTemplateByPointType(templateId, triggeredById);
+        }
+
+        // 否则使用原有逻辑
+        return this.distributeTasks({ templateId }, triggeredById);
     }
 }

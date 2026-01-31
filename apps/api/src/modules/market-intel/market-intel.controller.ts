@@ -11,6 +11,7 @@ import {
     MarketIntelQueryRequest,
     AnalyzeContentRequest,
     CreateManualResearchReportRequest,
+    PromoteToReportRequest,
 } from './dto';
 import {
     CreatePriceDataDto,
@@ -82,6 +83,38 @@ export class MarketIntelController {
     @Get('test-ai')
     async testAI() {
         return this.marketIntelService.testAI();
+    }
+
+    @Post('documents/batch-delete')
+    async batchDelete(@Body() body: { ids: string[] }) {
+        if (!body.ids || !Array.isArray(body.ids)) {
+            throw new BadRequestException('ids array is required');
+        }
+        return this.marketIntelService.batchDelete(body.ids);
+    }
+
+    @Post('documents/batch-tags')
+    async batchUpdateTags(@Body() body: { ids: string[], addTags?: string[], removeTags?: string[] }) {
+        if (!body.ids || !Array.isArray(body.ids)) {
+            throw new BadRequestException('ids array is required');
+        }
+        return this.marketIntelService.batchUpdateTags(body.ids, body.addTags || [], body.removeTags || []);
+    }
+
+    @Get('documents/stats')
+    async getDocStats(@Query('days') days?: number) {
+        return this.marketIntelService.getDocStats(days ? Number(days) : 30);
+    }
+
+    @Patch(':id/tags')
+    async updateTags(
+        @Param('id') id: string,
+        @Body() body: { tags: string[] },
+    ) {
+        if (!body.tags || !Array.isArray(body.tags)) {
+            throw new BadRequestException('tags array is required');
+        }
+        return this.marketIntelService.updateTags(id, body.tags);
     }
 
     // --- A类：价格数据 ---
@@ -356,8 +389,13 @@ export class MarketIntelController {
     }
 
     @Get('research-reports/stats')
-    async getResearchReportStats() {
-        return this.researchReportService.getStats();
+    async getResearchReportStats(@Query('days') days?: string) {
+        return this.researchReportService.getStats({ days: days ? parseInt(days, 10) : undefined });
+    }
+
+    @Get('research-reports/by-intel/:intelId')
+    async findResearchReportByIntelId(@Param('intelId') intelId: string) {
+        return this.researchReportService.findByIntelId(intelId);
     }
 
     @Get('research-reports/:id')
@@ -378,6 +416,14 @@ export class MarketIntelController {
     @Post('research-reports/batch-delete')
     async batchRemoveResearchReports(@Body() body: { ids: string[] }) {
         return this.researchReportService.batchRemove(body.ids);
+    }
+
+    @Post('research-reports/batch-review')
+    async batchReviewResearchReports(@Body() body: { ids: string[]; status: 'PENDING' | 'APPROVED' | 'REJECTED' | 'ARCHIVED'; reviewerId: string }) {
+        if (!body.ids || !Array.isArray(body.ids)) {
+            throw new BadRequestException('ids array is required');
+        }
+        return this.researchReportService.batchUpdateReviewStatus(body.ids, body.status as any, body.reviewerId);
     }
 
     @Post('research-reports/export')
@@ -407,6 +453,16 @@ export class MarketIntelController {
         @Body() body: { status: 'PENDING' | 'APPROVED' | 'REJECTED'; reviewerId: string },
     ) {
         return this.researchReportService.updateReviewStatus(id, body.status, body.reviewerId);
+    }
+
+    // --- 文档升级为研报 (Promote to Report) ---
+
+    @Post(':id/promote-to-report')
+    async promoteToReport(
+        @Param('id') intelId: string,
+        @Body() dto: PromoteToReportRequest,
+    ) {
+        return this.researchReportService.promoteToReport(intelId, dto);
     }
 
 

@@ -36,7 +36,7 @@ import {
 } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import { IntelFilterState, DEFAULT_FILTER_STATE, BUILT_IN_PRESETS, FilterPreset } from '../types';
-import { ContentType, IntelSourceType } from '../../../types';
+import { IntelSourceType } from '../../../types';
 
 const { Title, Text } = Typography;
 const { RangePicker } = DatePicker;
@@ -48,12 +48,6 @@ interface AdvancedFilterProps {
 }
 
 // 常量定义
-const CONTENT_TYPE_OPTIONS = [
-    { label: '日报情报', value: ContentType.DAILY_REPORT, icon: <FileTextOutlined /> },
-    { label: '研报档案', value: ContentType.RESEARCH_REPORT, icon: <FileTextOutlined /> },
-    { label: '政策文件', value: ContentType.POLICY_DOC, icon: <FileTextOutlined /> },
-];
-
 const SOURCE_TYPE_OPTIONS = [
     { label: '市场信息', value: IntelSourceType.FIRST_LINE },
     { label: '官方发布', value: IntelSourceType.OFFICIAL },
@@ -175,36 +169,6 @@ export const AdvancedFilter: React.FC<AdvancedFilterProps> = ({
                         />
                     )}
                 </Space>
-            ),
-        },
-        {
-            key: 'contentType',
-            label: (
-                <Flex align="center" gap={6}>
-                    <FileTextOutlined />
-                    <span>内容类型</span>
-                    {filterState.contentTypes.length > 0 && (
-                        <Badge count={filterState.contentTypes.length} size="small" />
-                    )}
-                </Flex>
-            ),
-            children: (
-                <Checkbox.Group
-                    value={filterState.contentTypes}
-                    onChange={(vals) => onChange({ contentTypes: vals as ContentType[] })}
-                    style={{ width: '100%' }}
-                >
-                    <Space direction="vertical">
-                        {CONTENT_TYPE_OPTIONS.map(opt => (
-                            <Checkbox key={opt.value} value={opt.value}>
-                                <Flex align="center" gap={6}>
-                                    {opt.icon}
-                                    <span>{opt.label}</span>
-                                </Flex>
-                            </Checkbox>
-                        ))}
-                    </Space>
-                </Checkbox.Group>
             ),
         },
         {
@@ -417,7 +381,7 @@ export const AdvancedFilter: React.FC<AdvancedFilterProps> = ({
             {/* 筛选项 */}
             <Collapse
                 ghost
-                defaultActiveKey={['presets', 'time', 'contentType']}
+                defaultActiveKey={['presets', 'time', 'sourceType']}
                 items={collapseItems}
                 style={{ padding: '8px 0' }}
             />

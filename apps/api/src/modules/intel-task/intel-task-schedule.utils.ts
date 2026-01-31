@@ -1,7 +1,8 @@
 import { TaskCycleType } from '@packages/types';
+import { TaskCycleType as PrismaTaskCycleType } from '@prisma/client';
 
 type TemplateLike = {
-    cycleType: TaskCycleType;
+    cycleType: TaskCycleType | PrismaTaskCycleType;
     cycleConfig?: any;
     runAtMinute?: number;
     runDayOfWeek?: number | null;

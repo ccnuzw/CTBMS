@@ -2,9 +2,9 @@
 import React, { useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { PageContainer } from '@ant-design/pro-components';
-import { Row, Col, Spin, Button, Space, App, Typography, Card, Tag, theme, FloatButton, Anchor, Divider, List } from 'antd';
-import { ArrowLeftOutlined, DownloadOutlined as DownloadIcon, ClockCircleOutlined, EyeOutlined } from '@ant-design/icons';
-import { useResearchReport, useIncrementViewCount, useIncrementDownloadCount } from '../api/hooks';
+import { Row, Col, Spin, Button, Space, App, Typography, Card, Tag, theme, FloatButton, Anchor, Divider, List, Alert } from 'antd';
+import { ArrowLeftOutlined, DownloadOutlined as DownloadIcon, ClockCircleOutlined, EyeOutlined, FileTextOutlined, LinkOutlined } from '@ant-design/icons';
+import { useResearchReport, useIncrementViewCount, useIncrementDownloadCount, useMarketIntel } from '../api/hooks';
 import { AIAnalysisPanel } from './research-report-detail/AIAnalysisPanel';
 import { DocumentPreview } from './research-report-detail/DocumentPreview';
 import { RelatedReports } from './research-report-detail/RelatedReports';
@@ -20,6 +20,10 @@ export const ResearchReportDetailPage: React.FC = () => {
     const { data: report, isLoading, error } = useResearchReport(id || '');
     const { mutate: incrementView } = useIncrementViewCount();
     const { mutate: incrementDownload } = useIncrementDownloadCount();
+
+    // Fetch linked source document if intelId exists
+    const linkedIntelId = (report as any)?.intelId || (report as any)?.intel?.id;
+    const { data: sourceDocument } = useMarketIntel(linkedIntelId || '');
 
     // 本地轻量状态，保证下载/阅读后数值即时反馈
     const [localViewCount, setLocalViewCount] = useState<number>();
@@ -106,12 +110,21 @@ export const ResearchReportDetailPage: React.FC = () => {
     );
 
     const anchorItems = [
+        { key: 'source', href: '#report-source', title: '源文档' },
         { key: 'highlights', href: '#report-highlights', title: '关键观点' },
         { key: 'reader', href: '#report-reader', title: '正文/原文' },
         { key: 'data', href: '#report-data', title: '关键数据' },
         attachments && attachments.length > 0 ? { key: 'attachments', href: '#report-attachments', title: '附件列表' } : null,
         { key: 'related', href: '#report-related', title: '相关研报' },
     ].filter(Boolean) as { key: string; href: string; title: string }[];
+
+    const handleBack = () => {
+        if (window.history.length > 1) {
+            navigate(-1);
+        } else {
+            navigate('/intel/knowledge?tab=library&content=reports');
+        }
+    };
 
     return (
         <PageContainer
@@ -150,7 +163,8 @@ export const ResearchReportDetailPage: React.FC = () => {
                     <Col xs={24} md={8}>
                         <Space direction="vertical" style={{ width: '100%', alignItems: 'flex-end' }} size="small">
                             <Space wrap>
-                                <Button icon={<ArrowLeftOutlined />} onClick={() => navigate('/intel/research-reports')}>返回</Button>
+                                <Button icon={<ArrowLeftOutlined />} onClick={handleBack}>返回</Button>
+                                <Button onClick={() => navigate(`/intel/knowledge/reports/${id}/edit`)}>编辑</Button>
                                 <Button type="primary" icon={<DownloadIcon />} onClick={() => handleDownload()}>下载原文</Button>
                             </Space>
                             <Space size="middle" wrap>
@@ -165,6 +179,52 @@ export const ResearchReportDetailPage: React.FC = () => {
             <Row gutter={[24, 24]}>
                 <Col xs={24} lg={18}>
                     <Space direction="vertical" size="large" style={{ width: '100%' }}>
+                        {/* Source Document Section */}
+                        {linkedIntelId && (
+                            <div id="report-source">
+                                <Alert
+                                    type="info"
+                                    showIcon
+                                    icon={<LinkOutlined />}
+                                    style={{ borderRadius: token.borderRadius }}
+                                    message={
+                                        <Space>
+                                            <FileTextOutlined />
+                                            <Typography.Text strong>基于以下素材生成</Typography.Text>
+                                        </Space>
+                                    }
+                                    description={
+                                        <div style={{ marginTop: 8 }}>
+                                            <Space direction="vertical" size="small">
+                                                <Typography.Text>
+                                                    {sourceDocument?.summary?.substring(0, 100) ||
+                                                     sourceDocument?.rawContent?.substring(0, 100) ||
+                                                     '源文档'}
+                                                    {((sourceDocument?.summary?.length || 0) > 100 ||
+                                                      (sourceDocument?.rawContent?.length || 0) > 100) && '...'}
+                                                </Typography.Text>
+                                                <Space>
+                                                    <Button
+                                                        type="link"
+                                                        size="small"
+                                                        style={{ padding: 0 }}
+                                                        onClick={() => navigate(`/intel/knowledge/documents/${linkedIntelId}`)}
+                                                    >
+                                                        查看原始文档
+                                                    </Button>
+                                                    {sourceDocument?.createdAt && (
+                                                        <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                                                            上传于 {dayjs(sourceDocument.createdAt).format('YYYY-MM-DD HH:mm')}
+                                                        </Typography.Text>
+                                                    )}
+                                                </Space>
+                                            </Space>
+                                        </div>
+                                    }
+                                />
+                            </div>
+                        )}
+
                         <div id="report-highlights">
                             <AIAnalysisPanel report={report} mode="summary" />
                         </div>

@@ -20,6 +20,8 @@ import { ExtractionConfigModule } from './modules/extraction-config';
 import { LoggerMiddleware } from './common/middleware/logger.middleware';
 import { IntelTaskModule } from './modules/intel-task';
 import { ConfigModule } from './modules/config/config.module';
+import { CollectionPointAllocationModule } from './modules/collection-point-allocation';
+import { PriceSubmissionModule } from './modules/price-submission';
 
 @Module({
     imports: [
@@ -42,6 +44,8 @@ import { ConfigModule } from './modules/config/config.module';
         ExtractionConfigModule,
         IntelTaskModule,
         ConfigModule,
+        CollectionPointAllocationModule,
+        PriceSubmissionModule,
     ],
     controllers: [AppController],
     providers: [],

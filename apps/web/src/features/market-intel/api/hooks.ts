@@ -1,4 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { message } from 'antd';
 import { apiClient } from '../../../api/client';
 import {
     CreateMarketIntelDto,
@@ -148,7 +149,13 @@ export const useMarketIntels = (query?: Partial<MarketIntelQuery>) => {
             if (query) {
                 Object.entries(query).forEach(([key, value]) => {
                     if (value !== undefined && value !== null) {
-                        params.append(key, String(value));
+                        if (value instanceof Date) {
+                            params.append(key, value.toISOString());
+                        } else if (Array.isArray(value)) {
+                            value.forEach((item) => params.append(key, String(item)));
+                        } else {
+                            params.append(key, String(value));
+                        }
                     }
                 });
             }
@@ -219,15 +226,59 @@ export const useUpdateMarketIntel = () => {
 
 export const useDeleteMarketIntel = () => {
     const queryClient = useQueryClient();
-
     return useMutation({
         mutationFn: async (id: string) => {
             const res = await apiClient.delete(`/market-intel/${id}`);
             return res.data;
         },
         onSuccess: () => {
+            message.success('删除成功');
             queryClient.invalidateQueries({ queryKey: ['market-intels'] });
-            queryClient.invalidateQueries({ queryKey: ['market-intel-stats'] });
+        },
+    });
+};
+
+export const useUpdateMarketIntelTags = () => {
+    const queryClient = useQueryClient();
+    return useMutation({
+        mutationFn: async ({ id, tags }: { id: string; tags: string[] }) => {
+            const res = await apiClient.patch(`/market-intel/${id}/tags`, { tags });
+            return res.data;
+        },
+        onSuccess: () => {
+            message.success('标签更新成功');
+            queryClient.invalidateQueries({ queryKey: ['market-intels'] });
+        },
+    });
+};
+
+export const useBatchDeleteMarketIntel = () => {
+    const queryClient = useQueryClient();
+    return useMutation({
+        mutationFn: async (ids: string[]) => {
+            const res = await apiClient.post('/market-intel/documents/batch-delete', { ids });
+            return res.data;
+        },
+        onSuccess: () => {
+            message.success('批量删除成功');
+            queryClient.invalidateQueries({ queryKey: ['market-intels'] });
+        },
+    });
+};
+
+export const useBatchUpdateTags = () => {
+    const queryClient = useQueryClient();
+    return useMutation({
+        mutationFn: async (params: { ids: string[]; addTags: string[]; removeTags: string[] }) => {
+            const res = await apiClient.post('/market-intel/documents/batch-tags', params);
+            return res.data;
+        },
+        onSuccess: (data) => {
+            message.success(`已为 ${data.updatedCount} 个项目更新标签`);
+            queryClient.invalidateQueries({ queryKey: ['market-intels'] });
+        },
+        onError: () => {
+            message.error('标签更新失败');
         },
     });
 };
@@ -246,6 +297,18 @@ export const useMarketIntelStats = () => {
         refetchInterval: 30000, // 每 30 秒刷新
     });
 };
+
+export const useDocumentStats = (days = 30) => {
+    return useQuery({
+        queryKey: ['document-stats', days],
+        queryFn: async () => {
+            const res = await apiClient.get('/market-intel/documents/stats', { params: { days } });
+            return res.data;
+        }
+    });
+};
+
+
 
 // =============================================
 // 排行榜
@@ -307,6 +370,8 @@ export const useResearchReports = (query?: Partial<ResearchReportQuery>) => {
                     if (value !== undefined && value !== null) {
                         if (value instanceof Date) {
                             params.append(key, value.toISOString());
+                        } else if (Array.isArray(value)) {
+                            value.forEach((item) => params.append(key, String(item)));
                         } else {
                             params.append(key, String(value));
                         }
@@ -329,6 +394,19 @@ export const useResearchReport = (id: string) => {
             return res.data;
         },
         enabled: !!id,
+    });
+};
+
+export const useResearchReportByIntelId = (intelId: string) => {
+    return useQuery<ResearchReportResponse | null>({
+        queryKey: ['research-reports-by-intel', intelId],
+        queryFn: async () => {
+            const res = await apiClient.get<ResearchReportResponse | null>(
+                `/market-intel/research-reports/by-intel/${intelId}`,
+            );
+            return res.data || null;
+        },
+        enabled: !!intelId,
     });
 };
 
@@ -392,11 +470,15 @@ export const useDeleteResearchReport = () => {
     });
 };
 
-export const useResearchReportStats = () => {
+export const useResearchReportStats = (options?: { days?: number }) => {
     return useQuery<any>({
-        queryKey: ['research-report-stats'],
+        queryKey: ['research-report-stats', options?.days],
         queryFn: async () => {
-            const res = await apiClient.get<any>('/market-intel/research-reports/stats');
+            const params = new URLSearchParams();
+            if (options?.days) {
+                params.append('days', String(options.days));
+            }
+            const res = await apiClient.get<any>(`/market-intel/research-reports/stats?${params.toString()}`);
             return res.data;
         },
     });
@@ -461,6 +543,21 @@ export const useBatchDeleteResearchReports = () => {
     });
 };
 
+export const useBatchReviewResearchReports = () => {
+    const queryClient = useQueryClient();
+
+    return useMutation({
+        mutationFn: async ({ ids, status, reviewerId }: { ids: string[]; status: 'PENDING' | 'APPROVED' | 'REJECTED' | 'ARCHIVED'; reviewerId: string }) => {
+            const res = await apiClient.post('/market-intel/research-reports/batch-review', { ids, status, reviewerId });
+            return res.data;
+        },
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['research-reports'] });
+            queryClient.invalidateQueries({ queryKey: ['research-report-stats'] });
+        },
+    });
+};
+
 export const useExportResearchReports = () => {
     return useMutation({
         mutationFn: async ({ ids, query }: { ids?: string[]; query?: any }) => {
@@ -482,6 +579,43 @@ export const useExportResearchReports = () => {
     });
 };
 
+// =============================================
+// 文档升级为研报 (Promote to Report)
+// =============================================
+
+interface PromoteToReportRequest {
+    intelId: string;
+    reportType: string;
+    triggerDeepAnalysis?: boolean;
+}
+
+interface PromoteToReportResponse {
+    success: boolean;
+    reportId: string;
+    report: ResearchReportResponse;
+}
+
+export const usePromoteToReport = () => {
+    const queryClient = useQueryClient();
+
+    return useMutation({
+        mutationFn: async (data: PromoteToReportRequest) => {
+            const res = await apiClient.post<PromoteToReportResponse>(
+                `/market-intel/${data.intelId}/promote-to-report`,
+                {
+                    reportType: data.reportType,
+                    triggerDeepAnalysis: data.triggerDeepAnalysis ?? true,
+                }
+            );
+            return res.data;
+        },
+        onSuccess: (_, variables) => {
+            queryClient.invalidateQueries({ queryKey: ['research-reports'] });
+            queryClient.invalidateQueries({ queryKey: ['research-report-stats'] });
+            queryClient.invalidateQueries({ queryKey: ['market-intels', variables.intelId] });
+        },
+    });
+};
 
 // =============================================
 // A类：价格数据

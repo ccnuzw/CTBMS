@@ -26,9 +26,20 @@ import {
     ResearchReportDetailPage,
     ResearchReportDashboard,
     ResearchReportCreatePage,
+    KnowledgePortal,
+    KnowledgeTabs,
+    Workbench,
+    DocumentDetailPage,
 } from '../features/market-intel';
 import { ExtractionConfigPage } from '../features/extraction-config';
 import { systemConfigRoutes } from '../features/system-config';
+import {
+    PriceReportingDashboard,
+    PriceEntryForm,
+    PointAllocationManager,
+    PriceReviewPanel,
+    TaskTemplateManager,
+} from '../features/price-reporting';
 
 export const router = createBrowserRouter([
     {
@@ -91,19 +102,38 @@ export const router = createBrowserRouter([
                     { path: 'dashboard', element: <Dashboard /> },
                     { path: 'workbench', element: <OperationalWorkbench /> },
                     { path: 'search', element: <UniversalSearch /> },
-                    { path: 'research-reports/dashboard', element: <ResearchReportDashboard /> },
-                    { path: 'research-reports/create', element: <ResearchReportCreatePage /> },
-                    { path: 'research-reports', element: <ResearchReportListPage /> },
-                    { path: 'research-reports/:id', element: <ResearchReportDetailPage /> },
+
                     { path: 'entry', element: <DataEntry /> },
                     { path: 'market-data', element: <MarketData /> },
                     { path: 'feed', element: <IntelligenceFeed /> },
                     { path: 'feed/:id', element: <IntelligenceFeed /> },
-                    { path: 'knowledge', element: <KnowledgeBase /> },
+
+                    {
+                        path: 'knowledge',
+                        children: [
+                            { index: true, element: <KnowledgeTabs /> },
+                            { path: 'workbench', element: <Workbench /> },
+                            { path: 'documents/:id', element: <DocumentDetailPage /> },
+                            { path: 'reports/create', element: <ResearchReportCreatePage /> },
+                            { path: 'reports/:id', element: <ResearchReportDetailPage /> },
+                            { path: 'reports/:id/edit', element: <ResearchReportCreatePage /> },
+                        ]
+                    },
                     { path: 'leaderboard', element: <Leaderboard /> },
                     { path: 'collection-points', element: <CollectionPointManager /> },
                     { path: 'tasks', element: <TaskDistributionPage /> },
                     { path: 'extraction-config', element: <ExtractionConfigPage /> },
+                ]
+            },
+            // 价格填报模块路由
+            {
+                path: 'price-reporting',
+                children: [
+                    { index: true, element: <PriceReportingDashboard /> },
+                    { path: 'submit/:pointId', element: <PriceEntryForm /> },
+                    { path: 'allocation', element: <PointAllocationManager /> },
+                    { path: 'review', element: <PriceReviewPanel /> },
+                    { path: 'templates', element: <TaskTemplateManager /> },
                 ]
             },
         ],

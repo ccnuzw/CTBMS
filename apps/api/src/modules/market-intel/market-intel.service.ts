@@ -97,6 +97,186 @@ export class MarketIntelService {
     }
 
     /**
+     * 获取文档归档统计 (C类)
+     */
+    async getDocStats(days = 30) {
+        const now = new Date();
+        const startDate = new Date(now);
+        startDate.setDate(now.getDate() - days);
+
+        const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+
+        const [
+            total,
+            monthlyNew,
+            sourceGrouping,
+            scoreAgg,
+            trendGrouping,
+            intels
+        ] = await Promise.all([
+            // 总量
+            this.prisma.marketIntel.count({
+                where: { category: IntelCategory.C_DOCUMENT }
+            }),
+            // 本月新增
+            this.prisma.marketIntel.count({
+                where: {
+                    category: IntelCategory.C_DOCUMENT,
+                    createdAt: { gte: monthStart }
+                }
+            }),
+            // 来源分布
+            this.prisma.marketIntel.groupBy({
+                by: ['sourceType'],
+                where: { category: IntelCategory.C_DOCUMENT },
+                _count: true
+            }),
+            // 平均分
+            this.prisma.marketIntel.aggregate({
+                where: { category: IntelCategory.C_DOCUMENT },
+                _avg: { totalScore: true }
+            }),
+            // 趋势 (简化版：按天分组需用 raw query 或后期处理，这里用 groupBy effectiveTime 太细，暂取最近列表后期处理)
+            // 为简单起见，这里只取最近 N 天的数据在内存聚合
+            this.prisma.marketIntel.findMany({
+                where: {
+                    category: IntelCategory.C_DOCUMENT,
+                    createdAt: { gte: startDate }
+                },
+                select: { createdAt: true }
+            }),
+            // 取最近文档用于提取标签
+            this.prisma.marketIntel.findMany({
+                where: { category: IntelCategory.C_DOCUMENT },
+                orderBy: { createdAt: 'desc' },
+                take: 50,
+                select: { aiAnalysis: true }
+            })
+        ]);
+
+        // 处理趋势
+        const trendMap = new Map<string, number>();
+        // 初始化日期
+        for (let d = new Date(startDate); d <= now; d.setDate(d.getDate() + 1)) {
+            trendMap.set(d.toISOString().split('T')[0], 0);
+        }
+        trendGrouping.forEach(item => {
+            const date = item.createdAt.toISOString().split('T')[0];
+            if (trendMap.has(date)) {
+                trendMap.set(date, (trendMap.get(date) || 0) + 1);
+            }
+        });
+
+        const trend = Array.from(trendMap.entries())
+            .map(([date, count]) => ({ date, count }))
+            .sort((a, b) => a.date.localeCompare(b.date));
+
+        // 处理标签
+        const tagCount = new Map<string, number>();
+        intels.forEach(intel => {
+            const tags = (intel.aiAnalysis as any)?.tags || [];
+            if (Array.isArray(tags)) {
+                tags.forEach(tag => {
+                    if (typeof tag === 'string') {
+                        tagCount.set(tag, (tagCount.get(tag) || 0) + 1);
+                    }
+                });
+            }
+        });
+
+        const topTags = Array.from(tagCount.entries())
+            .map(([tag, count]) => ({ tag, count }))
+            .sort((a, b) => b.count - a.count)
+            .slice(0, 20);
+
+        return {
+            total,
+            monthlyNew,
+            bySource: sourceGrouping.map(g => ({
+                name: g.sourceType,
+                value: g._count
+            })),
+            avgScore: Math.round(scoreAgg._avg.totalScore || 0),
+            trend,
+            topTags
+        };
+    }
+
+    /**
+     * 批量删除情报
+     */
+    async batchDelete(ids: string[]) {
+        console.log('[MarketIntelService.batchDelete] Deleting ids:', ids);
+        return this.prisma.marketIntel.deleteMany({
+            where: {
+                id: { in: ids },
+            },
+        });
+    }
+
+    /**
+     * 更新情报标签
+     */
+    async updateTags(id: string, tags: string[]) {
+        const intel = await this.prisma.marketIntel.findUnique({ where: { id } });
+        if (!intel) throw new NotFoundException('Intel not found');
+
+        const aiAnalysis = (intel.aiAnalysis as any) || {};
+        aiAnalysis.tags = tags;
+
+        return this.prisma.marketIntel.update({
+            where: { id },
+            data: { aiAnalysis },
+        });
+    }
+
+    /**
+     * 批量更新情报标签
+     * @param ids ID列表
+     * @param addTags 要添加的标签
+     * @param removeTags 要移除的标签
+     */
+    async batchUpdateTags(ids: string[], addTags: string[], removeTags: string[]) {
+        // 1. 查出所有涉及的情报及其当前 AI 分析数据
+        const intels = await this.prisma.marketIntel.findMany({
+            where: { id: { in: ids } },
+            select: { id: true, aiAnalysis: true }
+        });
+
+        if (intels.length === 0) {
+            return { success: true, updatedCount: 0 };
+        }
+
+        // 2. 构建更新操作
+        const updates = intels.map(intel => {
+            const currentAnalysis = (intel.aiAnalysis as any) || {};
+            let currentTags: string[] = Array.isArray(currentAnalysis.tags) ? currentAnalysis.tags : [];
+
+            // 移除指定标签
+            if (removeTags.length > 0) {
+                currentTags = currentTags.filter(t => !removeTags.includes(t));
+            }
+
+            // 添加新标签并去重
+            if (addTags.length > 0) {
+                currentTags = Array.from(new Set([...currentTags, ...addTags]));
+            }
+
+            currentAnalysis.tags = currentTags;
+
+            return this.prisma.marketIntel.update({
+                where: { id: intel.id },
+                data: { aiAnalysis: currentAnalysis }
+            });
+        });
+
+        // 3. 事务执行
+        await this.prisma.$transaction(updates);
+
+        return { success: true, updatedCount: intels.length };
+    }
+
+    /**
      * 批量创建价格数据（从日报解析结果）
      * 增强版：自动关联采集点和行政区划
      */
@@ -315,6 +495,7 @@ export class MarketIntelService {
                     author: {
                         select: { id: true, name: true, avatar: true },
                     },
+                    attachments: true,
                 },
             }),
             this.prisma.marketIntel.count({ where }),
@@ -339,6 +520,7 @@ export class MarketIntelService {
                 author: {
                     select: { id: true, name: true, avatar: true, position: true },
                 },
+                attachments: true,
             },
         });
 

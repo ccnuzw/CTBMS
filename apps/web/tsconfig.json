@@ -5,6 +5,12 @@
         "paths": {
             "@/*": [
                 "src/*"
+            ],
+            "@packages/utils": [
+                "../../packages/utils/src"
+            ],
+            "@packages/types": [
+                "../../packages/types/src"
             ]
         }
     },

@@ -28,7 +28,7 @@ export const INTEL_CATEGORY_LABELS: Record<IntelCategory, string> = {
 };
 
 export const INTEL_SOURCE_TYPE_LABELS: Record<IntelSourceType, string> = {
-  [IntelSourceType.FIRST_LINE]: '市场信息',
+  [IntelSourceType.FIRST_LINE]: '一线采集',
   [IntelSourceType.COMPETITOR]: '竞对情报',
   [IntelSourceType.OFFICIAL]: '官方发布',
   [IntelSourceType.RESEARCH_INST]: '第三方研究机构',
@@ -39,8 +39,8 @@ export const INTEL_SOURCE_TYPE_LABELS: Record<IntelSourceType, string> = {
 // 统一入口：内容类型
 export enum ContentType {
   DAILY_REPORT = 'DAILY_REPORT',     // 市场日报（提取价格/事件/洞察）
-  RESEARCH_REPORT = 'RESEARCH_REPORT', // 研究报告（存入知识库）
-  POLICY_DOC = 'POLICY_DOC',         // 政策文件
+  RESEARCH_REPORT = 'RESEARCH_REPORT', // 研究报告（存入知识库）- 仅从知识库入口创建
+  POLICY_DOC = 'POLICY_DOC',         // 政策文件 - 仅从知识库入口创建
 }
 
 export const CONTENT_TYPE_LABELS: Record<ContentType, string> = {
@@ -61,6 +61,15 @@ export const CONTENT_TYPE_SOURCE_OPTIONS: Record<ContentType, IntelSourceType[]>
   [ContentType.RESEARCH_REPORT]: [IntelSourceType.INTERNAL_REPORT, IntelSourceType.RESEARCH_INST, IntelSourceType.OFFICIAL],
   [ContentType.POLICY_DOC]: [IntelSourceType.OFFICIAL],
 };
+
+// 智能采集入口可用的内容类型（简化后仅支持市场信息）
+export const DATA_ENTRY_CONTENT_TYPES: ContentType[] = [ContentType.DAILY_REPORT];
+
+// 知识库入口可用的内容类型（文档类）
+export const KNOWLEDGE_BASE_CONTENT_TYPES: ContentType[] = [
+  ContentType.RESEARCH_REPORT,
+  ContentType.POLICY_DOC,
+];
 
 // 研报类型
 // 报告内容类型
@@ -485,6 +494,17 @@ export type MarketIntelQuery = z.infer<typeof MarketIntelQuerySchema>;
 
 export type AnalyzeContentDto = z.infer<typeof AnalyzeContentSchema>;
 
+// =============================================
+// 文档升级为研报 Schema (Promote to Report)
+// =============================================
+
+export const PromoteToReportSchema = z.object({
+  reportType: z.nativeEnum(ReportType).default(ReportType.MARKET),
+  triggerDeepAnalysis: z.boolean().default(true),
+});
+
+export type PromoteToReportDto = z.infer<typeof PromoteToReportSchema>;
+
 export type UserIntelStats = z.infer<typeof UserIntelStatsSchema>;
 export type LeaderboardEntry = z.infer<typeof LeaderboardEntrySchema>;
 export type MarketIntelStats = z.infer<typeof MarketIntelStatsSchema>;
@@ -806,6 +826,8 @@ export const ResearchReportQuerySchema = z.object({
   startDate: z.coerce.date().optional(),
   endDate: z.coerce.date().optional(),
   keyword: z.string().optional(),
+  title: z.string().optional(),
+  source: z.string().optional(),
   page: z.coerce.number().min(1).default(1),
   pageSize: z.coerce.number().min(1).max(100).default(20),
 });

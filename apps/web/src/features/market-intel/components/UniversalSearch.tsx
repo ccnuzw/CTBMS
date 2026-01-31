@@ -23,6 +23,7 @@ import {
     RightOutlined,
     CalendarOutlined,
     TagOutlined,
+    BulbOutlined,
 
     ControlOutlined,
     FullscreenOutlined,
@@ -36,10 +37,20 @@ import {
     YAxis,
     CartesianGrid,
     Tooltip,
+    BarChart,
+    Bar,
+    Legend
 } from 'recharts';
 import { IntelCategory, INTEL_SOURCE_TYPE_LABELS } from '../types';
 import { useMarketIntels, usePriceData, useAnalyzeContent } from '../api/hooks';
 import { ChartContainer } from './ChartContainer';
+
+const stripHtml = (html: string) => {
+    if (!html) return '';
+    const tmp = document.createElement('DIV');
+    tmp.innerHTML = html;
+    return tmp.textContent || tmp.innerText || '';
+};
 
 const { Title, Text, Paragraph } = Typography;
 
@@ -444,14 +455,16 @@ export const UniversalSearch: React.FC = () => {
                                                             <FileTextOutlined style={{ color: token.colorWarning, marginTop: 4 }} />
                                                             <div style={{ flex: 1, minWidth: 0 }}>
                                                                 <Text strong ellipsis style={{ display: 'block' }}>
-                                                                    {c.rawContent.substring(0, 30)}...
+                                                                    {stripHtml(c.rawContent || '').substring(0, 30)}...
                                                                 </Text>
                                                                 {c.aiAnalysis?.summary && (
                                                                     <Card size="small" style={{ background: `${token.colorWarning}08`, marginTop: 8, marginBottom: 8 }} bodyStyle={{ padding: 8 }}>
-                                                                        <Text style={{ fontSize: 12 }}>
-                                                                            <Text strong style={{ color: token.colorWarning }}>AI摘要: </Text>
-                                                                            {c.aiAnalysis.summary}
-                                                                        </Text>
+                                                                        <Flex gap={4}>
+                                                                            <BulbOutlined style={{ color: token.colorWarning, fontSize: 12 }} />
+                                                                            <Text type="secondary" style={{ fontSize: 12 }}>
+                                                                                {stripHtml(c.aiAnalysis.summary).substring(0, 60)}...
+                                                                            </Text>
+                                                                        </Flex>
                                                                     </Card>
                                                                 )}
                                                                 <Flex justify="space-between" align="center">

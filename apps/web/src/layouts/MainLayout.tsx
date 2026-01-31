@@ -20,6 +20,9 @@ import {
     ShopOutlined,
     GlobalOutlined,
     ScheduleOutlined,
+    FormOutlined,
+    AuditOutlined,
+    NodeIndexOutlined,
 } from '@ant-design/icons';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { ThemeSwitcher } from '../components/ThemeSwitcher';
@@ -200,6 +203,28 @@ export const MainLayout: React.FC = () => {
                                         label: '客商管理',
                                     },
                                     {
+                                        key: 'price-reporting',
+                                        icon: <FormOutlined />,
+                                        label: '价格填报',
+                                        children: [
+                                            {
+                                                key: '/price-reporting',
+                                                icon: <DashboardOutlined />,
+                                                label: '填报工作台',
+                                            },
+                                            {
+                                                key: '/price-reporting/allocation',
+                                                icon: <NodeIndexOutlined />,
+                                                label: '采集点分配',
+                                            },
+                                            {
+                                                key: '/price-reporting/review',
+                                                icon: <AuditOutlined />,
+                                                label: '价格审核',
+                                            },
+                                        ]
+                                    },
+                                    {
                                         key: 'intel',
                                         icon: <CloudOutlined />,
                                         label: '商情中心',
@@ -239,22 +264,12 @@ export const MainLayout: React.FC = () => {
                                                 icon: <FileTextOutlined />,
                                                 label: 'B类情报流',
                                             },
+
                                             {
                                                 key: '/intel/knowledge',
                                                 icon: <FileTextOutlined />,
-                                                label: 'C类知识库',
+                                                label: '商情知识库',
                                             },
-                                            {
-                                                key: '/intel/research-reports',
-                                                icon: <FileTextOutlined />,
-                                                label: '研报管理',
-                                            },
-                                            {
-                                                key: '/intel/research-reports/dashboard',
-                                                icon: <DashboardOutlined />,
-                                                label: '研报仪表盘',
-                                            },
-
                                             {
                                                 key: '/intel/leaderboard',
                                                 icon: <TeamOutlined />,
@@ -476,6 +491,28 @@ export const MainLayout: React.FC = () => {
                                     key: '/enterprise',
                                     icon: <ShopOutlined />,
                                     label: '客商管理',
+                                },
+                                {
+                                    key: 'price-reporting',
+                                    icon: <FormOutlined />,
+                                    label: '价格填报',
+                                    children: [
+                                        {
+                                            key: '/price-reporting',
+                                            icon: <DashboardOutlined />,
+                                            label: '填报工作台',
+                                        },
+                                        {
+                                            key: '/price-reporting/allocation',
+                                            icon: <NodeIndexOutlined />,
+                                            label: '采集点分配',
+                                        },
+                                        {
+                                            key: '/price-reporting/review',
+                                            icon: <AuditOutlined />,
+                                            label: '价格审核',
+                                        },
+                                    ]
                                 },
                                 {
                                     key: 'intel',

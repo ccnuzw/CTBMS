@@ -18,6 +18,7 @@ import { ResearchReportResponse, ReportType, ReviewStatus, REVIEW_STATUS_LABELS 
 import {
     useResearchReports,
     useBatchDeleteResearchReports,
+    useBatchReviewResearchReports,
     useExportResearchReports,
     useUpdateReviewStatus,
     useDeleteResearchReport
@@ -29,6 +30,7 @@ export const ResearchReportListPage: React.FC = () => {
     const actionRef = useRef<ActionType>();
     const navigate = useNavigate();
     const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([]);
+    const [batchReviewLoading, setBatchReviewLoading] = useState(false);
 
     // Ant Design Dynamic Context Hooks
     const [messageApi, contextHolder] = message.useMessage();
@@ -36,6 +38,7 @@ export const ResearchReportListPage: React.FC = () => {
 
     // Hooks
     const { mutateAsync: batchDelete, isPending: isBatchDeleting } = useBatchDeleteResearchReports();
+    const { mutateAsync: batchReview } = useBatchReviewResearchReports();
     const { mutateAsync: exportReports, isPending: isExporting } = useExportResearchReports();
     const { mutateAsync: updateReviewStatus } = useUpdateReviewStatus();
     const { mutateAsync: deleteReport } = useDeleteResearchReport();
@@ -114,8 +117,39 @@ export const ResearchReportListPage: React.FC = () => {
             title: '操作',
             valueType: 'option',
             fixed: 'right',
-            width: 150,
+            width: 220,
             render: (_, record) => {
+                const renderQuickAudit = () => {
+                    if (record.reviewStatus !== ReviewStatus.PENDING) return null;
+                    return (
+                        <Space size={4}>
+                            <Button
+                                size="small"
+                                type="link"
+                                onClick={async () => {
+                                    await updateReviewStatus({ id: record.id, status: ReviewStatus.APPROVED, reviewerId: 'current-user' });
+                                    messageApi.success('已通过审核');
+                                    actionRef.current?.reload();
+                                }}
+                            >
+                                通过
+                            </Button>
+                            <Button
+                                size="small"
+                                type="link"
+                                danger
+                                onClick={async () => {
+                                    await updateReviewStatus({ id: record.id, status: ReviewStatus.REJECTED, reviewerId: 'current-user' });
+                                    messageApi.success('已驳回');
+                                    actionRef.current?.reload();
+                                }}
+                            >
+                                驳回
+                            </Button>
+                        </Space>
+                    );
+                };
+
                 const menuItems: MenuProps['items'] = [
                     {
                         key: 'approve',
@@ -155,9 +189,17 @@ export const ResearchReportListPage: React.FC = () => {
 
                 return (
                     <Space>
-                        <a onClick={() => navigate(`/intel/research-reports/${record.id}`)}>查看</a>
+                        {renderQuickAudit()}
+                        <a onClick={() => navigate(`/intel/knowledge/reports/${record.id}`)}>查看</a>
                         <Dropdown menu={{
-                            items: menuItems,
+                            items: [
+                                {
+                                    key: 'edit',
+                                    label: '编辑',
+                                    onClick: () => navigate(`/intel/knowledge/reports/${record.id}?action=edit`)
+                                },
+                                ...menuItems // Spread existing menu items
+                            ],
                             onClick: ({ key }) => {
                                 if (key === 'delete') {
                                     // Trigger delete confirm
@@ -210,6 +252,28 @@ export const ResearchReportListPage: React.FC = () => {
         }
     };
 
+    const handleBatchReview = async (status: ReviewStatus) => {
+        if (!selectedRowKeys.length) return;
+        const actionText = status === ReviewStatus.APPROVED ? '通过' : '驳回';
+        modal.confirm({
+            title: `确认${actionText}审核?`,
+            content: `确定要${actionText}选中的 ${selectedRowKeys.length} 条研报吗?`,
+            onOk: async () => {
+                try {
+                    setBatchReviewLoading(true);
+                    await batchReview({ ids: selectedRowKeys as string[], status, reviewerId: 'current-user' });
+                    messageApi.success(`已${actionText} ${selectedRowKeys.length} 条研报`);
+                    setSelectedRowKeys([]);
+                    actionRef.current?.reload();
+                } catch (error) {
+                    messageApi.error(`${actionText}失败，请重试`);
+                } finally {
+                    setBatchReviewLoading(false);
+                }
+            },
+        });
+    };
+
     // Need to use request prop to fetch data
     // But we have useResearchReports hook which returns data directly?
     // ProTable `request` expects return { data, success, total }
@@ -218,12 +282,7 @@ export const ResearchReportListPage: React.FC = () => {
 
 
     return (
-        <PageContainer
-            header={{
-                title: '研究报告管理',
-                breadcrumb: {},
-            }}
-        >
+        <div style={{ padding: 24 }}>
             {contextHolder}
             {modalContextHolder}
             <ProTable<ResearchReportResponse>
@@ -252,7 +311,7 @@ export const ResearchReportListPage: React.FC = () => {
                                     key: 'manual',
                                     label: '手工新建研报',
                                     icon: <FileTextOutlined />,
-                                    onClick: () => navigate('/intel/research-reports/create'),
+                                    onClick: () => navigate('/intel/knowledge/reports/create')
                                 },
                             ],
                         }}
@@ -267,6 +326,12 @@ export const ResearchReportListPage: React.FC = () => {
                 }}
                 tableAlertOptionRender={() => (
                     <Space size={16}>
+                        <a onClick={() => handleBatchReview(ReviewStatus.APPROVED)}>
+                            批量通过 ({selectedRowKeys.length})
+                        </a>
+                        <a onClick={() => handleBatchReview(ReviewStatus.REJECTED)} style={{ color: 'red' }}>
+                            批量驳回 ({selectedRowKeys.length})
+                        </a>
                         <a onClick={handleBatchDelete} style={{ color: 'red' }}>
                             批量删除 ({selectedRowKeys.length})
                         </a>
@@ -315,6 +380,6 @@ export const ResearchReportListPage: React.FC = () => {
                 }}
                 columns={columns}
             />
-        </PageContainer>
+        </div>
     );
 };
