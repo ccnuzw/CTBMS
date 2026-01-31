@@ -61,8 +61,8 @@ export interface SelectedNode {
 interface OrgDeptTreeProps {
     onSelect?: (node: SelectedNode | null) => void;
     selectedNode?: SelectedNode | null;
-    showAllLevels: boolean;
-    onShowAllLevelsChange: (value: boolean) => void;
+    showAllLevels?: boolean;
+    onShowAllLevelsChange?: (value: boolean) => void;
 }
 
 // 组织类型选项
@@ -378,17 +378,19 @@ export const OrgDeptTree: React.FC<OrgDeptTreeProps> = ({
                     onChange={(e) => setSearchValue(e.target.value)}
                     allowClear
                 />
-                {/* 显示所有层级员工开关 */}
-                <Flex justify="space-between" align="center">
-                    <span style={{ fontSize: 12, color: token.colorTextSecondary }}>
-                        包含下级员工
-                    </span>
-                    <Switch
-                        size="small"
-                        checked={showAllLevels}
-                        onChange={onShowAllLevelsChange}
-                    />
-                </Flex>
+                {/* 显示所有层级员工开关 - 仅在提供了回调时显示 */}
+                {onShowAllLevelsChange && (
+                    <Flex justify="space-between" align="center">
+                        <span style={{ fontSize: 12, color: token.colorTextSecondary }}>
+                            包含下级员工
+                        </span>
+                        <Switch
+                            size="small"
+                            checked={!!showAllLevels}
+                            onChange={onShowAllLevelsChange}
+                        />
+                    </Flex>
+                )}
             </Flex>
 
             {/* 树形结构 */}

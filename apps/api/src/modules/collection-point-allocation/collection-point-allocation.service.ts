@@ -167,7 +167,17 @@ export class CollectionPointAllocationService {
         isActive: true,
       },
       include: {
-        user: { select: { id: true, name: true, username: true, avatar: true, phone: true } },
+        user: {
+          select: {
+            id: true,
+            name: true,
+            username: true,
+            avatar: true,
+            phone: true,
+            organization: { select: { name: true } },
+            department: { select: { name: true } },
+          },
+        },
       },
       orderBy: { assignedAt: 'desc' },
     });

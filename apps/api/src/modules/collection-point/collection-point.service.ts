@@ -41,12 +41,18 @@ export class CollectionPointService {
      * 分页查询采集点
      */
     async findAll(query: CollectionPointQueryDto) {
-        const { page, pageSize, type, regionCode, keyword, isActive } = query;
+        const { page, pageSize, type, regionCode, keyword, isActive, allocationStatus } = query;
 
         const where: any = {};
         if (type) where.type = type;
         if (regionCode) where.regionCode = regionCode;
         if (isActive !== undefined) where.isActive = isActive;
+        if (allocationStatus === 'ALLOCATED') {
+            where.allocations = { some: { isActive: true } };
+        } else if (allocationStatus === 'UNALLOCATED') {
+            where.allocations = { none: { isActive: true } };
+        }
+
         if (keyword) {
             where.OR = [
                 { name: { contains: keyword, mode: 'insensitive' } },
@@ -66,6 +72,14 @@ export class CollectionPointService {
                     region: true,
                     enterprise: {
                         select: { id: true, name: true, shortName: true },
+                    },
+                    allocations: {
+                        where: { isActive: true },
+                        include: {
+                            user: {
+                                select: { id: true, name: true, avatar: true, username: true },
+                            },
+                        },
                     },
                 },
             }),

@@ -84,9 +84,11 @@ export const useCreateAllocation = () => {
       const { data } = await apiClient.post<CollectionPointAllocationResponse>(ALLOCATION_BASE_URL, dto);
       return data;
     },
-    onSuccess: () => {
+    onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: ['collection-point-allocations'] });
       queryClient.invalidateQueries({ queryKey: ['allocation-statistics'] });
+      queryClient.invalidateQueries({ queryKey: ['collection-points'] });
+      queryClient.invalidateQueries({ queryKey: ['point-assignees', variables.collectionPointId] });
     },
   });
 };
@@ -127,6 +129,8 @@ export const useDeleteAllocation = () => {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['collection-point-allocations'] });
       queryClient.invalidateQueries({ queryKey: ['allocation-statistics'] });
+      queryClient.invalidateQueries({ queryKey: ['collection-points'] });
+      queryClient.invalidateQueries({ queryKey: ['point-assignees'] });
     },
   });
 };

@@ -150,6 +150,14 @@ export const CollectionPointResponseSchema = z.object({
         name: z.string(),
         shortName: z.string().nullable(),
     }).optional(),
+    allocations: z.array(z.object({
+        user: z.object({
+            id: z.string(),
+            name: z.string(),
+            avatar: z.string().nullable(),
+            username: z.string(),
+        })
+    })).optional(),
     priority: z.number(),
     isActive: z.boolean(),
     description: z.string().nullable(),
@@ -163,6 +171,7 @@ export const CollectionPointQuerySchema = z.object({
     regionCode: z.string().optional(),
     keyword: z.string().optional(),
     isActive: z.coerce.boolean().optional(),
+    allocationStatus: z.enum(['ALLOCATED', 'UNALLOCATED']).optional(),
     page: z.coerce.number().min(1).default(1),
     pageSize: z.coerce.number().min(1).max(1000).default(20),
 });

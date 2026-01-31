@@ -16,6 +16,8 @@ import {
     Spin,
     Empty,
     App,
+    List,
+    Segmented,
 } from 'antd';
 import { PageContainer } from '@ant-design/pro-components';
 import { useNavigate, useParams } from 'react-router-dom';
@@ -32,10 +34,12 @@ import {
     CheckCircleOutlined,
     ClockCircleOutlined,
     ThunderboltOutlined,
+    DownloadOutlined,
 } from '@ant-design/icons';
 import { useMarketIntel, usePromoteToReport, useResearchReportByIntelId } from '../api/hooks';
 import { ReportType, REPORT_TYPE_LABELS } from '@packages/types';
 import DOMPurify from 'dompurify';
+import { DocumentPreview } from './research-report-detail/DocumentPreview';
 
 const { Title, Text, Paragraph } = Typography;
 
@@ -54,6 +58,8 @@ export const DocumentDetailPage: React.FC = () => {
 
     const [promoteModalOpen, setPromoteModalOpen] = useState(false);
     const [selectedReportType, setSelectedReportType] = useState<ReportType>(ReportType.MARKET);
+    const [readerView, setReaderView] = useState<'content' | 'original'>('content');
+    const [contentMode, setContentMode] = useState<'summary' | 'full'>('full');
 
     const handlePromoteToReport = async () => {
         if (!id) return;
@@ -126,9 +132,60 @@ export const DocumentDetailPage: React.FC = () => {
     }
 
     const rawContent = document.rawContent || '';
-    const isHtml = /^\s*<.*>/.test(rawContent) || /<br\s*\/?>|<p>|<div>|<table>|<span>|<ul>|<ol>|<li>/i.test(rawContent);
-    const htmlContent = isHtml ? rawContent : rawContent.replace(/\n/g, '<br/>');
+    const summaryContent = document.summary || '';
+    const hasSummary = !!summaryContent;
+
+    React.useEffect(() => {
+        setContentMode(hasSummary ? 'summary' : 'full');
+    }, [document.id, hasSummary]);
+
+    const displayContent = contentMode === 'summary' && hasSummary ? summaryContent : rawContent;
+    const isHtml = /^\s*<.*>/.test(displayContent) || /<br\s*\/?>|<p>|<div>|<table>|<span>|<ul>|<ol>|<li>/i.test(displayContent);
+    const htmlContent = isHtml ? displayContent : displayContent.replace(/\n/g, '<br/>');
     const safeHtml = DOMPurify.sanitize(htmlContent, { USE_PROFILES: { html: true } });
+
+    const normalizedAttachments = React.useMemo(() => {
+        const attachments = ((document as any).attachments || []) as Array<{
+            id: string;
+            filename?: string;
+            fileName?: string;
+            mimeType?: string;
+            fileUrl?: string;
+        }>;
+        return attachments.map((att) => ({
+            ...att,
+            filename: att.filename || att.fileName,
+        }));
+    }, [document]);
+
+    const [selectedAttachmentId, setSelectedAttachmentId] = useState<string | undefined>(normalizedAttachments[0]?.id);
+
+    React.useEffect(() => {
+        setSelectedAttachmentId(normalizedAttachments[0]?.id);
+    }, [document.id, normalizedAttachments]);
+
+    const selectedAttachment = normalizedAttachments.find((att) => att.id === selectedAttachmentId) || normalizedAttachments[0];
+    const previewUrl = selectedAttachment
+        ? (selectedAttachment.fileUrl || `/api/market-intel/attachments/${selectedAttachment.id}/download?inline=true`)
+        : undefined;
+
+    const handleDownloadAttachment = (attachmentId?: string) => {
+        const target = normalizedAttachments.find((att) => att.id === attachmentId) || normalizedAttachments[0];
+        if (!target) {
+            message.warning('该文档暂无附件可下载');
+            return;
+        }
+        const url = target.fileUrl || `/api/market-intel/attachments/${target.id}/download`;
+        window.open(url, '_self');
+    };
+
+    const handleBack = () => {
+        if (window.history.length > 1) {
+            navigate(-1);
+        } else {
+            navigate('/intel/knowledge?tab=library&content=documents');
+        }
+    };
 
     return (
         <PageContainer
@@ -140,24 +197,36 @@ export const DocumentDetailPage: React.FC = () => {
                     </Space>
                 ),
                 subTitle: document.summary?.substring(0, 50) || '未命名文档',
-                onBack: () => navigate(-1),
+                onBack: handleBack,
                 tags: getProcessingStatusTag(),
-                extra: hasLinkedReport ? (
-                    <Button
-                        type="primary"
-                        icon={<EyeOutlined />}
-                        onClick={() => navigate(`/intel/knowledge/reports/${linkedReport?.id}`)}
-                    >
-                        查看关联研报
-                    </Button>
-                ) : (
-                    <Button
-                        type="primary"
-                        icon={<RocketOutlined />}
-                        onClick={() => setPromoteModalOpen(true)}
-                    >
-                        一键生成研报
-                    </Button>
+                extra: (
+                    <Space>
+                        {normalizedAttachments.length > 0 && (
+                            <Button
+                                icon={<DownloadOutlined />}
+                                onClick={() => handleDownloadAttachment(selectedAttachment?.id)}
+                            >
+                                下载原件
+                            </Button>
+                        )}
+                        {hasLinkedReport ? (
+                            <Button
+                                type="primary"
+                                icon={<EyeOutlined />}
+                                onClick={() => navigate(`/intel/knowledge/reports/${linkedReport?.id}`)}
+                            >
+                                查看关联研报
+                            </Button>
+                        ) : (
+                            <Button
+                                type="primary"
+                                icon={<RocketOutlined />}
+                                onClick={() => setPromoteModalOpen(true)}
+                            >
+                                一键生成研报
+                            </Button>
+                        )}
+                    </Space>
                 ),
             }}
         >
@@ -231,28 +300,35 @@ export const DocumentDetailPage: React.FC = () => {
                             </Space>
                         }
                         style={{ borderRadius: token.borderRadiusLG }}
+                        bodyStyle={{ padding: 0 }}
                     >
-                        <div
-                            style={{
-                                padding: 16,
-                                background: token.colorBgLayout,
-                                borderRadius: token.borderRadius,
-                                maxHeight: 500,
-                                overflow: 'auto',
-                            }}
-                        >
-                            {safeHtml ? (
-                                <div
-                                    style={{
-                                        fontSize: 13,
-                                        lineHeight: 1.6,
-                                    }}
-                                    dangerouslySetInnerHTML={{ __html: safeHtml }}
+                        <div style={{ padding: 16, borderBottom: `1px solid ${token.colorBorderSecondary}` }}>
+                            {hasSummary && (
+                                <Segmented
+                                    size="small"
+                                    value={contentMode}
+                                    onChange={(value) => setContentMode(value as 'summary' | 'full')}
+                                    options={[
+                                        { label: '摘要', value: 'summary' },
+                                        { label: '全文', value: 'full' },
+                                    ]}
                                 />
-                            ) : (
-                                <Text type="secondary">暂无内容</Text>
                             )}
                         </div>
+                        <DocumentPreview
+                            fileUrl={previewUrl}
+                            fileName={selectedAttachment?.filename}
+                            mimeType={selectedAttachment?.mimeType}
+                            content={safeHtml}
+                            onDownload={() => handleDownloadAttachment(selectedAttachment?.id)}
+                            view={readerView}
+                            onViewChange={setReaderView}
+                            attachments={normalizedAttachments}
+                            selectedAttachmentId={selectedAttachment?.id}
+                            onAttachmentChange={setSelectedAttachmentId}
+                            contentLabel={hasSummary ? '内容摘要' : '正文内容'}
+                            originalLabel="原始附件"
+                        />
                     </Card>
                 </Col>
 
@@ -382,6 +458,49 @@ export const DocumentDetailPage: React.FC = () => {
                             >
                                 {hasLinkedReport ? '已生成研报' : '基于此分析生成研报'}
                             </Button>
+                        </Card>
+                    )}
+
+                    {normalizedAttachments.length > 0 && (
+                        <Card
+                            title={`附件列表 (${normalizedAttachments.length})`}
+                            size="small"
+                            style={{ borderRadius: token.borderRadiusLG }}
+                        >
+                            <List
+                                size="small"
+                                dataSource={normalizedAttachments}
+                                renderItem={(item) => (
+                                    <List.Item
+                                        actions={[
+                                            <Button
+                                                key="preview"
+                                                type="link"
+                                                size="small"
+                                                onClick={() => {
+                                                    setSelectedAttachmentId(item.id);
+                                                    setReaderView('original');
+                                                }}
+                                            >
+                                                预览
+                                            </Button>,
+                                            <Button
+                                                key="download"
+                                                type="link"
+                                                size="small"
+                                                onClick={() => handleDownloadAttachment(item.id)}
+                                            >
+                                                下载
+                                            </Button>,
+                                        ]}
+                                    >
+                                        <List.Item.Meta
+                                            title={item.filename || '未命名附件'}
+                                            description={item.mimeType || '附件'}
+                                        />
+                                    </List.Item>
+                                )}
+                            />
                         </Card>
                     )}
                 </Col>

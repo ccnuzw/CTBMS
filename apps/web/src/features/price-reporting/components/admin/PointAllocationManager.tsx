@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   Card,
   Table,
@@ -21,6 +21,8 @@ import {
   Empty,
   Spin,
   Typography,
+  Layout,
+  Segmented,
 } from 'antd';
 import {
   PlusOutlined,
@@ -32,9 +34,9 @@ import {
   TeamOutlined,
   CheckCircleOutlined,
   ExclamationCircleOutlined,
+  ApartmentOutlined,
 } from '@ant-design/icons';
 import {
-  useAllocations,
   useAllocationStatistics,
   useCreateAllocation,
   useDeleteAllocation,
@@ -43,8 +45,10 @@ import {
 import { useCollectionPoints } from '../../../market-intel/api/collection-point';
 import { useUsers } from '../../../users/api/users';
 import { CollectionPointType } from '@packages/types';
+import { OrgDeptTree } from '../../../organization/components/OrgDeptTree';
 
 const { Text, Title } = Typography;
+const { Sider, Content } = Layout;
 
 const POINT_TYPE_OPTIONS = [
   { value: 'PORT' as CollectionPointType, label: '港口', icon: '⚓' },
@@ -66,24 +70,28 @@ export const PointAllocationManager: React.FC = () => {
     type?: CollectionPointType;
     keyword: string;
     isActive: boolean;
+    allocationStatus?: 'ALLOCATED' | 'UNALLOCATED';
   }>({
     page: 1,
     pageSize: 15,
     type: undefined,
     keyword: '',
     isActive: true,
+    allocationStatus: undefined,
   });
 
   // 抽屉状态
   const [drawerVisible, setDrawerVisible] = useState(false);
   const [selectedPoint, setSelectedPoint] = useState<any>(null);
+
+  // 用户筛选状态
   const [searchUserKeyword, setSearchUserKeyword] = useState('');
+  const [selectedOrgNode, setSelectedOrgNode] = useState<{ id: string; type: 'org' | 'dept'; name: string } | null>(null);
 
   // 数据查询
   const { data: pointsData, isLoading: loadingPoints } = useCollectionPoints(pointQuery);
   const { data: stats } = useAllocationStatistics();
   const { data: users, isLoading: loadingUsers } = useUsers({ status: 'ACTIVE' });
-  const { data: allocations } = useAllocations({ page: 1, pageSize: 1000, isActive: true });
 
   // 当前选中采集点的分配列表
   const { data: pointAssignees, isLoading: loadingAssignees } = usePointAssignees(
@@ -93,37 +101,47 @@ export const PointAllocationManager: React.FC = () => {
   const createAllocation = useCreateAllocation();
   const deleteAllocation = useDeleteAllocation();
 
-  // 计算每个采集点的分配人数
-  const allocationCountMap = React.useMemo(() => {
-    const map: Record<string, number> = {};
-    allocations?.data?.forEach((a: any) => {
-      map[a.collectionPointId] = (map[a.collectionPointId] || 0) + 1;
-    });
-    return map;
-  }, [allocations]);
-
   // 过滤用户列表
-  const filteredUsers = React.useMemo(() => {
+  const filteredUsers = useMemo(() => {
     if (!users) return [];
+
+    // 1. 排除已分配用户
     const assignedUserIds = new Set(pointAssignees?.map((a: any) => a.userId) || []);
-    return users
-      .filter((u: any) => !assignedUserIds.has(u.id))
-      .filter(
+    let result = users.filter((u: any) => !assignedUserIds.has(u.id));
+
+    // 2. 按组织架构筛选
+    if (selectedOrgNode) {
+      if (selectedOrgNode.type === 'org') {
+        // 选中组织：匹配该组织及其下属部门的用户
+        result = result.filter((u: any) => u.organizationId === selectedOrgNode.id);
+      } else {
+        // 选中部门
+        result = result.filter((u: any) => u.departmentId === selectedOrgNode.id);
+      }
+    }
+
+    // 3. 按关键字筛选
+    if (searchUserKeyword) {
+      const lowerKeyword = searchUserKeyword.toLowerCase();
+      result = result.filter(
         (u: any) =>
-          !searchUserKeyword ||
-          u.name?.toLowerCase().includes(searchUserKeyword.toLowerCase()) ||
-          u.username?.toLowerCase().includes(searchUserKeyword.toLowerCase())
+          u.name?.toLowerCase().includes(lowerKeyword) ||
+          u.username?.toLowerCase().includes(lowerKeyword)
       );
-  }, [users, pointAssignees, searchUserKeyword]);
+    }
+
+    return result;
+  }, [users, pointAssignees, searchUserKeyword, selectedOrgNode]);
 
   // 打开分配抽屉
   const handleOpenDrawer = (point: any) => {
     setSelectedPoint(point);
     setDrawerVisible(true);
     setSearchUserKeyword('');
+    setSelectedOrgNode(null);
   };
 
-  // 分配人员 (简化版 - 无角色)
+  // 分配人员
   const handleAssign = async (userId: string) => {
     if (!selectedPoint) return;
     try {
@@ -191,21 +209,55 @@ export const PointAllocationManager: React.FC = () => {
       dataIndex: 'regionCode',
       key: 'regionCode',
       width: 120,
-      render: (code: string) => code || '-',
+      render: (code: string, record: any) => record.region?.name || code || '-',
     },
     {
-      title: '分配状态',
-      key: 'allocationStatus',
-      width: 150,
-      render: (_: any, record: any) => {
-        const count = allocationCountMap[record.id] || 0;
-        if (count === 0) {
-          return (
-            <Badge status="warning" text={<Text type="warning">未分配</Text>} />
-          );
-        }
+      title: '主要品种',
+      dataIndex: 'commodities',
+      key: 'commodities',
+      width: 200,
+      render: (commodities: string[]) => {
+        if (!commodities || commodities.length === 0) return '-';
+        const display = commodities.slice(0, 3);
+        const restCount = commodities.length - 3;
         return (
-          <Badge status="success" text={<Text type="success">{count} 人负责</Text>} />
+          <Space size={4} wrap>
+            {display.map((c) => (
+              <Tag key={c} style={{ margin: 0 }}>
+                {c}
+              </Tag>
+            ))}
+            {restCount > 0 && <Tag style={{ margin: 0 }}>+{restCount}</Tag>}
+          </Space>
+        );
+      },
+    },
+    {
+      title: '分配状态 / 负责人',
+      key: 'allocationStatus',
+      width: 250,
+      render: (_: any, record: any) => {
+        const activeAllocations = record.allocations?.filter((a: any) => a.isActive) || [];
+
+        if (activeAllocations.length === 0) {
+          return <Badge status="warning" text={<Text type="warning">未分配</Text>} />;
+        }
+
+        return (
+          <Space>
+             <Avatar.Group maxCount={5} size="small">
+              {activeAllocations.map((a: any) => (
+                <Tooltip key={a.id} title={a.user?.name}>
+                  <Avatar src={a.user?.avatar} style={{ backgroundColor: '#1890ff' }}>
+                    {a.user?.name?.[0]}
+                  </Avatar>
+                </Tooltip>
+              ))}
+            </Avatar.Group>
+            <Text type="secondary" style={{ fontSize: 12 }}>
+              ({activeAllocations.length}人)
+            </Text>
+          </Space>
         );
       },
     },
@@ -281,6 +333,22 @@ export const PointAllocationManager: React.FC = () => {
       >
         {/* 筛选栏 */}
         <Space style={{ marginBottom: 16 }} wrap>
+          <Segmented
+            options={[
+              { label: '全部', value: 'ALL' },
+              { label: '已分配', value: 'ALLOCATED' },
+              { label: '未分配', value: 'UNALLOCATED' },
+            ]}
+            value={pointQuery.allocationStatus || 'ALL'}
+            onChange={(val) => {
+              setPointQuery({
+                ...pointQuery,
+                allocationStatus: val === 'ALL' ? undefined : (val as any),
+                page: 1,
+              });
+            }}
+          />
+          <Divider type="vertical" />
           <Input
             placeholder="搜索采集点名称/编码"
             prefix={<SearchOutlined />}
@@ -330,117 +398,148 @@ export const PointAllocationManager: React.FC = () => {
           )
         }
         placement="right"
-        width={480}
+        width={1000}
         open={drawerVisible}
         onClose={() => {
           setDrawerVisible(false);
           setSelectedPoint(null);
         }}
+        bodyStyle={{ padding: 0 }}
       >
         {selectedPoint && (
-          <div>
-            {/* 当前负责人列表 */}
-            <div style={{ marginBottom: 24 }}>
-              <Title level={5}>
-                <TeamOutlined style={{ marginRight: 8 }} />
-                当前负责人 ({pointAssignees?.length || 0})
-              </Title>
+          <div style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
+            <div style={{ padding: '16px 24px', flex: 1, overflowY: 'auto' }}>
+              {/* 1. 当前负责人列表 */}
+              <div style={{ marginBottom: 24 }}>
+                <Title level={5}>
+                  <TeamOutlined style={{ marginRight: 8 }} />
+                  当前负责人 ({pointAssignees?.length || 0})
+                </Title>
 
-              {loadingAssignees ? (
-                <Spin />
-              ) : !pointAssignees?.length ? (
-                <Empty description="暂无分配人员" image={Empty.PRESENTED_IMAGE_SIMPLE} />
-              ) : (
-                <List
-                  size="small"
-                  dataSource={pointAssignees}
-                  renderItem={(item: any) => (
-                    <List.Item
-                      actions={[
-                        <Tooltip title="取消分配" key="delete">
-                          <Button
-                            type="text"
-                            danger
-                            size="small"
-                            icon={<DeleteOutlined />}
-                            onClick={() => handleRemoveAssignment(item.id, item.user?.name)}
+                {loadingAssignees ? (
+                  <Spin />
+                ) : !pointAssignees?.length ? (
+                  <Empty description="暂无分配人员" image={Empty.PRESENTED_IMAGE_SIMPLE} />
+                ) : (
+                  <List
+                    grid={{ gutter: 16, column: 3 }}
+                    dataSource={pointAssignees}
+                    renderItem={(item: any) => (
+                      <List.Item>
+                        <Card size="small" bodyStyle={{ padding: 12 }}>
+                           <List.Item.Meta
+                            avatar={<Avatar src={item.user?.avatar} icon={<UserOutlined />} />}
+                            title={
+                              <Space>
+                                <span>{item.user?.name}</span>
+                                <Button
+                                  type="text"
+                                  danger
+                                  size="small"
+                                  icon={<DeleteOutlined />}
+                                  onClick={() => handleRemoveAssignment(item.id, item.user?.name)}
+                                />
+                              </Space>
+                            }
+                            description={
+                              <div style={{ fontSize: 12 }}>
+                                <div>{item.user?.username}</div>
+                                <div style={{ color: '#888', marginTop: 4 }}>
+                                  <ApartmentOutlined style={{ marginRight: 4 }} />
+                                  {item.user?.organization?.name}
+                                  {item.user?.department?.name ? ` - ${item.user?.department?.name}` : ''}
+                                </div>
+                              </div>
+                            }
                           />
-                        </Tooltip>,
-                      ]}
-                    >
-                      <List.Item.Meta
-                        avatar={<Avatar icon={<UserOutlined />} />}
-                        title={
-                          <Space>
-                            <span>{item.user?.name}</span>
-                            <Tag color="blue">负责人</Tag>
-                          </Space>
-                        }
-                        description={item.user?.username}
-                      />
-                    </List.Item>
-                  )}
-                />
-              )}
-            </div>
+                        </Card>
+                      </List.Item>
+                    )}
+                  />
+                )}
+              </div>
 
-            <Divider />
+              <Divider />
 
-            {/* 添加人员 */}
-            <div>
-              <Title level={5}>
-                <UserAddOutlined style={{ marginRight: 8 }} />
-                添加负责人
-              </Title>
+              {/* 2. 添加人员区域 (带组织架构筛选) */}
+              <div style={{ height: 500, display: 'flex', flexDirection: 'column' }}>
+                <Title level={5}>
+                  <UserAddOutlined style={{ marginRight: 8 }} />
+                  添加负责人
+                </Title>
 
-              {/* 搜索用户 */}
-              <Input
-                placeholder="搜索员工姓名/用户名"
-                prefix={<SearchOutlined />}
-                style={{ marginBottom: 12 }}
-                value={searchUserKeyword}
-                onChange={(e) => setSearchUserKeyword(e.target.value)}
-                allowClear
-              />
+                <div style={{ display: 'flex', gap: 16, height: '100%' }}>
+                  {/* 左侧：组织架构树 */}
+                  <div style={{ width: 280, borderRight: '1px solid #f0f0f0', paddingRight: 16, overflowY: 'auto' }}>
+                    <OrgDeptTree
+                      onSelect={(node) => setSelectedOrgNode(node)}
+                    />
+                  </div>
 
-              {/* 可分配用户列表 */}
-              {loadingUsers ? (
-                <Spin />
-              ) : (
-                <List
-                  size="small"
-                  style={{ maxHeight: 300, overflowY: 'auto' }}
-                  dataSource={filteredUsers.slice(0, 20)}
-                  locale={{ emptyText: searchUserKeyword ? '未找到匹配用户' : '所有用户已分配' }}
-                  renderItem={(user: any) => (
-                    <List.Item
-                      actions={[
-                        <Button
-                          type="primary"
-                          size="small"
-                          icon={<PlusOutlined />}
-                          onClick={() => handleAssign(user.id)}
-                          loading={createAllocation.isPending}
-                          key="assign"
-                        >
-                          分配
-                        </Button>,
-                      ]}
-                    >
-                      <List.Item.Meta
-                        avatar={<Avatar icon={<UserOutlined />} />}
-                        title={user.name}
-                        description={user.username}
-                      />
-                    </List.Item>
-                  )}
-                />
-              )}
-              {filteredUsers.length > 20 && (
-                <Text type="secondary" style={{ fontSize: 12, display: 'block', marginTop: 8 }}>
-                  还有 {filteredUsers.length - 20} 个用户，请使用搜索缩小范围
-                </Text>
-              )}
+                  {/* 右侧：用户列表 */}
+                  <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
+                    {/* 筛选标签 */}
+                    {selectedOrgNode && (
+                      <div style={{ marginBottom: 12 }}>
+                        <Tag closable onClose={() => setSelectedOrgNode(null)} color="blue">
+                          {selectedOrgNode.type === 'org' ? '组织' : '部门'}: {selectedOrgNode.name}
+                        </Tag>
+                      </div>
+                    )}
+
+                    {/* 搜索框 */}
+                    <Input
+                      placeholder="搜索员工姓名/用户名"
+                      prefix={<SearchOutlined />}
+                      style={{ marginBottom: 12 }}
+                      value={searchUserKeyword}
+                      onChange={(e) => setSearchUserKeyword(e.target.value)}
+                      allowClear
+                    />
+
+                    {/* 用户列表 */}
+                    <div style={{ flex: 1, overflowY: 'auto' }}>
+                      {loadingUsers ? (
+                        <Spin />
+                      ) : (
+                        <List
+                          grid={{ gutter: 12, column: 2 }}
+                          dataSource={filteredUsers.slice(0, 50)}
+                          locale={{ emptyText: searchUserKeyword || selectedOrgNode ? '未找到匹配用户' : '请搜索或选择部门' }}
+                          renderItem={(user: any) => (
+                            <List.Item>
+                               <Card size="small" hoverable onClick={() => handleAssign(user.id)}>
+                                <List.Item.Meta
+                                  avatar={<Avatar icon={<UserOutlined />} />}
+                                  title={
+                                    <Space>
+                                      <span>{user.name}</span>
+                                      <PlusOutlined style={{ color: '#1890ff' }} />
+                                    </Space>
+                                  }
+                                  description={
+                                    <div style={{ fontSize: 12 }}>
+                                      <div>{user.username}</div>
+                                      <div style={{ color: '#888' }}>
+                                        {user.organization?.name} {user.department?.name ? `- ${user.department?.name}` : ''}
+                                      </div>
+                                    </div>
+                                  }
+                                />
+                              </Card>
+                            </List.Item>
+                          )}
+                        />
+                      )}
+                      {filteredUsers.length > 50 && (
+                        <Text type="secondary" style={{ fontSize: 12, display: 'block', marginTop: 8, textAlign: 'center' }}>
+                          还有 {filteredUsers.length - 50} 个用户，请使用搜索或选择部门缩小范围
+                        </Text>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
         )}

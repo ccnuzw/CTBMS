@@ -1,5 +1,5 @@
 
-import React, { useState } from 'react';
+import React, { useMemo, useRef, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { PageContainer } from '@ant-design/pro-components';
 import { Row, Col, Spin, Button, Space, App, Typography, Card, Tag, theme, FloatButton, Anchor, Divider, List, Alert } from 'antd';
@@ -20,6 +20,7 @@ export const ResearchReportDetailPage: React.FC = () => {
     const { data: report, isLoading, error } = useResearchReport(id || '');
     const { mutate: incrementView } = useIncrementViewCount();
     const { mutate: incrementDownload } = useIncrementDownloadCount();
+    const viewIncrementedRef = useRef(false);
 
     // Fetch linked source document if intelId exists
     const linkedIntelId = (report as any)?.intelId || (report as any)?.intel?.id;
@@ -30,11 +31,17 @@ export const ResearchReportDetailPage: React.FC = () => {
     const [localDownloadCount, setLocalDownloadCount] = useState<number>();
     const [readerView, setReaderView] = useState<'content' | 'original'>('content');
 
-    // Increment view count on mount
+    // Increment view count on mount (guard against repeated runs)
     React.useEffect(() => {
-        if (id) {
+        if (!id) return;
+        if (!viewIncrementedRef.current) {
             incrementView(id);
+            viewIncrementedRef.current = true;
         }
+    }, [id, incrementView]);
+
+    React.useEffect(() => {
+        viewIncrementedRef.current = false;
     }, [id]);
 
     // 同步远端数据到本地状态
@@ -54,8 +61,6 @@ export const ResearchReportDetailPage: React.FC = () => {
 
     const handleDownload = (attachmentId?: string) => {
         if (id) {
-            const attachments = (report as any).intel?.attachments;
-
             if (attachments && attachments.length > 0) {
                 const targetAttachmentId = attachmentId || attachments[0].id;
                 incrementDownload(id);
@@ -69,25 +74,30 @@ export const ResearchReportDetailPage: React.FC = () => {
         }
     };
 
-    // Determine preview URL (Support PDF and Images)
-    const attachments = (report as any).intel?.attachments as Array<{
-        id: string;
-        filename: string;
-        mimeType: string;
-    }> | undefined;
-    let previewUrl = undefined;
-    if (attachments && attachments.length > 0) {
-        const att = attachments[0];
-        // Relaxed check: Check MimeType OR Filename extension
-        const isPdf = att.mimeType === 'application/pdf' || att.filename.toLowerCase().endsWith('.pdf');
-        const isImage = att.mimeType.startsWith('image/') || /\.(jpg|jpeg|png|webp)$/i.test(att.filename);
-        const isWord = att.mimeType === 'application/msword' || att.mimeType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' || /\.(doc|docx)$/i.test(att.filename);
-        const isPpt = att.mimeType === 'application/vnd.ms-powerpoint' || att.mimeType === 'application/vnd.openxmlformats-officedocument.presentationml.presentation' || /\.(ppt|pptx)$/i.test(att.filename);
+    const attachments = useMemo(() => {
+        const raw = ((report as any).intel?.attachments || []) as Array<{
+            id: string;
+            filename?: string;
+            fileName?: string;
+            mimeType?: string;
+            fileUrl?: string;
+        }>;
+        return raw.map((att) => ({
+            ...att,
+            filename: att.filename || att.fileName,
+        }));
+    }, [report]);
 
-        if (isPdf || isImage || isWord || isPpt) {
-            previewUrl = `/api/market-intel/attachments/${att.id}/download?inline=true`;
-        }
-    }
+    const [selectedAttachmentId, setSelectedAttachmentId] = useState<string | undefined>(attachments[0]?.id);
+
+    React.useEffect(() => {
+        setSelectedAttachmentId(attachments[0]?.id);
+    }, [report?.id, attachments]);
+
+    const selectedAttachment = attachments.find((att) => att.id === selectedAttachmentId) || attachments[0];
+    const previewUrl = selectedAttachment
+        ? (selectedAttachment.fileUrl || `/api/market-intel/attachments/${selectedAttachment.id}/download?inline=true`)
+        : undefined;
 
     const heroBackground = `linear-gradient(135deg, ${token.colorPrimaryBg} 0%, ${token.colorBgLayout} 100%)`;
 
@@ -110,7 +120,7 @@ export const ResearchReportDetailPage: React.FC = () => {
     );
 
     const anchorItems = [
-        { key: 'source', href: '#report-source', title: '源文档' },
+        linkedIntelId ? { key: 'source', href: '#report-source', title: '源文档' } : null,
         { key: 'highlights', href: '#report-highlights', title: '关键观点' },
         { key: 'reader', href: '#report-reader', title: '正文/原文' },
         { key: 'data', href: '#report-data', title: '关键数据' },
@@ -233,9 +243,12 @@ export const ResearchReportDetailPage: React.FC = () => {
                             <DocumentPreview
                                 fileUrl={previewUrl}
                                 content={displayContent}
-                                fileName={attachments?.[0]?.filename}
-                                mimeType={attachments?.[0]?.mimeType}
-                                onDownload={() => handleDownload()}
+                                fileName={selectedAttachment?.filename}
+                                mimeType={selectedAttachment?.mimeType}
+                                attachments={attachments}
+                                selectedAttachmentId={selectedAttachment?.id}
+                                onAttachmentChange={setSelectedAttachmentId}
+                                onDownload={() => handleDownload(selectedAttachment?.id)}
                                 view={readerView}
                                 onViewChange={setReaderView}
                             />
@@ -250,6 +263,12 @@ export const ResearchReportDetailPage: React.FC = () => {
                                         renderItem={(item: any) => (
                                             <List.Item
                                                 actions={[
+                                                    <Button key="preview" size="small" type="link" onClick={() => {
+                                                        setSelectedAttachmentId(item.id);
+                                                        setReaderView('original');
+                                                    }}>
+                                                        预览
+                                                    </Button>,
                                                     <Button key="download" size="small" type="link" onClick={() => handleDownload(item.id)}>
                                                         下载
                                                     </Button>
@@ -273,7 +292,7 @@ export const ResearchReportDetailPage: React.FC = () => {
                         <Divider style={{ margin: '8px 0' }} />
 
                         <div id="report-related">
-                            <RelatedReports currentReportId={report.id} />
+                            <RelatedReports currentReportId={report.id} report={report} />
                         </div>
                     </Space>
                 </Col>

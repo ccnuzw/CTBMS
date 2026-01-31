@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect } from 'react';
-import { PageContainer, ProForm, ProCard, ProFormText, ProFormSelect, ProFormDatePicker, ProFormList, ProFormGroup, ProFormDigit, ProFormTextArea, ProFormItem } from '@ant-design/pro-components';
-import { App, Form, Space, Typography, Button, Badge, Row, Col, Empty, Result, Modal, Tag, theme } from 'antd';
-import { FileWordOutlined, ThunderboltOutlined, FileSearchOutlined, RobotOutlined, CheckCircleOutlined, EyeOutlined, BulbOutlined, LineChartOutlined, BarChartOutlined } from '@ant-design/icons';
+import { PageContainer, ProForm, ProCard, ProFormText, ProFormSelect, ProFormDatePicker, ProFormList, ProFormDigit, ProFormTextArea, ProFormItem } from '@ant-design/pro-components';
+import { App, Form, Space, Typography, Button, Badge, Row, Col, Empty, Result, Tag, theme, Progress } from 'antd';
+import { FileWordOutlined, ThunderboltOutlined, FileSearchOutlined, RobotOutlined, CheckCircleOutlined, BulbOutlined, LineChartOutlined, BarChartOutlined } from '@ant-design/icons';
 import { useNavigate, useParams } from 'react-router-dom';
 import {
     ReportType,
@@ -11,12 +11,14 @@ import {
     CreateManualResearchReportDto,
     IntelCategory,
     ContentType,
+    type AIAnalysisResult,
 } from '@packages/types';
 import { useCreateManualResearchReport, useUpdateResearchReport, useResearchReport, useResearchReportStats, useAnalyzeContent } from '../api/hooks';
 import { useProvinces } from '../api/region';
 import TiptapEditor from '@/components/TiptapEditor';
 import { DocumentUploader } from './DocumentUploader';
 import { PREDICTION_DIRECTION_LABELS, PREDICTION_TIMEFRAME_LABELS } from '../constants';
+import dayjs from 'dayjs';
 
 const { Text } = Typography;
 
@@ -85,8 +87,15 @@ export const ResearchReportCreatePage = () => {
     const { token } = theme.useToken();
 
     // UI State
-    const [previewModalOpen, setPreviewModalOpen] = useState(false);
     const [aiSectionCollapsed, setAiSectionCollapsed] = useState(true);
+    const [aiResult, setAiResult] = useState<AIAnalysisResult | null>(null);
+    const [aiSectionMeta, setAiSectionMeta] = useState<{
+        overall?: { confidence: number; updatedAt: Date };
+        keyPoints?: { confidence: number; updatedAt: Date };
+        prediction?: { confidence: number; updatedAt: Date };
+        dataPoints?: { confidence: number; updatedAt: Date };
+        meta?: { confidence: number; updatedAt: Date };
+    }>({});
 
     // Data Fetching
     const { data: stats } = useResearchReportStats();
@@ -199,7 +208,9 @@ export const ResearchReportCreatePage = () => {
         }
     };
 
-    const handleAnalyzeEditorContent = async () => {
+    type AnalysisTarget = 'all' | 'meta' | 'keyPoints' | 'prediction' | 'dataPoints';
+
+    const handleAnalyzeEditorContent = async (targets: AnalysisTarget[] = ['all']) => {
         if (analyzeMutation.isPending) return;
 
         const content = form.getFieldValue('summary');
@@ -207,10 +218,10 @@ export const ResearchReportCreatePage = () => {
             message.warning('编辑器内容为空，无法分析');
             return;
         }
-        await performAnalysis(content);
+        await performAnalysis(content, targets);
     };
 
-    const performAnalysis = async (content: string) => {
+    const performAnalysis = async (content: string, targets: AnalysisTarget[] = ['all']) => {
         if (analyzeMutation.isPending) return;
 
         const hide = message.loading('AI 正在深度分析研报内容...', 0);
@@ -223,27 +234,38 @@ export const ResearchReportCreatePage = () => {
             });
 
             if (result) {
+                const now = new Date();
+                const applyAll = targets.includes('all');
+                const shouldApply = (target: AnalysisTarget) => applyAll || targets.includes(target);
+
                 const updates: Partial<CreateManualResearchReportDto> = {};
                 const extractedFields: string[] = [];
 
-                if (result.extractedData?.title && !form.getFieldValue('title')) {
-                    updates.title = result.extractedData.title;
-                    extractedFields.push('标题');
+                if (shouldApply('meta')) {
+                    if (result.extractedData?.title && !form.getFieldValue('title')) {
+                        updates.title = result.extractedData.title;
+                        extractedFields.push('标题');
+                    }
+
+                    if (result.commodities?.length) {
+                        updates.commodities = result.commodities;
+                        extractedFields.push('关联品种');
+                    }
+                    if (result.regions?.length) {
+                        updates.regions = result.regions;
+                        extractedFields.push('关联区域');
+                    }
+
+                    if (result.reportType) updates.reportType = result.reportType;
+                    if (result.reportPeriod) updates.reportPeriod = result.reportPeriod;
+
+                    setAiSectionMeta((prev) => ({
+                        ...prev,
+                        meta: { confidence: result.confidenceScore || 0, updatedAt: now },
+                    }));
                 }
 
-                if (result.commodities?.length) {
-                    updates.commodities = result.commodities;
-                    extractedFields.push('关联品种');
-                }
-                if (result.regions?.length) {
-                    updates.regions = result.regions;
-                    extractedFields.push('关联区域');
-                }
-
-                if (result.reportType) updates.reportType = result.reportType;
-                if (result.reportPeriod) updates.reportPeriod = result.reportPeriod;
-
-                if (result.keyPoints?.length) {
+                if (shouldApply('keyPoints') && result.keyPoints?.length) {
                     updates.keyPoints = result.keyPoints.map(kp => ({
                         ...kp,
                         sentiment: kp.sentiment === 'bullish' ? 'positive' :
@@ -252,28 +274,51 @@ export const ResearchReportCreatePage = () => {
                                     kp.sentiment,
                     }));
                     extractedFields.push('核心观点');
+                    const confidences = result.keyPoints
+                        .map((kp) => kp.confidence)
+                        .filter((value): value is number => typeof value === 'number');
+                    const avgConfidence = confidences.length > 0
+                        ? Math.round(confidences.reduce((sum, val) => sum + val, 0) / confidences.length)
+                        : (result.confidenceScore || 0);
+                    setAiSectionMeta((prev) => ({
+                        ...prev,
+                        keyPoints: { confidence: avgConfidence, updatedAt: now },
+                    }));
                 }
 
-                if (result.prediction) {
+                if (shouldApply('prediction') && result.prediction) {
                     updates.prediction = {
                         direction: result.prediction.direction,
                         timeframe: result.prediction.timeframe,
                         reasoning: result.prediction.logic || result.prediction.reasoning,
                     };
                     extractedFields.push('后市预判');
+                    setAiSectionMeta((prev) => ({
+                        ...prev,
+                        prediction: { confidence: result.confidenceScore || 0, updatedAt: now },
+                    }));
                 }
 
-                if (result.dataPoints?.length) {
+                if (shouldApply('dataPoints') && result.dataPoints?.length) {
                     updates.dataPoints = result.dataPoints.map(dp => ({
                         metric: dp.metric,
                         value: dp.value,
                         unit: dp.unit
                     }));
                     extractedFields.push('关键数据');
+                    setAiSectionMeta((prev) => ({
+                        ...prev,
+                        dataPoints: { confidence: result.confidenceScore || 0, updatedAt: now },
+                    }));
                 }
 
                 form.setFieldsValue(updates);
                 setAiSectionCollapsed(false); // 展开 AI 分析区
+                setAiResult(result);
+                setAiSectionMeta((prev) => ({
+                    ...prev,
+                    overall: { confidence: result.confidenceScore || 0, updatedAt: now },
+                }));
 
                 if (extractedFields.length > 0) {
                     message.success(`AI 分析完成，已自动提取：${extractedFields.join('、')}`);
@@ -290,7 +335,7 @@ export const ResearchReportCreatePage = () => {
     };
 
     const handleUploadAnalysisTrigger = async (content: string) => {
-        await performAnalysis(content);
+        await performAnalysis(content, ['all']);
     };
 
     const initialValues = useMemo(() => ({
@@ -308,12 +353,13 @@ export const ResearchReportCreatePage = () => {
     };
 
     const renderDocumentPreview = () => {
+        const previewHeight = 360;
         if (!uploadedAttachment) {
             return (
                 <Empty
                     description="暂无上传文档"
                     image={Empty.PRESENTED_IMAGE_SIMPLE}
-                    style={{ padding: 60 }}
+                    style={{ padding: 24 }}
                 />
             );
         }
@@ -322,7 +368,7 @@ export const ResearchReportCreatePage = () => {
             return (
                 <iframe
                     src={`/api/market-intel/attachments/${uploadedAttachment.id}/download?inline=true`}
-                    style={{ width: '100%', height: '70vh', border: 'none' }}
+                    style={{ width: '100%', height: previewHeight, border: 'none' }}
                     title="Document Preview"
                 />
             );
@@ -331,7 +377,7 @@ export const ResearchReportCreatePage = () => {
         if (isOfficeDoc(uploadedAttachment.filename, uploadedAttachment.mimeType)) {
             return (
                 <div style={{
-                    height: 400,
+                    height: previewHeight,
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
@@ -358,13 +404,19 @@ export const ResearchReportCreatePage = () => {
                     <img
                         src={`/api/market-intel/attachments/${uploadedAttachment.id}/download?inline=true`}
                         alt="Preview"
-                        style={{ maxWidth: '100%', maxHeight: '70vh' }}
+                        style={{ maxWidth: '100%', maxHeight: previewHeight }}
                     />
                 </div>
             );
         }
 
-        return null;
+        return (
+            <Empty
+                description="该格式暂不支持预览"
+                image={Empty.PRESENTED_IMAGE_SIMPLE}
+                style={{ padding: 24 }}
+            />
+        );
     };
 
     return (
@@ -380,7 +432,7 @@ export const ResearchReportCreatePage = () => {
                             key="ai"
                             type="primary"
                             icon={<ThunderboltOutlined />}
-                            onClick={handleAnalyzeEditorContent}
+                            onClick={() => handleAnalyzeEditorContent(['all'])}
                             loading={analyzeMutation.isPending}
                             size="large"
                         >
@@ -445,16 +497,6 @@ export const ResearchReportCreatePage = () => {
                                         onStartAnalysis={handleUploadAnalysisTrigger}
                                         isAnalyzing={analyzeMutation.isPending}
                                     />
-                                    {uploadedAttachment && (
-                                        <Button
-                                            type="link"
-                                            icon={<EyeOutlined />}
-                                            onClick={() => setPreviewModalOpen(true)}
-                                            style={{ padding: 0, marginTop: 8 }}
-                                        >
-                                            预览原始文档
-                                        </Button>
-                                    )}
                                 </ProCard>
 
                                 {/* 基础信息 */}
@@ -530,8 +572,8 @@ export const ResearchReportCreatePage = () => {
                             </div>
                         </Col>
 
-                        {/* 右侧编辑区 (80%) - 绝对定位填充，实现内部滚动且不撑开父容器 */}
-                        <Col xs={24} lg={19} style={{ display: 'flex', flexDirection: 'column' }}>
+                        {/* 中间编辑区 (约 55%) - 绝对定位填充，实现内部滚动且不撑开父容器 */}
+                        <Col xs={24} lg={13} style={{ display: 'flex', flexDirection: 'column' }}>
                             <div style={{ position: 'relative', width: '100%', flex: 1, minHeight: 600 }}>
                                 <ProCard
                                     title="研报正文"
@@ -550,15 +592,6 @@ export const ResearchReportCreatePage = () => {
                                     bodyStyle={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}
                                     extra={
                                         <Space>
-                                            {uploadedAttachment && (
-                                                <Button
-                                                    icon={<FileSearchOutlined />}
-                                                    onClick={() => setPreviewModalOpen(true)}
-                                                    size="small"
-                                                >
-                                                    查看原始文档
-                                                </Button>
-                                            )}
                                             {hasAiData && (
                                                 <Tag color="success" icon={<CheckCircleOutlined />}>
                                                     已完成 AI 分析
@@ -578,6 +611,80 @@ export const ResearchReportCreatePage = () => {
                                             placeholder="在此输入研报内容，或从左侧上传文档自动导入..."
                                         />
                                     </ProFormItem>
+                                </ProCard>
+                            </div>
+                        </Col>
+                        {/* 右侧上下文面板 (约 25%) */}
+                        <Col xs={24} lg={6} style={{ display: 'flex', flexDirection: 'column' }}>
+                            <div style={{ position: 'sticky', top: 88, display: 'flex', flexDirection: 'column', gap: 16 }}>
+                                <ProCard
+                                    title={<Space><FileSearchOutlined />原文资料</Space>}
+                                    bordered
+                                    headerBordered
+                                    size="small"
+                                    style={{ maxHeight: 520, overflow: 'hidden' }}
+                                    bodyStyle={{ padding: 12 }}
+                                >
+                                    <div style={{ maxHeight: 420, overflow: 'auto' }}>
+                                        {renderDocumentPreview()}
+                                    </div>
+                                    {uploadedAttachment && (
+                                        <Button
+                                            type="link"
+                                            size="small"
+                                            href={`/api/market-intel/attachments/${uploadedAttachment.id}/download`}
+                                            target="_blank"
+                                            style={{ padding: 0, marginTop: 8 }}
+                                        >
+                                            下载原件
+                                        </Button>
+                                    )}
+                                </ProCard>
+
+                                <ProCard
+                                    title={<Space><RobotOutlined style={{ color: token.colorPrimary }} />AI 提示</Space>}
+                                    bordered
+                                    headerBordered
+                                    size="small"
+                                >
+                                    <Space direction="vertical" size={8} style={{ width: '100%' }}>
+                                        <div>
+                                            <Text type="secondary">整体置信度</Text>
+                                            <Progress
+                                                percent={aiResult?.confidenceScore || 0}
+                                                size="small"
+                                                status={(aiResult?.confidenceScore || 0) >= 70 ? 'success' : 'active'}
+                                            />
+                                        </div>
+                                        <div>
+                                            <Text type="secondary">最近分析</Text>
+                                            <div style={{ marginTop: 4 }}>
+                                                <Tag color="blue">
+                                                    {aiSectionMeta.overall?.updatedAt
+                                                        ? dayjs(aiSectionMeta.overall.updatedAt).format('YYYY-MM-DD HH:mm')
+                                                        : '尚未分析'}
+                                                </Tag>
+                                            </div>
+                                        </div>
+                                        <div>
+                                            <Text type="secondary">已提取</Text>
+                                            <div style={{ marginTop: 6 }}>
+                                                <Space wrap>
+                                                    <Tag>观点 {keyPointsWatch?.length || 0}</Tag>
+                                                    <Tag>数据 {dataPointsWatch?.length || 0}</Tag>
+                                                    <Tag>预测 {predictionWatch?.direction ? 1 : 0}</Tag>
+                                                </Space>
+                                            </div>
+                                        </div>
+                                        <Button
+                                            type="primary"
+                                            icon={<ThunderboltOutlined />}
+                                            onClick={() => handleAnalyzeEditorContent(['all'])}
+                                            loading={analyzeMutation.isPending}
+                                        >
+                                            重新分析全部
+                                        </Button>
+                                    </Space>
                                 </ProCard>
                             </div>
                         </Col>
@@ -623,6 +730,21 @@ export const ResearchReportCreatePage = () => {
                                     bordered
                                     size="small"
                                     style={{ height: '100%' }}
+                                    extra={
+                                        <Space size={8}>
+                                            {aiSectionMeta.keyPoints?.confidence !== undefined && (
+                                                <Tag color="blue">{aiSectionMeta.keyPoints.confidence}%</Tag>
+                                            )}
+                                            <Button
+                                                size="small"
+                                                icon={<ThunderboltOutlined />}
+                                                onClick={() => handleAnalyzeEditorContent(['keyPoints'])}
+                                                loading={analyzeMutation.isPending}
+                                            >
+                                                重新提取
+                                            </Button>
+                                        </Space>
+                                    }
                                 >
                                     <ProFormList
                                         name="keyPoints"
@@ -706,6 +828,21 @@ export const ResearchReportCreatePage = () => {
                                     bordered
                                     size="small"
                                     style={{ height: '100%' }}
+                                    extra={
+                                        <Space size={8}>
+                                            {aiSectionMeta.prediction?.confidence !== undefined && (
+                                                <Tag color="blue">{aiSectionMeta.prediction.confidence}%</Tag>
+                                            )}
+                                            <Button
+                                                size="small"
+                                                icon={<ThunderboltOutlined />}
+                                                onClick={() => handleAnalyzeEditorContent(['prediction'])}
+                                                loading={analyzeMutation.isPending}
+                                            >
+                                                重新提取
+                                            </Button>
+                                        </Space>
+                                    }
                                 >
                                     <ProFormSelect
                                         name={['prediction', 'direction']}
@@ -745,6 +882,21 @@ export const ResearchReportCreatePage = () => {
                                     bordered
                                     size="small"
                                     style={{ height: '100%' }}
+                                    extra={
+                                        <Space size={8}>
+                                            {aiSectionMeta.dataPoints?.confidence !== undefined && (
+                                                <Tag color="blue">{aiSectionMeta.dataPoints.confidence}%</Tag>
+                                            )}
+                                            <Button
+                                                size="small"
+                                                icon={<ThunderboltOutlined />}
+                                                onClick={() => handleAnalyzeEditorContent(['dataPoints'])}
+                                                loading={analyzeMutation.isPending}
+                                            >
+                                                重新提取
+                                            </Button>
+                                        </Space>
+                                    }
                                 >
                                     <ProFormList
                                         name="dataPoints"
@@ -797,28 +949,6 @@ export const ResearchReportCreatePage = () => {
                 </ProForm>
             </PageContainer>
 
-            {/* Document Preview Modal */}
-            <Modal
-                title={
-                    <Space>
-                        <FileSearchOutlined />
-                        <span>原始文档预览</span>
-                        {uploadedAttachment?.filename && (
-                            <Text type="secondary" style={{ fontSize: 12 }}>
-                                {uploadedAttachment.filename}
-                            </Text>
-                        )}
-                    </Space>
-                }
-                open={previewModalOpen}
-                onCancel={() => setPreviewModalOpen(false)}
-                footer={null}
-                width="80%"
-                style={{ top: 40 }}
-                styles={{ body: { padding: 0 } }}
-            >
-                {renderDocumentPreview()}
-            </Modal>
         </>
     );
 };
