@@ -43,6 +43,11 @@ export class CollectionPointAllocationController {
     return this.allocationService.getStatistics();
   }
 
+  @Get('matrix')
+  getAllocationMatrix(@Query() query: any) {
+    return this.allocationService.getAllocationMatrix(query);
+  }
+
   @Get('my-assigned')
   findMyAssigned(@Request() req: any, @Query('effectiveDate') effectiveDate?: string) {
     const userId = req.user?.id;

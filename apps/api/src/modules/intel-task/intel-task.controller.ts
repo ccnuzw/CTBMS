@@ -121,4 +121,15 @@ export class IntelTaskController {
         const triggerUserId = 'system-user-placeholder';
         return this.templateService.distributeTasks(dto, triggerUserId);
     }
+
+    @Post('templates/:id/preview')
+    async previewDistribution(@Param('id') id: string) {
+        return this.templateService.previewDistribution(id);
+    }
+
+    @Post('templates/:id/execute')
+    async executeTemplate(@Param('id') id: string) {
+        const triggerUserId = 'system-user-placeholder';
+        return this.templateService.executeTemplate(id, triggerUserId);
+    }
 }

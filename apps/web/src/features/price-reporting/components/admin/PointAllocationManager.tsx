@@ -1,6 +1,7 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   Card,
+  Alert,
   Table,
   Button,
   Space,
@@ -30,6 +31,7 @@ import {
   UserOutlined,
   UserAddOutlined,
   DeleteOutlined,
+  DownloadOutlined,
   EnvironmentOutlined,
   TeamOutlined,
   CheckCircleOutlined,
@@ -62,7 +64,16 @@ const getPointTypeInfo = (type: string) => {
   return POINT_TYPE_OPTIONS.find((t) => t.value === type) || { label: type, icon: '📍' };
 };
 
-export const PointAllocationManager: React.FC = () => {
+export interface PointAllocationManagerProps {
+  embedded?: boolean;
+  defaultAllocationStatus?: 'ALL' | 'ALLOCATED' | 'UNALLOCATED';
+}
+
+export const PointAllocationManager: React.FC<PointAllocationManagerProps> = ({
+  embedded = false,
+  defaultAllocationStatus = 'ALL',
+}) => {
+  const initialAllocationStatus = defaultAllocationStatus === 'ALL' ? undefined : defaultAllocationStatus;
   // 查询状态
   const [pointQuery, setPointQuery] = useState<{
     page: number;
@@ -77,8 +88,20 @@ export const PointAllocationManager: React.FC = () => {
     type: undefined,
     keyword: '',
     isActive: true,
-    allocationStatus: undefined,
+    allocationStatus: initialAllocationStatus,
   });
+
+  useEffect(() => {
+    const nextStatus = defaultAllocationStatus === 'ALL' ? undefined : defaultAllocationStatus;
+    setPointQuery((prev) => {
+      if (prev.allocationStatus === nextStatus) return prev;
+      return {
+        ...prev,
+        allocationStatus: nextStatus,
+        page: 1,
+      };
+    });
+  }, [defaultAllocationStatus]);
 
   // 抽屉状态
   const [drawerVisible, setDrawerVisible] = useState(false);
@@ -100,6 +123,50 @@ export const PointAllocationManager: React.FC = () => {
 
   const createAllocation = useCreateAllocation();
   const deleteAllocation = useDeleteAllocation();
+
+  const handleExport = async (allocationStatusOverride?: 'ALLOCATED' | 'UNALLOCATED') => {
+    try {
+      const params = new URLSearchParams();
+      if (pointQuery.type) params.append('type', pointQuery.type);
+      if (pointQuery.keyword) params.append('keyword', pointQuery.keyword);
+      if (pointQuery.isActive !== undefined) params.append('isActive', String(pointQuery.isActive));
+      const allocationStatus = allocationStatusOverride || pointQuery.allocationStatus;
+      if (allocationStatus) params.append('allocationStatus', allocationStatus);
+      params.append('page', '1');
+      params.append('pageSize', '1000');
+
+      const res = await fetch(`/api/collection-points?${params}`);
+      if (!res.ok) throw new Error('导出失败');
+      const data = await res.json() as { data: any[] };
+      const rows = data.data || [];
+
+      const header = ['采集点名称', '编码', '类型', '区域'];
+      const lines = rows.map((item) => [
+        item.name || '',
+        item.code || '',
+        getPointTypeInfo(item.type).label,
+        item.region?.name || item.regionCode || '',
+      ]);
+
+      const csvContent = '\ufeff' + [header, ...lines]
+        .map((row) => row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(','))
+        .join('\n');
+
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      const dateStr = new Date().toISOString().slice(0, 10);
+      link.download = `采集点分配导出_${dateStr}.csv`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+      message.success(`已导出 ${rows.length} 条数据`);
+    } catch (err: any) {
+      message.error(err?.message || '导出失败');
+    }
+  };
 
   // 过滤用户列表
   const filteredUsers = useMemo(() => {
@@ -245,7 +312,7 @@ export const PointAllocationManager: React.FC = () => {
 
         return (
           <Space>
-             <Avatar.Group maxCount={5} size="small">
+            <Avatar.Group maxCount={5} size="small">
               {activeAllocations.map((a: any) => (
                 <Tooltip key={a.id} title={a.user?.name}>
                   <Avatar src={a.user?.avatar} style={{ backgroundColor: '#1890ff' }}>
@@ -279,7 +346,7 @@ export const PointAllocationManager: React.FC = () => {
   ];
 
   return (
-    <div style={{ padding: 24 }}>
+    <div style={{ padding: embedded ? 0 : 24 }}>
       {/* 统计卡片 */}
       <Row gutter={16} style={{ marginBottom: 24 }}>
         <Col xs={12} sm={6}>
@@ -304,9 +371,14 @@ export const PointAllocationManager: React.FC = () => {
         <Col xs={12} sm={6}>
           <Card size="small">
             <Statistic
-              title="未分配"
+              title={
+                <Space size={6}>
+                  <span>未分配</span>
+                  <Tag color="red">待补齐</Tag>
+                </Space>
+              }
               value={stats?.unallocated || 0}
-              valueStyle={{ color: '#faad14' }}
+              valueStyle={{ color: '#ff4d4f' }}
               prefix={<ExclamationCircleOutlined />}
             />
           </Card>
@@ -331,6 +403,37 @@ export const PointAllocationManager: React.FC = () => {
           </Space>
         }
       >
+        {stats?.unallocated ? (
+          <Alert
+            type="warning"
+            showIcon
+            message={`当前有 ${stats.unallocated} 个采集点未分配负责人`}
+            action={
+              <Space>
+                <Button
+                  size="small"
+                  onClick={() =>
+                    setPointQuery({
+                      ...pointQuery,
+                      allocationStatus: 'UNALLOCATED',
+                      page: 1,
+                    })
+                  }
+                >
+                  只看未分配
+                </Button>
+                <Button
+                  size="small"
+                  icon={<DownloadOutlined />}
+                  onClick={() => handleExport('UNALLOCATED')}
+                >
+                  导出未分配
+                </Button>
+              </Space>
+            }
+            style={{ marginBottom: 16 }}
+          />
+        ) : null}
         {/* 筛选栏 */}
         <Space style={{ marginBottom: 16 }} wrap>
           <Segmented
@@ -368,6 +471,12 @@ export const PointAllocationManager: React.FC = () => {
               label: `${t.icon} ${t.label}`,
             }))}
           />
+          <Button
+            icon={<DownloadOutlined />}
+            onClick={() => handleExport()}
+          >
+            导出当前筛选
+          </Button>
         </Space>
 
         <Table
@@ -404,7 +513,7 @@ export const PointAllocationManager: React.FC = () => {
           setDrawerVisible(false);
           setSelectedPoint(null);
         }}
-        bodyStyle={{ padding: 0 }}
+        styles={{ body: { padding: 0 } }}
       >
         {selectedPoint && (
           <div style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
@@ -427,7 +536,7 @@ export const PointAllocationManager: React.FC = () => {
                     renderItem={(item: any) => (
                       <List.Item>
                         <Card size="small" bodyStyle={{ padding: 12 }}>
-                           <List.Item.Meta
+                          <List.Item.Meta
                             avatar={<Avatar src={item.user?.avatar} icon={<UserOutlined />} />}
                             title={
                               <Space>
@@ -508,7 +617,7 @@ export const PointAllocationManager: React.FC = () => {
                           locale={{ emptyText: searchUserKeyword || selectedOrgNode ? '未找到匹配用户' : '请搜索或选择部门' }}
                           renderItem={(user: any) => (
                             <List.Item>
-                               <Card size="small" hoverable onClick={() => handleAssign(user.id)}>
+                              <Card size="small" hoverable onClick={() => handleAssign(user.id)}>
                                 <List.Item.Meta
                                   avatar={<Avatar icon={<UserOutlined />} />}
                                   title={

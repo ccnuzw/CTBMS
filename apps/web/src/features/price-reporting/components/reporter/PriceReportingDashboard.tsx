@@ -39,7 +39,7 @@ export const PriceReportingDashboard: React.FC = () => {
 
   return (
     <div style={{ padding: 24 }}>
-      <Title level={4} style={{ marginBottom: 24 }}>价格填报工作台</Title>
+
 
       {/* 统计卡片 */}
       <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>

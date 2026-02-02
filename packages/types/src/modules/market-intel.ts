@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { CollectionPointType } from './collection-point';
 
 // =============================================
 // 枚举定义 (与 Prisma Schema 保持同步)
@@ -129,6 +130,7 @@ export const REVIEW_STATUS_LABELS: Record<ReviewStatus, string> = {
 export const StructuredEventSchema = z.object({
   subject: z.string().optional(),
   action: z.string().optional(),
+  content: z.string().optional(), // Add content field
   impact: z.string().optional(),
   commodity: z.string().optional(),
   regionCode: z.string().optional(),
@@ -700,7 +702,7 @@ export const PriceDataQuerySchema = z.object({
   // enterpriseId: z.string().optional(), [REMOVED]
   // 新增：采集点和行政区划查询
   collectionPointId: z.string().optional(),
-  collectionPointIds: z.array(z.string()).optional(),
+  collectionPointIds: z.array(z.string()).default([]),
   regionCode: z.string().optional(),
   pointTypes: z.array(z.string()).optional(),
   startDate: z.coerce.date().optional(),
@@ -1082,10 +1084,13 @@ export const CreateIntelTaskTemplateSchema = z.object({
   maxBackfillPeriods: z.number().min(0).max(365).default(3),
 
   // 分配规则
-  assigneeMode: z.enum(['MANUAL', 'ALL_ACTIVE', 'BY_DEPARTMENT', 'BY_ORGANIZATION']).default('MANUAL'),
+  assigneeMode: z.enum(['MANUAL', 'ALL_ACTIVE', 'BY_DEPARTMENT', 'BY_ORGANIZATION', 'BY_COLLECTION_POINT']).default('MANUAL'),
   assigneeIds: z.array(z.string()).default([]),
   departmentIds: z.array(z.string()).default([]),
   organizationIds: z.array(z.string()).default([]),
+  collectionPointIds: z.array(z.string()).default([]),
+  targetPointType: z.nativeEnum(CollectionPointType).optional(),
+  collectionPointId: z.string().optional(),
 
   isActive: z.boolean().default(true),
 });
@@ -1116,6 +1121,9 @@ export const IntelTaskTemplateResponseSchema = z.object({
   assigneeIds: z.array(z.string()),
   departmentIds: z.array(z.string()),
   organizationIds: z.array(z.string()),
+  collectionPointIds: z.array(z.string()).optional(),
+  targetPointType: z.nativeEnum(CollectionPointType).optional(),
+  collectionPointId: z.string().optional(),
   isActive: z.boolean(),
   lastRunAt: z.date().nullable(),
   nextRunAt: z.date().nullable(),
@@ -1140,3 +1148,31 @@ export type CreateIntelTaskTemplateDto = z.infer<typeof CreateIntelTaskTemplateS
 export type UpdateIntelTaskTemplateDto = z.infer<typeof UpdateIntelTaskTemplateSchema>;
 export type IntelTaskTemplateResponse = z.infer<typeof IntelTaskTemplateResponseSchema>;
 export type BatchDistributeTasksDto = z.infer<typeof BatchDistributeTasksSchema>;
+
+// =============================================
+// 任务分发预览 Schema
+// =============================================
+
+export const DistributionPreviewResponseSchema = z.object({
+  totalTasks: z.number(),
+  totalAssignees: z.number(),
+  assignees: z.array(z.object({
+    userId: z.string(),
+    userName: z.string(),
+    departmentName: z.string().optional(),
+    organizationName: z.string().optional(),
+    collectionPoints: z.array(z.object({
+      id: z.string(),
+      name: z.string(),
+      type: z.string(),
+    })).optional(),
+    taskCount: z.number(),
+  })),
+  unassignedPoints: z.array(z.object({
+    id: z.string(),
+    name: z.string(),
+    type: z.string(),
+  })).optional(),
+});
+
+export type DistributionPreviewResponse = z.infer<typeof DistributionPreviewResponseSchema>;

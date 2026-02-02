@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
-import { Card, Form, InputNumber, Input, Select, Button, Space, Row, Col, message, Divider, Typography, Spin, Alert } from 'antd';
+import { Card, Form, InputNumber, Input, Select, Button, Space, Row, Col, Divider, Typography, Spin, Alert, App } from 'antd';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { ArrowLeftOutlined, CopyOutlined, SendOutlined } from '@ant-design/icons';
+import { useQueryClient } from '@tanstack/react-query';
 import {
   useCreateSubmission,
   useSubmission,
@@ -11,6 +12,7 @@ import {
   usePointPriceHistory,
 } from '../../api/hooks';
 import { useCollectionPoints } from '../../../market-intel/api/collection-point';
+import { getErrorMessage } from '../../../../api/client';
 
 const { Title, Text } = Typography;
 const { TextArea } = Input;
@@ -37,7 +39,9 @@ export const PriceEntryForm: React.FC = () => {
   const taskId = searchParams.get('taskId') || undefined;
   const navigate = useNavigate();
   const [form] = Form.useForm();
+  const { message } = App.useApp();
 
+  const queryClient = useQueryClient();
   const [submissionId, setSubmissionId] = useState<string | null>(null);
 
   const { data: pointsData } = useCollectionPoints({ page: 1, pageSize: 100, isActive: true });
@@ -47,7 +51,8 @@ export const PriceEntryForm: React.FC = () => {
   const addEntry = useAddPriceEntry();
   const submitSubmission = useSubmitSubmission();
   const copyYesterday = useCopyYesterdayData();
-  const { data: priceHistory } = usePointPriceHistory(pointId || '', 7);
+  const commodity = Form.useWatch('commodity', form);
+  const { data: priceHistory } = usePointPriceHistory(pointId || '', 7, commodity);
 
   const { data: submission, isLoading: loadingSubmission } = useSubmission(submissionId || '');
 
@@ -59,21 +64,42 @@ export const PriceEntryForm: React.FC = () => {
         effectiveDate: new Date(),
         taskId,
       }).then((result) => {
+        // Pre-populate the cache to avoid loading state
+        queryClient.setQueryData(['price-submission', result.id], result);
         setSubmissionId(result.id);
-      }).catch(() => {
-        message.error('创建填报批次失败');
+      }).catch((err: any) => {
+        message.error(getErrorMessage(err));
       });
     }
   }, [pointId]);
 
-  const handleCopyYesterday = async () => {
-    if (!submissionId) return;
-    try {
-      await copyYesterday.mutateAsync(submissionId);
-      message.success('已复制昨日数据');
-    } catch (err: any) {
-      message.error(err.response?.data?.message || '复制失败');
+  const handleCopyYesterday = () => {
+    if (!priceHistory?.length) {
+      message.warning('暂无历史数据可复制');
+      return;
     }
+
+    // Find latest entry for current commodity
+    const latestEntry = priceHistory
+      .filter((p: any) => p.commodity === commodity)
+      .sort((a: any, b: any) => new Date(b.effectiveDate).getTime() - new Date(a.effectiveDate).getTime())[0];
+
+    if (!latestEntry) {
+      message.warning(`未找到 ${commodity || ''} 的历史数据`);
+      return;
+    }
+
+    form.setFieldsValue({
+      price: latestEntry.price,
+      subType: latestEntry.subType,
+      grade: latestEntry.grade,
+      moisture: latestEntry.moisture,
+      bulkDensity: latestEntry.bulkDensity,
+      inventory: latestEntry.inventory,
+      note: '复制自近期数据',
+    });
+
+    message.success('已填充最近一次填报数据');
   };
 
   const handleAddEntry = async (values: any) => {
@@ -97,7 +123,7 @@ export const PriceEntryForm: React.FC = () => {
       message.success('添加成功');
       form.resetFields(['price', 'moisture', 'bulkDensity', 'inventory', 'note']);
     } catch (err: any) {
-      message.error(err.response?.data?.message || '添加失败');
+      message.error(getErrorMessage(err));
     }
   };
 
@@ -112,7 +138,7 @@ export const PriceEntryForm: React.FC = () => {
       message.success('提交成功');
       navigate('/price-reporting');
     } catch (err: any) {
-      message.error(err.response?.data?.message || '提交失败');
+      message.error(getErrorMessage(err));
     }
   };
 
@@ -141,9 +167,9 @@ export const PriceEntryForm: React.FC = () => {
               <Button
                 icon={<CopyOutlined />}
                 onClick={handleCopyYesterday}
-                loading={copyYesterday.isPending}
+                loading={false}
               >
-                复制昨日
+                复制历史数据
               </Button>
             }
           >
@@ -218,7 +244,7 @@ export const PriceEntryForm: React.FC = () => {
 
           {/* 已添加的价格列表 */}
           <Card title={`已添加 (${priceDataList.length} 条)`} style={{ marginTop: 16 }}>
-            {loadingSubmission ? (
+            {submissionId && loadingSubmission ? (
               <Spin />
             ) : !priceDataList.length ? (
               <Text type="secondary">暂无数据，请添加价格</Text>

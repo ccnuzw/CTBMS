@@ -81,6 +81,15 @@ export class IntelTaskTemplateService {
             throw new NotFoundException('任务模板不存在');
         }
 
+        if (template.targetPointType) {
+            const result = await this.executeTemplateByPointType(template.id, triggeredById);
+            return {
+                count: result.count,
+                message: result.message,
+                assigneeIds: [],
+            };
+        }
+
         const result = await this.createTasksFromTemplate(template, {
             assigneeIds: dto.assigneeIds,
             overrideDeadline: dto.overrideDeadline ? new Date(dto.overrideDeadline) : undefined,
@@ -104,6 +113,91 @@ export class IntelTaskTemplateService {
             runAt: Date;
         },
     ) {
+        if (
+            template.assigneeMode === 'BY_COLLECTION_POINT' &&
+            (template.collectionPointId || (template.collectionPointIds && template.collectionPointIds.length > 0))
+        ) {
+            const pointIds = template.collectionPointId
+                ? [template.collectionPointId]
+                : template.collectionPointIds;
+
+            const points = await this.prisma.collectionPoint.findMany({
+                where: {
+                    id: { in: pointIds },
+                    isActive: true,
+                },
+                include: {
+                    allocations: {
+                        where: { isActive: true },
+                        select: { userId: true },
+                    },
+                },
+            });
+
+            if (points.length === 0) {
+                return { count: 0, assigneeIds: [] as string[] };
+            }
+
+            const allUserIds = [...new Set(points.flatMap(p => p.allocations.map(a => a.userId)))];
+            if (allUserIds.length === 0) {
+                return { count: 0, assigneeIds: [] as string[] };
+            }
+
+            const assigneeSnapshots = await this.prisma.user.findMany({
+                where: { id: { in: allUserIds } },
+                select: { id: true, organizationId: true, departmentId: true },
+            });
+            const assigneeMap = new Map(
+                assigneeSnapshots.map(item => [
+                    item.id,
+                    { organizationId: item.organizationId, departmentId: item.departmentId },
+                ]),
+            );
+
+            const anchorDate = opts.overrideDeadline || opts.runAt;
+            const periodInfo = computePeriodInfo(template, anchorDate, opts.overrideDeadline);
+            const legacyDeadline = new Date(anchorDate);
+            legacyDeadline.setHours(legacyDeadline.getHours() + template.deadlineOffset);
+            const effectiveDeadline = opts.overrideDeadline || periodInfo.dueAt || legacyDeadline;
+
+            const tasksToCreate: any[] = [];
+            for (const point of points) {
+                for (const allocation of point.allocations) {
+                    const snapshot = assigneeMap.get(allocation.userId);
+                    tasksToCreate.push({
+                        title: this.generateTaskTitle(template.name, periodInfo.periodKey || undefined),
+                        description: template.description || undefined,
+                        type: template.taskType,
+                        priority: template.priority,
+                        deadline: effectiveDeadline,
+                        periodStart: periodInfo.periodStart || undefined,
+                        periodEnd: periodInfo.periodEnd || undefined,
+                        dueAt: periodInfo.dueAt || undefined,
+                        periodKey: periodInfo.periodKey || undefined,
+                        assigneeId: allocation.userId,
+                        assigneeOrgId: snapshot?.organizationId || undefined,
+                        assigneeDeptId: snapshot?.departmentId || undefined,
+                        createdById: opts.triggeredById,
+                        templateId: template.id,
+                        collectionPointId: point.id,
+                    });
+                }
+            }
+
+            if (tasksToCreate.length === 0) {
+                return { count: 0, assigneeIds: [] as string[] };
+            }
+
+            await this.taskService.createMany(tasksToCreate as any);
+
+            await this.prisma.intelTaskTemplate.update({
+                where: { id: template.id },
+                data: { lastRunAt: opts.runAt },
+            });
+
+            return { count: tasksToCreate.length, assigneeIds: allUserIds };
+        }
+
         const targetAssigneeIds = await this.resolveAssigneesWithOverride(template, opts.assigneeIds);
 
         if (targetAssigneeIds.length === 0) {
@@ -358,5 +452,185 @@ export class IntelTaskTemplateService {
 
         // 否则使用原有逻辑
         return this.distributeTasks({ templateId }, triggeredById);
+    }
+
+    /**
+     * 预览任务分发
+     */
+    async previewDistribution(templateId: string) {
+        const template = await this.prisma.intelTaskTemplate.findUnique({
+            where: { id: templateId },
+        });
+
+        if (!template) {
+            throw new NotFoundException('任务模板不存在');
+        }
+
+        const result = {
+            totalTasks: 0,
+            totalAssignees: 0,
+            assignees: [] as any[],
+            unassignedPoints: [] as any[],
+        };
+
+        // Case 1: 按采集点类型分发
+        if (template.targetPointType) {
+            // 查找该类型的所有活跃采集点
+            const points = await this.prisma.collectionPoint.findMany({
+                where: {
+                    type: template.targetPointType,
+                    isActive: true,
+                },
+                include: {
+                    allocations: {
+                        where: { isActive: true },
+                        include: {
+                            user: {
+                                include: {
+                                    department: true,
+                                    organization: true,
+                                }
+                            }
+                        }
+                    },
+                },
+            });
+
+            const assigneeMap = new Map<string, any>();
+
+            for (const point of points) {
+                if (point.allocations.length === 0) {
+                    result.unassignedPoints.push({
+                        id: point.id,
+                        name: point.name,
+                        type: point.type,
+                    });
+                    continue;
+                }
+
+                for (const allocation of point.allocations) {
+                    const user = allocation.user;
+                    if (!assigneeMap.has(user.id)) {
+                        assigneeMap.set(user.id, {
+                            userId: user.id,
+                            userName: user.name,
+                            departmentName: user.department?.name,
+                            organizationName: user.organization?.name,
+                            collectionPoints: [],
+                            taskCount: 0,
+                        });
+                    }
+                    const assigneeEntry = assigneeMap.get(user.id);
+                    assigneeEntry.collectionPoints.push({
+                        id: point.id,
+                        name: point.name,
+                        type: point.type,
+                    });
+                    assigneeEntry.taskCount += 1; // 每个采集点产生一个任务
+                }
+            }
+
+            result.assignees = Array.from(assigneeMap.values());
+            result.totalTasks = result.assignees.reduce((sum, a) => sum + a.taskCount, 0);
+            result.totalAssignees = result.assignees.length;
+
+            return result;
+        }
+
+        // Case 2: 标准模式分发 (MANUAL, BY_DEPARTMENT, BY_ORGANIZATION)
+        if (
+            template.assigneeMode === 'BY_COLLECTION_POINT' &&
+            (template.collectionPointId || (template.collectionPointIds && template.collectionPointIds.length > 0))
+        ) {
+            const pointIds = template.collectionPointId
+                ? [template.collectionPointId]
+                : template.collectionPointIds;
+
+            const points = await this.prisma.collectionPoint.findMany({
+                where: {
+                    id: { in: pointIds },
+                    isActive: true,
+                },
+                include: {
+                    allocations: {
+                        where: { isActive: true },
+                        include: {
+                            user: {
+                                include: {
+                                    department: true,
+                                    organization: true,
+                                }
+                            }
+                        }
+                    },
+                },
+            });
+
+            const assigneeMap = new Map<string, any>();
+
+            for (const point of points) {
+                if (point.allocations.length === 0) {
+                    result.unassignedPoints.push({
+                        id: point.id,
+                        name: point.name,
+                        type: point.type,
+                    });
+                    continue;
+                }
+
+                for (const allocation of point.allocations) {
+                    const user = allocation.user;
+                    if (!assigneeMap.has(user.id)) {
+                        assigneeMap.set(user.id, {
+                            userId: user.id,
+                            userName: user.name,
+                            departmentName: user.department?.name,
+                            organizationName: user.organization?.name,
+                            collectionPoints: [],
+                            taskCount: 0,
+                        });
+                    }
+                    const assigneeEntry = assigneeMap.get(user.id);
+                    assigneeEntry.collectionPoints.push({
+                        id: point.id,
+                        name: point.name,
+                        type: point.type,
+                    });
+                    assigneeEntry.taskCount += 1;
+                }
+            }
+
+            result.assignees = Array.from(assigneeMap.values());
+            result.totalTasks = result.assignees.reduce((sum, a) => sum + a.taskCount, 0);
+            result.totalAssignees = result.assignees.length;
+
+            return result;
+        }
+
+        const targetAssigneeIds = await this.resolveAssignees(template);
+
+        if (targetAssigneeIds.length > 0) {
+            const users = await this.prisma.user.findMany({
+                where: { id: { in: targetAssigneeIds } },
+                include: {
+                    department: true,
+                    organization: true,
+                },
+            });
+
+            result.assignees = users.map(user => ({
+                userId: user.id,
+                userName: user.name,
+                departmentName: user.department?.name,
+                organizationName: user.organization?.name,
+                collectionPoints: [],
+                taskCount: 1, // 标准模式每人一个任务
+            }));
+
+            result.totalTasks = result.assignees.length;
+            result.totalAssignees = result.assignees.length;
+        }
+
+        return result;
     }
 }

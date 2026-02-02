@@ -1547,7 +1547,7 @@ export class MarketIntelService {
             raw: p
         }));
 
-        // @ts-ignore
+
         return [...related, ...priceItems]
             .sort((a, b) => (b.similarity || 0) - (a.similarity || 0))
             .slice(0, limit);
@@ -1717,7 +1717,7 @@ export class MarketIntelService {
 
 
         // 并行查询事件、洞察和研报
-        // @ts-ignore
+
         const [events, insights, reports] = await Promise.all([
             this.prisma.marketEvent.findMany({
                 where: eventWhere,

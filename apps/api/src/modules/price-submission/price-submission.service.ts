@@ -14,7 +14,7 @@ import { SubmissionStatus, PriceReviewStatus, PriceInputMethod } from '@packages
 
 @Injectable()
 export class PriceSubmissionService {
-  constructor(private prisma: PrismaService) {}
+  constructor(private prisma: PrismaService) { }
 
   /**
    * 生成批次编号
@@ -30,12 +30,40 @@ export class PriceSubmissionService {
    * 创建填报批次
    */
   async create(dto: CreatePriceSubmissionDto, submittedById: string) {
-    // 检查是否已存在同一天同一采集点的批次
+    if (!submittedById) {
+      throw new BadRequestException('User ID is required');
+    }
+
+    // 1. 检查任务关联 (taskId 必须唯一)
+    if (dto.taskId) {
+      const existingTaskSubmission = await this.prisma.priceSubmission.findUnique({
+        where: { taskId: dto.taskId },
+      });
+
+      if (existingTaskSubmission) {
+        if (existingTaskSubmission.status === SubmissionStatus.REJECTED) {
+          // 如果之前的提交被拒绝，解除任务关联，允许重新提交
+          await this.prisma.priceSubmission.update({
+            where: { id: existingTaskSubmission.id },
+            data: { taskId: null },
+          });
+        } else {
+          // 如果已存在有效的关联提交，直接返回
+          return this.findOne(existingTaskSubmission.id);
+        }
+      }
+    }
+
+    // 规范化日期为当天的 00:00:00.000
+    const effectiveDate = new Date(dto.effectiveDate);
+    effectiveDate.setHours(0, 0, 0, 0);
+
+    // 2. 检查是否已存在同一天同一采集点的批次
     const existing = await this.prisma.priceSubmission.findFirst({
       where: {
         collectionPointId: dto.collectionPointId,
         submittedById,
-        effectiveDate: dto.effectiveDate,
+        effectiveDate: effectiveDate,
         status: { not: SubmissionStatus.REJECTED },
       },
     });
@@ -45,12 +73,13 @@ export class PriceSubmissionService {
       return this.findOne(existing.id);
     }
 
+    // 3. 创建新批次
     return this.prisma.priceSubmission.create({
       data: {
         batchCode: this.generateBatchCode(),
         submittedById,
         collectionPointId: dto.collectionPointId,
-        effectiveDate: dto.effectiveDate,
+        effectiveDate: effectiveDate,
         taskId: dto.taskId,
         status: SubmissionStatus.DRAFT,
       },
@@ -419,13 +448,13 @@ export class PriceSubmissionService {
       // 今日待填报（有待办任务）
       userId
         ? this.prisma.intelTask.count({
-            where: {
-              assigneeId: userId,
-              status: 'PENDING',
-              type: { in: ['PRICE_COLLECTION', 'INVENTORY_CHECK'] },
-              deadline: { gte: today },
-            },
-          })
+          where: {
+            assigneeId: userId,
+            status: 'PENDING',
+            type: { in: ['PRICE_COLLECTION', 'INVENTORY_CHECK'] },
+            deadline: { gte: today },
+          },
+        })
         : 0,
       // 今日已完成
       this.prisma.priceSubmission.count({
@@ -481,25 +510,45 @@ export class PriceSubmissionService {
       throw new BadRequestException('只能在草稿状态下复制数据');
     }
 
-    // 查找昨日数据
-    const yesterday = new Date(submission.effectiveDate);
-    yesterday.setDate(yesterday.getDate() - 1);
+    // 查找最近可用的数据 (最多向前追溯7天)
+    const effectiveDate = new Date(submission.effectiveDate);
+    const lookbackDate = new Date(effectiveDate);
+    lookbackDate.setDate(lookbackDate.getDate() - 7);
 
-    const yesterdayData = await this.prisma.priceData.findMany({
+    // Find the most recent date that has data
+    const lastAvailableEntry = await this.prisma.priceData.findFirst({
       where: {
         collectionPointId: submission.collectionPointId,
-        effectiveDate: yesterday,
-        reviewStatus: PriceReviewStatus.APPROVED,
+        effectiveDate: {
+          lt: effectiveDate,
+          gte: lookbackDate,
+        },
+        reviewStatus: { in: [PriceReviewStatus.APPROVED, PriceReviewStatus.PENDING] },
+      },
+      orderBy: { effectiveDate: 'desc' },
+    });
+
+    if (!lastAvailableEntry) {
+      throw new NotFoundException('近7日内未找到可复制的数据');
+    }
+
+    const lastDate = lastAvailableEntry.effectiveDate;
+
+    const sourceData = await this.prisma.priceData.findMany({
+      where: {
+        collectionPointId: submission.collectionPointId,
+        effectiveDate: lastDate,
+        reviewStatus: { in: [PriceReviewStatus.APPROVED, PriceReviewStatus.PENDING] },
       },
     });
 
-    if (yesterdayData.length === 0) {
-      throw new NotFoundException('未找到昨日数据');
+    if (sourceData.length === 0) {
+      throw new NotFoundException('未找到可复制的数据');
     }
 
     // 复制数据
     const results = [];
-    for (const data of yesterdayData) {
+    for (const data of sourceData) {
       const entry = await this.addEntry(
         submissionId,
         {
@@ -512,7 +561,7 @@ export class PriceSubmissionService {
           moisture: data.moisture ? Number(data.moisture) : undefined,
           bulkDensity: data.bulkDensity || undefined,
           inventory: data.inventory || undefined,
-          note: '复制自昨日数据',
+          note: '复制自近期数据',
         },
         authorId,
       );
@@ -525,22 +574,36 @@ export class PriceSubmissionService {
   /**
    * 获取采集点历史价格
    */
-  async getCollectionPointPriceHistory(collectionPointId: string, days: number = 7) {
+  async getCollectionPointPriceHistory(collectionPointId: string, days: number = 7, commodity?: string) {
     const startDate = new Date();
+    startDate.setHours(0, 0, 0, 0);
     startDate.setDate(startDate.getDate() - days);
 
+    const where: any = {
+      collectionPointId,
+      effectiveDate: { gte: startDate },
+      reviewStatus: { in: [PriceReviewStatus.APPROVED, PriceReviewStatus.PENDING] },
+    };
+
+    if (commodity) {
+      where.commodity = commodity;
+    }
+
     return this.prisma.priceData.findMany({
-      where: {
-        collectionPointId,
-        effectiveDate: { gte: startDate },
-        reviewStatus: PriceReviewStatus.APPROVED,
-      },
+      where,
       orderBy: { effectiveDate: 'asc' },
       select: {
         effectiveDate: true,
         price: true,
         commodity: true,
         subType: true,
+        grade: true,
+        moisture: true,
+        bulkDensity: true,
+        inventory: true,
+        note: true,
+        sourceType: true,
+        geoLevel: true,
       },
     });
   }

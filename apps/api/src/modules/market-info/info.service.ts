@@ -18,7 +18,6 @@ export class InfoService {
         const info = await this.prisma.marketInfo.create({
             data: {
                 ...rest,
-                // @ts-ignore - Handle null attachments
                 attachments: rest.attachments ?? undefined,
                 category: {
                     connect: { id: categoryId }
@@ -98,7 +97,6 @@ export class InfoService {
             where: { id },
             data: {
                 ...rest,
-                // @ts-ignore - Handle null attachments
                 attachments: rest.attachments ?? undefined,
                 category: categoryId ? {
                     connect: { id: categoryId }

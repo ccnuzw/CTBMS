@@ -18,6 +18,7 @@ import { CollectionPointModule } from './modules/collection-point';
 import { RegionModule } from './modules/region';
 import { ExtractionConfigModule } from './modules/extraction-config';
 import { LoggerMiddleware } from './common/middleware/logger.middleware';
+import { MockAuthMiddleware } from './common/middleware/mock-auth.middleware';
 import { IntelTaskModule } from './modules/intel-task';
 import { ConfigModule } from './modules/config/config.module';
 import { CollectionPointAllocationModule } from './modules/collection-point-allocation';
@@ -53,6 +54,7 @@ import { PriceSubmissionModule } from './modules/price-submission';
 export class AppModule implements NestModule {
     configure(consumer: MiddlewareConsumer) {
         consumer.apply(LoggerMiddleware).forRoutes('*');
+        consumer.apply(MockAuthMiddleware).forRoutes('*');
     }
 }
 

@@ -346,7 +346,6 @@ export class AIService implements OnModuleInit {
                         eventTypeCode: r.typeId
                     }));
 
-                // @ts-ignore
                 if (ruleEvents.length > 0) {
                     result.events = result.events || [];
                     result.events.push(...ruleEvents);
@@ -358,16 +357,14 @@ export class AIService implements OnModuleInit {
                     .map(r => ({
                         title: r.ruleName,
                         content: r.sourceText,
-                        direction: 'Neutral', // 默认值
-                        timeframe: 'medium',  // 默认值
+                        direction: 'Neutral' as const, // 默认值
+                        timeframe: 'medium' as const,  // 默认值
                         confidence: 85,       // 规则匹配通常置信度较高
                         factors: r.extractedData.value ? [r.extractedData.value] : []
                     }));
 
                 if (ruleInsights.length > 0) {
-                    // @ts-ignore
                     result.insights = result.insights || [];
-                    // @ts-ignore
                     result.insights.push(...ruleInsights);
                 }
             }

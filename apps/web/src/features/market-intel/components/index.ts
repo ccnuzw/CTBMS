@@ -25,3 +25,7 @@ export * from './task-distribution';
 export * from './KnowledgePortal';
 export * from './KnowledgeTabs';
 export * from './DocumentStatsDashboard';
+export { TaskAllocationWorkbench } from './TaskAllocationWorkbench';
+export { AllocationMatrix } from './AllocationMatrix';
+export { CollectionPointAllocationCenter } from './CollectionPointAllocationCenter';
+export { DistributionPreview } from './DistributionPreview';

@@ -5,6 +5,8 @@ import {
   BatchCreateAllocationDto,
   UpdateCollectionPointAllocationDto,
   QueryCollectionPointAllocationDto,
+  AllocationMatrixQueryDto,
+  AllocationMatrixResponse,
   CollectionPointAllocationResponse,
   CreatePriceSubmissionDto,
   QueryPriceSubmissionDto,
@@ -55,6 +57,20 @@ export const useAllocationStatistics = () => {
   });
 };
 
+export const useAllocationMatrix = (query: AllocationMatrixQueryDto, options?: { enabled?: boolean }) => {
+  return useQuery({
+    queryKey: ['allocation-matrix', query],
+    enabled: options?.enabled,
+    queryFn: async () => {
+      const { data } = await apiClient.get<AllocationMatrixResponse>(
+        `${ALLOCATION_BASE_URL}/matrix`,
+        { params: query }
+      );
+      return data;
+    },
+  });
+};
+
 export const useMyAssignedPoints = (effectiveDate?: string) => {
   return useQuery({
     queryKey: ['my-assigned-points', effectiveDate],
@@ -77,6 +93,19 @@ export const usePointAssignees = (collectionPointId: string) => {
   });
 };
 
+export const useAllocationsByUser = (userId?: string) => {
+  return useQuery({
+    queryKey: ['allocation-by-user', userId],
+    queryFn: async () => {
+      const { data } = await apiClient.get<CollectionPointAllocationResponse[]>(
+        `${ALLOCATION_BASE_URL}/by-user/${userId}`
+      );
+      return data;
+    },
+    enabled: !!userId,
+  });
+};
+
 export const useCreateAllocation = () => {
   const queryClient = useQueryClient();
   return useMutation({
@@ -89,6 +118,7 @@ export const useCreateAllocation = () => {
       queryClient.invalidateQueries({ queryKey: ['allocation-statistics'] });
       queryClient.invalidateQueries({ queryKey: ['collection-points'] });
       queryClient.invalidateQueries({ queryKey: ['point-assignees', variables.collectionPointId] });
+      queryClient.invalidateQueries({ queryKey: ['allocation-by-user', variables.userId] });
     },
   });
 };
@@ -131,6 +161,7 @@ export const useDeleteAllocation = () => {
       queryClient.invalidateQueries({ queryKey: ['allocation-statistics'] });
       queryClient.invalidateQueries({ queryKey: ['collection-points'] });
       queryClient.invalidateQueries({ queryKey: ['point-assignees'] });
+      queryClient.invalidateQueries({ queryKey: ['allocation-by-user'] });
     },
   });
 };
@@ -216,12 +247,12 @@ export const usePendingReviews = (query?: { page?: number; pageSize?: number }) 
   });
 };
 
-export const usePointPriceHistory = (collectionPointId: string, days: number = 7) => {
+export const usePointPriceHistory = (collectionPointId: string, days: number = 7, commodity?: string) => {
   return useQuery({
-    queryKey: ['point-price-history', collectionPointId, days],
+    queryKey: ['point-price-history', collectionPointId, days, commodity],
     queryFn: async () => {
       const { data } = await apiClient.get<any[]>(`${SUBMISSION_BASE_URL}/point/${collectionPointId}/history`, {
-        params: { days },
+        params: { days, commodity },
       });
       return data;
     },
@@ -384,13 +415,17 @@ export interface TaskTemplate {
   taskType: string;
   priority: string;
   cycleType: string;
+  timezone?: string;
   deadlineOffset: number;
+  runDayOfWeek?: number | null;
+  runDayOfMonth?: number | null;
   assigneeMode: string;
   assigneeIds: string[];
   departmentIds: string[];
   organizationIds: string[];
   collectionPointIds: string[];
   targetPointType?: string;
+  collectionPointId?: string;
   isActive: boolean;
   lastRunAt?: string;
   nextRunAt?: string;
@@ -398,6 +433,10 @@ export interface TaskTemplate {
   activeUntil?: string;
   runAtMinute: number;
   dueAtMinute: number;
+  dueDayOfWeek?: number | null;
+  dueDayOfMonth?: number | null;
+  allowLate?: boolean;
+  maxBackfillPeriods?: number;
   createdAt: string;
   updatedAt: string;
 }
@@ -408,15 +447,23 @@ export interface CreateTaskTemplateDto {
   taskType: string;
   priority?: string;
   cycleType: string;
+  timezone?: string;
   deadlineOffset?: number;
+  runDayOfWeek?: number | null;
+  runDayOfMonth?: number | null;
   assigneeMode?: string;
   assigneeIds?: string[];
   departmentIds?: string[];
   organizationIds?: string[];
   collectionPointIds?: string[];
   targetPointType?: string;
+  collectionPointId?: string;
   runAtMinute?: number;
   dueAtMinute?: number;
+  dueDayOfWeek?: number | null;
+  dueDayOfMonth?: number | null;
+  allowLate?: boolean;
+  maxBackfillPeriods?: number;
   activeFrom?: string;
   activeUntil?: string;
 }
@@ -459,7 +506,7 @@ export const useUpdateTaskTemplate = () => {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async ({ id, dto }: { id: string; dto: Partial<CreateTaskTemplateDto> }) => {
-      const { data } = await apiClient.patch<TaskTemplate>(`${TEMPLATE_BASE_URL}/${id}`, dto);
+      const { data } = await apiClient.put<TaskTemplate>(`${TEMPLATE_BASE_URL}/${id}`, dto);
       return data;
     },
     onSuccess: () => {
@@ -507,6 +554,17 @@ export const useDistributeTasks = () => {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['task-templates'] });
+    },
+  });
+};
+
+export const usePreviewTaskDistribution = () => {
+  return useMutation({
+    mutationFn: async (templateId: string) => {
+      const { data } = await apiClient.post<import('@packages/types').DistributionPreviewResponse>(
+        `/intel-tasks/templates/${templateId}/preview`
+      );
+      return data;
     },
   });
 };

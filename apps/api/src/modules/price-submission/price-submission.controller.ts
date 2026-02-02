@@ -8,6 +8,8 @@ import {
   Delete,
   Query,
   Request,
+  ParseIntPipe,
+  UnauthorizedException,
 } from '@nestjs/common';
 import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { PriceSubmissionService } from './price-submission.service';
@@ -23,13 +25,16 @@ import {
 
 @Controller('price-submissions')
 export class PriceSubmissionController {
-  constructor(private readonly submissionService: PriceSubmissionService) {}
+  constructor(private readonly submissionService: PriceSubmissionService) { }
 
   @Post()
   @ApiOperation({ summary: '创建填报批次' })
   @ApiResponse({ status: 201, description: '创建成功' })
   create(@Body() dto: CreatePriceSubmissionDto, @Request() req: any) {
     const userId = req.user?.id;
+    if (!userId) {
+      throw new UnauthorizedException('User not authenticated');
+    }
     return this.submissionService.create(dto, userId);
   }
 
@@ -51,7 +56,7 @@ export class PriceSubmissionController {
   @Get('pending-reviews')
   @ApiOperation({ summary: '获取待审核列表' })
   @ApiResponse({ status: 200, description: '待审核列表' })
-  getPendingReviews(@Query('page') page?: number, @Query('pageSize') pageSize?: number) {
+  getPendingReviews(@Query('page', new ParseIntPipe({ optional: true })) page?: number, @Query('pageSize', new ParseIntPipe({ optional: true })) pageSize?: number) {
     return this.submissionService.getPendingReviews({ page, pageSize });
   }
 
@@ -66,8 +71,12 @@ export class PriceSubmissionController {
   @Get('point/:collectionPointId/history')
   @ApiOperation({ summary: '获取采集点历史价格' })
   @ApiResponse({ status: 200, description: '历史价格数据' })
-  getPointHistory(@Param('collectionPointId') collectionPointId: string, @Query('days') days?: number) {
-    return this.submissionService.getCollectionPointPriceHistory(collectionPointId, days);
+  getPointHistory(
+    @Param('collectionPointId') collectionPointId: string,
+    @Query('days', ParseIntPipe) days?: number,
+    @Query('commodity') commodity?: string,
+  ) {
+    return this.submissionService.getCollectionPointPriceHistory(collectionPointId, days, commodity);
   }
 
   @Get(':id')
@@ -134,7 +143,7 @@ export class PriceSubmissionController {
 @ApiTags('价格数据审核')
 @Controller('price-data')
 export class PriceDataReviewController {
-  constructor(private readonly submissionService: PriceSubmissionService) {}
+  constructor(private readonly submissionService: PriceSubmissionService) { }
 
   @Post(':id/review')
   @ApiOperation({ summary: '审核单条价格数据' })

@@ -36,10 +36,10 @@ import { systemConfigRoutes } from '../features/system-config';
 import {
     PriceReportingDashboard,
     PriceEntryForm,
-    PointAllocationManager,
     PriceReviewPanel,
     TaskTemplateManager,
 } from '../features/price-reporting';
+import { TaskAllocationWorkbench, CollectionPointAllocationCenter } from '../features/market-intel';
 
 export const router = createBrowserRouter([
     {
@@ -49,6 +49,12 @@ export const router = createBrowserRouter([
             {
                 index: true,
                 element: <Navigate to="/dashboard" replace />,
+            },
+            {
+                path: 'admin',
+                children: [
+                    { path: 'task-allocation', element: <TaskAllocationWorkbench /> },
+                ]
             },
             {
                 path: 'dashboard',
@@ -131,7 +137,7 @@ export const router = createBrowserRouter([
                 children: [
                     { index: true, element: <PriceReportingDashboard /> },
                     { path: 'submit/:pointId', element: <PriceEntryForm /> },
-                    { path: 'allocation', element: <PointAllocationManager /> },
+                    { path: 'allocation', element: <CollectionPointAllocationCenter defaultMode="POINT_COVERAGE" /> },
                     { path: 'review', element: <PriceReviewPanel /> },
                     { path: 'templates', element: <TaskTemplateManager /> },
                 ]
@@ -139,5 +145,3 @@ export const router = createBrowserRouter([
         ],
     },
 ]);
-
-

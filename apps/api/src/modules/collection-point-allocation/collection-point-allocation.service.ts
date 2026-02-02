@@ -5,11 +5,125 @@ import {
   BatchCreateAllocationDto,
   UpdateCollectionPointAllocationDto,
   QueryCollectionPointAllocationDto,
+  AllocationMatrixQueryDto,
 } from './dto';
 
 @Injectable()
 export class CollectionPointAllocationService {
   constructor(private prisma: PrismaService) {}
+
+  /**
+   * 获取分配矩阵数据
+   */
+  async getAllocationMatrix(query: AllocationMatrixQueryDto) {
+    const { organizationId, departmentId, pointType, keyword, userKeyword, pointKeyword } = query;
+
+    // 性能优化：如果没有筛选条件，不返回数据（避免加载全量数据）
+    if (!organizationId && !departmentId && !pointType && !keyword && !userKeyword && !pointKeyword) {
+      return {
+        points: [],
+        users: [],
+        stats: {
+          totalPoints: 0,
+          allocatedPoints: 0,
+          unallocatedPoints: 0,
+        },
+      };
+    }
+
+    // 1. 获取符合条件的用户
+    const userWhere: any = { status: 'ACTIVE' };
+    if (organizationId) userWhere.organizationId = organizationId;
+    if (departmentId) userWhere.departmentId = departmentId;
+
+    // 搜索用户：优先使用 userKeyword，其次兼容 keyword
+    const searchUserKw = userKeyword || keyword;
+    if (searchUserKw) {
+      userWhere.OR = [
+        { name: { contains: searchUserKw } },
+        { username: { contains: searchUserKw } },
+      ];
+    }
+
+    const users = await this.prisma.user.findMany({
+      where: userWhere,
+      select: {
+        id: true,
+        name: true,
+        organization: { select: { name: true } },
+        department: { select: { name: true } },
+        _count: {
+          select: {
+            collectionPointAllocations: { where: { isActive: true } },
+            intelTasks: { where: { status: 'PENDING' } },
+          },
+        },
+      },
+      orderBy: { name: 'asc' },
+    });
+
+    // 2. 获取符合条件的采集点
+    const pointWhere: any = { isActive: true };
+    if (pointType) pointWhere.type = pointType;
+
+    // 搜索采集点：优先使用 pointKeyword，其次兼容 keyword
+    const searchPointKw = pointKeyword || keyword;
+    if (searchPointKw) {
+      pointWhere.OR = [
+        { name: { contains: searchPointKw } },
+        { code: { contains: searchPointKw } },
+      ];
+    }
+
+    const points = await this.prisma.collectionPoint.findMany({
+      where: pointWhere,
+      select: {
+        id: true,
+        name: true,
+        type: true,
+        latitude: true,
+        longitude: true,
+        allocations: {
+          where: { isActive: true },
+          select: { userId: true },
+        },
+      },
+      orderBy: { type: 'asc' },
+    });
+
+    // 3. 组装矩阵数据
+    const matrixPoints = points.map(point => ({
+      pointId: point.id,
+      pointName: point.name,
+      pointType: point.type,
+      latitude: point.latitude,
+      longitude: point.longitude,
+      allocatedUserIds: point.allocations.map(a => a.userId),
+      isAllocated: point.allocations.length > 0,
+    }));
+
+    const matrixUsers = users.map(user => ({
+      id: user.id,
+      name: user.name,
+      organizationName: user.organization?.name,
+      departmentName: user.department?.name,
+      assignedPointCount: user._count.collectionPointAllocations,
+      pendingTaskCount: user._count.intelTasks,
+    }));
+
+    // 4. 计算统计数据
+    const stats = {
+      totalPoints: points.length,
+      allocatedPoints: matrixPoints.filter(p => p.isAllocated).length,
+      unallocatedPoints: matrixPoints.filter(p => !p.isAllocated).length,
+    };
+
+    return {
+      points: matrixPoints,
+      users: matrixUsers,
+      stats,
+    };
+  }
 
   /**
    * 创建单个分配关系

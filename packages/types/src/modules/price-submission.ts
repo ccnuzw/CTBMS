@@ -280,3 +280,45 @@ export const CollectionPointReportingStatusSchema = z.object({
 });
 
 export type CollectionPointReportingStatus = z.infer<typeof CollectionPointReportingStatusSchema>;
+
+// =============================================
+// 分配矩阵 Schema
+// =============================================
+
+export const AllocationMatrixQuerySchema = z.object({
+  organizationId: z.string().optional(),
+  departmentId: z.string().optional(),
+  pointType: z.string().optional(),
+  keyword: z.string().optional(),
+  userKeyword: z.string().optional(),
+  pointKeyword: z.string().optional(),
+});
+
+export type AllocationMatrixQueryDto = z.infer<typeof AllocationMatrixQuerySchema>;
+
+export const AllocationMatrixResponseSchema = z.object({
+  points: z.array(z.object({
+    pointId: z.string(),
+    pointName: z.string(),
+    pointType: z.string(),
+    allocatedUserIds: z.array(z.string()),
+    isAllocated: z.boolean(),
+    latitude: z.number().nullable().optional(),
+    longitude: z.number().nullable().optional(),
+  })),
+  users: z.array(z.object({
+    id: z.string(),
+    name: z.string(),
+    organizationName: z.string().optional(),
+    departmentName: z.string().optional(),
+    assignedPointCount: z.number().default(0),
+    pendingTaskCount: z.number().default(0),
+  })),
+  stats: z.object({
+    totalPoints: z.number(),
+    allocatedPoints: z.number(),
+    unallocatedPoints: z.number(),
+  }),
+});
+
+export type AllocationMatrixResponse = z.infer<typeof AllocationMatrixResponseSchema>;

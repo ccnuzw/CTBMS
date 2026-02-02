@@ -4,6 +4,7 @@ import {
   BatchCreateAllocationSchema,
   UpdateCollectionPointAllocationSchema,
   QueryCollectionPointAllocationSchema,
+  AllocationMatrixQuerySchema,
 } from '@packages/types';
 
 export class CreateCollectionPointAllocationDto extends createZodDto(CreateCollectionPointAllocationSchema) {}
@@ -13,3 +14,5 @@ export class BatchCreateAllocationDto extends createZodDto(BatchCreateAllocation
 export class UpdateCollectionPointAllocationDto extends createZodDto(UpdateCollectionPointAllocationSchema) {}
 
 export class QueryCollectionPointAllocationDto extends createZodDto(QueryCollectionPointAllocationSchema) {}
+
+export class AllocationMatrixQueryDto extends createZodDto(AllocationMatrixQuerySchema) {}
