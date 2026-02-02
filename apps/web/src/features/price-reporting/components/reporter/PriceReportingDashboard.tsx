@@ -9,8 +9,9 @@ import {
   RightOutlined,
 } from '@ant-design/icons';
 import { useMyAssignedPoints, useSubmissionStatistics } from '../../api/hooks';
+import { useVirtualUser } from '@/features/auth/virtual-user';
 
-const { Title, Text } = Typography;
+const { Text } = Typography;
 
 const POINT_TYPE_ICONS: Record<string, string> = {
   PORT: '⚓',
@@ -23,9 +24,10 @@ const POINT_TYPE_ICONS: Record<string, string> = {
 export const PriceReportingDashboard: React.FC = () => {
   const navigate = useNavigate();
   const today = new Date().toISOString().split('T')[0];
+  const { currentUser } = useVirtualUser();
 
-  const { data: assignedPoints, isLoading: loadingPoints } = useMyAssignedPoints(today);
-  const { data: stats, isLoading: loadingStats } = useSubmissionStatistics();
+  const { data: assignedPoints, isLoading: loadingPoints } = useMyAssignedPoints(today, currentUser?.id);
+  const { data: stats } = useSubmissionStatistics(currentUser?.id);
 
   const handleReport = (pointId: string, taskId?: string) => {
     const params = new URLSearchParams();

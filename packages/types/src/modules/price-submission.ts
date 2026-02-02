@@ -67,6 +67,7 @@ export const SUBMISSION_STATUS_LABELS: Record<SubmissionStatus, string> = {
 export const CreateCollectionPointAllocationSchema = z.object({
   userId: z.string().uuid(),
   collectionPointId: z.string().uuid(),
+  commodity: z.string().optional(), // [NEW] 负责品种
   remark: z.string().optional(),
 });
 
@@ -77,6 +78,7 @@ export const BatchCreateAllocationSchema = z.object({
   collectionPointId: z.string().uuid(),
   allocations: z.array(z.object({
     userId: z.string().uuid(),
+    commodity: z.string().optional(), // [NEW] 负责品种
     remark: z.string().optional(),
   })),
 });
@@ -85,6 +87,7 @@ export type BatchCreateAllocationDto = z.infer<typeof BatchCreateAllocationSchem
 
 // 更新分配
 export const UpdateCollectionPointAllocationSchema = z.object({
+  commodity: z.string().optional(), // [NEW] 允许更新品种
   remark: z.string().optional(),
   isActive: z.boolean().optional(),
 });
@@ -95,6 +98,7 @@ export type UpdateCollectionPointAllocationDto = z.infer<typeof UpdateCollection
 export const QueryCollectionPointAllocationSchema = z.object({
   userId: z.string().uuid().optional(),
   collectionPointId: z.string().uuid().optional(),
+  commodity: z.string().optional(), // [NEW] 按品种查询
   isActive: z.boolean().optional(),
   page: z.coerce.number().int().positive().default(1),
   pageSize: z.coerce.number().int().positive().max(100).default(20),
@@ -109,6 +113,7 @@ export const CollectionPointAllocationResponseSchema = z.object({
   collectionPointId: z.string().uuid(),
   assignedById: z.string().uuid().nullable(),
   assignedAt: z.coerce.date(),
+  commodity: z.string().nullable(), // [NEW]
   remark: z.string().nullable(),
   isActive: z.boolean(),
   createdAt: z.coerce.date(),
@@ -305,6 +310,11 @@ export const AllocationMatrixResponseSchema = z.object({
     isAllocated: z.boolean(),
     latitude: z.number().nullable().optional(),
     longitude: z.number().nullable().optional(),
+    commodities: z.array(z.string()).optional(), // [NEW] 采集点支持的品种
+    allocations: z.array(z.object({             // [NEW] 详细分配信息
+      userId: z.string(),
+      commodity: z.string().nullable(),
+    })).optional(),
   })),
   users: z.array(z.object({
     id: z.string(),

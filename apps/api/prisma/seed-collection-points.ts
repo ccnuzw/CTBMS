@@ -64,6 +64,21 @@ async function seedCollectionPoints() {
             delete data.region;
             delete data.entityTags; // We will handle tags separately or need proper connect syntax
 
+            // 4. Default commodities and priceSubTypes if missing
+            if (!data.commodities) {
+                data.commodities = ['玉米', '大豆']; // Default logic
+            }
+            if (!data.priceSubTypes) {
+                // Default based on type
+                if (data.type === 'PORT') {
+                    data.priceSubTypes = ['ARRIVAL', 'FOB'];
+                } else if (data.type === 'ENTERPRISE') {
+                    data.priceSubTypes = ['PURCHASE', 'LISTED'];
+                } else {
+                    data.priceSubTypes = ['LISTED'];
+                }
+            }
+
             await prisma.collectionPoint.upsert({
                 where: { id: item.id },
                 update: data,

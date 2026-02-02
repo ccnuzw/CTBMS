@@ -1,36 +1,32 @@
-import React, { useMemo, useState, useEffect } from 'react';
-import { Badge, Button, Space, Typography, Avatar, Tag, Select } from 'antd';
-import { ProCard, StatisticCard } from '@ant-design/pro-components';
+import React, { useMemo } from 'react';
+import { Badge, Button, Space, Typography, Tag, Select } from 'antd';
+import { ProCard } from '@ant-design/pro-components';
 import { CheckCircleOutlined, ClockCircleOutlined, ExclamationCircleOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import {
     IntelTaskStatus,
-    INTEL_TASK_STATUS_LABELS,
     INTEL_TASK_TYPE_LABELS,
     IntelTaskResponse,
     IntelTaskPriority
 } from '@packages/types';
 import { useCompleteTask, useTasks } from '../../../api/tasks';
 import { useUsers } from '../../../../users/api/users';
+import { useVirtualUser, ADMIN_USER } from '@/features/auth/virtual-user';
 
 const { Text } = Typography;
 
 export const MyTaskBoard: React.FC = () => {
-    // Mock user context or use standard auth
-    const [userId, setUserId] = useState<string>('system-user-placeholder'); // Should be me
+    const { currentUser, isVirtual } = useVirtualUser();
     const { data: users = [] } = useUsers({ status: 'ACTIVE' });
 
-    // In real app, `userId` comes from context. For now, use the first user or 'u1'.
-
-    const { data } = useTasks({ assigneeId: userId, page: 1, pageSize: 500 }); // Get all my tasks
+    const taskQuery = {
+        page: 1,
+        pageSize: 500,
+        ...(currentUser?.id ? { assigneeId: currentUser.id } : {}),
+    };
+    const { data } = useTasks(taskQuery); // Get all my tasks
     const tasks = data?.data || [];
     const completeMutation = useCompleteTask();
-
-    useEffect(() => {
-        if (userId === 'system-user-placeholder' && users.length > 0) {
-            setUserId(users[0].id);
-        }
-    }, [userId, users]);
 
     const columns = [
         { title: '待办任务', status: IntelTaskStatus.PENDING, color: 'blue', icon: <ClockCircleOutlined /> },
@@ -59,13 +55,21 @@ export const MyTaskBoard: React.FC = () => {
     return (
         <div style={{ overflowX: 'auto', paddingBottom: 20 }}>
             <Space style={{ marginBottom: 12 }}>
-                <Text type="secondary">选择人员：</Text>
+                <Text type="secondary">当前登录：</Text>
                 <Select
                     style={{ minWidth: 220 }}
-                    value={userId}
-                    onChange={setUserId}
-                    options={users.map(user => ({ label: user.name, value: user.id }))}
+                    value={currentUser?.id}
+                    disabled
+                    options={[
+                        { label: ADMIN_USER.name, value: ADMIN_USER.id },
+                        ...users.map(user => ({ label: user.name, value: user.id })),
+                    ]}
                 />
+                {isVirtual && (
+                    <Tag color="blue" style={{ margin: 0 }}>
+                        虚拟登录
+                    </Tag>
+                )}
             </Space>
             <ProCard ghost gutter={16} direction="row" style={{ minWidth: 1000 }}>
                 {columns.map(col => (

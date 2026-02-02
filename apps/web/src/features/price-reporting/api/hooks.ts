@@ -71,9 +71,9 @@ export const useAllocationMatrix = (query: AllocationMatrixQueryDto, options?: {
   });
 };
 
-export const useMyAssignedPoints = (effectiveDate?: string) => {
+export const useMyAssignedPoints = (effectiveDate?: string, userId?: string) => {
   return useQuery({
-    queryKey: ['my-assigned-points', effectiveDate],
+    queryKey: ['my-assigned-points', effectiveDate, userId],
     queryFn: async () => {
       const params = effectiveDate ? { effectiveDate } : {};
       const { data } = await apiClient.get<any[]>(`${ALLOCATION_BASE_URL}/my-assigned`, { params });
@@ -190,9 +190,12 @@ export const useSubmissions = (query: QueryPriceSubmissionDto) => {
   });
 };
 
-export const useMySubmissions = (query: Omit<QueryPriceSubmissionDto, 'submittedById'>) => {
+export const useMySubmissions = (
+  query: Omit<QueryPriceSubmissionDto, 'submittedById'>,
+  userId?: string,
+) => {
   return useQuery({
-    queryKey: ['my-submissions', query],
+    queryKey: ['my-submissions', query, userId],
     queryFn: async () => {
       const params = { ...query };
       if (params.effectiveDateStart) (params as any).effectiveDateStart = (params.effectiveDateStart as Date).toISOString();
@@ -217,9 +220,9 @@ export const useSubmission = (id: string) => {
   });
 };
 
-export const useSubmissionStatistics = () => {
+export const useSubmissionStatistics = (userId?: string) => {
   return useQuery({
-    queryKey: ['submission-statistics'],
+    queryKey: ['submission-statistics', userId],
     queryFn: async () => {
       const { data } = await apiClient.get<{
         todayPending: number;

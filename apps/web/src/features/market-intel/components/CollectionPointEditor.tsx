@@ -59,8 +59,20 @@ export const CollectionPointEditor: React.FC<CollectionPointEditorProps> = ({
     const updateMutation = useUpdateCollectionPoint();
     const { data: regionTree } = useRegionTree();
 
+    const PRICE_SUB_TYPE_OPTIONS = [
+        { value: 'LISTED', label: '挂牌价' },
+        { value: 'TRANSACTION', label: '成交价' },
+        { value: 'ARRIVAL', label: '到港价' },
+        { value: 'FOB', label: '平舱价' },
+        { value: 'STATION_ORIGIN', label: '站台价-产区' },
+        { value: 'STATION_DEST', label: '站台价-销区' },
+        { value: 'PURCHASE', label: '收购价' },
+        { value: 'WHOLESALE', label: '批发价' },
+    ];
+
     // Watch type field to conditionally show region selector
     const selectedType = Form.useWatch('type', form);
+    const priceSubTypes = Form.useWatch('priceSubTypes', form);
 
     // Convert region tree to Cascader options
     const regionOptions = useMemo(() => {
@@ -341,7 +353,7 @@ export const CollectionPointEditor: React.FC<CollectionPointEditorProps> = ({
                     </Divider>
 
                     <Row gutter={16}>
-                        <Col span={12}>
+                        <Col span={24}>
                             <Form.Item
                                 name="commodities"
                                 label="主营品种"
@@ -361,25 +373,54 @@ export const CollectionPointEditor: React.FC<CollectionPointEditorProps> = ({
                                 />
                             </Form.Item>
                         </Col>
+                    </Row>
+
+                    <Row gutter={16}>
+                        <Col span={24}>
+                            <Form.Item
+                                name="priceSubTypes"
+                                label="允许填报的价格类型"
+                                tooltip="限制该站点允许提取/填报的价格类型，该设置对所有品种生效"
+                            >
+                                <Select
+                                    mode="multiple"
+                                    allowClear
+                                    placeholder="选择该站点通常发布的价格类型"
+                                    options={PRICE_SUB_TYPE_OPTIONS}
+                                />
+                            </Form.Item>
+                        </Col>
+                    </Row>
+
+                    <Row gutter={16}>
                         <Col span={12}>
                             <Form.Item
                                 name="defaultSubType"
-                                label="默认价格子类型"
+                                label="默认价格类型"
                                 tooltip="该采集点的价格默认分类"
+                                dependencies={['priceSubTypes']}
+                                rules={[
+                                    {
+                                        validator: async (_, value) => {
+                                            if (
+                                                value &&
+                                                priceSubTypes &&
+                                                priceSubTypes.length > 0 &&
+                                                !priceSubTypes.includes(value)
+                                            ) {
+                                                return Promise.reject(
+                                                    new Error('默认类型必须在允许的价格类型范围内')
+                                                );
+                                            }
+                                            return Promise.resolve();
+                                        },
+                                    },
+                                ]}
                             >
                                 <Select
                                     allowClear
-                                    placeholder="选择默认价格子类型"
-                                    options={[
-                                        { value: 'LISTED', label: '挂牌价' },
-                                        { value: 'TRANSACTION', label: '成交价' },
-                                        { value: 'ARRIVAL', label: '到港价' },
-                                        { value: 'FOB', label: '平舱价' },
-                                        { value: 'STATION_ORIGIN', label: '站台价-产区' },
-                                        { value: 'STATION_DEST', label: '站台价-销区' },
-                                        { value: 'PURCHASE', label: '收购价' },
-                                        { value: 'WHOLESALE', label: '批发价' },
-                                    ]}
+                                    placeholder="选择默认价格类型"
+                                    options={PRICE_SUB_TYPE_OPTIONS}
                                 />
                             </Form.Item>
                         </Col>
@@ -394,28 +435,7 @@ export const CollectionPointEditor: React.FC<CollectionPointEditorProps> = ({
                     </Divider>
 
                     <Row gutter={16}>
-                        <Col span={16}>
-                            <Form.Item
-                                name="priceSubTypes"
-                                label="支持的价格类型"
-                                tooltip="限制该站点允许提取的价格类型，防止幻觉"
-                            >
-                                <Select
-                                    mode="multiple"
-                                    allowClear
-                                    placeholder="选择该站点通常发布的价格类型"
-                                    options={[
-                                        { value: 'LISTED', label: '挂牌价' },
-                                        { value: 'TRANSACTION', label: '成交价' },
-                                        { value: 'ARRIVAL', label: '到港价' },
-                                        { value: 'FOB', label: '平舱价' },
-                                        { value: 'PURCHASE', label: '收购价' },
-                                        { value: 'WHOLESALE', label: '批发价' },
-                                    ]}
-                                />
-                            </Form.Item>
-                        </Col>
-                        <Col span={8}>
+                        <Col span={24}>
                             <Form.Item
                                 name="isDataSource"
                                 label="作为数据源"

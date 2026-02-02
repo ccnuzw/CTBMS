@@ -157,35 +157,45 @@ export class PriceSubmissionService {
       throw new BadRequestException('只能在草稿状态下添加条目');
     }
 
-    const priceData = await this.prisma.priceData.create({
-      data: {
-        submissionId,
-        collectionPointId: submission.collectionPointId,
-        effectiveDate: submission.effectiveDate,
-        location: submission.collectionPoint.name,
-        commodity: dto.commodity,
-        price: dto.price,
-        subType: dto.subType as any,
-        sourceType: dto.sourceType as any,
-        geoLevel: dto.geoLevel as any,
-        grade: dto.grade,
-        moisture: dto.moisture,
-        bulkDensity: dto.bulkDensity,
-        inventory: dto.inventory,
-        note: dto.note,
-        authorId,
-        inputMethod: PriceInputMethod.MANUAL_ENTRY,
-        reviewStatus: PriceReviewStatus.PENDING,
-      },
-    });
+    try {
+      const priceData = await this.prisma.priceData.create({
+        data: {
+          submissionId,
+          collectionPointId: submission.collectionPointId,
+          effectiveDate: submission.effectiveDate,
+          location: submission.collectionPoint.name,
+          commodity: dto.commodity,
+          price: dto.price,
+          subType: dto.subType as any,
+          sourceType: dto.sourceType as any,
+          geoLevel: dto.geoLevel as any,
+          grade: dto.grade,
+          moisture: dto.moisture,
+          bulkDensity: dto.bulkDensity,
+          inventory: dto.inventory,
+          note: dto.note,
+          authorId,
+          inputMethod: PriceInputMethod.MANUAL_ENTRY,
+          reviewStatus: PriceReviewStatus.PENDING,
+        },
+      });
 
-    // 更新批次条目数
-    await this.prisma.priceSubmission.update({
-      where: { id: submissionId },
-      data: { itemCount: { increment: 1 } },
-    });
+      // 更新批次条目数
+      await this.prisma.priceSubmission.update({
+        where: { id: submissionId },
+        data: { itemCount: { increment: 1 } },
+      });
 
-    return priceData;
+      return priceData;
+    } catch (error: any) {
+      // P2002 is Prisma's unique constraint violation code
+      if (error.code === 'P2002') {
+        throw new BadRequestException(
+          `该品种(${dto.commodity})在当日(${submission.effectiveDate.toISOString().split('T')[0]})已有${dto.subType}数据，请勿重复填报`
+        );
+      }
+      throw error;
+    }
   }
 
   /**

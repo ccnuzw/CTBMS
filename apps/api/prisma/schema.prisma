@@ -824,7 +824,12 @@ model PriceData {
   updatedAt     DateTime @updatedAt
   
   // 唯一约束：同一天同一地点同一品种同一来源类型同一子类型
-  @@unique([effectiveDate, commodity, location, sourceType, subType])
+  // [MODIFIED] 使用 collectionPointId 替代 location 进行约束，提高严谨性
+  // 注意：PostgreSQL 中唯一索引允许多个 NULL 值，这符合"未关联采集点的数据不强制唯一"的特性（或者需业务层处理）
+  @@unique([effectiveDate, collectionPointId, commodity, sourceType, subType], map: "price_data_collection_point_unique")
+  // 保留旧索引用于非采集点数据的查询优化
+  @@unique([effectiveDate, commodity, location, sourceType, subType], map: "price_data_location_unique")
+
   @@index([sourceType, commodity, effectiveDate])
   @@index([geoLevel, effectiveDate])
   // @@index([enterpriseId, effectiveDate])
@@ -911,6 +916,7 @@ model CollectionPointAllocation {
   // 分配信息
   assignedById      String?         // 分配人
   assignedAt        DateTime        @default(now())
+  commodity         String?         // [NEW] 负责品种，空表示负责该点所有品种
   remark            String?         // 备注
 
   // 状态
@@ -919,7 +925,7 @@ model CollectionPointAllocation {
   createdAt         DateTime        @default(now())
   updatedAt         DateTime        @updatedAt
 
-  @@unique([userId, collectionPointId])
+  @@unique([userId, collectionPointId, commodity])
   @@index([userId, isActive])
   @@index([collectionPointId, isActive])
 }

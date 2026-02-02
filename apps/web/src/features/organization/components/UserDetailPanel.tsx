@@ -23,6 +23,8 @@ import {
     MailOutlined,
     PhoneOutlined,
     CheckCircleOutlined,
+    LoginOutlined,
+    LogoutOutlined,
     SwapOutlined,
     GlobalOutlined,
     ClusterOutlined,
@@ -43,6 +45,7 @@ import {
     STATUS_OPTIONS,
     USER_STATUS_CONFIG,
 } from '../../users/components/UserFormModal';
+import { useVirtualUser } from '@/features/auth/virtual-user';
 
 interface UserDetailPanelProps {
     userId: string | null;
@@ -70,6 +73,7 @@ export const UserDetailPanel: React.FC<UserDetailPanelProps> = ({
     const { data: allDepartments } = useDepartments(); // 获取所有部门用于显示层级
     const updateMutation = useUpdateUser();
     const deleteMutation = useDeleteUser();
+    const { user: virtualUser, setUser: setVirtualUser } = useVirtualUser();
 
     // 自动聚焦 hook
     const { focusRef, modalProps: transferModalProps } = useModalAutoFocus();
@@ -79,6 +83,8 @@ export const UserDetailPanel: React.FC<UserDetailPanelProps> = ({
         setIsEditing(false);
         setEditData({});
     }, [userId]);
+
+    const isCurrentVirtualUser = virtualUser?.id === user?.id;
 
     // 开始编辑
     const handleStartEdit = () => {
@@ -162,6 +168,28 @@ export const UserDetailPanel: React.FC<UserDetailPanelProps> = ({
         } catch (error) {
             message.error((error as Error).message || '调岗失败');
         }
+    };
+
+    const handleVirtualLogin = () => {
+        if (!user) return;
+        if (isCurrentVirtualUser) {
+            setVirtualUser(null);
+            message.success('已切换为系统管理员');
+            return;
+        }
+
+        setVirtualUser({
+            id: user.id,
+            name: user.name,
+            email: user.email ?? null,
+            avatar: user.avatar ?? null,
+            organizationName: user.organization?.name ?? null,
+            departmentName: user.department?.name ?? null,
+            roleNames: user.roles?.map((role) => role.role.name).filter(Boolean),
+            employeeNo: user.employeeNo ?? null,
+            position: user.position ?? null,
+        });
+        message.success(`已切换为当前登录用户：${user.name}`);
     };
 
     // 获取组织类型图标
@@ -316,6 +344,13 @@ export const UserDetailPanel: React.FC<UserDetailPanelProps> = ({
 
                 {/* 操作按钮 */}
                 <Flex gap={8}>
+                    <Button
+                        type={isCurrentVirtualUser ? 'default' : 'primary'}
+                        icon={isCurrentVirtualUser ? <LogoutOutlined /> : <LoginOutlined />}
+                        onClick={handleVirtualLogin}
+                    >
+                        {isCurrentVirtualUser ? '切回管理员' : '虚拟登录'}
+                    </Button>
                     {isEditing ? (
                         <>
                             <Button icon={<CloseOutlined />} onClick={handleCancelEdit}>
@@ -382,6 +417,11 @@ export const UserDetailPanel: React.FC<UserDetailPanelProps> = ({
                             >
                                 {statusConfig.label}
                             </Tag>
+                            {isCurrentVirtualUser && (
+                                <Tag color="blue" style={{ margin: 0 }} bordered={false}>
+                                    当前登录
+                                </Tag>
+                            )}
                         </Flex>
                     </Flex>
                 </Flex>

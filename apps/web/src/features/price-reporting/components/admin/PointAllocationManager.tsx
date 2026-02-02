@@ -1,22 +1,18 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import {
   Card,
-  Alert,
   Table,
   Button,
   Space,
   Tag,
   Input,
   Select,
-  message,
+  App,
   Modal,
   Drawer,
   List,
   Avatar,
   Tooltip,
-  Row,
-  Col,
-  Statistic,
   Badge,
   Divider,
   Empty,
@@ -73,6 +69,7 @@ export const PointAllocationManager: React.FC<PointAllocationManagerProps> = ({
   embedded = false,
   defaultAllocationStatus = 'ALL',
 }) => {
+  const { message, modal } = App.useApp();
   const initialAllocationStatus = defaultAllocationStatus === 'ALL' ? undefined : defaultAllocationStatus;
   // 查询状态
   const [pointQuery, setPointQuery] = useState<{
@@ -106,6 +103,7 @@ export const PointAllocationManager: React.FC<PointAllocationManagerProps> = ({
   // 抽屉状态
   const [drawerVisible, setDrawerVisible] = useState(false);
   const [selectedPoint, setSelectedPoint] = useState<any>(null);
+  const [assignCommodity, setAssignCommodity] = useState<string | undefined>(undefined); // [NEW] 分配品种
 
   // 用户筛选状态
   const [searchUserKeyword, setSearchUserKeyword] = useState('');
@@ -125,6 +123,7 @@ export const PointAllocationManager: React.FC<PointAllocationManagerProps> = ({
   const deleteAllocation = useDeleteAllocation();
 
   const handleExport = async (allocationStatusOverride?: 'ALLOCATED' | 'UNALLOCATED') => {
+    // ... (existing export logic)
     try {
       const params = new URLSearchParams();
       if (pointQuery.type) params.append('type', pointQuery.type);
@@ -172,9 +171,14 @@ export const PointAllocationManager: React.FC<PointAllocationManagerProps> = ({
   const filteredUsers = useMemo(() => {
     if (!users) return [];
 
-    // 1. 排除已分配用户
-    const assignedUserIds = new Set(pointAssignees?.map((a: any) => a.userId) || []);
-    let result = users.filter((u: any) => !assignedUserIds.has(u.id));
+    // [MODIFIED] 不再完全排除已分配用户，因为同一用户可能分配不同品种
+    // 但为了简化，如果用户已经拥有"全品种"权限，则应排除
+    // 如果当前选择了"全品种"分配，则排除所有已在该点有分配的用户（避免冲突）
+
+    // const assignedUserIds = new Set(pointAssignees?.map((a: any) => a.userId) || []);
+    // let result = users.filter((u: any) => !assignedUserIds.has(u.id));
+
+    let result = users;
 
     // 2. 按组织架构筛选
     if (selectedOrgNode) {
@@ -197,6 +201,11 @@ export const PointAllocationManager: React.FC<PointAllocationManagerProps> = ({
       );
     }
 
+    // [MODIFIED] 如果没有选择组织且没有搜索关键字，则不显示任何用户（避免一次性加载过多，也解决初始空白问题）
+    if (!selectedOrgNode && !searchUserKeyword) {
+      return [];
+    }
+
     return result;
   }, [users, pointAssignees, searchUserKeyword, selectedOrgNode]);
 
@@ -206,25 +215,83 @@ export const PointAllocationManager: React.FC<PointAllocationManagerProps> = ({
     setDrawerVisible(true);
     setSearchUserKeyword('');
     setSelectedOrgNode(null);
+    setAssignCommodity(undefined); // 重置品种选择
   };
+
 
   // 分配人员
   const handleAssign = async (userId: string) => {
     if (!selectedPoint) return;
+
+    // Check user's current allocations at this point
+    const userAllocations = pointAssignees?.filter((a: any) => a.userId === userId) || [];
+
+    // CASE 1: Assigning a Specific Commodity
+    if (assignCommodity) {
+      const hasAll = userAllocations.some((a: any) => !a.commodity);
+      if (hasAll) {
+        message.warning('该用户已拥有全品种采集权限，无需重复分配');
+        return;
+      }
+      const isDuplicate = userAllocations.some((a: any) => a.commodity === assignCommodity);
+      if (isDuplicate) {
+        message.warning('该用户已在当前采集点分配了同一种品种');
+        return;
+      }
+    }
+    // CASE 2: Assigning "All Commodities" (Upgrade)
+    else {
+      const hasAll = userAllocations.some((a: any) => !a.commodity);
+      if (hasAll) {
+        message.warning('该用户已拥有全品种采集权限');
+        return;
+      }
+      // If user has existing specific allocations, upgrade means replacing them
+      if (userAllocations.length > 0) {
+        try {
+          // Delete all existing specific allocations first
+          await Promise.all(userAllocations.map((a: any) => deleteAllocation.mutateAsync(a.id)));
+          // Then create the "All" allocation
+          await createAllocation.mutateAsync({
+            userId,
+            collectionPointId: selectedPoint.id,
+            commodity: undefined,
+          });
+          message.success('已升级为全品种权限，原有单一品种分配已清除');
+          return;
+        } catch (err: any) {
+          message.error('权限升级失败，请重试');
+          return;
+        }
+      }
+    }
+
     try {
       await createAllocation.mutateAsync({
         userId,
         collectionPointId: selectedPoint.id,
+        commodity: assignCommodity, // [NEW]
       });
       message.success('分配成功');
     } catch (err: any) {
-      message.error(err.response?.data?.message || '分配失败');
+      if (err.response?.status === 409) {
+        message.warning('该用户已在当前采集点分配了同一种品种');
+        return;
+      }
+      const errorMsg = err.response?.data?.message;
+      if (typeof errorMsg === 'string') {
+        message.error(errorMsg);
+      } else if (Array.isArray(errorMsg)) {
+        message.error(errorMsg.join(', '));
+      } else {
+        message.error('分配失败');
+      }
     }
   };
 
   // 取消分配
   const handleRemoveAssignment = (allocationId: string, userName: string) => {
-    Modal.confirm({
+    modal.confirm({
       title: '确认取消分配？',
       content: `取消后 ${userName} 将无法填报此采集点`,
       okText: '确认',
@@ -347,93 +414,8 @@ export const PointAllocationManager: React.FC<PointAllocationManagerProps> = ({
 
   return (
     <div style={{ padding: embedded ? 0 : 24 }}>
-      {/* 统计卡片 */}
-      <Row gutter={16} style={{ marginBottom: 24 }}>
-        <Col xs={12} sm={6}>
-          <Card size="small">
-            <Statistic
-              title="采集点总数"
-              value={stats?.total || 0}
-              prefix={<EnvironmentOutlined />}
-            />
-          </Card>
-        </Col>
-        <Col xs={12} sm={6}>
-          <Card size="small">
-            <Statistic
-              title="已分配"
-              value={stats?.allocated || 0}
-              valueStyle={{ color: '#52c41a' }}
-              prefix={<CheckCircleOutlined />}
-            />
-          </Card>
-        </Col>
-        <Col xs={12} sm={6}>
-          <Card size="small">
-            <Statistic
-              title={
-                <Space size={6}>
-                  <span>未分配</span>
-                  <Tag color="red">待补齐</Tag>
-                </Space>
-              }
-              value={stats?.unallocated || 0}
-              valueStyle={{ color: '#ff4d4f' }}
-              prefix={<ExclamationCircleOutlined />}
-            />
-          </Card>
-        </Col>
-        <Col xs={12} sm={6}>
-          <Card size="small">
-            <Statistic
-              title="分配率"
-              value={stats?.total ? Math.round((stats.allocated / stats.total) * 100) : 0}
-              suffix="%"
-            />
-          </Card>
-        </Col>
-      </Row>
-
       {/* 采集点列表 */}
-      <Card
-        title={
-          <Space>
-            <EnvironmentOutlined />
-            <span>采集点分配管理</span>
-          </Space>
-        }
-      >
-        {stats?.unallocated ? (
-          <Alert
-            type="warning"
-            showIcon
-            message={`当前有 ${stats.unallocated} 个采集点未分配负责人`}
-            action={
-              <Space>
-                <Button
-                  size="small"
-                  onClick={() =>
-                    setPointQuery({
-                      ...pointQuery,
-                      allocationStatus: 'UNALLOCATED',
-                      page: 1,
-                    })
-                  }
-                >
-                  只看未分配
-                </Button>
-                <Button
-                  size="small"
-                  icon={<DownloadOutlined />}
-                  onClick={() => handleExport('UNALLOCATED')}
-                >
-                  导出未分配
-                </Button>
-              </Space>
-            }
-            style={{ marginBottom: 16 }}
-          />
-        ) : null}
+      <Card bordered={false}>
         {/* 筛选栏 */}
         <Space style={{ marginBottom: 16 }} wrap>
           <Segmented
@@ -541,6 +523,7 @@ export const PointAllocationManager: React.FC<PointAllocationManagerProps> = ({
                             title={
                               <Space>
                                 <span>{item.user?.name}</span>
+                                {item.commodity && <Tag color="blue">{item.commodity}</Tag>}
                                 <Button
                                   type="text"
                                   danger
@@ -588,13 +571,28 @@ export const PointAllocationManager: React.FC<PointAllocationManagerProps> = ({
                   {/* 右侧：用户列表 */}
                   <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
                     {/* 筛选标签 */}
-                    {selectedOrgNode && (
-                      <div style={{ marginBottom: 12 }}>
+                    <Space style={{ marginBottom: 12 }}>
+                      {selectedOrgNode && (
                         <Tag closable onClose={() => setSelectedOrgNode(null)} color="blue">
                           {selectedOrgNode.type === 'org' ? '组织' : '部门'}: {selectedOrgNode.name}
                         </Tag>
-                      </div>
-                    )}
+                      )}
+
+                      {/* [NEW] 品种选择 */}
+                      {selectedPoint?.commodities?.length > 0 && (
+                        <Select
+                          style={{ width: 160 }}
+                          placeholder="选择分配品种"
+                          value={assignCommodity}
+                          onChange={setAssignCommodity}
+                          allowClear
+                          options={[
+                            { value: undefined, label: '全部品种 (默认)' },
+                            ...selectedPoint.commodities.map((c: string) => ({ value: c, label: c }))
+                          ]}
+                        />
+                      )}
+                    </Space>
 
                     {/* 搜索框 */}
                     <Input
@@ -607,7 +605,7 @@ export const PointAllocationManager: React.FC<PointAllocationManagerProps> = ({
                     />
 
                     {/* 用户列表 */}
-                    <div style={{ flex: 1, overflowY: 'auto' }}>
+                    <div style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden' }}>
                       {loadingUsers ? (
                         <Spin />
                       ) : (

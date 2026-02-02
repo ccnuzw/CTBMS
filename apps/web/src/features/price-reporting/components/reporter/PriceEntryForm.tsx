@@ -10,9 +10,11 @@ import {
   useSubmitSubmission,
   useCopyYesterdayData,
   usePointPriceHistory,
+  useMyAssignedPoints,
 } from '../../api/hooks';
 import { useCollectionPoints } from '../../../market-intel/api/collection-point';
 import { getErrorMessage } from '../../../../api/client';
+import { useVirtualUser } from '@/features/auth/virtual-user';
 
 const { Title, Text } = Typography;
 const { TextArea } = Input;
@@ -26,7 +28,8 @@ const PRICE_SUB_TYPES = [
   { value: 'WHOLESALE', label: '批发价' },
 ];
 
-const COMMODITIES = [
+// 默认品种列表（作为兜底）
+const DEFAULT_COMMODITIES = [
   { value: '玉米', label: '玉米' },
   { value: '大豆', label: '大豆' },
   { value: '小麦', label: '小麦' },
@@ -40,12 +43,41 @@ export const PriceEntryForm: React.FC = () => {
   const navigate = useNavigate();
   const [form] = Form.useForm();
   const { message } = App.useApp();
+  const { currentUser } = useVirtualUser();
 
   const queryClient = useQueryClient();
   const [submissionId, setSubmissionId] = useState<string | null>(null);
 
   const { data: pointsData } = useCollectionPoints({ page: 1, pageSize: 100, isActive: true });
   const currentPoint = pointsData?.data?.find((p: any) => p.id === pointId);
+
+  // [NEW] 获取当前用户的分配信息以确定品种权限
+  const { data: myAssignedPoints } = useMyAssignedPoints(undefined, currentUser?.id);
+  const myAllocation = myAssignedPoints?.find((a: any) => a.collectionPointId === pointId);
+
+  // [NEW] 计算允许填报的品种
+  const allowedCommodities = React.useMemo(() => {
+    // 1. 如果分配了特定品种，只允许该品种
+    if (myAllocation?.commodity) {
+      return [{ value: myAllocation.commodity, label: myAllocation.commodity }];
+    }
+
+    // 2. 如果是全品种权限，使用采集点配置的品种
+    if (currentPoint?.commodities?.length) {
+      return currentPoint.commodities.map((c: string) => ({ value: c, label: c }));
+    }
+
+    // 3. 兜底
+    return DEFAULT_COMMODITIES;
+  }, [myAllocation, currentPoint]);
+
+  // [NEW] 根据采集点配置过滤价格类型
+  const allowedPriceTypes = React.useMemo(() => {
+    if (!currentPoint?.priceSubTypes?.length) {
+      return PRICE_SUB_TYPES;
+    }
+    return PRICE_SUB_TYPES.filter(t => currentPoint.priceSubTypes.includes(t.value));
+  }, [currentPoint]);
 
   const createSubmission = useCreateSubmission();
   const addEntry = useAddPriceEntry();
@@ -72,6 +104,17 @@ export const PriceEntryForm: React.FC = () => {
       });
     }
   }, [pointId]);
+
+  // [NEW] 当允许的品种变化时，自动设置默认值
+  React.useEffect(() => {
+    if (allowedCommodities.length > 0) {
+      // 如果当前选中的品种不在允许列表中，重置为第一个允许的品种
+      const currentVal = form.getFieldValue('commodity');
+      if (!currentVal || !allowedCommodities.find(c => c.value === currentVal)) {
+        form.setFieldValue('commodity', allowedCommodities[0].value);
+      }
+    }
+  }, [allowedCommodities, form]);
 
   const handleCopyYesterday = () => {
     if (!priceHistory?.length) {
@@ -186,12 +229,12 @@ export const PriceEntryForm: React.FC = () => {
               <Row gutter={16}>
                 <Col xs={12} md={8}>
                   <Form.Item name="commodity" label="品种" rules={[{ required: true }]}>
-                    <Select options={COMMODITIES} />
+                    <Select options={allowedCommodities} />
                   </Form.Item>
                 </Col>
                 <Col xs={12} md={8}>
                   <Form.Item name="subType" label="价格类型" rules={[{ required: true }]}>
-                    <Select options={PRICE_SUB_TYPES} />
+                    <Select options={allowedPriceTypes} />
                   </Form.Item>
                 </Col>
                 <Col xs={12} md={8}>

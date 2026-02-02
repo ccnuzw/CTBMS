@@ -9,7 +9,6 @@ import {
   Input,
   Select,
   Button,
-  Statistic,
   Empty,
   Checkbox,
   Space,
@@ -17,16 +16,16 @@ import {
   Typography,
   Divider,
   Modal,
-  message,
+  // message, // Removed static message import to avoid conflict or just don't use it
   Tooltip,
   Segmented,
   Alert,
+  App, // Add App component
 } from 'antd';
 import {
   UserOutlined,
   SearchOutlined,
   EnvironmentOutlined,
-  CheckCircleOutlined,
   WarningOutlined,
   SaveOutlined,
   ReloadOutlined,
@@ -36,11 +35,13 @@ import {
   InfoCircleOutlined,
 } from '@ant-design/icons';
 import { useDebounce } from '@/hooks/useDebounce';
+import { useModalAutoFocus } from '@/hooks/useModalAutoFocus';
 import {
   useAllocationMatrix,
   useAllocationsByUser,
   useCreateAllocation,
-  useDeleteAllocation
+  useDeleteAllocation,
+  useBatchCreateAllocation
 } from '../../price-reporting/api/hooks';
 import { OrgDeptTreeSelect } from '../../organization/components/OrgDeptTreeSelect';
 import { CollectionPointMap } from './CollectionPointMap';
@@ -82,6 +83,10 @@ const getWorkloadColor = (count: number) => {
 };
 
 export const AllocationMatrix: React.FC = () => {
+  const { message, modal } = App.useApp();
+  // 焦点管理
+  const { focusRef, containerRef, modalProps } = useModalAutoFocus();
+
   // 状态
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
   const [userKeyword, setUserKeyword] = useState('');
@@ -93,6 +98,11 @@ export const AllocationMatrix: React.FC = () => {
   const [selectedPointIds, setSelectedPointIds] = useState<Set<string>>(new Set());
   const [pointStatusFilter, setPointStatusFilter] = useState<'ALL' | 'UNALLOCATED' | 'ALLOCATED' | 'ASSIGNED_TO_USER'>('ALL');
   const [userSort, setUserSort] = useState<'NAME' | 'WORKLOAD' | 'TASKS'>('NAME');
+
+  // 品种选择弹窗状态
+  const [commodityModalOpen, setCommodityModalOpen] = useState(false);
+  const [currentOperatingPoint, setCurrentOperatingPoint] = useState<any>(null);
+  const [selectedCommodity, setSelectedCommodity] = useState<string[]>([]);
 
   // 查询参数
   const debouncedUserKeyword = useDebounce(userKeyword, 500);
@@ -145,6 +155,7 @@ export const AllocationMatrix: React.FC = () => {
     refetch: refetchUserAllocations,
   } = useAllocationsByUser(selectedUserId || undefined);
   const createAllocation = useCreateAllocation();
+  const batchCreateAllocation = useBatchCreateAllocation();
   const deleteAllocation = useDeleteAllocation();
 
   // 当前选中的用户信息
@@ -257,6 +268,50 @@ export const AllocationMatrix: React.FC = () => {
     }
   }, [data?.users, selectedUserId]);
 
+  // 处理分配确认 (Modal确认)
+  const handleConfirmAllocation = async () => {
+    if (!selectedUserId || !currentOperatingPoint) return;
+
+    try {
+      // 检查是否选择了"全品种" (空字符串) 或未选择任何内容(空数组)
+      const isAllCommodities = selectedCommodity.length === 0 || selectedCommodity.includes('');
+
+      if (isAllCommodities) {
+        // 全品种分配
+        await createAllocation.mutateAsync({
+          userId: selectedUserId,
+          collectionPointId: currentOperatingPoint.pointId,
+          commodity: undefined,
+        });
+      } else if (selectedCommodity.length === 1) {
+        // 单个品种分配
+        await createAllocation.mutateAsync({
+          userId: selectedUserId,
+          collectionPointId: currentOperatingPoint.pointId,
+          commodity: selectedCommodity[0],
+        });
+      } else {
+        // 多个品种 -> 批量创建
+        await batchCreateAllocation.mutateAsync({
+          collectionPointId: currentOperatingPoint.pointId,
+          allocations: selectedCommodity.map(c => ({
+            userId: selectedUserId,
+            commodity: c,
+          }))
+        });
+      }
+
+      message.success('已分配');
+      setCommodityModalOpen(false);
+      setCurrentOperatingPoint(null);
+      setSelectedCommodity([]);
+      refetch();
+      refetchUserAllocations();
+    } catch (err: any) {
+      message.error(err?.response?.data?.message || '操作失败');
+    }
+  };
+
   // 处理分配变更 (单个)
   const handleToggleAllocation = async (pointId: string, currentAllocated: boolean) => {
     if (!selectedUserId) {
@@ -265,20 +320,25 @@ export const AllocationMatrix: React.FC = () => {
     }
 
     if (currentAllocated) {
-      const allocationId = allocationIdByPointId.get(pointId);
-      if (!allocationId) {
+      // 查找当前用户在该点的所有分配
+      const allocations = userAllocations?.filter((a: any) => a.collectionPointId === pointId) || [];
+
+      if (allocations.length === 0) {
         message.warning('分配信息加载中，请稍后再试');
         return;
       }
 
-      Modal.confirm({
+      modal.confirm({
         title: '确认取消分配？',
-        content: '取消后该采集点将不再分配给当前负责人',
+        content: allocations.length > 1
+          ? `该用户在此采集点有 ${allocations.length} 项分配记录（${allocations.map((a: any) => a.commodity || '全品种').join(', ')}），将全部取消。`
+          : '取消后该采集点将不再分配给当前负责人',
         okText: '确认',
         cancelText: '取消',
         onOk: async () => {
           try {
-            await deleteAllocation.mutateAsync(allocationId);
+            // 并行删除所有关联分配
+            await Promise.all(allocations.map((a: any) => deleteAllocation.mutateAsync(a.id)));
             message.success('已取消分配');
             refetch();
             refetchUserAllocations();
@@ -290,16 +350,29 @@ export const AllocationMatrix: React.FC = () => {
       return;
     }
 
-    try {
-      await createAllocation.mutateAsync({
-        userId: selectedUserId,
-        collectionPointId: pointId,
-      });
-      message.success('已分配');
-      refetch();
-      refetchUserAllocations();
-    } catch (err: any) {
-      message.error(err?.response?.data?.message || '操作失败');
+    // 新增分配
+    const point = data?.points.find(p => p.pointId === pointId);
+    if (!point) return;
+
+    // 检查是否需要选择品种
+    const commodities = (point as any).commodities || [];
+    if (commodities.length > 0) {
+      setCurrentOperatingPoint(point);
+      setSelectedCommodity([]); // 默认全选/空状态
+      setCommodityModalOpen(true);
+    } else {
+      // 无特定品种，直接分配
+      try {
+        await createAllocation.mutateAsync({
+          userId: selectedUserId,
+          collectionPointId: pointId,
+        });
+        message.success('已分配');
+        refetch();
+        refetchUserAllocations();
+      } catch (err: any) {
+        message.error(err?.response?.data?.message || '操作失败');
+      }
     }
   };
 
@@ -507,7 +580,13 @@ export const AllocationMatrix: React.FC = () => {
         dataSource={filteredPoints}
         loading={queryEnabled && isFetching}
         renderItem={(point) => {
-          const isAssignedToCurrentUser = selectedUserId ? point.allocatedUserIds.includes(selectedUserId) : false;
+          // 获取当前选中用户在该点的分配详情
+          const userAllocationsForPoint = selectedUserId && point.allocations
+            ? point.allocations.filter((a: any) => a.userId === selectedUserId)
+            : [];
+          const isAssignedToCurrentUser = userAllocationsForPoint.length > 0;
+          const assignedCommodities = userAllocationsForPoint.map((a: any) => a.commodity || '全品种');
+
           const isSelected = selectedPointIds.has(point.pointId);
           const actionDisabled = !selectedUserId || (isAssignedToCurrentUser && isLoadingUserAllocations);
 
@@ -561,14 +640,23 @@ export const AllocationMatrix: React.FC = () => {
                         {POINT_TYPE_LABELS[point.pointType] || point.pointType}
                       </Tag>
 
-                      {point.allocatedUserIds.length > 0 ? (
+                      {isAssignedToCurrentUser ? (
+                        <div style={{ marginTop: 4 }}>
+                          <Text type="secondary" style={{ fontSize: 12, display: 'block', marginBottom: 2 }}>负责品种:</Text>
+                          <Space size={4} wrap>
+                            {assignedCommodities.map((c: string, idx: number) => (
+                              <Tag key={idx} color="green" style={{ margin: 0 }}>{c}</Tag>
+                            ))}
+                          </Space>
+                        </div>
+                      ) : (point.allocatedUserIds.length > 0 ? (
                         <Space size={2} wrap>
                           <Text type="secondary" style={{ fontSize: 12 }}>已分配给:</Text>
                           <Badge count={point.allocatedUserIds.length} style={{ backgroundColor: '#52c41a' }} />
                         </Space>
                       ) : (
                         <Tag icon={<WarningOutlined />} color="warning">未分配</Tag>
-                      )}
+                      ))}
                     </Space>
                   }
                 />
@@ -585,40 +673,8 @@ export const AllocationMatrix: React.FC = () => {
     <div className="allocation-matrix">
       {/* 顶部统计与筛选 */}
       <Card bodyStyle={{ padding: '16px 24px' }} style={{ marginBottom: 16 }}>
-        {!queryEnabled && (
-          <div style={{ marginBottom: 12, color: '#faad14', fontSize: '13px', display: 'flex', alignItems: 'center' }}>
-            <InfoCircleOutlined style={{ marginRight: 6 }} />
-            <span>为避免加载全量数据，请先选择组织/部门或输入人员/采集点关键字</span>
-          </div>
-        )}
-        <Row gutter={16} style={{ marginBottom: 12 }}>
-          <Col span={6}>
-            <Statistic title="采集点总数" value={pointCounts.total} />
-          </Col>
-          <Col span={6}>
-            <Statistic title="已分配" value={pointCounts.allocated} />
-          </Col>
-          <Col span={6}>
-            <Statistic
-              title={
-                <Space size={6}>
-                  <span>未分配</span>
-                  <Tag color="red">待补齐</Tag>
-                </Space>
-              }
-              value={pointCounts.unallocated}
-              valueStyle={{ color: '#ff4d4f' }}
-            />
-          </Col>
-          <Col span={6}>
-            <Statistic
-              title="采集点覆盖率"
-              value={pointCounts.total ? Math.round((pointCounts.allocated / pointCounts.total) * 100) : 0}
-              suffix="%"
-              prefix={<CheckCircleOutlined />}
-            />
-          </Col>
-        </Row>
+
+
         {pointCounts.unallocated > 0 && (
           <Alert
             type="warning"
@@ -807,6 +863,65 @@ export const AllocationMatrix: React.FC = () => {
           </Card>
         </Col>
       </Row>
+
+      {/* 品种选择弹窗 */}
+      <Modal
+        title={`分配品种 - ${currentOperatingPoint?.pointName || ''}`}
+        open={commodityModalOpen}
+        {...modalProps}
+        onOk={handleConfirmAllocation}
+        onCancel={() => {
+          setCommodityModalOpen(false);
+          setCurrentOperatingPoint(null);
+          setSelectedCommodity(null);
+        }}
+        okText="确认分配"
+        cancelText="取消"
+      >
+        <div ref={containerRef} style={{ padding: '20px 0' }}>
+          <Alert
+            message="请选择该负责人负责的品种"
+            description="如果不选择具体品种，将默认为“全品种”负责（即负责该采集点的所有商品）。"
+            type="info"
+            showIcon
+            style={{ marginBottom: 24 }}
+          />
+
+          <div style={{ marginBottom: 8 }}>选择品种:</div>
+          <Select
+            ref={focusRef}
+            style={{ width: '100%' }}
+            placeholder="请选择品种 (留空代表全品种)"
+            allowClear
+            mode="multiple"
+            value={selectedCommodity}
+            onChange={(values) => {
+              // 互斥逻辑处理
+              // 1. 如果新选择中包含"全品种"('')，且之前没有，说明是刚点击了全品种 -> 清空其他，只留全品种
+              const hasAll = values.includes('');
+              const hadAll = selectedCommodity.includes('');
+
+              if (hasAll && !hadAll) {
+                setSelectedCommodity(['']);
+                return;
+              }
+
+              // 2. 如果之前有全品种，现在选了别的 -> 移除全品种
+              if (hadAll && values.length > 1) {
+                setSelectedCommodity(values.filter(v => v !== ''));
+                return;
+              }
+
+              // 3. 正常情况
+              setSelectedCommodity(values);
+            }}
+            options={[
+              { label: '全品种 (默认)', value: '' },
+              ...(currentOperatingPoint?.commodities || []).map((c: string) => ({ label: c, value: c }))
+            ]}
+          />
+        </div>
+      </Modal>
     </div>
   );
 };

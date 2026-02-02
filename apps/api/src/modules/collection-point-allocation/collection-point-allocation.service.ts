@@ -83,9 +83,10 @@ export class CollectionPointAllocationService {
         type: true,
         latitude: true,
         longitude: true,
+        commodities: true,
         allocations: {
           where: { isActive: true },
-          select: { userId: true },
+          select: { userId: true, commodity: true },
         },
       },
       orderBy: { type: 'asc' },
@@ -98,6 +99,8 @@ export class CollectionPointAllocationService {
       pointType: point.type,
       latitude: point.latitude,
       longitude: point.longitude,
+      commodities: point.commodities,
+      allocations: point.allocations,
       allocatedUserIds: point.allocations.map(a => a.userId),
       isAllocated: point.allocations.length > 0,
     }));
@@ -130,18 +133,18 @@ export class CollectionPointAllocationService {
    */
   async create(dto: CreateCollectionPointAllocationDto, assignedById?: string) {
     // 检查是否已存在分配关系
-    const existing = await this.prisma.collectionPointAllocation.findUnique({
+    // 注意：Prisma unique 复合键包含可选字段时，需要显式处理
+    const existing = await this.prisma.collectionPointAllocation.findFirst({
       where: {
-        userId_collectionPointId: {
-          userId: dto.userId,
-          collectionPointId: dto.collectionPointId,
-        },
+        userId: dto.userId,
+        collectionPointId: dto.collectionPointId,
+        commodity: dto.commodity || null,
       },
     });
 
     if (existing) {
       if (existing.isActive) {
-        throw new ConflictException('该用户已分配到此采集点');
+        throw new ConflictException(`该用户已分配到此采集点${dto.commodity ? ` (${dto.commodity})` : ' (全品种)'}`);
       }
       // 如果存在但已停用，重新激活
       return this.prisma.collectionPointAllocation.update({
@@ -159,10 +162,26 @@ export class CollectionPointAllocationService {
       });
     }
 
+    // 业务逻辑检查：如果用户已有"全品种"权限，无需重复分配特定品种
+    if (dto.commodity) {
+      const existingAll = await this.prisma.collectionPointAllocation.findFirst({
+        where: {
+          userId: dto.userId,
+          collectionPointId: dto.collectionPointId,
+          commodity: null,
+          isActive: true,
+        },
+      });
+      if (existingAll) {
+        throw new ConflictException('该用户已拥有此采集点的全品种权限，无需单独分配');
+      }
+    }
+
     return this.prisma.collectionPointAllocation.create({
       data: {
         userId: dto.userId,
         collectionPointId: dto.collectionPointId,
+        commodity: dto.commodity,
         remark: dto.remark,
         assignedById,
       },
@@ -184,6 +203,7 @@ export class CollectionPointAllocationService {
           {
             userId: allocation.userId,
             collectionPointId: dto.collectionPointId,
+            commodity: allocation.commodity,
             remark: allocation.remark,
           },
           assignedById,
@@ -200,11 +220,12 @@ export class CollectionPointAllocationService {
    * 查询分配列表
    */
   async findAll(query: QueryCollectionPointAllocationDto) {
-    const { userId, collectionPointId, isActive, page, pageSize } = query;
+    const { userId, collectionPointId, commodity, isActive, page, pageSize } = query;
 
     const where: any = {};
     if (userId) where.userId = userId;
     if (collectionPointId) where.collectionPointId = collectionPointId;
+    if (commodity !== undefined) where.commodity = commodity; // null也是有效值
     if (isActive !== undefined) where.isActive = isActive;
 
     const [data, total] = await Promise.all([

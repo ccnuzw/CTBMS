@@ -338,31 +338,38 @@ export class MarketIntelService {
                 authorId,
             };
 
-            // 使用 upsert 避免重复数据（基于唯一约束）
-            await this.prisma.priceData.upsert({
+            // 使用 findFirst + create/update 替代 upsert 以避免 Prisma 复合键类型问题
+            const existingPrice = await this.prisma.priceData.findFirst({
                 where: {
-                    effectiveDate_commodity_location_sourceType_subType: {
-                        effectiveDate: priceData.effectiveDate,
-                        commodity: priceData.commodity,
-                        location: priceData.location,
-                        sourceType: priceData.sourceType,
-                        subType: priceData.subType,
-                    },
-                },
-                update: {
-                    price: priceData.price,
-                    dayChange: priceData.dayChange,
-                    intelId: priceData.intelId,
-                    // enterpriseId: priceData.enterpriseId, [REMOVED]
-                    // 更新关联信息
-                    collectionPointId: priceData.collectionPointId,
-                    regionCode: priceData.regionCode,
-                    longitude: priceData.longitude,
-                    latitude: priceData.latitude,
-                    note: priceData.note,
-                },
-                create: priceData,
+                    effectiveDate: priceData.effectiveDate,
+                    commodity: priceData.commodity,
+                    location: priceData.location,
+                    sourceType: priceData.sourceType,
+                    subType: priceData.subType,
+                }
             });
+
+            if (existingPrice) {
+                await this.prisma.priceData.update({
+                    where: { id: existingPrice.id },
+                    data: {
+                        price: priceData.price,
+                        dayChange: priceData.dayChange,
+                        intelId: priceData.intelId,
+                        // enterpriseId: priceData.enterpriseId, [REMOVED]
+                        // 更新关联信息
+                        collectionPointId: priceData.collectionPointId,
+                        regionCode: priceData.regionCode,
+                        longitude: priceData.longitude,
+                        latitude: priceData.latitude,
+                        note: priceData.note,
+                    }
+                });
+            } else {
+                await this.prisma.priceData.create({
+                    data: priceData,
+                });
+            }
         }
     }
 

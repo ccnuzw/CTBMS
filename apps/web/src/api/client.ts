@@ -5,6 +5,28 @@ export const apiClient = axios.create({
     timeout: 120000, // 120秒超时，复杂日报 AI 分析可能需要较长时间
 });
 
+apiClient.interceptors.request.use((config) => {
+    if (typeof window !== 'undefined') {
+        try {
+            const raw = window.localStorage.getItem('ctbms_virtual_login_user');
+            if (raw) {
+                const parsed = JSON.parse(raw) as { id?: string };
+                if (parsed?.id) {
+                    config.headers = {
+                        ...config.headers,
+                        'x-virtual-user-id': parsed.id,
+                    };
+                }
+            } else if (config.headers && 'x-virtual-user-id' in config.headers) {
+                delete (config.headers as Record<string, unknown>)['x-virtual-user-id'];
+            }
+        } catch {
+            // Ignore localStorage errors
+        }
+    }
+    return config;
+});
+
 // 响应错误信息提取
 export const getErrorMessage = (error: unknown): string => {
     if (axios.isAxiosError(error)) {
@@ -18,4 +40,3 @@ export const getErrorMessage = (error: unknown): string => {
     }
     return '请求失败';
 };
-
