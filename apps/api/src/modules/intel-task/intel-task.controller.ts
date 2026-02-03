@@ -73,6 +73,25 @@ export class IntelTaskController {
         return this.itemTaskService.update(id, dto);
     }
 
+    @Post(':id/submit')
+    async submit(
+        @Param('id') id: string,
+        @Body() body: { operatorId: string; data?: any }
+    ) {
+        // In real app, operatorId comes from JWT
+        const operatorId = body.operatorId || 'system-user-placeholder';
+        return this.itemTaskService.submitTask(id, operatorId, body.data);
+    }
+
+    @Post(':id/review')
+    async review(
+        @Param('id') id: string,
+        @Body() body: { operatorId: string; approved: boolean; reason?: string }
+    ) {
+        const operatorId = body.operatorId || 'system-user-placeholder';
+        return this.itemTaskService.reviewTask(id, operatorId, body.approved, body.reason);
+    }
+
     @Post(':id/complete')
     async complete(
         @Param('id') id: string,

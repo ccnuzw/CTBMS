@@ -129,7 +129,7 @@ export class IntelTaskTemplateService {
                 include: {
                     allocations: {
                         where: { isActive: true },
-                        select: { userId: true },
+                        select: { userId: true, commodity: true },
                     },
                 },
             });
@@ -164,23 +164,35 @@ export class IntelTaskTemplateService {
             for (const point of points) {
                 for (const allocation of point.allocations) {
                     const snapshot = assigneeMap.get(allocation.userId);
-                    tasksToCreate.push({
-                        title: this.generateTaskTitle(template.name, periodInfo.periodKey || undefined),
-                        description: template.description || undefined,
-                        type: template.taskType,
-                        priority: template.priority,
-                        deadline: effectiveDeadline,
-                        periodStart: periodInfo.periodStart || undefined,
-                        periodEnd: periodInfo.periodEnd || undefined,
-                        dueAt: periodInfo.dueAt || undefined,
-                        periodKey: periodInfo.periodKey || undefined,
-                        assigneeId: allocation.userId,
-                        assigneeOrgId: snapshot?.organizationId || undefined,
-                        assigneeDeptId: snapshot?.departmentId || undefined,
-                        createdById: opts.triggeredById,
-                        templateId: template.id,
-                        collectionPointId: point.id,
-                    });
+
+                    // Determine target commodities
+                    // If assigned specific commodity, task for that.
+                    // If assigned "All" (null), task for ALL point commodities.
+                    const commoditiesToTask = allocation.commodity
+                        ? [allocation.commodity]
+                        : (point.commodities && point.commodities.length > 0 ? point.commodities : [null]);
+
+                    for (const comm of commoditiesToTask) {
+                        const titleSuffix = comm ? ` [${comm}]` : '';
+                        tasksToCreate.push({
+                            title: this.generateTaskTitle(template.name, periodInfo.periodKey || undefined) + titleSuffix,
+                            description: template.description || undefined,
+                            type: template.taskType,
+                            priority: template.priority,
+                            deadline: effectiveDeadline,
+                            periodStart: periodInfo.periodStart || undefined,
+                            periodEnd: periodInfo.periodEnd || undefined,
+                            dueAt: periodInfo.dueAt || undefined,
+                            periodKey: periodInfo.periodKey || undefined,
+                            assigneeId: allocation.userId,
+                            assigneeOrgId: snapshot?.organizationId || undefined,
+                            assigneeDeptId: snapshot?.departmentId || undefined,
+                            createdById: opts.triggeredById,
+                            templateId: template.id,
+                            collectionPointId: point.id,
+                            commodity: comm || undefined,
+                        });
+                    }
                 }
             }
 
@@ -361,7 +373,7 @@ export class IntelTaskTemplateService {
             include: {
                 allocations: {
                     where: { isActive: true },
-                    select: { userId: true },
+                    select: { userId: true, commodity: true },
                 },
             },
         });
@@ -394,23 +406,35 @@ export class IntelTaskTemplateService {
         for (const point of points) {
             for (const allocation of point.allocations) {
                 const snapshot = assigneeMap.get(allocation.userId);
-                tasksToCreate.push({
-                    title: this.generateTaskTitle(template.name, periodInfo.periodKey || undefined),
-                    description: template.description || undefined,
-                    type: template.taskType,
-                    priority: template.priority,
-                    deadline: effectiveDeadline,
-                    periodStart: periodInfo.periodStart || undefined,
-                    periodEnd: periodInfo.periodEnd || undefined,
-                    dueAt: periodInfo.dueAt || undefined,
-                    periodKey: periodInfo.periodKey || undefined,
-                    assigneeId: allocation.userId,
-                    assigneeOrgId: snapshot?.organizationId || undefined,
-                    assigneeDeptId: snapshot?.departmentId || undefined,
-                    createdById: triggeredById,
-                    templateId: template.id,
-                    collectionPointId: point.id,
-                });
+
+                // Determine target commodities
+                // If assigned specific commodity, task for that.
+                // If assigned "All" (null), task for ALL point commodities.
+                const commoditiesToTask = allocation.commodity
+                    ? [allocation.commodity]
+                    : (point.commodities && point.commodities.length > 0 ? point.commodities : [null]);
+
+                for (const comm of commoditiesToTask) {
+                    const titleSuffix = comm ? ` [${comm}]` : '';
+                    tasksToCreate.push({
+                        title: this.generateTaskTitle(template.name, periodInfo.periodKey || undefined) + titleSuffix,
+                        description: template.description || undefined,
+                        type: template.taskType,
+                        priority: template.priority,
+                        deadline: effectiveDeadline,
+                        periodStart: periodInfo.periodStart || undefined,
+                        periodEnd: periodInfo.periodEnd || undefined,
+                        dueAt: periodInfo.dueAt || undefined,
+                        periodKey: periodInfo.periodKey || undefined,
+                        assigneeId: allocation.userId,
+                        assigneeOrgId: snapshot?.organizationId || undefined,
+                        assigneeDeptId: snapshot?.departmentId || undefined,
+                        createdById: triggeredById,
+                        templateId: template.id,
+                        collectionPointId: point.id,
+                        commodity: comm || undefined,
+                    });
+                }
             }
         }
 
@@ -521,12 +545,20 @@ export class IntelTaskTemplateService {
                         });
                     }
                     const assigneeEntry = assigneeMap.get(user.id);
+
+                    // Task Count Calculation (Granular)
+                    const commoditiesCount = allocation.commodity
+                        ? 1
+                        : (point.commodities && point.commodities.length > 0 ? point.commodities.length : 1);
+
                     assigneeEntry.collectionPoints.push({
                         id: point.id,
                         name: point.name,
                         type: point.type,
+                        commodity: allocation.commodity || 'All',
+                        count: commoditiesCount
                     });
-                    assigneeEntry.taskCount += 1; // 每个采集点产生一个任务
+                    assigneeEntry.taskCount += commoditiesCount;
                 }
             }
 
@@ -591,12 +623,20 @@ export class IntelTaskTemplateService {
                         });
                     }
                     const assigneeEntry = assigneeMap.get(user.id);
+
+                    // Task Count Calculation (Granular)
+                    const commoditiesCount = allocation.commodity
+                        ? 1
+                        : (point.commodities && point.commodities.length > 0 ? point.commodities.length : 1);
+
                     assigneeEntry.collectionPoints.push({
                         id: point.id,
                         name: point.name,
                         type: point.type,
+                        commodity: allocation.commodity || 'All',
+                        count: commoditiesCount
                     });
-                    assigneeEntry.taskCount += 1;
+                    assigneeEntry.taskCount += commoditiesCount;
                 }
             }
 

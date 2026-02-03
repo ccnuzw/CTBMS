@@ -910,6 +910,8 @@ export enum IntelTaskType {
 
 export enum IntelTaskStatus {
   PENDING = 'PENDING',
+  SUBMITTED = 'SUBMITTED', // 已提交待审核
+  RETURNED = 'RETURNED',   // 已驳回需修改
   COMPLETED = 'COMPLETED',
   OVERDUE = 'OVERDUE',
 }
@@ -945,6 +947,8 @@ export const INTEL_TASK_TYPE_LABELS: Record<IntelTaskType, string> = {
 
 export const INTEL_TASK_STATUS_LABELS: Record<IntelTaskStatus, string> = {
   [IntelTaskStatus.PENDING]: '待完成',
+  [IntelTaskStatus.SUBMITTED]: '待审核',
+  [IntelTaskStatus.RETURNED]: '已驳回',
   [IntelTaskStatus.COMPLETED]: '已完成',
   [IntelTaskStatus.OVERDUE]: '已超时',
 };
@@ -1176,3 +1180,23 @@ export const DistributionPreviewResponseSchema = z.object({
 });
 
 export type DistributionPreviewResponse = z.infer<typeof DistributionPreviewResponseSchema>;
+
+// =============================================
+// 任务历史记录 Schema
+// =============================================
+
+export const IntelTaskHistorySchema = z.object({
+  id: z.string(),
+  taskId: z.string(),
+  operatorId: z.string(),
+  action: z.string(),
+  details: z.any().nullable(),
+  createdAt: z.date(),
+  operator: z.object({
+    id: z.string(),
+    name: z.string(),
+    avatar: z.string().nullable(),
+  }).optional(),
+});
+
+export type IntelTaskHistory = z.infer<typeof IntelTaskHistorySchema>;

@@ -54,7 +54,7 @@ export class IntelTaskService {
     /**
      * 批量创建任务 (用于直接分发)
      */
-    async createMany(tasks: (CreateIntelTaskDto & { createdById?: string, templateId?: string, description?: string, collectionPointId?: string })[]) {
+    async createMany(tasks: (CreateIntelTaskDto & { createdById?: string, templateId?: string, description?: string, collectionPointId?: string, commodity?: string })[]) {
         // Prisma createMany 不支持 include，所以如果需要返回完整对象，可能需要循环创建或者 createMany 后再查询
         // 这里为了性能使用 createMany，但无法返回关联对象
         return this.prisma.intelTask.createMany({
@@ -78,6 +78,7 @@ export class IntelTaskService {
                 templateId: t.templateId,
                 isLate: t.isLate,
                 collectionPointId: t.collectionPointId,
+                commodity: t.commodity,
             })),
             skipDuplicates: true,
         });
@@ -364,7 +365,19 @@ export class IntelTaskService {
             },
             orderBy: { deadline: 'asc' },
             include: {
-                template: { select: { name: true } }
+                template: { select: { name: true } },
+                collectionPoint: {
+                    select: {
+                        id: true,
+                        name: true,
+                        type: true,
+                        commodities: true,
+                        allocations: {
+                            where: { userId, isActive: true },
+                            select: { commodity: true }
+                        }
+                    }
+                }
             }
         });
     }
@@ -409,9 +422,94 @@ export class IntelTaskService {
     }
 
     /**
-     * 完成任务
+     * 提交任务 (PENDING -> SUBMITTED)
      */
-    async complete(id: string, intelId?: string) {
+    async submitTask(id: string, operatorId: string, submissionData?: any) {
+        const task = await this.prisma.intelTask.findUnique({ where: { id } });
+        if (!task) throw new NotFoundException(`任务 ID ${id} 不存在`);
+
+        if (task.status !== IntelTaskStatus.PENDING && task.status !== IntelTaskStatus.RETURNED) {
+            throw new Error(`任务当前状态 ${task.status} 不允许提交`);
+        }
+
+        const updated = await this.prisma.intelTask.update({
+            where: { id },
+            data: {
+                status: IntelTaskStatus.SUBMITTED,
+                // 如果有提交数据，可以在这里关联 submissionId 或其他字段
+            }
+        });
+
+        await this.logHistory(id, operatorId, 'SUBMIT', {
+            from: task.status,
+            to: IntelTaskStatus.SUBMITTED,
+            submissionData
+        });
+
+        return updated;
+    }
+
+    /**
+     * 审核任务 (SUBMITTED -> COMPLETED | RETURNED)
+     */
+    async reviewTask(id: string, operatorId: string, approved: boolean, reason?: string) {
+        const task = await this.prisma.intelTask.findUnique({ where: { id } });
+        if (!task) throw new NotFoundException(`任务 ID ${id} 不存在`);
+
+        if (task.status !== IntelTaskStatus.SUBMITTED) {
+            throw new Error(`任务当前状态 ${task.status} 不在审核中`);
+        }
+
+        const newStatus = approved ? IntelTaskStatus.COMPLETED : IntelTaskStatus.RETURNED;
+        const completedAt = approved ? new Date() : null;
+
+        // 计算是否逾期 (仅当通过时计算)
+        let isLate = task.isLate;
+        if (approved) {
+            const dueAt = task.dueAt || task.deadline;
+            if (dueAt && completedAt) {
+                isLate = completedAt > dueAt;
+            }
+        }
+
+        const updated = await this.prisma.intelTask.update({
+            where: { id },
+            data: {
+                status: newStatus,
+                completedAt,
+                isLate,
+            }
+        });
+
+        await this.logHistory(id, operatorId, approved ? 'APPROVE' : 'REJECT', {
+            from: task.status,
+            to: newStatus,
+            reason
+        });
+
+        return updated;
+    }
+
+    /**
+     * 记录操作历史
+     */
+    private async logHistory(taskId: string, operatorId: string, action: string, details: any) {
+        // 简单验证用户是否存在，避免外键错误 (生产环境可能不需要查询，直接依靠DB约束)
+        // 这里为了安全起见
+        return this.prisma.intelTaskHistory.create({
+            data: {
+                taskId,
+                operatorId,
+                action,
+                details: details || {},
+            }
+        });
+    }
+
+    /**
+     * 完成任务 (Direct Complete - Admin/System override)
+     */
+    async complete(id: string, intelId?: string, operatorId?: string) {
         const task = await this.prisma.intelTask.findUnique({ where: { id } });
         if (!task) {
             throw new NotFoundException(`任务 ID ${id} 不存在`);
@@ -419,12 +517,23 @@ export class IntelTaskService {
         const completedAt = new Date();
         const dueAt = task.dueAt || task.deadline;
         const isLate = dueAt ? completedAt > dueAt : false;
-        return this.update(id, {
+
+        const updated = await this.update(id, {
             status: IntelTaskStatus.COMPLETED,
             completedAt,
             intelId,
             isLate,
         });
+
+        if (operatorId) {
+            await this.logHistory(id, operatorId, 'COMPLETE_DIRECT', {
+                from: task.status,
+                to: IntelTaskStatus.COMPLETED,
+                intelId
+            });
+        }
+
+        return updated;
     }
 
     /**

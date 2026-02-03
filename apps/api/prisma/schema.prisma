@@ -69,6 +69,9 @@ model User {
   // [NEW] 价格填报批次
   priceSubmissions PriceSubmission[]
 
+  // [NEW] 任务操作历史
+  taskHistory    IntelTaskHistory[]
+
   createdAt      DateTime     @default(now())
   updatedAt      DateTime     @updatedAt
 }
@@ -1019,6 +1022,8 @@ enum TaskCycleType {
 // 任务状态枚举
 enum IntelTaskStatus {
   PENDING
+  SUBMITTED // 已提交待审核
+  RETURNED  // 已驳回需修改
   COMPLETED
   OVERDUE
 }
@@ -1087,6 +1092,9 @@ model IntelTask {
   collectionPointId String?
   collectionPoint   CollectionPoint? @relation(fields: [collectionPointId], references: [id])
 
+  // [NEW] 关联具体品种（明确任务标的）
+  commodity         String?
+
   // [NEW] 关联填报批次（任务完成时自动关联）
   priceSubmissionId String?           @unique
   priceSubmission   PriceSubmission?  @relation(fields: [priceSubmissionId], references: [id])
@@ -1099,7 +1107,10 @@ model IntelTask {
   // 关联完成的情报
   intelId     String?
   intel       MarketIntel?    @relation(fields: [intelId], references: [id])
-  
+
+  // [NEW] 任务操作历史
+  history     IntelTaskHistory[]
+
   createdAt   DateTime        @default(now())
   updatedAt   DateTime        @updatedAt
   
@@ -1107,7 +1118,7 @@ model IntelTask {
   @@index([deadline])
   @@index([templateId])
   @@index([periodKey])
-  @@unique([templateId, assigneeId, periodStart])
+  @@unique([templateId, assigneeId, periodStart, collectionPointId, commodity])
 }
 
 // 任务模板模型
@@ -1403,4 +1414,25 @@ model AIModelConfig {
   
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
+}
+
+// =============================================
+// 任务操作历史记录
+// =============================================
+model IntelTaskHistory {
+  id          String    @id @default(uuid())
+
+  taskId      String
+  task        IntelTask @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  operatorId  String
+  operator    User      @relation(fields: [operatorId], references: [id])
+
+  action      String    // STATUS_CHANGE, COMMENT, ASSIGN, etc.
+  details     Json?     // { from: "PENDING", to: "SUBMITTED", reason: "..." }
+
+  createdAt   DateTime  @default(now())
+
+  @@index([taskId])
+  @@index([operatorId])
 }

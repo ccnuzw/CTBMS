@@ -22,6 +22,7 @@ import {
     CollectionPointManager,
     RegionManager,
     TaskDistributionPage,
+    TaskMonitor,
     ResearchReportListPage,
     ResearchReportDetailPage,
     ResearchReportDashboard,
@@ -38,6 +39,7 @@ import {
     PriceEntryForm,
     PriceReviewPanel,
     TaskTemplateManager,
+    BatchPriceEntryTable,
 } from '../features/price-reporting';
 import { TaskAllocationWorkbench, CollectionPointAllocationCenter } from '../features/market-intel';
 
@@ -128,6 +130,7 @@ export const router = createBrowserRouter([
                     { path: 'leaderboard', element: <Leaderboard /> },
                     { path: 'collection-points', element: <CollectionPointManager /> },
                     { path: 'tasks', element: <TaskDistributionPage /> },
+                    { path: 'monitor', element: <TaskMonitor /> },
                     { path: 'extraction-config', element: <ExtractionConfigPage /> },
                 ]
             },
@@ -136,6 +139,7 @@ export const router = createBrowserRouter([
                 path: 'price-reporting',
                 children: [
                     { index: true, element: <PriceReportingDashboard /> },
+                    { path: 'bulk', element: <BatchPriceEntryTable /> },
                     { path: 'submit/:pointId', element: <PriceEntryForm /> },
                     { path: 'allocation', element: <CollectionPointAllocationCenter defaultMode="POINT_COVERAGE" /> },
                     { path: 'review', element: <PriceReviewPanel /> },

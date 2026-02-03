@@ -1,5 +1,5 @@
 import React, { useMemo, useRef, useState } from 'react';
-import { App, Alert, Button, Space, Tag, Drawer, Timeline, Divider, Popconfirm } from 'antd';
+import { App, Alert, Button, Space, Tag, Drawer, Timeline, Divider, Popconfirm, Form } from 'antd';
 import {
     ProTable,
     ActionType,
@@ -24,12 +24,16 @@ import {
     INTEL_TASK_PRIORITY_LABELS,
     TASK_CYCLE_TYPE_LABELS,
     IntelTaskTemplateResponse,
+    CollectionPointType,
+    COLLECTION_POINT_TYPE_LABELS,
 } from '@packages/types';
-import { useTaskTemplates, useCreateTaskTemplate, useUpdateTaskTemplate, useDeleteTaskTemplate, useDistributeTasks } from '../../../api/tasks';
+import { useTaskTemplates, useCreateTaskTemplate, useUpdateTaskTemplate, useDeleteTaskTemplate, useDistributeTasks, usePreviewDistribution } from '../../../api/tasks';
+import { useCollectionPoints } from '../../../api/collection-point';
 import { useOrganizations } from '../../../../organization/api/organizations';
 import { useDepartments } from '../../../../organization/api/departments';
 import { useUsers } from '../../../../users/api/users';
 import { TemplateScheduleGrid } from './TemplateScheduleGrid';
+import { DistributionPreview } from '../../DistributionPreview';
 import { useModalAutoFocus } from '../../../../../hooks/useModalAutoFocus';
 
 // 简化的调度预览逻辑
@@ -80,9 +84,17 @@ export const TaskTemplateList: React.FC = () => {
     const updateMutation = useUpdateTaskTemplate();
     const deleteMutation = useDeleteTaskTemplate();
     const distributeMutation = useDistributeTasks();
+    const previewMutation = usePreviewDistribution();
+    const [distributionPreviewData, setDistributionPreviewData] = useState<any>(null);
+    const [isDistributionPreviewOpen, setIsDistributionPreviewOpen] = useState(false);
+
     const { data: organizations = [] } = useOrganizations();
     const { data: departments = [] } = useDepartments();
     const { data: users = [] } = useUsers({ status: 'ACTIVE' });
+    // Fetch all active collection points for selection
+    const { data: collectionPointsResult } = useCollectionPoints({ isActive: true, pageSize: 2000 });
+    const collectionPoints = collectionPointsResult?.data || [];
+
     const orgMap = useMemo(() => new Map(organizations.map(org => [org.id, org.name])), [organizations]);
     const deptMap = useMemo(() => new Map(departments.map(dept => [dept.id, dept.name])), [departments]);
     const userMap = useMemo(() => new Map(users.map(user => [user.id, user.name])), [users]);
@@ -118,9 +130,28 @@ export const TaskTemplateList: React.FC = () => {
 
     const normalizeTemplatePayload = (values: any) => {
         // 剔除 UI 辅助字段 placeholder，防止 Prisma 报错
-        const { placeholder, ...rest } = values;
+        const { placeholder, pointSelectionMode, ...rest } = values;
+
+        // Handle PointSelectionMode logic
+        let finalTargetPointType = rest.targetPointType;
+        let finalCollectionPointIds = rest.collectionPointIds;
+
+        if (rest.assigneeMode === 'BY_COLLECTION_POINT') {
+            if (pointSelectionMode === 'TYPE') {
+                finalCollectionPointIds = [];
+            } else {
+                finalTargetPointType = null;
+            }
+        } else {
+            // clear both if mode changed
+            finalTargetPointType = null;
+            finalCollectionPointIds = [];
+        }
+
         return {
             ...rest,
+            targetPointType: finalTargetPointType,
+            collectionPointIds: finalCollectionPointIds,
             activeFrom: rest.activeFrom ? dayjs(rest.activeFrom).toDate() : undefined,
             activeUntil: rest.activeUntil ? dayjs(rest.activeUntil).toDate() : undefined,
             assigneeIds: rest.assigneeMode === 'MANUAL' ? (rest.assigneeIds || []) : [],
@@ -182,6 +213,17 @@ export const TaskTemplateList: React.FC = () => {
                                 <Tag key={id}>{deptMap.get(id) || id}</Tag>
                             ))}
                             {(r.departmentIds || []).length > 3 && <Tag>+{(r.departmentIds || []).length - 3}</Tag>}
+                        </Space>
+                    );
+                }
+                if (r.assigneeMode === 'BY_COLLECTION_POINT') {
+                    if (r.targetPointType) {
+                        return <Tag color="orange">按类型: {COLLECTION_POINT_TYPE_LABELS[r.targetPointType]}</Tag>;
+                    }
+                    return (
+                        <Space wrap>
+                            <Tag color="orange">采集点</Tag>
+                            {(r.collectionPointIds || []).length} 个
                         </Space>
                     );
                 }
@@ -288,15 +330,17 @@ export const TaskTemplateList: React.FC = () => {
                             setPreviewDrawerVisible(true);
                         }}
                     >
-                        预览
+                        调度
                     </Button>
                     <Button
                         key="distribute"
                         size="small"
                         icon={<SendOutlined />}
                         onClick={async () => {
-                            await distributeMutation.mutateAsync({ templateId: record.id });
-                            message.success('手动分发任务触发成功');
+                            setCurrentTemplate(record);
+                            const data = await previewMutation.mutateAsync(record.id);
+                            setDistributionPreviewData(data);
+                            setIsDistributionPreviewOpen(true);
                         }}
                     >
                         分发
@@ -327,195 +371,268 @@ export const TaskTemplateList: React.FC = () => {
         },
     ];
 
-    const TemplateFormItems = () => (
-        <>
-            <ProFormText
-                name="name"
-                label="模板名称"
-                rules={[{ required: true }]}
-                colProps={{ span: 24 }}
-                fieldProps={{ ref: focusRef }}
-            />
-            <ProFormSelect
-                name="taskType"
-                label="任务类型"
-                tooltip="模板分发出的任务类型"
-                options={Object.entries(INTEL_TASK_TYPE_LABELS).map(([v, l]) => ({ label: l, value: v }))}
-                rules={[{ required: true }]}
-                colProps={{ span: 12 }}
-            />
-            <ProFormRadio.Group
-                name="priority"
-                label="默认优先级"
-                options={Object.entries(INTEL_TASK_PRIORITY_LABELS).map(([v, l]) => ({ label: l, value: v }))}
-                colProps={{ span: 12 }}
-            />
+    const TemplateFormItems: React.FC = () => {
+        const form = Form.useFormInstance();
 
-            <Divider style={{ margin: '12px 0' }} />
-
-            <ProFormSelect
-                name="assigneeMode"
-                label="分配方式"
-                options={[
-                    { label: '手动指定', value: 'MANUAL' },
-                    { label: '全员', value: 'ALL_ACTIVE' },
-                    { label: '按部门', value: 'BY_DEPARTMENT' },
-                    { label: '按组织', value: 'BY_ORGANIZATION' },
-                ]}
-                rules={[{ required: true }]}
-                colProps={{ span: 8 }}
-            />
-            <ProFormDependency name={['assigneeMode']}>
-                {({ assigneeMode }) => {
-                    if (assigneeMode === 'MANUAL') {
-                        return (
-                            <ProFormSelect
-                                name="assigneeIds"
-                                label="指定业务员"
-                                fieldProps={{ mode: 'multiple', optionFilterProp: 'label' }}
-                                options={users.map(user => ({ label: user.name, value: user.id }))}
-                                colProps={{ span: 16 }}
-                            />
-                        );
-                    }
-                    if (assigneeMode === 'BY_DEPARTMENT') {
-                        return (
-                            <ProFormSelect
-                                name="departmentIds"
-                                label="选择部门"
-                                fieldProps={{ mode: 'multiple' }}
-                                options={departments.map(dept => ({ label: dept.name, value: dept.id }))}
-                                colProps={{ span: 16 }}
-                            />
-                        );
-                    }
-                    if (assigneeMode === 'BY_ORGANIZATION') {
-                        return (
-                            <ProFormSelect
-                                name="organizationIds"
-                                label="选择组织"
-                                fieldProps={{ mode: 'multiple' }}
-                                options={organizations.map(org => ({ label: org.name, value: org.id }))}
-                                colProps={{ span: 16 }}
-                            />
-                        );
-                    }
-                    return <ProFormSelect name="placeholder" label=" " disabled fieldProps={{ placeholder: '将分发给所有活跃用户' }} colProps={{ span: 16 }} />;
-                }}
-            </ProFormDependency>
-
-            <Divider style={{ margin: '12px 0' }} />
-
-            <ProFormSelect
-                name="cycleType"
-                label="周期类型"
-                options={Object.entries(TASK_CYCLE_TYPE_LABELS).map(([v, l]) => ({ label: l, value: v }))}
-                rules={[{ required: true }]}
-                colProps={{ span: 8 }}
-            />
-            <ProFormSelect
-                name="runAtMinute"
-                label="分发时间"
-                options={timeOptions}
-                rules={[{ required: true }]}
-                colProps={{ span: 8 }}
-            />
-            <ProFormSelect
-                name="dueAtMinute"
-                label="截止时间"
-                options={timeOptions}
-                rules={[{ required: true }]}
-                colProps={{ span: 8 }}
-            />
-
-            <ProFormDependency name={['cycleType']}>
-                {({ cycleType }) => {
-                    if (cycleType === TaskCycleType.WEEKLY) {
-                        return (
-                            <ProFormSelect
-                                name="runDayOfWeek"
-                                label="每周分发日"
-                                options={weekDayOptions}
-                                colProps={{ span: 12 }}
-                            />
-                        );
-                    }
-                    if (cycleType === TaskCycleType.MONTHLY) {
-                        return (
-                            <ProFormSelect
-                                name="runDayOfMonth"
-                                label="每月分发日"
-                                options={monthDayOptions}
-                                colProps={{ span: 12 }}
-                            />
-                        );
-                    }
-                    return null;
-                }}
-            </ProFormDependency>
-            <ProFormDependency name={['cycleType']}>
-                {({ cycleType }) => {
-                    if (cycleType === TaskCycleType.WEEKLY) {
-                        return (
-                            <ProFormSelect
-                                name="dueDayOfWeek"
-                                label="每周截止日"
-                                options={weekDayOptions}
-                                colProps={{ span: 12 }}
-                            />
-                        );
-                    }
-                    if (cycleType === TaskCycleType.MONTHLY) {
-                        return (
-                            <ProFormSelect
-                                name="dueDayOfMonth"
-                                label="每月截止日"
-                                options={monthDayOptions}
-                                colProps={{ span: 12 }}
-                            />
-                        );
-                    }
-                    return null;
-                }}
-            </ProFormDependency>
-
-            <ProFormDatePicker
-                name="activeFrom"
-                label="生效时间"
-                fieldProps={{ showTime: true, style: { width: '100%' } }}
-                colProps={{ span: 12 }}
-            />
-            <ProFormDatePicker
-                name="activeUntil"
-                label="停止时间"
-                fieldProps={{ showTime: true, style: { width: '100%' } }}
-                colProps={{ span: 12 }}
-            />
-
-            <Divider style={{ margin: '12px 0' }} />
-
-            <ProFormSwitch name="allowLate" label="允许补报" colProps={{ span: 6 }} />
-            <ProFormDigit name="maxBackfillPeriods" label="最大补发期数" min={0} max={365} colProps={{ span: 6 }} />
-            <ProFormSwitch name="isActive" label="是否启用" colProps={{ span: 6 }} />
-
-            <ProFormTextArea
-                name="description"
-                label="模板描述"
-                colProps={{ span: 24 }}
-                fieldProps={{ rows: 3 }}
-            />
-
-            <div style={{ width: '100%' }}>
-                <Alert
-                    type="info"
-                    showIcon
-                    message="模板说明"
-                    description="模板任务将由后台调度服务自动生成。修改生效时间可能影响下一次生成。"
-                    style={{ marginTop: 16 }}
+        return (
+            <>
+                <ProFormText
+                    name="name"
+                    label="模板名称"
+                    rules={[{ required: true }]}
+                    colProps={{ span: 24 }}
                 />
-            </div>
-        </>
-    );
+                <ProFormSelect
+                    name="taskType"
+                    label="任务类型"
+                    tooltip="模板分发出的任务类型"
+                    options={Object.entries(INTEL_TASK_TYPE_LABELS).map(([v, l]) => ({ label: l, value: v }))}
+                    rules={[{ required: true }]}
+                    colProps={{ span: 12 }}
+                />
+                <ProFormRadio.Group
+                    name="priority"
+                    label="默认优先级"
+                    options={Object.entries(INTEL_TASK_PRIORITY_LABELS).map(([v, l]) => ({ label: l, value: v }))}
+                    colProps={{ span: 12 }}
+                />
+
+                <Divider style={{ margin: '12px 0' }} />
+
+                <ProFormDependency name={['taskType']}>
+                    {({ taskType }) => {
+                        const isPriceCollection = taskType === IntelTaskType.PRICE_COLLECTION;
+
+                        // Auto-switch mode if Price Collection is selected
+                        React.useEffect(() => {
+                            if (isPriceCollection) {
+                                form.setFieldValue('assigneeMode', 'BY_COLLECTION_POINT');
+                            }
+                        }, [isPriceCollection, form]);
+
+                        return (
+                            <ProFormSelect
+                                name="assigneeMode"
+                                label="分配方式"
+                                options={[
+                                    { label: '手动指定', value: 'MANUAL', disabled: isPriceCollection },
+                                    { label: '按采集点分配', value: 'BY_COLLECTION_POINT' },
+                                    { label: '全员', value: 'ALL_ACTIVE', disabled: isPriceCollection },
+                                    { label: '按部门', value: 'BY_DEPARTMENT', disabled: isPriceCollection },
+                                    { label: '按组织', value: 'BY_ORGANIZATION', disabled: isPriceCollection },
+                                ]}
+                                disabled={isPriceCollection}
+                                help={isPriceCollection ? "价格采集任务必须绑定具体的采集点，因此只能按采集点分配。" : undefined}
+                                rules={[{ required: true }]}
+                                colProps={{ span: 8 }}
+                            />
+                        );
+                    }}
+                </ProFormDependency>
+
+                <ProFormDependency name={['assigneeMode']}>
+                    {({ assigneeMode }) => {
+                        if (assigneeMode === 'MANUAL') {
+                            return (
+                                <ProFormSelect
+                                    name="assigneeIds"
+                                    label="指定业务员"
+                                    fieldProps={{ mode: 'multiple', optionFilterProp: 'label' }}
+                                    options={users.map(user => ({ label: user.name, value: user.id }))}
+                                    colProps={{ span: 16 }}
+                                />
+                            );
+                        }
+                        if (assigneeMode === 'BY_DEPARTMENT') {
+                            return (
+                                <ProFormSelect
+                                    name="departmentIds"
+                                    label="选择部门"
+                                    fieldProps={{ mode: 'multiple' }}
+                                    options={departments.map(dept => ({ label: dept.name, value: dept.id }))}
+                                    colProps={{ span: 16 }}
+                                />
+                            );
+                        }
+                        if (assigneeMode === 'BY_ORGANIZATION') {
+                            return (
+                                <ProFormSelect
+                                    name="organizationIds"
+                                    label="选择组织"
+                                    fieldProps={{ mode: 'multiple' }}
+                                    options={organizations.map(org => ({ label: org.name, value: org.id }))}
+                                    colProps={{ span: 16 }}
+                                />
+                            );
+                        }
+                        if (assigneeMode === 'BY_COLLECTION_POINT') {
+                            return (
+                                <>
+                                    <ProFormRadio.Group
+                                        name="pointSelectionMode"
+                                        label="选择方式"
+                                        options={[
+                                            { label: '按采集点类型', value: 'TYPE' },
+                                            { label: '指定采集点', value: 'SPECIFIC' },
+                                        ]}
+                                        colProps={{ span: 24 }}
+                                    />
+                                    <ProFormDependency name={['pointSelectionMode']}>
+                                        {({ pointSelectionMode }) => {
+                                            if (pointSelectionMode === 'TYPE') {
+                                                return (
+                                                    <ProFormSelect
+                                                        name="targetPointType"
+                                                        label="目标类型 (多选)"
+                                                        fieldProps={{ mode: 'multiple' }}
+                                                        options={Object.entries(COLLECTION_POINT_TYPE_LABELS).map(([v, l]) => ({ label: l, value: v }))}
+                                                        rules={[{ required: true, message: '请选择至少一个采集点类型' }]}
+                                                        colProps={{ span: 16 }}
+                                                    />
+                                                );
+                                            }
+                                            return (
+                                                <ProFormSelect
+                                                    name="collectionPointIds"
+                                                    label="选择采集点"
+                                                    fieldProps={{
+                                                        mode: 'multiple',
+                                                        showSearch: true,
+                                                        optionFilterProp: 'label'
+                                                    }}
+                                                    options={collectionPoints.map(p => ({ label: `${p.name} (${COLLECTION_POINT_TYPE_LABELS[p.type]})`, value: p.id }))}
+                                                    rules={[{ required: true, message: '请选择至少一个采集点' }]}
+                                                    colProps={{ span: 16 }}
+                                                />
+                                            );
+                                        }}
+                                    </ProFormDependency>
+                                    <Alert
+                                        type="info"
+                                        message="分配逻辑说明"
+                                        description="任务将分发给对应采集点当前的负责人。若采集点未分配负责人，将不会生成任务。"
+                                        style={{ margin: '0 12px 12px 12px', width: '100%' }}
+                                    />
+                                </>
+                            );
+                        }
+                        return <ProFormSelect name="placeholder" label=" " disabled fieldProps={{ placeholder: '将分发给所有活跃用户' }} colProps={{ span: 16 }} />;
+                    }}
+                </ProFormDependency>
+
+                <Divider style={{ margin: '12px 0' }} />
+
+                <ProFormSelect
+                    name="cycleType"
+                    label="周期类型"
+                    options={Object.entries(TASK_CYCLE_TYPE_LABELS).map(([v, l]) => ({ label: l, value: v }))}
+                    rules={[{ required: true }]}
+                    colProps={{ span: 8 }}
+                />
+                <ProFormSelect
+                    name="runAtMinute"
+                    label="分发时间"
+                    options={timeOptions}
+                    rules={[{ required: true }]}
+                    colProps={{ span: 8 }}
+                />
+                <ProFormSelect
+                    name="dueAtMinute"
+                    label="截止时间"
+                    options={timeOptions}
+                    rules={[{ required: true }]}
+                    colProps={{ span: 8 }}
+                />
+
+                <ProFormDependency name={['cycleType']}>
+                    {({ cycleType }) => {
+                        if (cycleType === TaskCycleType.WEEKLY) {
+                            return (
+                                <ProFormSelect
+                                    name="runDayOfWeek"
+                                    label="每周分发日"
+                                    options={weekDayOptions}
+                                    colProps={{ span: 12 }}
+                                />
+                            );
+                        }
+                        if (cycleType === TaskCycleType.MONTHLY) {
+                            return (
+                                <ProFormSelect
+                                    name="runDayOfMonth"
+                                    label="每月分发日"
+                                    options={monthDayOptions}
+                                    colProps={{ span: 12 }}
+                                />
+                            );
+                        }
+                        return null;
+                    }}
+                </ProFormDependency>
+                <ProFormDependency name={['cycleType']}>
+                    {({ cycleType }) => {
+                        if (cycleType === TaskCycleType.WEEKLY) {
+                            return (
+                                <ProFormSelect
+                                    name="dueDayOfWeek"
+                                    label="每周截止日"
+                                    options={weekDayOptions}
+                                    colProps={{ span: 12 }}
+                                />
+                            );
+                        }
+                        if (cycleType === TaskCycleType.MONTHLY) {
+                            return (
+                                <ProFormSelect
+                                    name="dueDayOfMonth"
+                                    label="每月截止日"
+                                    options={monthDayOptions}
+                                    colProps={{ span: 12 }}
+                                />
+                            );
+                        }
+                        return null;
+                    }}
+                </ProFormDependency>
+
+                <ProFormDatePicker
+                    name="activeFrom"
+                    label="生效时间"
+                    fieldProps={{ showTime: true, style: { width: '100%' } }}
+                    colProps={{ span: 12 }}
+                />
+                <ProFormDatePicker
+                    name="activeUntil"
+                    label="停止时间"
+                    fieldProps={{ showTime: true, style: { width: '100%' } }}
+                    colProps={{ span: 12 }}
+                />
+
+                <Divider style={{ margin: '12px 0' }} />
+
+                <ProFormSwitch name="allowLate" label="允许补报" colProps={{ span: 6 }} />
+                <ProFormDigit name="maxBackfillPeriods" label="最大补发期数" min={0} max={365} colProps={{ span: 6 }} />
+                <ProFormSwitch name="isActive" label="是否启用" colProps={{ span: 6 }} />
+
+                <ProFormTextArea
+                    name="description"
+                    label="模板描述"
+                    colProps={{ span: 24 }}
+                    fieldProps={{ rows: 3 }}
+                />
+
+                <div style={{ width: '100%' }}>
+                    <Alert
+                        type="info"
+                        showIcon
+                        message="模板说明"
+                        description="模板任务将由后台调度服务自动生成。修改生效时间可能影响下一次生成。"
+                        style={{ marginTop: 16 }}
+                    />
+                </div>
+            </>
+        );
+    };
 
     return (
         <>
@@ -570,6 +687,7 @@ export const TaskTemplateList: React.FC = () => {
                     ...currentTemplate,
                     activeFrom: currentTemplate.activeFrom ? dayjs(currentTemplate.activeFrom) : undefined,
                     activeUntil: currentTemplate.activeUntil ? dayjs(currentTemplate.activeUntil) : undefined,
+                    pointSelectionMode: currentTemplate.targetPointType ? 'TYPE' : 'SPECIFIC',
                 } : {}}
             >
                 <TemplateFormItems />
@@ -598,6 +716,20 @@ export const TaskTemplateList: React.FC = () => {
                     </>
                 )}
             </Drawer>
+
+            <DistributionPreview
+                open={isDistributionPreviewOpen}
+                onCancel={() => setIsDistributionPreviewOpen(false)}
+                data={distributionPreviewData}
+                loading={distributeMutation.isPending}
+                onExecute={async () => {
+                    if (currentTemplate) {
+                        await distributeMutation.mutateAsync({ templateId: currentTemplate.id });
+                        message.success('任务分发成功');
+                        setIsDistributionPreviewOpen(false);
+                    }
+                }}
+            />
         </>
     );
 };

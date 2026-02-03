@@ -40,6 +40,17 @@ export const useTasks = (query: IntelTaskQuery) => {
     });
 };
 
+export const useTask = (id?: string) => {
+    return useQuery({
+        queryKey: ['intel-task', id],
+        queryFn: async () => {
+            const { data } = await apiClient.get<IntelTaskResponse>(`${BASE_URL}/${id}`);
+            return data;
+        },
+        enabled: !!id,
+    });
+};
+
 export const useTaskMetrics = (query: IntelTaskQuery) => {
     return useQuery({
         queryKey: ['intel-tasks-metrics', query],
@@ -198,6 +209,33 @@ export const useDeleteTask = () => {
     });
 };
 
+export const useSubmitTask = () => {
+    const queryClient = useQueryClient();
+    return useMutation({
+        mutationFn: async ({ id, operatorId, data }: { id: string; operatorId: string; data?: any }) => {
+            const { data: res } = await apiClient.post<IntelTaskResponse>(`${BASE_URL}/${id}/submit`, { operatorId, data });
+            return res;
+        },
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['intel-tasks'] });
+            queryClient.invalidateQueries({ queryKey: ['my-intel-tasks'] });
+        },
+    });
+};
+
+export const useReviewTask = () => {
+    const queryClient = useQueryClient();
+    return useMutation({
+        mutationFn: async ({ id, operatorId, approved, reason }: { id: string; operatorId: string; approved: boolean; reason?: string }) => {
+            const { data: res } = await apiClient.post<IntelTaskResponse>(`${BASE_URL}/${id}/review`, { operatorId, approved, reason });
+            return res;
+        },
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['intel-tasks'] });
+        },
+    });
+};
+
 // --- Templates ---
 
 export const useTaskTemplates = () => {
@@ -258,6 +296,15 @@ export const useDistributeTasks = () => {
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ['intel-tasks'] });
             queryClient.invalidateQueries({ queryKey: ['intel-task-templates'] });
+        },
+    });
+};
+
+export const usePreviewDistribution = () => {
+    return useMutation({
+        mutationFn: async (templateId: string) => {
+            const { data } = await apiClient.post<any>(`${BASE_URL}/templates/${templateId}/preview`);
+            return data;
         },
     });
 };

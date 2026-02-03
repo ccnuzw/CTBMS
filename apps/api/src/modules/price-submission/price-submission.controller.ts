@@ -21,6 +21,7 @@ import {
   ReviewPriceDataDto,
   BatchReviewPriceDataDto,
   ReviewPriceSubmissionDto,
+  BatchSubmitPriceDto,
 } from './dto';
 
 @Controller('price-submissions')
@@ -36,6 +37,14 @@ export class PriceSubmissionController {
       throw new UnauthorizedException('User not authenticated');
     }
     return this.submissionService.create(dto, userId);
+  }
+
+  @Post('batch-submit')
+  @ApiOperation({ summary: '批量提交价格（跨采集点）' })
+  @ApiResponse({ status: 201, description: '批量提交成功' })
+  batchSubmit(@Body() dto: BatchSubmitPriceDto, @Request() req: any) {
+    const userId = req.user?.id;
+    return this.submissionService.batchSubmit(dto, userId);
   }
 
   @Get()

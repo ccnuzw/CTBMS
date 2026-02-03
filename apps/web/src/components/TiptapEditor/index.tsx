@@ -46,10 +46,6 @@ export const TiptapEditor: React.FC<TiptapEditorProps> = ({
                     levels: [1, 2, 3, 4],
                 },
                 // Disable potential duplicates that cause warnings
-                // @ts-ignore
-                link: false,
-                // @ts-ignore
-                underline: false,
             }),
             Underline,
             TextStyle,

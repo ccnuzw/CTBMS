@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { Card, Form, InputNumber, Input, Select, Button, Space, Row, Col, Divider, Typography, Spin, Alert, App } from 'antd';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
-import { ArrowLeftOutlined, CopyOutlined, SendOutlined } from '@ant-design/icons';
+import { ArrowLeftOutlined, CopyOutlined, SendOutlined, WarningOutlined } from '@ant-design/icons';
+import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { useQueryClient } from '@tanstack/react-query';
 import {
   useCreateSubmission,
@@ -12,6 +13,7 @@ import {
   usePointPriceHistory,
   useMyAssignedPoints,
 } from '../../api/hooks';
+import { useSubmitTask } from '../../../market-intel/api/tasks';
 import { useCollectionPoints } from '../../../market-intel/api/collection-point';
 import { getErrorMessage } from '../../../../api/client';
 import { useVirtualUser } from '@/features/auth/virtual-user';
@@ -40,9 +42,10 @@ export const PriceEntryForm: React.FC = () => {
   const { pointId } = useParams<{ pointId: string }>();
   const [searchParams] = useSearchParams();
   const taskId = searchParams.get('taskId') || undefined;
+  const urlCommodity = searchParams.get('commodity');
   const navigate = useNavigate();
   const [form] = Form.useForm();
-  const { message } = App.useApp();
+  const { message, modal } = App.useApp();
   const { currentUser } = useVirtualUser();
 
   const queryClient = useQueryClient();
@@ -53,23 +56,35 @@ export const PriceEntryForm: React.FC = () => {
 
   // [NEW] 获取当前用户的分配信息以确定品种权限
   const { data: myAssignedPoints } = useMyAssignedPoints(undefined, currentUser?.id);
-  const myAllocation = myAssignedPoints?.find((a: any) => a.collectionPointId === pointId);
+  const myAllocations = myAssignedPoints?.filter((a: any) => a.collectionPointId === pointId);
 
   // [NEW] 计算允许填报的品种
   const allowedCommodities = React.useMemo(() => {
-    // 1. 如果分配了特定品种，只允许该品种
-    if (myAllocation?.commodity) {
-      return [{ value: myAllocation.commodity, label: myAllocation.commodity }];
+    // 0.5 如果URL指定了品种 (Daily Maintenance)
+    if (urlCommodity) {
+      return [{ value: urlCommodity, label: urlCommodity }];
     }
 
-    // 2. 如果是全品种权限，使用采集点配置的品种
-    if (currentPoint?.commodities?.length) {
-      return currentPoint.commodities.map((c: string) => ({ value: c, label: c }));
+    // 1. 如果没有分配记录，或者分配记录包含"全品种"（commodity=null），则允许该点所有配置的品种
+    const hasFullAccess = !myAllocations?.length || myAllocations.some((a: any) => !a.commodity);
+
+    if (hasFullAccess) {
+      if (currentPoint?.commodities?.length) {
+        return currentPoint.commodities.map((c: string) => ({ value: c, label: c }));
+      }
+      return DEFAULT_COMMODITIES;
     }
 
-    // 3. 兜底
-    return DEFAULT_COMMODITIES;
-  }, [myAllocation, currentPoint]);
+    // 2. 如果只有特定品种分配，聚合所有分配的品种
+    const allocatedCommodities = [...new Set(myAllocations.map((a: any) => a.commodity).filter(Boolean))];
+
+    if (allocatedCommodities.length > 0) {
+      return allocatedCommodities.map((c: string) => ({ value: c, label: c }));
+    }
+
+    // 3. 兜底 (理论上不应到达这里，除非分配了但没品种也没全选)
+    return currentPoint?.commodities?.map((c: string) => ({ value: c, label: c })) || DEFAULT_COMMODITIES;
+  }, [myAllocations, currentPoint, urlCommodity]);
 
   // [NEW] 根据采集点配置过滤价格类型
   const allowedPriceTypes = React.useMemo(() => {
@@ -82,6 +97,7 @@ export const PriceEntryForm: React.FC = () => {
   const createSubmission = useCreateSubmission();
   const addEntry = useAddPriceEntry();
   const submitSubmission = useSubmitSubmission();
+  const submitTask = useSubmitTask();
   const copyYesterday = useCopyYesterdayData();
   const commodity = Form.useWatch('commodity', form);
   const { data: priceHistory } = usePointPriceHistory(pointId || '', 7, commodity);
@@ -116,6 +132,29 @@ export const PriceEntryForm: React.FC = () => {
     }
   }, [allowedCommodities, form]);
 
+  const normalizeGrade = (value: unknown) => {
+    if (value === null || value === undefined) return undefined;
+    const raw = String(value).trim();
+    if (!raw) return undefined;
+    const map: Record<string, string> = {
+      '1': '一等',
+      '一': '一等',
+      '2': '二等',
+      '二': '二等',
+      '3': '三等',
+      '三': '三等',
+    };
+    return map[raw] || raw;
+  };
+
+  const gradeOptions = React.useMemo(() => {
+    const base = ['一等', '二等', '三等'];
+    const historyGrades = (priceHistory || [])
+      .map((item: any) => normalizeGrade(item.grade))
+      .filter(Boolean) as string[];
+    return Array.from(new Set([...base, ...historyGrades])).map(value => ({ value, label: value }));
+  }, [priceHistory]);
+
   const handleCopyYesterday = () => {
     if (!priceHistory?.length) {
       message.warning('暂无历史数据可复制');
@@ -132,15 +171,18 @@ export const PriceEntryForm: React.FC = () => {
       return;
     }
 
-    form.setFieldsValue({
-      price: latestEntry.price,
+    const copiedGrade = normalizeGrade(latestEntry.grade);
+    const nextValues: Record<string, unknown> = {
+      price: latestEntry.price !== undefined && latestEntry.price !== null ? Number(latestEntry.price) : undefined,
       subType: latestEntry.subType,
-      grade: latestEntry.grade,
-      moisture: latestEntry.moisture,
-      bulkDensity: latestEntry.bulkDensity,
-      inventory: latestEntry.inventory,
-      note: '复制自近期数据',
-    });
+      moisture: latestEntry.moisture !== undefined && latestEntry.moisture !== null ? Number(latestEntry.moisture) : undefined,
+      bulkDensity: latestEntry.bulkDensity !== undefined && latestEntry.bulkDensity !== null ? Number(latestEntry.bulkDensity) : undefined,
+      inventory: latestEntry.inventory !== undefined && latestEntry.inventory !== null ? Number(latestEntry.inventory) : undefined,
+      note: latestEntry.note || '复制自近期数据',
+    };
+    nextValues.grade = copiedGrade ?? undefined;
+
+    form.setFieldsValue(nextValues);
 
     message.success('已填充最近一次填报数据');
   };
@@ -148,6 +190,7 @@ export const PriceEntryForm: React.FC = () => {
   const handleAddEntry = async (values: any) => {
     if (!submissionId) return;
     try {
+      const bulkDensity = typeof values.bulkDensity === 'number' && values.bulkDensity > 0 ? values.bulkDensity : undefined;
       await addEntry.mutateAsync({
         submissionId,
         dto: {
@@ -156,11 +199,11 @@ export const PriceEntryForm: React.FC = () => {
           subType: values.subType || 'LISTED',
           sourceType: 'ENTERPRISE',
           geoLevel: 'ENTERPRISE',
-          grade: values.grade,
-          moisture: values.moisture,
-          bulkDensity: values.bulkDensity,
-          inventory: values.inventory,
-          note: values.note,
+          ...(values.grade ? { grade: values.grade } : {}),
+          ...(typeof values.moisture === 'number' ? { moisture: values.moisture } : {}),
+          ...(bulkDensity !== undefined ? { bulkDensity } : {}),
+          ...(typeof values.inventory === 'number' ? { inventory: values.inventory } : {}),
+          ...(values.note ? { note: values.note } : {}),
         },
       });
       message.success('添加成功');
@@ -176,9 +219,52 @@ export const PriceEntryForm: React.FC = () => {
       message.warning('请至少添加一条价格数据');
       return;
     }
+
+    // [NEW] 检查是否填报了所有指定品种
+    const filledCommodities = priceDataList.map((i: any) => i.commodity);
+    const missingCommodities = allowedCommodities
+      .map(c => c.value)
+      .filter(c => !filledCommodities.includes(c));
+
+    if (missingCommodities.length > 0) {
+      modal.confirm({
+        title: '确认提交未完成的填报？',
+        content: (
+          <div>
+            <p>您还有以下分配的品种尚未填报：</p>
+            <p style={{ color: '#ff4d4f', fontWeight: 'bold' }}>{missingCommodities.join('、')}</p>
+            <p>提交后任务将标记为完成。如需稍后继续，请点击“取消”并保存草稿。</p>
+          </div>
+        ),
+        okText: '仍要提交',
+        okButtonProps: { danger: true },
+        cancelText: '取消',
+        onOk: () => performSubmit(),
+      });
+      return;
+    }
+
+    await performSubmit();
+  };
+
+  const performSubmit = async () => {
+    if (!submissionId) return;
     try {
+      // 1. Submit the price submission (marks as SUBMITTED)
       await submitSubmission.mutateAsync(submissionId);
-      message.success('提交成功');
+
+      // 2. If this is a task-based submission, also submit the task for review
+      if (taskId) {
+        await submitTask.mutateAsync({
+          id: taskId,
+          operatorId: currentUser?.id || 'unknown',
+          data: { submissionId }
+        });
+        message.success('任务已提交审核');
+      } else {
+        message.success('提交成功');
+      }
+
       navigate('/price-reporting');
     } catch (err: any) {
       message.error(getErrorMessage(err));
@@ -229,7 +315,7 @@ export const PriceEntryForm: React.FC = () => {
               <Row gutter={16}>
                 <Col xs={12} md={8}>
                   <Form.Item name="commodity" label="品种" rules={[{ required: true }]}>
-                    <Select options={allowedCommodities} />
+                    <Select options={allowedCommodities} disabled={allowedCommodities.length === 1} />
                   </Form.Item>
                 </Col>
                 <Col xs={12} md={8}>
@@ -239,20 +325,32 @@ export const PriceEntryForm: React.FC = () => {
                 </Col>
                 <Col xs={12} md={8}>
                   <Form.Item name="grade" label="等级">
-                    <Select
-                      options={[
-                        { value: '一等', label: '一等' },
-                        { value: '二等', label: '二等' },
-                        { value: '三等', label: '三等' },
-                      ]}
-                    />
+                    <Select options={gradeOptions} />
                   </Form.Item>
                 </Col>
               </Row>
 
               <Row gutter={16}>
                 <Col xs={12} md={6}>
-                  <Form.Item name="price" label="价格 (元/吨)" rules={[{ required: true }]}>
+                  <Form.Item
+                    name="price"
+                    label="价格 (元/吨)"
+                    rules={[
+                      { required: true, message: '请输入价格' },
+                      {
+                        validator: (_, value) => {
+                          if (value === undefined || value === null || value === '') {
+                            return Promise.resolve();
+                          }
+                          const normalized = typeof value === 'number' ? value : Number(String(value).replace(/,/g, ''));
+                          if (Number.isFinite(normalized) && normalized > 0) {
+                            return Promise.resolve();
+                          }
+                          return Promise.reject(new Error('价格必须大于 0'));
+                        },
+                      },
+                    ]}
+                  >
                     <InputNumber style={{ width: '100%' }} min={0} precision={0} />
                   </Form.Item>
                 </Col>
@@ -263,7 +361,7 @@ export const PriceEntryForm: React.FC = () => {
                 </Col>
                 <Col xs={12} md={6}>
                   <Form.Item name="bulkDensity" label="容重 g/L">
-                    <InputNumber style={{ width: '100%' }} min={0} precision={0} />
+                    <InputNumber style={{ width: '100%' }} min={1} precision={0} />
                   </Form.Item>
                 </Col>
                 <Col xs={12} md={6}>
@@ -278,9 +376,42 @@ export const PriceEntryForm: React.FC = () => {
               </Form.Item>
 
               <Form.Item>
-                <Button type="primary" htmlType="submit" loading={addEntry.isPending}>
+                <Button type="primary" htmlType="submit" loading={addEntry.isPending} disabled={!submissionId}>
                   添加价格
                 </Button>
+              </Form.Item>
+              {/* Deviation Warning Logic */}
+              <Form.Item noStyle shouldUpdate={(prev, curr) => prev.price !== curr.price || prev.commodity !== curr.commodity}>
+                {({ getFieldValue }) => {
+                  const currentPrice = getFieldValue('price');
+                  const currentCommodity = getFieldValue('commodity');
+
+                  // Find latest history price for comparison
+                  const latestHistory = priceHistory?.filter((h: any) => h.commodity === currentCommodity)?.[0];
+
+                  if (currentPrice && latestHistory && latestHistory.price) {
+                    const diff = Math.abs(currentPrice - Number(latestHistory.price));
+                    const percent = (diff / Number(latestHistory.price)) * 100;
+
+                    if (percent > 10) {
+                      return (
+                        <Alert
+                          type="warning"
+                          showIcon
+                          icon={<WarningOutlined />}
+                          message="价格波动预警"
+                          description={
+                            <span>
+                              当前输入价格 <b>{currentPrice}</b> 与最近一次({new Date(latestHistory.effectiveDate).toLocaleDateString()})价格 <b>{Number(latestHistory.price)}</b> 相比波动幅度较大 (<b>{percent.toFixed(1)}%</b>)，请确认是否输入无误。
+                            </span>
+                          }
+                          style={{ marginTop: 16 }}
+                        />
+                      );
+                    }
+                  }
+                  return null;
+                }}
               </Form.Item>
             </Form>
           </Card>
@@ -324,10 +455,10 @@ export const PriceEntryForm: React.FC = () => {
               size="large"
               icon={<SendOutlined />}
               onClick={handleSubmit}
-              loading={submitSubmission.isPending}
+              loading={submitSubmission.isPending || submitTask.isPending}
               disabled={!priceDataList.length}
             >
-              提交审核
+              {taskId ? '提交审核' : '提交'}
             </Button>
             <Button size="large" onClick={() => navigate('/price-reporting')}>
               保存草稿
@@ -337,25 +468,32 @@ export const PriceEntryForm: React.FC = () => {
 
         {/* 右侧：历史价格 */}
         <Col xs={24} lg={8}>
-          <Card title="历史价格 (近7日)" size="small">
+          <Card title="历史价格趋势 (近7日)" size="small">
             {priceHistory?.length ? (
-              <div>
-                {priceHistory.map((item: any, index: number) => (
-                  <div
-                    key={index}
-                    style={{
-                      display: 'flex',
-                      justifyContent: 'space-between',
-                      padding: '8px 0',
-                      borderBottom: '1px solid #f0f0f0',
-                    }}
+              <div style={{ width: '100%' }}>
+                <ResponsiveContainer width="100%" height={200}>
+                  <AreaChart
+                    data={priceHistory.slice().reverse().map((i: any) => ({
+                      date: new Date(i.effectiveDate).toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric' }),
+                      price: Number(i.price)
+                    }))}
+                    margin={{ top: 10, right: 0, left: 0, bottom: 0 }}
                   >
-                    <Text type="secondary">
-                      {new Date(item.effectiveDate).toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric' })}
-                    </Text>
-                    <Text strong>{Number(item.price).toLocaleString()}</Text>
-                  </div>
-                ))}
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                    <XAxis dataKey="date" tick={{ fontSize: 10 }} interval="preserveStartEnd" />
+                    <YAxis domain={['auto', 'auto']} hide />
+                    <Tooltip
+                      contentStyle={{ fontSize: 12 }}
+                      formatter={(value: any) => [`${value} 元/吨`, '价格']}
+                    />
+                    <Area type="monotone" dataKey="price" stroke="#1890ff" fill="#e6f7ff" />
+                  </AreaChart>
+                </ResponsiveContainer>
+                <div style={{ textAlign: 'center', marginTop: 8 }}>
+                  <Text type="secondary" style={{ fontSize: 12 }}>
+                    最近报价: <span style={{ color: '#1890ff', fontWeight: 'bold' }}>{Number(priceHistory[0].price).toLocaleString()}</span> 元/吨
+                  </Text>
+                </div>
               </div>
             ) : (
               <Text type="secondary">暂无历史数据</Text>
@@ -363,7 +501,7 @@ export const PriceEntryForm: React.FC = () => {
           </Card>
         </Col>
       </Row>
-    </div>
+    </div >
   );
 };
 

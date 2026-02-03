@@ -9,6 +9,7 @@ import {
   ReviewPriceDataDto,
   BatchReviewPriceDataDto,
   ReviewPriceSubmissionDto,
+  BatchSubmitPriceDto,
 } from './dto';
 import { SubmissionStatus, PriceReviewStatus, PriceInputMethod } from '@packages/types';
 
@@ -616,5 +617,64 @@ export class PriceSubmissionService {
         geoLevel: true,
       },
     });
+  }
+  /**
+   * 批量提交价格 (跨采集点)
+   */
+  async batchSubmit(dto: BatchSubmitPriceDto, submittedById: string) {
+    // 1. 按采集点分组
+    const entriesByPoint = new Map<string, typeof dto.entries>();
+    for (const entry of dto.entries) {
+      if (!entriesByPoint.has(entry.collectionPointId)) {
+        entriesByPoint.set(entry.collectionPointId, []);
+      }
+      entriesByPoint.get(entry.collectionPointId)!.push(entry);
+    }
+
+    const results = {
+      totalPoints: entriesByPoint.size,
+      successPoints: 0,
+      failedPoints: 0,
+      results: [] as any[],
+    };
+
+    // 2. 逐个采集点处理
+    for (const [pointId, entries] of entriesByPoint) {
+      try {
+        // 2.1 创建或获取批次
+        const submission = await this.create({
+          collectionPointId: pointId,
+          effectiveDate: dto.effectiveDate || new Date(),
+        }, submittedById);
+
+        // 2.2 添加条目
+        const addedEntries = [];
+        for (const entry of entries) {
+          // Reuse addEntry logic
+          const result = await this.addEntry(submission.id, {
+            ...entry,
+            // Ensure defaults
+            subType: entry.subType || 'LISTED',
+            sourceType: entry.sourceType || 'ENTERPRISE',
+            geoLevel: entry.geoLevel || 'ENTERPRISE',
+          }, submittedById);
+          addedEntries.push(result);
+        }
+
+        // 2.3 提交批次
+        if (addedEntries.length > 0) {
+          await this.submit(submission.id);
+        }
+
+        results.successPoints++;
+        results.results.push({ pointId, success: true, count: addedEntries.length });
+
+      } catch (error: any) {
+        results.failedPoints++;
+        results.results.push({ pointId, success: false, error: error.message });
+      }
+    }
+
+    return results;
   }
 }

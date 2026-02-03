@@ -70,6 +70,16 @@ export const MainLayout: React.FC = () => {
                             label: '填报工作台',
                         },
                         {
+                            key: '/intel/tasks',
+                            icon: <ScheduleOutlined />,
+                            label: '任务分配',
+                        },
+                        {
+                            key: '/intel/monitor',
+                            icon: <AuditOutlined />,
+                            label: '任务监控',
+                        },
+                        {
                             key: '/price-reporting/review',
                             icon: <AuditOutlined />,
                             label: '价格审核',
@@ -125,11 +135,6 @@ export const MainLayout: React.FC = () => {
                     key: '/intel/leaderboard',
                     icon: <TeamOutlined />,
                     label: '绩效排行',
-                },
-                {
-                    key: '/intel/tasks',
-                    icon: <ScheduleOutlined />,
-                    label: '任务分配',
                 },
                 {
                     key: '/intel/collection-points',

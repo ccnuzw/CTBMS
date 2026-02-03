@@ -873,7 +873,7 @@ export const AllocationMatrix: React.FC = () => {
         onCancel={() => {
           setCommodityModalOpen(false);
           setCurrentOperatingPoint(null);
-          setSelectedCommodity(null);
+          setSelectedCommodity([]);
         }}
         okText="确认分配"
         cancelText="取消"

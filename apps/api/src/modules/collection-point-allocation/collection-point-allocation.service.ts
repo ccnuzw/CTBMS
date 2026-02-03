@@ -10,7 +10,7 @@ import {
 
 @Injectable()
 export class CollectionPointAllocationService {
-  constructor(private prisma: PrismaService) {}
+  constructor(private prisma: PrismaService) { }
 
   /**
    * 获取分配矩阵数据
@@ -377,9 +377,27 @@ export class CollectionPointAllocationService {
       },
     });
 
+    console.log(`[debug] User ${userId} raw allocations:`, allocations.length);
+
+    // Flatten allocations: If commodity is null (ALL), expand to point commodities
+    const flattenedAllocations = [];
+    for (const alloc of allocations) {
+      if (alloc.commodity) {
+        flattenedAllocations.push(alloc);
+      } else if (alloc.collectionPoint.commodities && alloc.collectionPoint.commodities.length > 0) {
+        // Expand
+        for (const comm of alloc.collectionPoint.commodities) {
+          flattenedAllocations.push({ ...alloc, commodity: comm });
+        }
+      } else {
+        // Fallback
+        flattenedAllocations.push(alloc);
+      }
+    }
+
     // 获取今日填报状态和最近价格
     const result = await Promise.all(
-      allocations.map(async (allocation) => {
+      flattenedAllocations.map(async (allocation) => {
         const [todaySubmission, lastPrice, pendingTask] = await Promise.all([
           // 今日是否已填报
           this.prisma.priceSubmission.findFirst({
@@ -391,11 +409,15 @@ export class CollectionPointAllocationService {
                 lte: endOfDay,
               },
             },
+            include: {
+              priceData: { select: { commodity: true } },
+            },
           }),
           // 最近一条价格数据
           this.prisma.priceData.findFirst({
             where: {
               collectionPointId: allocation.collectionPointId,
+              ...(allocation.commodity ? { commodity: allocation.commodity } : {}),
             },
             orderBy: { effectiveDate: 'desc' },
             select: { price: true, effectiveDate: true, commodity: true },
@@ -412,15 +434,28 @@ export class CollectionPointAllocationService {
           }),
         ]);
 
+        let isReported = false;
+        if (todaySubmission) {
+          if (allocation.commodity) {
+            isReported = todaySubmission.priceData.some(p => p.commodity === allocation.commodity);
+          } else {
+            isReported = todaySubmission.priceData.length > 0;
+          }
+        }
+
         return {
           ...allocation,
-          todayReported: !!todaySubmission,
+          todayReported: isReported,
+          submissionId: todaySubmission?.id,
           submissionStatus: todaySubmission?.status,
           lastPrice: lastPrice ? Number(lastPrice.price) : null,
           lastPriceDate: lastPrice?.effectiveDate,
           lastCommodity: lastPrice?.commodity,
           hasPendingTask: !!pendingTask,
           pendingTask: pendingTask,
+          // Debug field
+          _debug_commodities: allocation.collectionPoint.commodities,
+          _debug_expanded: !allocation.id, // ID is preserved usually, but let's see.
         };
       }),
     );

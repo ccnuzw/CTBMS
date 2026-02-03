@@ -227,6 +227,26 @@ export const BulkSubmitPriceEntriesSchema = z.object({
 
 export type BulkSubmitPriceEntriesDto = z.infer<typeof BulkSubmitPriceEntriesSchema>;
 
+// [NEW] 跨采集点批量提交价格
+export const BatchSubmitPriceSchema = z.object({
+  effectiveDate: z.coerce.date().optional(), // 默认为今日
+  entries: z.array(z.object({
+    collectionPointId: z.string().uuid(),
+    commodity: z.string().min(1),
+    price: z.number().positive(),
+    subType: z.string().default('LISTED'),
+    sourceType: z.string().default('ENTERPRISE'),
+    geoLevel: z.string().default('ENTERPRISE'),
+    grade: z.string().optional(),
+    moisture: z.number().min(0).max(100).optional(),
+    bulkDensity: z.number().int().positive().optional(),
+    inventory: z.number().int().min(0).optional(),
+    note: z.string().optional(),
+  })),
+});
+
+export type BatchSubmitPriceDto = z.infer<typeof BatchSubmitPriceSchema>;
+
 // =============================================
 // 审核 Schema
 // =============================================

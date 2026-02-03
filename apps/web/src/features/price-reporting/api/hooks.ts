@@ -16,6 +16,7 @@ import {
   ReviewPriceDataDto,
   BatchReviewPriceDataDto,
   ReviewPriceSubmissionDto,
+  BatchSubmitPriceDto,
   AllocationRole,
   SubmissionStatus,
   PriceReviewStatus,
@@ -334,6 +335,22 @@ export const useSubmitSubmission = () => {
   return useMutation({
     mutationFn: async (submissionId: string) => {
       const { data } = await apiClient.post<PriceSubmissionResponse>(`${SUBMISSION_BASE_URL}/${submissionId}/submit`);
+      return data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['price-submissions'] });
+      queryClient.invalidateQueries({ queryKey: ['my-submissions'] });
+      queryClient.invalidateQueries({ queryKey: ['submission-statistics'] });
+      queryClient.invalidateQueries({ queryKey: ['my-assigned-points'] });
+    },
+  });
+};
+
+export const useBatchSubmit = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (dto: BatchSubmitPriceDto) => {
+      const { data } = await apiClient.post<any>('/price-submissions/batch-submit', dto);
       return data;
     },
     onSuccess: () => {
