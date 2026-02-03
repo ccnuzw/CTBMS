@@ -79,6 +79,16 @@ async function seedCollectionPoints() {
                 }
             }
 
+            // 5. Generate commodityConfigs if missing
+            if (!data.commodityConfigs && data.commodities && data.priceSubTypes) {
+                // Default config for each commodity using the flat priceSubTypes
+                data.commodityConfigs = data.commodities.map((c: string) => ({
+                    name: c,
+                    allowedSubTypes: data.priceSubTypes,
+                    defaultSubType: data.defaultSubType || data.priceSubTypes[0],
+                }));
+            }
+
             await prisma.collectionPoint.upsert({
                 where: { id: item.id },
                 update: data,

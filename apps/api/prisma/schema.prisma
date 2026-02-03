@@ -382,6 +382,11 @@ model CollectionPoint {
   defaultSubType String?                      // 默认价格子类型（如 FOB、LISTED）
   isDataSource  Boolean              @default(true) // 是否作为数据来源点
 
+  // [NEW] 品种-价格类型映射配置 (JSON format)
+  // Structure: { name: string, allowedSubTypes: string[], defaultSubType?: string }[]
+  commodityConfigs Json?
+
+
   // [NEW] 市场经营主体属性 (替代原企业关联)
   isMarketEntity Boolean             @default(false)
   contactInfo    Json?               // 简易联系人信息 {name, phone, role}

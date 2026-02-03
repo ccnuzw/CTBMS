@@ -1,11 +1,12 @@
 import { Injectable, NotFoundException, ConflictException } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import {
     CreateCollectionPointDto,
     UpdateCollectionPointDto,
     CollectionPointQueryDto,
 } from './dto';
-import { CollectionPointType } from '@packages/types';
+import { CollectionPointType, CommodityConfig } from '@packages/types';
 
 @Injectable()
 export class CollectionPointService {
@@ -23,9 +24,27 @@ export class CollectionPointService {
             throw new ConflictException(`采集点编码 ${dto.code} 已存在`);
         }
 
+        // 处理 commodityConfigs -> commodities, priceSubTypes
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+        const { commodityConfigs, ...restDto } = dto;
+        const processedDto = { ...restDto };
+
+        if (dto.commodityConfigs && dto.commodityConfigs.length > 0) {
+            const commodities = dto.commodityConfigs.map(c => c.name);
+            // 提取所有配置中出现过的 subType，去重
+            const subTypes = new Set<string>();
+            dto.commodityConfigs.forEach(c => {
+                c.allowedSubTypes.forEach(t => subTypes.add(t));
+            });
+
+            processedDto.commodities = commodities;
+            processedDto.priceSubTypes = Array.from(subTypes);
+        }
+
         return this.prisma.collectionPoint.create({
             data: {
-                ...dto,
+                ...processedDto,
+                commodityConfigs: dto.commodityConfigs as unknown as Prisma.InputJsonValue,
                 createdById,
             },
             include: {
@@ -132,9 +151,29 @@ export class CollectionPointService {
             }
         }
 
+        // 处理 commodityConfigs -> commodities, priceSubTypes
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+        const { commodityConfigs, ...restDto } = dto;
+        const processedDto = { ...restDto };
+
+        if (dto.commodityConfigs && dto.commodityConfigs.length > 0) {
+            const commodities = dto.commodityConfigs.map(c => c.name);
+            // 提取所有配置中出现过的 subType，去重
+            const subTypes = new Set<string>();
+            dto.commodityConfigs.forEach(c => {
+                c.allowedSubTypes.forEach(t => subTypes.add(t));
+            });
+
+            processedDto.commodities = commodities;
+            processedDto.priceSubTypes = Array.from(subTypes);
+        }
+
         return this.prisma.collectionPoint.update({
             where: { id },
-            data: dto,
+            data: {
+                ...processedDto,
+                commodityConfigs: dto.commodityConfigs as unknown as Prisma.InputJsonValue,
+            },
             include: {
                 region: true,
                 enterprise: {

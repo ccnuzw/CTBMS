@@ -15,11 +15,13 @@ import {
     Cascader,
 } from 'antd';
 import {
+    SettingOutlined,
+    RobotOutlined,
+    MinusCircleOutlined,
+    PlusOutlined,
     ShopOutlined,
     EnvironmentOutlined,
     TagsOutlined,
-    SettingOutlined,
-    RobotOutlined,
 } from '@ant-design/icons';
 import {
     useCollectionPoint,
@@ -72,7 +74,6 @@ export const CollectionPointEditor: React.FC<CollectionPointEditorProps> = ({
 
     // Watch type field to conditionally show region selector
     const selectedType = Form.useWatch('type', form);
-    const priceSubTypes = Form.useWatch('priceSubTypes', form);
 
     // Convert region tree to Cascader options
     const regionOptions = useMemo(() => {
@@ -110,15 +111,17 @@ export const CollectionPointEditor: React.FC<CollectionPointEditorProps> = ({
                 'address',
                 'longitude',
                 'latitude',
-                'commodities',
+                'latitude',
+                'commodities', // Backend will derive this from configs if present
+                'priceSubTypes', // Backend will derive this from configs if present
                 'defaultSubType',
+                'commodityConfigs',
                 'enterpriseId',
                 'priority',
                 'isActive',
                 'description',
                 // AI Config
                 'matchRegionCodes',
-                'priceSubTypes',
                 'isDataSource',
             ];
             const filteredValues = Object.fromEntries(
@@ -348,83 +351,112 @@ export const CollectionPointEditor: React.FC<CollectionPointEditorProps> = ({
                     <Divider orientation="left">
                         <Space>
                             <TagsOutlined />
-                            <Text strong>业务属性</Text>
+                            <Text strong>业务属性 (品种与价格)</Text>
                         </Space>
                     </Divider>
 
-                    <Row gutter={16}>
-                        <Col span={24}>
-                            <Form.Item
-                                name="commodities"
-                                label="主营品种"
-                                tooltip="该采集点主要涉及的品种"
-                            >
-                                <Select
-                                    mode="tags"
-                                    placeholder="如：玉米、大豆"
-                                    options={[
-                                        { value: '玉米', label: '玉米' },
-                                        { value: '大豆', label: '大豆' },
-                                        { value: '小麦', label: '小麦' },
-                                        { value: '稻谷', label: '稻谷' },
-                                        { value: '高粱', label: '高粱' },
-                                        { value: '豆粕', label: '豆粕' },
-                                    ]}
-                                />
-                            </Form.Item>
-                        </Col>
-                    </Row>
-
-                    <Row gutter={16}>
-                        <Col span={24}>
-                            <Form.Item
-                                name="priceSubTypes"
-                                label="允许填报的价格类型"
-                                tooltip="限制该站点允许提取/填报的价格类型，该设置对所有品种生效"
-                            >
-                                <Select
-                                    mode="multiple"
-                                    allowClear
-                                    placeholder="选择该站点通常发布的价格类型"
-                                    options={PRICE_SUB_TYPE_OPTIONS}
-                                />
-                            </Form.Item>
-                        </Col>
-                    </Row>
-
-                    <Row gutter={16}>
-                        <Col span={12}>
-                            <Form.Item
-                                name="defaultSubType"
-                                label="默认价格类型"
-                                tooltip="该采集点的价格默认分类"
-                                dependencies={['priceSubTypes']}
-                                rules={[
-                                    {
-                                        validator: async (_, value) => {
-                                            if (
-                                                value &&
-                                                priceSubTypes &&
-                                                priceSubTypes.length > 0 &&
-                                                !priceSubTypes.includes(value)
-                                            ) {
-                                                return Promise.reject(
-                                                    new Error('默认类型必须在允许的价格类型范围内')
-                                                );
-                                            }
-                                            return Promise.resolve();
-                                        },
-                                    },
-                                ]}
-                            >
-                                <Select
-                                    allowClear
-                                    placeholder="选择默认价格类型"
-                                    options={PRICE_SUB_TYPE_OPTIONS}
-                                />
-                            </Form.Item>
-                        </Col>
-                    </Row>
+                    <Form.List name="commodityConfigs">
+                        {(fields, { add, remove }) => (
+                            <>
+                                {fields.map(({ key, name, ...restField }) => (
+                                    <React.Fragment key={key}>
+                                        <Row gutter={16} align="bottom">
+                                            <Col span={6}>
+                                                <Form.Item
+                                                    {...restField}
+                                                    name={[name, 'name']}
+                                                    label="品种名称"
+                                                    rules={[{ required: true, message: '请选择品种' }]}
+                                                >
+                                                    <Select
+                                                        placeholder="选择品种"
+                                                        options={[
+                                                            { value: '玉米', label: '玉米' },
+                                                            { value: '大豆', label: '大豆' },
+                                                            { value: '小麦', label: '小麦' },
+                                                            { value: '稻谷', label: '稻谷' },
+                                                            { value: '高粱', label: '高粱' },
+                                                            { value: '豆粕', label: '豆粕' },
+                                                        ]}
+                                                    />
+                                                </Form.Item>
+                                            </Col>
+                                            <Col span={10}>
+                                                <Form.Item
+                                                    {...restField}
+                                                    name={[name, 'allowedSubTypes']}
+                                                    label="允许的价格类型"
+                                                    rules={[{ required: true, message: '至少选一种' }]}
+                                                >
+                                                    <Select
+                                                        mode="multiple"
+                                                        placeholder="支持的价格类型"
+                                                        options={PRICE_SUB_TYPE_OPTIONS}
+                                                    />
+                                                </Form.Item>
+                                            </Col>
+                                            <Col span={6}>
+                                                <Form.Item
+                                                    shouldUpdate={(prev, curr) =>
+                                                        prev.commodityConfigs?.[name]?.allowedSubTypes !==
+                                                        curr.commodityConfigs?.[name]?.allowedSubTypes
+                                                    }
+                                                >
+                                                    {({ getFieldValue }) => {
+                                                        const allowed = getFieldValue(['commodityConfigs', name, 'allowedSubTypes']) || [];
+                                                        return (
+                                                            <Form.Item
+                                                                {...restField}
+                                                                name={[name, 'defaultSubType']}
+                                                                label="默认类型"
+                                                                rules={[
+                                                                    { required: true, message: '必填' },
+                                                                    {
+                                                                        validator: async (_, value) => {
+                                                                            if (value && !allowed.includes(value)) {
+                                                                                return Promise.reject(new Error('无效默认值'));
+                                                                            }
+                                                                        }
+                                                                    }
+                                                                ]}
+                                                            >
+                                                                <Select
+                                                                    placeholder="默认类型"
+                                                                    options={PRICE_SUB_TYPE_OPTIONS.filter(o => allowed.includes(o.value))}
+                                                                />
+                                                            </Form.Item>
+                                                        );
+                                                    }}
+                                                </Form.Item>
+                                            </Col>
+                                            <Col span={2}>
+                                                <Form.Item label=" ">
+                                                    <MinusCircleOutlined onClick={() => remove(name)} style={{ color: 'red' }} />
+                                                </Form.Item>
+                                            </Col>
+                                        </Row>
+                                        <Divider style={{ margin: '0 0 16px 0' }} dashed />
+                                    </React.Fragment>
+                                ))}
+                                <Form.Item>
+                                    <button
+                                        type="button"
+                                        onClick={() => add()}
+                                        style={{
+                                            width: '100%',
+                                            border: '1px dashed #d9d9d9',
+                                            backgroundColor: 'transparent',
+                                            cursor: 'pointer',
+                                            padding: '8px 0',
+                                            borderRadius: '6px',
+                                        }}
+                                    >
+                                        <PlusOutlined /> 添加经营品种
+                                    </button>
+                                </Form.Item>
+                            </>
+                        )}
+                    </Form.List>
 
                     {/* AI 智能提取配置 */}
                     <Divider orientation="left">

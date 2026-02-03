@@ -95,6 +95,14 @@ export const COLLECTION_POINT_TYPE_ICONS: Record<CollectionPointType, string> = 
     [CollectionPointType.MARKET]: '🏪',
 };
 
+// 品种配置接口
+export interface CommodityConfig {
+    name: string; // 品种名称 (e.g. "玉米")
+    allowedSubTypes: string[]; // 允许的价格类型
+    defaultSubType?: string; // 默认价格类型
+}
+
+
 // 创建采集点 DTO
 export const CreateCollectionPointSchema = z.object({
     code: z.string().min(1, '编码不能为空').max(50),
@@ -107,7 +115,13 @@ export const CreateCollectionPointSchema = z.object({
     longitude: z.number().min(-180).max(180).optional(),
     latitude: z.number().min(-90).max(90).optional(),
     commodities: z.array(z.string()).optional().default([]),
+    commodityConfigs: z.array(z.object({
+        name: z.string(),
+        allowedSubTypes: z.array(z.string()),
+        defaultSubType: z.string().optional(),
+    })).optional().default([]),
     // AI 提取增强配置
+
     matchRegionCodes: z.array(z.string()).optional().default([]),
     priceSubTypes: z.array(z.string()).optional().default([]),
     isDataSource: z.boolean().optional().default(true),
@@ -137,8 +151,14 @@ export const CollectionPointResponseSchema = z.object({
     longitude: z.number().nullable(),
     latitude: z.number().nullable(),
     commodities: z.array(z.string()),
+    commodityConfigs: z.array(z.object({
+        name: z.string(),
+        allowedSubTypes: z.array(z.string()),
+        defaultSubType: z.string().nullable().optional(),
+    })).optional().nullable(),
 
     // AI 提取增强配置
+
     matchRegionCodes: z.array(z.string()),
     priceSubTypes: z.array(z.string()),
     isDataSource: z.boolean(),
