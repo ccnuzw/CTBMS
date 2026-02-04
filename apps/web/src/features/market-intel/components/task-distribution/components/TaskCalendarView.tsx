@@ -8,9 +8,9 @@ import {
     IntelTaskStatus,
     IntelTaskType,
     INTEL_TASK_PRIORITY_LABELS,
-    INTEL_TASK_STATUS_LABELS,
     INTEL_TASK_TYPE_LABELS,
 } from '@packages/types';
+import { INTEL_TASK_STATUS_LABELS } from '@/constants';
 import { useTasks, useCompleteTask } from '../../../api/tasks';
 import { useUsers } from '../../../../users/api/users';
 import { useOrganizations } from '../../../../organization/api/organizations';

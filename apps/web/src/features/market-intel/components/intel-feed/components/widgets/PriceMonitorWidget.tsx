@@ -7,6 +7,7 @@ import { RiseOutlined, FallOutlined, LineChartOutlined } from '@ant-design/icons
 import dayjs from 'dayjs';
 import { ChartContainer } from '../../../ChartContainer';
 import { usePriceTrend } from '../../../../api/hooks';
+import { useDictionaries } from '@/hooks/useDictionaries';
 
 const { Text } = Typography;
 
@@ -15,28 +16,41 @@ interface PriceMonitorWidgetProps {
     defaultLocation?: string;
 }
 
-const COMMODITY_OPTIONS = [
-    { label: '玉米', value: '玉米' },
-    { label: '大豆', value: '大豆' },
-    { label: '小麦', value: '小麦' },
-    { label: '豆粕', value: '豆粕' }
+const COMMODITY_OPTIONS_FALLBACK = [
+    { label: '玉米', value: 'CORN' },
+    { label: '大豆', value: 'SOYBEAN' },
+    { label: '小麦', value: 'WHEAT' },
+    { label: '豆粕', value: 'SOYMEAL' }
 ];
 
-const LOCATION_OPTIONS = [
-    { label: '锦州港', value: '锦州港' },
-    { label: '鲅鱼圈', value: '鲅鱼圈' },
-    { label: '深加工', value: '深加工' },
-    { label: '全国均价', value: '全国' }
+const LOCATION_OPTIONS_FALLBACK = [
+    { label: '锦州港', value: 'JINZHOU_PORT' },
+    { label: '鲅鱼圈', value: 'BAYUQUAN_PORT' },
+    { label: '深加工', value: 'DEEP_PROCESSING' },
+    { label: '全国均价', value: 'NATIONAL' }
 ];
 
 export const PriceMonitorWidget: React.FC<PriceMonitorWidgetProps> = ({
-    defaultCommodity = '玉米',
-    defaultLocation = '锦州港'
+    defaultCommodity = 'CORN',
+    defaultLocation = 'JINZHOU_PORT'
 }) => {
     const { token } = theme.useToken();
     const [commodity, setCommodity] = useState(defaultCommodity);
     const [location, setLocation] = useState(defaultLocation);
     const [days, setDays] = useState(30);
+    const { data: dictionaries } = useDictionaries(['COMMODITY', 'PRICE_MONITOR_LOCATION']);
+
+    const commodityOptions = useMemo(() => {
+        const items = dictionaries?.COMMODITY?.filter((item) => item.isActive) || [];
+        if (!items.length) return COMMODITY_OPTIONS_FALLBACK;
+        return items.map((item) => ({ label: item.label, value: item.code }));
+    }, [dictionaries]);
+
+    const locationOptions = useMemo(() => {
+        const items = dictionaries?.PRICE_MONITOR_LOCATION?.filter((item) => item.isActive) || [];
+        if (!items.length) return LOCATION_OPTIONS_FALLBACK;
+        return items.map((item) => ({ label: item.label, value: item.code }));
+    }, [dictionaries]);
 
     const { data, isLoading } = usePriceTrend(commodity, location, days);
 
@@ -66,7 +80,7 @@ export const PriceMonitorWidget: React.FC<PriceMonitorWidgetProps> = ({
                     <Select
                         value={commodity}
                         onChange={setCommodity}
-                        options={COMMODITY_OPTIONS}
+                        options={commodityOptions}
                         size="small"
                         style={{ width: 80 }}
                         bordered={false}
@@ -74,7 +88,7 @@ export const PriceMonitorWidget: React.FC<PriceMonitorWidgetProps> = ({
                     <Select
                         value={location}
                         onChange={setLocation}
-                        options={LOCATION_OPTIONS}
+                        options={locationOptions}
                         size="small"
                         style={{ width: 90 }}
                         bordered={false}

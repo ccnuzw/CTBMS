@@ -121,7 +121,7 @@ async function main() {
                 geoLevel = GeoLevel.ENTERPRISE;
             } else if (cp.type === 'STATION') {
                 sourceType = PriceSourceType.REGIONAL;
-                subType = PriceSubType.STATION_ORIGIN;
+                subType = PriceSubType.STATION;
                 geoLevel = GeoLevel.STATION;
             } else if (cp.type === 'MARKET') {
                 sourceType = PriceSourceType.REGIONAL;
@@ -138,8 +138,8 @@ async function main() {
                 province: cp.regionCode ? '辽宁省' : null,
                 collectionPointId: cp.id,
                 effectiveDate: currentDate,
-                commodity: '玉米',
-                grade: '二等',
+                commodity: 'CORN',
+                grade: 'Grade 2',
                 price: Math.round(finalPrice),
                 dayChange: Math.round(currentMomentum + dailyNoise),
                 authorId: userId
@@ -166,7 +166,7 @@ async function main() {
             authorId: userId,
             aiAnalysis: {
                 summary: intelContent,
-                sentiment: 'neutral',
+                sentiment: 'NEUTRAL',
                 confidenceScore: 90
             }
         });

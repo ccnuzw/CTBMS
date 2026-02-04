@@ -42,6 +42,7 @@ import {
     Legend
 } from 'recharts';
 import { IntelCategory, INTEL_SOURCE_TYPE_LABELS } from '../types';
+import { useDictionaries } from '@/hooks/useDictionaries';
 import { useMarketIntels, usePriceData, useAnalyzeContent } from '../api/hooks';
 import { ChartContainer } from './ChartContainer';
 
@@ -59,6 +60,16 @@ type SentimentFilter = 'ALL' | 'positive' | 'negative';
 
 export const UniversalSearch: React.FC = () => {
     const { token } = theme.useToken();
+    const { data: dictionaries } = useDictionaries(['INTEL_SOURCE_TYPE']);
+
+    const sourceTypeLabels = useMemo(() => {
+        const items = dictionaries?.INTEL_SOURCE_TYPE?.filter((item) => item.isActive) || [];
+        if (!items.length) return INTEL_SOURCE_TYPE_LABELS;
+        return items.reduce<Record<string, string>>((acc, item) => {
+            acc[item.code] = item.label;
+            return acc;
+        }, {});
+    }, [dictionaries]);
 
     // 状态
     const [query, setQuery] = useState('');
@@ -472,7 +483,9 @@ export const UniversalSearch: React.FC = () => {
                                                                         <CalendarOutlined style={{ marginRight: 4 }} />
                                                                         {new Date(c.effectiveTime).toLocaleDateString()}
                                                                     </Text>
-                                                                    <Tag style={{ fontSize: 10 }}>{INTEL_SOURCE_TYPE_LABELS[c.sourceType]}</Tag>
+                                                                    <Tag style={{ fontSize: 10 }}>
+                                                                        {sourceTypeLabels[c.sourceType] || c.sourceType}
+                                                                    </Tag>
                                                                 </Flex>
                                                             </div>
                                                         </Flex>

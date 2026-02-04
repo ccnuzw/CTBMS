@@ -20,12 +20,8 @@ import {
     IntelTaskType,
     IntelTaskPriority,
     TaskCycleType,
-    INTEL_TASK_TYPE_LABELS,
-    INTEL_TASK_PRIORITY_LABELS,
-    TASK_CYCLE_TYPE_LABELS,
     IntelTaskTemplateResponse,
     CollectionPointType,
-    COLLECTION_POINT_TYPE_LABELS,
 } from '@packages/types';
 import { useTaskTemplates, useCreateTaskTemplate, useUpdateTaskTemplate, useDeleteTaskTemplate, useDistributeTasks, usePreviewDistribution } from '../../../api/tasks';
 import { useCollectionPoints } from '../../../api/collection-point';
@@ -35,6 +31,7 @@ import { useUsers } from '../../../../users/api/users';
 import { TemplateScheduleGrid } from './TemplateScheduleGrid';
 import { DistributionPreview } from '../../DistributionPreview';
 import { useModalAutoFocus } from '../../../../../hooks/useModalAutoFocus';
+import { useDictionaries } from '@/hooks/useDictionaries';
 
 // 简化的调度预览逻辑
 const computeNextRuns = (template: IntelTaskTemplateResponse, count = 5) => {
@@ -94,10 +91,106 @@ export const TaskTemplateList: React.FC = () => {
     // Fetch all active collection points for selection
     const { data: collectionPointsResult } = useCollectionPoints({ isActive: true, pageSize: 2000 });
     const collectionPoints = collectionPointsResult?.data || [];
+    const { data: dictionaries } = useDictionaries([
+        'INTEL_TASK_TYPE',
+        'INTEL_TASK_PRIORITY',
+        'TASK_CYCLE_TYPE',
+        'COLLECTION_POINT_TYPE',
+        'ASSIGNEE_MODE',
+    ]);
 
     const orgMap = useMemo(() => new Map(organizations.map(org => [org.id, org.name])), [organizations]);
     const deptMap = useMemo(() => new Map(departments.map(dept => [dept.id, dept.name])), [departments]);
     const userMap = useMemo(() => new Map(users.map(user => [user.id, user.name])), [users]);
+
+    const taskTypeLabels = useMemo(() => {
+        const items = dictionaries?.INTEL_TASK_TYPE?.filter((item) => item.isActive) || [];
+        if (!items.length) return {} as Record<string, string>;
+        return items.reduce<Record<string, string>>((acc, item) => {
+            acc[item.code] = item.label;
+            return acc;
+        }, {});
+    }, [dictionaries]);
+
+    const taskPriorityMeta = useMemo(() => {
+        const items = dictionaries?.INTEL_TASK_PRIORITY?.filter((item) => item.isActive) || [];
+        if (!items.length) return { labels: {} as Record<string, string>, colors: {} as Record<string, string> };
+        return items.reduce<{ labels: Record<string, string>; colors: Record<string, string> }>(
+            (acc, item) => {
+                acc.labels[item.code] = item.label;
+                const color = (item.meta as { color?: string } | null)?.color || 'default';
+                acc.colors[item.code] = color;
+                return acc;
+            },
+            { labels: {}, colors: {} },
+        );
+    }, [dictionaries]);
+
+    const cycleTypeLabels = useMemo(() => {
+        const items = dictionaries?.TASK_CYCLE_TYPE?.filter((item) => item.isActive) || [];
+        if (!items.length) return {} as Record<string, string>;
+        return items.reduce<Record<string, string>>((acc, item) => {
+            acc[item.code] = item.label;
+            return acc;
+        }, {});
+    }, [dictionaries]);
+
+    const collectionPointTypeLabels = useMemo(() => {
+        const items = dictionaries?.COLLECTION_POINT_TYPE?.filter((item) => item.isActive) || [];
+        if (!items.length) return {} as Record<string, string>;
+        return items.reduce<Record<string, string>>((acc, item) => {
+            acc[item.code] = item.label;
+            return acc;
+        }, {});
+    }, [dictionaries]);
+
+    const assigneeModeLabels = useMemo(() => {
+        const items = dictionaries?.ASSIGNEE_MODE?.filter((item) => item.isActive) || [];
+        if (!items.length) return {} as Record<string, string>;
+        return items.reduce<Record<string, string>>((acc, item) => {
+            acc[item.code] = item.label;
+            return acc;
+        }, {});
+    }, [dictionaries]);
+
+    const taskTypeValueEnum = useMemo(() => {
+        if (!Object.keys(taskTypeLabels).length) return {};
+        return Object.entries(taskTypeLabels).reduce<Record<string, { text: string }>>((acc, [key, label]) => {
+            acc[key] = { text: label };
+            return acc;
+        }, {});
+    }, [taskTypeLabels]);
+
+    const taskPriorityValueEnum = useMemo(() => {
+        if (!Object.keys(taskPriorityMeta.labels).length) return {};
+        return Object.entries(taskPriorityMeta.labels).reduce<Record<string, { text: string }>>((acc, [key, label]) => {
+            acc[key] = { text: label };
+            return acc;
+        }, {});
+    }, [taskPriorityMeta.labels]);
+
+    const cycleTypeValueEnum = useMemo(() => {
+        if (!Object.keys(cycleTypeLabels).length) return {};
+        return Object.entries(cycleTypeLabels).reduce<Record<string, { text: string }>>((acc, [key, label]) => {
+            acc[key] = { text: label };
+            return acc;
+        }, {});
+    }, [cycleTypeLabels]);
+
+    const taskTypeOptions = useMemo(() => {
+        if (!Object.keys(taskTypeLabels).length) return [];
+        return Object.entries(taskTypeLabels).map(([value, label]) => ({ value, label }));
+    }, [taskTypeLabels]);
+
+    const taskPriorityOptions = useMemo(() => {
+        if (!Object.keys(taskPriorityMeta.labels).length) return [];
+        return Object.entries(taskPriorityMeta.labels).map(([value, label]) => ({ value, label }));
+    }, [taskPriorityMeta.labels]);
+
+    const assigneeModeOptions = useMemo(() => {
+        if (!Object.keys(assigneeModeLabels).length) return [];
+        return Object.entries(assigneeModeLabels).map(([value, label]) => ({ value, label }));
+    }, [assigneeModeLabels]);
 
     const timeOptions = useMemo(() => {
         const options = [];
@@ -186,15 +279,15 @@ export const TaskTemplateList: React.FC = () => {
             title: '生成任务类型',
             dataIndex: 'taskType',
             valueType: 'select',
-            valueEnum: Object.entries(INTEL_TASK_TYPE_LABELS).reduce((acc, [k, v]) => ({ ...acc, [k]: { text: v } }), {}),
-            render: (_, r) => <Tag>{INTEL_TASK_TYPE_LABELS[r.taskType]}</Tag>
+            valueEnum: taskTypeValueEnum,
+            render: (_, r) => <Tag>{taskTypeLabels[r.taskType] || r.taskType}</Tag>
         },
         {
             title: '分配对象',
             dataIndex: 'assigneeMode',
             render: (_, r) => {
                 if (r.assigneeMode === 'ALL_ACTIVE') {
-                    return <Tag color="green">全员</Tag>;
+                    return <Tag color="green">{assigneeModeLabels[r.assigneeMode] || '全员'}</Tag>;
                 }
                 if (r.assigneeMode === 'BY_ORGANIZATION') {
                     return (
@@ -218,11 +311,15 @@ export const TaskTemplateList: React.FC = () => {
                 }
                 if (r.assigneeMode === 'BY_COLLECTION_POINT') {
                     if (r.targetPointType) {
-                        return <Tag color="orange">按类型: {COLLECTION_POINT_TYPE_LABELS[r.targetPointType]}</Tag>;
+                        return (
+                            <Tag color="orange">
+                                {assigneeModeLabels[r.assigneeMode] || '按采集点分配'}: {collectionPointTypeLabels[r.targetPointType] || r.targetPointType}
+                            </Tag>
+                        );
                     }
                     return (
                         <Space wrap>
-                            <Tag color="orange">采集点</Tag>
+                            <Tag color="orange">{assigneeModeLabels[r.assigneeMode] || '采集点'}</Tag>
                             {(r.collectionPointIds || []).length} 个
                         </Space>
                     );
@@ -241,15 +338,19 @@ export const TaskTemplateList: React.FC = () => {
             title: '优先级',
             dataIndex: 'priority',
             valueType: 'select',
-            valueEnum: Object.entries(INTEL_TASK_PRIORITY_LABELS).reduce((acc, [k, v]) => ({ ...acc, [k]: { text: v } }), {}),
-            render: (_, r) => <Tag color={r.priority === IntelTaskPriority.URGENT ? 'red' : 'blue'}>{INTEL_TASK_PRIORITY_LABELS[r.priority]}</Tag>
+            valueEnum: taskPriorityValueEnum,
+            render: (_, r) => (
+                <Tag color={taskPriorityMeta.colors[r.priority] || (r.priority === IntelTaskPriority.URGENT ? 'red' : 'blue')}>
+                    {taskPriorityMeta.labels[r.priority] || r.priority}
+                </Tag>
+            )
         },
         {
             title: '周期',
             dataIndex: 'cycleType',
             valueType: 'select',
-            valueEnum: Object.entries(TASK_CYCLE_TYPE_LABELS).reduce((acc, [k, v]) => ({ ...acc, [k]: { text: v } }), {}),
-            render: (_, r) => <Tag color="geekblue">{TASK_CYCLE_TYPE_LABELS[r.cycleType]}</Tag>
+            valueEnum: cycleTypeValueEnum,
+            render: (_, r) => <Tag color="geekblue">{cycleTypeLabels[r.cycleType] || r.cycleType}</Tag>
         },
         {
             title: '状态',
@@ -386,14 +487,14 @@ export const TaskTemplateList: React.FC = () => {
                     name="taskType"
                     label="任务类型"
                     tooltip="模板分发出的任务类型"
-                    options={Object.entries(INTEL_TASK_TYPE_LABELS).map(([v, l]) => ({ label: l, value: v }))}
+                    options={taskTypeOptions.length ? taskTypeOptions : Object.values(IntelTaskType).map((value) => ({ label: value, value }))}
                     rules={[{ required: true }]}
                     colProps={{ span: 12 }}
                 />
                 <ProFormRadio.Group
                     name="priority"
                     label="默认优先级"
-                    options={Object.entries(INTEL_TASK_PRIORITY_LABELS).map(([v, l]) => ({ label: l, value: v }))}
+                    options={taskPriorityOptions.length ? taskPriorityOptions : Object.values(IntelTaskPriority).map((value) => ({ label: value, value }))}
                     colProps={{ span: 12 }}
                 />
 
@@ -414,13 +515,18 @@ export const TaskTemplateList: React.FC = () => {
                             <ProFormSelect
                                 name="assigneeMode"
                                 label="分配方式"
-                                options={[
-                                    { label: '手动指定', value: 'MANUAL', disabled: isPriceCollection },
+                                options={(assigneeModeOptions.length ? assigneeModeOptions : [
+                                    { label: '手动指定', value: 'MANUAL' },
                                     { label: '按采集点分配', value: 'BY_COLLECTION_POINT' },
-                                    { label: '全员', value: 'ALL_ACTIVE', disabled: isPriceCollection },
-                                    { label: '按部门', value: 'BY_DEPARTMENT', disabled: isPriceCollection },
-                                    { label: '按组织', value: 'BY_ORGANIZATION', disabled: isPriceCollection },
-                                ]}
+                                    { label: '全员', value: 'ALL_ACTIVE' },
+                                    { label: '按部门', value: 'BY_DEPARTMENT' },
+                                    { label: '按组织', value: 'BY_ORGANIZATION' },
+                                ]).map((option) => ({
+                                    ...option,
+                                    disabled: isPriceCollection
+                                        ? option.value !== 'BY_COLLECTION_POINT'
+                                        : option.value === 'MANUAL' ? false : option.disabled,
+                                }))}
                                 disabled={isPriceCollection}
                                 help={isPriceCollection ? "价格采集任务必须绑定具体的采集点，因此只能按采集点分配。" : undefined}
                                 rules={[{ required: true }]}
@@ -485,22 +591,29 @@ export const TaskTemplateList: React.FC = () => {
                                                         name="targetPointType"
                                                         label="目标类型 (多选)"
                                                         fieldProps={{ mode: 'multiple' }}
-                                                        options={Object.entries(COLLECTION_POINT_TYPE_LABELS).map(([v, l]) => ({ label: l, value: v }))}
+                                                        options={
+                                                            Object.keys(collectionPointTypeLabels).length
+                                                                ? Object.entries(collectionPointTypeLabels).map(([v, l]) => ({ label: l, value: v }))
+                                                                : Object.values(CollectionPointType).map((value) => ({ label: value, value }))
+                                                        }
                                                         rules={[{ required: true, message: '请选择至少一个采集点类型' }]}
                                                         colProps={{ span: 16 }}
                                                     />
                                                 );
                                             }
                                             return (
-                                                <ProFormSelect
-                                                    name="collectionPointIds"
-                                                    label="选择采集点"
-                                                    fieldProps={{
-                                                        mode: 'multiple',
-                                                        showSearch: true,
-                                                        optionFilterProp: 'label'
-                                                    }}
-                                                    options={collectionPoints.map(p => ({ label: `${p.name} (${COLLECTION_POINT_TYPE_LABELS[p.type]})`, value: p.id }))}
+                                                    <ProFormSelect
+                                                        name="collectionPointIds"
+                                                        label="选择采集点"
+                                                        fieldProps={{
+                                                            mode: 'multiple',
+                                                            showSearch: true,
+                                                            optionFilterProp: 'label'
+                                                        }}
+                                                    options={collectionPoints.map(p => ({
+                                                        label: `${p.name} (${collectionPointTypeLabels[p.type] || p.type})`,
+                                                        value: p.id,
+                                                    }))}
                                                     rules={[{ required: true, message: '请选择至少一个采集点' }]}
                                                     colProps={{ span: 16 }}
                                                 />
@@ -525,7 +638,7 @@ export const TaskTemplateList: React.FC = () => {
                 <ProFormSelect
                     name="cycleType"
                     label="周期类型"
-                    options={Object.entries(TASK_CYCLE_TYPE_LABELS).map(([v, l]) => ({ label: l, value: v }))}
+                    options={Object.keys(cycleTypeLabels).length ? Object.entries(cycleTypeLabels).map(([v, l]) => ({ label: l, value: v })) : Object.values(TaskCycleType).map((value) => ({ label: value, value }))}
                     rules={[{ required: true }]}
                     colProps={{ span: 8 }}
                 />

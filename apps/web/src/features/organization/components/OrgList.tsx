@@ -39,6 +39,7 @@ import {
     useUpdateOrganization,
     useDeleteOrganization,
 } from '../api/organizations';
+import { useDictionaries } from '@/hooks/useDictionaries';
 
 const { TextArea } = Input;
 
@@ -49,7 +50,7 @@ interface OrganizationWithRelations extends OrganizationDto {
 }
 
 // 组织类型映射
-const ORG_TYPE_MAP: Record<OrganizationType, { label: string; color: string }> = {
+const ORG_TYPE_MAP_FALLBACK: Record<OrganizationType, { label: string; color: string }> = {
     HEADQUARTERS: { label: '总部', color: 'red' },
     REGION: { label: '大区', color: 'orange' },
     BRANCH: { label: '经营部', color: 'blue' },
@@ -84,10 +85,35 @@ export const OrgList: React.FC = () => {
     const screens = Grid.useBreakpoint();
     const { token } = theme.useToken();
     const actionRef = useRef<ActionType>();
+    const { data: dictionaries } = useDictionaries(['ORGANIZATION_TYPE', 'ENTITY_STATUS']);
     const [form] = Form.useForm();
     const [drawerVisible, setDrawerVisible] = useState(false);
     const [currentRow, setCurrentRow] = useState<OrganizationWithRelations | undefined>(undefined);
     const [searchText, setSearchText] = useState('');
+
+    const orgTypeMap = useMemo(() => {
+        const items = dictionaries?.ORGANIZATION_TYPE?.filter((item) => item.isActive) || [];
+        if (!items.length) return ORG_TYPE_MAP_FALLBACK;
+        const map = items.reduce<Partial<Record<OrganizationType, { label: string; color: string }>>>((acc, item) => {
+            acc[item.code as OrganizationType] = {
+                label: item.label,
+                color: (item.meta as { color?: string } | null)?.color || 'default',
+            };
+            return acc;
+        }, {});
+        return { ...ORG_TYPE_MAP_FALLBACK, ...map } as Record<OrganizationType, { label: string; color: string }>;
+    }, [dictionaries]);
+
+    const statusOptions = useMemo(() => {
+        const items = dictionaries?.ENTITY_STATUS?.filter((item) => item.isActive) || [];
+        if (!items.length) {
+            return [
+                { value: 'ACTIVE', label: '启用' },
+                { value: 'INACTIVE', label: '禁用' },
+            ];
+        }
+        return items.map((item) => ({ value: item.code, label: item.label }));
+    }, [dictionaries]);
 
     const { data: organizations, isLoading } = useOrganizations();
     const { data: orgTree } = useOrganizationTree();
@@ -201,10 +227,10 @@ export const OrgList: React.FC = () => {
             title: '类型',
             dataIndex: 'type',
             render: (_, record) => {
-                const typeInfo = ORG_TYPE_MAP[record.type as OrganizationType];
+                const typeInfo = orgTypeMap[record.type as OrganizationType];
                 return <Tag color={typeInfo?.color}>{typeInfo?.label || record.type}</Tag>;
             },
-            filters: Object.entries(ORG_TYPE_MAP).map(([key, val]) => ({
+            filters: Object.entries(orgTypeMap).map(([key, val]) => ({
                 text: val.label,
                 value: key,
             })),
@@ -287,7 +313,7 @@ export const OrgList: React.FC = () => {
             >
                 <Select
                     placeholder="请选择组织类型"
-                    options={Object.entries(ORG_TYPE_MAP).map(([key, val]) => ({
+                    options={Object.entries(orgTypeMap).map(([key, val]) => ({
                         value: key,
                         label: val.label,
                     }))}
@@ -309,10 +335,7 @@ export const OrgList: React.FC = () => {
 
             <Form.Item name="status" label="状态">
                 <Select
-                    options={[
-                        { value: 'ACTIVE', label: '启用' },
-                        { value: 'INACTIVE', label: '禁用' },
-                    ]}
+                    options={statusOptions}
                 />
             </Form.Item>
 
@@ -362,7 +385,7 @@ export const OrgList: React.FC = () => {
                             </div>
                         ) : (
                             filteredOrganizations.map((record) => {
-                                const typeInfo = ORG_TYPE_MAP[record.type as OrganizationType];
+                                const typeInfo = orgTypeMap[record.type as OrganizationType];
                                 return (
                                     <Card
                                         key={record.id}

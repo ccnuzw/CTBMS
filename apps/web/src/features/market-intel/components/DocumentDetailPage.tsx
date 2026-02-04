@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
     Card,
     Row,
@@ -38,6 +38,7 @@ import {
 } from '@ant-design/icons';
 import { useMarketIntel, usePromoteToReport, useResearchReportByIntelId } from '../api/hooks';
 import { ReportType, REPORT_TYPE_LABELS } from '@packages/types';
+import { useDictionaries } from '@/hooks/useDictionaries';
 import DOMPurify from 'dompurify';
 import { DocumentPreview } from './research-report-detail/DocumentPreview';
 
@@ -51,6 +52,15 @@ export const DocumentDetailPage: React.FC = () => {
 
     const { data: document, isLoading } = useMarketIntel(id || '');
     const promoteMutation = usePromoteToReport();
+    const { data: dictionaries } = useDictionaries(['REPORT_TYPE']);
+
+    const reportTypeOptions = useMemo(() => {
+        const items = dictionaries?.REPORT_TYPE?.filter((item) => item.isActive) || [];
+        if (!items.length) {
+            return Object.entries(REPORT_TYPE_LABELS).map(([value, label]) => ({ label, value }));
+        }
+        return items.map((item) => ({ label: item.label, value: item.code }));
+    }, [dictionaries]);
 
     // Check if document already has a linked report (precise by intelId)
     const { data: linkedReport } = useResearchReportByIntelId(id || '');
@@ -540,10 +550,7 @@ export const DocumentDetailPage: React.FC = () => {
                             value={selectedReportType}
                             onChange={setSelectedReportType}
                             style={{ width: '100%' }}
-                            options={Object.entries(REPORT_TYPE_LABELS).map(([value, label]) => ({
-                                label,
-                                value,
-                            }))}
+                            options={reportTypeOptions}
                         />
                     </div>
                 </div>

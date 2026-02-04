@@ -22,6 +22,7 @@ import {
 } from '../types';
 import { DocumentUploader } from './DocumentUploader';
 import { useTestAI } from '../api';
+import { useDictionaries } from '@/hooks/useDictionaries';
 
 const { TextArea } = Input;
 const { Text } = Typography;
@@ -79,6 +80,16 @@ export const CollectionConsole: React.FC<CollectionConsoleProps> = ({
     const { message } = App.useApp();
     const fileInputRef = useRef<HTMLInputElement>(null);
     const testAIMutation = useTestAI();
+    const { data: dictionaries } = useDictionaries(['INTEL_SOURCE_TYPE']);
+
+    const sourceTypeLabels = React.useMemo(() => {
+        const items = dictionaries?.INTEL_SOURCE_TYPE?.filter((item) => item.isActive) || [];
+        if (!items.length) return INTEL_SOURCE_TYPE_LABELS;
+        return items.reduce<Record<string, string>>((acc, item) => {
+            acc[item.code] = item.label;
+            return acc;
+        }, {});
+    }, [dictionaries]);
 
     // 快捷填入 Prompt placeholder
     const getPlaceholder = () => {
@@ -261,7 +272,7 @@ export const CollectionConsole: React.FC<CollectionConsoleProps> = ({
                     >
                         {(CONTENT_TYPE_SOURCE_OPTIONS[contentType] || []).map((type) => (
                             <Radio.Button key={type} value={type}>
-                                {INTEL_SOURCE_TYPE_LABELS[type]}
+                                {sourceTypeLabels[type] || type}
                             </Radio.Button>
                         ))}
                     </Radio.Group>

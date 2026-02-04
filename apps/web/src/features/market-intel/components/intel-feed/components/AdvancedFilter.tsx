@@ -37,6 +37,7 @@ import {
 import dayjs from 'dayjs';
 import { IntelFilterState, DEFAULT_FILTER_STATE, BUILT_IN_PRESETS, FilterPreset } from '../types';
 import { IntelSourceType } from '../../../types';
+import { useDictionaries } from '@/hooks/useDictionaries';
 
 const { Title, Text } = Typography;
 const { RangePicker } = DatePicker;
@@ -55,9 +56,9 @@ const SOURCE_TYPE_OPTIONS = [
     { label: '媒体报道', value: IntelSourceType.MEDIA },
 ];
 
-const COMMODITY_OPTIONS = ['玉米', '大豆', '小麦', '高粱', '豆粕', '稻谷', '油菜籽'];
+const COMMODITY_OPTIONS_FALLBACK = ['CORN', 'SOYBEAN', 'WHEAT', 'SORGHUM', 'SOYMEAL', 'RICE', 'RAPESEED'];
 
-const TIME_RANGE_OPTIONS = [
+const TIME_RANGE_OPTIONS_FALLBACK = [
     { label: '日', value: '1D' },
     { label: '周', value: '7D' },
     { label: '月', value: '30D' },
@@ -66,17 +67,17 @@ const TIME_RANGE_OPTIONS = [
     { label: <CalendarOutlined />, value: 'CUSTOM' },
 ];
 
-const STATUS_OPTIONS = [
+const STATUS_OPTIONS_FALLBACK = [
     { label: '待处理', value: 'pending', color: 'orange' },
     { label: '已确认', value: 'confirmed', color: 'green' },
     { label: '已标记', value: 'flagged', color: 'red' },
     { label: '已归档', value: 'archived', color: 'default' },
 ];
 
-const QUALITY_OPTIONS = [
-    { label: '高质量', value: 'high', color: 'gold' },
-    { label: '中等', value: 'medium', color: 'blue' },
-    { label: '低质量', value: 'low', color: 'default' },
+const QUALITY_OPTIONS_FALLBACK = [
+    { label: '高质量', value: 'HIGH', color: 'gold' },
+    { label: '中等', value: 'MEDIUM', color: 'blue' },
+    { label: '低质量', value: 'LOW', color: 'default' },
 ];
 
 export const AdvancedFilter: React.FC<AdvancedFilterProps> = ({
@@ -86,6 +87,42 @@ export const AdvancedFilter: React.FC<AdvancedFilterProps> = ({
 }) => {
     const { token } = theme.useToken();
     const [customDateRange, setCustomDateRange] = useState<[dayjs.Dayjs, dayjs.Dayjs] | null>(null);
+    const { data: dictionaries } = useDictionaries(['COMMODITY', 'INTEL_FEED_STATUS', 'QUALITY_LEVEL', 'TIME_RANGE']);
+
+    const commodityOptions = React.useMemo(() => {
+        const items = dictionaries?.COMMODITY?.filter((item) => item.isActive) || [];
+        if (!items.length) return COMMODITY_OPTIONS_FALLBACK.map(c => ({ label: c, value: c }));
+        return items.map((item) => ({ label: item.label, value: item.code }));
+    }, [dictionaries]);
+
+    const statusOptions = React.useMemo(() => {
+        const items = dictionaries?.INTEL_FEED_STATUS?.filter((item) => item.isActive) || [];
+        if (!items.length) return STATUS_OPTIONS_FALLBACK;
+        return items.map((item) => ({
+            label: item.label,
+            value: item.code,
+            color: (item.meta as { color?: string } | null)?.color || 'default',
+        }));
+    }, [dictionaries]);
+
+    const qualityOptions = React.useMemo(() => {
+        const items = dictionaries?.QUALITY_LEVEL?.filter((item) => item.isActive) || [];
+        if (!items.length) return QUALITY_OPTIONS_FALLBACK;
+        return items.map((item) => ({
+            label: item.label,
+            value: item.code,
+            color: (item.meta as { color?: string } | null)?.color || 'default',
+        }));
+    }, [dictionaries]);
+
+    const timeRangeOptions = React.useMemo(() => {
+        const items = dictionaries?.TIME_RANGE?.filter((item) => item.isActive) || [];
+        if (!items.length) return TIME_RANGE_OPTIONS_FALLBACK;
+        return items.map((item) => ({
+            label: item.code === 'CUSTOM' ? <CalendarOutlined /> : item.label,
+            value: item.code,
+        }));
+    }, [dictionaries]);
 
     // 重置筛选
     const handleReset = () => {
@@ -149,7 +186,7 @@ export const AdvancedFilter: React.FC<AdvancedFilterProps> = ({
                     <Segmented
                         block
                         size="small"
-                        options={TIME_RANGE_OPTIONS}
+                        options={timeRangeOptions}
                         value={filterState.timeRange}
                         onChange={(val) => onChange({ timeRange: val as any })}
                     />
@@ -218,7 +255,7 @@ export const AdvancedFilter: React.FC<AdvancedFilterProps> = ({
                     size="small"
                     value={filterState.commodities}
                     onChange={(vals) => onChange({ commodities: vals })}
-                    options={COMMODITY_OPTIONS.map(c => ({ label: c, value: c }))}
+                    options={commodityOptions}
                 />
             ),
         },
@@ -287,7 +324,7 @@ export const AdvancedFilter: React.FC<AdvancedFilterProps> = ({
             ),
             children: (
                 <Space wrap>
-                    {STATUS_OPTIONS.map(opt => (
+                    {statusOptions.map(opt => (
                         <Tag.CheckableTag
                             key={opt.value}
                             checked={filterState.status.includes(opt.value as any)}
@@ -318,7 +355,7 @@ export const AdvancedFilter: React.FC<AdvancedFilterProps> = ({
             ),
             children: (
                 <Space wrap>
-                    {QUALITY_OPTIONS.map(opt => (
+                    {qualityOptions.map(opt => (
                         <Tag.CheckableTag
                             key={opt.value}
                             checked={filterState.qualityLevel.includes(opt.value as any)}

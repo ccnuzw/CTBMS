@@ -1,10 +1,11 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { Drawer, Button, Flex, Tag, Typography, Space, Card, Row, Col, Divider, Descriptions, App } from 'antd';
 import { DownloadOutlined, FileTextOutlined, ClockCircleOutlined, UserOutlined, GlobalOutlined, PaperClipOutlined, FilePdfOutlined, FileImageOutlined } from '@ant-design/icons';
 import { theme } from 'antd';
 import { DocItem } from './DocumentCardView';
 import { IntelSourceType, INTEL_SOURCE_TYPE_LABELS } from '@packages/types';
 import { EditTagsModal } from './EditTagsModal';
+import { useDictionaries } from '@/hooks/useDictionaries';
 
 const { Text, Paragraph, Title } = Typography;
 
@@ -22,6 +23,34 @@ export const DocumentPreviewDrawer: React.FC<DocumentPreviewDrawerProps> = ({
     const { token } = theme.useToken();
     const { message } = App.useApp();
     const [isEditTagsOpen, setIsEditTagsOpen] = React.useState(false);
+    const { data: dictionaries } = useDictionaries(['INTEL_SOURCE_TYPE']);
+
+    const sourceTypeMeta = useMemo(() => {
+        const items = dictionaries?.INTEL_SOURCE_TYPE?.filter((item) => item.isActive) || [];
+        const fallbackColors: Record<string, string> = {
+            [IntelSourceType.FIRST_LINE]: 'blue',
+            [IntelSourceType.COMPETITOR]: 'warning',
+            [IntelSourceType.OFFICIAL]: 'error',
+            [IntelSourceType.RESEARCH_INST]: 'purple',
+            [IntelSourceType.MEDIA]: 'orange',
+            [IntelSourceType.INTERNAL_REPORT]: 'geekblue',
+        };
+        if (!items.length) {
+            return {
+                labels: INTEL_SOURCE_TYPE_LABELS as Record<string, string>,
+                colors: fallbackColors,
+            };
+        }
+        return items.reduce<{ labels: Record<string, string>; colors: Record<string, string> }>(
+            (acc, item) => {
+                acc.labels[item.code] = item.label;
+                const color = (item.meta as { color?: string } | null)?.color || fallbackColors[item.code] || 'default';
+                acc.colors[item.code] = color;
+                return acc;
+            },
+            { labels: {}, colors: {} },
+        );
+    }, [dictionaries]);
 
     // Maintain local state to reflect changes immediately
     const [localDoc, setLocalDoc] = React.useState<DocItem | null>(null);
@@ -62,8 +91,8 @@ export const DocumentPreviewDrawer: React.FC<DocumentPreviewDrawerProps> = ({
             <Drawer
                 title={
                     <Flex align="center" gap={8}>
-                        <Tag color={localDoc.sourceType === IntelSourceType.OFFICIAL ? 'error' : 'blue'}>
-                            {INTEL_SOURCE_TYPE_LABELS[localDoc.sourceType as IntelSourceType] || localDoc.sourceType}
+                        <Tag color={sourceTypeMeta.colors[localDoc.sourceType as string] || 'default'}>
+                            {sourceTypeMeta.labels[localDoc.sourceType as string] || localDoc.sourceType}
                         </Tag>
                         <Text strong style={{ maxWidth: 600 }} ellipsis>
                             {localDoc.rawContent?.split('\n')[0] || '文档详情'}
@@ -134,7 +163,7 @@ export const DocumentPreviewDrawer: React.FC<DocumentPreviewDrawerProps> = ({
                                     <Descriptions.Item label="来源渠道">
                                         <Space>
                                             {localDoc.sourceType === IntelSourceType.OFFICIAL ? <GlobalOutlined /> : <UserOutlined />}
-                                            {INTEL_SOURCE_TYPE_LABELS[localDoc.sourceType as IntelSourceType] || localDoc.sourceType}
+                                            {sourceTypeMeta.labels[localDoc.sourceType as string] || localDoc.sourceType}
                                         </Space>
                                     </Descriptions.Item>
                                     <Descriptions.Item label="归档时间">

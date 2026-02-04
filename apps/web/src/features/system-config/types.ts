@@ -1,4 +1,4 @@
-
+import type { DictionaryDomain, DictionaryItem } from '@packages/types';
 export interface BaseEntity {
     id: string;
     createdAt?: string;
@@ -45,4 +45,46 @@ export interface PromptTemplate extends BaseEntity {
 
 export interface CreatePromptDTO extends Omit<PromptTemplate, 'id' | 'createdAt' | 'updatedAt' | 'version' | 'isActive'> {
     isActive?: boolean;
+}
+
+export type DictionaryDomainModel = DictionaryDomain;
+export type DictionaryItemModel = DictionaryItem;
+
+export interface CreateDictionaryDomainDTO {
+    code: string;
+    name: string;
+    description?: string | null;
+    category?: string | null;
+    usageHint?: string | null;
+    usageLocations?: string[];
+    isSystemDomain?: boolean;
+    isActive?: boolean;
+}
+
+export interface UpdateDictionaryDomainDTO {
+    name?: string;
+    description?: string | null;
+    category?: string | null;
+    usageHint?: string | null;
+    usageLocations?: string[];
+    isSystemDomain?: boolean;
+    isActive?: boolean;
+}
+
+
+export interface CreateDictionaryItemDTO {
+    code: string;
+    label: string;
+    sortOrder?: number;
+    isActive?: boolean;
+    parentCode?: string | null;
+    meta?: unknown;
+}
+
+export interface UpdateDictionaryItemDTO {
+    label?: string;
+    sortOrder?: number;
+    isActive?: boolean;
+    parentCode?: string | null;
+    meta?: unknown;
 }

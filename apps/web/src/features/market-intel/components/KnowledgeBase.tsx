@@ -24,12 +24,11 @@ import {
     DeleteOutlined,
 } from '@ant-design/icons';
 import { useMarketIntels, useSearchAttachments, useBatchDeleteMarketIntel } from '../api/hooks';
-import { IntelCategory, IntelSourceType } from '@packages/types';
+import { IntelCategory } from '@packages/types';
 import { FilterPanel, TimeRange } from './knowledge-base/FilterPanel';
 import { DocumentCardView, DocItem } from './knowledge-base/DocumentCardView';
 import { DocumentListView } from './knowledge-base/DocumentListView';
 import { DocumentPreviewDrawer } from './knowledge-base/DocumentPreviewDrawer';
-import { INTEL_SOURCE_TYPE_LABELS } from '@packages/types';
 
 const { Title, Text, Paragraph } = Typography;
 

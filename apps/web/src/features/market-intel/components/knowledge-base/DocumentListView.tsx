@@ -1,11 +1,13 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { Table, Tag, Space, Typography, Button, Tooltip } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import { EyeOutlined, StarOutlined, StarFilled } from '@ant-design/icons';
-import { IntelSourceType, INTEL_SOURCE_TYPE_LABELS, REVIEW_STATUS_LABELS, ReviewStatus } from '@packages/types';
+import { IntelSourceType, INTEL_SOURCE_TYPE_LABELS, ReviewStatus } from '@packages/types';
+import { REVIEW_STATUS_LABELS, REVIEW_STATUS_COLORS } from '@/constants';
 import { DocItem } from './DocumentCardView';
 import { stripHtml } from '@packages/utils';
 import { useFavoritesStore } from '../../stores/useFavoritesStore';
+import { useDictionaries } from '@/hooks/useDictionaries';
 
 const { Text } = Typography;
 
@@ -36,6 +38,39 @@ export const DocumentListView: React.FC<DocumentListViewProps> = ({
     pagination
 }) => {
     const { isFavorite, toggleFavorite } = useFavoritesStore();
+    const { data: dictionaries } = useDictionaries(['INTEL_SOURCE_TYPE']);
+
+    const sourceTypeMeta = useMemo(() => {
+        const items = dictionaries?.INTEL_SOURCE_TYPE?.filter((item) => item.isActive) || [];
+        const fallbackColors: Record<string, string> = {
+            [IntelSourceType.FIRST_LINE]: 'blue',
+            [IntelSourceType.COMPETITOR]: 'warning',
+            [IntelSourceType.OFFICIAL]: 'error',
+            [IntelSourceType.RESEARCH_INST]: 'purple',
+            [IntelSourceType.MEDIA]: 'orange',
+            [IntelSourceType.INTERNAL_REPORT]: 'geekblue',
+        };
+        if (!items.length) {
+            return {
+                labels: INTEL_SOURCE_TYPE_LABELS as Record<string, string>,
+                colors: fallbackColors,
+            };
+        }
+        return items.reduce<{ labels: Record<string, string>; colors: Record<string, string> }>(
+            (acc, item) => {
+                acc.labels[item.code] = item.label;
+                const color = (item.meta as { color?: string } | null)?.color || fallbackColors[item.code] || 'default';
+                acc.colors[item.code] = color;
+                return acc;
+            },
+            { labels: {}, colors: {} },
+        );
+    }, [dictionaries]);
+
+    const reviewStatusMeta = {
+        labels: REVIEW_STATUS_LABELS,
+        colors: REVIEW_STATUS_COLORS,
+    };
 
     const columns: ColumnsType<DocItem> = [
         {
@@ -94,11 +129,8 @@ export const DocumentListView: React.FC<DocumentListViewProps> = ({
                     return record.reportData?.source || '-';
                 }
                 return (
-                    <Tag color={
-                        type === IntelSourceType.OFFICIAL ? 'error' :
-                            type === IntelSourceType.COMPETITOR ? 'warning' : 'processing'
-                    }>
-                        {INTEL_SOURCE_TYPE_LABELS[type as IntelSourceType] || type}
+                    <Tag color={sourceTypeMeta.colors[type] || 'default'}>
+                        {sourceTypeMeta.labels[type] || type}
                     </Tag>
                 );
             },
@@ -111,13 +143,11 @@ export const DocumentListView: React.FC<DocumentListViewProps> = ({
                 if (record.itemType !== 'report') return '-';
                 const status = record.reportData?.reviewStatus as ReviewStatus | undefined;
                 if (!status) return '-';
-                const colorMap: Record<ReviewStatus, string> = {
-                    PENDING: 'orange',
-                    APPROVED: 'green',
-                    REJECTED: 'red',
-                    ARCHIVED: 'default',
-                };
-                return <Tag color={colorMap[status] || 'default'}>{REVIEW_STATUS_LABELS[status]}</Tag>;
+                return (
+                    <Tag color={reviewStatusMeta.colors[status] || 'default'}>
+                        {reviewStatusMeta.labels[status] || status}
+                    </Tag>
+                );
             },
         },
         {

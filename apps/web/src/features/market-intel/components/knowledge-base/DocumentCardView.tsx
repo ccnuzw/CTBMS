@@ -1,10 +1,11 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { Card, Row, Col, Flex, Typography, Tag, Space, Empty, Spin, Checkbox, Button, Tooltip } from 'antd';
 import { EyeOutlined, SafetyOutlined, FileExcelOutlined, FileTextOutlined, StarOutlined, StarFilled } from '@ant-design/icons';
 import { theme } from 'antd';
 import { IntelSourceType, INTEL_SOURCE_TYPE_LABELS } from '@packages/types';
 import { stripHtml } from '@packages/utils';
 import { useFavoritesStore } from '../../stores/useFavoritesStore';
+import { useDictionaries } from '@/hooks/useDictionaries';
 
 const { Text, Paragraph } = Typography;
 
@@ -45,6 +46,34 @@ export const DocumentCardView: React.FC<DocumentCardViewProps> = ({
 }) => {
     const { token } = theme.useToken();
     const { isFavorite, toggleFavorite } = useFavoritesStore();
+    const { data: dictionaries } = useDictionaries(['INTEL_SOURCE_TYPE']);
+
+    const sourceTypeMeta = useMemo(() => {
+        const items = dictionaries?.INTEL_SOURCE_TYPE?.filter((item) => item.isActive) || [];
+        const fallbackColors: Record<string, string> = {
+            [IntelSourceType.FIRST_LINE]: 'blue',
+            [IntelSourceType.COMPETITOR]: 'warning',
+            [IntelSourceType.OFFICIAL]: 'error',
+            [IntelSourceType.RESEARCH_INST]: 'purple',
+            [IntelSourceType.MEDIA]: 'orange',
+            [IntelSourceType.INTERNAL_REPORT]: 'geekblue',
+        };
+        if (!items.length) {
+            return {
+                labels: INTEL_SOURCE_TYPE_LABELS as Record<string, string>,
+                colors: fallbackColors,
+            };
+        }
+        return items.reduce<{ labels: Record<string, string>; colors: Record<string, string> }>(
+            (acc, item) => {
+                acc.labels[item.code] = item.label;
+                const color = (item.meta as { color?: string } | null)?.color || fallbackColors[item.code] || 'default';
+                acc.colors[item.code] = color;
+                return acc;
+            },
+            { labels: {}, colors: {} },
+        );
+    }, [dictionaries]);
 
     const getSourceIcon = (source: string) => {
         switch (source) {
@@ -142,7 +171,9 @@ export const DocumentCardView: React.FC<DocumentCardViewProps> = ({
                                     <Tag style={{ fontSize: 10 }}>
                                         {new Date(doc.effectiveTime).toLocaleDateString()}
                                     </Tag>
-                                    <Tag style={{ fontSize: 10 }}>{INTEL_SOURCE_TYPE_LABELS[doc.sourceType as IntelSourceType] || doc.sourceType}</Tag>
+                                    <Tag color={sourceTypeMeta.colors[doc.sourceType as string] || 'default'} style={{ fontSize: 10 }}>
+                                        {sourceTypeMeta.labels[doc.sourceType as string] || doc.sourceType}
+                                    </Tag>
                                     {doc.itemType && (
                                         <Tag color={doc.itemType === 'report' ? 'green' : 'blue'} style={{ fontSize: 10 }}>
                                             {doc.itemType === 'report' ? '研报' : '文档'}

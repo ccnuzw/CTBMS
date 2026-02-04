@@ -7,6 +7,7 @@ import { useVirtualUser } from '@/features/auth/virtual-user';
 import { useNavigate } from 'react-router-dom';
 import { ArrowLeftOutlined, SaveOutlined, CopyOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
+import { useDictionary } from '@/hooks/useDictionaries';
 
 const { Title, Text } = Typography;
 
@@ -34,6 +35,29 @@ export const BatchPriceEntryTable: React.FC = () => {
     const [form] = Form.useForm();
     const [editableKeys, setEditableRowKeys] = useState<React.Key[]>([]);
     const [dataSource, setDataSource] = useState<BatchEntryRow[]>([]);
+    const { data: priceSubTypeDict } = useDictionary('PRICE_SUB_TYPE');
+
+    const priceSubTypeOptions = useMemo(() => {
+        const items = (priceSubTypeDict || []).filter((item) => item.isActive);
+        if (!items.length) {
+            return [
+                { value: 'LISTED', label: '挂牌价' },
+                { value: 'TRANSACTION', label: '成交价' },
+                { value: 'ARRIVAL', label: '到港价' },
+                { value: 'FOB', label: '平舱价' },
+                { value: 'PURCHASE', label: '收购价' },
+                { value: 'WHOLESALE', label: '批发价' },
+            ];
+        }
+        return items.map((item) => ({ value: item.code, label: item.label }));
+    }, [priceSubTypeDict]);
+
+    const priceSubTypeValueEnum = useMemo(() => {
+        return priceSubTypeOptions.reduce<Record<string, { text: string; status?: string }>>((acc, item) => {
+            acc[item.value] = { text: item.label };
+            return acc;
+        }, {});
+    }, [priceSubTypeOptions]);
 
     // API Hooks
     const { data: assignedPoints, isLoading: loadingPoints } = useMyAssignedPoints(undefined, currentUser?.id);
@@ -197,20 +221,10 @@ export const BatchPriceEntryTable: React.FC = () => {
             title: '类型',
             dataIndex: 'subType',
             valueType: 'select',
-            valueEnum: {
-                LISTED: { text: '挂牌价', status: 'Default' },
-                TRANSACTION: { text: '成交价', status: 'Success' },
-                mn: { text: '到港价', status: 'Processing' }, // ARRIVAL typo fixed logic later if needed
-            },
+            valueEnum: priceSubTypeValueEnum,
             width: 100,
             fieldProps: {
-                options: [
-                    { value: 'LISTED', label: '挂牌价' },
-                    { value: 'TRANSACTION', label: '成交价' },
-                    { value: 'ARRIVAL', label: '到港价' },
-                    { value: 'FOB', label: '平舱价' },
-                    { value: 'PURCHASE', label: '收购价' },
-                ]
+                options: priceSubTypeOptions,
             }
         },
         {

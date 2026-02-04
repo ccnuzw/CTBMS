@@ -25,6 +25,7 @@ import {
 import { useQueryClient } from '@tanstack/react-query';
 import { FilterPanel, TrendChart, ComparisonPanel, DataGrid, InsightCards } from './market-data';
 import { useModalAutoFocus } from '@/hooks/useModalAutoFocus';
+import { useDictionary } from '@/hooks/useDictionaries';
 import type { PriceSubType } from '@packages/types';
 
 const { Title, Text, Paragraph } = Typography;
@@ -34,9 +35,10 @@ type TabKey = 'trend' | 'comparison' | 'data';
 export const MarketData: React.FC = () => {
     const { token } = theme.useToken();
     const queryClient = useQueryClient();
+    const { data: commodityDict } = useDictionary('COMMODITY');
 
-    // 筛选状态
-    const [commodity, setCommodity] = useState('玉米');
+    // 筛选状态 - 存储 code (如 CORN)
+    const [commodity, setCommodity] = useState('CORN');
     const [dateRange, setDateRange] = useState<[Dayjs, Dayjs] | null>(() => [
         dayjs().subtract(29, 'day'),
         dayjs(),
@@ -50,6 +52,13 @@ export const MarketData: React.FC = () => {
     const [helpVisible, setHelpVisible] = useState(false);
     const { containerRef, modalProps, focusRef } = useModalAutoFocus();
 
+    // 将 commodity code 转换为 label (用于 API 查询，因为数据库存储的是中文标签)
+    const commodityLabel = useMemo(() => {
+        if (!commodityDict) return commodity; // 字典未加载时用 code
+        const found = commodityDict.find((item) => item.code === commodity);
+        return found?.label || commodity;
+    }, [commodity, commodityDict]);
+
     const { startDate, endDate } = useMemo(() => {
         if (!dateRange) return { startDate: undefined, endDate: undefined };
         return {
@@ -57,6 +66,7 @@ export const MarketData: React.FC = () => {
             endDate: dateRange[1].endOf('day').toDate(),
         };
     }, [dateRange]);
+
 
     // 刷新数据
     const handleRefresh = () => {
@@ -79,7 +89,7 @@ export const MarketData: React.FC = () => {
                 <Space direction="vertical" size={16} style={{ width: '100%' }}>
                     {/* 智能洞察 */}
                     <InsightCards
-                        commodity={commodity}
+                        commodity={commodityLabel}
                         startDate={startDate}
                         endDate={endDate}
                         selectedPointIds={selectedPointIds}
@@ -87,7 +97,7 @@ export const MarketData: React.FC = () => {
                     />
                     {/* 趋势图表 */}
                     <TrendChart
-                        commodity={commodity}
+                        commodity={commodityLabel}
                         startDate={startDate}
                         endDate={endDate}
                         selectedPointIds={selectedPointIds}
@@ -108,7 +118,7 @@ export const MarketData: React.FC = () => {
             ),
             children: (
                 <ComparisonPanel
-                    commodity={commodity}
+                    commodity={commodityLabel}
                     startDate={startDate}
                     endDate={endDate}
                     selectedPointIds={selectedPointIds}
@@ -132,7 +142,7 @@ export const MarketData: React.FC = () => {
             ),
             children: (
                 <DataGrid
-                    commodity={commodity}
+                    commodity={commodityLabel}
                     startDate={startDate}
                     endDate={endDate}
                     selectedPointIds={selectedPointIds}

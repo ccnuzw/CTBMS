@@ -42,8 +42,7 @@ async function seedPriceHistory() {
         if (subTypeRaw.includes('成交')) subType = PriceSubType.TRANSACTION;
         else if (subTypeRaw.includes('平舱') || subTypeRaw.includes('FOB')) subType = PriceSubType.FOB;
         else if (subTypeRaw.includes('到港') || subTypeRaw.includes('入厂')) subType = PriceSubType.ARRIVAL;
-        else if (subTypeRaw.includes('站台') && subTypeRaw.includes('产区')) subType = PriceSubType.STATION_ORIGIN;
-        else if (subTypeRaw.includes('站台') && subTypeRaw.includes('销区')) subType = PriceSubType.STATION_DEST;
+        else if (subTypeRaw.includes('站台')) subType = PriceSubType.STATION;
         else if (subTypeRaw.includes('批发')) subType = PriceSubType.WHOLESALE;
 
         // Determine SourceType

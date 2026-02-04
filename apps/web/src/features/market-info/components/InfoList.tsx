@@ -8,6 +8,7 @@ import { useCategories } from '../api/categories';
 import { useGlobalTags } from '../../tags/api/tags';
 import { useNavigate } from 'react-router-dom';
 import dayjs from 'dayjs';
+import { useDictionary } from '@/hooks/useDictionaries';
 
 export const InfoList: React.FC = () => {
     const actionRef = useRef<ActionType>();
@@ -24,6 +25,7 @@ export const InfoList: React.FC = () => {
     const { data: infos, isLoading } = useInfos();
     const { data: categories } = useCategories();
     const { data: tags } = useGlobalTags({ scope: TagScope.MARKET_INFO });
+    const { data: infoStatusDict } = useDictionary('INFO_STATUS');
     const deleteInfo = useDeleteInfo();
 
     // 构建分类筛选选项
@@ -43,6 +45,28 @@ export const InfoList: React.FC = () => {
         });
         return enumObj;
     }, [tags]);
+
+    const infoStatusValueEnum = useMemo(() => {
+        const items = (infoStatusDict || []).filter((item) => item.isActive);
+        const fallback = {
+            DRAFT: { text: '草稿', status: 'Default' },
+            PUBLISHED: { text: '已发布', status: 'Success' },
+            ARCHIVED: { text: '已归档', status: 'Warning' },
+        };
+        if (!items.length) return fallback;
+        const statusMap: Record<string, string> = {
+            processing: 'Processing',
+            success: 'Success',
+            warning: 'Warning',
+            error: 'Error',
+            default: 'Default',
+        };
+        return items.reduce<Record<string, { text: string; status: string }>>((acc, item) => {
+            const color = (item.meta as { color?: string } | null)?.color || 'default';
+            acc[item.code] = { text: item.label, status: statusMap[color] || 'Default' };
+            return acc;
+        }, {});
+    }, [infoStatusDict]);
 
     const handleDelete = async (id: string) => {
         try {
@@ -91,11 +115,7 @@ export const InfoList: React.FC = () => {
         {
             title: '状态',
             dataIndex: 'status',
-            valueEnum: {
-                DRAFT: { text: '草稿', status: 'Default' },
-                PUBLISHED: { text: '已发布', status: 'Success' },
-                ARCHIVED: { text: '已归档', status: 'Warning' },
-            },
+            valueEnum: infoStatusValueEnum,
             responsive: ['md'],
         },
         {
@@ -228,11 +248,20 @@ export const InfoList: React.FC = () => {
     }, [filterCategory, filterStatus]);
 
     // 状态配置
-    const statusConfig: Record<string, { text: string; color: string }> = {
-        DRAFT: { text: '草稿', color: 'default' },
-        PUBLISHED: { text: '已发布', color: 'success' },
-        ARCHIVED: { text: '已归档', color: 'warning' },
-    };
+    const statusConfig = useMemo(() => {
+        const items = (infoStatusDict || []).filter((item) => item.isActive);
+        const fallback: Record<string, { text: string; color: string }> = {
+            DRAFT: { text: '草稿', color: 'default' },
+            PUBLISHED: { text: '已发布', color: 'success' },
+            ARCHIVED: { text: '已归档', color: 'warning' },
+        };
+        if (!items.length) return fallback;
+        return items.reduce<Record<string, { text: string; color: string }>>((acc, item) => {
+            const color = (item.meta as { color?: string } | null)?.color || 'default';
+            acc[item.code] = { text: item.label, color };
+            return acc;
+        }, {});
+    }, [infoStatusDict]);
 
     // 移动端视图
     if (!screens.md) {

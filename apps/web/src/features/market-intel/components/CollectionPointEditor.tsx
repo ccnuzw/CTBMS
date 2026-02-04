@@ -36,6 +36,7 @@ import {
 } from '@packages/types';
 import { useModalAutoFocus } from '../../../hooks/useModalAutoFocus';
 import { useRegionTree } from '../api/region';
+import { useDictionary } from '@/hooks/useDictionaries';
 
 const { Text } = Typography;
 const { TextArea } = Input;
@@ -61,16 +62,23 @@ export const CollectionPointEditor: React.FC<CollectionPointEditorProps> = ({
     const updateMutation = useUpdateCollectionPoint();
     const { data: regionTree } = useRegionTree();
 
-    const PRICE_SUB_TYPE_OPTIONS = [
-        { value: 'LISTED', label: '挂牌价' },
-        { value: 'TRANSACTION', label: '成交价' },
-        { value: 'ARRIVAL', label: '到港价' },
-        { value: 'FOB', label: '平舱价' },
-        { value: 'STATION_ORIGIN', label: '站台价-产区' },
-        { value: 'STATION_DEST', label: '站台价-销区' },
-        { value: 'PURCHASE', label: '收购价' },
-        { value: 'WHOLESALE', label: '批发价' },
-    ];
+    const { data: priceSubTypeDict } = useDictionary('PRICE_SUB_TYPE');
+    const priceSubTypeOptions = useMemo(() => {
+        const items = (priceSubTypeDict || []).filter((item) => item.isActive);
+        if (!items.length) {
+            return [
+                { value: 'LISTED', label: '挂牌价' },
+                { value: 'TRANSACTION', label: '成交价' },
+                { value: 'ARRIVAL', label: '到港价' },
+                { value: 'FOB', label: '平舱价' },
+                { value: 'STATION_ORIGIN', label: '站台价-产区' },
+                { value: 'STATION_DEST', label: '站台价-销区' },
+                { value: 'PURCHASE', label: '收购价' },
+                { value: 'WHOLESALE', label: '批发价' },
+            ];
+        }
+        return items.map((item) => ({ value: item.code, label: item.label }));
+    }, [priceSubTypeDict]);
 
     // Watch type field to conditionally show region selector
     const selectedType = Form.useWatch('type', form);
@@ -371,12 +379,12 @@ export const CollectionPointEditor: React.FC<CollectionPointEditorProps> = ({
                                                     <Select
                                                         placeholder="选择品种"
                                                         options={[
-                                                            { value: '玉米', label: '玉米' },
-                                                            { value: '大豆', label: '大豆' },
-                                                            { value: '小麦', label: '小麦' },
-                                                            { value: '稻谷', label: '稻谷' },
-                                                            { value: '高粱', label: '高粱' },
-                                                            { value: '豆粕', label: '豆粕' },
+                                                            { value: 'CORN', label: '玉米' },
+                                                            { value: 'SOYBEAN', label: '大豆' },
+                                                            { value: 'WHEAT', label: '小麦' },
+                                                            { value: 'RICE', label: '稻谷' },
+                                                            { value: 'SORGHUM', label: '高粱' },
+                                                            { value: 'BARLEY', label: '大麦' },
                                                         ]}
                                                     />
                                                 </Form.Item>
@@ -391,7 +399,7 @@ export const CollectionPointEditor: React.FC<CollectionPointEditorProps> = ({
                                                     <Select
                                                         mode="multiple"
                                                         placeholder="支持的价格类型"
-                                                        options={PRICE_SUB_TYPE_OPTIONS}
+                                                        options={priceSubTypeOptions}
                                                     />
                                                 </Form.Item>
                                             </Col>
@@ -422,7 +430,7 @@ export const CollectionPointEditor: React.FC<CollectionPointEditorProps> = ({
                                                             >
                                                                 <Select
                                                                     placeholder="默认类型"
-                                                                    options={PRICE_SUB_TYPE_OPTIONS.filter(o => allowed.includes(o.value))}
+                                                                    options={priceSubTypeOptions.filter(o => allowed.includes(o.value))}
                                                                 />
                                                             </Form.Item>
                                                         );

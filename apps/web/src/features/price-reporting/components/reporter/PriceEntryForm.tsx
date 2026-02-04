@@ -17,11 +17,12 @@ import { useSubmitTask } from '../../../market-intel/api/tasks';
 import { useCollectionPoints } from '../../../market-intel/api/collection-point';
 import { getErrorMessage } from '../../../../api/client';
 import { useVirtualUser } from '@/features/auth/virtual-user';
+import { useDictionary } from '@/hooks/useDictionaries';
 
 const { Title, Text } = Typography;
 const { TextArea } = Input;
 
-const PRICE_SUB_TYPES = [
+const PRICE_SUB_TYPE_FALLBACK = [
   { value: 'LISTED', label: '挂牌价' },
   { value: 'TRANSACTION', label: '成交价' },
   { value: 'ARRIVAL', label: '到港价' },
@@ -31,11 +32,13 @@ const PRICE_SUB_TYPES = [
 ];
 
 // 默认品种列表（作为兜底）
-const DEFAULT_COMMODITIES = [
-  { value: '玉米', label: '玉米' },
-  { value: '大豆', label: '大豆' },
-  { value: '小麦', label: '小麦' },
-  { value: '水稻', label: '水稻' },
+const DEFAULT_COMMODITIES_FALLBACK = [
+  { value: 'CORN', label: '玉米' },
+  { value: 'SOYBEAN', label: '大豆' },
+  { value: 'WHEAT', label: '小麦' },
+  { value: 'RICE', label: '稻谷' },
+  { value: 'SORGHUM', label: '高粱' },
+  { value: 'BARLEY', label: '大麦' },
 ];
 
 export const PriceEntryForm: React.FC = () => {
@@ -51,6 +54,21 @@ export const PriceEntryForm: React.FC = () => {
   const queryClient = useQueryClient();
   const [submissionId, setSubmissionId] = useState<string | null>(null);
 
+  const { data: priceSubTypeDict } = useDictionary('PRICE_SUB_TYPE');
+  const { data: commodityDict } = useDictionary('COMMODITY');
+
+  const priceSubTypeOptions = React.useMemo(() => {
+    const items = (priceSubTypeDict || []).filter((item) => item.isActive);
+    if (!items.length) return PRICE_SUB_TYPE_FALLBACK;
+    return items.map((item) => ({ value: item.code, label: item.label }));
+  }, [priceSubTypeDict]);
+
+  const commodityOptions = React.useMemo(() => {
+    const items = (commodityDict || []).filter((item) => item.isActive);
+    if (!items.length) return DEFAULT_COMMODITIES_FALLBACK;
+    return items.map((item) => ({ value: item.code, label: item.label }));
+  }, [commodityDict]);
+
   const { data: pointsData } = useCollectionPoints({ page: 1, pageSize: 100, isActive: true });
   const currentPoint = pointsData?.data?.find((p: any) => p.id === pointId);
 
@@ -60,9 +78,15 @@ export const PriceEntryForm: React.FC = () => {
 
   // [NEW] 计算允许填报的品种
   const allowedCommodities = React.useMemo(() => {
+    // 辅助函数：从 code 查找中文 label
+    const getLabel = (code: string) => {
+      const found = commodityOptions.find((opt) => opt.value === code);
+      return found?.label || code;
+    };
+
     // 0.5 如果URL指定了品种 (Daily Maintenance)
     if (urlCommodity) {
-      return [{ value: urlCommodity, label: urlCommodity }];
+      return [{ value: urlCommodity, label: getLabel(urlCommodity) }];
     }
 
     // 1. 如果没有分配记录，或者分配记录包含"全品种"（commodity=null），则允许该点所有配置的品种
@@ -70,29 +94,29 @@ export const PriceEntryForm: React.FC = () => {
 
     if (hasFullAccess) {
       if (currentPoint?.commodities?.length) {
-        return currentPoint.commodities.map((c: string) => ({ value: c, label: c }));
+        return currentPoint.commodities.map((c: string) => ({ value: c, label: getLabel(c) }));
       }
-      return DEFAULT_COMMODITIES;
+      return commodityOptions;
     }
 
     // 2. 如果只有特定品种分配，聚合所有分配的品种
     const allocatedCommodities = [...new Set(myAllocations.map((a: any) => a.commodity).filter(Boolean))];
 
     if (allocatedCommodities.length > 0) {
-      return allocatedCommodities.map((c: string) => ({ value: c, label: c }));
+      return allocatedCommodities.map((c: string) => ({ value: c, label: getLabel(c) }));
     }
 
     // 3. 兜底 (理论上不应到达这里，除非分配了但没品种也没全选)
-    return currentPoint?.commodities?.map((c: string) => ({ value: c, label: c })) || DEFAULT_COMMODITIES;
-  }, [myAllocations, currentPoint, urlCommodity]);
+    return currentPoint?.commodities?.map((c: string) => ({ value: c, label: getLabel(c) })) || commodityOptions;
+  }, [myAllocations, currentPoint, urlCommodity, commodityOptions]);
 
   // [NEW] 根据采集点配置过滤价格类型
   const allowedPriceTypes = React.useMemo(() => {
     if (!currentPoint?.priceSubTypes?.length) {
-      return PRICE_SUB_TYPES;
+      return priceSubTypeOptions;
     }
-    return PRICE_SUB_TYPES.filter(t => currentPoint.priceSubTypes.includes(t.value));
-  }, [currentPoint]);
+    return priceSubTypeOptions.filter(t => currentPoint.priceSubTypes.includes(t.value));
+  }, [currentPoint, priceSubTypeOptions]);
 
   const createSubmission = useCreateSubmission();
   const addEntry = useAddPriceEntry();
@@ -307,7 +331,7 @@ export const PriceEntryForm: React.FC = () => {
               layout="vertical"
               onFinish={handleAddEntry}
               initialValues={{
-                commodity: '玉米',
+                commodity: 'CORN',
                 subType: 'LISTED',
                 grade: '二等',
               }}

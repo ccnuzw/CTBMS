@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import {
     PageContainer,
     ProForm,
@@ -11,6 +11,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import dayjs from 'dayjs';
 import { CreateUserDto, UpdateUserDto } from '@packages/types';
 import { useCreateUser, useUpdateUser } from '../api/users';
+import { useDictionary } from '@/hooks/useDictionaries';
 
 export const UserEditor: React.FC = () => {
     const { message } = App.useApp();
@@ -22,6 +23,33 @@ export const UserEditor: React.FC = () => {
 
     const createUserMutation = useCreateUser();
     const updateUserMutation = useUpdateUser();
+    const { data: genderDict } = useDictionary('GENDER');
+    const { data: userStatusDict } = useDictionary('USER_STATUS');
+
+    const genderOptions = useMemo(() => {
+        const items = (genderDict || []).filter((item) => item.isActive);
+        if (!items.length) {
+            return [
+                { value: 'MALE', label: '男' },
+                { value: 'FEMALE', label: '女' },
+                { value: 'OTHER', label: '其他' },
+            ];
+        }
+        return items.map((item) => ({ value: item.code, label: item.label }));
+    }, [genderDict]);
+
+    const statusOptions = useMemo(() => {
+        const items = (userStatusDict || []).filter((item) => item.isActive);
+        if (!items.length) {
+            return [
+                { value: 'ACTIVE', label: '在职' },
+                { value: 'PROBATION', label: '试用期' },
+                { value: 'RESIGNED', label: '离职' },
+                { value: 'SUSPENDED', label: '停职' },
+            ];
+        }
+        return items.map((item) => ({ value: item.code, label: item.label }));
+    }, [userStatusDict]);
 
     const loadData = async () => {
         if (!isEdit || !id) {
@@ -126,11 +154,7 @@ export const UserEditor: React.FC = () => {
                             name="gender"
                             label="性别"
                             width="xs"
-                            options={[
-                                { value: 'MALE', label: '男' },
-                                { value: 'FEMALE', label: '女' },
-                                { value: 'OTHER', label: '其他' },
-                            ]}
+                            options={genderOptions}
                         />
                         <ProFormDatePicker name="birthday" label="生日" width="sm" />
                         <ProFormText name="employeeNo" label="工号" width="sm" />
@@ -140,12 +164,7 @@ export const UserEditor: React.FC = () => {
                             name="status"
                             label="状态"
                             width="sm"
-                            options={[
-                                { value: 'ACTIVE', label: '在职' },
-                                { value: 'PROBATION', label: '试用期' },
-                                { value: 'RESIGNED', label: '离职' },
-                                { value: 'SUSPENDED', label: '停职' },
-                            ]}
+                            options={statusOptions}
                         />
                     </ProForm.Group>
                 </ProForm>

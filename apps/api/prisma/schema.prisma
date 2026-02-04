@@ -741,8 +741,7 @@ enum PriceSubType {
   TRANSACTION   // 成交价（实际成交）
   ARRIVAL       // 到港价（到达港口的价格）
   FOB           // 平舱价（船舱交货价）
-  STATION_ORIGIN    // 站台价-产区（东北站台发货价）
-  STATION_DEST      // 站台价-销区（销区站台到货价）
+  STATION       // 站台价
   PURCHASE      // 收购价（向农户/贸易商收购）
   WHOLESALE     // 批发价（批发市场价格）
   OTHER         // 其他
@@ -1393,6 +1392,48 @@ model BusinessMappingRule {
   updatedAt   DateTime @updatedAt
 
   @@index([domain, priority])
+}
+
+// =============================================
+// 统一数据字典 (Dictionary)
+// =============================================
+model DictionaryDomain {
+  id          String   @id @default(uuid())
+  code        String   @unique // 业务域编码 (e.g. "PRICE_SUB_TYPE", "USER_STATUS")
+  name        String
+  description String?
+  isActive    Boolean  @default(true)
+
+  // 元数据字段（界面展示增强）
+  category       String?   // 分类：USER_ORG, TAG_ENTERPRISE, REGION, PRICE, INTEL, MARKET
+  usageHint      String?   // 用途说明（简短）
+  usageLocations String[]  // 使用位置（组件/页面名称数组）
+  isSystemDomain Boolean   @default(true) // 是否系统域（不可删除）
+
+  items       DictionaryItem[]
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+
+model DictionaryItem {
+  id         String            @id @default(uuid())
+  domainCode String
+  domain     DictionaryDomain  @relation(fields: [domainCode], references: [code], onDelete: Cascade)
+
+  code       String
+  label      String
+  sortOrder  Int               @default(0)
+  isActive   Boolean           @default(true)
+  parentCode String?
+  meta       Json?
+
+  createdAt  DateTime          @default(now())
+  updatedAt  DateTime          @updatedAt
+
+  @@unique([domainCode, code])
+  @@index([domainCode])
 }
 
 // AI 模型配置 (AI Model Configuration)

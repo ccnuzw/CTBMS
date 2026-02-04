@@ -37,10 +37,12 @@ export const EventCard: React.FC<EventCardProps> = ({
 
     // 情绪配置
     const getSentimentConfig = (sentiment: string | null) => {
-        switch (sentiment?.toLowerCase()) {
-            case 'positive':
+        switch (sentiment?.toUpperCase()) {
+            case 'BULLISH':
+            case 'POSITIVE': // Backward compatibility
                 return { color: token.colorSuccess, bg: token.colorSuccessBg, icon: <RiseOutlined />, label: '利好' };
-            case 'negative':
+            case 'BEARISH':
+            case 'NEGATIVE': // Backward compatibility
                 return { color: token.colorError, bg: token.colorErrorBg, icon: <FallOutlined />, label: '利空' };
             default:
                 return { color: token.colorTextSecondary, bg: token.colorBgTextHover, icon: <MinusOutlined />, label: '中性' };
@@ -49,12 +51,12 @@ export const EventCard: React.FC<EventCardProps> = ({
 
     // 影响等级配置
     const getImpactLevelConfig = (level: string | null) => {
-        switch (level?.toLowerCase()) {
-            case 'high':
+        switch (level?.toUpperCase()) {
+            case 'HIGH':
                 return { color: token.colorError, label: '高影响' };
-            case 'medium':
+            case 'MEDIUM':
                 return { color: token.colorWarning, label: '中影响' };
-            case 'low':
+            case 'LOW':
                 return { color: token.colorTextSecondary, label: '低影响' };
             default:
                 return { color: token.colorTextQuaternary, label: '未知' };

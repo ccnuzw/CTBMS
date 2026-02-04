@@ -384,32 +384,22 @@ export const LINE_COLORS = [
 // AI 预测相关标签映射
 // =============================================
 
-export const PREDICTION_DIRECTION_LABELS: Record<string, string> = {
-  'bullish': '看涨',
-  'bearish': '看跌',
-  'neutral': '震荡',
-  'stable': '平稳',
-  'volatile': '剧烈波动',
-  'positive': '利好',
-  'negative': '利空',
+// 合并情感/情绪/预测相关标签（对应 MARKET_SENTIMENT 字典域）
+export const MARKET_SENTIMENT_LABELS: Record<string, string> = {
+  // 标准 Code
+  'BULLISH': '看涨/积极',
+  'BEARISH': '看跌/消极',
+  'NEUTRAL': '中性/震荡',
+  'MIXED': '混合/波动',
+  'STABLE': '平稳',
+  'VOLATILE': '剧烈波动',
 };
 
 export const PREDICTION_TIMEFRAME_LABELS: Record<string, string> = {
-  'short_term': '短期',
-  'medium_term': '中期',
-  'long_term': '长期',
-  'short_to_medium_term': '短中期',
-  'medium_to_long_term': '中长期',
-  'annual': '年度',
-  'quarterly': '季度',
-  'weekly': '周度',
-  'daily': '日度',
+  'SHORT': '短期',
+  'MEDIUM': '中期',
+  'LONG': '长期',
+  'SHORT_TO_MEDIUM': '短中期',
+  'MEDIUM_TO_LONG': '中长期',
 };
 
-export const SENTIMENT_LABELS: Record<string, string> = {
-  'positive': '利好',
-  'negative': '利空',
-  'neutral': '中性',
-  'bullish': '看涨',
-  'bearish': '看跌',
-};

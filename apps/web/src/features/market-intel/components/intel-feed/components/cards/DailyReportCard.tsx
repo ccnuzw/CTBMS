@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { Card, Typography, Tag, Flex, Space, Button, Tooltip, Divider, theme, Badge } from 'antd';
 import {
     FileTextOutlined,
@@ -18,6 +18,7 @@ import dayjs from 'dayjs';
 import relativeTime from 'dayjs/plugin/relativeTime';
 import 'dayjs/locale/zh-cn';
 import { IntelItem } from '../../types';
+import { useDictionaries } from '@/hooks/useDictionaries';
 
 dayjs.extend(relativeTime);
 dayjs.locale('zh-cn');
@@ -30,34 +31,32 @@ interface DailyReportCardProps {
     onClick?: () => void;
 }
 
-const SOURCE_TYPE_LABELS: Record<string, { label: string; color: string }> = {
+const FALLBACK_SOURCE_TYPE_META: Record<string, { label: string; color: string }> = {
     FIRST_LINE: { label: '一线采集', color: 'blue' },
+    COMPETITOR: { label: '竞对情报', color: 'volcano' },
     OFFICIAL_GOV: { label: '官方发布', color: 'green' },
+    OFFICIAL: { label: '官方发布', color: 'green' },
     RESEARCH_INST: { label: '研究机构', color: 'purple' },
     MEDIA: { label: '媒体报道', color: 'orange' },
+    INTERNAL_REPORT: { label: '内部研报', color: 'geekblue' },
 };
 
-// 市场心态常量
-const SENTIMENT_LABELS: Record<string, string> = {
+const FALLBACK_SENTIMENT_LABELS: Record<string, string> = {
     bullish: '看涨',
     bearish: '看跌',
     neutral: '中性',
     mixed: '分歧',
 };
 
-const getSentimentColor = (sentiment: string): string => {
-    switch (sentiment) {
-        case 'bullish': return '#f5222d';
-        case 'bearish': return '#52c41a';
-        case 'neutral': return '#1890ff';
-        case 'mixed': return '#faad14';
-        default: return '#1890ff';
-    }
+const FALLBACK_SENTIMENT_COLORS: Record<string, string> = {
+    bullish: '#f5222d',
+    bearish: '#52c41a',
+    neutral: '#1890ff',
+    mixed: '#faad14',
 };
 
-// 风险等级常量
-const RISK_LABELS: Record<string, string> = { low: '低', medium: '中', high: '高' };
-const RISK_COLORS: Record<string, string> = { low: 'green', medium: 'orange', high: 'red' };
+const FALLBACK_RISK_LABELS: Record<string, string> = { low: '低', medium: '中', high: '高' };
+const FALLBACK_RISK_COLORS: Record<string, string> = { low: 'green', medium: 'orange', high: 'red' };
 
 export const DailyReportCard: React.FC<DailyReportCardProps> = ({
     intel,
@@ -65,7 +64,61 @@ export const DailyReportCard: React.FC<DailyReportCardProps> = ({
     onClick,
 }) => {
     const { token } = theme.useToken();
-    const sourceInfo = SOURCE_TYPE_LABELS[intel.sourceType] || { label: '未知', color: 'default' };
+    const { data: dictionaries } = useDictionaries(['INTEL_SOURCE_TYPE', 'MARKET_SENTIMENT', 'RISK_LEVEL']);
+
+    const sourceTypeMeta = useMemo(() => {
+        const items = dictionaries?.INTEL_SOURCE_TYPE?.filter((item) => item.isActive) || [];
+        if (!items.length) return FALLBACK_SOURCE_TYPE_META;
+        return items.reduce<Record<string, { label: string; color: string }>>((acc, item) => {
+            const color = (item.meta as { color?: string } | null)?.color
+                || FALLBACK_SOURCE_TYPE_META[item.code]?.color
+                || 'default';
+            acc[item.code] = { label: item.label, color };
+            return acc;
+        }, { ...FALLBACK_SOURCE_TYPE_META });
+    }, [dictionaries]);
+
+    const sentimentMeta = useMemo(() => {
+        const items = dictionaries?.MARKET_SENTIMENT?.filter((item) => item.isActive) || [];
+        if (!items.length) {
+            return {
+                labels: FALLBACK_SENTIMENT_LABELS,
+                colors: FALLBACK_SENTIMENT_COLORS,
+            };
+        }
+        return items.reduce<{ labels: Record<string, string>; colors: Record<string, string> }>(
+            (acc, item) => {
+                acc.labels[item.code] = item.label;
+                const color = (item.meta as { color?: string } | null)?.color || FALLBACK_SENTIMENT_COLORS[item.code] || '#1890ff';
+                acc.colors[item.code] = color;
+                return acc;
+            },
+            { labels: {}, colors: {} },
+        );
+    }, [dictionaries]);
+
+    const riskMeta = useMemo(() => {
+        const items = dictionaries?.RISK_LEVEL?.filter((item) => item.isActive) || [];
+        if (!items.length) {
+            return {
+                labels: FALLBACK_RISK_LABELS,
+                colors: FALLBACK_RISK_COLORS,
+            };
+        }
+        return items.reduce<{ labels: Record<string, string>; colors: Record<string, string> }>(
+            (acc, item) => {
+                acc.labels[item.code] = item.label;
+                const color = (item.meta as { color?: string } | null)?.color || FALLBACK_RISK_COLORS[item.code] || 'default';
+                acc.colors[item.code] = color;
+                return acc;
+            },
+            { labels: {}, colors: {} },
+        );
+    }, [dictionaries]);
+
+    const sentimentColor = sentimentMeta.colors[intel.marketSentiment?.overall || ''] || '#1890ff';
+    const sentimentLabel = sentimentMeta.labels[intel.marketSentiment?.overall || ''] || intel.marketSentiment?.overall || '未知';
+    const sourceInfo = sourceTypeMeta[intel.sourceType] || { label: '未知', color: 'default' };
 
     return (
         <Card
@@ -185,10 +238,10 @@ export const DailyReportCard: React.FC<DailyReportCardProps> = ({
             {intel.marketSentiment && (
                 <div style={{ marginBottom: 12, padding: 10, background: token.colorFillQuaternary, borderRadius: token.borderRadius }}>
                     <Flex align="center" gap={6} style={{ marginBottom: 6 }}>
-                        <HeartOutlined style={{ color: getSentimentColor(intel.marketSentiment.overall) }} />
+                        <HeartOutlined style={{ color: sentimentColor }} />
                         <Text type="secondary" style={{ fontSize: 12 }}>市场心态</Text>
-                        <Tag color={getSentimentColor(intel.marketSentiment.overall)} style={{ margin: 0 }}>
-                            {SENTIMENT_LABELS[intel.marketSentiment.overall] || intel.marketSentiment.overall}
+                        <Tag color={sentimentColor} style={{ margin: 0 }}>
+                            {sentimentLabel}
                         </Tag>
                         {intel.marketSentiment.score !== undefined && (
                             <Text style={{ fontSize: 12 }}>情绪值: {intel.marketSentiment.score}</Text>
@@ -233,8 +286,8 @@ export const DailyReportCard: React.FC<DailyReportCardProps> = ({
                         <FundOutlined style={{ color: token.colorInfo }} />
                         <Text type="secondary" style={{ fontSize: 12 }}>后市预判</Text>
                         {intel.forecast.riskLevel && (
-                            <Tag color={RISK_COLORS[intel.forecast.riskLevel]} style={{ margin: 0 }}>
-                                风险: {RISK_LABELS[intel.forecast.riskLevel]}
+                            <Tag color={riskMeta.colors[intel.forecast.riskLevel] || 'default'} style={{ margin: 0 }}>
+                                风险: {riskMeta.labels[intel.forecast.riskLevel] || intel.forecast.riskLevel}
                             </Tag>
                         )}
                     </Flex>

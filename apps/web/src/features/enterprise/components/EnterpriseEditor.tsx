@@ -30,12 +30,13 @@ import {
     useEnterprises,
 } from '../api';
 import { useGlobalTags, useSyncTags } from '../../tags/api/tags';
+import { useDictionaries } from '@/hooks/useDictionaries';
 
 const { TextArea } = Input;
 const { useToken } = theme;
 
 // 企业类型选项
-const ENTERPRISE_TYPE_OPTIONS = [
+const ENTERPRISE_TYPE_OPTIONS_FALLBACK = [
     { label: '供应商', value: EnterpriseType.SUPPLIER },
     { label: '客户', value: EnterpriseType.CUSTOMER },
     { label: '物流商', value: EnterpriseType.LOGISTICS },
@@ -43,7 +44,7 @@ const ENTERPRISE_TYPE_OPTIONS = [
 ];
 
 // 联系人角色选项
-const CONTACT_ROLE_OPTIONS = [
+const CONTACT_ROLE_OPTIONS_FALLBACK = [
     { label: '采购决策线', value: ContactRole.PROCUREMENT },
     { label: '执行运营线', value: ContactRole.EXECUTION },
     { label: '财务结算线', value: ContactRole.FINANCE },
@@ -65,6 +66,19 @@ export const EnterpriseEditor: React.FC<EnterpriseEditorProps> = ({
     const { message } = App.useApp();
     const [form] = Form.useForm();
     const isEdit = !!enterpriseId;
+    const { data: dictionaries } = useDictionaries(['ENTERPRISE_TYPE', 'CONTACT_ROLE']);
+
+    const enterpriseTypeOptions = useMemo(() => {
+        const items = dictionaries?.ENTERPRISE_TYPE?.filter((item) => item.isActive) || [];
+        if (!items.length) return ENTERPRISE_TYPE_OPTIONS_FALLBACK;
+        return items.map((item) => ({ label: item.label, value: item.code as EnterpriseType }));
+    }, [dictionaries]);
+
+    const contactRoleOptions = useMemo(() => {
+        const items = dictionaries?.CONTACT_ROLE?.filter((item) => item.isActive) || [];
+        if (!items.length) return CONTACT_ROLE_OPTIONS_FALLBACK;
+        return items.map((item) => ({ label: item.label, value: item.code as ContactRole }));
+    }, [dictionaries]);
 
     // 获取企业详情（编辑模式）
     const { data: enterprise, isLoading: loadingEnterprise } = useEnterprise(
@@ -266,7 +280,7 @@ export const EnterpriseEditor: React.FC<EnterpriseEditorProps> = ({
                         <Select
                             mode="multiple"
                             placeholder="请选择业务身份（可多选）"
-                            options={ENTERPRISE_TYPE_OPTIONS}
+                            options={enterpriseTypeOptions}
                             onChange={(values) => setSelectedTypes(values)}
                         />
                     </Form.Item>
@@ -401,7 +415,7 @@ export const EnterpriseEditor: React.FC<EnterpriseEditorProps> = ({
                                             >
                                                 <Select
                                                     placeholder="角色"
-                                                    options={CONTACT_ROLE_OPTIONS}
+                                                    options={contactRoleOptions}
                                                     style={{ width: 120 }}
                                                 />
                                             </Form.Item>

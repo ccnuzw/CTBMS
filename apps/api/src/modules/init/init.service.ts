@@ -138,6 +138,7 @@ export class InitService implements OnModuleInit {
         try {
             // 1. Transaction Data (Leaves)
             await this.measureTime('Clear PriceData', () => this.prisma.priceData.deleteMany());
+            await this.measureTime('Clear PriceSubmission', () => this.prisma.priceSubmission.deleteMany());
 
             // 2. Intelligence Data
             await this.measureTime('Clear MarketInsight', () => this.prisma.marketInsight.deleteMany());

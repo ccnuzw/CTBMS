@@ -5,13 +5,13 @@ import { CheckCircleOutlined, ClockCircleOutlined, ExclamationCircleOutlined, Ap
 import dayjs from 'dayjs';
 import {
     IntelTaskStatus,
-    INTEL_TASK_TYPE_LABELS,
     IntelTaskResponse,
     IntelTaskPriority
 } from '@packages/types';
 import { useCompleteTask, useTasks } from '../../../api/tasks';
 import { useUsers } from '../../../../users/api/users';
 import { useVirtualUser, ADMIN_USER } from '@/features/auth/virtual-user';
+import { useDictionaries } from '@/hooks/useDictionaries';
 
 const { Text } = Typography;
 
@@ -19,6 +19,7 @@ export const MyTaskBoard: React.FC = () => {
     const { currentUser, isVirtual } = useVirtualUser();
     const { data: users = [] } = useUsers({ status: 'ACTIVE' });
     const [viewMode, setViewMode] = React.useState<'BOARD' | 'TABLE'>('BOARD');
+    const { data: dictionaries } = useDictionaries(['INTEL_TASK_TYPE', 'INTEL_TASK_STATUS', 'INTEL_TASK_PRIORITY']);
 
     const taskQuery = {
         page: 1,
@@ -29,10 +30,69 @@ export const MyTaskBoard: React.FC = () => {
     const tasks = data?.data || [];
     const completeMutation = useCompleteTask();
 
+    const taskTypeLabels = useMemo(() => {
+        const items = dictionaries?.INTEL_TASK_TYPE?.filter((item) => item.isActive) || [];
+        if (!items.length) return {} as Record<string, string>;
+        return items.reduce<Record<string, string>>((acc, item) => {
+            acc[item.code] = item.label;
+            return acc;
+        }, {});
+    }, [dictionaries]);
+
+    const taskPriorityMeta = useMemo(() => {
+        const items = dictionaries?.INTEL_TASK_PRIORITY?.filter((item) => item.isActive) || [];
+        if (!items.length) return { labels: {} as Record<string, string>, colors: {} as Record<string, string> };
+        return items.reduce<{ labels: Record<string, string>; colors: Record<string, string> }>(
+            (acc, item) => {
+                acc.labels[item.code] = item.label;
+                const color = (item.meta as { color?: string } | null)?.color || 'default';
+                acc.colors[item.code] = color;
+                return acc;
+            },
+            { labels: {}, colors: {} },
+        );
+    }, [dictionaries]);
+
+    const taskStatusMeta = useMemo(() => {
+        const items = dictionaries?.INTEL_TASK_STATUS?.filter((item) => item.isActive) || [];
+        const fallbackLabels: Record<string, string> = {
+            [IntelTaskStatus.PENDING]: '待办',
+            [IntelTaskStatus.OVERDUE]: '已逾期',
+            [IntelTaskStatus.COMPLETED]: '已完成',
+        };
+        if (!items.length) {
+            return {
+                labels: fallbackLabels,
+                valueEnum: {
+                    [IntelTaskStatus.PENDING]: { text: fallbackLabels[IntelTaskStatus.PENDING], status: 'Processing' },
+                    [IntelTaskStatus.OVERDUE]: { text: fallbackLabels[IntelTaskStatus.OVERDUE], status: 'Error' },
+                    [IntelTaskStatus.COMPLETED]: { text: fallbackLabels[IntelTaskStatus.COMPLETED], status: 'Success' },
+                },
+            };
+        }
+        const statusMap: Record<string, string> = {
+            processing: 'Processing',
+            success: 'Success',
+            warning: 'Warning',
+            error: 'Error',
+            default: 'Default',
+        };
+        const labels = items.reduce<Record<string, string>>((acc, item) => {
+            acc[item.code] = item.label;
+            return acc;
+        }, {});
+        const valueEnum = items.reduce<Record<string, { text: string; status: string }>>((acc, item) => {
+            const color = (item.meta as { color?: string } | null)?.color || 'default';
+            acc[item.code] = { text: item.label, status: statusMap[color] || 'Default' };
+            return acc;
+        }, {});
+        return { labels, valueEnum };
+    }, [dictionaries]);
+
     const columns = [
-        { title: '待办任务', status: IntelTaskStatus.PENDING, color: 'blue', icon: <ClockCircleOutlined /> },
-        { title: '即将超时', status: IntelTaskStatus.OVERDUE, color: 'red', icon: <ExclamationCircleOutlined /> }, // Logic: Overdue or near deadline
-        { title: '已完成', status: IntelTaskStatus.COMPLETED, color: 'green', icon: <CheckCircleOutlined /> },
+        { title: taskStatusMeta.labels[IntelTaskStatus.PENDING] || '待办任务', status: IntelTaskStatus.PENDING, color: 'blue', icon: <ClockCircleOutlined /> },
+        { title: taskStatusMeta.labels[IntelTaskStatus.OVERDUE] || '即将超时', status: IntelTaskStatus.OVERDUE, color: 'red', icon: <ExclamationCircleOutlined /> },
+        { title: taskStatusMeta.labels[IntelTaskStatus.COMPLETED] || '已完成', status: IntelTaskStatus.COMPLETED, color: 'green', icon: <CheckCircleOutlined /> },
     ];
 
     // Group tasks
@@ -108,12 +168,12 @@ export const MyTaskBoard: React.FC = () => {
                                     <Space direction="vertical" style={{ width: '100%' }}>
                                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start' }}>
                                             <Text strong ellipsis={{ tooltip: task.title }} style={{ maxWidth: 180 }}>{task.title}</Text>
-                                            <Tag color={task.priority === IntelTaskPriority.URGENT ? 'red' : 'blue'}>
-                                                {task.priority === IntelTaskPriority.URGENT ? '紧急' : '普通'}
+                                            <Tag color={taskPriorityMeta.colors[task.priority] || (task.priority === IntelTaskPriority.URGENT ? 'red' : 'blue')}>
+                                                {taskPriorityMeta.labels[task.priority] || task.priority}
                                             </Tag>
                                         </div>
                                         <Space size="small" style={{ fontSize: 12, color: '#888' }}>
-                                            <Tag>{INTEL_TASK_TYPE_LABELS[task.type]}</Tag>
+                                            <Tag>{taskTypeLabels[task.type] || task.type}</Tag>
                                             <span>{dayjs(task.dueAt || task.deadline).format('MM-DD HH:mm')}</span>
                                         </Space>
                                         {(task as any).metadata?.collectionPointName && (
@@ -167,7 +227,7 @@ export const MyTaskBoard: React.FC = () => {
                         {
                             title: '类型',
                             dataIndex: 'type',
-                            render: (_, r) => <Tag>{INTEL_TASK_TYPE_LABELS[r.type]}</Tag>
+                            render: (_, r) => <Tag>{taskTypeLabels[r.type] || r.type}</Tag>
                         },
                         {
                             title: '截止时间',
@@ -177,11 +237,7 @@ export const MyTaskBoard: React.FC = () => {
                         {
                             title: '状态',
                             dataIndex: 'status',
-                            valueEnum: {
-                                [IntelTaskStatus.PENDING]: { text: '待办', status: 'Processing' },
-                                [IntelTaskStatus.OVERDUE]: { text: '已逾期', status: 'Error' },
-                                [IntelTaskStatus.COMPLETED]: { text: '已完成', status: 'Success' },
-                            }
+                            valueEnum: taskStatusMeta.valueEnum
                         },
                         {
                             title: '操作',

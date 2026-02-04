@@ -10,9 +10,7 @@ export enum AllocationRole {
   PRIMARY = 'PRIMARY',       // 负责人（统一角色）
 }
 
-export const ALLOCATION_ROLE_LABELS: Record<AllocationRole, string> = {
-  [AllocationRole.PRIMARY]: '负责人',
-};
+// ALLOCATION_ROLE_LABELS 已移至 apps/web/src/constants/statusEnums.ts
 
 // 价格录入方式
 export enum PriceInputMethod {
@@ -21,11 +19,7 @@ export enum PriceInputMethod {
   BULK_IMPORT = 'BULK_IMPORT',       // 批量导入（Excel/CSV）
 }
 
-export const PRICE_INPUT_METHOD_LABELS: Record<PriceInputMethod, string> = {
-  [PriceInputMethod.AI_EXTRACTED]: '智能采集',
-  [PriceInputMethod.MANUAL_ENTRY]: '手动填报',
-  [PriceInputMethod.BULK_IMPORT]: '批量导入',
-};
+// PRICE_INPUT_METHOD_LABELS 已移至 apps/web/src/constants/technicalEnums.ts
 
 // 价格审核状态
 export enum PriceReviewStatus {
@@ -35,12 +29,7 @@ export enum PriceReviewStatus {
   AUTO_APPROVED = 'AUTO_APPROVED', // 自动通过
 }
 
-export const PRICE_REVIEW_STATUS_LABELS: Record<PriceReviewStatus, string> = {
-  [PriceReviewStatus.PENDING]: '待审核',
-  [PriceReviewStatus.APPROVED]: '已通过',
-  [PriceReviewStatus.REJECTED]: '已拒绝',
-  [PriceReviewStatus.AUTO_APPROVED]: '自动通过',
-};
+// PRICE_REVIEW_STATUS_LABELS 已移至 apps/web/src/constants/statusEnums.ts
 
 // 填报批次状态
 export enum SubmissionStatus {
@@ -51,13 +40,7 @@ export enum SubmissionStatus {
   REJECTED = 'REJECTED',               // 已拒绝
 }
 
-export const SUBMISSION_STATUS_LABELS: Record<SubmissionStatus, string> = {
-  [SubmissionStatus.DRAFT]: '草稿',
-  [SubmissionStatus.SUBMITTED]: '已提交',
-  [SubmissionStatus.PARTIAL_APPROVED]: '部分通过',
-  [SubmissionStatus.APPROVED]: '已通过',
-  [SubmissionStatus.REJECTED]: '已拒绝',
-};
+// SUBMISSION_STATUS_LABELS 已移至 apps/web/src/constants/statusEnums.ts
 
 // =============================================
 // 采集点分配 Schema

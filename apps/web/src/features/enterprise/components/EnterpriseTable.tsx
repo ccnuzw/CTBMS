@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { Table, Tag, Space, Typography, Tooltip, Button, theme } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import {
@@ -9,12 +9,13 @@ import {
     CaretRightOutlined,
 } from '@ant-design/icons';
 import { EnterpriseType, EnterpriseResponse } from '@packages/types';
+import { useDictionary } from '@/hooks/useDictionaries';
 
 const { Text } = Typography;
 const { useToken } = theme;
 
 // 企业类型颜色映射
-const TYPE_COLORS: Record<EnterpriseType, string> = {
+const TYPE_COLORS_FALLBACK: Record<EnterpriseType, string> = {
     [EnterpriseType.SUPPLIER]: 'orange',
     [EnterpriseType.CUSTOMER]: 'green',
     [EnterpriseType.LOGISTICS]: 'blue',
@@ -22,7 +23,7 @@ const TYPE_COLORS: Record<EnterpriseType, string> = {
 };
 
 // 企业类型中文映射
-const TYPE_LABELS: Record<EnterpriseType, string> = {
+const TYPE_LABELS_FALLBACK: Record<EnterpriseType, string> = {
     [EnterpriseType.SUPPLIER]: '供应商',
     [EnterpriseType.CUSTOMER]: '客户',
     [EnterpriseType.LOGISTICS]: '物流商',
@@ -55,7 +56,29 @@ export const EnterpriseTable: React.FC<EnterpriseTableProps> = ({
     hideAddress = false,
 }) => {
     const { token } = useToken();
+    const { data: enterpriseTypeDict } = useDictionary('ENTERPRISE_TYPE');
     const [expandedRowKeys, setExpandedRowKeys] = useState<string[]>([]);
+
+    const typeLabels = useMemo(() => {
+        const items = (enterpriseTypeDict || []).filter((item) => item.isActive);
+        if (!items.length) return TYPE_LABELS_FALLBACK;
+        const map = items.reduce<Partial<Record<EnterpriseType, string>>>((acc, item) => {
+            acc[item.code as EnterpriseType] = item.label;
+            return acc;
+        }, {});
+        return { ...TYPE_LABELS_FALLBACK, ...map } as Record<EnterpriseType, string>;
+    }, [enterpriseTypeDict]);
+
+    const typeColors = useMemo(() => {
+        const items = (enterpriseTypeDict || []).filter((item) => item.isActive);
+        if (!items.length) return TYPE_COLORS_FALLBACK;
+        const map = items.reduce<Partial<Record<EnterpriseType, string>>>((acc, item) => {
+            acc[item.code as EnterpriseType] =
+                ((item.meta as { color?: string } | null)?.color || TYPE_COLORS_FALLBACK[item.code as EnterpriseType] || 'default') as string;
+            return acc;
+        }, {});
+        return { ...TYPE_COLORS_FALLBACK, ...map } as Record<EnterpriseType, string>;
+    }, [enterpriseTypeDict]);
 
     // 获取信用评分颜色
     const getRiskScoreColor = (score: number) => {
@@ -102,8 +125,8 @@ export const EnterpriseTable: React.FC<EnterpriseTableProps> = ({
             render: (types: EnterpriseType[]) => (
                 <Space size={4} wrap>
                     {types.filter(t => t !== EnterpriseType.GROUP).map((type) => (
-                        <Tag key={type} color={TYPE_COLORS[type]} bordered={false}>
-                            {TYPE_LABELS[type]}
+                        <Tag key={type} color={typeColors[type]} bordered={false}>
+                            {typeLabels[type]}
                         </Tag>
                     ))}
                 </Space>

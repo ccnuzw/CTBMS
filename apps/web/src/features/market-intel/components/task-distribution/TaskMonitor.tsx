@@ -6,11 +6,11 @@ import {
     IntelTaskStatus,
     IntelTaskPriority,
     IntelTaskType,
-    INTEL_TASK_STATUS_LABELS,
     INTEL_TASK_PRIORITY_LABELS,
     INTEL_TASK_TYPE_LABELS,
     IntelTaskResponse
 } from '@packages/types';
+import { INTEL_TASK_STATUS_LABELS } from '@/constants';
 import { useReviewTask } from '../../api/tasks';
 import { useUsers } from '../../../users/api/users';
 import { apiClient } from '../../../../api/client';

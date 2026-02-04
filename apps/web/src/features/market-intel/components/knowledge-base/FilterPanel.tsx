@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { Card, Typography, Button, Flex, Checkbox, Tag } from 'antd';
 import {
     FilterOutlined,
@@ -10,6 +10,7 @@ import {
 } from '@ant-design/icons';
 import { theme } from 'antd';
 import { IntelSourceType, INTEL_SOURCE_TYPE_LABELS } from '@packages/types';
+import { useDictionary } from '@/hooks/useDictionaries';
 
 const { Title, Text } = Typography;
 
@@ -43,6 +44,34 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
     style
 }) => {
     const { token } = theme.useToken();
+    const { data: sourceItems } = useDictionary('INTEL_SOURCE_TYPE');
+
+    const sourceTypeMeta = useMemo(() => {
+        const items = sourceItems?.filter((item) => item.isActive) || [];
+        const fallbackColors: Record<string, string> = {
+            [IntelSourceType.FIRST_LINE]: 'blue',
+            [IntelSourceType.COMPETITOR]: 'warning',
+            [IntelSourceType.OFFICIAL]: 'error',
+            [IntelSourceType.RESEARCH_INST]: 'purple',
+            [IntelSourceType.MEDIA]: 'orange',
+            [IntelSourceType.INTERNAL_REPORT]: 'geekblue',
+        };
+        if (!items.length) {
+            return {
+                labels: INTEL_SOURCE_TYPE_LABELS as Record<string, string>,
+                colors: fallbackColors,
+                options: [IntelSourceType.OFFICIAL, IntelSourceType.COMPETITOR, IntelSourceType.FIRST_LINE],
+            };
+        }
+        const labels: Record<string, string> = {};
+        const colors: Record<string, string> = {};
+        const options = items.map((item) => {
+            labels[item.code] = item.label;
+            colors[item.code] = (item.meta as { color?: string } | null)?.color || fallbackColors[item.code] || 'default';
+            return item.code;
+        });
+        return { labels, colors, options };
+    }, [sourceItems]);
 
     const getSourceIcon = (source: string) => {
         switch (source) {
@@ -95,7 +124,7 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
                     来源渠道
                 </Text>
                 <div style={{ marginTop: 12 }}>
-                    {[IntelSourceType.OFFICIAL, IntelSourceType.COMPETITOR, IntelSourceType.FIRST_LINE].map(
+                    {sourceTypeMeta.options.map(
                         (source) => (
                             <Flex
                                 key={source}
@@ -113,7 +142,7 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
                             >
                                 <Flex align="center" gap={8}>
                                     {getSourceIcon(source)}
-                                    <Text style={{ fontSize: 12 }}>{INTEL_SOURCE_TYPE_LABELS[source]}</Text>
+                                    <Text style={{ fontSize: 12 }}>{sourceTypeMeta.labels[source] || source}</Text>
                                 </Flex>
                                 <Checkbox checked={selectedSources.has(source)} />
                             </Flex>

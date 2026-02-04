@@ -4,6 +4,7 @@ import { Button, Tag, Space, Typography, Card } from 'antd';
 import { UserOutlined, EnvironmentOutlined } from '@ant-design/icons';
 import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
+import { useDictionary } from '@/hooks/useDictionaries';
 
 // Fix Leaflet default icon issue in React
 import icon from 'leaflet/dist/images/marker-icon.png';
@@ -40,7 +41,7 @@ const redIcon = createColoredIcon('#ff4d4f');   // Unassigned
 const blueIcon = createColoredIcon('#1890ff');  // Assigned
 const greenIcon = createColoredIcon('#52c41a'); // Assigned to current user
 
-const POINT_TYPE_LABELS: Record<string, string> = {
+const POINT_TYPE_LABELS_FALLBACK: Record<string, string> = {
   PORT: '港口',
   ENTERPRISE: '企业',
   STATION: '站台',
@@ -74,6 +75,16 @@ export const CollectionPointMap: React.FC<CollectionPointMapProps> = ({
   onAssign,
   onUnassign
 }) => {
+  const { data: pointTypeDict } = useDictionary('COLLECTION_POINT_TYPE');
+
+  const pointTypeLabels = useMemo(() => {
+    const items = (pointTypeDict || []).filter((item) => item.isActive);
+    if (!items.length) return POINT_TYPE_LABELS_FALLBACK;
+    return items.reduce<Record<string, string>>((acc, item) => {
+      acc[item.code] = item.label;
+      return acc;
+    }, {});
+  }, [pointTypeDict]);
   // Filter valid points
   const validPoints = useMemo(() =>
     points.filter(p => p.latitude && p.longitude),
@@ -130,7 +141,7 @@ export const CollectionPointMap: React.FC<CollectionPointMapProps> = ({
                   bodyStyle={{ padding: '8px 0 0 0' }}
                 >
                   <Space direction="vertical" style={{ width: '100%' }}>
-                    <Tag>{POINT_TYPE_LABELS[point.pointType] || point.pointType}</Tag>
+                  <Tag>{pointTypeLabels[point.pointType] || point.pointType}</Tag>
                     {isAssignedToCurrentUser ? (
                       <Tag color="success" icon={<UserOutlined />}>我负责的点</Tag>
                     ) : isAssigned ? (

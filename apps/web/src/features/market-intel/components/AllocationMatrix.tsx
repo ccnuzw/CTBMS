@@ -36,6 +36,7 @@ import {
 } from '@ant-design/icons';
 import { useDebounce } from '@/hooks/useDebounce';
 import { useModalAutoFocus } from '@/hooks/useModalAutoFocus';
+import { useDictionary } from '@/hooks/useDictionaries';
 import {
   useAllocationMatrix,
   useAllocationsByUser,
@@ -48,31 +49,12 @@ import { CollectionPointMap } from './CollectionPointMap';
 
 const { Text, Title } = Typography;
 
-// 采集点类型颜色映射
-const POINT_TYPE_COLORS: Record<string, string> = {
-  PORT: 'blue',
-  ENTERPRISE: 'cyan',
-  STATION: 'purple',
-  MARKET: 'green',
-  REGION: 'orange',
-};
-
-// 采集点类型图标
-const POINT_TYPE_ICONS: Record<string, string> = {
-  PORT: '⚓',
-  ENTERPRISE: '🏭',
-  STATION: '🚂',
-  MARKET: '🏪',
-  REGION: '📍',
-};
-
-// 采集点类型标签
-const POINT_TYPE_LABELS: Record<string, string> = {
-  PORT: '港口',
-  ENTERPRISE: '企业',
-  STATION: '站台',
-  MARKET: '市场',
-  REGION: '区域',
+const POINT_TYPE_META_FALLBACK: Record<string, { label: string; color: string; icon: string }> = {
+  PORT: { label: '港口', color: 'blue', icon: '⚓' },
+  ENTERPRISE: { label: '企业', color: 'cyan', icon: '🏭' },
+  STATION: { label: '站台', color: 'purple', icon: '🚂' },
+  MARKET: { label: '批发市场', color: 'green', icon: '🏪' },
+  REGION: { label: '地域', color: 'orange', icon: '🌍' },
 };
 
 // 负载状态颜色
@@ -86,6 +68,7 @@ export const AllocationMatrix: React.FC = () => {
   const { message, modal } = App.useApp();
   // 焦点管理
   const { focusRef, containerRef, modalProps } = useModalAutoFocus();
+  const { data: pointTypeDict } = useDictionary('COLLECTION_POINT_TYPE');
 
   // 状态
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
@@ -195,6 +178,34 @@ export const AllocationMatrix: React.FC = () => {
       disabled: !selectedUserId,
     },
   ]), [pointCounts, selectedUserId]);
+
+  const pointTypeMeta = useMemo(() => {
+    const items = (pointTypeDict || []).filter((item) => item.isActive);
+    if (!items.length) return POINT_TYPE_META_FALLBACK;
+    return items.reduce<Record<string, { label: string; color: string; icon: string }>>((acc, item) => {
+      const meta = item.meta as { color?: string; icon?: string } | null;
+      acc[item.code] = {
+        label: item.label,
+        color: meta?.color || POINT_TYPE_META_FALLBACK[item.code]?.color || 'default',
+        icon: meta?.icon || POINT_TYPE_META_FALLBACK[item.code]?.icon || '',
+      };
+      return acc;
+    }, { ...POINT_TYPE_META_FALLBACK });
+  }, [pointTypeDict]);
+
+  const pointTypeOptions = useMemo(() => {
+    const items = (pointTypeDict || []).filter((item) => item.isActive);
+    if (!items.length) {
+      return Object.entries(POINT_TYPE_META_FALLBACK).map(([value, meta]) => ({
+        value,
+        label: meta.label,
+      }));
+    }
+    return items
+      .slice()
+      .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0))
+      .map((item) => ({ value: item.code, label: item.label }));
+  }, [pointTypeDict]);
 
   const sortedUsers = useMemo(() => {
     const users = [...(data?.users || [])];
@@ -630,14 +641,16 @@ export const AllocationMatrix: React.FC = () => {
                 <Card.Meta
                   title={
                     <Space>
-                      <span>{POINT_TYPE_ICONS[point.pointType]}</span>
+                      {pointTypeMeta[point.pointType]?.icon && (
+                        <span>{pointTypeMeta[point.pointType]?.icon}</span>
+                      )}
                       <span>{point.pointName}</span>
                     </Space>
                   }
                   description={
                     <Space direction="vertical" size={4} style={{ width: '100%' }}>
-                      <Tag color={POINT_TYPE_COLORS[point.pointType]}>
-                        {POINT_TYPE_LABELS[point.pointType] || point.pointType}
+                      <Tag color={pointTypeMeta[point.pointType]?.color || 'default'}>
+                        {pointTypeMeta[point.pointType]?.label || point.pointType}
                       </Tag>
 
                       {isAssignedToCurrentUser ? (
@@ -716,13 +729,7 @@ export const AllocationMatrix: React.FC = () => {
               style={{ width: '100%' }}
               value={pointTypeFilter}
               onChange={(value) => setPointTypeFilter(value || undefined)}
-              options={[
-                { label: '港口', value: 'PORT' },
-                { label: '企业', value: 'ENTERPRISE' },
-                { label: '站台', value: 'STATION' },
-                { label: '市场', value: 'MARKET' },
-                { label: '区域', value: 'REGION' },
-              ]}
+              options={pointTypeOptions}
             />
           </Col>
           <Col span={6}>

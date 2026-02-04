@@ -243,6 +243,10 @@ export const MainLayout: React.FC = () => {
                         {
                             key: '/system/config/prompts',
                             label: '提示词库',
+                        },
+                        {
+                            key: '/system/config/dictionaries',
+                            label: '数据字典',
                         }
                     ]
                 },

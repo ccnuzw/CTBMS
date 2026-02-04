@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { Card, Row, Col, Typography, Space, Button, List, Tag, theme, Flex, Radio, Empty, Divider, Segmented } from 'antd';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
@@ -21,6 +21,7 @@ import {
 import { Area, Pie, WordCloud } from '@ant-design/plots';
 import { useResearchReportStats, useDocumentStats, useResearchReports, useMarketIntels, useHotTopics } from '../api/hooks';
 import { IntelCategory, ReviewStatus, REPORT_TYPE_LABELS } from '@packages/types';
+import { useDictionaries } from '@/hooks/useDictionaries';
 import { StatCard } from './StatCard';
 import { ReportTrendChart } from './research-report-dashboard/ReportTrendChart';
 import { ReportDistributionCharts } from './research-report-dashboard/ReportDistributionCharts';
@@ -60,6 +61,7 @@ export const Workbench: React.FC = () => {
     const [searchParams, setSearchParams] = useSearchParams();
     const { token } = theme.useToken();
     const [days, setDays] = useState(30);
+    const { data: dictionaries } = useDictionaries(['REPORT_TYPE']);
 
     const { data: reportStats, isLoading: reportLoading, refetch } = useResearchReportStats({ days });
     const { data: docStats, isLoading: docLoading } = useDocumentStats(days);
@@ -89,9 +91,34 @@ export const Workbench: React.FC = () => {
     const todayDocs = docStats?.trend?.length ? docStats.trend[docStats.trend.length - 1].count : 0;
     const weeklyReports = reportStats?.trend?.slice(-7).reduce((sum: number, item: any) => sum + item.count, 0) || 0;
 
+    const reportTypeLabels = useMemo(() => {
+        const items = dictionaries?.REPORT_TYPE?.filter((item) => item.isActive) || [];
+        if (!items.length) return REPORT_TYPE_LABELS as Record<string, string>;
+        return items.reduce<Record<string, string>>((acc, item) => {
+            acc[item.code] = item.label;
+            return acc;
+        }, {});
+    }, [dictionaries]);
+
+    const reportTypeColors = useMemo(() => {
+        const items = dictionaries?.REPORT_TYPE?.filter((item) => item.isActive) || [];
+        const fallbackColors: Record<string, string> = {
+            POLICY: 'volcano',
+            MARKET: 'blue',
+            RESEARCH: 'purple',
+            INDUSTRY: 'cyan',
+        };
+        if (!items.length) return fallbackColors;
+        return items.reduce<Record<string, string>>((acc, item) => {
+            const color = (item.meta as { color?: string } | null)?.color || fallbackColors[item.code] || 'blue';
+            acc[item.code] = color;
+            return acc;
+        }, {});
+    }, [dictionaries]);
+
     const typeData = reportStats?.byType
         ? Object.entries(reportStats.byType).map(([type, value]) => ({
-            type: REPORT_TYPE_LABELS[type as keyof typeof REPORT_TYPE_LABELS] || type,
+            type: reportTypeLabels[type] || type,
             value: value as number,
         }))
         : [];
@@ -461,8 +488,8 @@ export const Workbench: React.FC = () => {
                                             <Space key="date"><ClockCircleOutlined /> {new Date(item.publishDate || item.createdAt).toLocaleDateString()}</Space>
                                         ]}
                                         extra={
-                                            <Tag color="blue" className="kb-chip">
-                                                {REPORT_TYPE_LABELS[item.reportType] || item.reportType}
+                                            <Tag color={reportTypeColors[item.reportType] || 'blue'} className="kb-chip">
+                                                {reportTypeLabels[item.reportType] || item.reportType}
                                             </Tag>
                                         }
                                     >

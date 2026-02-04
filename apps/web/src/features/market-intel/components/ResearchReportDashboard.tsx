@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { Row, Col, Card, Statistic, Space, Button, Progress, theme, Flex } from 'antd';
 import {
     FileTextOutlined,
@@ -16,6 +16,7 @@ import { ReportTrendChart } from './research-report-dashboard/ReportTrendChart';
 import { ReportDistributionCharts } from './research-report-dashboard/ReportDistributionCharts';
 import { RecentReportsList } from './research-report-dashboard/RecentReportsList';
 import { REPORT_TYPE_LABELS } from '@packages/types';
+import { useDictionaries } from '@/hooks/useDictionaries';
 import { useNavigate } from 'react-router-dom';
 
 export const ResearchReportDashboard: React.FC = () => {
@@ -23,11 +24,21 @@ export const ResearchReportDashboard: React.FC = () => {
     const navigate = useNavigate();
     const [days, setDays] = useState(30);
     const { data: stats, isLoading, refetch } = useResearchReportStats({ days });
+    const { data: dictionaries } = useDictionaries(['REPORT_TYPE']);
+
+    const reportTypeLabels = useMemo(() => {
+        const items = dictionaries?.REPORT_TYPE?.filter((item) => item.isActive) || [];
+        if (!items.length) return REPORT_TYPE_LABELS as Record<string, string>;
+        return items.reduce<Record<string, string>>((acc, item) => {
+            acc[item.code] = item.label;
+            return acc;
+        }, {});
+    }, [dictionaries]);
 
     // 转换类型数据为图表格式
     const typeData = stats?.byType
         ? Object.entries(stats.byType).map(([type, value]) => ({
-            type: REPORT_TYPE_LABELS[type as keyof typeof REPORT_TYPE_LABELS] || type,
+            type: reportTypeLabels[type] || type,
             value: value as number,
         }))
         : [];

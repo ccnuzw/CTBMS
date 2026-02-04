@@ -4,7 +4,7 @@ import { Card, Typography, Space, Statistic, List, Tag, Empty, Descriptions, Row
 import { ResearchReportResponse } from '@packages/types';
 import { RobotOutlined, RiseOutlined, FallOutlined, MinusOutlined, BulbOutlined, LineChartOutlined } from '@ant-design/icons';
 
-import { PREDICTION_DIRECTION_LABELS, PREDICTION_TIMEFRAME_LABELS } from '../../constants';
+import { MARKET_SENTIMENT_LABELS, PREDICTION_TIMEFRAME_LABELS } from '../../constants';
 
 const { Text } = Typography;
 
@@ -81,7 +81,7 @@ export const AIAnalysisPanel: React.FC<AIAnalysisPanelProps> = ({ report, mode =
                             <Descriptions.Item label="预测方向">
                                 <Space>
                                     {getSentimentIcon(prediction.direction)}
-                                    {PREDICTION_DIRECTION_LABELS[prediction.direction] || prediction.direction || '震荡'}
+                                    {MARKET_SENTIMENT_LABELS[prediction.direction] || prediction.direction || '震荡'}
                                 </Space>
                             </Descriptions.Item>
                             <Descriptions.Item label="时间周期">

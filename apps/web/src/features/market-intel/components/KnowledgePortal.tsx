@@ -19,17 +19,18 @@ import { stripHtml } from '@packages/utils';
 import { useNavigate } from 'react-router-dom';
 import { useResearchReports, useMarketIntels, useResearchReportStats, useMarketIntelStats, useHotTopics } from '../api/hooks';
 import { IntelCategory, ReportType, IntelSourceType, ReviewStatus } from '@packages/types';
+import { useDictionary } from '@/hooks/useDictionaries';
 
 const { Title, Text, Paragraph } = Typography;
 
-const REPORT_TYPE_LABELS: Record<string, string> = {
+const REPORT_TYPE_LABELS_FALLBACK: Record<string, string> = {
     POLICY: '政策解读',
     MARKET: '市场行情',
     RESEARCH: '深度研究',
     INDUSTRY: '行业分析',
 };
 
-const REPORT_TYPE_COLORS: Record<string, string> = {
+const REPORT_TYPE_COLORS_FALLBACK: Record<string, string> = {
     POLICY: 'volcano',
     MARKET: 'blue',
     RESEARCH: 'purple',
@@ -41,6 +42,25 @@ const REPORT_TYPE_COLORS: Record<string, string> = {
 export const KnowledgePortal: React.FC = () => {
     const { token } = theme.useToken();
     const navigate = useNavigate();
+    const { data: reportTypeDict } = useDictionary('REPORT_TYPE');
+
+    const reportTypeLabels = useMemo(() => {
+        const items = (reportTypeDict || []).filter((item) => item.isActive);
+        if (!items.length) return REPORT_TYPE_LABELS_FALLBACK;
+        return items.reduce<Record<string, string>>((acc, item) => {
+            acc[item.code] = item.label;
+            return acc;
+        }, {});
+    }, [reportTypeDict]);
+
+    const reportTypeColors = useMemo(() => {
+        const items = (reportTypeDict || []).filter((item) => item.isActive);
+        if (!items.length) return REPORT_TYPE_COLORS_FALLBACK;
+        return items.reduce<Record<string, string>>((acc, item) => {
+            acc[item.code] = ((item.meta as { color?: string } | null)?.color || 'default') as string;
+            return acc;
+        }, {});
+    }, [reportTypeDict]);
 
     // 获取最新研报
     const { data: reportsData, isLoading: reportsLoading } = useResearchReports({
@@ -195,8 +215,8 @@ export const KnowledgePortal: React.FC = () => {
                                     ]}
                                     extra={
                                         <div style={{ marginLeft: 24 }}>
-                                            <Tag color={REPORT_TYPE_COLORS[item.reportType] || 'default'}>
-                                                {REPORT_TYPE_LABELS[item.reportType] || item.reportType}
+                                            <Tag color={reportTypeColors[item.reportType] || 'default'}>
+                                                {reportTypeLabels[item.reportType] || item.reportType}
                                             </Tag>
                                         </div>
                                     }

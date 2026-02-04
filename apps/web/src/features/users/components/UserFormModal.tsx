@@ -19,6 +19,7 @@ import { CreateUserDto, UpdateUserDto } from '@packages/types';
 import { useCreateUser, useUpdateUser, UserWithRelations } from '../api/users';
 import { useRoles } from '../api/roles';
 import { useModalAutoFocus } from '../../../hooks/useModalAutoFocus';
+import { useDictionary } from '@/hooks/useDictionaries';
 
 const { Text } = Typography;
 
@@ -114,6 +115,20 @@ export const UserFormModal: React.FC<UserFormModalProps> = ({
 }) => {
     const { token } = theme.useToken();
     const { message } = App.useApp();
+    const { data: genderDict } = useDictionary('GENDER');
+    const { data: userStatusDict } = useDictionary('USER_STATUS');
+
+    const genderOptions = useMemo(() => {
+        const items = (genderDict || []).filter((item) => item.isActive);
+        if (!items.length) return [...GENDER_OPTIONS];
+        return items.map((item) => ({ value: item.code, label: item.label }));
+    }, [genderDict]);
+
+    const statusOptions = useMemo(() => {
+        const items = (userStatusDict || []).filter((item) => item.isActive);
+        if (!items.length) return [...STATUS_OPTIONS];
+        return items.map((item) => ({ value: item.code, label: item.label }));
+    }, [userStatusDict]);
 
     const isEdit = !!user;
     const { containerRef, autoFocusFieldProps, modalProps } = useModalAutoFocus();
@@ -272,7 +287,7 @@ export const UserFormModal: React.FC<UserFormModalProps> = ({
                 <ProFormSelect
                     name="gender"
                     label="性别"
-                    options={[...GENDER_OPTIONS]}
+                    options={genderOptions}
                     colProps={{ xs: 24, sm: 8 }}
                     fieldProps={{ allowClear: true }}
                 />
@@ -315,11 +330,8 @@ export const UserFormModal: React.FC<UserFormModalProps> = ({
                     label="状态"
                     options={
                         isEdit
-                            ? [...STATUS_OPTIONS]
-                            : [
-                                { value: 'ACTIVE', label: '在职' },
-                                { value: 'PROBATION', label: '试用期' },
-                            ]
+                            ? statusOptions
+                            : statusOptions.filter((opt) => opt.value === 'ACTIVE' || opt.value === 'PROBATION')
                     }
                     colProps={{ xs: 24, sm: 8 }}
                 />

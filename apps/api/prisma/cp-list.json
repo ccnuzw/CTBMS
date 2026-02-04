@@ -43,8 +43,7 @@
     "latitude": 31.1891,
     "commodities": [
       "玉米",
-      "大豆",
-      "肉类"
+      "大豆"
     ],
     "priceSubTypes": [],
     "defaultSubType": "WHOLESALE",
@@ -270,8 +269,7 @@
       "玉米",
       "大豆",
       "高粱",
-      "大麦",
-      "木薯干"
+      "大麦"
     ],
     "priceSubTypes": [
       "平舱价",
@@ -511,7 +509,7 @@
     "commodities": [
       "玉米",
       "大豆",
-      "水稻"
+      "稻谷"
     ],
     "priceSubTypes": [],
     "defaultSubType": "LISTED",
@@ -793,8 +791,7 @@
     "latitude": 21.61,
     "commodities": [
       "玉米",
-      "大豆",
-      "油菜籽"
+      "大豆"
     ],
     "priceSubTypes": [
       "平舱价",
@@ -857,8 +854,7 @@
     "longitude": 108.61,
     "latitude": 21.73,
     "commodities": [
-      "大豆",
-      "油菜籽"
+      "大豆"
     ],
     "priceSubTypes": [
       "平舱价",
@@ -889,9 +885,7 @@
     "longitude": 120.44,
     "latitude": 31.87,
     "commodities": [
-      "大豆",
-      "油菜籽",
-      "木薯干"
+      "大豆"
     ],
     "priceSubTypes": [
       "平舱价",
@@ -1106,9 +1100,7 @@
     "longitude": 116.3458,
     "latitude": 39.8071,
     "commodities": [
-      "玉米",
-      "蔬菜",
-      "水果"
+      "玉米"
     ],
     "priceSubTypes": [],
     "defaultSubType": "WHOLESALE",

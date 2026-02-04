@@ -30,9 +30,10 @@ import {
 } from '../api/tags';
 import { useTagGroups } from '../api/tag-groups';
 import { useModalAutoFocus } from '../../../hooks/useModalAutoFocus';
+import { useDictionary } from '@/hooks/useDictionaries';
 
 // 作用域选项
-const SCOPE_OPTIONS = [
+const SCOPE_OPTIONS_FALLBACK = [
     { label: '全局', value: TagScope.GLOBAL },
     { label: '客户', value: TagScope.CUSTOMER },
     { label: '供应商', value: TagScope.SUPPLIER },
@@ -42,7 +43,7 @@ const SCOPE_OPTIONS = [
 ];
 
 // 作用域颜色映射
-const SCOPE_COLOR_MAP: Record<TagScope, string> = {
+const SCOPE_COLOR_MAP_FALLBACK: Record<TagScope, string> = {
     [TagScope.GLOBAL]: 'blue',
     [TagScope.CUSTOMER]: 'green',
     [TagScope.SUPPLIER]: 'orange',
@@ -55,6 +56,7 @@ export const GlobalTagList: React.FC = () => {
     const { message } = App.useApp();
     const screens = Grid.useBreakpoint();
     const { token } = theme.useToken();
+    const { data: tagScopeDict } = useDictionary('TAG_SCOPE');
     const actionRef = useRef<ActionType>();
     const [editModalVisible, setEditModalVisible] = useState(false);
     const [currentRow, setCurrentRow] = useState<TagResponse | undefined>(undefined);
@@ -68,6 +70,22 @@ export const GlobalTagList: React.FC = () => {
     const createTag = useCreateGlobalTag();
     const updateTag = useUpdateGlobalTag();
     const deleteTag = useDeleteGlobalTag();
+
+    const scopeOptions = useMemo(() => {
+        const items = (tagScopeDict || []).filter((item) => item.isActive);
+        if (!items.length) return SCOPE_OPTIONS_FALLBACK;
+        return items.map((item) => ({ label: item.label, value: item.code as TagScope }));
+    }, [tagScopeDict]);
+
+    const scopeColorMap = useMemo(() => {
+        const items = (tagScopeDict || []).filter((item) => item.isActive);
+        if (!items.length) return SCOPE_COLOR_MAP_FALLBACK;
+        const map = items.reduce<Partial<Record<TagScope, string>>>((acc, item) => {
+            acc[item.code as TagScope] = ((item.meta as { color?: string } | null)?.color || 'default') as string;
+            return acc;
+        }, {});
+        return { ...SCOPE_COLOR_MAP_FALLBACK, ...map } as Record<TagScope, string>;
+    }, [tagScopeDict]);
 
     const handleEdit = (record: TagResponse) => {
         setCurrentRow(record);
@@ -135,13 +153,13 @@ export const GlobalTagList: React.FC = () => {
             fieldProps: {
                 mode: undefined,
                 placeholder: '请选择作用域',
-                options: SCOPE_OPTIONS,
+                options: scopeOptions,
             },
             render: (_, record) => (
                 <Space wrap size={4}>
                     {record.scopes?.map((scope) => (
-                        <Tag key={scope} color={SCOPE_COLOR_MAP[scope]}>
-                            {SCOPE_OPTIONS.find((o) => o.value === scope)?.label || scope}
+                        <Tag key={scope} color={scopeColorMap[scope]}>
+                            {scopeOptions.find((o) => o.value === scope)?.label || scope}
                         </Tag>
                     ))}
                 </Space>
@@ -254,8 +272,8 @@ export const GlobalTagList: React.FC = () => {
                                             </Space>
                                             <Space wrap size={4}>
                                                 {record.scopes?.map((scope) => (
-                                                    <Tag key={scope} color={SCOPE_COLOR_MAP[scope]} style={{ fontSize: 10 }}>
-                                                        {SCOPE_OPTIONS.find((o) => o.value === scope)?.label || scope}
+                                                    <Tag key={scope} color={scopeColorMap[scope]} style={{ fontSize: 10 }}>
+                                                        {scopeOptions.find((o) => o.value === scope)?.label || scope}
                                                     </Tag>
                                                 ))}
                                             </Space>
@@ -313,7 +331,7 @@ export const GlobalTagList: React.FC = () => {
                             name="scopes"
                             label="作用域"
                             mode="multiple"
-                            options={SCOPE_OPTIONS}
+                            options={scopeOptions}
                             placeholder="选择作用域"
                         />
                         <ProFormSelect
@@ -390,7 +408,7 @@ export const GlobalTagList: React.FC = () => {
                         name="scopes"
                         label="作用域"
                         mode="multiple"
-                        options={SCOPE_OPTIONS}
+                        options={scopeOptions}
                         placeholder="选择作用域（可多选）"
                         rules={[{ required: true, message: '请选择至少一个作用域' }]}
                     />

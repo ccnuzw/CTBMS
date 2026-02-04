@@ -115,12 +115,7 @@ export enum ReviewStatus {
   ARCHIVED = 'ARCHIVED',   // 已归档
 }
 
-export const REVIEW_STATUS_LABELS: Record<ReviewStatus, string> = {
-  [ReviewStatus.PENDING]: '待审核',
-  [ReviewStatus.APPROVED]: '已通过',
-  [ReviewStatus.REJECTED]: '已拒绝',
-  [ReviewStatus.ARCHIVED]: '已归档',
-};
+// REVIEW_STATUS_LABELS 已移至 apps/web/src/constants/statusEnums.ts
 
 
 // =============================================
@@ -851,11 +846,7 @@ export enum IntelPointLinkType {
   SOURCE = 'SOURCE',
 }
 
-export const INTEL_POINT_LINK_TYPE_LABELS: Record<IntelPointLinkType, string> = {
-  [IntelPointLinkType.MENTIONED]: '被提及',
-  [IntelPointLinkType.SUBJECT]: '情报主体',
-  [IntelPointLinkType.SOURCE]: '情报来源',
-};
+// INTEL_POINT_LINK_TYPE_LABELS 已移至 apps/web/src/constants/technicalEnums.ts
 
 export const CreateIntelPointLinkSchema = z.object({
   intelId: z.string(),
@@ -945,13 +936,7 @@ export const INTEL_TASK_TYPE_LABELS: Record<IntelTaskType, string> = {
   [IntelTaskType.RESOURCE_UPDATE]: '客商/档案更新',
 };
 
-export const INTEL_TASK_STATUS_LABELS: Record<IntelTaskStatus, string> = {
-  [IntelTaskStatus.PENDING]: '待完成',
-  [IntelTaskStatus.SUBMITTED]: '待审核',
-  [IntelTaskStatus.RETURNED]: '已驳回',
-  [IntelTaskStatus.COMPLETED]: '已完成',
-  [IntelTaskStatus.OVERDUE]: '已超时',
-};
+// INTEL_TASK_STATUS_LABELS 已移至 apps/web/src/constants/statusEnums.ts
 
 export const INTEL_TASK_PRIORITY_LABELS: Record<IntelTaskPriority, string> = {
   [IntelTaskPriority.LOW]: '低',
@@ -960,12 +945,7 @@ export const INTEL_TASK_PRIORITY_LABELS: Record<IntelTaskPriority, string> = {
   [IntelTaskPriority.URGENT]: '紧急',
 };
 
-export const TASK_CYCLE_TYPE_LABELS: Record<TaskCycleType, string> = {
-  [TaskCycleType.DAILY]: '每日',
-  [TaskCycleType.WEEKLY]: '每周',
-  [TaskCycleType.MONTHLY]: '每月',
-  [TaskCycleType.ONE_TIME]: '单次',
-};
+// TASK_CYCLE_TYPE_LABELS 已移至 apps/web/src/constants/statusEnums.ts
 
 // 任务 Schema
 export const CreateIntelTaskSchema = z.object({

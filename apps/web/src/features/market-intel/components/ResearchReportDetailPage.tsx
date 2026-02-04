@@ -8,7 +8,9 @@ import { useResearchReport, useIncrementViewCount, useIncrementDownloadCount, us
 import { AIAnalysisPanel } from './research-report-detail/AIAnalysisPanel';
 import { DocumentPreview } from './research-report-detail/DocumentPreview';
 import { RelatedReports } from './research-report-detail/RelatedReports';
-import { REPORT_TYPE_LABELS, REVIEW_STATUS_LABELS, ReviewStatus } from '@packages/types';
+import { REPORT_TYPE_LABELS } from '@packages/types';
+import { REVIEW_STATUS_LABELS } from '@/constants';
+import { useDictionaries } from '@/hooks/useDictionaries';
 import dayjs from 'dayjs';
 
 export const ResearchReportDetailPage: React.FC = () => {
@@ -21,6 +23,57 @@ export const ResearchReportDetailPage: React.FC = () => {
     const { mutate: incrementView } = useIncrementViewCount();
     const { mutate: incrementDownload } = useIncrementDownloadCount();
     const viewIncrementedRef = useRef(false);
+    const { data: dictionaries } = useDictionaries(['REPORT_TYPE', 'REVIEW_STATUS']);
+
+    const reportTypeLabels = useMemo(() => {
+        const items = dictionaries?.REPORT_TYPE?.filter((item) => item.isActive) || [];
+        if (!items.length) return REPORT_TYPE_LABELS;
+        return items.reduce<Record<string, string>>((acc, item) => {
+            acc[item.code] = item.label;
+            return acc;
+        }, {});
+    }, [dictionaries]);
+
+    const reportTypeColors = useMemo(() => {
+        const items = dictionaries?.REPORT_TYPE?.filter((item) => item.isActive) || [];
+        const fallbackColors: Record<string, string> = {
+            POLICY: 'volcano',
+            MARKET: 'blue',
+            RESEARCH: 'purple',
+            INDUSTRY: 'cyan',
+        };
+        if (!items.length) return fallbackColors;
+        return items.reduce<Record<string, string>>((acc, item) => {
+            const color = (item.meta as { color?: string } | null)?.color || fallbackColors[item.code] || 'blue';
+            acc[item.code] = color;
+            return acc;
+        }, {});
+    }, [dictionaries]);
+
+    const reviewStatusMeta = useMemo(() => {
+        const items = dictionaries?.REVIEW_STATUS?.filter((item) => item.isActive) || [];
+        const fallbackColors: Record<string, string> = {
+            PENDING: 'processing',
+            APPROVED: 'success',
+            REJECTED: 'error',
+            ARCHIVED: 'default',
+        };
+        if (!items.length) {
+            return {
+                labels: REVIEW_STATUS_LABELS,
+                colors: fallbackColors,
+            };
+        }
+        return items.reduce<{ labels: Record<string, string>; colors: Record<string, string> }>(
+            (acc, item) => {
+                acc.labels[item.code] = item.label;
+                const color = (item.meta as { color?: string } | null)?.color || fallbackColors[item.code] || 'default';
+                acc.colors[item.code] = color;
+                return acc;
+            },
+            { labels: {}, colors: {} },
+        );
+    }, [dictionaries]);
 
     // Fetch linked source document if intelId exists
     const linkedIntelId = (report as any)?.intelId || (report as any)?.intel?.id;
@@ -101,21 +154,14 @@ export const ResearchReportDetailPage: React.FC = () => {
 
     const heroBackground = `linear-gradient(135deg, ${token.colorPrimaryBg} 0%, ${token.colorBgLayout} 100%)`;
 
-    const reviewStatusColorMap: Record<ReviewStatus, string> = {
-        [ReviewStatus.PENDING]: 'processing',
-        [ReviewStatus.APPROVED]: 'success',
-        [ReviewStatus.REJECTED]: 'error',
-        [ReviewStatus.ARCHIVED]: 'default',
-    };
-
     const publishDate = dayjs(report.publishDate || report.createdAt).format('YYYY-MM-DD');
 
     const commodityTags = report.commodities?.slice(0, 6) || [];
     const regionTags = report.regions?.slice(0, 6) || [];
 
     const statusTag = (
-        <Tag color={reviewStatusColorMap[report.reviewStatus]} style={{ marginLeft: 8 }}>
-            {REVIEW_STATUS_LABELS[report.reviewStatus]}
+        <Tag color={reviewStatusMeta.colors[report.reviewStatus] || 'default'} style={{ marginLeft: 8 }}>
+            {reviewStatusMeta.labels[report.reviewStatus] || report.reviewStatus}
         </Tag>
     );
 
@@ -157,7 +203,9 @@ export const ResearchReportDetailPage: React.FC = () => {
                                 {statusTag}
                             </Typography.Title>
                             <Space size="small" wrap>
-                                <Tag color="blue">{REPORT_TYPE_LABELS[report.reportType] || report.reportType}</Tag>
+                                <Tag color={reportTypeColors[report.reportType] || 'blue'}>
+                                    {reportTypeLabels[report.reportType] || report.reportType}
+                                </Tag>
                                 {commodityTags.map((item) => <Tag key={`commodity-${item}`}>{item}</Tag>)}
                                 {report.commodities?.length > 6 && <Tag>+{report.commodities.length - 6}</Tag>}
                                 {regionTags.map((item) => <Tag key={`region-${item}`}>{item}</Tag>)}
@@ -208,10 +256,10 @@ export const ResearchReportDetailPage: React.FC = () => {
                                             <Space direction="vertical" size="small">
                                                 <Typography.Text>
                                                     {sourceDocument?.summary?.substring(0, 100) ||
-                                                     sourceDocument?.rawContent?.substring(0, 100) ||
-                                                     '源文档'}
+                                                        sourceDocument?.rawContent?.substring(0, 100) ||
+                                                        '源文档'}
                                                     {((sourceDocument?.summary?.length || 0) > 100 ||
-                                                      (sourceDocument?.rawContent?.length || 0) > 100) && '...'}
+                                                        (sourceDocument?.rawContent?.length || 0) > 100) && '...'}
                                                 </Typography.Text>
                                                 <Space>
                                                     <Button

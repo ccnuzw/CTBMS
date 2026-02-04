@@ -177,9 +177,9 @@ export const IntelFeedDashboard: React.FC = () => {
         const getScore = (item: IntelItem) => item.confidence ?? item.qualityScore;
         const getQualityLevel = (score?: number) => {
             if (score === undefined || score === null) return null;
-            if (score >= 80) return 'high';
-            if (score >= 50) return 'medium';
-            return 'low';
+            if (score >= 80) return 'HIGH';
+            if (score >= 50) return 'MEDIUM';
+            return 'LOW';
         };
 
         const matchCommodities = (item: IntelItem) => {

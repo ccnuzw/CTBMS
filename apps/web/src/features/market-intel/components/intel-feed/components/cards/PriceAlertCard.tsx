@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { Card, Typography, Tag, Flex, Space, Button, Tooltip, Divider, theme, Badge, Progress } from 'antd';
 import {
     DollarOutlined,
@@ -16,6 +16,7 @@ import dayjs from 'dayjs';
 import relativeTime from 'dayjs/plugin/relativeTime';
 import 'dayjs/locale/zh-cn';
 import { IntelItem, ExtractedPricePoint } from '../../types';
+import { useDictionaries } from '@/hooks/useDictionaries';
 
 dayjs.extend(relativeTime);
 dayjs.locale('zh-cn');
@@ -28,11 +29,14 @@ interface PriceAlertCardProps {
     onClick?: () => void;
 }
 
-const SOURCE_TYPE_LABELS: Record<string, { label: string; color: string }> = {
+const FALLBACK_SOURCE_TYPE_META: Record<string, { label: string; color: string }> = {
     FIRST_LINE: { label: '一线采集', color: 'blue' },
+    COMPETITOR: { label: '竞对情报', color: 'volcano' },
     OFFICIAL_GOV: { label: '官方发布', color: 'green' },
+    OFFICIAL: { label: '官方发布', color: 'green' },
     RESEARCH_INST: { label: '研究机构', color: 'purple' },
     MEDIA: { label: '媒体报道', color: 'orange' },
+    INTERNAL_REPORT: { label: '内部研报', color: 'geekblue' },
 };
 
 // 计算价格变动的统计信息
@@ -59,7 +63,21 @@ export const PriceAlertCard: React.FC<PriceAlertCardProps> = ({
     onClick,
 }) => {
     const { token } = theme.useToken();
-    const sourceInfo = SOURCE_TYPE_LABELS[intel.sourceType] || { label: '未知', color: 'default' };
+    const { data: dictionaries } = useDictionaries(['INTEL_SOURCE_TYPE']);
+
+    const sourceTypeMeta = useMemo(() => {
+        const items = dictionaries?.INTEL_SOURCE_TYPE?.filter((item) => item.isActive) || [];
+        if (!items.length) return FALLBACK_SOURCE_TYPE_META;
+        return items.reduce<Record<string, { label: string; color: string }>>((acc, item) => {
+            const color = (item.meta as { color?: string } | null)?.color
+                || FALLBACK_SOURCE_TYPE_META[item.code]?.color
+                || 'default';
+            acc[item.code] = { label: item.label, color };
+            return acc;
+        }, { ...FALLBACK_SOURCE_TYPE_META });
+    }, [dictionaries]);
+
+    const sourceInfo = sourceTypeMeta[intel.sourceType] || { label: '未知', color: 'default' };
 
     const pricePoints = intel.pricePoints || [];
     const stats = getPriceStats(pricePoints);

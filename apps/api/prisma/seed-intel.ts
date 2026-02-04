@@ -77,18 +77,18 @@ const INTEL_TEMPLATES = [
         region: ['辽宁省', '锦州市'],
         content: `【锦州港玉米行情日报】今日港口玉米收购价维持在2350元/吨，较昨日上涨20元。到港车辆约85车，贸易商收购积极性较高。水分要求在14%以内，容重720g/L。当前港口库存约42万吨，较上周增加3万吨。后市观点：短期内价格有望继续上涨，建议关注东北产区上量节奏。`,
         events: [
-            { subject: '锦州港', action: '价格上涨', content: '玉米收购价上涨20元至2350元/吨', impact: '利好收购方', sentiment: 'bullish' },
+            { subject: '锦州港', action: '价格上涨', content: '玉米收购价上涨20元至2350元/吨', impact: '利好收购方', sentiment: 'BULLISH' },
         ],
         insights: [
-            { title: '短期看涨', content: '预计短期内价格有望继续上涨', direction: 'Bullish', timeframe: 'short', confidence: 85 },
+            { title: '短期看涨', content: '预计短期内价格有望继续上涨', direction: 'BULLISH', timeframe: 'SHORT', confidence: 85 },
         ],
         // 新增：价格点数据
         pricePoints: [
-            { location: '锦州港', price: 2350, change: 20, unit: '元/吨', commodity: '玉米', note: '收购价' },
+            { location: '锦州港', price: 2350, change: 20, unit: '元/吨', commodity: 'CORN', note: '收购价' },
         ],
         // 新增：市场心态
         marketSentiment: {
-            overall: 'bullish',
+            overall: 'BULLISH',
             score: 65,
             traders: '贸易商收购积极性较高，看涨心态明显',
             summary: '港口收购活跃，市场情绪偏乐观',
@@ -135,10 +135,10 @@ const INTEL_TEMPLATES = [
             { title: '短期承压', content: '深加工备货充裕，短期价格下行压力较大', direction: 'Bearish', timeframe: 'short', confidence: 80 },
         ],
         pricePoints: [
-            { location: '梅花味精（通辽）', price: 2760, change: -20, unit: '元/吨', commodity: '玉米', note: '挂牌价' },
+            { location: '梅花味精（通辽）', price: 2760, change: -20, unit: '元/吨', commodity: 'CORN', note: '挂牌价' },
         ],
         marketSentiment: {
-            overall: 'bearish',
+            overall: 'BEARISH',
             score: -35,
             processors: '深加工企业库存充裕，采购意愿下降',
             farmers: '农户卖粮积极性上升',
@@ -160,10 +160,10 @@ const INTEL_TEMPLATES = [
         ],
         insights: [],
         pricePoints: [
-            { location: '象屿生化（绥化）', price: 2700, change: 0, unit: '元/吨', commodity: '玉米', note: '收购价' },
+            { location: '象屿生化（绥化）', price: 2700, change: 0, unit: '元/吨', commodity: 'CORN', note: '收购价' },
         ],
         marketSentiment: {
-            overall: 'neutral',
+            overall: 'NEUTRAL',
             score: 0,
             summary: '市场平稳运行',
         },
@@ -180,10 +180,10 @@ const INTEL_TEMPLATES = [
             { title: '需求增量', content: '中储粮轮换收购将增加区域需求支撑', direction: 'Bullish', timeframe: 'medium', confidence: 90 },
         ],
         pricePoints: [
-            { location: '中储粮锦州库', price: 2320, change: null, unit: '元/吨', commodity: '玉米', note: '轮换收购价' },
+            { location: '中储粮锦州库', price: 2320, change: null, unit: '元/吨', commodity: 'CORN', note: '轮换收购价' },
         ],
         marketSentiment: {
-            overall: 'bullish',
+            overall: 'BULLISH',
             score: 45,
             traders: '贸易商对政策性收购持积极态度',
             summary: '政策性收购启动，提振市场信心',
@@ -206,10 +206,10 @@ const INTEL_TEMPLATES = [
             { title: '销区看涨', content: '销区补库积极，后期价格有望继续走高', direction: 'Bullish', timeframe: 'short', confidence: 82 },
         ],
         pricePoints: [
-            { location: '山东潍坊', price: 2450, change: 10, unit: '元/吨', commodity: '玉米', note: '到站价' },
+            { location: '山东潍坊', price: 2450, change: 10, unit: '元/吨', commodity: 'CORN', note: '到站价' },
         ],
         marketSentiment: {
-            overall: 'bullish',
+            overall: 'BULLISH',
             score: 55,
             traders: '贸易商报价坚挺，看涨心态较浓',
             processors: '饲料企业补库积极',
@@ -232,11 +232,11 @@ const INTEL_TEMPLATES = [
             { title: '内外价差收窄', content: '进口玉米与内贸价差缩小，关注替代效应', direction: 'Neutral', timeframe: 'medium', confidence: 70 },
         ],
         pricePoints: [
-            { location: '黄埔港(内贸)', price: 2520, change: 0, unit: '元/吨', commodity: '玉米', note: '内贸价' },
-            { location: '黄埔港(进口)', price: 2480, change: null, unit: '元/吨', commodity: '玉米', note: '进口到港价' },
+            { location: '黄埔港(内贸)', price: 2520, change: 0, unit: '元/吨', commodity: 'CORN', note: '内贸价' },
+            { location: '黄埔港(进口)', price: 2480, change: null, unit: '元/吨', commodity: 'CORN', note: '进口到港价' },
         ],
         marketSentiment: {
-            overall: 'neutral',
+            overall: 'NEUTRAL',
             score: 10,
             traders: '采购商多观望为主',
             summary: '南方港口供需平衡，价格稳定',
@@ -260,7 +260,7 @@ const INTEL_TEMPLATES = [
         ],
         pricePoints: [],
         marketSentiment: {
-            overall: 'neutral',
+            overall: 'NEUTRAL',
             score: 15,
             farmers: '农户利益得到政策保护',
             summary: '政策环境向好，市场秩序规范',
@@ -281,7 +281,7 @@ const INTEL_TEMPLATES = [
         ],
         pricePoints: [],
         marketSentiment: {
-            overall: 'mixed',
+            overall: 'MIXED',
             score: 25,
             traders: '贸易商建库意愿逐步增强',
             farmers: '农户惜售情绪上升',
@@ -305,10 +305,10 @@ const INTEL_TEMPLATES = [
             { title: '农户惜售', content: '农户惜售心态浓厚，节前售粮压力有限', direction: 'Bullish', timeframe: 'short', confidence: 75 },
         ],
         pricePoints: [
-            { location: '长春地区', price: 2280, change: -10, unit: '元/吨', commodity: '玉米', note: '收购商挂牌价' },
+            { location: '长春地区', price: 2280, change: -10, unit: '元/吨', commodity: 'CORN', note: '收购商挂牌价' },
         ],
         marketSentiment: {
-            overall: 'mixed',
+            overall: 'MIXED',
             score: -5,
             traders: '收购商压价意愿明显',
             farmers: '农户惜售心态浓厚',
@@ -333,15 +333,15 @@ const INTEL_TEMPLATES = [
             { title: '涨价潮来袭', content: '产区和港口集体涨价，短期看涨', direction: 'Bullish', timeframe: 'short', confidence: 88 },
         ],
         pricePoints: [
-            { location: '锦州港', price: 2355, change: 15, unit: '元/吨', commodity: '玉米', note: '收购价' },
-            { location: '大连港', price: 2360, change: 20, unit: '元/吨', commodity: '玉米', note: '平舱价' },
-            { location: '营口港', price: 2345, change: 18, unit: '元/吨', commodity: '玉米', note: '收购价' },
-            { location: '象屿生化', price: 2725, change: 25, unit: '元/吨', commodity: '玉米', note: '挂牌价' },
-            { location: '嘉吉生化', price: 2710, change: 20, unit: '元/吨', commodity: '玉米', note: '挂牌价' },
-            { location: '中粮生化', price: 2695, change: 15, unit: '元/吨', commodity: '玉米', note: '挂牌价' },
+            { location: '锦州港', price: 2355, change: 15, unit: '元/吨', commodity: 'CORN', note: '收购价' },
+            { location: '大连港', price: 2360, change: 20, unit: '元/吨', commodity: 'CORN', note: '平舱价' },
+            { location: '营口港', price: 2345, change: 18, unit: '元/吨', commodity: 'CORN', note: '收购价' },
+            { location: '象屿生化', price: 2725, change: 25, unit: '元/吨', commodity: 'CORN', note: '挂牌价' },
+            { location: '嘉吉生化', price: 2710, change: 20, unit: '元/吨', commodity: 'CORN', note: '挂牌价' },
+            { location: '中粮生化', price: 2695, change: 15, unit: '元/吨', commodity: 'CORN', note: '挂牌价' },
         ],
         marketSentiment: {
-            overall: 'bullish',
+            overall: 'BULLISH',
             score: 72,
             traders: '贸易商建库意愿明显增强',
             processors: '深加工同步提价抢粮',
@@ -368,7 +368,7 @@ const INTEL_TEMPLATES = [
         ],
         pricePoints: [],
         marketSentiment: {
-            overall: 'mixed',
+            overall: 'MIXED',
             score: 5,
             traders: '贸易商持观望态度',
             processors: '饲料企业采购节奏放缓',
@@ -386,7 +386,7 @@ const INTEL_TEMPLATES = [
 ];
 
 // 品种列表
-const COMMODITIES = ['玉米', '大豆', '小麦', '高粱', '豆粕'];
+const COMMODITIES = ['CORN', 'SOYBEAN', 'WHEAT', 'SORGHUM', 'SOYBEAN_MEAL'];
 
 // 内容类型
 const CONTENT_TYPES = ['DAILY_REPORT', 'RESEARCH_REPORT', 'POLICY_DOC'];

@@ -46,6 +46,7 @@ import {
 } from '@ant-design/pro-components';
 import type { CreateOrganizationDto, CreateDepartmentDto } from '@packages/types';
 import { DeptFormFields } from './DeptFormFields';
+import { useDictionary } from '@/hooks/useDictionaries';
 
 // 节点类型
 export type TreeNodeType = 'org' | 'dept';
@@ -66,7 +67,7 @@ interface OrgDeptTreeProps {
 }
 
 // 组织类型选项
-const ORG_TYPE_OPTIONS = [
+const ORG_TYPE_OPTIONS_FALLBACK = [
     { value: 'HEADQUARTERS', label: '总部' },
     { value: 'REGION', label: '大区/分公司' },
     { value: 'BRANCH', label: '经营部/办事处' },
@@ -103,6 +104,13 @@ export const OrgDeptTree: React.FC<OrgDeptTreeProps> = ({
 }) => {
     const { token } = theme.useToken();
     const { message } = App.useApp();
+    const { data: orgTypeDict } = useDictionary('ORGANIZATION_TYPE');
+
+    const orgTypeOptions = useMemo(() => {
+        const items = (orgTypeDict || []).filter((item) => item.isActive);
+        if (!items.length) return ORG_TYPE_OPTIONS_FALLBACK;
+        return items.map((item) => ({ value: item.code, label: item.label }));
+    }, [orgTypeDict]);
 
     // 状态
     const [searchValue, setSearchValue] = useState('');
@@ -483,7 +491,7 @@ export const OrgDeptTree: React.FC<OrgDeptTreeProps> = ({
                     <ProFormSelect
                         name="type"
                         label="组织类型"
-                        options={ORG_TYPE_OPTIONS}
+                        options={orgTypeOptions}
                         initialValue="BRANCH"
                         rules={[{ required: true }]}
                     />

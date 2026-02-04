@@ -40,7 +40,7 @@ export interface IntelFilterState {
     status: ('pending' | 'confirmed' | 'flagged' | 'archived')[];
 
     // 质量评分
-    qualityLevel: ('high' | 'medium' | 'low')[];
+    qualityLevel: ('HIGH' | 'MEDIUM' | 'LOW')[];
 
     // 全文搜索
     keyword?: string;
@@ -84,7 +84,7 @@ export const BUILT_IN_PRESETS: FilterPreset[] = [
     {
         id: 'high-value',
         name: '高价值情报',
-        filter: { confidenceRange: [80, 100], qualityLevel: ['high'] },
+        filter: { confidenceRange: [80, 100], qualityLevel: ['HIGH'] },
         isBuiltIn: true,
         createdAt: new Date(),
     },
@@ -106,7 +106,7 @@ export const BUILT_IN_PRESETS: FilterPreset[] = [
 
 // 市场心态类型
 export interface MarketSentiment {
-    overall: 'bullish' | 'bearish' | 'neutral' | 'mixed';
+    overall: 'BULLISH' | 'BEARISH' | 'NEUTRAL' | 'MIXED';
     score?: number;
     traders?: string;
     processors?: string;
@@ -131,7 +131,7 @@ export interface Forecast {
     mediumTerm?: string;
     longTerm?: string;
     keyFactors?: string[];
-    riskLevel?: 'low' | 'medium' | 'high';
+    riskLevel?: 'LOW' | 'MEDIUM' | 'HIGH';
 }
 
 // 洞察类型
@@ -139,7 +139,7 @@ export interface Insight {
     title: string;
     content: string;
     direction?: 'Bullish' | 'Bearish' | 'Neutral';
-    timeframe?: 'short' | 'medium' | 'long';
+    timeframe?: 'SHORT' | 'MEDIUM' | 'LONG';
     confidence?: number;
     factors?: string[];
 }
@@ -221,7 +221,7 @@ export interface RelatedIntel {
     id: string;
     title: string;
     contentType: ContentType;
-    relationType: 'time' | 'commodity' | 'region' | 'chain' | 'citation';
+    relationType: 'TIME' | 'COMMODITY' | 'REGION' | 'CHAIN' | 'CITATION' | 'PRICE_FLUCTUATION';
     similarity?: number;
     createdAt: Date;
 }

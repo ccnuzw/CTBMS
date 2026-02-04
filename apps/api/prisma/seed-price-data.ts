@@ -5,11 +5,11 @@ const prisma = new PrismaClient();
 
 // 品种基准价格和波动范围
 const COMMODITY_BASE_PRICES: Record<string, { base: number; volatility: number }> = {
-    '玉米': { base: 2350, volatility: 80 },
-    '大豆': { base: 4800, volatility: 150 },
-    '小麦': { base: 2680, volatility: 60 },
-    '高粱': { base: 2200, volatility: 70 },
-    '豆粕': { base: 3850, volatility: 120 },
+    'CORN': { base: 2350, volatility: 80 },
+    'SOYBEAN': { base: 4800, volatility: 150 },
+    'WHEAT': { base: 2680, volatility: 60 },
+    'SORGHUM': { base: 2200, volatility: 70 },
+    'SOYBEAN_MEAL': { base: 3850, volatility: 120 },
 };
 
 // 类型到 SourceType/SubType 的映射
@@ -18,7 +18,7 @@ const TYPE_MAPPINGS: Record<string, { sourceType: PriceSourceType; subType: Pric
     ENTERPRISE: { sourceType: 'ENTERPRISE', subType: 'PURCHASE', geoLevel: 'ENTERPRISE' },
     MARKET: { sourceType: 'REGIONAL', subType: 'WHOLESALE', geoLevel: 'CITY' },
     REGION: { sourceType: 'REGIONAL', subType: 'LISTED', geoLevel: 'CITY' },
-    STATION: { sourceType: 'REGIONAL', subType: 'STATION_ORIGIN', geoLevel: 'STATION' },
+    STATION: { sourceType: 'REGIONAL', subType: 'STATION', geoLevel: 'STATION' },
 };
 
 // 生成随机价格波动
@@ -68,7 +68,7 @@ async function main() {
     console.log(`   📅 生成 ${dates.length} 天的数据 (${dates[0].toISOString().split('T')[0]} ~ ${dates[dates.length - 1].toISOString().split('T')[0]})`);
 
     // 4. 为每个采集点生成价格数据
-    const commodities = ['玉米']; // 主要生成玉米数据，可扩展
+    const commodities = ['CORN']; // 主要生成玉米数据，可扩展
     let totalCreated = 0;
     let skipped = 0;
 
@@ -109,7 +109,7 @@ async function main() {
                     regionCode: point.regionCode || null,
                     effectiveDate: date,
                     commodity,
-                    grade: '二等',
+                    grade: 'Grade 2',
                     price: currentPrice,
                     moisture: parseFloat(moisture.toFixed(1)),
                     dayChange: dayChange,

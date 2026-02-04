@@ -9,7 +9,7 @@ export interface RelatedIntelResponse {
     id: string;
     title: string;
     contentType: string;
-    relationType: 'time' | 'commodity' | 'region' | 'chain' | 'citation';
+    relationType: 'TIME' | 'COMMODITY' | 'REGION' | 'CHAIN' | 'CITATION' | 'PRICE_FLUCTUATION';
     similarity?: number;
     createdAt: string;
 }

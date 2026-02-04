@@ -5,7 +5,6 @@ import { FileWordOutlined, ThunderboltOutlined, FileSearchOutlined, RobotOutline
 import { useNavigate, useParams } from 'react-router-dom';
 import {
     ReportType,
-    ReportPeriod,
     REPORT_TYPE_LABELS,
     REPORT_PERIOD_LABELS,
     CreateManualResearchReportDto,
@@ -17,7 +16,8 @@ import { useCreateManualResearchReport, useUpdateResearchReport, useResearchRepo
 import { useProvinces } from '../api/region';
 import TiptapEditor from '@/components/TiptapEditor';
 import { DocumentUploader } from './DocumentUploader';
-import { PREDICTION_DIRECTION_LABELS, PREDICTION_TIMEFRAME_LABELS } from '../constants';
+import { MARKET_SENTIMENT_LABELS, PREDICTION_TIMEFRAME_LABELS } from '../constants';
+import { useDictionaries } from '@/hooks/useDictionaries';
 import dayjs from 'dayjs';
 
 const { Text } = Typography;
@@ -100,6 +100,12 @@ export const ResearchReportCreatePage = () => {
     // Data Fetching
     const { data: stats } = useResearchReportStats();
     const { data: provinces } = useProvinces();
+    const { data: dictionaries } = useDictionaries([
+        'REPORT_TYPE',
+        'REPORT_PERIOD',
+        'MARKET_SENTIMENT',
+        'PREDICTION_TIMEFRAME',
+    ]);
 
     // Computed Options
     const commodityOptions = stats?.commodityDistribution?.map((item: any) => ({
@@ -111,6 +117,38 @@ export const ResearchReportCreatePage = () => {
         label: p.name,
         value: p.name,
     })) || [];
+
+    const reportTypeOptions = useMemo(() => {
+        const items = dictionaries?.REPORT_TYPE?.filter((item) => item.isActive) || [];
+        if (!items.length) {
+            return Object.entries(REPORT_TYPE_LABELS).map(([value, label]) => ({ label, value }));
+        }
+        return items.map((item) => ({ label: item.label, value: item.code }));
+    }, [dictionaries]);
+
+    const reportPeriodOptions = useMemo(() => {
+        const items = dictionaries?.REPORT_PERIOD?.filter((item) => item.isActive) || [];
+        if (!items.length) {
+            return Object.entries(REPORT_PERIOD_LABELS).map(([value, label]) => ({ label, value }));
+        }
+        return items.map((item) => ({ label: item.label, value: item.code }));
+    }, [dictionaries]);
+
+    const predictionDirectionOptions = useMemo(() => {
+        const items = dictionaries?.MARKET_SENTIMENT?.filter((item) => item.isActive) || [];
+        if (!items.length) {
+            return Object.entries(MARKET_SENTIMENT_LABELS).map(([value, label]) => ({ label, value }));
+        }
+        return items.map((item) => ({ label: item.label, value: item.code }));
+    }, [dictionaries]);
+
+    const predictionTimeframeOptions = useMemo(() => {
+        const items = dictionaries?.PREDICTION_TIMEFRAME?.filter((item) => item.isActive) || [];
+        if (!items.length) {
+            return Object.entries(PREDICTION_TIMEFRAME_LABELS).map(([value, label]) => ({ label, value }));
+        }
+        return items.map((item) => ({ label: item.label, value: item.code }));
+    }, [dictionaries]);
 
     // Pre-fill form in edit mode
     useEffect(() => {
@@ -517,10 +555,7 @@ export const ResearchReportCreatePage = () => {
                                             <ProFormSelect
                                                 name="reportType"
                                                 label="类型"
-                                                options={Object.entries(REPORT_TYPE_LABELS).map(([value, label]) => ({
-                                                    label,
-                                                    value,
-                                                }))}
+                                                options={reportTypeOptions}
                                                 rules={[{ required: true }]}
                                             />
                                         </Col>
@@ -528,10 +563,7 @@ export const ResearchReportCreatePage = () => {
                                             <ProFormSelect
                                                 name="reportPeriod"
                                                 label="周期"
-                                                options={Object.entries(REPORT_PERIOD_LABELS).map(([value, label]) => ({
-                                                    label,
-                                                    value,
-                                                }))}
+                                                options={reportPeriodOptions}
                                             />
                                         </Col>
                                     </Row>
@@ -847,18 +879,12 @@ export const ResearchReportCreatePage = () => {
                                     <ProFormSelect
                                         name={['prediction', 'direction']}
                                         label="预测方向"
-                                        options={Object.entries(PREDICTION_DIRECTION_LABELS).map(([value, label]) => ({
-                                            label: label,
-                                            value: value,
-                                        }))}
+                                        options={predictionDirectionOptions}
                                     />
                                     <ProFormSelect
                                         name={['prediction', 'timeframe']}
                                         label="时间周期"
-                                        options={Object.entries(PREDICTION_TIMEFRAME_LABELS).map(([value, label]) => ({
-                                            label: label,
-                                            value: value,
-                                        }))}
+                                        options={predictionTimeframeOptions}
                                     />
                                     <ProFormTextArea
                                         name={['prediction', 'reasoning']}

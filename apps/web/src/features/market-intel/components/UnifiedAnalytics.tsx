@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { Row, Col, Card, Typography, Spin, Empty, Radio, Flex, Statistic, Space, Button, Progress, theme } from 'antd';
 import {
     FileTextOutlined,
@@ -19,6 +19,7 @@ import { ReportTrendChart } from './research-report-dashboard/ReportTrendChart';
 import { ReportDistributionCharts } from './research-report-dashboard/ReportDistributionCharts';
 import { RecentReportsList } from './research-report-dashboard/RecentReportsList';
 import { REPORT_TYPE_LABELS } from '@packages/types';
+import { useDictionaries } from '@/hooks/useDictionaries';
 import { useNavigate } from 'react-router-dom';
 
 const { Title, Text } = Typography;
@@ -30,6 +31,7 @@ export const UnifiedAnalytics: React.FC = () => {
     const navigate = useNavigate();
     const [days, setDays] = useState(30);
     const [view, setView] = useState<AnalyticsView>('all');
+    const { data: dictionaries } = useDictionaries(['REPORT_TYPE']);
 
     // Fetch both stats
     const { data: docStats, isLoading: docLoading } = useDocumentStats(days);
@@ -38,9 +40,18 @@ export const UnifiedAnalytics: React.FC = () => {
     const isLoading = docLoading || reportLoading;
 
     // Transform report type data for charts
+    const reportTypeLabels = useMemo(() => {
+        const items = dictionaries?.REPORT_TYPE?.filter((item) => item.isActive) || [];
+        if (!items.length) return REPORT_TYPE_LABELS as Record<string, string>;
+        return items.reduce<Record<string, string>>((acc, item) => {
+            acc[item.code] = item.label;
+            return acc;
+        }, {});
+    }, [dictionaries]);
+
     const typeData = reportStats?.byType
         ? Object.entries(reportStats.byType).map(([type, value]) => ({
-            type: REPORT_TYPE_LABELS[type as keyof typeof REPORT_TYPE_LABELS] || type,
+            type: reportTypeLabels[type] || type,
             value: value as number,
         }))
         : [];
