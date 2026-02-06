@@ -1,13 +1,14 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { Card, Button, message, Space, Typography, Tag, App, Alert, Form } from 'antd';
+import { Card, Button, Space, Typography, Tag, App, Alert, Form } from 'antd';
 import { EditableProTable, ProColumns } from '@ant-design/pro-components';
 import { COLLECTION_POINT_TYPE_ICONS, CollectionPointType } from '@packages/types';
-import { useMyAssignedPoints, useBatchSubmit, usePointPriceHistory } from '../../api/hooks';
+import { useMyAssignedPoints, useBatchSubmit } from '../../api/hooks';
 import { useVirtualUser } from '@/features/auth/virtual-user';
 import { useNavigate } from 'react-router-dom';
 import { ArrowLeftOutlined, SaveOutlined, CopyOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import { useDictionary } from '@/hooks/useDictionaries';
+import { usePriceSubTypeOptions } from '@/utils/priceSubType';
 
 const { Title, Text } = Typography;
 
@@ -37,20 +38,8 @@ export const BatchPriceEntryTable: React.FC = () => {
     const [dataSource, setDataSource] = useState<BatchEntryRow[]>([]);
     const { data: priceSubTypeDict } = useDictionary('PRICE_SUB_TYPE');
 
-    const priceSubTypeOptions = useMemo(() => {
-        const items = (priceSubTypeDict || []).filter((item) => item.isActive);
-        if (!items.length) {
-            return [
-                { value: 'LISTED', label: '挂牌价' },
-                { value: 'TRANSACTION', label: '成交价' },
-                { value: 'ARRIVAL', label: '到港价' },
-                { value: 'FOB', label: '平舱价' },
-                { value: 'PURCHASE', label: '收购价' },
-                { value: 'WHOLESALE', label: '批发价' },
-            ];
-        }
-        return items.map((item) => ({ value: item.code, label: item.label }));
-    }, [priceSubTypeDict]);
+    // 统一的价格类型选项与标签映射（字典优先，兜底中文）
+    const priceSubTypeOptions = usePriceSubTypeOptions(priceSubTypeDict);
 
     const priceSubTypeValueEnum = useMemo(() => {
         return priceSubTypeOptions.reduce<Record<string, { text: string; status?: string }>>((acc, item) => {

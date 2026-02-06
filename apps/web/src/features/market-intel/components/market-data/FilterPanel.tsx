@@ -35,6 +35,7 @@ import type { PriceSubType } from '@packages/types';
 import { useCollectionPoints, useProvinces } from '../../api/hooks';
 import { AdvancedPointSelector } from './AdvancedPointSelector';
 import { useDictionary } from '@/hooks/useDictionaries';
+import { usePriceSubTypeLabels } from '@/utils/priceSubType';
 
 const { Title, Text } = Typography;
 
@@ -63,19 +64,7 @@ const POINT_TYPE_COLORS: Record<string, string> = {
     STATION: 'cyan',
 };
 
-const PRICE_SUB_TYPE_LABELS_FALLBACK: Record<string, string> = {
-    LISTED: '挂牌价',
-    TRANSACTION: '成交价',
-    ARRIVAL: '到港价',
-    FOB: '平舱价',
-    STATION_ORIGIN: '产区站台',
-    STATION_DEST: '销区站台',
-    PURCHASE: '收购价',
-    WHOLESALE: '批发价',
-    OTHER: '其他',
-};
 
-const COMMODITIES_FALLBACK = ['CORN', 'SOYBEAN', 'WHEAT', 'SORGHUM', 'RICE', 'BARLEY'];
 
 const TIME_RANGES_FALLBACK = [
     { label: '7天', value: 7 },
@@ -155,14 +144,8 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
             .map((item) => ({ label: item.label, value: item.code }));
     }, [commodityDict]);
 
-    const priceSubTypeLabels = useMemo(() => {
-        const items = (priceSubTypeDict || []).filter((item) => item.isActive);
-        if (!items.length) return PRICE_SUB_TYPE_LABELS_FALLBACK;
-        return items.reduce<Record<string, string>>((acc, item) => {
-            acc[item.code] = item.label;
-            return acc;
-        }, {});
-    }, [priceSubTypeDict]);
+    // 统一的价格类型标签映射（字典优先，兜底中文）
+    const priceSubTypeLabels = usePriceSubTypeLabels(priceSubTypeDict);
 
     const pointTypeLabels = useMemo(() => {
         const items = (pointTypeDict || []).filter((item) => item.isActive);

@@ -56,14 +56,23 @@ const SOURCE_TYPE_OPTIONS = [
     { label: '媒体报道', value: IntelSourceType.MEDIA },
 ];
 
-const COMMODITY_OPTIONS_FALLBACK = ['CORN', 'SOYBEAN', 'WHEAT', 'SORGHUM', 'SOYMEAL', 'RICE', 'RAPESEED'];
+// 品种 fallback（与字典 COMMODITY 保持一致）
+const COMMODITY_OPTIONS_FALLBACK = ['CORN', 'WHEAT', 'SOYBEAN', 'RICE', 'SORGHUM', 'BARLEY'];
+
+const ALLOWED_TIME_RANGES = ['1D', '7D', '30D', 'CUSTOM'];
+
+const TIME_RANGE_SHORT_LABELS: Record<string, string> = {
+    '1D': '1天',
+    '7D': '7天',
+    '30D': '30天',
+    '90D': '3个月',
+    'YTD': '今年',
+};
 
 const TIME_RANGE_OPTIONS_FALLBACK = [
-    { label: '日', value: '1D' },
-    { label: '周', value: '7D' },
-    { label: '月', value: '30D' },
-    { label: '季', value: '90D' },
-    { label: '年', value: 'YTD' },
+    { label: '1天', value: '1D' },
+    { label: '7天', value: '7D' },
+    { label: '30天', value: '30D' },
     { label: <CalendarOutlined />, value: 'CUSTOM' },
 ];
 
@@ -117,11 +126,26 @@ export const AdvancedFilter: React.FC<AdvancedFilterProps> = ({
 
     const timeRangeOptions = React.useMemo(() => {
         const items = dictionaries?.TIME_RANGE?.filter((item) => item.isActive) || [];
+
+        // 如果没有字典数据，使用 Fallback
         if (!items.length) return TIME_RANGE_OPTIONS_FALLBACK;
-        return items.map((item) => ({
-            label: item.code === 'CUSTOM' ? <CalendarOutlined /> : item.label,
-            value: item.code,
-        }));
+
+        // 过滤并映射字典数据，强制使用短标签
+        const filtered = items
+            .filter(item => ALLOWED_TIME_RANGES.includes(item.code))
+            .map((item) => ({
+                label: item.code === 'CUSTOM'
+                    ? <CalendarOutlined />
+                    : (TIME_RANGE_SHORT_LABELS[item.code] || item.label),
+                value: item.code,
+            }));
+
+        // 确保顺序：1D -> 7D -> 30D -> CUSTOM
+        return filtered.sort((a, b) => {
+            const indexA = ALLOWED_TIME_RANGES.indexOf(a.value as string);
+            const indexB = ALLOWED_TIME_RANGES.indexOf(b.value as string);
+            return indexA - indexB;
+        });
     }, [dictionaries]);
 
     // 重置筛选
@@ -418,7 +442,7 @@ export const AdvancedFilter: React.FC<AdvancedFilterProps> = ({
             {/* 筛选项 */}
             <Collapse
                 ghost
-                defaultActiveKey={['presets', 'time', 'sourceType']}
+                defaultActiveKey={['presets', 'time']}
                 items={collapseItems}
                 style={{ padding: '8px 0' }}
             />

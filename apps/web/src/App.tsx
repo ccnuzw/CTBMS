@@ -20,7 +20,8 @@ const queryClient = new QueryClient({
         },
         queries: {
             retry: 1, // Only retry queries once
-            staleTime: 5000, // Consider data fresh for 5 seconds
+            staleTime: 5 * 60 * 1000, // Consider data fresh for 5 minutes (reduced for better UX)
+            cacheTime: 10 * 60 * 1000, // Cache for 10 minutes before garbage collection (v4 syntax)
         },
     },
 });

@@ -47,10 +47,14 @@ type TimeRange = '7D' | '30D' | '90D' | 'YTD' | 'ALL';
 
 import { ChartContainer } from './ChartContainer';
 
+// 品种 fallback（与字典 COMMODITY 保持一致）
 const COMMODITY_OPTIONS_FALLBACK = [
     { label: '🌽 玉米', value: 'CORN' },
+    { label: '🌾 小麦', value: 'WHEAT' },
     { label: '🫘 大豆', value: 'SOYBEAN' },
-    { label: '🌾 水稻', value: 'RICE' },
+    { label: '🌾 稻谷', value: 'RICE' },
+    { label: '🌾 高粱', value: 'SORGHUM' },
+    { label: '🌾 大麦', value: 'BARLEY' },
 ];
 
 const REGION_OPTIONS_FALLBACK = [

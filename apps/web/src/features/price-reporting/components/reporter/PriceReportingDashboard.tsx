@@ -14,6 +14,7 @@ import {
 import { useMyAssignedPoints, useSubmissionStatistics } from '../../api/hooks';
 import { useMyTasks } from '../../../market-intel/api/tasks';
 import { useVirtualUser } from '@/features/auth/virtual-user';
+import { useDictionary } from '@/hooks/useDictionaries';
 import { IntelTaskStatus, IntelTaskType, INTEL_TASK_TYPE_LABELS } from '@packages/types';
 import dayjs from 'dayjs';
 import styles from './PriceReportingDashboard.module.css';
@@ -37,6 +38,10 @@ export const PriceReportingDashboard: React.FC = () => {
   const { data: assignedPoints, isLoading: loadingPoints } = useMyAssignedPoints(today, currentUser?.id);
   const { data: myTasks, isLoading: loadingTasks } = useMyTasks(currentUser?.id || '');
   const { data: stats } = useSubmissionStatistics(currentUser?.id);
+  
+  // 预加载关键字典数据，确保进入填报页面时字典已可用
+  useDictionary('PRICE_SUB_TYPE');
+  useDictionary('COMMODITY');
 
   // Filter tasks
   const pendingTasks = myTasks?.filter(t => t.status === IntelTaskStatus.PENDING || t.status === IntelTaskStatus.RETURNED) || [];

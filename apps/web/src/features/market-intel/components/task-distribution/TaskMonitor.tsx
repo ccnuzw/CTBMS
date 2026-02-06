@@ -1,5 +1,5 @@
 import React, { useRef, useState } from 'react';
-import { Button, Tag, Space, Typography, message, Modal, Input, Tabs } from 'antd';
+import { Button, Tag, Space, Typography, App, Modal, Input, Tabs } from 'antd';
 import { ActionType, ProColumns, ProTable } from '@ant-design/pro-components';
 import dayjs from 'dayjs';
 import {
@@ -16,15 +16,27 @@ import { useUsers } from '../../../users/api/users';
 import { apiClient } from '../../../../api/client';
 import { useVirtualUser } from '@/features/auth/virtual-user';
 import { CheckCircleOutlined, CloseCircleOutlined, EyeOutlined } from '@ant-design/icons';
+import { useModalAutoFocus } from '@/hooks/useModalAutoFocus';
 
 const { Text } = Typography;
 const { TextArea } = Input;
 
 export const TaskMonitor: React.FC = () => {
+    const { message, modal } = App.useApp();
     const actionRef = useRef<ActionType>();
     const { currentUser } = useVirtualUser();
     const { data: users = [] } = useUsers({ status: 'ACTIVE' });
     const reviewMutation = useReviewTask();
+    const {
+        containerRef: reviewContainerRef,
+        autoFocusFieldProps: reviewAutoFocusFieldProps,
+        modalProps: reviewModalProps,
+    } = useModalAutoFocus();
+    const {
+        containerRef: detailContainerRef,
+        focusRef: detailCloseRef,
+        modalProps: detailModalProps,
+    } = useModalAutoFocus();
 
     const [reviewModalOpen, setReviewModalOpen] = useState(false);
     const [detailModalOpen, setDetailModalOpen] = useState(false);
@@ -37,7 +49,7 @@ export const TaskMonitor: React.FC = () => {
         setCurrentTask(task);
         setReviewAction(action);
         if (action === 'APPROVE') {
-            Modal.confirm({
+            modal.confirm({
                 title: '确认通过任务？',
                 content: `任务：${task.title}`,
                 onOk: async () => {
@@ -260,59 +272,66 @@ export const TaskMonitor: React.FC = () => {
                 open={reviewModalOpen}
                 onOk={submitReject}
                 onCancel={() => setReviewModalOpen(false)}
+                {...reviewModalProps}
             >
-                <p>请输入驳回原因，将通知执行人修改：</p>
-                <TextArea
-                    rows={4}
-                    value={rejectReason}
-                    onChange={e => setRejectReason(e.target.value)}
-                    placeholder="例如：价格数据与市场行情偏差较大，请核实..."
-                />
+                <div ref={reviewContainerRef}>
+                    <p>请输入驳回原因，将通知执行人修改：</p>
+                    <TextArea
+                        rows={4}
+                        value={rejectReason}
+                        onChange={e => setRejectReason(e.target.value)}
+                        placeholder="例如：价格数据与市场行情偏差较大，请核实..."
+                        {...(reviewAutoFocusFieldProps as any)}
+                    />
+                </div>
             </Modal>
             <Modal
                 title="任务详情"
                 open={detailModalOpen}
                 onCancel={() => setDetailModalOpen(false)}
                 footer={[
-                    <Button key="close" onClick={() => setDetailModalOpen(false)}>
+                    <Button key="close" onClick={() => setDetailModalOpen(false)} ref={detailCloseRef}>
                         关闭
                     </Button>
                 ]}
+                {...detailModalProps}
             >
-                {currentTask && (
-                    <Space direction="vertical" style={{ width: '100%' }}>
-                        <Space>
-                            <Text strong>任务名称:</Text>
-                            <Text>{currentTask.title}</Text>
-                        </Space>
-                        <Space>
-                            <Text strong>执行人:</Text>
-                            <Text>{currentTask.assignee?.name || '-'}</Text>
-                        </Space>
-                        <Space>
-                            <Text strong>截止时间:</Text>
-                            <Text>{dayjs(currentTask.deadline).format('YYYY-MM-DD HH:mm')}</Text>
-                        </Space>
-                        <Space>
-                            <Text strong>状态:</Text>
-                            <Tag>{INTEL_TASK_STATUS_LABELS[currentTask.status]}</Tag>
-                        </Space>
-                        <div>
-                            <Text strong>任务描述:</Text>
-                            <div style={{ marginTop: 8, padding: 12, background: '#f5f5f5', borderRadius: 4 }}>
-                                {currentTask.description || '无描述'}
-                            </div>
-                        </div>
-                        {currentTask.requirements && (
+                <div ref={detailContainerRef}>
+                    {currentTask && (
+                        <Space direction="vertical" style={{ width: '100%' }}>
+                            <Space>
+                                <Text strong>任务名称:</Text>
+                                <Text>{currentTask.title}</Text>
+                            </Space>
+                            <Space>
+                                <Text strong>执行人:</Text>
+                                <Text>{currentTask.assignee?.name || '-'}</Text>
+                            </Space>
+                            <Space>
+                                <Text strong>截止时间:</Text>
+                                <Text>{dayjs(currentTask.deadline).format('YYYY-MM-DD HH:mm')}</Text>
+                            </Space>
+                            <Space>
+                                <Text strong>状态:</Text>
+                                <Tag>{INTEL_TASK_STATUS_LABELS[currentTask.status]}</Tag>
+                            </Space>
                             <div>
-                                <Text strong>任务要求:</Text>
+                                <Text strong>任务描述:</Text>
                                 <div style={{ marginTop: 8, padding: 12, background: '#f5f5f5', borderRadius: 4 }}>
-                                    {currentTask.requirements}
+                                    {currentTask.description || '无描述'}
                                 </div>
                             </div>
-                        )}
-                    </Space>
-                )}
+                            {currentTask.requirements && (
+                                <div>
+                                    <Text strong>任务要求:</Text>
+                                    <div style={{ marginTop: 8, padding: 12, background: '#f5f5f5', borderRadius: 4 }}>
+                                        {currentTask.requirements}
+                                    </div>
+                                </div>
+                            )}
+                        </Space>
+                    )}
+                </div>
             </Modal>
         </div>
     );

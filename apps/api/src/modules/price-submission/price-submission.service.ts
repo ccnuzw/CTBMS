@@ -11,7 +11,7 @@ import {
   ReviewPriceSubmissionDto,
   BatchSubmitPriceDto,
 } from './dto';
-import { SubmissionStatus, PriceReviewStatus, PriceInputMethod } from '@packages/types';
+import { SubmissionStatus, PriceReviewStatus, PriceInputMethod, IntelTaskStatus } from '@packages/types';
 
 @Injectable()
 export class PriceSubmissionService {
@@ -29,13 +29,21 @@ export class PriceSubmissionService {
 
   /**
    * 创建填报批次
+   * 
+   * 逻辑说明：
+   * - 如果有 taskId：每个任务对应独立的批次，通过 taskId 唯一关联
+   * - 如果没有 taskId（日常维护模式）：同一天同一采集点复用同一批次
    */
   async create(dto: CreatePriceSubmissionDto, submittedById: string) {
     if (!submittedById) {
       throw new BadRequestException('User ID is required');
     }
 
-    // 1. 检查任务关联 (taskId 必须唯一)
+    // 规范化日期为当天的 00:00:00.000
+    const effectiveDate = new Date(dto.effectiveDate);
+    effectiveDate.setHours(0, 0, 0, 0);
+
+    // 1. 任务模式：检查任务关联 (taskId 必须唯一对应一个批次)
     if (dto.taskId) {
       const existingTaskSubmission = await this.prisma.priceSubmission.findUnique({
         where: { taskId: dto.taskId },
@@ -49,22 +57,35 @@ export class PriceSubmissionService {
             data: { taskId: null },
           });
         } else {
-          // 如果已存在有效的关联提交，直接返回
+          // 如果已存在有效的关联提交，直接返回该批次
           return this.findOne(existingTaskSubmission.id);
         }
       }
+
+      // 任务模式下创建新的独立批次
+      return this.prisma.priceSubmission.create({
+        data: {
+          batchCode: this.generateBatchCode(),
+          submittedById,
+          collectionPointId: dto.collectionPointId,
+          effectiveDate: effectiveDate,
+          taskId: dto.taskId,
+          status: SubmissionStatus.DRAFT,
+        },
+        include: {
+          submittedBy: { select: { id: true, name: true, username: true } },
+          collectionPoint: { select: { id: true, code: true, name: true, type: true } },
+        },
+      });
     }
 
-    // 规范化日期为当天的 00:00:00.000
-    const effectiveDate = new Date(dto.effectiveDate);
-    effectiveDate.setHours(0, 0, 0, 0);
-
-    // 2. 检查是否已存在同一天同一采集点的批次
+    // 2. 日常维护模式（无 taskId）：检查是否已存在同一天同一采集点的批次
     const existing = await this.prisma.priceSubmission.findFirst({
       where: {
         collectionPointId: dto.collectionPointId,
         submittedById,
         effectiveDate: effectiveDate,
+        taskId: null, // 只查找无任务关联的批次
         status: { not: SubmissionStatus.REJECTED },
       },
     });
@@ -74,14 +95,14 @@ export class PriceSubmissionService {
       return this.findOne(existing.id);
     }
 
-    // 3. 创建新批次
+    // 3. 创建新批次（日常维护模式）
     return this.prisma.priceSubmission.create({
       data: {
         batchCode: this.generateBatchCode(),
         submittedById,
         collectionPointId: dto.collectionPointId,
         effectiveDate: effectiveDate,
-        taskId: dto.taskId,
+        taskId: null,
         status: SubmissionStatus.DRAFT,
       },
       include: {
@@ -285,13 +306,12 @@ export class PriceSubmissionService {
       },
     });
 
-    // 如果关联了任务，自动完成任务
+    // 如果关联了任务，将任务状态更新为 SUBMITTED（待审核）
     if (submission.taskId) {
       await this.prisma.intelTask.update({
         where: { id: submission.taskId },
         data: {
-          status: 'COMPLETED',
-          completedAt: new Date(),
+          status: 'SUBMITTED',
           priceSubmissionId: submissionId,
         },
       });
@@ -370,6 +390,16 @@ export class PriceSubmissionService {
     const submissionStatus = dto.action === 'approve_all' ? SubmissionStatus.APPROVED : SubmissionStatus.REJECTED;
     const approvedCount = dto.action === 'approve_all' ? submission.itemCount : 0;
 
+    // 如果是拒绝且关联了任务，将任务状态改为 RETURNED
+    if (submission.taskId && submissionStatus === SubmissionStatus.REJECTED) {
+      await this.prisma.intelTask.update({
+        where: { id: submission.taskId },
+        data: {
+          status: IntelTaskStatus.RETURNED,
+        },
+      });
+    }
+
     return this.prisma.priceSubmission.update({
       where: { id: submissionId },
       data: {
@@ -412,6 +442,24 @@ export class PriceSubmissionService {
       where: { id: submissionId },
       data: { approvedCount, status },
     });
+
+    // 如果状态发生变化，且关联了任务，同步更新任务状态
+    if (status === SubmissionStatus.REJECTED || status === SubmissionStatus.APPROVED) {
+      const submission = await this.prisma.priceSubmission.findUnique({
+        where: { id: submissionId },
+        select: { taskId: true }
+      });
+
+      if (submission?.taskId) {
+        await this.prisma.intelTask.update({
+          where: { id: submission.taskId },
+          data: {
+            status: status === SubmissionStatus.APPROVED ? IntelTaskStatus.COMPLETED : IntelTaskStatus.RETURNED,
+            completedAt: status === SubmissionStatus.APPROVED ? new Date() : undefined,
+          }
+        });
+      }
+    }
   }
 
   /**

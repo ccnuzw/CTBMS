@@ -39,6 +39,7 @@ interface RelationPanelProps {
 import { useRelatedIntel } from '../../../api/related-hooks';
 import { useMarketIntel } from '../../../api/hooks';
 import { useDictionaries } from '@/hooks/useDictionaries';
+import { stripHtml } from '../utils';
 
 const RELATION_TYPE_META_FALLBACK: Record<string, { label: string; color: string }> = {
     TIME: { label: '时间关联', color: 'blue' },
@@ -323,7 +324,7 @@ export const RelationPanel: React.FC<RelationPanelProps> = ({
                                             <ul style={{ paddingLeft: 16, margin: '4px 0 0 0', fontSize: 12 }}>
                                                 {Array.isArray(selectedIntel.researchReport.keyPoints) &&
                                                     selectedIntel.researchReport.keyPoints.map((p: any, i: number) => (
-                                                        <li key={i}>{typeof p === 'string' ? p : p.point}</li>
+                                                        <li key={i}>{stripHtml(typeof p === 'string' ? p : p.point)}</li>
                                                     ))}
                                             </ul>
                                         </>
@@ -346,7 +347,7 @@ export const RelationPanel: React.FC<RelationPanelProps> = ({
                                     ellipsis={{ rows: 6, expandable: true }}
                                     style={{ fontSize: 12, marginBottom: 0 }}
                                 >
-                                    {selectedIntel.rawContent || '暂无原文内容'}
+                                    {stripHtml(selectedIntel.rawContent) || '暂无原文内容'}
                                 </Paragraph>
                             </Card>
                         </div>
@@ -392,14 +393,14 @@ export const RelationPanel: React.FC<RelationPanelProps> = ({
                         <div>
                             <Text strong>摘要</Text>
                             <Paragraph style={{ marginTop: 6 }}>
-                                {detailData.summary || '暂无摘要'}
+                                {stripHtml(detailData.summary) || '暂无摘要'}
                             </Paragraph>
                         </div>
 
                         <div>
                             <Text strong>原文内容</Text>
                             <Paragraph style={{ marginTop: 6 }}>
-                                {detailData.rawContent || '暂无原文内容'}
+                                {stripHtml(detailData.rawContent) || '暂无原文内容'}
                             </Paragraph>
                         </div>
                     </Space>

@@ -13,6 +13,9 @@ import {
     Space,
     Typography,
     Cascader,
+    Flex,
+    Button,
+    theme,
 } from 'antd';
 import {
     SettingOutlined,
@@ -55,6 +58,7 @@ export const CollectionPointEditor: React.FC<CollectionPointEditorProps> = ({
     const [form] = Form.useForm();
     const isEdit = !!editId;
     const { message } = App.useApp();
+    const { token } = theme.useToken();
     const { containerRef, autoFocusFieldProps, modalProps } = useModalAutoFocus();
 
     const { data: editData, isLoading: loadingData } = useCollectionPoint(editId);
@@ -66,15 +70,16 @@ export const CollectionPointEditor: React.FC<CollectionPointEditorProps> = ({
     const priceSubTypeOptions = useMemo(() => {
         const items = (priceSubTypeDict || []).filter((item) => item.isActive);
         if (!items.length) {
+            // Fallback: 与字典 PRICE_SUB_TYPE 保持一致
             return [
                 { value: 'LISTED', label: '挂牌价' },
                 { value: 'TRANSACTION', label: '成交价' },
                 { value: 'ARRIVAL', label: '到港价' },
                 { value: 'FOB', label: '平舱价' },
-                { value: 'STATION_ORIGIN', label: '站台价-产区' },
-                { value: 'STATION_DEST', label: '站台价-销区' },
+                { value: 'STATION', label: '站台价' },
                 { value: 'PURCHASE', label: '收购价' },
                 { value: 'WHOLESALE', label: '批发价' },
+                { value: 'OTHER', label: '其他' },
             ];
         }
         return items.map((item) => ({ value: item.code, label: item.label }));
@@ -365,16 +370,57 @@ export const CollectionPointEditor: React.FC<CollectionPointEditorProps> = ({
 
                     <Form.List name="commodityConfigs">
                         {(fields, { add, remove }) => (
-                            <>
+                            <Flex vertical gap={12}>
                                 {fields.map(({ key, name, ...restField }) => (
-                                    <React.Fragment key={key}>
-                                        <Row gutter={16} align="bottom">
-                                            <Col span={6}>
+                                    <div
+                                        key={key}
+                                        style={{
+                                            background: token.colorBgContainer,
+                                            border: `1px solid ${token.colorBorderSecondary}`,
+                                            borderRadius: token.borderRadiusLG,
+                                            padding: '16px',
+                                            position: 'relative',
+                                        }}
+                                    >
+                                        {/* 删除按钮 - 扩大点击区域 */}
+                                        <div
+                                            onClick={() => remove(name)}
+                                            style={{
+                                                position: 'absolute',
+                                                top: 4,
+                                                right: 4,
+                                                width: 32,
+                                                height: 32,
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                justifyContent: 'center',
+                                                cursor: 'pointer',
+                                                borderRadius: '50%',
+                                                transition: 'background-color 0.2s',
+                                                zIndex: 10,
+                                            }}
+                                            onMouseEnter={(e) => {
+                                                e.currentTarget.style.backgroundColor = token.colorErrorBg;
+                                            }}
+                                            onMouseLeave={(e) => {
+                                                e.currentTarget.style.backgroundColor = 'transparent';
+                                            }}
+                                        >
+                                            <MinusCircleOutlined
+                                                style={{
+                                                    color: token.colorError,
+                                                    fontSize: 18,
+                                                }}
+                                            />
+                                        </div>
+                                        <Row gutter={16}>
+                                            <Col xs={24} sm={8}>
                                                 <Form.Item
                                                     {...restField}
                                                     name={[name, 'name']}
-                                                    label="品种名称"
-                                                    rules={[{ required: true, message: '请选择品种' }]}
+                                                    label="品种"
+                                                    rules={[{ required: true, message: '请选择' }]}
+                                                    style={{ marginBottom: 0 }}
                                                 >
                                                     <Select
                                                         placeholder="选择品种"
@@ -389,26 +435,29 @@ export const CollectionPointEditor: React.FC<CollectionPointEditorProps> = ({
                                                     />
                                                 </Form.Item>
                                             </Col>
-                                            <Col span={10}>
+                                            <Col xs={24} sm={10}>
                                                 <Form.Item
                                                     {...restField}
                                                     name={[name, 'allowedSubTypes']}
                                                     label="允许的价格类型"
                                                     rules={[{ required: true, message: '至少选一种' }]}
+                                                    style={{ marginBottom: 0 }}
                                                 >
                                                     <Select
                                                         mode="multiple"
-                                                        placeholder="支持的价格类型"
+                                                        placeholder="可多选"
                                                         options={priceSubTypeOptions}
+                                                        maxTagCount="responsive"
                                                     />
                                                 </Form.Item>
                                             </Col>
-                                            <Col span={6}>
+                                            <Col xs={24} sm={6}>
                                                 <Form.Item
                                                     shouldUpdate={(prev, curr) =>
                                                         prev.commodityConfigs?.[name]?.allowedSubTypes !==
                                                         curr.commodityConfigs?.[name]?.allowedSubTypes
                                                     }
+                                                    style={{ marginBottom: 0 }}
                                                 >
                                                     {({ getFieldValue }) => {
                                                         const allowed = getFieldValue(['commodityConfigs', name, 'allowedSubTypes']) || [];
@@ -422,14 +471,15 @@ export const CollectionPointEditor: React.FC<CollectionPointEditorProps> = ({
                                                                     {
                                                                         validator: async (_, value) => {
                                                                             if (value && !allowed.includes(value)) {
-                                                                                return Promise.reject(new Error('无效默认值'));
+                                                                                return Promise.reject(new Error('无效'));
                                                                             }
                                                                         }
                                                                     }
                                                                 ]}
+                                                                style={{ marginBottom: 0 }}
                                                             >
                                                                 <Select
-                                                                    placeholder="默认类型"
+                                                                    placeholder="选择"
                                                                     options={priceSubTypeOptions.filter(o => allowed.includes(o.value))}
                                                                 />
                                                             </Form.Item>
@@ -437,32 +487,18 @@ export const CollectionPointEditor: React.FC<CollectionPointEditorProps> = ({
                                                     }}
                                                 </Form.Item>
                                             </Col>
-                                            <Col span={2}>
-                                                <Form.Item label=" ">
-                                                    <MinusCircleOutlined onClick={() => remove(name)} style={{ color: 'red' }} />
-                                                </Form.Item>
-                                            </Col>
                                         </Row>
-                                        <Divider style={{ margin: '0 0 16px 0' }} dashed />
-                                    </React.Fragment>
+                                    </div>
                                 ))}
-                                <Form.Item>
-                                    <button
-                                        type="button"
-                                        onClick={() => add()}
-                                        style={{
-                                            width: '100%',
-                                            border: '1px dashed #d9d9d9',
-                                            backgroundColor: 'transparent',
-                                            cursor: 'pointer',
-                                            padding: '8px 0',
-                                            borderRadius: '6px',
-                                        }}
-                                    >
-                                        <PlusOutlined /> 添加经营品种
-                                    </button>
-                                </Form.Item>
-                            </>
+                                <Button
+                                    type="dashed"
+                                    onClick={() => add({ name: '', allowedSubTypes: [], defaultSubType: '' })}
+                                    block
+                                    icon={<PlusOutlined />}
+                                >
+                                    添加经营品种
+                                </Button>
+                            </Flex>
                         )}
                     </Form.List>
 
@@ -515,9 +551,9 @@ export const CollectionPointEditor: React.FC<CollectionPointEditorProps> = ({
                     <Form.Item name="description" label="备注">
                         <TextArea rows={2} placeholder="可选备注信息" />
                     </Form.Item>
-                </Form >
-            </div >
-        </Modal >
+                </Form>
+            </div>
+        </Modal>
     );
 };
 

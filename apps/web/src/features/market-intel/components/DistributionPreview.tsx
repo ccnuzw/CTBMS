@@ -10,6 +10,7 @@ import {
   BankOutlined,
   ApartmentOutlined
 } from '@ant-design/icons';
+import { useModalAutoFocus } from '@/hooks/useModalAutoFocus';
 
 const { Text, Title } = Typography;
 
@@ -30,6 +31,8 @@ export const DistributionPreview: React.FC<DistributionPreviewProps> = ({
   onExecute,
   executing
 }) => {
+  const { containerRef, focusRef, modalProps } = useModalAutoFocus();
+
   if (!data) return null;
 
   const columns = [
@@ -105,7 +108,7 @@ export const DistributionPreview: React.FC<DistributionPreviewProps> = ({
       onCancel={onCancel}
       width={800}
       footer={[
-        <Button key="cancel" onClick={onCancel}>
+        <Button key="cancel" onClick={onCancel} ref={focusRef}>
           取消
         </Button>,
         <Button
@@ -118,66 +121,69 @@ export const DistributionPreview: React.FC<DistributionPreviewProps> = ({
           确认执行 ({data.totalTasks}个任务)
         </Button>
       ]}
+      {...modalProps}
     >
-      <Row gutter={16} style={{ marginBottom: 24 }}>
-        <Col span={8}>
-          <Card bordered={false} style={{ background: '#f6ffed', textAlign: 'center' }}>
-            <Statistic
-              title="将生成的任务总数"
-              value={data.totalTasks}
-              prefix={<CheckCircleOutlined />}
-              valueStyle={{ color: '#3f8600' }}
-            />
-          </Card>
-        </Col>
-        <Col span={8}>
-          <Card bordered={false} style={{ background: '#e6f7ff', textAlign: 'center' }}>
-            <Statistic
-              title="涉及业务员人数"
-              value={data.totalAssignees}
-              prefix={<UserOutlined />}
-              valueStyle={{ color: '#1890ff' }}
-            />
-          </Card>
-        </Col>
-        <Col span={8}>
-          <Card bordered={false} style={{ background: '#fff7e6', textAlign: 'center' }}>
-            <Statistic
-              title="未分配采集点"
-              value={data.unassignedPoints?.length || 0}
-              prefix={<WarningOutlined />}
-              valueStyle={{ color: '#fa8c16' }}
-            />
-          </Card>
-        </Col>
-      </Row>
+      <div ref={containerRef}>
+        <Row gutter={16} style={{ marginBottom: 24 }}>
+          <Col span={8}>
+            <Card bordered={false} style={{ background: '#f6ffed', textAlign: 'center' }}>
+              <Statistic
+                title="将生成的任务总数"
+                value={data.totalTasks}
+                prefix={<CheckCircleOutlined />}
+                valueStyle={{ color: '#3f8600' }}
+              />
+            </Card>
+          </Col>
+          <Col span={8}>
+            <Card bordered={false} style={{ background: '#e6f7ff', textAlign: 'center' }}>
+              <Statistic
+                title="涉及业务员人数"
+                value={data.totalAssignees}
+                prefix={<UserOutlined />}
+                valueStyle={{ color: '#1890ff' }}
+              />
+            </Card>
+          </Col>
+          <Col span={8}>
+            <Card bordered={false} style={{ background: '#fff7e6', textAlign: 'center' }}>
+              <Statistic
+                title="未分配采集点"
+                value={data.unassignedPoints?.length || 0}
+                prefix={<WarningOutlined />}
+                valueStyle={{ color: '#fa8c16' }}
+              />
+            </Card>
+          </Col>
+        </Row>
 
-      {data.unassignedPoints && data.unassignedPoints.length > 0 && (
-        <Alert
-          message="注意：以下采集点未分配负责人，将不会生成任务"
-          description={
-            <div style={{ marginTop: 8, maxHeight: 100, overflow: 'auto' }}>
-              {data.unassignedPoints.map(p => (
-                <Tag key={p.id} color="warning">{p.name}</Tag>
-              ))}
-            </div>
-          }
-          type="warning"
-          showIcon
-          style={{ marginBottom: 24 }}
+        {data.unassignedPoints && data.unassignedPoints.length > 0 && (
+          <Alert
+            message="注意：以下采集点未分配负责人，将不会生成任务"
+            description={
+              <div style={{ marginTop: 8, maxHeight: 100, overflow: 'auto' }}>
+                {data.unassignedPoints.map(p => (
+                  <Tag key={p.id} color="warning">{p.name}</Tag>
+                ))}
+              </div>
+            }
+            type="warning"
+            showIcon
+            style={{ marginBottom: 24 }}
+          />
+        )}
+
+        <Divider orientation="left">分发详情</Divider>
+
+        <Table
+          columns={columns}
+          dataSource={data.assignees}
+          rowKey="userId"
+          pagination={{ pageSize: 5 }}
+          size="small"
+          scroll={{ y: 300 }}
         />
-      )}
-
-      <Divider orientation="left">分发详情</Divider>
-
-      <Table
-        columns={columns}
-        dataSource={data.assignees}
-        rowKey="userId"
-        pagination={{ pageSize: 5 }}
-        size="small"
-        scroll={{ y: 300 }}
-      />
+      </div>
     </Modal>
   );
 };

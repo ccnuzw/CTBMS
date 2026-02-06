@@ -16,11 +16,14 @@ interface PriceMonitorWidgetProps {
     defaultLocation?: string;
 }
 
+// 品种 fallback（与字典 COMMODITY 保持一致）
 const COMMODITY_OPTIONS_FALLBACK = [
     { label: '玉米', value: 'CORN' },
-    { label: '大豆', value: 'SOYBEAN' },
     { label: '小麦', value: 'WHEAT' },
-    { label: '豆粕', value: 'SOYMEAL' }
+    { label: '大豆', value: 'SOYBEAN' },
+    { label: '稻谷', value: 'RICE' },
+    { label: '高粱', value: 'SORGHUM' },
+    { label: '大麦', value: 'BARLEY' },
 ];
 
 const LOCATION_OPTIONS_FALLBACK = [

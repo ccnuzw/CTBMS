@@ -1,7 +1,8 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma';
-import { CreatePriceDataDto, PriceDataQuery, PriceSubType } from '@packages/types';
+import { CreatePriceDataDto, PriceDataQuery, PriceSubType as TypesPriceSubType } from '@packages/types';
 import { Decimal } from '@prisma/client/runtime/library';
+import { PriceSubType } from '@prisma/client';
 
 @Injectable()
 export class PriceDataService {

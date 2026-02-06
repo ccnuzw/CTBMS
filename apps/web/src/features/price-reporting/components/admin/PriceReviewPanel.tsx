@@ -1,13 +1,13 @@
 import React, { useState } from 'react';
-import { Card, Table, Button, Space, Tag, message, Modal, Tabs, Row, Col, Statistic } from 'antd';
+import { Card, Table, Button, Space, Tag, App, Row, Col, Statistic } from 'antd';
 import { CheckOutlined, CloseOutlined } from '@ant-design/icons';
 import {
   usePendingReviews,
   useReviewSubmission,
   useSubmissionStatistics,
-  SubmissionStatus,
-  PriceReviewStatus,
 } from '../../api/hooks';
+import { useDictionary } from '@/hooks/useDictionaries';
+import { usePriceSubTypeLabels } from '@/utils/priceSubType';
 
 const STATUS_MAP: Record<string, { text: string; color: string }> = {
   DRAFT: { text: '草稿', color: 'default' },
@@ -18,14 +18,19 @@ const STATUS_MAP: Record<string, { text: string; color: string }> = {
 };
 
 export const PriceReviewPanel: React.FC = () => {
+  const { message, modal } = App.useApp();
   const [query, setQuery] = useState({ page: 1, pageSize: 20 });
 
   const { data: pendingReviews, isLoading } = usePendingReviews(query);
   const { data: stats } = useSubmissionStatistics();
   const reviewSubmission = useReviewSubmission();
+  const { data: priceSubTypeDict } = useDictionary('PRICE_SUB_TYPE');
+
+  // 统一的价格类型标签映射（字典优先，兜底中文）
+  const priceSubTypeLabels = usePriceSubTypeLabels(priceSubTypeDict);
 
   const handleApprove = (submissionId: string) => {
-    Modal.confirm({
+    modal.confirm({
       title: '确认通过？',
       content: '将批准该批次的所有价格数据',
       onOk: async () => {
@@ -43,7 +48,7 @@ export const PriceReviewPanel: React.FC = () => {
   };
 
   const handleReject = (submissionId: string) => {
-    Modal.confirm({
+    modal.confirm({
       title: '确认拒绝？',
       content: '将拒绝该批次的所有价格数据',
       okButtonProps: { danger: true },
@@ -134,7 +139,14 @@ export const PriceReviewPanel: React.FC = () => {
   const expandedRowRender = (record: any) => {
     const priceColumns = [
       { title: '品种', dataIndex: 'commodity', key: 'commodity' },
-      { title: '价格类型', dataIndex: 'subType', key: 'subType' },
+      {
+        title: '价格类型',
+        dataIndex: 'subType',
+        key: 'subType',
+        render: (subType: string) => (
+          <Tag color="blue">{priceSubTypeLabels[subType] || subType}</Tag>
+        ),
+      },
       {
         title: '价格',
         dataIndex: 'price',

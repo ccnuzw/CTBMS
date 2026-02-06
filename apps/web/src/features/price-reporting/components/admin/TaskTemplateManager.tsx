@@ -11,7 +11,7 @@ import {
   Select,
   Switch,
   InputNumber,
-  message,
+  App,
   Popconfirm,
   Tooltip,
   Row,
@@ -145,6 +145,7 @@ export const TaskTemplateManager: React.FC = () => {
   const [pointScope, setPointScope] = useState<'TYPE' | 'POINTS'>('TYPE');
 
   const [form] = Form.useForm();
+  const { message } = App.useApp();
 
   // 数据查询
   const { data: templates, isLoading } = useTaskTemplates();

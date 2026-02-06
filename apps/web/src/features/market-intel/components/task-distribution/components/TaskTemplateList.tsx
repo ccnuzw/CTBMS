@@ -523,9 +523,7 @@ export const TaskTemplateList: React.FC = () => {
                                     { label: '按组织', value: 'BY_ORGANIZATION' },
                                 ]).map((option) => ({
                                     ...option,
-                                    disabled: isPriceCollection
-                                        ? option.value !== 'BY_COLLECTION_POINT'
-                                        : option.value === 'MANUAL' ? false : option.disabled,
+                                    disabled: isPriceCollection && option.value !== 'BY_COLLECTION_POINT',
                                 }))}
                                 disabled={isPriceCollection}
                                 help={isPriceCollection ? "价格采集任务必须绑定具体的采集点，因此只能按采集点分配。" : undefined}
@@ -602,14 +600,14 @@ export const TaskTemplateList: React.FC = () => {
                                                 );
                                             }
                                             return (
-                                                    <ProFormSelect
-                                                        name="collectionPointIds"
-                                                        label="选择采集点"
-                                                        fieldProps={{
-                                                            mode: 'multiple',
-                                                            showSearch: true,
-                                                            optionFilterProp: 'label'
-                                                        }}
+                                                <ProFormSelect
+                                                    name="collectionPointIds"
+                                                    label="选择采集点"
+                                                    fieldProps={{
+                                                        mode: 'multiple',
+                                                        showSearch: true,
+                                                        optionFilterProp: 'label'
+                                                    }}
                                                     options={collectionPoints.map(p => ({
                                                         label: `${p.name} (${collectionPointTypeLabels[p.type] || p.type})`,
                                                         value: p.id,

@@ -13,6 +13,7 @@ import {
 import { usePriceData } from '../../api/hooks';
 import type { PriceDataResponse, PriceSubType } from '@packages/types';
 import { useDictionary } from '@/hooks/useDictionaries';
+import { usePriceSubTypeLabels } from '@/utils/priceSubType';
 
 const { Text } = Typography;
 
@@ -33,17 +34,7 @@ const POINT_TYPE_LABELS_FALLBACK: Record<string, string> = {
     STATION: '站台',
 };
 
-const PRICE_SUB_TYPE_LABELS_FALLBACK: Record<string, string> = {
-    LISTED: '挂牌价',
-    TRANSACTION: '成交价',
-    ARRIVAL: '到港价',
-    FOB: '平舱价',
-    STATION_ORIGIN: '产区站台',
-    STATION_DEST: '销区站台',
-    PURCHASE: '收购价',
-    WHOLESALE: '批发价',
-    OTHER: '其他',
-};
+
 
 const COMMODITY_LABELS_FALLBACK: Record<string, string> = {
     CORN: '玉米',
@@ -78,14 +69,8 @@ export const DataGrid: React.FC<DataGridProps> = ({
     const { data: pointTypeDict } = useDictionary('COLLECTION_POINT_TYPE');
     const { data: commodityDict } = useDictionary('COMMODITY');
 
-    const priceSubTypeLabels = useMemo(() => {
-        const items = (priceSubTypeDict || []).filter((item) => item.isActive);
-        if (!items.length) return PRICE_SUB_TYPE_LABELS_FALLBACK;
-        return items.reduce<Record<string, string>>((acc, item) => {
-            acc[item.code] = item.label;
-            return acc;
-        }, {});
-    }, [priceSubTypeDict]);
+    // 统一的价格类型标签映射（字典优先，兜底中文）
+    const priceSubTypeLabels = usePriceSubTypeLabels(priceSubTypeDict);
 
     const pointTypeLabels = useMemo(() => {
         const items = (pointTypeDict || []).filter((item) => item.isActive);

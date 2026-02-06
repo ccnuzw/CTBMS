@@ -21,6 +21,7 @@ import dayjs from 'dayjs';
 import { useNavigate } from 'react-router-dom';
 import { IntelItem } from '../../types';
 import { useIncrementViewCount, useIncrementDownloadCount } from '../../../../api/hooks';
+import { stripHtml } from '../../utils';
 
 const { Text, Paragraph, Title } = Typography;
 
@@ -189,7 +190,7 @@ export const ResearchReportCard: React.FC<ResearchReportCardProps> = ({
                 ellipsis={{ rows: 2 }}
                 style={{ marginBottom: 12, color: token.colorText }}
             >
-                {reportData.summary || intel.summary || '暂无摘要'}
+                {stripHtml(reportData.summary || intel.summary) || '暂无摘要'}
             </Paragraph>
 
             {/* 核心观点 */}
@@ -202,7 +203,7 @@ export const ResearchReportCard: React.FC<ResearchReportCardProps> = ({
                     <ul style={{ margin: 0, paddingLeft: 20 }}>
                         {keyPoints.slice(0, 3).map((point: string, idx: number) => (
                             <li key={idx} style={{ fontSize: 13, marginBottom: 4 }}>
-                                {point}
+                                {stripHtml(point)}
                             </li>
                         ))}
                     </ul>

@@ -36,10 +36,10 @@ const TARGET_OPTIONS_FALLBACK: Record<string, Record<string, string>> = {
         TRANSACTION: '成交价 (TRANSACTION)',
         ARRIVAL: '到港价 (ARRIVAL)',
         FOB: '平舱价 (FOB)',
-        STATION_ORIGIN: '站台-产区 (STATION_ORIGIN)',
-        STATION_DEST: '站台-销区 (STATION_DEST)',
+        STATION: '站台价 (STATION)',
         PURCHASE: '收购价 (PURCHASE)',
         WHOLESALE: '批发价 (WHOLESALE)',
+        OTHER: '其他 (OTHER)',
     },
     SENTIMENT: {
         positive: '积极/看涨 (positive)',

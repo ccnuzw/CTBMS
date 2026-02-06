@@ -86,7 +86,7 @@ export const DataDictionaryPage = () => {
     const [selectedDomainCode, setSelectedDomainCode] = useState<string | null>(null);
     const [includeInactiveDomains, setIncludeInactiveDomains] = useState(true);
     const [includeInactiveItems, setIncludeInactiveItems] = useState(true);
-    const [categoryFilter, setCategoryFilter] = useState<string | null>(null);
+    const [categoryFilter, setCategoryFilter] = useState<string>('');
     const [searchText, setSearchText] = useState('');
 
     const [domainModalOpen, setDomainModalOpen] = useState(false);
@@ -528,7 +528,7 @@ export const DataDictionaryPage = () => {
                                 optionType="button"
                                 size="small"
                             >
-                                <Radio.Button value={null}>全部</Radio.Button>
+                                <Radio.Button value="">全部</Radio.Button>
                                 {DOMAIN_CATEGORY_OPTIONS.map((opt) => (
                                     <Radio.Button key={opt.value} value={opt.value}>
                                         {opt.label}

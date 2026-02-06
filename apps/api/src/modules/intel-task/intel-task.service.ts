@@ -360,7 +360,7 @@ export class IntelTaskService {
             where: {
                 assigneeId: userId,
                 status: {
-                    in: [IntelTaskStatus.PENDING, IntelTaskStatus.OVERDUE],
+                    in: [IntelTaskStatus.PENDING, IntelTaskStatus.OVERDUE, IntelTaskStatus.RETURNED],
                 },
             },
             orderBy: { deadline: 'asc' },
@@ -494,12 +494,35 @@ export class IntelTaskService {
      * 记录操作历史
      */
     private async logHistory(taskId: string, operatorId: string, action: string, details: any) {
-        // 简单验证用户是否存在，避免外键错误 (生产环境可能不需要查询，直接依靠DB约束)
-        // 这里为了安全起见
+        // 验证用户是否存在，避免外键错误
+        let validOperatorId = operatorId;
+
+        if (operatorId) {
+            const user = await this.prisma.user.findUnique({ where: { id: operatorId } });
+            if (!user) {
+                // 如果指定的 operatorId 不存在，尝试使用任务的 assigneeId
+                const task = await this.prisma.intelTask.findUnique({
+                    where: { id: taskId },
+                    select: { assigneeId: true }
+                });
+                validOperatorId = task?.assigneeId || operatorId;
+
+                // 再次验证 assigneeId 是否存在
+                if (validOperatorId !== operatorId) {
+                    const assignee = await this.prisma.user.findUnique({ where: { id: validOperatorId } });
+                    if (!assignee) {
+                        // 如果都不存在，跳过记录历史
+                        console.warn(`logHistory: 无法找到有效的操作人 ID (operatorId: ${operatorId}, assigneeId: ${task?.assigneeId})`);
+                        return null;
+                    }
+                }
+            }
+        }
+
         return this.prisma.intelTaskHistory.create({
             data: {
                 taskId,
-                operatorId,
+                operatorId: validOperatorId,
                 action,
                 details: details || {},
             }
