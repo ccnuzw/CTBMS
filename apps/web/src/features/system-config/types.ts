@@ -28,6 +28,7 @@ export interface AIModelConfig extends BaseEntity {
     pathOverrides?: Record<string, string> | string;
     modelFetchMode?: 'official' | 'manual' | 'custom';
     allowUrlProbe?: boolean;
+    allowCompatPathFallback?: boolean;
     temperature: number;
     maxTokens: number;
     maxRetries: number;

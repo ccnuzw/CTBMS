@@ -45,7 +45,7 @@ export class CollectionPointService {
                 ...processedDto,
                 commodityConfigs: dto.commodityConfigs as unknown as Prisma.InputJsonValue,
                 createdById,
-            },
+            } as Prisma.CollectionPointUncheckedCreateInput,
             include: {
                 region: true,
                 enterprise: {
@@ -182,7 +182,7 @@ export class CollectionPointService {
             data: {
                 ...processedDto,
                 commodityConfigs: dto.commodityConfigs as unknown as Prisma.InputJsonValue,
-            },
+            } as Prisma.CollectionPointUncheckedUpdateInput,
             include: {
                 region: true,
                 enterprise: {
@@ -237,8 +237,8 @@ export class CollectionPointService {
             try {
                 await this.prisma.collectionPoint.upsert({
                     where: { code: point.code },
-                    update: { ...point },
-                    create: { ...point, createdById },
+                    update: { ...point } as Prisma.CollectionPointUncheckedUpdateInput,
+                    create: { ...point, createdById } as Prisma.CollectionPointUncheckedCreateInput,
                 });
                 results.success++;
             } catch (error: unknown) {

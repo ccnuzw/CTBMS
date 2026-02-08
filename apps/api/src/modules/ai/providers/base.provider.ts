@@ -8,6 +8,7 @@ export interface AIRequestOptions {
   pathOverrides?: Record<string, string>;
   modelFetchMode?: 'official' | 'manual' | 'custom';
   allowUrlProbe?: boolean;
+  allowCompatPathFallback?: boolean;
   temperature?: number;
   maxTokens?: number;
   topP?: number;
@@ -42,6 +43,8 @@ export interface IAIProvider {
     modelId: string;
     response?: string;
     error?: string;
+    authMode?: string;
+    pathUsed?: string;
   }>;
 
   /**

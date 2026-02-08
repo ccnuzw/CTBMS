@@ -392,7 +392,7 @@ export class PriceSubmissionService {
 
     // 如果是拒绝且关联了任务，将任务状态改为 RETURNED
     if (submission.taskId && submissionStatus === SubmissionStatus.REJECTED) {
-      await this.prisma.intelTask.update({
+      await this.prisma.intelTask.updateMany({
         where: { id: submission.taskId },
         data: {
           status: IntelTaskStatus.RETURNED,
@@ -451,12 +451,12 @@ export class PriceSubmissionService {
       });
 
       if (submission?.taskId) {
-        await this.prisma.intelTask.update({
+        await this.prisma.intelTask.updateMany({
           where: { id: submission.taskId },
           data: {
             status: status === SubmissionStatus.APPROVED ? IntelTaskStatus.COMPLETED : IntelTaskStatus.RETURNED,
             completedAt: status === SubmissionStatus.APPROVED ? new Date() : undefined,
-          }
+          },
         });
       }
     }

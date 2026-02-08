@@ -32,6 +32,15 @@ const { Title, Text, Paragraph } = Typography;
 
 type TabKey = 'trend' | 'comparison' | 'data';
 
+const COMMODITY_LABELS_FALLBACK: Record<string, string> = {
+    CORN: '玉米',
+    WHEAT: '小麦',
+    SOYBEAN: '大豆',
+    RICE: '稻谷',
+    SORGHUM: '高粱',
+    BARLEY: '大麦',
+};
+
 export const MarketData: React.FC = () => {
     const { token } = theme.useToken();
     const queryClient = useQueryClient();
@@ -52,9 +61,12 @@ export const MarketData: React.FC = () => {
     const [helpVisible, setHelpVisible] = useState(false);
     const { containerRef, modalProps, focusRef } = useModalAutoFocus();
 
-    // 将 commodity code 转换为 label (用于 API 查询，因为数据库存储的是中文标签)
-    const commodityLabel = useMemo(() => {
-        if (!commodityDict) return commodity; // 字典未加载时用 code
+    // 显示文案统一使用中文兜底，避免字典被改成英文后界面显示 code
+    const commodityDisplayLabel = useMemo(() => {
+        const fallbackLabel = COMMODITY_LABELS_FALLBACK[commodity];
+        if (fallbackLabel) return fallbackLabel;
+
+        if (!commodityDict) return commodity;
         const found = commodityDict.find((item) => item.code === commodity);
         return found?.label || commodity;
     }, [commodity, commodityDict]);
@@ -89,7 +101,7 @@ export const MarketData: React.FC = () => {
                 <Space direction="vertical" size={16} style={{ width: '100%' }}>
                     {/* 智能洞察 */}
                     <InsightCards
-                        commodity={commodityLabel}
+                        commodity={commodity}
                         startDate={startDate}
                         endDate={endDate}
                         selectedPointIds={selectedPointIds}
@@ -97,7 +109,8 @@ export const MarketData: React.FC = () => {
                     />
                     {/* 趋势图表 */}
                     <TrendChart
-                        commodity={commodityLabel}
+                        commodity={commodity}
+                        commodityLabel={commodityDisplayLabel}
                         startDate={startDate}
                         endDate={endDate}
                         selectedPointIds={selectedPointIds}
@@ -118,7 +131,7 @@ export const MarketData: React.FC = () => {
             ),
             children: (
                 <ComparisonPanel
-                    commodity={commodityLabel}
+                    commodity={commodity}
                     startDate={startDate}
                     endDate={endDate}
                     selectedPointIds={selectedPointIds}
@@ -142,7 +155,7 @@ export const MarketData: React.FC = () => {
             ),
             children: (
                 <DataGrid
-                    commodity={commodityLabel}
+                    commodity={commodity}
                     startDate={startDate}
                     endDate={endDate}
                     selectedPointIds={selectedPointIds}

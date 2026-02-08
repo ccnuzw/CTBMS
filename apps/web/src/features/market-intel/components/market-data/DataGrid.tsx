@@ -82,12 +82,20 @@ export const DataGrid: React.FC<DataGridProps> = ({
     }, [pointTypeDict]);
 
     const commodityLabels = useMemo(() => {
+        const baseMap: Record<string, string> = {};
+        Object.entries(COMMODITY_LABELS_FALLBACK).forEach(([code, label]) => {
+            baseMap[code] = label;
+            baseMap[label] = label;
+        });
+
         const items = (commodityDict || []).filter((item) => item.isActive);
-        if (!items.length) return COMMODITY_LABELS_FALLBACK;
+        if (!items.length) return baseMap;
         return items.reduce<Record<string, string>>((acc, item) => {
-            acc[item.code] = item.label;
+            const preferredLabel = COMMODITY_LABELS_FALLBACK[item.code] || item.label;
+            acc[item.code] = preferredLabel;
+            acc[item.label] = preferredLabel;
             return acc;
-        }, {});
+        }, { ...baseMap });
     }, [commodityDict]);
 
     // 获取价格数据
@@ -169,7 +177,7 @@ export const DataGrid: React.FC<DataGridProps> = ({
                     new Date(item.effectiveDate).toLocaleDateString(),
                     item.location,
                     pointTypeLabels[pointType] || pointType || '-',
-                    item.commodity,
+                    commodityLabels[item.commodity] || item.commodity,
                     priceSubTypeLabels[item.subType] || item.subType,
                     item.price,
                     item.dayChange ?? '',

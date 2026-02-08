@@ -1514,6 +1514,7 @@ model AIModelConfig {
   pathOverrides Json?
   modelFetchMode String? // official | manual | custom
   allowUrlProbe Boolean? @default(true)
+  allowCompatPathFallback Boolean? @default(true)
   
   temperature  Float    @default(0.3)
   maxTokens    Int      @default(8192)

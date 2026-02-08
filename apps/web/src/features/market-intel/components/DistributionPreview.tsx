@@ -107,6 +107,7 @@ export const DistributionPreview: React.FC<DistributionPreviewProps> = ({
       open={open}
       onCancel={onCancel}
       width={800}
+      focusTriggerAfterClose={false}
       footer={[
         <Button key="cancel" onClick={onCancel} ref={focusRef}>
           取消

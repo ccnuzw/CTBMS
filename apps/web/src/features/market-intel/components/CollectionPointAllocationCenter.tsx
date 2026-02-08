@@ -27,6 +27,13 @@ export const CollectionPointAllocationCenter: React.FC<CollectionPointAllocation
   const [isHelpModalOpen, setIsHelpModalOpen] = useState(false);
   const { data: stats } = useAllocationStatistics();
   const { containerRef, focusRef, modalProps } = useModalAutoFocus();
+  const blurActiveElement = () => {
+    if (typeof document === 'undefined') return;
+    const active = document.activeElement;
+    if (active instanceof HTMLElement) {
+      active.blur();
+    }
+  };
 
   return (
     <App>
@@ -48,7 +55,10 @@ export const CollectionPointAllocationCenter: React.FC<CollectionPointAllocation
                   <Tag
                     icon={<InfoCircleOutlined />}
                     style={{ cursor: 'pointer', margin: 0 }}
-                    onClick={() => setIsHelpModalOpen(true)}
+                    onClick={() => {
+                      blurActiveElement();
+                      setIsHelpModalOpen(true);
+                    }}
                   >
                     配置说明
                   </Tag>
@@ -144,13 +154,24 @@ export const CollectionPointAllocationCenter: React.FC<CollectionPointAllocation
       <Modal
         title="采集任务分配配置说明"
         open={isHelpModalOpen}
-        onCancel={() => setIsHelpModalOpen(false)}
+        onCancel={() => {
+          blurActiveElement();
+          setIsHelpModalOpen(false);
+        }}
         footer={[
-          <Button key="close" onClick={() => setIsHelpModalOpen(false)} ref={focusRef}>
+          <Button
+            key="close"
+            onClick={() => {
+              blurActiveElement();
+              setIsHelpModalOpen(false);
+            }}
+            ref={focusRef}
+          >
             关闭
           </Button>,
         ]}
         width={600}
+        focusTriggerAfterClose={false}
         {...modalProps}
       >
         <div ref={containerRef}>

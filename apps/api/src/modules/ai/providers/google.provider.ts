@@ -10,17 +10,41 @@ export class GoogleProvider implements IAIProvider {
   }
 
   private buildHeaders(options: AIRequestOptions): Record<string, string> | undefined {
+    // 'custom' is not a valid auth mode for standard headers logic, so we fallback to 'api-key' or ignore it
+    const authType = options.authType === 'custom' ? 'api-key' : (options.authType || 'api-key');
+    return this.buildHeadersForAuthMode(options, authType);
+  }
+
+  private buildHeadersForAuthMode(
+    options: AIRequestOptions,
+    authMode: 'x-goog-api-key' | 'bearer' | 'x-api-key' | 'api-key' | 'none' | 'query',
+  ): Record<string, string> | undefined {
     const headers: Record<string, string> = { ...(options.headers || {}) };
 
-    if ((options.authType === 'api-key' || !options.authType) && options.apiKey && !headers['x-goog-api-key']) {
+    if (authMode === 'x-goog-api-key' && options.apiKey) {
       headers['x-goog-api-key'] = options.apiKey;
     }
 
-    if (options.authType === 'bearer' && options.apiKey && !headers.Authorization) {
+    if (authMode === 'bearer' && options.apiKey && !headers.Authorization) {
       headers.Authorization = `Bearer ${options.apiKey}`;
     }
 
+    if (authMode === 'x-api-key' && options.apiKey) {
+      headers['x-api-key'] = options.apiKey;
+    }
+
+    if (authMode === 'api-key' && options.apiKey) {
+      headers['api-key'] = options.apiKey;
+    }
+
     return Object.keys(headers).length ? headers : undefined;
+  }
+
+  private resolveAuthModes(options: AIRequestOptions): Array<'x-goog-api-key' | 'bearer' | 'x-api-key' | 'query' | 'api-key' | 'none'> {
+    if (options.authType === 'bearer') return ['bearer'];
+    if (options.authType === 'api-key') return ['query', 'x-goog-api-key'];
+    if (options.authType === 'none') return ['none'];
+    return ['x-goog-api-key', 'bearer', 'x-api-key', 'query'];
   }
 
   private buildBaseUrl(options: AIRequestOptions): string {
@@ -38,7 +62,24 @@ export class GoogleProvider implements IAIProvider {
     return ['/v1beta/models', '/models'];
   }
 
-  private buildUrl(path: string, options: AIRequestOptions): string {
+  private buildUrl(path: string, options: AIRequestOptions, authMode?: 'x-goog-api-key' | 'bearer' | 'x-api-key' | 'api-key' | 'none' | 'query'): string {
+    if (path.startsWith('http://') || path.startsWith('https://')) {
+      const url = new URL(path);
+      if (options.queryParams) {
+        for (const [key, value] of Object.entries(options.queryParams)) {
+          if (value !== undefined && value !== null && String(value).length > 0) {
+            url.searchParams.set(key, String(value));
+          }
+        }
+      }
+
+      if (authMode === 'query' && options.apiKey) {
+        url.searchParams.set('key', options.apiKey);
+      }
+
+      return url.toString();
+    }
+
     const baseUrl = this.buildBaseUrl(options);
     const normalizedPath = path.startsWith('/') ? path : `/${path}`;
     const url = new URL(`${baseUrl}${normalizedPath}`);
@@ -51,11 +92,20 @@ export class GoogleProvider implements IAIProvider {
       }
     }
 
-    if ((options.authType === 'api-key' || !options.authType) && options.apiKey && !this.buildHeaders(options)?.['x-goog-api-key']) {
+    if (authMode === 'query' && options.apiKey) {
       url.searchParams.set('key', options.apiKey);
     }
 
     return url.toString();
+  }
+
+  private resolveGenerateContentPath(options: AIRequestOptions): string {
+    if (options.pathOverrides?.generateContent) return options.pathOverrides.generateContent;
+    const baseUrl = this.buildBaseUrl(options);
+    if (baseUrl.endsWith('/v1beta')) {
+      return `/models/${options.modelName}:generateContent`;
+    }
+    return `/v1beta/models/${options.modelName}:generateContent`;
   }
 
   private shouldUseRest(options: AIRequestOptions): boolean {
@@ -66,10 +116,8 @@ export class GoogleProvider implements IAIProvider {
     systemPrompt: string,
     userPrompt: string,
     options: AIRequestOptions,
-  ): Promise<string> {
-    const path = options.pathOverrides?.generateContent || `/models/${options.modelName}:generateContent`;
-    const url = this.buildUrl(path, options);
-    const headers = this.buildHeaders(options);
+  ): Promise<{ content: string; authMode?: string; pathUsed?: string }> {
+    const authModes = this.resolveAuthModes(options);
     const contentParts = [
       { text: `${systemPrompt}\n\n${userPrompt}` },
       ...(options.images || []).map((img) => ({
@@ -98,26 +146,50 @@ export class GoogleProvider implements IAIProvider {
       ...(generationConfig ? { generationConfig } : {}),
     };
 
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        ...(headers || {}),
-      },
-      body: JSON.stringify(body),
-    });
+    const primaryPath = this.resolveGenerateContentPath(options);
+    const fallbackPath = primaryPath.includes('/v1beta/models/')
+      ? `/models/${options.modelName}:generateContent`
+      : `/v1beta/models/${options.modelName}:generateContent`;
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`Gemini REST call failed: ${response.status} ${errorText}`);
+    const pathsToTry = primaryPath === fallbackPath ? [primaryPath] : [primaryPath, fallbackPath];
+
+    let lastError: Error | undefined;
+
+    for (const authMode of authModes) {
+      const headers = this.buildHeadersForAuthMode(options, authMode);
+      for (const path of pathsToTry) {
+        const url = this.buildUrl(path, options, authMode);
+        const response = await fetch(url, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(headers || {}),
+          },
+          body: JSON.stringify(body),
+        });
+
+        if (!response.ok) {
+          const errorText = await response.text();
+          lastError = new Error(`Gemini REST call failed: ${response.status} ${errorText}`);
+          if (response.status === 401 || response.status === 403) {
+            break;
+          }
+          if (response.status === 404 || response.status === 405) {
+            continue;
+          }
+          throw lastError;
+        }
+
+        const data = await response.json() as {
+          candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
+        };
+
+        const text = data.candidates?.[0]?.content?.parts?.map((p) => p.text).filter(Boolean).join('') || '';
+        return { content: text, authMode, pathUsed: path };
+      }
     }
 
-    const data = await response.json() as {
-      candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
-    };
-
-    const text = data.candidates?.[0]?.content?.parts?.map((p) => p.text).filter(Boolean).join('') || '';
-    return text;
+    throw lastError || new Error('Gemini REST call failed');
   }
 
   async generateResponse(
@@ -127,7 +199,8 @@ export class GoogleProvider implements IAIProvider {
   ): Promise<string> {
     if (this.shouldUseRest(options)) {
       try {
-        return await this.generateByRest(systemPrompt, userPrompt, options);
+        const result = await this.generateByRest(systemPrompt, userPrompt, options);
+        return result.content;
       } catch (error) {
         this.logger.warn('Gemini REST fallback failed, retrying with SDK', error);
       }
@@ -179,15 +252,19 @@ export class GoogleProvider implements IAIProvider {
     modelId: string;
     response?: string;
     error?: string;
+    authMode?: string;
+    pathUsed?: string;
   }> {
     try {
       if (this.shouldUseRest(options)) {
-        const text = await this.generateByRest('Hello', 'Are you working?', options);
+        const result = await this.generateByRest('Hello', 'Are you working?', options);
         return {
           success: true,
           message: 'Google Gemini 连接测试成功',
           modelId: options.modelName,
-          response: text.substring(0, 100),
+          response: result.content.substring(0, 100),
+          authMode: result.authMode,
+          pathUsed: result.pathUsed,
         };
       }
       const genAI = new GoogleGenerativeAI(options.apiKey);
@@ -230,30 +307,35 @@ export class GoogleProvider implements IAIProvider {
     if (_options.modelFetchMode === 'official' || _options.modelFetchMode === 'custom' || !_options.modelFetchMode) {
       const baseUrl = this.buildBaseUrl(_options);
       const paths = this.resolveModelListPaths(baseUrl, _options);
+      const authModes = this.resolveAuthModes(_options);
 
-      for (const path of paths) {
-        try {
-          const url = this.buildUrl(path, _options);
-          const headers = this.buildHeaders(_options);
+      for (const authMode of authModes) {
+        const headers = this.buildHeadersForAuthMode(_options, authMode);
+        for (const path of paths) {
+          try {
+            const url = this.buildUrl(path, _options, authMode);
+            const response = await fetch(url, { headers: headers || undefined });
+            if (!response.ok) {
+              const errorText = await response.text();
+              if (response.status === 401 || response.status === 403) {
+                break;
+              }
+              throw new Error(`Gemini model list failed: ${response.status} ${errorText}`);
+            }
 
-          const response = await fetch(url, { headers: headers || undefined });
-          if (!response.ok) {
-            const errorText = await response.text();
-            throw new Error(`Gemini model list failed: ${response.status} ${errorText}`);
+            const data = await response.json() as { models?: Array<{ name?: string }> };
+            const models = (data.models || [])
+              .map((model) => model.name || '')
+              .filter(Boolean)
+              .map((name) => name.replace(/^models\//, ''))
+              .sort();
+
+            if (models.length > 0) {
+              return { models, activeUrl: _options.apiUrl };
+            }
+          } catch (error) {
+            this.logger.warn(`Failed to fetch Gemini models via REST: ${error instanceof Error ? error.message : String(error)}`);
           }
-
-          const data = await response.json() as { models?: Array<{ name?: string }> };
-          const models = (data.models || [])
-            .map((model) => model.name || '')
-            .filter(Boolean)
-            .map((name) => name.replace(/^models\//, ''))
-            .sort();
-
-          if (models.length > 0) {
-            return { models, activeUrl: _options.apiUrl };
-          }
-        } catch (error) {
-          this.logger.warn(`Failed to fetch Gemini models via REST: ${error instanceof Error ? error.message : String(error)}`);
         }
       }
     }

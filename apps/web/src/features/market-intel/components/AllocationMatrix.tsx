@@ -68,6 +68,13 @@ export const AllocationMatrix: React.FC = () => {
   const { message, modal } = App.useApp();
   // 焦点管理
   const { focusRef, containerRef, modalProps } = useModalAutoFocus();
+  const blurActiveElement = () => {
+    if (typeof document === 'undefined') return;
+    const active = document.activeElement;
+    if (active instanceof HTMLElement) {
+      active.blur();
+    }
+  };
   const { data: pointTypeDict } = useDictionary('COLLECTION_POINT_TYPE');
 
   // 状态
@@ -313,6 +320,7 @@ export const AllocationMatrix: React.FC = () => {
       }
 
       message.success('已分配');
+      blurActiveElement();
       setCommodityModalOpen(false);
       setCurrentOperatingPoint(null);
       setSelectedCommodity([]);
@@ -368,6 +376,7 @@ export const AllocationMatrix: React.FC = () => {
     // 检查是否需要选择品种
     const commodities = (point as any).commodities || [];
     if (commodities.length > 0) {
+      blurActiveElement();
       setCurrentOperatingPoint(point);
       setSelectedCommodity([]); // 默认全选/空状态
       setCommodityModalOpen(true);
@@ -878,12 +887,14 @@ export const AllocationMatrix: React.FC = () => {
         {...modalProps}
         onOk={handleConfirmAllocation}
         onCancel={() => {
+          blurActiveElement();
           setCommodityModalOpen(false);
           setCurrentOperatingPoint(null);
           setSelectedCommodity([]);
         }}
         okText="确认分配"
         cancelText="取消"
+        focusTriggerAfterClose={false}
       >
         <div ref={containerRef} style={{ padding: '20px 0' }}>
           <Alert

@@ -64,6 +64,15 @@ const POINT_TYPE_COLORS: Record<string, string> = {
     STATION: 'cyan',
 };
 
+const COMMODITY_LABELS_FALLBACK: Record<string, string> = {
+    CORN: '玉米',
+    WHEAT: '小麦',
+    SOYBEAN: '大豆',
+    RICE: '稻谷',
+    SORGHUM: '高粱',
+    BARLEY: '大麦',
+};
+
 
 
 const TIME_RANGES_FALLBACK = [
@@ -136,12 +145,19 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
             (item) => item.isActive && MAIN_COMMODITIES.includes(item.code)
         );
         if (!items.length) {
-            return MAIN_COMMODITIES.map((code) => ({ label: code, value: code }));
+            return MAIN_COMMODITIES.map((code) => ({
+                label: COMMODITY_LABELS_FALLBACK[code] || code,
+                value: code,
+            }));
         }
         // 按预设顺序排序
         return items
             .sort((a, b) => MAIN_COMMODITIES.indexOf(a.code) - MAIN_COMMODITIES.indexOf(b.code))
-            .map((item) => ({ label: item.label, value: item.code }));
+            .map((item) => ({
+                // 对核心品种固定中文显示，避免字典被改成英文 code 后影响业务界面
+                label: COMMODITY_LABELS_FALLBACK[item.code] || item.label || item.code,
+                value: item.code,
+            }));
     }, [commodityDict]);
 
     // 统一的价格类型标签映射（字典优先，兜底中文）

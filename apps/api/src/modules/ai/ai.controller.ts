@@ -36,6 +36,7 @@ export class AIController {
         pathOverrides?: Record<string, string>;
         modelFetchMode?: 'official' | 'manual' | 'custom';
         allowUrlProbe?: boolean;
+        allowCompatPathFallback?: boolean;
         timeoutMs?: number;
         maxRetries?: number;
         temperature?: number;

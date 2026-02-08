@@ -6,17 +6,36 @@ export class OpenAIProvider implements IAIProvider {
   private readonly logger = new Logger(OpenAIProvider.name);
 
   private buildHeaders(options: AIRequestOptions): Record<string, string> | undefined {
+    const authType = options.authType === 'custom' ? 'bearer' : (options.authType || 'bearer');
+    return this.buildHeadersForAuthMode(options, authType);
+  }
+
+  private buildHeadersForAuthMode(
+    options: AIRequestOptions,
+    authMode: 'bearer' | 'api-key' | 'x-api-key' | 'none',
+  ): Record<string, string> | undefined {
     const headers: Record<string, string> = { ...(options.headers || {}) };
 
-    if (options.authType === 'api-key' && options.apiKey) {
+    if (authMode === 'api-key' && options.apiKey) {
       headers['api-key'] = options.apiKey;
     }
 
-    if ((options.authType === 'bearer' || !options.authType) && options.apiKey && !headers.Authorization) {
+    if (authMode === 'x-api-key' && options.apiKey) {
+      headers['x-api-key'] = options.apiKey;
+    }
+
+    if (authMode === 'bearer' && options.apiKey && !headers.Authorization) {
       headers.Authorization = `Bearer ${options.apiKey}`;
     }
 
     return Object.keys(headers).length ? headers : undefined;
+  }
+
+  private resolveAuthModes(options: AIRequestOptions): Array<'bearer' | 'x-api-key' | 'api-key' | 'none'> {
+    if (options.authType === 'bearer') return ['bearer'];
+    if (options.authType === 'api-key') return ['api-key'];
+    if (options.authType === 'none') return ['none'];
+    return ['bearer', 'x-api-key', 'api-key'];
   }
 
   private async fetchModelsDirect(apiUrl: string | undefined, options: AIRequestOptions): Promise<string[]> {
@@ -30,6 +49,118 @@ export class OpenAIProvider implements IAIProvider {
     }
     const data = await response.json() as { data?: Array<{ id?: string }> };
     return (data.data || []).map((model) => model.id || '').filter(Boolean);
+  }
+
+  private async callChatCompletionFetch(
+    baseUrl: string,
+    options: AIRequestOptions,
+    messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[],
+    authMode: 'bearer' | 'api-key' | 'x-api-key' | 'none',
+  ): Promise<string> {
+    const url = `${baseUrl.replace(/\/+$/, '')}/chat/completions`;
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(this.buildHeadersForAuthMode(options, authMode) || {}),
+      },
+      body: JSON.stringify({
+        model: options.modelName,
+        messages,
+        temperature: options.temperature ?? 0.3,
+        max_tokens: options.maxTokens ?? 8192,
+        top_p: options.topP,
+      }),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`${response.status} ${errorText}`);
+    }
+
+    const data = await response.json() as { choices?: Array<{ message?: { content?: string } }> };
+    return data.choices?.[0]?.message?.content || '';
+  }
+
+  private async callCompletionFetch(
+    baseUrl: string,
+    options: AIRequestOptions,
+    prompt: string,
+    authMode: 'bearer' | 'api-key' | 'x-api-key' | 'none',
+  ): Promise<string> {
+    const url = `${baseUrl.replace(/\/+$/, '')}/completions`;
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(this.buildHeadersForAuthMode(options, authMode) || {}),
+      },
+      body: JSON.stringify({
+        model: options.modelName,
+        prompt,
+        max_tokens: options.maxTokens ?? 8192,
+        temperature: options.temperature ?? 0.3,
+        top_p: options.topP,
+      }),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`${response.status} ${errorText}`);
+    }
+
+    const data = await response.json() as { choices?: Array<{ text?: string }> };
+    return data.choices?.[0]?.text || '';
+  }
+
+  private async callWithCompatFallback(
+    baseUrl: string,
+    options: AIRequestOptions,
+    messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[],
+    prompt: string,
+  ): Promise<{ content: string; authMode?: string; pathUsed?: string }> {
+    const primaryBase = baseUrl.replace(/\/+$/, '');
+    const authModes = this.resolveAuthModes(options);
+
+    const parseStatus = (message: string): number | undefined => {
+      const match = message.match(/^(\d{3})\b/);
+      return match ? Number(match[1]) : undefined;
+    };
+
+    let lastError: Error | undefined;
+
+    for (const authMode of authModes) {
+      try {
+        const content = await this.callChatCompletionFetch(primaryBase, options, messages, authMode);
+        return { content, authMode, pathUsed: '/chat/completions' };
+      } catch (error) {
+        const msg = error instanceof Error ? error.message : String(error);
+        const status = parseStatus(msg);
+        lastError = error instanceof Error ? error : new Error(msg);
+
+        if ((status === 401 || status === 403) && authModes.length > 1) {
+          continue;
+        }
+
+        if (options.allowCompatPathFallback && (status === 404 || status === 405)) {
+          try {
+            const content = await this.callCompletionFetch(primaryBase, options, prompt, authMode);
+            return { content, authMode, pathUsed: '/completions' };
+          } catch (fallbackError) {
+            const fallbackMsg = fallbackError instanceof Error ? fallbackError.message : String(fallbackError);
+            const fallbackStatus = parseStatus(fallbackMsg);
+            if ((fallbackStatus === 401 || fallbackStatus === 403) && authModes.length > 1) {
+              continue;
+            }
+            lastError = fallbackError instanceof Error ? fallbackError : new Error(fallbackMsg);
+          }
+        }
+
+        break;
+      }
+    }
+
+    throw lastError || new Error('OpenAI API call failed');
   }
 
   async generateResponse(
@@ -69,6 +200,10 @@ export class OpenAIProvider implements IAIProvider {
       return response.choices[0]?.message?.content || '';
     } catch (error) {
       this.logger.error('OpenAI API call failed', error);
+      if (options.allowCompatPathFallback) {
+        const fallback = await this.callWithCompatFallback(options.apiUrl || 'https://api.openai.com/v1', options, messages, `${systemPrompt}\n\n${userPrompt}`);
+        return fallback.content;
+      }
       throw error;
     }
   }
@@ -79,6 +214,8 @@ export class OpenAIProvider implements IAIProvider {
     modelId: string;
     response?: string;
     error?: string;
+    authMode?: string;
+    pathUsed?: string;
   }> {
     try {
       const client = this.createClient(options);
@@ -96,6 +233,32 @@ export class OpenAIProvider implements IAIProvider {
       };
     } catch (error) {
       const msg = error instanceof Error ? error.message : String(error);
+      if (options.allowCompatPathFallback) {
+        try {
+          const response = await this.callWithCompatFallback(
+            options.apiUrl || 'https://api.openai.com/v1',
+            options,
+            [{ role: 'user', content: 'Hello, are you working?' }],
+            'Hello, are you working?',
+          );
+          return {
+            success: true,
+            message: 'OpenAI 连接测试成功 (fallback)',
+            modelId: options.modelName,
+            response: response.content || '',
+            authMode: response.authMode,
+            pathUsed: response.pathUsed,
+          };
+        } catch (fallbackError) {
+          const fallbackMsg = fallbackError instanceof Error ? fallbackError.message : String(fallbackError);
+          return {
+            success: false,
+            message: `OpenAI 连接失败: ${msg}`,
+            modelId: options.modelName,
+            error: fallbackMsg,
+          };
+        }
+      }
       return {
         success: false,
         message: `OpenAI 连接失败: ${msg}`,

@@ -137,6 +137,8 @@ export const TaskTemplateList: React.FC = () => {
     // 焦点管理
     const { containerRef: createContainerRef, autoFocusFieldProps: createAutoFocusFieldProps, modalProps: createModalProps } = useModalAutoFocus();
     const { containerRef: editContainerRef, autoFocusFieldProps: editAutoFocusFieldProps, modalProps: editModalProps } = useModalAutoFocus();
+    const { containerRef: ruleContainerRef, focusRef: ruleScopeSelectRef, modalProps: ruleModalProps } = useModalAutoFocus();
+    const { containerRef: ruleLogContainerRef, focusRef: ruleLogCloseBtnRef, modalProps: ruleLogModalProps } = useModalAutoFocus();
 
     const { data: templates = [] } = useTaskTemplates();
     const createMutation = useCreateTaskTemplate();
@@ -256,6 +258,14 @@ export const TaskTemplateList: React.FC = () => {
         }
         return map;
     }, [ruleMetrics]);
+
+    const blurActiveElement = () => {
+        if (typeof document === 'undefined') return;
+        const active = document.activeElement;
+        if (active instanceof HTMLElement) {
+            active.blur();
+        }
+    };
 
     const taskTypeValueEnum = useMemo(() => {
         if (!Object.keys(taskTypeLabels).length) return {};
@@ -401,6 +411,7 @@ export const TaskTemplateList: React.FC = () => {
             render: (_: any, record: IntelTaskRuleResponse) => (
                 <Space size="small">
                     <Button size="small" onClick={() => {
+                        blurActiveElement();
                         setRuleLogTarget(record);
                         setRuleLogOpen(true);
                     }}>记录</Button>
@@ -419,11 +430,13 @@ export const TaskTemplateList: React.FC = () => {
     ];
 
     const openRulesDrawer = (template: IntelTaskTemplateResponse) => {
+        blurActiveElement();
         setRuleTemplate(template);
         setRulesDrawerOpen(true);
     };
 
     const closeRulesDrawer = () => {
+        blurActiveElement();
         setRulesDrawerOpen(false);
         setRuleTemplate(null);
         setEditingRule(null);
@@ -441,6 +454,8 @@ export const TaskTemplateList: React.FC = () => {
     };
 
     const openRuleModal = (rule?: IntelTaskRuleResponse) => {
+        // 避免触发元素在 aria-hidden 切换时保留焦点
+        blurActiveElement();
         setEditingRule(rule || null);
         const minute = rule?.dispatchAtMinute ?? 540;
         const rawScope = rule?.scopeQuery;
@@ -577,6 +592,7 @@ export const TaskTemplateList: React.FC = () => {
         } else {
             await createRuleMutation.mutateAsync(payload);
         }
+        blurActiveElement();
         setIsRuleModalOpen(false);
         setEditingRule(null);
         ruleForm.resetFields();
@@ -806,6 +822,7 @@ export const TaskTemplateList: React.FC = () => {
                         size="small"
                         icon={<EditOutlined />}
                         onClick={() => {
+                            blurActiveElement();
                             setCurrentTemplate(record);
                             setIsEditModalOpen(true);
                         }}
@@ -817,6 +834,7 @@ export const TaskTemplateList: React.FC = () => {
                         size="small"
                         icon={<ScheduleOutlined />}
                         onClick={() => {
+                            blurActiveElement();
                             setCurrentTemplate(record);
                             setPreviewDrawerVisible(true);
                         }}
@@ -828,6 +846,7 @@ export const TaskTemplateList: React.FC = () => {
                         size="small"
                         icon={<SendOutlined />}
                         onClick={async () => {
+                            blurActiveElement();
                             setCurrentTemplate(record);
                             const data = await previewMutation.mutateAsync(record.id);
                             setDistributionPreviewData(data);
@@ -887,6 +906,7 @@ export const TaskTemplateList: React.FC = () => {
                         type="primary"
                         icon={<PlusOutlined />}
                         onClick={() => {
+                            blurActiveElement();
                             setIsCreateModalOpen(true);
                         }}
                     >
@@ -899,7 +919,10 @@ export const TaskTemplateList: React.FC = () => {
             <Modal
                 title="创建任务模板"
                 open={isCreateModalOpen}
-                onCancel={() => setIsCreateModalOpen(false)}
+                onCancel={() => {
+                    blurActiveElement();
+                    setIsCreateModalOpen(false);
+                }}
                 onOk={async () => {
                     try {
                         const values = await createForm.validateFields();
@@ -908,6 +931,7 @@ export const TaskTemplateList: React.FC = () => {
                             runAtMinute: (values.runAtHour || 0) * 60 + (values.runAtMin || 0),
                             dueAtMinute: (values.dueAtHour || 0) * 60 + (values.dueAtMin || 0),
                         });
+                        blurActiveElement();
                         setIsCreateModalOpen(false);
                     } catch (err) {
                         // 校验失败，不关闭
@@ -917,6 +941,7 @@ export const TaskTemplateList: React.FC = () => {
                 destroyOnClose
                 centered
                 confirmLoading={createMutation.isPending}
+                focusTriggerAfterClose={false}
                 afterOpenChange={createModalProps.afterOpenChange}
             >
                 <Form
@@ -936,7 +961,10 @@ export const TaskTemplateList: React.FC = () => {
             <Modal
                 title="编辑任务模板"
                 open={isEditModalOpen}
-                onCancel={() => setIsEditModalOpen(false)}
+                onCancel={() => {
+                    blurActiveElement();
+                    setIsEditModalOpen(false);
+                }}
                 onOk={async () => {
                     try {
                         const values = await editForm.validateFields();
@@ -945,6 +973,7 @@ export const TaskTemplateList: React.FC = () => {
                             runAtMinute: (values.runAtHour || 0) * 60 + (values.runAtMin || 0),
                             dueAtMinute: (values.dueAtHour || 0) * 60 + (values.dueAtMin || 0),
                         });
+                        blurActiveElement();
                         setIsEditModalOpen(false);
                     } catch (err) {
                         // 校验失败，不关闭
@@ -954,6 +983,7 @@ export const TaskTemplateList: React.FC = () => {
                 destroyOnClose
                 centered
                 confirmLoading={updateMutation.isPending}
+                focusTriggerAfterClose={false}
                 afterOpenChange={editModalProps.afterOpenChange}
             >
                 <Form
@@ -973,7 +1003,10 @@ export const TaskTemplateList: React.FC = () => {
                 title="调度预览"
                 width={800}
                 open={previewDrawerVisible}
-                onClose={() => setPreviewDrawerVisible(false)}
+                onClose={() => {
+                    blurActiveElement();
+                    setPreviewDrawerVisible(false);
+                }}
             >
                 {currentTemplate && (
                     <>
@@ -1006,13 +1039,17 @@ export const TaskTemplateList: React.FC = () => {
 
             <DistributionPreview
                 open={isDistributionPreviewOpen}
-                onCancel={() => setIsDistributionPreviewOpen(false)}
+                onCancel={() => {
+                    blurActiveElement();
+                    setIsDistributionPreviewOpen(false);
+                }}
                 data={distributionPreviewData}
                 loading={distributeMutation.isPending}
                 onExecute={async () => {
                     if (currentTemplate) {
                         await distributeMutation.mutateAsync({ templateId: currentTemplate.id });
                         message.success('任务分发成功');
+                        blurActiveElement();
                         setIsDistributionPreviewOpen(false);
                     }
                 }}
@@ -1047,11 +1084,17 @@ export const TaskTemplateList: React.FC = () => {
             <Modal
                 title={editingRule ? '编辑规则' : '新增规则'}
                 open={isRuleModalOpen}
-                onCancel={() => setIsRuleModalOpen(false)}
+                onCancel={() => {
+                    blurActiveElement();
+                    setIsRuleModalOpen(false);
+                }}
                 onOk={handleSaveRule}
                 destroyOnClose
+                focusTriggerAfterClose={false}
+                afterOpenChange={ruleModalProps.afterOpenChange}
             >
-                <Form form={ruleForm} layout="vertical">
+                <div ref={ruleContainerRef}>
+                    <Form form={ruleForm} layout="vertical">
                     <Form.Item name="templateId" hidden>
                         <Input />
                     </Form.Item>
@@ -1060,7 +1103,10 @@ export const TaskTemplateList: React.FC = () => {
                         label="范围"
                         rules={[{ required: true, message: '请选择范围' }]}
                     >
-                        <Select options={Object.entries(ruleScopeLabels).map(([value, label]) => ({ value, label }))} />
+                        <Select
+                            ref={ruleScopeSelectRef}
+                            options={Object.entries(ruleScopeLabels).map(([value, label]) => ({ value, label }))}
+                        />
                     </Form.Item>
                     <Form.Item label="范围配置">
                         <Space>
@@ -1302,34 +1348,52 @@ export const TaskTemplateList: React.FC = () => {
                     <Form.Item name="isActive" label="启用" valuePropName="checked">
                         <Switch />
                     </Form.Item>
-                </Form>
+                    </Form>
+                </div>
             </Modal>
 
             <Modal
                 title={`执行记录${ruleLogTarget ? ` - ${ruleScopeLabels[ruleLogTarget.scopeType] || ruleLogTarget.scopeType}` : ''}`}
                 open={ruleLogOpen}
-                onCancel={() => setRuleLogOpen(false)}
-                footer={null}
-                destroyOnClose
-            >
-                {ruleLogTarget ? (
-                    (() => {
-                        const logs = ruleDailyMap.get(ruleLogTarget.id) || [];
-                        if (!logs.length) {
-                            return <Alert type="info" showIcon message="当前规则暂无执行记录" />;
-                        }
-                        return (
-                            <Timeline
-                                items={logs.slice(0, 30).map((item) => ({
-                                    color: item.overdue > 0 ? 'red' : item.completed > 0 ? 'green' : 'blue',
-                                    children: `${item.date} 生成 ${item.total} 完成 ${item.completed} 逾期 ${item.overdue}`,
-                                }))}
-                            />
-                        );
-                    })()
-                ) : (
-                    <Alert type="info" showIcon message="请选择规则查看执行记录" />
+                onCancel={() => {
+                    blurActiveElement();
+                    setRuleLogOpen(false);
+                }}
+                footer={(
+                    <Button
+                        ref={ruleLogCloseBtnRef}
+                        onClick={() => {
+                            blurActiveElement();
+                            setRuleLogOpen(false);
+                        }}
+                    >
+                        关闭
+                    </Button>
                 )}
+                destroyOnClose
+                focusTriggerAfterClose={false}
+                afterOpenChange={ruleLogModalProps.afterOpenChange}
+            >
+                <div ref={ruleLogContainerRef}>
+                    {ruleLogTarget ? (
+                        (() => {
+                            const logs = ruleDailyMap.get(ruleLogTarget.id) || [];
+                            if (!logs.length) {
+                                return <Alert type="info" showIcon message="当前规则暂无执行记录" />;
+                            }
+                            return (
+                                <Timeline
+                                    items={logs.slice(0, 30).map((item) => ({
+                                        color: item.overdue > 0 ? 'red' : item.completed > 0 ? 'green' : 'blue',
+                                        children: `${item.date} 生成 ${item.total} 完成 ${item.completed} 逾期 ${item.overdue}`,
+                                    }))}
+                                />
+                            );
+                        })()
+                    ) : (
+                        <Alert type="info" showIcon message="请选择规则查看执行记录" />
+                    )}
+                </div>
             </Modal>
         </>
     );

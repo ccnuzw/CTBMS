@@ -25,6 +25,15 @@ type PricePointGroup = {
 
 type PriceDataRecord = PriceData & { collectionPoint?: CollectionPointSummary };
 
+const COMMODITY_CODE_TO_LABEL: Record<string, string> = {
+    CORN: '玉米',
+    WHEAT: '小麦',
+    SOYBEAN: '大豆',
+    RICE: '稻谷',
+    SORGHUM: '高粱',
+    BARLEY: '大麦',
+};
+
 @Injectable()
 export class PriceDataService {
     constructor(private prisma: PrismaService) { }
@@ -45,6 +54,35 @@ export class PriceDataService {
             return { startDate: start, endDate: resolvedEnd ?? end };
         }
         return { startDate: resolvedStart, endDate: resolvedEnd };
+    }
+
+    private resolveCommodityCandidates(commodity?: string) {
+        if (!commodity) return [];
+        const value = commodity.trim();
+        if (!value) return [];
+
+        const candidates = new Set<string>([value]);
+        const upperCode = value.toUpperCase();
+        const mappedLabel = COMMODITY_CODE_TO_LABEL[upperCode];
+        if (mappedLabel) {
+            candidates.add(upperCode);
+            candidates.add(mappedLabel);
+        }
+
+        const reverseCode = Object.entries(COMMODITY_CODE_TO_LABEL).find(([, label]) => label === value)?.[0];
+        if (reverseCode) {
+            candidates.add(reverseCode);
+            candidates.add(COMMODITY_CODE_TO_LABEL[reverseCode]);
+        }
+
+        return Array.from(candidates);
+    }
+
+    private buildCommodityFilter(commodity?: string): string | Prisma.StringFilter | undefined {
+        const candidates = this.resolveCommodityCandidates(commodity);
+        if (candidates.length === 0) return undefined;
+        if (candidates.length === 1) return candidates[0];
+        return { in: candidates };
     }
 
     /**
@@ -133,7 +171,8 @@ export class PriceDataService {
         const pageSize = Number(query.pageSize) || 20;
 
         const andFilters: Prisma.PriceDataWhereInput[] = [];
-        if (commodity) andFilters.push({ commodity });
+        const commodityFilter = this.buildCommodityFilter(commodity);
+        if (commodityFilter) andFilters.push({ commodity: commodityFilter });
         if (location) andFilters.push({ location: { contains: location, mode: 'insensitive' } });
         if (province) andFilters.push({ province });
         if (city) andFilters.push({ city });
@@ -239,10 +278,11 @@ export class PriceDataService {
     async getTrend(commodity: string, location: string, days = 30) {
         const startDate = new Date();
         startDate.setDate(startDate.getDate() - days);
+        const commodityFilter = this.buildCommodityFilter(commodity);
 
         const data = await this.prisma.priceData.findMany({
             where: {
-                commodity,
+                ...(commodityFilter ? { commodity: commodityFilter } : {}),
                 location: { contains: location, mode: 'insensitive' },
                 effectiveDate: { gte: startDate },
             },
@@ -266,10 +306,11 @@ export class PriceDataService {
      */
     async getHeatmap(commodity: string, date?: Date) {
         const targetDate = date || new Date();
+        const commodityFilter = this.buildCommodityFilter(commodity);
 
         const data = await this.prisma.priceData.findMany({
             where: {
-                commodity,
+                ...(commodityFilter ? { commodity: commodityFilter } : {}),
                 effectiveDate: targetDate,
             },
             select: {
@@ -316,7 +357,8 @@ export class PriceDataService {
         const where: Prisma.PriceDataWhereInput = {
             collectionPointId,
         };
-        if (commodity) where.commodity = commodity;
+        const commodityFilter = this.buildCommodityFilter(commodity);
+        if (commodityFilter) where.commodity = commodityFilter;
         const subTypeList = this.parseCsv(subTypes)
             .filter((value): value is PriceSubType => Object.values(PriceSubType).includes(value as PriceSubType));
         if (subTypeList.length > 0) {
@@ -391,7 +433,8 @@ export class PriceDataService {
         const where: Prisma.PriceDataWhereInput = {
             regionCode,
         };
-        if (commodity) where.commodity = commodity;
+        const commodityFilter = this.buildCommodityFilter(commodity);
+        if (commodityFilter) where.commodity = commodityFilter;
         const subTypeList = this.parseCsv(subTypes)
             .filter((value): value is PriceSubType => Object.values(PriceSubType).includes(value as PriceSubType));
         if (subTypeList.length > 0) {
@@ -487,11 +530,12 @@ export class PriceDataService {
 
         const subTypeList = this.parseCsv(subTypes)
             .filter((value): value is PriceSubType => Object.values(PriceSubType).includes(value as PriceSubType));
+        const commodityFilter = this.buildCommodityFilter(commodity);
 
         const data = await this.prisma.priceData.findMany({
             where: {
                 collectionPointId: { in: collectionPointIds },
-                commodity,
+                ...(commodityFilter ? { commodity: commodityFilter } : {}),
                 ...(subTypeList.length > 0 ? { subType: { in: subTypeList } } : {}),
                 effectiveDate: {
                     ...(resolvedStart ? { gte: resolvedStart } : {}),

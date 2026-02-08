@@ -23,6 +23,7 @@ export const AIConfigSchema = z.object({
   pathOverrides: z.record(z.string()).optional(),
   modelFetchMode: AIModelFetchModeSchema.optional(),
   allowUrlProbe: z.boolean().optional(),
+  allowCompatPathFallback: z.boolean().optional(),
   temperature: z.number().min(0).max(2).default(0.3),
   maxTokens: z.number().int().positive().default(8192),
   topP: z.number().min(0).max(1).optional(),

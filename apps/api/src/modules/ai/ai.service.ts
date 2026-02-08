@@ -116,6 +116,35 @@ export class AIService implements OnModuleInit {
         return value as Record<string, string>;
     }
 
+    private buildTestHint(provider: AIProvider, apiUrl?: string, errorMessage?: string): string | undefined {
+        if (!errorMessage) return undefined;
+        const message = errorMessage.toLowerCase();
+        const url = apiUrl || '';
+
+        if (provider === 'google') {
+            if (message.includes('404') && url.includes('/v1beta')) {
+                return 'Gemini 兼容网关在 /v1beta 下常用的生成路径是 /models/{model}:generateContent，而不是 /v1beta/models/...';
+            }
+            if (message.includes('invalid_argument')) {
+                return '请确保请求体包含 role 字段（contents: [{ role: "user", parts: [...] }])，并尽量保持精简。';
+            }
+            if (message.includes('401')) {
+                return '鉴权失败：优先使用 x-goog-api-key 或 Bearer，避免使用 api-key 头。';
+            }
+        }
+
+        if (provider === 'openai') {
+            if (message.includes('405') && url.endsWith('/v1')) {
+                return '该网关可能不接受 /v1 前缀的二次拼接，请使用 /chat/completions 或 /completions。';
+            }
+            if (message.includes('401')) {
+                return '鉴权失败：优先使用 Authorization: Bearer 或 x-api-key。';
+            }
+        }
+
+        return undefined;
+    }
+
     /**
      * 模块初始化时加载采集点
      */
@@ -446,6 +475,9 @@ export class AIService implements OnModuleInit {
         provider?: string;
         response?: string;
         error?: string;
+        hint?: string;
+        authMode?: string;
+        pathUsed?: string;
     }> {
         // [NEW] Get Configuration from DB for testing
         const aiConfig = await this.prisma.aIModelConfig.findUnique({ where: { configKey } });
@@ -471,6 +503,7 @@ export class AIService implements OnModuleInit {
                 pathOverrides: this.resolveRecord(aiConfig?.pathOverrides),
                 modelFetchMode: aiConfig?.modelFetchMode as AIRequestOptions['modelFetchMode'],
                 allowUrlProbe: aiConfig?.allowUrlProbe ?? undefined,
+                allowCompatPathFallback: aiConfig?.allowCompatPathFallback ?? undefined,
                 timeoutMs: aiConfig?.timeoutMs ?? undefined,
                 maxRetries: aiConfig?.maxRetries ?? undefined,
             };
@@ -484,7 +517,10 @@ export class AIService implements OnModuleInit {
                 modelId: result.modelId,
                 provider: providerType,
                 response: result.response,
-                error: result.error
+                error: result.error,
+                hint: this.buildTestHint(providerType, currentApiUrl, result.error || result.message),
+                authMode: result.authMode,
+                pathUsed: result.pathUsed,
             };
         } catch (error) {
             const errorMessage = error instanceof Error ? error.message : String(error);
@@ -496,6 +532,7 @@ export class AIService implements OnModuleInit {
                 modelId: currentModelId,
                 provider: providerType,
                 error: errorMessage,
+                hint: this.buildTestHint(providerType, currentApiUrl, errorMessage),
             };
         }
     }
@@ -514,6 +551,7 @@ export class AIService implements OnModuleInit {
         pathOverrides?: Record<string, string>;
         modelFetchMode?: AIRequestOptions['modelFetchMode'];
         allowUrlProbe?: boolean;
+        allowCompatPathFallback?: boolean;
         timeoutMs?: number;
         maxRetries?: number;
         temperature?: number;
@@ -527,6 +565,9 @@ export class AIService implements OnModuleInit {
         provider?: string;
         response?: string;
         error?: string;
+        hint?: string;
+        authMode?: string;
+        pathUsed?: string;
     }> {
         const providerType = payload.provider || 'google';
         const currentApiKey = payload.apiKey || this.apiKey;
@@ -549,6 +590,7 @@ export class AIService implements OnModuleInit {
                 pathOverrides: payload.pathOverrides,
                 modelFetchMode: payload.modelFetchMode,
                 allowUrlProbe: payload.allowUrlProbe,
+                allowCompatPathFallback: payload.allowCompatPathFallback,
                 timeoutMs: payload.timeoutMs,
                 maxRetries: payload.maxRetries,
                 temperature: payload.temperature,
@@ -565,6 +607,9 @@ export class AIService implements OnModuleInit {
                 provider: providerType,
                 response: result.response,
                 error: result.error,
+                hint: this.buildTestHint(providerType, currentApiUrl, result.error || result.message),
+                authMode: result.authMode,
+                pathUsed: result.pathUsed,
             };
         } catch (error) {
             const errorMessage = error instanceof Error ? error.message : String(error);
@@ -576,6 +621,7 @@ export class AIService implements OnModuleInit {
                 modelId: modelName,
                 provider: providerType,
                 error: errorMessage,
+                hint: this.buildTestHint(providerType, currentApiUrl, errorMessage),
             };
         }
     }
@@ -648,15 +694,16 @@ export class AIService implements OnModuleInit {
                     modelName: 'model-listing-placeholder',
                     apiKey: finalApiKey,
                     apiUrl: finalApiUrl || undefined,
-                    authType: resolvedConfig?.authType as AIRequestOptions['authType'],
-                    headers: this.resolveRecord(resolvedConfig?.headers),
-                    queryParams: this.resolveRecord(resolvedConfig?.queryParams),
-                    pathOverrides: this.resolveRecord(resolvedConfig?.pathOverrides),
-                    modelFetchMode: resolvedConfig?.modelFetchMode as AIRequestOptions['modelFetchMode'],
-                    allowUrlProbe: resolvedConfig?.allowUrlProbe ?? undefined,
-                    timeoutMs: resolvedConfig?.timeoutMs ?? undefined,
-                    maxRetries: resolvedConfig?.maxRetries ?? undefined,
-                };
+                authType: resolvedConfig?.authType as AIRequestOptions['authType'],
+                headers: this.resolveRecord(resolvedConfig?.headers),
+                queryParams: this.resolveRecord(resolvedConfig?.queryParams),
+                pathOverrides: this.resolveRecord(resolvedConfig?.pathOverrides),
+                modelFetchMode: resolvedConfig?.modelFetchMode as AIRequestOptions['modelFetchMode'],
+                allowUrlProbe: resolvedConfig?.allowUrlProbe ?? undefined,
+                allowCompatPathFallback: resolvedConfig?.allowCompatPathFallback ?? undefined,
+                timeoutMs: resolvedConfig?.timeoutMs ?? undefined,
+                maxRetries: resolvedConfig?.maxRetries ?? undefined,
+            };
 
                 try {
                     const result = await provider.getModels(options);
@@ -675,6 +722,7 @@ export class AIService implements OnModuleInit {
                                 pathOverrides: this.resolveRecord(resolvedConfig.pathOverrides),
                                 modelFetchMode: resolvedConfig.modelFetchMode as AIRequestOptions['modelFetchMode'],
                                 allowUrlProbe: resolvedConfig.allowUrlProbe ?? undefined,
+                                allowCompatPathFallback: resolvedConfig.allowCompatPathFallback ?? undefined,
                                 temperature: resolvedConfig.temperature,
                                 maxTokens: resolvedConfig.maxTokens,
                                 topP: resolvedConfig.topP ?? undefined,
@@ -897,23 +945,24 @@ export class AIService implements OnModuleInit {
         // 3. 获取 Provider 实例
         const provider = this.aiProviderFactory.getProvider(providerType);
 
-        const options: AIRequestOptions = {
-            modelName: targetModel,
-            apiKey: targetApiKey,
-            apiUrl: currentApiUrl || aiConfig?.apiUrl || undefined,
-            authType: aiConfig?.authType as AIRequestOptions['authType'],
-            headers: this.resolveRecord(aiConfig?.headers),
-            queryParams: this.resolveRecord(aiConfig?.queryParams),
-            pathOverrides: this.resolveRecord(aiConfig?.pathOverrides),
-            modelFetchMode: aiConfig?.modelFetchMode as AIRequestOptions['modelFetchMode'],
-            allowUrlProbe: aiConfig?.allowUrlProbe ?? undefined,
-            temperature: aiConfig?.temperature ?? 0.3,
-            maxTokens: aiConfig?.maxTokens ?? 8192,
-            topP: aiConfig?.topP ?? undefined,
-            timeoutMs: aiConfig?.timeoutMs ?? undefined,
-            maxRetries: aiConfig?.maxRetries ?? undefined,
-            images: base64Image && mimeType ? [{ base64: base64Image, mimeType }] : undefined
-        };
+            const options: AIRequestOptions = {
+                modelName: targetModel,
+                apiKey: targetApiKey,
+                apiUrl: currentApiUrl || aiConfig?.apiUrl || undefined,
+                authType: aiConfig?.authType as AIRequestOptions['authType'],
+                headers: this.resolveRecord(aiConfig?.headers),
+                queryParams: this.resolveRecord(aiConfig?.queryParams),
+                pathOverrides: this.resolveRecord(aiConfig?.pathOverrides),
+                modelFetchMode: aiConfig?.modelFetchMode as AIRequestOptions['modelFetchMode'],
+                allowUrlProbe: aiConfig?.allowUrlProbe ?? undefined,
+                allowCompatPathFallback: aiConfig?.allowCompatPathFallback ?? undefined,
+                temperature: aiConfig?.temperature ?? 0.3,
+                maxTokens: aiConfig?.maxTokens ?? 8192,
+                topP: aiConfig?.topP ?? undefined,
+                timeoutMs: aiConfig?.timeoutMs ?? undefined,
+                maxRetries: aiConfig?.maxRetries ?? undefined,
+                images: base64Image && mimeType ? [{ base64: base64Image, mimeType }] : undefined
+            };
 
         // 4. 执行调用
         try {

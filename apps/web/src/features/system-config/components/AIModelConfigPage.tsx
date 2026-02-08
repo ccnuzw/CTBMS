@@ -1,5 +1,5 @@
 import { PageContainer, ProTable, ActionType, ProColumns, ModalForm, ProFormText, ProFormSelect, ProFormDigit, ProFormSwitch, ProFormDependency, ProFormTextArea, ProFormInstance } from '@ant-design/pro-components';
-import { Card, App, Alert, Space, Button, Modal, Tag, Typography, Tooltip, Badge, Divider, Checkbox } from 'antd';
+import { Card, App, Alert, Space, Button, Modal, Tag, Typography, Tooltip, Badge, Divider, Checkbox, Table } from 'antd';
 import { useAIConfigs, useUpdateAIConfig, useDeleteAIConfig, useTestAIConnection, useFetchAIModels, useTestAIModel } from '../api';
 import { useRef, useState } from 'react';
 import { PlusOutlined, DeleteOutlined, EditOutlined, ApiOutlined, ReloadOutlined, CheckCircleFilled } from '@ant-design/icons';
@@ -25,8 +25,47 @@ export const AIModelConfigPage = () => {
     const [fetchDiagnostics, setFetchDiagnostics] = useState<Array<{ provider: string; message: string; activeUrl?: string }>>([]);
     const [fetchRecommendation, setFetchRecommendation] = useState<string | undefined>(undefined);
     const [fetchRecommendationPatch, setFetchRecommendationPatch] = useState<Partial<AIModelConfig> | undefined>(undefined);
-    const { containerRef, autoFocusFieldProps, modalProps } = useModalAutoFocus();
+    const [batchTestResults, setBatchTestResults] = useState<Array<{ model: string; success: boolean; message: string; pathUsed?: string; authMode?: string; error?: string }>>([]);
+    const [batchTestVisible, setBatchTestVisible] = useState(false);
+    const [batchTestRunning, setBatchTestRunning] = useState(false);
+    const {
+        containerRef,
+        focusRef: editModalFocusRef,
+        autoFocusFieldProps,
+        modalProps,
+    } = useModalAutoFocus({ delay: 120 });
+    const {
+        containerRef: batchTestContainerRef,
+        focusRef: batchTestCloseBtnRef,
+        modalProps: batchTestModalProps,
+    } = useModalAutoFocus();
     const formRef = useRef<ProFormInstance>();
+
+    const blurActiveElement = () => {
+        if (typeof document === 'undefined') return;
+        const active = document.activeElement;
+        if (active instanceof HTMLElement) {
+            active.blur();
+            if (document.activeElement === active) {
+                const prevTabIndex = document.body.getAttribute('tabindex');
+                document.body.setAttribute('tabindex', '-1');
+                document.body.focus();
+                if (prevTabIndex === null) {
+                    document.body.removeAttribute('tabindex');
+                } else {
+                    document.body.setAttribute('tabindex', prevTabIndex);
+                }
+            }
+        }
+    };
+
+    const openEditModal = () => {
+        if (typeof window !== 'undefined') {
+            window.requestAnimationFrame(() => setEditModalVisible(true));
+            return;
+        }
+        setEditModalVisible(true);
+    };
 
     const templateOptions = [
         { label: 'OpenAI 官方', value: 'openai_official' },
@@ -104,21 +143,28 @@ export const AIModelConfigPage = () => {
     };
 
     const handleEdit = (record: AIModelConfig) => {
+        // 避免触发元素在弹窗 aria-hidden 切换时保留焦点
+        blurActiveElement();
         setCurrentRow({
             ...record,
             headers: formatJsonField(record.headers as Record<string, string> | string),
             queryParams: formatJsonField(record.queryParams as Record<string, string> | string),
             pathOverrides: formatJsonField(record.pathOverrides as Record<string, string> | string),
         });
-        setEditModalVisible(true);
+        openEditModal();
         setFetchedModels([]);
         setSelectedFetchedModels([]);
         setFetchDiagnostics([]);
         setFetchRecommendation(undefined);
         setFetchRecommendationPatch(undefined);
+        setBatchTestResults([]);
+        setBatchTestVisible(false);
+        setBatchTestRunning(false);
     };
 
     const handleAdd = () => {
+        // 避免触发元素在弹窗 aria-hidden 切换时保留焦点
+        blurActiveElement();
         setCurrentRow({
             isActive: true,
             isDefault: false,
@@ -126,18 +172,22 @@ export const AIModelConfigPage = () => {
             authType: 'bearer',
             modelFetchMode: 'official',
             allowUrlProbe: true,
+            allowCompatPathFallback: true,
             temperature: 0.3,
             maxTokens: 8192,
             maxRetries: 3,
             timeoutMs: 30000,
             availableModels: []
         });
-        setEditModalVisible(true);
+        openEditModal();
         setFetchedModels([]);
         setSelectedFetchedModels([]);
         setFetchDiagnostics([]);
         setFetchRecommendation(undefined);
         setFetchRecommendationPatch(undefined);
+        setBatchTestResults([]);
+        setBatchTestVisible(false);
+        setBatchTestRunning(false);
     };
 
     const handleDelete = async (key: string) => {
@@ -152,6 +202,7 @@ export const AIModelConfigPage = () => {
              return;
         }
 
+        blurActiveElement();
         modal.confirm({
             title: '确认删除?',
             content: `确定要删除配置 "${key}" 吗？此操作不可恢复。`,
@@ -183,6 +234,7 @@ export const AIModelConfigPage = () => {
 
             await updateMutation.mutateAsync(payload);
             message.success('配置已保存');
+            blurActiveElement();
             setEditModalVisible(false);
             actionRef.current?.reload();
             return true;
@@ -224,6 +276,10 @@ export const AIModelConfigPage = () => {
             setFetchDiagnostics(result.diagnostics || []);
             setFetchRecommendation(undefined);
             setFetchRecommendationPatch(undefined);
+            setBatchTestResults([]);
+            blurActiveElement();
+            setBatchTestVisible(false);
+            setBatchTestRunning(false);
 
             if (result.provider && result.provider !== provider) {
                 const nextAuthType = result.provider === 'openai' ? 'bearer' : 'api-key';
@@ -289,7 +345,7 @@ export const AIModelConfigPage = () => {
 
         try {
             const values = form.getFieldsValue();
-            const payload = {
+                const payload = {
                 provider: values.provider,
                 modelName,
                 apiKey: values.apiKey,
@@ -300,6 +356,7 @@ export const AIModelConfigPage = () => {
                 pathOverrides: parseJsonField(values.pathOverrides, 'Path Overrides'),
                 modelFetchMode: values.modelFetchMode,
                 allowUrlProbe: values.allowUrlProbe,
+                allowCompatPathFallback: values.allowCompatPathFallback,
                 timeoutMs: values.timeoutMs,
                 maxRetries: values.maxRetries,
                 temperature: values.temperature,
@@ -312,6 +369,7 @@ export const AIModelConfigPage = () => {
             hide();
 
             if (result.success) {
+                blurActiveElement();
                 modal.success({
                     title: '✅ 模型测试成功',
                     width: 500,
@@ -321,7 +379,18 @@ export const AIModelConfigPage = () => {
                             <div style={{ marginBottom: 10 }}>
                                 <p style={{ margin: 0 }}><strong>模型:</strong> {result.modelId || modelName}</p>
                                 {result.provider && <p style={{ margin: 0 }}><strong>供应商:</strong> {result.provider}</p>}
+                                {result.pathUsed && <p style={{ margin: 0 }}><strong>路径:</strong> {result.pathUsed}</p>}
+                                {result.authMode && <p style={{ margin: 0 }}><strong>认证:</strong> {result.authMode}</p>}
                             </div>
+                            {result.hint && (
+                                <Alert
+                                    type="info"
+                                    showIcon
+                                    message="优化建议"
+                                    description={result.hint}
+                                    style={{ marginBottom: 10 }}
+                                />
+                            )}
                             {result.response && (
                                 <div style={{
                                     background: '#f5f5f5',
@@ -340,12 +409,28 @@ export const AIModelConfigPage = () => {
                     ),
                 });
             } else {
+                blurActiveElement();
                 modal.error({
                     title: '❌ 模型测试失败',
                     width: 500,
                     content: (
                         <div>
                             <p style={{ fontWeight: 500 }}>{result.message}</p>
+                            {(result.pathUsed || result.authMode) && (
+                                <div style={{ marginBottom: 8 }}>
+                                    {result.pathUsed && <p style={{ margin: 0 }}><strong>路径:</strong> {result.pathUsed}</p>}
+                                    {result.authMode && <p style={{ margin: 0 }}><strong>认证:</strong> {result.authMode}</p>}
+                                </div>
+                            )}
+                            {result.hint && (
+                                <Alert
+                                    type="info"
+                                    showIcon
+                                    message="优化建议"
+                                    description={result.hint}
+                                    style={{ marginBottom: 10 }}
+                                />
+                            )}
                             {result.error && (
                                 <div style={{
                                     background: '#fff1f0',
@@ -368,6 +453,65 @@ export const AIModelConfigPage = () => {
         }
     };
 
+    const handleBatchTestModels = async () => {
+        const form = formRef.current;
+        if (!form) return;
+        if (selectedFetchedModels.length === 0) {
+            message.warning('请先选择要测试的模型');
+            return;
+        }
+
+        const values = form.getFieldsValue();
+        const payloadBase = {
+            provider: values.provider,
+            apiKey: values.apiKey,
+            apiUrl: values.apiUrl,
+            authType: values.authType,
+            headers: parseJsonField(values.headers, 'Headers'),
+            queryParams: parseJsonField(values.queryParams, 'Query Params'),
+            pathOverrides: parseJsonField(values.pathOverrides, 'Path Overrides'),
+            modelFetchMode: values.modelFetchMode,
+            allowUrlProbe: values.allowUrlProbe,
+            allowCompatPathFallback: values.allowCompatPathFallback,
+            timeoutMs: values.timeoutMs,
+            maxRetries: values.maxRetries,
+            temperature: values.temperature,
+            maxTokens: values.maxTokens,
+            topP: values.topP,
+        };
+
+        setBatchTestRunning(true);
+        blurActiveElement();
+        setBatchTestVisible(true);
+        const results: Array<{ model: string; success: boolean; message: string; pathUsed?: string; authMode?: string; error?: string }> = [];
+
+        for (const modelName of selectedFetchedModels) {
+            try {
+                const result = await testModelMutation.mutateAsync({
+                    ...payloadBase,
+                    modelName,
+                });
+                results.push({
+                    model: modelName,
+                    success: result.success,
+                    message: result.message,
+                    pathUsed: result.pathUsed,
+                    authMode: result.authMode,
+                    error: result.error,
+                });
+            } catch (error) {
+                results.push({
+                    model: modelName,
+                    success: false,
+                    message: '测试失败',
+                });
+            }
+            setBatchTestResults([...results]);
+        }
+
+        setBatchTestRunning(false);
+    };
+
     const handleTestConnection = async (record: AIModelConfig) => {
         const hide = message.loading('正在测试连接...', 0);
         try {
@@ -375,6 +519,7 @@ export const AIModelConfigPage = () => {
             hide();
 
             if (result.success) {
+                blurActiveElement();
                 modal.success({
                     title: '✅ 连接测试成功',
                     width: 500,
@@ -401,6 +546,7 @@ export const AIModelConfigPage = () => {
                     ),
                 });
             } else {
+                blurActiveElement();
                 modal.error({
                     title: '❌ 连接测试失败',
                     width: 500,
@@ -497,14 +643,36 @@ export const AIModelConfigPage = () => {
             width: 200,
             fixed: 'right',
             render: (_, record) => [
-                <a key="test" onClick={() => handleTestConnection(record)}>
+                <a
+                    key="test"
+                    onClick={(event) => {
+                        event.preventDefault();
+                        blurActiveElement();
+                        handleTestConnection(record);
+                    }}
+                >
                     <ApiOutlined /> 测试
                 </a>,
-                <a key="edit" onClick={() => handleEdit(record)}>
+                <a
+                    key="edit"
+                    onClick={(event) => {
+                        event.preventDefault();
+                        blurActiveElement();
+                        handleEdit(record);
+                    }}
+                >
                     编辑
                 </a>,
                 record.configKey !== 'DEFAULT' && (
-                    <a key="delete" style={{ color: '#ff4d4f' }} onClick={() => handleDelete(record.configKey)}>
+                    <a
+                        key="delete"
+                        style={{ color: '#ff4d4f' }}
+                        onClick={(event) => {
+                            event.preventDefault();
+                            blurActiveElement();
+                            handleDelete(record.configKey);
+                        }}
+                    >
                         删除
                     </a>
                 ),
@@ -546,13 +714,22 @@ export const AIModelConfigPage = () => {
             <ModalForm
                 title={currentRow?.configKey ? `编辑配置: ${currentRow.configKey}` : '新建 AI 配置'}
                 open={editModalVisible}
-                onOpenChange={setEditModalVisible}
+                onOpenChange={(open) => {
+                    blurActiveElement();
+                    setEditModalVisible(open);
+                }}
                 onFinish={handleFinish}
                 initialValues={currentRow}
                 formRef={formRef}
+                autoFocusFirstInput={false}
                 modalProps={{
                     destroyOnClose: true,
                     maskClosable: false,
+                    focusTriggerAfterClose: false,
+                    onCancel: () => {
+                        blurActiveElement();
+                        setEditModalVisible(false);
+                    },
                     ...modalProps,
                 }}
             >
@@ -592,7 +769,10 @@ export const AIModelConfigPage = () => {
                             { required: true, message: '请输入配置标识' },
                             { pattern: /^[A-Z0-9_]+$/, message: '仅允许大写字母、数字和下划线' }
                         ]}
-                        fieldProps={currentRow?.id ? undefined : (autoFocusFieldProps as any)}
+                        fieldProps={currentRow?.id ? undefined : {
+                            ...(autoFocusFieldProps as any),
+                            ref: editModalFocusRef,
+                        }}
                     />
 
                     <ProFormSelect
@@ -603,7 +783,10 @@ export const AIModelConfigPage = () => {
                             { label: 'OpenAI (兼容协议)', value: 'openai' },
                         ]}
                         rules={[{ required: true }]}
-                        fieldProps={currentRow?.id ? (autoFocusFieldProps as any) : undefined}
+                        fieldProps={currentRow?.id ? {
+                            ...(autoFocusFieldProps as any),
+                            ref: editModalFocusRef,
+                        } : undefined}
                     />
 
                 <ProFormSelect
@@ -675,11 +858,18 @@ export const AIModelConfigPage = () => {
                                 <Button size="small" onClick={handleTestSelectedModel} loading={testModelMutation.isPending}>
                                     测试选中模型
                                 </Button>
+                                <Button size="small" onClick={handleBatchTestModels} loading={batchTestRunning}>
+                                    批量测试选中
+                                </Button>
                                 <Button size="small" onClick={() => {
                                     setFetchedModels([]);
                                     setSelectedFetchedModels([]);
                                     setFetchRecommendation(undefined);
                                     setFetchRecommendationPatch(undefined);
+                                    setBatchTestResults([]);
+                                    blurActiveElement();
+                                    setBatchTestVisible(false);
+                                    setBatchTestRunning(false);
                                 }}>
                                     清空列表
                                 </Button>
@@ -742,6 +932,9 @@ export const AIModelConfigPage = () => {
                                 gap: 8,
                             }}
                         />
+                        <div style={{ marginTop: 8, color: '#666', fontSize: 12 }}>
+                            已选择 {selectedFetchedModels.length} / {fetchedModels.length}
+                        </div>
                     </Card>
                 )}
 
@@ -802,6 +995,12 @@ export const AIModelConfigPage = () => {
                                     tooltip="获取模型列表失败时尝试常见路径"
                                 />
                             ) : null}
+
+                            <ProFormSwitch
+                                name="allowCompatPathFallback"
+                                label="启用兼容路径回退"
+                                tooltip="当调用 /chat/completions 失败时自动改用 /completions"
+                            />
 
                             <ProFormTextArea
                                 name="headers"
@@ -881,6 +1080,58 @@ export const AIModelConfigPage = () => {
                 </Space>
                 </div>
             </ModalForm>
+            <Modal
+                title="批量测试结果"
+                open={batchTestVisible}
+                onCancel={() => {
+                    blurActiveElement();
+                    setBatchTestVisible(false);
+                }}
+                footer={(
+                    <Button
+                        ref={batchTestCloseBtnRef}
+                        onClick={() => {
+                            blurActiveElement();
+                            setBatchTestVisible(false);
+                        }}
+                    >
+                        关闭
+                    </Button>
+                )}
+                width={720}
+                focusTriggerAfterClose={false}
+                afterOpenChange={batchTestModalProps.afterOpenChange}
+            >
+                <div ref={batchTestContainerRef}>
+                    <Table
+                        size="small"
+                        rowKey="model"
+                        pagination={false}
+                        dataSource={batchTestResults}
+                        columns={[
+                            { title: '模型', dataIndex: 'model', ellipsis: true },
+                            {
+                                title: '状态',
+                                dataIndex: 'success',
+                                width: 90,
+                                render: (value) => (
+                                    <Tag color={value ? 'green' : 'red'}>
+                                        {value ? '可用' : '失败'}
+                                    </Tag>
+                                ),
+                            },
+                            { title: '路径', dataIndex: 'pathUsed', width: 160, ellipsis: true },
+                            { title: '认证', dataIndex: 'authMode', width: 100 },
+                            { title: '信息', dataIndex: 'message', ellipsis: true },
+                        ]}
+                    />
+                    {batchTestRunning && (
+                        <div style={{ marginTop: 8, color: '#666', fontSize: 12 }}>
+                            正在测试，请稍候...
+                        </div>
+                    )}
+                </div>
+            </Modal>
         </PageContainer>
     );
 };

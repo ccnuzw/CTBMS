@@ -110,6 +110,18 @@ export const COLLECTION_POINT_FREQUENCY_LABELS: Record<CollectionPointFrequencyT
     [CollectionPointFrequencyType.CUSTOM]: '自定义',
 };
 
+export const ShiftConfigSchema = z.object({
+    dates: z.array(z.string()).optional(),
+    weekdays: z.array(z.number().min(1).max(7)).optional(),
+    monthDays: z.array(z.number().min(0).max(31)).optional(),
+    intervalDays: z.union([z.number().min(1), z.string().min(1)]).optional(),
+    startDate: z.string().optional(),
+}).passthrough();
+
+export type ShiftConfig = z.infer<typeof ShiftConfigSchema>;
+
+const ShiftConfigInputSchema = z.union([ShiftConfigSchema, z.string(), z.null()]).optional();
+
 // 品种配置接口
 export interface CommodityConfig {
     name: string; // 品种名称 (e.g. "玉米")
@@ -146,7 +158,7 @@ export const CreateCollectionPointSchema = z.object({
     weekdays: z.array(z.number().min(1).max(7)).optional().default([]),
     monthDays: z.array(z.number().min(0).max(31)).optional().default([]),
     dispatchAtMinute: z.number().min(0).max(1439).optional().default(540),
-    shiftConfig: z.any().optional(),
+    shiftConfig: ShiftConfigInputSchema,
 
     defaultSubType: z.string().optional(),
     enterpriseId: z.string().optional(),
@@ -190,7 +202,7 @@ export const CollectionPointResponseSchema = z.object({
     weekdays: z.array(z.number()),
     monthDays: z.array(z.number()),
     dispatchAtMinute: z.number(),
-    shiftConfig: z.any().nullable().optional(),
+    shiftConfig: z.union([ShiftConfigSchema, z.string()]).nullable().optional(),
 
     defaultSubType: z.string().nullable(),
     enterpriseId: z.string().nullable(),

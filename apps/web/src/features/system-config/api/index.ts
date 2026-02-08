@@ -241,6 +241,9 @@ export const useTestAIConnection = () => {
                 apiUrl?: string;
                 modelId?: string;
                 provider?: string;
+                hint?: string;
+                authMode?: string;
+                pathUsed?: string;
             }>;
         },
     });
@@ -259,6 +262,7 @@ export const useTestAIModel = () => {
             pathOverrides?: Record<string, string>;
             modelFetchMode?: 'official' | 'manual' | 'custom';
             allowUrlProbe?: boolean;
+            allowCompatPathFallback?: boolean;
             timeoutMs?: number;
             maxRetries?: number;
             temperature?: number;
@@ -279,6 +283,9 @@ export const useTestAIModel = () => {
                 modelId?: string;
                 provider?: string;
                 apiUrl?: string;
+                hint?: string;
+                authMode?: string;
+                pathUsed?: string;
             }>;
         },
     });

@@ -39,7 +39,9 @@ import {
     CollectionPointFrequencyType,
     COLLECTION_POINT_FREQUENCY_LABELS,
     type CreateCollectionPointDto,
+    type ShiftConfig,
 } from '@packages/types';
+import { ShiftConfigEditor } from './ShiftConfigEditor';
 import { useModalAutoFocus } from '../../../hooks/useModalAutoFocus';
 import { useRegionTree } from '../api/region';
 import { useDictionary } from '@/hooks/useDictionaries';
@@ -92,6 +94,10 @@ export const CollectionPointEditor: React.FC<CollectionPointEditorProps> = ({
     // Watch type field to conditionally show region selector
     const selectedType = Form.useWatch('type', form);
     const frequencyType = Form.useWatch('frequencyType', form);
+    const frequencyOptions = Object.entries(COLLECTION_POINT_FREQUENCY_LABELS).map(([value, label]) => ({
+        value,
+        label: value === CollectionPointFrequencyType.CUSTOM ? '自定义排期' : label,
+    }));
 
     // Convert region tree to Cascader options
     const regionOptions = useMemo(() => {
@@ -121,6 +127,29 @@ export const CollectionPointEditor: React.FC<CollectionPointEditorProps> = ({
             });
         }
     }, [open, editData, editId, form]);
+
+    const normalizeShiftConfig = (raw?: unknown): ShiftConfig | undefined => {
+        if (!raw) return undefined;
+        let cfg = raw as ShiftConfig | undefined;
+        if (typeof raw === 'string') {
+            try {
+                cfg = JSON.parse(raw) as ShiftConfig;
+            } catch {
+                return undefined;
+            }
+        }
+        if (!cfg) return undefined;
+        const cleaned: ShiftConfig = {};
+        if (Array.isArray(cfg.dates) && cfg.dates.length > 0) cleaned.dates = cfg.dates.filter(Boolean);
+        if (Array.isArray(cfg.weekdays) && cfg.weekdays.length > 0) cleaned.weekdays = cfg.weekdays;
+        if (Array.isArray(cfg.monthDays) && cfg.monthDays.length > 0) cleaned.monthDays = cfg.monthDays;
+        if (cfg.intervalDays !== undefined && cfg.intervalDays !== null && cfg.intervalDays !== '') {
+            const value = Number(cfg.intervalDays);
+            if (Number.isFinite(value) && value > 0) cleaned.intervalDays = value;
+        }
+        if (cfg.startDate) cleaned.startDate = cfg.startDate;
+        return Object.keys(cleaned).length > 0 ? cleaned : undefined;
+    };
 
     const handleSubmit = async () => {
         try {
@@ -169,6 +198,24 @@ export const CollectionPointEditor: React.FC<CollectionPointEditorProps> = ({
             if (dispatchAtMinute !== undefined) {
                 filteredValues.dispatchAtMinute = dispatchAtMinute;
             }
+            if (filteredValues.frequencyType !== CollectionPointFrequencyType.CUSTOM) {
+                delete filteredValues.shiftConfig;
+            } else {
+                const cleaned = normalizeShiftConfig(filteredValues.shiftConfig);
+                if (cleaned) {
+                    filteredValues.shiftConfig = cleaned;
+                } else {
+                    delete filteredValues.shiftConfig;
+                }
+                delete filteredValues.weekdays;
+                delete filteredValues.monthDays;
+            }
+            if (filteredValues.frequencyType !== CollectionPointFrequencyType.WEEKLY) {
+                delete filteredValues.weekdays;
+            }
+            if (filteredValues.frequencyType !== CollectionPointFrequencyType.MONTHLY) {
+                delete filteredValues.monthDays;
+            }
 
             if (isEdit) {
                 await updateMutation.mutateAsync({ id: editId, dto: filteredValues });
@@ -196,6 +243,7 @@ export const CollectionPointEditor: React.FC<CollectionPointEditorProps> = ({
             confirmLoading={isPending}
             width={700}
             destroyOnClose
+            focusTriggerAfterClose={false}
             afterOpenChange={modalProps.afterOpenChange}
         >
             <div ref={containerRef}>
@@ -287,29 +335,27 @@ export const CollectionPointEditor: React.FC<CollectionPointEditorProps> = ({
                     <Divider orientation="left">
                         <Space>
                             <SettingOutlined />
-                            <Text strong>采集频率</Text>
+                            <Text strong>任务下发规则</Text>
                         </Space>
                     </Divider>
 
                     <Row gutter={16}>
-                        <Col span={8}>
-                            <Form.Item name="frequencyType" label="频率类型">
-                                <Select
-                                    options={Object.entries(COLLECTION_POINT_FREQUENCY_LABELS).map(([value, label]) => ({
-                                        value,
-                                        label,
-                                    }))}
-                                />
+                        <Col span={12}>
+                            <Form.Item
+                                name="frequencyType"
+                                label="下发频率"
+                                extra="选择“自定义排期”时请在下方设置规则"
+                            >
+                                <Select options={frequencyOptions} />
                             </Form.Item>
                         </Col>
-                        <Col span={8}>
-                            <Form.Item name="dispatchTime" label="下发时间">
+                        <Col span={12}>
+                            <Form.Item
+                                name="dispatchTime"
+                                label="任务生成时间（当天）"
+                                tooltip="到达该时间点后才会生成任务"
+                            >
                                 <TimePicker format="HH:mm" />
-                            </Form.Item>
-                        </Col>
-                        <Col span={8}>
-                            <Form.Item name="shiftConfig" label="班次配置">
-                                <Input placeholder="可选，JSON/文本" />
                             </Form.Item>
                         </Col>
                     </Row>
@@ -346,6 +392,10 @@ export const CollectionPointEditor: React.FC<CollectionPointEditorProps> = ({
                                 ]}
                             />
                         </Form.Item>
+                    )}
+
+                    {frequencyType === CollectionPointFrequencyType.CUSTOM && (
+                        <ShiftConfigEditor open={open} resetKey={editId ?? 'new'} />
                     )}
 
                     {/* 地理信息 */}

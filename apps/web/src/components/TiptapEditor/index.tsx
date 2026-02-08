@@ -2,9 +2,7 @@ import React from 'react';
 import { useEditor, EditorContent } from '@tiptap/react';
 import { theme } from 'antd';
 import StarterKit from '@tiptap/starter-kit';
-import Underline from '@tiptap/extension-underline';
 import TextAlign from '@tiptap/extension-text-align';
-import Link from '@tiptap/extension-link';
 import Image from '@tiptap/extension-image';
 // Tiptap table extensions
 import { Table } from '@tiptap/extension-table';
@@ -45,19 +43,19 @@ export const TiptapEditor: React.FC<TiptapEditorProps> = ({
                 heading: {
                     levels: [1, 2, 3, 4],
                 },
-                // Disable potential duplicates that cause warnings
+                // Tiptap v3 StarterKit already includes link/underline.
+                // Configure link here to avoid duplicate extension registration warnings.
+                link: {
+                    openOnClick: false,
+                    HTMLAttributes: {
+                        class: 'tiptap-link',
+                    },
+                },
             }),
-            Underline,
             TextStyle,
             Color,
             TextAlign.configure({
                 types: ['heading', 'paragraph'],
-            }),
-            Link.configure({
-                openOnClick: false,
-                HTMLAttributes: {
-                    class: 'tiptap-link',
-                },
             }),
             Image.configure({
                 HTMLAttributes: {

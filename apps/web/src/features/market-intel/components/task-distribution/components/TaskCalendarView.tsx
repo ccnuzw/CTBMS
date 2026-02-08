@@ -46,6 +46,7 @@ import {
     INTEL_TASK_TYPE_LABELS,
 } from '@packages/types';
 import { INTEL_TASK_STATUS_LABELS } from '@/constants';
+import { useModalAutoFocus } from '@/hooks/useModalAutoFocus';
 import { useTasks, useCompleteTask, useCalendarPreview, useCalendarSummary } from '../../../api/tasks';
 import { useUsers } from '../../../../users/api/users';
 import { useOrganizations } from '../../../../organization/api/organizations';
@@ -87,6 +88,21 @@ const INITIAL_FILTERS = {
 export const TaskCalendarView: React.FC = () => {
     const { token } = theme.useToken();
     const [form] = Form.useForm();
+    const {
+        containerRef: saveModalContainerRef,
+        focusRef: saveNameInputRef,
+        modalProps: saveModalProps,
+    } = useModalAutoFocus();
+    const {
+        containerRef: advancedDrawerContainerRef,
+        focusRef: advancedDrawerFocusRef,
+        modalProps: advancedDrawerProps,
+    } = useModalAutoFocus();
+    const {
+        containerRef: taskDrawerContainerRef,
+        focusRef: taskDrawerFocusRef,
+        modalProps: taskDrawerProps,
+    } = useModalAutoFocus();
     const [filters, setFilters] = useState(INITIAL_FILTERS);
     const screens = Grid.useBreakpoint();
     const isWideDrawer = !!(screens.lg || screens.md);
@@ -108,6 +124,34 @@ export const TaskCalendarView: React.FC = () => {
     const [saveModalOpen, setSaveModalOpen] = useState(false);
     const [saveMode, setSaveMode] = useState<'create' | 'rename'>('create');
     const [saveName, setSaveName] = useState('');
+
+    const blurActiveElement = () => {
+        if (typeof document === 'undefined') return;
+        const active = document.activeElement;
+        if (active instanceof HTMLElement) {
+            active.blur();
+        }
+    };
+
+    const openAdvancedDrawer = () => {
+        blurActiveElement();
+        setAdvancedOpen(true);
+    };
+
+    const closeAdvancedDrawer = () => {
+        blurActiveElement();
+        setAdvancedOpen(false);
+    };
+
+    const openTaskDrawer = () => {
+        blurActiveElement();
+        setDrawerOpen(true);
+    };
+
+    const closeTaskDrawer = () => {
+        blurActiveElement();
+        setDrawerOpen(false);
+    };
 
     // Data Hooks
     const { data: users = [] } = useUsers({ status: 'ACTIVE', organizationId: filters.assigneeOrgId, departmentId: filters.assigneeDeptId });
@@ -252,6 +296,7 @@ export const TaskCalendarView: React.FC = () => {
             setSelectedSavedFilterId(entry.id);
         }
         setSaveName('');
+        blurActiveElement();
         setSaveModalOpen(false);
     };
 
@@ -286,6 +331,7 @@ export const TaskCalendarView: React.FC = () => {
     const handleOpenSaveModal = (mode: 'create' | 'rename') => {
         setSaveMode(mode);
         setSaveName(mode === 'rename' ? selectedSavedFilter?.name || '' : '');
+        blurActiveElement();
         setSaveModalOpen(true);
     };
 
@@ -607,7 +653,14 @@ export const TaskCalendarView: React.FC = () => {
     }, [filteredDrawerTasks, selectedTaskId]);
 
     useEffect(() => {
-        setSelectedTaskIds((prev) => prev.filter(id => filteredDrawerTasks.some(task => task.id === id)));
+        setSelectedTaskIds((prev) => {
+            const filteredIdSet = new Set(filteredDrawerTasks.map(task => task.id));
+            const next = prev.filter(id => filteredIdSet.has(id));
+            if (next.length === prev.length && next.every((id, index) => id === prev[index])) {
+                return prev;
+            }
+            return next;
+        });
     }, [filteredDrawerTasks]);
 
     const yearOptions = useMemo(() => {
@@ -640,7 +693,7 @@ export const TaskCalendarView: React.FC = () => {
     const handleFocusDate = (date: dayjs.Dayjs, openDrawer = true) => {
         setViewDate(date);
         setSelectedDate(date);
-        if (openDrawer) setDrawerOpen(true);
+        if (openDrawer) openTaskDrawer();
     };
 
     const handleFocusWeek = () => {
@@ -761,6 +814,7 @@ export const TaskCalendarView: React.FC = () => {
                 title={saveMode === 'rename' ? '重命名筛选' : '保存筛选'}
                 open={saveModalOpen}
                 onCancel={() => {
+                    blurActiveElement();
                     setSaveModalOpen(false);
                     setSaveName('');
                 }}
@@ -768,12 +822,17 @@ export const TaskCalendarView: React.FC = () => {
                 okText={saveMode === 'rename' ? '保存名称' : '保存'}
                 cancelText="取消"
                 okButtonProps={{ disabled: !saveName.trim() }}
+                focusTriggerAfterClose={false}
+                afterOpenChange={saveModalProps.afterOpenChange}
             >
-                <Input
-                    placeholder="筛选名称"
-                    value={saveName}
-                    onChange={(event) => setSaveName(event.target.value)}
-                />
+                <div ref={saveModalContainerRef}>
+                    <Input
+                        ref={saveNameInputRef}
+                        placeholder="筛选名称"
+                        value={saveName}
+                        onChange={(event) => setSaveName(event.target.value)}
+                    />
+                </div>
             </Modal>
             <Form
                 form={form}
@@ -859,7 +918,7 @@ export const TaskCalendarView: React.FC = () => {
                             <Row align="middle" justify="space-between" gutter={[12, 8]}>
                                 <Col flex="auto">
                                     <Space wrap size="small">
-                                        <Button icon={<FilterOutlined />} onClick={() => setAdvancedOpen(true)}>
+                                        <Button icon={<FilterOutlined />} onClick={openAdvancedDrawer}>
                                             高级筛选
                                         </Button>
                                         <Divider type="vertical" />
@@ -1000,34 +1059,37 @@ export const TaskCalendarView: React.FC = () => {
                     placement="left"
                     width={360}
                     open={advancedOpen}
-                    onClose={() => setAdvancedOpen(false)}
+                    onClose={closeAdvancedDrawer}
+                    afterOpenChange={advancedDrawerProps.afterOpenChange}
                 >
-                    <Space direction="vertical" size="middle" style={{ width: '100%' }}>
-                        <Text strong>视图与汇总</Text>
-                        <Form.Item name="orgSummary" label="组织汇总" valuePropName="checked">
-                            <Switch />
-                        </Form.Item>
-                        <Form.Item
-                            name="includePreview"
-                            label="包含预览任务"
-                            valuePropName="checked"
-                            tooltip={filters.status ? '已选择状态时不可包含预览任务' : ''}
-                        >
-                            <Switch disabled={!!filters.status} />
-                        </Form.Item>
+                    <div ref={advancedDrawerContainerRef}>
+                        <Space direction="vertical" size="middle" style={{ width: '100%' }}>
+                            <Text strong>视图与汇总</Text>
+                            <Form.Item name="orgSummary" label="组织汇总" valuePropName="checked">
+                                <Switch ref={advancedDrawerFocusRef} />
+                            </Form.Item>
+                            <Form.Item
+                                name="includePreview"
+                                label="包含预览任务"
+                                valuePropName="checked"
+                                tooltip={filters.status ? '已选择状态时不可包含预览任务' : ''}
+                            >
+                                <Switch disabled={!!filters.status} />
+                            </Form.Item>
 
-                        <Divider style={{ margin: '4px 0' }} />
-                        <Text strong>快捷筛选</Text>
-                        <Space wrap>
-                            <Button onClick={() => handleApplyPresetFilter('OVERDUE')}>仅看逾期</Button>
-                            <Button onClick={() => handleApplyPresetFilter('PENDING')}>仅看待办</Button>
-                            <Button onClick={() => handleApplyPresetFilter('PREVIEW')}>仅看预览</Button>
-                            <Button onClick={() => handleApplyPresetFilter('URGENT')}>仅看紧急</Button>
+                            <Divider style={{ margin: '4px 0' }} />
+                            <Text strong>快捷筛选</Text>
+                            <Space wrap>
+                                <Button onClick={() => handleApplyPresetFilter('OVERDUE')}>仅看逾期</Button>
+                                <Button onClick={() => handleApplyPresetFilter('PENDING')}>仅看待办</Button>
+                                <Button onClick={() => handleApplyPresetFilter('PREVIEW')}>仅看预览</Button>
+                                <Button onClick={() => handleApplyPresetFilter('URGENT')}>仅看紧急</Button>
+                            </Space>
+                            <Text type="secondary">
+                                高级筛选会与主筛选条叠加生效，组织汇总开启时将清空部门与负责人。
+                            </Text>
                         </Space>
-                        <Text type="secondary">
-                            高级筛选会与主筛选条叠加生效，组织汇总开启时将清空部门与负责人。
-                        </Text>
-                    </Space>
+                    </div>
                 </Drawer>
             </Form>
 
@@ -1061,7 +1123,7 @@ export const TaskCalendarView: React.FC = () => {
                             onSelect={(date, { source }) => {
                                 if (source === 'date') {
                                     setSelectedDate(date);
-                                    setDrawerOpen(true);
+                                    openTaskDrawer();
                                 }
                                 setViewDate(date);
                             }}
@@ -1175,7 +1237,7 @@ export const TaskCalendarView: React.FC = () => {
                                                 type="link"
                                                 onClick={() => {
                                                     setSelectedDate(dayjs(item.date));
-                                                    setDrawerOpen(true);
+                                                    openTaskDrawer();
                                                 }}
                                             >
                                                 查看任务
@@ -1206,13 +1268,16 @@ export const TaskCalendarView: React.FC = () => {
                 title={selectedDate ? `${selectedDate.format('MM月DD日')} 任务工作台` : '任务工作台'}
                 placement="right"
                 width={isWideDrawer ? 860 : '100%'}
-                onClose={() => setDrawerOpen(false)}
+                onClose={closeTaskDrawer}
                 open={drawerOpen}
+                afterOpenChange={taskDrawerProps.afterOpenChange}
             >
-                <Space direction="vertical" size="middle" style={{ width: '100%' }}>
+                <div ref={taskDrawerContainerRef}>
+                    <Space direction="vertical" size="middle" style={{ width: '100%' }}>
                     <Space wrap align="center" style={{ justifyContent: 'space-between', width: '100%' }}>
                         <Space wrap>
                             <Button
+                                ref={taskDrawerFocusRef}
                                 icon={<LeftOutlined />}
                                 disabled={!selectedDate}
                                 onClick={() => selectedDate && handleFocusDate(selectedDate.subtract(1, 'day'), false)}
@@ -1559,7 +1624,8 @@ export const TaskCalendarView: React.FC = () => {
                             )}
                         </div>
                     )}
-                </Space>
+                    </Space>
+                </div>
             </Drawer>
         </Space>
     );

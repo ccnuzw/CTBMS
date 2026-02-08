@@ -137,6 +137,19 @@ export const router = createBrowserRouter([
                     { path: 'review', element: <PriceReviewPanel /> },
                 ]
             },
+            // 历史设置中心路由兼容（菜单/书签）
+            {
+                path: 'settings',
+                children: [
+                    { path: 'general', element: <Navigate to="/system/config/rules" replace /> },
+                    { path: 'security', element: <Navigate to="/system/config/ai-models" replace /> },
+                ],
+            },
+            // 全局兜底，避免 React Router 默认 ErrorBoundary 报 no route matched
+            {
+                path: '*',
+                element: <Navigate to="/dashboard" replace />,
+            },
         ],
     },
 ]);

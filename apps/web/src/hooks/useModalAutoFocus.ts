@@ -48,14 +48,29 @@ export const useModalAutoFocus = (options: UseModalAutoFocusOptions = {}) => {
         if (!el || typeof el.focus !== 'function') {
             return false;
         }
+        if (el.hasAttribute('inert') || !!el.closest('[inert]')) {
+            return false;
+        }
         if (el.getAttribute('aria-hidden') === 'true') {
             return false;
         }
         if (el.closest('[aria-hidden="true"]')) {
             return false;
         }
+        const className = typeof el.className === 'string' ? el.className : '';
+        if (/focus-guard|sentinel/i.test(className)) {
+            return false;
+        }
+        const computedStyle = window.getComputedStyle(el);
+        if (computedStyle.display === 'none' || computedStyle.visibility === 'hidden') {
+            return false;
+        }
         const tabIndex = el.getAttribute('tabindex');
         if (tabIndex !== null && Number(tabIndex) < 0) {
+            return false;
+        }
+        const rect = el.getBoundingClientRect();
+        if (rect.width === 0 && rect.height === 0 && computedStyle.overflow === 'hidden') {
             return false;
         }
         if (el instanceof HTMLInputElement) {
