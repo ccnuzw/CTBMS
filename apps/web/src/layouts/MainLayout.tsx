@@ -65,14 +65,19 @@ export const MainLayout: React.FC = () => {
                     label: '采集管理',
                     children: [
                         {
-                            key: '/price-reporting',
-                            icon: <FormOutlined />,
-                            label: '填报工作台',
+                            key: '/intel/collection-points',
+                            icon: <SettingOutlined />,
+                            label: '采集点配置',
                         },
                         {
                             key: '/intel/tasks',
                             icon: <ScheduleOutlined />,
-                            label: '任务分配',
+                            label: '任务管理',
+                        },
+                        {
+                            key: '/price-reporting',
+                            icon: <FormOutlined />,
+                            label: '填报工作台',
                         },
                         {
                             key: '/intel/monitor',
@@ -85,14 +90,9 @@ export const MainLayout: React.FC = () => {
                             label: '价格审核',
                         },
                         {
-                            key: '/admin/task-allocation',
-                            icon: <ScheduleOutlined />,
-                            label: '任务分发工作台',
-                        },
-                        {
-                            key: '/price-reporting/allocation',
-                            icon: <NodeIndexOutlined />,
-                            label: '采集点分配',
+                            key: '/intel/leaderboard',
+                            icon: <TeamOutlined />,
+                            label: '绩效排行',
                         },
                     ]
                 },
@@ -130,16 +130,6 @@ export const MainLayout: React.FC = () => {
                     key: '/intel/knowledge',
                     icon: <FileTextOutlined />,
                     label: '商情知识库',
-                },
-                {
-                    key: '/intel/leaderboard',
-                    icon: <TeamOutlined />,
-                    label: '绩效排行',
-                },
-                {
-                    key: '/intel/collection-points',
-                    icon: <SettingOutlined />,
-                    label: '采集点配置',
                 },
                 {
                     key: '/intel/extraction-config',

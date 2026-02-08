@@ -1,0 +1,40 @@
+-- Simplify IntelTaskType enum and map legacy values
+
+CREATE TYPE "IntelTaskType_new" AS ENUM (
+  'COLLECTION',
+  'REPORT',
+  'RESEARCH',
+  'VERIFICATION',
+  'OTHER'
+);
+
+ALTER TABLE "IntelTask"
+  ALTER COLUMN "type" TYPE "IntelTaskType_new"
+  USING (
+    CASE
+      WHEN "type" IN ('DAILY_REPORT', 'WEEKLY_REPORT', 'MONTHLY_REPORT') THEN 'REPORT'
+      WHEN "type" IN ('RESEARCH_REPORT', 'FIELD_VISIT', 'COMPETITOR_INFO', 'POLICY_ANALYSIS') THEN 'RESEARCH'
+      WHEN "type" IN ('EXHIBITION_REPORT') THEN 'REPORT'
+      WHEN "type" IN ('PRICE_COLLECTION', 'INVENTORY_CHECK') THEN 'COLLECTION'
+      WHEN "type" IN ('URGENT_VERIFICATION') THEN 'VERIFICATION'
+      WHEN "type" IN ('RESOURCE_UPDATE') THEN 'OTHER'
+      ELSE 'OTHER'
+    END
+  )::"IntelTaskType_new";
+
+ALTER TABLE "IntelTaskTemplate"
+  ALTER COLUMN "taskType" TYPE "IntelTaskType_new"
+  USING (
+    CASE
+      WHEN "taskType" IN ('DAILY_REPORT', 'WEEKLY_REPORT', 'MONTHLY_REPORT') THEN 'REPORT'
+      WHEN "taskType" IN ('RESEARCH_REPORT', 'FIELD_VISIT', 'COMPETITOR_INFO', 'POLICY_ANALYSIS') THEN 'RESEARCH'
+      WHEN "taskType" IN ('EXHIBITION_REPORT') THEN 'REPORT'
+      WHEN "taskType" IN ('PRICE_COLLECTION', 'INVENTORY_CHECK') THEN 'COLLECTION'
+      WHEN "taskType" IN ('URGENT_VERIFICATION') THEN 'VERIFICATION'
+      WHEN "taskType" IN ('RESOURCE_UPDATE') THEN 'OTHER'
+      ELSE 'OTHER'
+    END
+  )::"IntelTaskType_new";
+
+DROP TYPE "IntelTaskType";
+ALTER TYPE "IntelTaskType_new" RENAME TO "IntelTaskType";

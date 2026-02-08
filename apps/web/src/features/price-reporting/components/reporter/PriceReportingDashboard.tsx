@@ -38,7 +38,7 @@ export const PriceReportingDashboard: React.FC = () => {
   const { data: assignedPoints, isLoading: loadingPoints } = useMyAssignedPoints(today, currentUser?.id);
   const { data: myTasks, isLoading: loadingTasks } = useMyTasks(currentUser?.id || '');
   const { data: stats } = useSubmissionStatistics(currentUser?.id);
-  
+
   // 预加载关键字典数据，确保进入填报页面时字典已可用
   useDictionary('PRICE_SUB_TYPE');
   useDictionary('COMMODITY');
@@ -121,8 +121,8 @@ export const PriceReportingDashboard: React.FC = () => {
     }
 
     // Use point name as title if this is a price collection task, otherwise generic title
-    const displayTitle = (task.type === IntelTaskType.PRICE_COLLECTION && pointName) ? pointName : task.title;
-    const displaySubtitle = (task.type === IntelTaskType.PRICE_COLLECTION && pointName) ? task.title : null;
+    const displayTitle = (task.type === IntelTaskType.COLLECTION && pointName) ? pointName : task.title;
+    const displaySubtitle = (task.type === IntelTaskType.COLLECTION && pointName) ? task.title : null;
 
     return (
       <List.Item>
@@ -137,7 +137,10 @@ export const PriceReportingDashboard: React.FC = () => {
             title={
               <div className={styles.taskTitle}>
                 {pointType && POINT_TYPE_ICONS[pointType] ? <span style={{ marginRight: 8, fontSize: 16 }}>{POINT_TYPE_ICONS[pointType]}</span> : <FileTextOutlined style={{ marginRight: 8 }} />}
-                <span style={{ fontWeight: pointName ? 'bold' : 'normal', fontSize: 15 }}>{displayTitle}</span>
+                <span style={{ fontWeight: pointName ? 'bold' : 'normal', fontSize: 15 }}>
+                  {/* Simplification: Use template name if available, otherwise strip redundant info */}
+                  {(task as any).template?.name || displayTitle.replace(/\[(港口|站台|企业|地域|批发市场)\].*?\[/g, '[').replace(/\[.*?\]\s*$/, '')}
+                </span>
               </div>
             }
             extra={<Tag>{INTEL_TASK_TYPE_LABELS[task.type as IntelTaskType]}</Tag>}

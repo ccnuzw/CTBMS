@@ -5,6 +5,7 @@ import { useMappingRules, useCreateMappingRule, useUpdateMappingRule, useDeleteM
 import { BusinessMappingRule } from '../types';
 import { PlusOutlined, EditOutlined, DeleteOutlined, QuestionCircleOutlined } from '@ant-design/icons';
 import { useDictionaries } from '@/hooks/useDictionaries';
+import { useModalAutoFocus } from '@/hooks/useModalAutoFocus';
 
 const { Title, Paragraph, Text } = Typography;
 
@@ -73,6 +74,16 @@ export const LogicRulesPage = () => {
     const [modalVisible, setModalVisible] = useState(false);
     const [helpVisible, setHelpVisible] = useState(false);
     const [currentRow, setCurrentRow] = useState<BusinessMappingRule | null>(null);
+    const {
+        containerRef: formContainerRef,
+        autoFocusFieldProps: formAutoFocusFieldProps,
+        modalProps: formModalProps,
+    } = useModalAutoFocus();
+    const {
+        containerRef: helpContainerRef,
+        focusRef: helpFocusRef,
+        modalProps: helpModalProps,
+    } = useModalAutoFocus();
 
     const domainValueEnum = useMemo(() => {
         if (!dictionaryDomains || dictionaryDomains.length === 0) {
@@ -305,17 +316,20 @@ export const LogicRulesPage = () => {
                     matchMode: 'CONTAINS'
                 }}
                 modalProps={{
-                    destroyOnClose: true
+                    destroyOnClose: true,
+                    ...formModalProps,
                 }}
             >
-                <ProFormSelect
-                    name="domain"
-                    label="业务域 (Domain)"
-                    tooltip="决定规则适用的场景。例如：解析价格类型请选'PriceSubType'，分析情感请选'Sentiment'。"
-                    placeholder="请选择业务场景"
-                    valueEnum={Object.keys(domainValueEnum).length ? domainValueEnum : undefined}
-                    rules={[{ required: true }]}
-                />
+                <div ref={formContainerRef}>
+                    <ProFormSelect
+                        name="domain"
+                        label="业务域 (Domain)"
+                        tooltip="决定规则适用的场景。例如：解析价格类型请选'PriceSubType'，分析情感请选'Sentiment'。"
+                        placeholder="请选择业务场景"
+                        valueEnum={Object.keys(domainValueEnum).length ? domainValueEnum : undefined}
+                        rules={[{ required: true }]}
+                        fieldProps={formAutoFocusFieldProps as any}
+                    />
 
                 <ProFormSelect
                     name="matchMode"
@@ -382,16 +396,24 @@ export const LogicRulesPage = () => {
                     label="启用状态"
                 />
 
+                </div>
+
             </ModalForm>
 
             <Modal
                 title="业务规则配置指南"
                 open={helpVisible}
                 onCancel={() => setHelpVisible(false)}
-                footer={null}
+                footer={[
+                    <Button key="close" onClick={() => setHelpVisible(false)} ref={helpFocusRef}>
+                        关闭
+                    </Button>,
+                ]}
                 width={800}
+                {...helpModalProps}
             >
-                <Typography>
+                <div ref={helpContainerRef}>
+                    <Typography>
                     <Paragraph>
                         业务映射规则用于将非结构化的市场信息（如“平舱价”、“看涨”）转换为系统标准代码。规则修改后即时生效。
                     </Paragraph>
@@ -438,7 +460,8 @@ export const LogicRulesPage = () => {
                             <li><Text strong>目标值:</Text> 系统会自动根据业务域提供标准代码（如 FOB, ARRIVAL）及对应的中文说明，请在下拉菜单中直接选择。</li>
                         </ul>
                     </Paragraph>
-                </Typography>
+                    </Typography>
+                </div>
             </Modal>
         </div>
     );

@@ -19,7 +19,7 @@ import {
     KnowledgeBase,
     OperationalWorkbench,
     UniversalSearch,
-    CollectionPointManager,
+    CollectionPointConfigCenter,
     RegionManager,
     TaskDistributionPage,
     TaskMonitor,
@@ -38,10 +38,8 @@ import {
     PriceReportingDashboard,
     PriceEntryForm,
     PriceReviewPanel,
-    TaskTemplateManager,
     BatchPriceEntryTable,
 } from '../features/price-reporting';
-import { TaskAllocationWorkbench, CollectionPointAllocationCenter } from '../features/market-intel';
 
 export const router = createBrowserRouter([
     {
@@ -52,12 +50,7 @@ export const router = createBrowserRouter([
                 index: true,
                 element: <Navigate to="/dashboard" replace />,
             },
-            {
-                path: 'admin',
-                children: [
-                    { path: 'task-allocation', element: <TaskAllocationWorkbench /> },
-                ]
-            },
+
             {
                 path: 'dashboard',
                 element: <DashboardPage />,
@@ -128,7 +121,7 @@ export const router = createBrowserRouter([
                         ]
                     },
                     { path: 'leaderboard', element: <Leaderboard /> },
-                    { path: 'collection-points', element: <CollectionPointManager /> },
+                    { path: 'collection-points', element: <CollectionPointConfigCenter /> },
                     { path: 'tasks', element: <TaskDistributionPage /> },
                     { path: 'monitor', element: <TaskMonitor /> },
                     { path: 'extraction-config', element: <ExtractionConfigPage /> },
@@ -141,9 +134,7 @@ export const router = createBrowserRouter([
                     { index: true, element: <PriceReportingDashboard /> },
                     { path: 'bulk', element: <BatchPriceEntryTable /> },
                     { path: 'submit/:pointId', element: <PriceEntryForm /> },
-                    { path: 'allocation', element: <CollectionPointAllocationCenter defaultMode="POINT_COVERAGE" /> },
                     { path: 'review', element: <PriceReviewPanel /> },
-                    { path: 'templates', element: <TaskTemplateManager /> },
                 ]
             },
         ],

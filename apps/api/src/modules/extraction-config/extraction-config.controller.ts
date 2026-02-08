@@ -1,5 +1,7 @@
 import { Controller, Get, Post, Put, Delete, Body, Param, Query } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { ExtractionConfigService } from './extraction-config.service';
+import { RuleCondition } from '../ai/rule-engine.service';
 
 @Controller('extraction-config')
 export class ExtractionConfigController {
@@ -127,8 +129,8 @@ export class ExtractionConfigController {
             targetType: string;
             eventTypeId?: string;
             insightTypeId?: string;
-            conditions: any;
-            outputConfig?: any;
+            conditions: Prisma.InputJsonValue;
+            outputConfig?: Prisma.InputJsonValue;
             commodities?: string[];
             regions?: string[];
             priority?: number;
@@ -147,8 +149,8 @@ export class ExtractionConfigController {
             priority: number;
             eventTypeId: string;
             insightTypeId: string;
-            conditions: any;
-            outputConfig: any;
+            conditions: Prisma.InputJsonValue;
+            outputConfig: Prisma.InputJsonValue;
             commodities: string[];
             regions: string[];
         }>,
@@ -169,7 +171,7 @@ export class ExtractionConfigController {
     }
 
     @Post('rules/test-conditions')
-    testConditions(@Body() data: { conditions: any[]; text: string }) {
+    testConditions(@Body() data: { conditions: RuleCondition[]; text: string }) {
         return this.configService.testConditions(data.conditions, data.text);
     }
 }

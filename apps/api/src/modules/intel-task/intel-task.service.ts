@@ -1,5 +1,7 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../../prisma';
+import { ConfigService } from '../config/config.service';
+import { Prisma } from '@prisma/client';
 import {
     CreateIntelTaskDto,
     UpdateIntelTaskDto,
@@ -7,17 +9,49 @@ import {
     IntelTaskStatus,
     IntelTaskPriority,
     IntelTaskType,
+    IntelTaskCompletionPolicy,
     INTEL_TASK_TYPE_LABELS,
+    GetCalendarSummaryDto,
+    CalendarSummaryResponse,
+    CalendarPreviewTask,
 } from '@packages/types';
 
 @Injectable()
 export class IntelTaskService {
-    constructor(private prisma: PrismaService) { }
+    constructor(
+        private prisma: PrismaService,
+        private configService: ConfigService,
+    ) { }
+
+    private async resolveTaskTypeBinding(taskType: IntelTaskType) {
+        const items = await this.configService.getDictionary('INTEL_TASK_TYPE');
+        const item = items.find(i => i.code === taskType);
+        if (!item) {
+            throw new BadRequestException(`任务类型未配置: ${taskType}`);
+        }
+        const meta = (item.meta || {}) as {
+            formKey?: string;
+            workflowKey?: string;
+            requiresCollectionPoint?: boolean;
+            defaultSlaHours?: number;
+        };
+
+        if (!meta.formKey || !meta.workflowKey) {
+            throw new BadRequestException(`任务类型未绑定表单/流程: ${taskType}`);
+        }
+
+        return meta;
+    }
 
     /**
      * 创建采集任务
      */
-    async create(dto: CreateIntelTaskDto & { createdById?: string, templateId?: string, description?: string, collectionPointId?: string }) {
+    async create(dto: CreateIntelTaskDto & { createdById?: string, templateId?: string, description?: string, collectionPointId?: string, ruleId?: string }) {
+        const typeMeta = await this.resolveTaskTypeBinding(dto.type);
+        if (typeMeta.requiresCollectionPoint && !dto.collectionPointId) {
+            throw new BadRequestException('采集类任务必须绑定采集点');
+        }
+
         return this.prisma.intelTask.create({
             data: {
                 title: dto.title,
@@ -37,8 +71,14 @@ export class IntelTaskService {
                 assigneeDeptId: dto.assigneeDeptId,
                 createdById: dto.createdById,
                 templateId: dto.templateId,
+                ruleId: dto.ruleId,
                 isLate: dto.isLate,
                 collectionPointId: dto.collectionPointId,
+                commodity: dto.commodity,
+                priceSubmissionId: dto.priceSubmissionId,
+                taskGroupId: dto.taskGroupId,
+                formId: dto.formId || typeMeta.formKey,
+                workflowId: dto.workflowId || typeMeta.workflowKey,
             },
             include: {
                 assignee: {
@@ -54,7 +94,7 @@ export class IntelTaskService {
     /**
      * 批量创建任务 (用于直接分发)
      */
-    async createMany(tasks: (CreateIntelTaskDto & { createdById?: string, templateId?: string, description?: string, collectionPointId?: string, commodity?: string })[]) {
+    async createMany(tasks: (CreateIntelTaskDto & { createdById?: string, templateId?: string, description?: string, collectionPointId?: string, commodity?: string, ruleId?: string })[]) {
         // Prisma createMany 不支持 include，所以如果需要返回完整对象，可能需要循环创建或者 createMany 后再查询
         // 这里为了性能使用 createMany，但无法返回关联对象
         return this.prisma.intelTask.createMany({
@@ -76,9 +116,14 @@ export class IntelTaskService {
                 assigneeDeptId: t.assigneeDeptId,
                 createdById: t.createdById,
                 templateId: t.templateId,
+                ruleId: t.ruleId,
                 isLate: t.isLate,
                 collectionPointId: t.collectionPointId,
                 commodity: t.commodity,
+                priceSubmissionId: t.priceSubmissionId,
+                taskGroupId: t.taskGroupId,
+                formId: t.formId,
+                workflowId: t.workflowId,
             })),
             skipDuplicates: true,
         });
@@ -145,6 +190,171 @@ export class IntelTaskService {
             completionRate: total ? completed / total : 0,
             overdueRate: total ? overdue / total : 0,
             lateRate: total ? late / total : 0,
+        };
+    }
+
+    /**
+     * 日历任务聚合
+     */
+    async getCalendarSummary(query: GetCalendarSummaryDto): Promise<CalendarSummaryResponse> {
+        const { startDate, endDate, ...filters } = query;
+        const where = this.buildWhere(
+            {
+                ...filters,
+                dueStart: startDate,
+                dueEnd: endDate,
+            } as IntelTaskQuery,
+            'list',
+        );
+
+        const tasks = await this.prisma.intelTask.findMany({
+            where,
+            select: {
+                deadline: true,
+                dueAt: true,
+                status: true,
+                priority: true,
+                type: true,
+            },
+        });
+
+        const summaryMap = new Map<string, {
+            date: string;
+            total: number;
+            completed: number;
+            overdue: number;
+            urgent: number;
+            preview?: number;
+            byType?: Record<string, number>;
+            byPriority?: Record<string, number>;
+        }>();
+
+        const typeStatsMap = new Map<string, {
+            type: IntelTaskType;
+            total: number;
+            URGENT: number;
+            HIGH: number;
+            MEDIUM: number;
+            LOW: number;
+        }>();
+
+        tasks.forEach(task => {
+            const dueDate = task.dueAt || task.deadline;
+            if (!dueDate) return;
+            const dateKey = dueDate.toISOString().slice(0, 10);
+
+            if (!summaryMap.has(dateKey)) {
+                summaryMap.set(dateKey, {
+                    date: dateKey,
+                    total: 0,
+                    completed: 0,
+                    overdue: 0,
+                    urgent: 0,
+                    byType: {},
+                    byPriority: {},
+                });
+            }
+
+            const row = summaryMap.get(dateKey)!;
+            row.total += 1;
+            if (task.status === IntelTaskStatus.COMPLETED) row.completed += 1;
+            if (task.status === IntelTaskStatus.OVERDUE) row.overdue += 1;
+            if (task.priority === IntelTaskPriority.URGENT) row.urgent += 1;
+
+            const typeKey = String(task.type);
+            row.byType = row.byType || {};
+            row.byType[typeKey] = (row.byType[typeKey] || 0) + 1;
+
+            const priorityKey = String(task.priority);
+            row.byPriority = row.byPriority || {};
+            row.byPriority[priorityKey] = (row.byPriority[priorityKey] || 0) + 1;
+
+            if (!typeStatsMap.has(typeKey)) {
+                typeStatsMap.set(typeKey, {
+                    type: task.type as IntelTaskType,
+                    total: 0,
+                    URGENT: 0,
+                    HIGH: 0,
+                    MEDIUM: 0,
+                    LOW: 0,
+                });
+            }
+            const typeRow = typeStatsMap.get(typeKey)!;
+            typeRow.total += 1;
+            switch (task.priority) {
+                case IntelTaskPriority.URGENT:
+                    typeRow.URGENT += 1;
+                    break;
+                case IntelTaskPriority.HIGH:
+                    typeRow.HIGH += 1;
+                    break;
+                case IntelTaskPriority.MEDIUM:
+                    typeRow.MEDIUM += 1;
+                    break;
+                case IntelTaskPriority.LOW:
+                default:
+                    typeRow.LOW += 1;
+                    break;
+            }
+        });
+
+        const typeOrder = Object.keys(INTEL_TASK_TYPE_LABELS);
+        const typeStats = Array.from(typeStatsMap.values())
+            .sort((a, b) => typeOrder.indexOf(a.type) - typeOrder.indexOf(b.type));
+
+        return {
+            summary: Array.from(summaryMap.values())
+                .sort((a, b) => a.date.localeCompare(b.date)),
+            typeStats,
+        };
+    }
+
+    attachPreviewSummary(
+        summary: CalendarSummaryResponse,
+        previewTasks: CalendarPreviewTask[],
+        query: GetCalendarSummaryDto,
+    ): CalendarSummaryResponse {
+        if (!previewTasks.length) {
+            return summary;
+        }
+
+        const previewMap = new Map<string, number>();
+
+        previewTasks.forEach(task => {
+            if (query.type && task.type !== query.type) return;
+            if (query.priority && task.priority !== query.priority) return;
+            const dueDate = task.dueAt || task.deadline;
+            if (!dueDate) return;
+            const dateKey = dueDate.toISOString().slice(0, 10);
+            previewMap.set(dateKey, (previewMap.get(dateKey) || 0) + 1);
+        });
+
+        if (previewMap.size === 0) {
+            return summary;
+        }
+
+        const mergedMap = new Map(summary.summary.map(item => [item.date, { ...item }]));
+
+        previewMap.forEach((count, dateKey) => {
+            if (mergedMap.has(dateKey)) {
+                const item = mergedMap.get(dateKey)!;
+                item.preview = (item.preview || 0) + count;
+            } else {
+                mergedMap.set(dateKey, {
+                    date: dateKey,
+                    total: 0,
+                    completed: 0,
+                    overdue: 0,
+                    urgent: 0,
+                    preview: count,
+                });
+            }
+        });
+
+        return {
+            ...summary,
+            summary: Array.from(mergedMap.values())
+                .sort((a, b) => a.date.localeCompare(b.date)),
         };
     }
 
@@ -288,6 +498,205 @@ export class IntelTaskService {
         return rows.sort((a, b) => b.total - a.total);
     }
 
+    /**
+     * 绩效评分（按人/部门/组织）
+     */
+    async getPerformanceMetrics(query: IntelTaskQuery) {
+        const groupBy = query.groupBy || 'USER';
+        const where = this.buildWhere(query, 'metrics');
+
+        const groupField = groupBy === 'ORG' ? 'assigneeOrgId' : groupBy === 'DEPT' ? 'assigneeDeptId' : 'assigneeId';
+
+        const [totals, statusGroups, lateGroups] = await Promise.all([
+            this.prisma.intelTask.groupBy({
+                by: [groupField],
+                where,
+                _count: { _all: true },
+            }),
+            this.prisma.intelTask.groupBy({
+                by: [groupField, 'status'],
+                where,
+                _count: { _all: true },
+            }),
+            this.prisma.intelTask.groupBy({
+                by: [groupField],
+                where: { ...where, isLate: true },
+                _count: { _all: true },
+            }),
+        ]);
+
+        const statusMap = new Map<string, Record<string, number>>();
+        statusGroups.forEach(item => {
+            const key = String((item as Record<string, unknown>)[groupField] ?? '');
+            if (!key) return;
+            const current = statusMap.get(key) || {};
+            current[item.status] = item._count._all;
+            statusMap.set(key, current);
+        });
+
+        const lateMap = new Map<string, number>();
+        lateGroups.forEach(item => {
+            const key = String((item as Record<string, unknown>)[groupField] ?? '');
+            if (!key) return;
+            lateMap.set(key, item._count._all);
+        });
+
+        let nameMap = new Map<string, string>();
+        if (groupBy === 'ORG') {
+            const orgIds = totals.map(item => String((item as Record<string, unknown>)[groupField] ?? '')).filter(Boolean);
+            const orgs = await this.prisma.organization.findMany({
+                where: { id: { in: orgIds } },
+                select: { id: true, name: true },
+            });
+            nameMap = new Map(orgs.map(o => [o.id, o.name]));
+        } else if (groupBy === 'DEPT') {
+            const deptIds = totals.map(item => String((item as Record<string, unknown>)[groupField] ?? '')).filter(Boolean);
+            const depts = await this.prisma.department.findMany({
+                where: { id: { in: deptIds } },
+                select: { id: true, name: true },
+            });
+            nameMap = new Map(depts.map(d => [d.id, d.name]));
+        } else {
+            const userIds = totals.map(item => String((item as Record<string, unknown>)[groupField] ?? '')).filter(Boolean);
+            const users = await this.prisma.user.findMany({
+                where: { id: { in: userIds } },
+                select: { id: true, name: true },
+            });
+            nameMap = new Map(users.map(u => [u.id, u.name]));
+        }
+
+        const rows = totals.map(item => {
+            const key = String((item as Record<string, unknown>)[groupField] ?? '');
+            const total = item._count._all;
+            const status = statusMap.get(key) || {};
+            const pending = status[IntelTaskStatus.PENDING] || 0;
+            const completed = status[IntelTaskStatus.COMPLETED] || 0;
+            const overdue = status[IntelTaskStatus.OVERDUE] || 0;
+            const late = lateMap.get(key) || 0;
+
+            const completionRate = total ? completed / total : 0;
+            const overdueRate = total ? overdue / total : 0;
+            const lateRate = total ? late / total : 0;
+            const score = Math.round(completionRate * 60 + (1 - overdueRate) * 20 + (1 - lateRate) * 20);
+
+            return {
+                groupBy,
+                id: key,
+                name: nameMap.get(key) || '未知',
+                total,
+                pending,
+                completed,
+                overdue,
+                late,
+                completionRate,
+                overdueRate,
+                lateRate,
+                score,
+            };
+        });
+
+        return rows.sort((a, b) => b.score - a.score);
+    }
+
+    /**
+     * 规则执行监控（按规则统计）
+     */
+    async getRuleMetrics(templateId: string, query: { startDate?: Date; endDate?: Date }) {
+        const rangeEnd = query.endDate ? new Date(query.endDate) : new Date();
+        const rangeStart = query.startDate
+            ? new Date(query.startDate)
+            : new Date(rangeEnd.getTime() - 30 * 24 * 60 * 60 * 1000);
+
+        const baseWhere: Prisma.IntelTaskWhereInput = {
+            templateId,
+            ruleId: { not: null },
+            createdAt: { gte: rangeStart, lte: rangeEnd },
+        };
+
+        const [totals, statusGroups, lateGroups, lastGroups, tasks] = await Promise.all([
+            this.prisma.intelTask.groupBy({
+                by: ['ruleId'],
+                where: baseWhere,
+                _count: { _all: true },
+            }),
+            this.prisma.intelTask.groupBy({
+                by: ['ruleId', 'status'],
+                where: baseWhere,
+                _count: { _all: true },
+            }),
+            this.prisma.intelTask.groupBy({
+                by: ['ruleId'],
+                where: { ...baseWhere, isLate: true },
+                _count: { _all: true },
+            }),
+            this.prisma.intelTask.groupBy({
+                by: ['ruleId'],
+                where: baseWhere,
+                _max: { createdAt: true },
+            }),
+            this.prisma.intelTask.findMany({
+                where: baseWhere,
+                select: { ruleId: true, createdAt: true, status: true },
+            }),
+        ]);
+
+        const statusMap = new Map<string, Record<string, number>>();
+        statusGroups.forEach(item => {
+            const key = String(item.ruleId);
+            const current = statusMap.get(key) || {};
+            current[item.status] = item._count._all;
+            statusMap.set(key, current);
+        });
+
+        const lateMap = new Map<string, number>();
+        lateGroups.forEach(item => {
+            lateMap.set(String(item.ruleId), item._count._all);
+        });
+
+        const lastMap = new Map<string, Date | null>();
+        lastGroups.forEach(item => {
+            lastMap.set(String(item.ruleId), item._max.createdAt || null);
+        });
+
+        const rows = totals.map(item => {
+            const ruleId = String(item.ruleId);
+            const total = item._count._all;
+            const status = statusMap.get(ruleId) || {};
+            return {
+                ruleId,
+                total,
+                completed: status[IntelTaskStatus.COMPLETED] || 0,
+                pending: status[IntelTaskStatus.PENDING] || 0,
+                submitted: status[IntelTaskStatus.SUBMITTED] || 0,
+                returned: status[IntelTaskStatus.RETURNED] || 0,
+                overdue: status[IntelTaskStatus.OVERDUE] || 0,
+                late: lateMap.get(ruleId) || 0,
+                lastCreatedAt: lastMap.get(ruleId) || null,
+            };
+        });
+
+        const dailyMap = new Map<string, { ruleId: string; date: string; total: number; completed: number; overdue: number }>();
+        tasks.forEach(task => {
+            const ruleId = String(task.ruleId);
+            const dateKey = task.createdAt.toISOString().slice(0, 10);
+            const key = `${ruleId}|${dateKey}`;
+            if (!dailyMap.has(key)) {
+                dailyMap.set(key, { ruleId, date: dateKey, total: 0, completed: 0, overdue: 0 });
+            }
+            const row = dailyMap.get(key)!;
+            row.total += 1;
+            if (task.status === IntelTaskStatus.COMPLETED) row.completed += 1;
+            if (task.status === IntelTaskStatus.OVERDUE) row.overdue += 1;
+        });
+
+        return {
+            rangeStart,
+            rangeEnd,
+            rules: rows,
+            daily: Array.from(dailyMap.values()).sort((a, b) => b.date.localeCompare(a.date)),
+        };
+    }
+
     private buildWhere(query: IntelTaskQuery, mode: 'list' | 'metrics') {
         const {
             assigneeId,
@@ -307,7 +716,7 @@ export class IntelTaskService {
             endDate,
         } = query;
 
-        const where: any = {};
+        const where: Prisma.IntelTaskWhereInput = {};
         if (assigneeId) where.assigneeId = assigneeId;
         if (assigneeOrgId) where.assigneeOrgId = assigneeOrgId;
         if (assigneeDeptId) where.assigneeDeptId = assigneeDeptId;
@@ -344,9 +753,10 @@ export class IntelTaskService {
         }
 
         if (startDate || endDate) {
-            where.deadline = where.deadline || {};
-            if (startDate) where.deadline.gte = startDate;
-            if (endDate) where.deadline.lte = endDate;
+            const deadlineFilter: Prisma.DateTimeFilter = {};
+            if (startDate) deadlineFilter.gte = startDate;
+            if (endDate) deadlineFilter.lte = endDate;
+            where.deadline = deadlineFilter;
         }
 
         return where;
@@ -390,8 +800,9 @@ export class IntelTaskService {
         if (!existing) {
             throw new NotFoundException(`任务 ID ${id} 不存在`);
         }
+        const shouldHandleGroup = dto.status === IntelTaskStatus.COMPLETED && existing.status !== IntelTaskStatus.COMPLETED;
 
-        return this.prisma.intelTask.update({
+        const updated = await this.prisma.intelTask.update({
             where: { id },
             data: {
                 title: dto.title,
@@ -412,6 +823,7 @@ export class IntelTaskService {
                 assigneeDeptId: dto.assigneeDeptId,
                 isLate: dto.isLate,
                 templateId: dto.templateId,
+                ruleId: dto.ruleId,
             },
             include: {
                 assignee: {
@@ -419,12 +831,18 @@ export class IntelTaskService {
                 },
             },
         });
+
+        if (shouldHandleGroup) {
+            await this.handleGroupCompletion(id);
+        }
+
+        return updated;
     }
 
     /**
      * 提交任务 (PENDING -> SUBMITTED)
      */
-    async submitTask(id: string, operatorId: string, submissionData?: any) {
+    async submitTask(id: string, operatorId: string, submissionData?: Prisma.InputJsonValue) {
         const task = await this.prisma.intelTask.findUnique({ where: { id } });
         if (!task) throw new NotFoundException(`任务 ID ${id} 不存在`);
 
@@ -487,13 +905,17 @@ export class IntelTaskService {
             reason
         });
 
+        if (approved) {
+            await this.handleGroupCompletion(id, operatorId);
+        }
+
         return updated;
     }
 
     /**
      * 记录操作历史
      */
-    private async logHistory(taskId: string, operatorId: string, action: string, details: any) {
+    private async logHistory(taskId: string, operatorId: string, action: string, details: Prisma.InputJsonValue) {
         // 验证用户是否存在，避免外键错误
         let validOperatorId = operatorId;
 
@@ -529,6 +951,104 @@ export class IntelTaskService {
         });
     }
 
+    private parseQuorum(rule: { duePolicy?: Prisma.JsonValue | string | null } | null, total: number) {
+        if (!rule) return Math.max(1, Math.ceil(total / 2));
+        let policy = rule.duePolicy;
+        if (typeof policy === 'string') {
+            try {
+                policy = JSON.parse(policy);
+            } catch {
+                policy = {};
+            }
+        }
+        const policyObject = (typeof policy === 'object' && policy !== null)
+            ? (policy as { quorum?: unknown; minComplete?: unknown; ratio?: unknown })
+            : {};
+        const rawQuorum = Number(policyObject.quorum ?? policyObject.minComplete);
+        if (!Number.isNaN(rawQuorum) && rawQuorum > 0) {
+            return Math.min(total, Math.floor(rawQuorum));
+        }
+        const ratio = Number(policyObject.ratio);
+        if (!Number.isNaN(ratio) && ratio > 0) {
+            return Math.min(total, Math.ceil(total * ratio));
+        }
+        return Math.max(1, Math.ceil(total / 2));
+    }
+
+    private async handleGroupCompletion(taskId: string, operatorId?: string) {
+        const task = await this.prisma.intelTask.findUnique({
+            where: { id: taskId },
+            select: { taskGroupId: true },
+        });
+        if (!task?.taskGroupId) return;
+
+        const group = await this.prisma.intelTaskGroup.findUnique({
+            where: { id: task.taskGroupId },
+        });
+        if (!group?.ruleId) return;
+
+        const rule = await this.prisma.intelTaskRule.findUnique({
+            where: { id: group.ruleId },
+        });
+        if (!rule) return;
+
+        const completionPolicy = rule.completionPolicy || IntelTaskCompletionPolicy.EACH;
+        if (completionPolicy === IntelTaskCompletionPolicy.EACH) return;
+
+        const tasks = await this.prisma.intelTask.findMany({
+            where: { taskGroupId: group.id },
+            select: { id: true, status: true, dueAt: true, deadline: true, assigneeId: true },
+        });
+        if (!tasks.length) return;
+
+        const completedCount = tasks.filter(t => t.status === IntelTaskStatus.COMPLETED).length;
+        const total = tasks.length;
+
+        let shouldCompleteGroup = false;
+        let shouldAutoComplete = false;
+
+        if (completionPolicy === IntelTaskCompletionPolicy.ANY_ONE) {
+            shouldCompleteGroup = completedCount >= 1;
+            shouldAutoComplete = shouldCompleteGroup;
+        } else if (completionPolicy === IntelTaskCompletionPolicy.QUORUM) {
+            const quorum = this.parseQuorum(rule, total);
+            shouldCompleteGroup = completedCount >= quorum;
+            shouldAutoComplete = shouldCompleteGroup;
+        } else if (completionPolicy === IntelTaskCompletionPolicy.ALL) {
+            shouldCompleteGroup = completedCount >= total;
+        }
+
+        if (shouldCompleteGroup && group.status !== 'COMPLETED') {
+            await this.prisma.intelTaskGroup.update({
+                where: { id: group.id },
+                data: { status: 'COMPLETED' },
+            });
+        }
+
+        if (shouldAutoComplete) {
+            const now = new Date();
+            const pendingTasks = tasks.filter(t => t.status !== IntelTaskStatus.COMPLETED);
+            for (const pending of pendingTasks) {
+                const dueAt = pending.dueAt || pending.deadline;
+                const isLate = dueAt ? now > dueAt : false;
+                await this.prisma.intelTask.update({
+                    where: { id: pending.id },
+                    data: {
+                        status: IntelTaskStatus.COMPLETED,
+                        completedAt: now,
+                        isLate,
+                    },
+                });
+                if (operatorId) {
+                    await this.logHistory(pending.id, operatorId, 'AUTO_COMPLETE', {
+                        reason: completionPolicy,
+                        groupId: group.id,
+                    });
+                }
+            }
+        }
+    }
+
     /**
      * 完成任务 (Direct Complete - Admin/System override)
      */
@@ -555,6 +1075,8 @@ export class IntelTaskService {
                 intelId
             });
         }
+
+        await this.handleGroupCompletion(id, operatorId);
 
         return updated;
     }

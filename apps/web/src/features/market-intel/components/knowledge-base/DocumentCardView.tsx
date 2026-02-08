@@ -154,7 +154,7 @@ export const DocumentCardView: React.FC<DocumentCardViewProps> = ({
                             <div style={{ flex: 1, minWidth: 0 }}>
                                 <Text strong style={{ display: 'block' }}>
                                     {(() => {
-                                        const title = stripHtml(doc.rawContent || '').split('\n')[0]?.replace(/[\[\]]/g, '') || '';
+                                        const title = stripHtml(doc.rawContent || '').split('\n')[0]?.replace(/\[|\]/g, '') || '';
                                         return title
                                             ? (title.length > 50 ? title.substring(0, 50) + '...' : title)
                                             : '未命名文档';

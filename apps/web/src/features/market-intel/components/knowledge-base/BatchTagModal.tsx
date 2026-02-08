@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { Modal, Tag, Flex, Input, Button, Space, Typography, Divider, Empty } from 'antd';
 import { PlusOutlined, TagsOutlined } from '@ant-design/icons';
+import { useModalAutoFocus } from '@/hooks/useModalAutoFocus';
 
 const { Text } = Typography;
 
@@ -24,6 +25,7 @@ export const BatchTagModal: React.FC<BatchTagModalProps> = ({
     const [tagsToAdd, setTagsToAdd] = useState<Set<string>>(new Set());
     const [tagsToRemove, setTagsToRemove] = useState<Set<string>>(new Set());
     const [newTagInput, setNewTagInput] = useState('');
+    const { containerRef, autoFocusFieldProps, modalProps } = useModalAutoFocus();
 
     const sortedTags = useMemo(() => {
         return [...availableTags].sort((a, b) => a.localeCompare(b));
@@ -115,6 +117,7 @@ export const BatchTagModal: React.FC<BatchTagModalProps> = ({
             open={open}
             onCancel={handleClose}
             width={600}
+            {...modalProps}
             footer={[
                 <Button key="reset" onClick={handleReset}>
                     重置
@@ -133,7 +136,7 @@ export const BatchTagModal: React.FC<BatchTagModalProps> = ({
                 </Button>,
             ]}
         >
-            <Flex vertical gap={16}>
+            <Flex vertical gap={16} ref={containerRef}>
                 {/* Instructions */}
                 <Text type="secondary">
                     点击标签切换状态：
@@ -150,6 +153,7 @@ export const BatchTagModal: React.FC<BatchTagModalProps> = ({
                         onChange={(e) => setNewTagInput(e.target.value)}
                         onPressEnter={handleAddNewTag}
                         style={{ flex: 1 }}
+                        {...autoFocusFieldProps}
                     />
                     <Button
                         icon={<PlusOutlined />}

@@ -139,7 +139,7 @@ export const TrendChart: React.FC<TrendChartProps> = ({
         if (!multiPointData || multiPointData.length === 0) return null;
 
         let allPrices: number[] = [];
-        let latestChanges: { name: string; change: number }[] = [];
+        const latestChanges: { name: string; change: number }[] = [];
 
         multiPointData.forEach((item) => {
             const prices = item.data.map((d) => d.price);

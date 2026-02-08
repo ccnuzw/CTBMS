@@ -1,5 +1,6 @@
 
 import { Controller, Get, Post, Put, Delete, Body, Param, Query } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { ConfigService } from './config.service';
 import {
     CreateDictionaryDomainDto,
@@ -7,6 +8,7 @@ import {
     CreateDictionaryItemDto,
     UpdateDictionaryItemDto,
 } from './dto/dictionary.dto';
+import { CreateAIModelConfigDto } from './dto/create-ai-model-config.dto';
 
 @Controller('config')
 export class ConfigController {
@@ -26,12 +28,12 @@ export class ConfigController {
     }
 
     @Post('rules')
-    async createRule(@Body() body: any) {
+    async createRule(@Body() body: Prisma.BusinessMappingRuleCreateInput) {
         return this.configService.createMappingRule(body);
     }
 
     @Put('rules/:id')
-    async updateRule(@Param('id') id: string, @Body() body: any) {
+    async updateRule(@Param('id') id: string, @Body() body: Prisma.BusinessMappingRuleUpdateInput) {
         return this.configService.updateMappingRule(id, body);
     }
 
@@ -42,15 +44,24 @@ export class ConfigController {
 
     // ===== AI Config =====
 
+    @Get('ai-models')
+    async getAllAIConfigs(@Query('includeInactive') includeInactive?: string) {
+        return this.configService.getAllAIModelConfigs(includeInactive === 'true');
+    }
+
     @Get('ai-models/:key')
     async getAIConfig(@Param('key') key: string) {
         return this.configService.getAIModelConfig(key);
     }
 
     @Post('ai-models')
-    async saveAIConfig(@Body() body: any) {
-        const { configKey, ...rest } = body;
-        return this.configService.upsertAIModelConfig(configKey, rest);
+    async saveAIConfig(@Body() body: CreateAIModelConfigDto) {
+        return this.configService.upsertAIModelConfig(body.configKey, body);
+    }
+
+    @Delete('ai-models/:key')
+    async deleteAIConfig(@Param('key') key: string) {
+        return this.configService.deleteAIModelConfig(key);
     }
 
     // ===== Dictionaries =====

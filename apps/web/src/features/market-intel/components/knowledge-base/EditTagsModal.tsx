@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Modal, Select, Typography } from 'antd';
 import { useUpdateMarketIntelTags } from '../../api/hooks';
+import { useModalAutoFocus } from '@/hooks/useModalAutoFocus';
 
 const { Text } = Typography;
 
@@ -21,6 +22,7 @@ export const EditTagsModal: React.FC<EditTagsModalProps> = ({
 }) => {
     const [tags, setTags] = useState<string[]>([]);
     const updateTagsMutation = useUpdateMarketIntelTags();
+    const { containerRef, focusRef, modalProps } = useModalAutoFocus();
 
     useEffect(() => {
         if (open) {
@@ -45,18 +47,22 @@ export const EditTagsModal: React.FC<EditTagsModalProps> = ({
             onCancel={onClose}
             confirmLoading={updateTagsMutation.isPending}
             width={400}
+            {...modalProps}
         >
-            <Text type="secondary" style={{ display: 'block', marginBottom: 8 }}>
-                添加或移除标签，用于模拟分类管理。
-            </Text>
-            <Select
-                mode="tags"
-                style={{ width: '100%' }}
-                placeholder="输入标签并回车"
-                value={tags}
-                onChange={setTags}
-                tokenSeparators={[',']}
-            />
+            <div ref={containerRef}>
+                <Text type="secondary" style={{ display: 'block', marginBottom: 8 }}>
+                    添加或移除标签，用于模拟分类管理。
+                </Text>
+                <Select
+                    mode="tags"
+                    style={{ width: '100%' }}
+                    placeholder="输入标签并回车"
+                    value={tags}
+                    onChange={setTags}
+                    tokenSeparators={[',']}
+                    ref={focusRef}
+                />
+            </div>
         </Modal>
     );
 };

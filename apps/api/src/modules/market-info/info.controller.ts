@@ -1,7 +1,7 @@
 import { Controller, Get, Post, Body, Patch, Param, Delete, UseInterceptors, UploadedFile } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { diskStorage } from 'multer';
-import { extname, join } from 'path';
+import { extname } from 'path';
 import { v4 as uuidv4 } from 'uuid';
 import { InfoService } from './info.service';
 import { CreateInfoRequest, UpdateInfoRequest } from './dto';

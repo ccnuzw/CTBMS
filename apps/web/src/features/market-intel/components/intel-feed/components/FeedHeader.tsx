@@ -17,6 +17,7 @@ import {
 } from 'antd';
 import Markdown from 'react-markdown';
 import { useDebounce } from '@/hooks/useDebounce';
+import { useModalAutoFocus } from '@/hooks/useModalAutoFocus';
 import { useIntelSmartBriefing } from '../../../api/hooks';
 import {
     SearchOutlined,
@@ -78,6 +79,7 @@ export const FeedHeader: React.FC<FeedHeaderProps> = ({
     const [briefingModalVisible, setBriefingModalVisible] = useState(false);
     const [briefingResult, setBriefingResult] = useState<string>('');
     const { mutate: generateBriefing, isPending: isGeneratingBriefing } = useIntelSmartBriefing();
+    const { containerRef, focusRef, modalProps } = useModalAutoFocus();
 
     // 自动触发搜索
     React.useEffect(() => {
@@ -258,36 +260,39 @@ export const FeedHeader: React.FC<FeedHeaderProps> = ({
                 footer={null}
                 width={700}
                 styles={{ body: { maxHeight: '70vh', overflow: 'auto' } }}
+                {...modalProps}
             >
-                {isGeneratingBriefing ? (
-                    <Flex justify="center" align="center" style={{ padding: 40 }} vertical gap={16}>
-                        <Spin size="large" />
-                        <Typography.Text type="secondary">正在分析最新市场情报...</Typography.Text>
-                    </Flex>
-                ) : (
-                    <div style={{ lineHeight: 1.6 }}>
-                        {briefingResult ? (
-                            <Markdown components={{
-                                h1: ({ node, ...props }) => <h3 style={{ marginTop: 16, marginBottom: 8 }} {...props} />,
-                                h2: ({ node, ...props }) => <h4 style={{ marginTop: 12, marginBottom: 8 }} {...props} />,
-                                ul: ({ node, ...props }) => <ul style={{ paddingLeft: 20 }} {...props} />,
-                                li: ({ node, ...props }) => <li style={{ marginBottom: 4 }} {...props} />,
-                            }}>
-                                {briefingResult}
-                            </Markdown>
-                        ) : (
-                            <Flex justify="center" style={{ padding: 20 }}>
-                                <Button type="primary" onClick={doGenerate}>开始生成</Button>
-                            </Flex>
-                        )}
-                        <div style={{ marginTop: 24, textAlign: 'right' }}>
-                            <Space>
-                                <Button onClick={() => setBriefingResult('')} size="small">重新生成</Button>
-                                <Button type="primary" onClick={() => setBriefingModalVisible(false)}>关闭</Button>
-                            </Space>
+                <div ref={containerRef}>
+                    {isGeneratingBriefing ? (
+                        <Flex justify="center" align="center" style={{ padding: 40 }} vertical gap={16}>
+                            <Spin size="large" />
+                            <Typography.Text type="secondary">正在分析最新市场情报...</Typography.Text>
+                        </Flex>
+                    ) : (
+                        <div style={{ lineHeight: 1.6 }}>
+                            {briefingResult ? (
+                                <Markdown components={{
+                                    h1: ({ node, ...props }) => <h3 style={{ marginTop: 16, marginBottom: 8 }} {...props} />,
+                                    h2: ({ node, ...props }) => <h4 style={{ marginTop: 12, marginBottom: 8 }} {...props} />,
+                                    ul: ({ node, ...props }) => <ul style={{ paddingLeft: 20 }} {...props} />,
+                                    li: ({ node, ...props }) => <li style={{ marginBottom: 4 }} {...props} />,
+                                }}>
+                                    {briefingResult}
+                                </Markdown>
+                            ) : (
+                                <Flex justify="center" style={{ padding: 20 }}>
+                                    <Button type="primary" onClick={doGenerate} ref={focusRef}>开始生成</Button>
+                                </Flex>
+                            )}
+                            <div style={{ marginTop: 24, textAlign: 'right' }}>
+                                <Space>
+                                    <Button onClick={() => setBriefingResult('')} size="small">重新生成</Button>
+                                    <Button type="primary" onClick={() => setBriefingModalVisible(false)} ref={briefingResult ? focusRef : undefined}>关闭</Button>
+                                </Space>
+                            </div>
                         </div>
-                    </div>
-                )}
+                    )}
+                </div>
             </Modal>
         </Card >
     );

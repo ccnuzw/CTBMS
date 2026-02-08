@@ -1,12 +1,11 @@
 import { Injectable, NotFoundException, ConflictException } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
+import { CollectionPointType as PrismaCollectionPointType, Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import {
     CreateCollectionPointDto,
     UpdateCollectionPointDto,
-    CollectionPointQueryDto,
 } from './dto';
-import { CollectionPointType, CommodityConfig } from '@packages/types';
+import { CollectionPointQuery } from '@packages/types';
 
 @Injectable()
 export class CollectionPointService {
@@ -59,11 +58,21 @@ export class CollectionPointService {
     /**
      * 分页查询采集点
      */
-    async findAll(query: CollectionPointQueryDto) {
+    async findAll(query: CollectionPointQuery) {
         const { page, pageSize, type, regionCode, keyword, isActive, allocationStatus } = query;
+        const types = query.types as PrismaCollectionPointType[] | undefined;
 
-        const where: any = {};
-        if (type) where.type = type;
+        const where: Prisma.CollectionPointWhereInput = {};
+        if (types && types.length > 0) {
+            const resolvedTypes = types.filter((value): value is PrismaCollectionPointType =>
+                Object.values(PrismaCollectionPointType).includes(value),
+            );
+            if (resolvedTypes.length > 0) {
+                where.type = { in: resolvedTypes };
+            }
+        } else if (type && Object.values(PrismaCollectionPointType).includes(type as PrismaCollectionPointType)) {
+            where.type = type as PrismaCollectionPointType;
+        }
         if (regionCode) where.regionCode = regionCode;
         if (isActive !== undefined) where.isActive = isActive;
         if (allocationStatus === 'ALLOCATED') {
@@ -232,9 +241,10 @@ export class CollectionPointService {
                     create: { ...point, createdById },
                 });
                 results.success++;
-            } catch (error: any) {
+            } catch (error: unknown) {
                 results.failed++;
-                results.errors.push(`${point.code}: ${error.message}`);
+                const message = error instanceof Error ? error.message : String(error);
+                results.errors.push(`${point.code}: ${message}`);
             }
         }
 

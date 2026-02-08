@@ -22,11 +22,19 @@ export interface AIModelConfig extends BaseEntity {
     apiUrl?: string; // [NEW] Custom API URL
     apiKeyEnvVar?: string;
     apiKey?: string; // Optional (masked)
+    authType?: 'bearer' | 'api-key' | 'custom' | 'none';
+    headers?: Record<string, string> | string;
+    queryParams?: Record<string, string> | string;
+    pathOverrides?: Record<string, string> | string;
+    modelFetchMode?: 'official' | 'manual' | 'custom';
+    allowUrlProbe?: boolean;
     temperature: number;
     maxTokens: number;
     maxRetries: number;
     timeoutMs: number;
     isActive: boolean;
+    isDefault: boolean;
+    availableModels: string[];
 }
 
 export interface CreateMappingRuleDTO extends Omit<BusinessMappingRule, 'id' | 'createdAt' | 'updatedAt'> { }

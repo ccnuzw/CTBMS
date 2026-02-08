@@ -876,27 +876,13 @@ export type IntelPointLinkResponse = z.infer<typeof IntelPointLinkResponseSchema
 // 任务调度 (IntelTask)
 // =============================================
 
-// 任务类型枚举 (12种)
+// 任务类型枚举（简化，全局复用）
 export enum IntelTaskType {
-  // 1. 常规汇报
-  DAILY_REPORT = 'DAILY_REPORT',       // 市场日报
-  WEEKLY_REPORT = 'WEEKLY_REPORT',     // 周报
-  MONTHLY_REPORT = 'MONTHLY_REPORT',   // 月报
-  RESEARCH_REPORT = 'RESEARCH_REPORT', // 深度研报
-
-  // 2. 一线采集
-  PRICE_COLLECTION = 'PRICE_COLLECTION', // 价格采集
-  INVENTORY_CHECK = 'INVENTORY_CHECK',   // 库存盘点
-  FIELD_VISIT = 'FIELD_VISIT',           // 实地走访
-  COMPETITOR_INFO = 'COMPETITOR_INFO',   // 竞对情报
-
-  // 3. 特定事件
-  POLICY_ANALYSIS = 'POLICY_ANALYSIS',   // 政策解读
-  URGENT_VERIFICATION = 'URGENT_VERIFICATION', // 紧急核实
-  EXHIBITION_REPORT = 'EXHIBITION_REPORT', // 会议/展会纪要
-
-  // 4. 数据维护
-  RESOURCE_UPDATE = 'RESOURCE_UPDATE',   // 客商/档案更新
+  COLLECTION = 'COLLECTION',   // 采集任务
+  REPORT = 'REPORT',           // 报告任务
+  RESEARCH = 'RESEARCH',       // 调研任务
+  VERIFICATION = 'VERIFICATION', // 核实任务
+  OTHER = 'OTHER',             // 其他
 }
 
 export enum IntelTaskStatus {
@@ -921,19 +907,17 @@ export enum TaskCycleType {
   ONE_TIME = 'ONE_TIME', // 一次性
 }
 
+export enum TaskScheduleMode {
+  POINT_DEFAULT = 'POINT_DEFAULT',
+  TEMPLATE_OVERRIDE = 'TEMPLATE_OVERRIDE',
+}
+
 export const INTEL_TASK_TYPE_LABELS: Record<IntelTaskType, string> = {
-  [IntelTaskType.DAILY_REPORT]: '市场日报',
-  [IntelTaskType.WEEKLY_REPORT]: '周报',
-  [IntelTaskType.MONTHLY_REPORT]: '月报',
-  [IntelTaskType.RESEARCH_REPORT]: '深度研报',
-  [IntelTaskType.PRICE_COLLECTION]: '价格采集',
-  [IntelTaskType.INVENTORY_CHECK]: '库存盘点',
-  [IntelTaskType.FIELD_VISIT]: '实地走访',
-  [IntelTaskType.COMPETITOR_INFO]: '竞对情报',
-  [IntelTaskType.POLICY_ANALYSIS]: '政策解读',
-  [IntelTaskType.URGENT_VERIFICATION]: '紧急核实',
-  [IntelTaskType.EXHIBITION_REPORT]: '会议/展会纪要',
-  [IntelTaskType.RESOURCE_UPDATE]: '客商/档案更新',
+  [IntelTaskType.COLLECTION]: '采集任务',
+  [IntelTaskType.REPORT]: '报告任务',
+  [IntelTaskType.RESEARCH]: '调研任务',
+  [IntelTaskType.VERIFICATION]: '核实任务',
+  [IntelTaskType.OTHER]: '其他',
 };
 
 // INTEL_TASK_STATUS_LABELS 已移至 apps/web/src/constants/statusEnums.ts
@@ -966,6 +950,13 @@ export const CreateIntelTaskSchema = z.object({
   assigneeDeptId: z.string().optional(),
   isLate: z.boolean().optional(),
   templateId: z.string().optional(),
+  collectionPointId: z.string().optional(),
+  commodity: z.string().optional(),
+  priceSubmissionId: z.string().optional(),
+  taskGroupId: z.string().optional(),
+  ruleId: z.string().optional(),
+  formId: z.string().optional(),
+  workflowId: z.string().optional(),
 });
 
 export const UpdateIntelTaskSchema = z.object({
@@ -987,6 +978,13 @@ export const UpdateIntelTaskSchema = z.object({
   assigneeDeptId: z.string().optional(),
   isLate: z.boolean().optional(),
   templateId: z.string().optional(),
+  collectionPointId: z.string().optional(),
+  commodity: z.string().optional(),
+  priceSubmissionId: z.string().optional(),
+  taskGroupId: z.string().optional(),
+  ruleId: z.string().optional(),
+  formId: z.string().optional(),
+  workflowId: z.string().optional(),
 });
 
 export const IntelTaskResponseSchema = z.object({
@@ -1007,6 +1005,13 @@ export const IntelTaskResponseSchema = z.object({
   assigneeOrgId: z.string().nullable(),
   assigneeDeptId: z.string().nullable(),
   templateId: z.string().nullable(),
+  collectionPointId: z.string().nullable(),
+  commodity: z.string().nullable(),
+  priceSubmissionId: z.string().nullable(),
+  taskGroupId: z.string().nullable(),
+  ruleId: z.string().nullable(),
+  formId: z.string().nullable(),
+  workflowId: z.string().nullable(),
   createdById: z.string().nullable(),
   status: z.nativeEnum(IntelTaskStatus),
   completedAt: z.date().nullable(),
@@ -1030,6 +1035,7 @@ export const IntelTaskQuerySchema = z.object({
   status: z.nativeEnum(IntelTaskStatus).optional(),
   type: z.nativeEnum(IntelTaskType).optional(),
   priority: z.nativeEnum(IntelTaskPriority).optional(),
+  groupBy: z.enum(['USER', 'DEPT', 'ORG']).optional(),
   periodKey: z.string().optional(),
   periodStart: z.coerce.date().optional(),
   periodEnd: z.coerce.date().optional(),
@@ -1049,6 +1055,8 @@ export const CreateIntelTaskTemplateSchema = z.object({
   description: z.string().optional(),
   taskType: z.nativeEnum(IntelTaskType),
   priority: z.nativeEnum(IntelTaskPriority).default(IntelTaskPriority.MEDIUM),
+  domain: z.string().optional(),
+  scheduleMode: z.nativeEnum(TaskScheduleMode).default(TaskScheduleMode.TEMPLATE_OVERRIDE),
 
   // 周期配置
   cycleType: z.nativeEnum(TaskCycleType).default(TaskCycleType.ONE_TIME),
@@ -1073,6 +1081,7 @@ export const CreateIntelTaskTemplateSchema = z.object({
   departmentIds: z.array(z.string()).default([]),
   organizationIds: z.array(z.string()).default([]),
   collectionPointIds: z.array(z.string()).default([]),
+  targetPointTypes: z.array(z.nativeEnum(CollectionPointType)).optional().default([]),
   targetPointType: z.nativeEnum(CollectionPointType).optional(),
   collectionPointId: z.string().optional(),
 
@@ -1087,6 +1096,8 @@ export const IntelTaskTemplateResponseSchema = z.object({
   description: z.string().nullable(),
   taskType: z.nativeEnum(IntelTaskType),
   priority: z.nativeEnum(IntelTaskPriority),
+  domain: z.string().nullable(),
+  scheduleMode: z.nativeEnum(TaskScheduleMode),
   cycleType: z.nativeEnum(TaskCycleType),
   cycleConfig: z.any().nullable(),
   deadlineOffset: z.number(),
@@ -1106,12 +1117,116 @@ export const IntelTaskTemplateResponseSchema = z.object({
   departmentIds: z.array(z.string()),
   organizationIds: z.array(z.string()),
   collectionPointIds: z.array(z.string()).optional(),
+  targetPointTypes: z.array(z.nativeEnum(CollectionPointType)).optional(),
   targetPointType: z.nativeEnum(CollectionPointType).optional(),
   collectionPointId: z.string().optional(),
   isActive: z.boolean(),
   lastRunAt: z.date().nullable(),
   nextRunAt: z.date().nullable(),
   createdById: z.string(),
+  createdAt: z.date(),
+  updatedAt: z.date(),
+});
+
+// 任务规则枚举（前后端通用）
+export enum IntelTaskRuleScopeType {
+  POINT = 'POINT',
+  USER = 'USER',
+  DEPARTMENT = 'DEPARTMENT',
+  ORGANIZATION = 'ORGANIZATION',
+  ROLE = 'ROLE',
+  QUERY = 'QUERY',
+}
+
+export enum IntelTaskAssigneeStrategy {
+  POINT_OWNER = 'POINT_OWNER',
+  ROTATION = 'ROTATION',
+  BALANCED = 'BALANCED',
+  USER_POOL = 'USER_POOL',
+}
+
+export enum IntelTaskCompletionPolicy {
+  EACH = 'EACH',
+  ANY_ONE = 'ANY_ONE',
+  QUORUM = 'QUORUM',
+  ALL = 'ALL',
+}
+
+// 任务规则 Schema
+export const CreateIntelTaskRuleSchema = z.object({
+  templateId: z.string(),
+  scopeType: z.nativeEnum(IntelTaskRuleScopeType),
+  scopeQuery: z.any().optional(),
+  frequencyType: z.nativeEnum(TaskCycleType).default(TaskCycleType.DAILY),
+  weekdays: z.array(z.number().min(1).max(7)).optional().default([]),
+  monthDays: z.array(z.number().min(0).max(31)).optional().default([]),
+  dispatchAtMinute: z.number().min(0).max(1439).optional().default(540),
+  duePolicy: z.any().optional(),
+  assigneeStrategy: z.nativeEnum(IntelTaskAssigneeStrategy).default(IntelTaskAssigneeStrategy.POINT_OWNER),
+  completionPolicy: z.nativeEnum(IntelTaskCompletionPolicy).default(IntelTaskCompletionPolicy.EACH),
+  grouping: z.boolean().optional().default(false),
+  isActive: z.boolean().optional().default(true),
+});
+
+export const UpdateIntelTaskRuleSchema = CreateIntelTaskRuleSchema.partial();
+
+export const IntelTaskRuleResponseSchema = z.object({
+  id: z.string(),
+  templateId: z.string(),
+  scopeType: z.nativeEnum(IntelTaskRuleScopeType),
+  scopeQuery: z.any().nullable(),
+  frequencyType: z.nativeEnum(TaskCycleType),
+  weekdays: z.array(z.number()),
+  monthDays: z.array(z.number()),
+  dispatchAtMinute: z.number(),
+  duePolicy: z.any().nullable(),
+  assigneeStrategy: z.nativeEnum(IntelTaskAssigneeStrategy),
+  completionPolicy: z.nativeEnum(IntelTaskCompletionPolicy),
+  grouping: z.boolean(),
+  isActive: z.boolean(),
+  createdAt: z.date(),
+  updatedAt: z.date(),
+});
+
+export const GetRuleMetricsSchema = z.object({
+  startDate: z.coerce.date().optional(),
+  endDate: z.coerce.date().optional(),
+});
+
+export const RuleMetricsItemSchema = z.object({
+  ruleId: z.string(),
+  total: z.number(),
+  completed: z.number(),
+  pending: z.number(),
+  submitted: z.number(),
+  returned: z.number(),
+  overdue: z.number(),
+  late: z.number(),
+  lastCreatedAt: z.date().nullable().optional(),
+});
+
+export const RuleMetricsDailySchema = z.object({
+  ruleId: z.string(),
+  date: z.string(),
+  total: z.number(),
+  completed: z.number(),
+  overdue: z.number(),
+});
+
+export const IntelTaskRuleMetricsResponseSchema = z.object({
+  rangeStart: z.date(),
+  rangeEnd: z.date(),
+  rules: z.array(RuleMetricsItemSchema),
+  daily: z.array(RuleMetricsDailySchema),
+});
+
+// 任务组 Schema
+export const IntelTaskGroupResponseSchema = z.object({
+  id: z.string(),
+  templateId: z.string().nullable(),
+  ruleId: z.string().nullable(),
+  status: z.string(),
+  groupKey: z.string().nullable(),
   createdAt: z.date(),
   updatedAt: z.date(),
 });
@@ -1132,6 +1247,12 @@ export type CreateIntelTaskTemplateDto = z.infer<typeof CreateIntelTaskTemplateS
 export type UpdateIntelTaskTemplateDto = z.infer<typeof UpdateIntelTaskTemplateSchema>;
 export type IntelTaskTemplateResponse = z.infer<typeof IntelTaskTemplateResponseSchema>;
 export type BatchDistributeTasksDto = z.infer<typeof BatchDistributeTasksSchema>;
+export type CreateIntelTaskRuleDto = z.infer<typeof CreateIntelTaskRuleSchema>;
+export type UpdateIntelTaskRuleDto = z.infer<typeof UpdateIntelTaskRuleSchema>;
+export type IntelTaskRuleResponse = z.infer<typeof IntelTaskRuleResponseSchema>;
+export type IntelTaskGroupResponse = z.infer<typeof IntelTaskGroupResponseSchema>;
+export type GetRuleMetricsDto = z.infer<typeof GetRuleMetricsSchema>;
+export type IntelTaskRuleMetricsResponse = z.infer<typeof IntelTaskRuleMetricsResponseSchema>;
 
 // =============================================
 // 任务分发预览 Schema
@@ -1180,3 +1301,76 @@ export const IntelTaskHistorySchema = z.object({
 });
 
 export type IntelTaskHistory = z.infer<typeof IntelTaskHistorySchema>;
+
+// =============================================
+// 日历任务预览 Schema (Virtual Tasks)
+// =============================================
+
+export const GetCalendarPreviewSchema = z.object({
+  startDate: z.coerce.date(),
+  endDate: z.coerce.date(),
+  assigneeId: z.string().optional(),
+  assigneeOrgId: z.string().optional(),
+  assigneeDeptId: z.string().optional(),
+});
+
+export const CalendarPreviewTaskSchema = z.object({
+  id: z.string(),
+  title: z.string(),
+  type: z.nativeEnum(IntelTaskType),
+  priority: z.nativeEnum(IntelTaskPriority),
+  status: z.string(), // 'PREVIEW'
+  deadline: z.date(),
+  dueAt: z.date().nullable().optional(),
+  isPreview: z.literal(true),
+  templateId: z.string(),
+  assigneeId: z.string().nullable().optional(),
+});
+
+// =============================================
+// 日历任务聚合 Schema
+// =============================================
+
+export const GetCalendarSummarySchema = z.object({
+  startDate: z.coerce.date(),
+  endDate: z.coerce.date(),
+  assigneeId: z.string().optional(),
+  assigneeOrgId: z.string().optional(),
+  assigneeDeptId: z.string().optional(),
+  status: z.nativeEnum(IntelTaskStatus).optional(),
+  type: z.nativeEnum(IntelTaskType).optional(),
+  priority: z.nativeEnum(IntelTaskPriority).optional(),
+  includePreview: z.coerce.boolean().optional(),
+});
+
+export const CalendarSummaryItemSchema = z.object({
+  date: z.string(),
+  total: z.number(),
+  completed: z.number(),
+  overdue: z.number(),
+  urgent: z.number(),
+  preview: z.number().optional(),
+  byType: z.record(z.number()).optional(),
+  byPriority: z.record(z.number()).optional(),
+});
+
+export const CalendarSummaryTypeStatSchema = z.object({
+  type: z.nativeEnum(IntelTaskType),
+  total: z.number(),
+  URGENT: z.number(),
+  HIGH: z.number(),
+  MEDIUM: z.number(),
+  LOW: z.number(),
+});
+
+export const CalendarSummaryResponseSchema = z.object({
+  summary: z.array(CalendarSummaryItemSchema),
+  typeStats: z.array(CalendarSummaryTypeStatSchema),
+});
+
+export type GetCalendarPreviewDto = z.infer<typeof GetCalendarPreviewSchema>;
+export type CalendarPreviewTask = z.infer<typeof CalendarPreviewTaskSchema>;
+export type GetCalendarSummaryDto = z.infer<typeof GetCalendarSummarySchema>;
+export type CalendarSummaryItem = z.infer<typeof CalendarSummaryItemSchema>;
+export type CalendarSummaryTypeStat = z.infer<typeof CalendarSummaryTypeStatSchema>;
+export type CalendarSummaryResponse = z.infer<typeof CalendarSummaryResponseSchema>;

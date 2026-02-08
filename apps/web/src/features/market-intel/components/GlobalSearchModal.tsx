@@ -11,6 +11,7 @@ import { useNavigate } from 'react-router-dom';
 import { useMarketIntels, useResearchReports } from '../api/hooks';
 import { IntelCategory, ReviewStatus } from '@packages/types';
 import { stripHtml } from '@packages/utils';
+import { useModalAutoFocus } from '@/hooks/useModalAutoFocus';
 
 const { Text, Paragraph } = Typography;
 
@@ -34,6 +35,7 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({ open, onCl
     const navigate = useNavigate();
     const [searchTerm, setSearchTerm] = useState('');
     const [selectedIndex, setSelectedIndex] = useState(0);
+    const { containerRef, autoFocusFieldProps, modalProps } = useModalAutoFocus();
 
     // Fetch data
     const { data: intelsResult, isLoading: docsLoading } = useMarketIntels({
@@ -159,12 +161,12 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({ open, onCl
                 content: { borderRadius: 12, overflow: 'hidden' }
             }}
             style={{ top: 100 }}
+            {...modalProps}
         >
-            <div onKeyDown={handleKeyDown}>
+            <div ref={containerRef} onKeyDown={handleKeyDown}>
                 {/* Search Input */}
                 <div style={{ padding: '16px 20px', borderBottom: `1px solid ${token.colorBorderSecondary}` }}>
                     <Input
-                        ref={(input) => input?.focus()}
                         prefix={<SearchOutlined style={{ color: token.colorTextSecondary }} />}
                         placeholder="搜索文档、研报..."
                         value={searchTerm}
@@ -172,7 +174,7 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({ open, onCl
                         bordered={false}
                         size="large"
                         style={{ fontSize: 16 }}
-                        autoFocus
+                        {...autoFocusFieldProps}
                     />
                 </div>
 

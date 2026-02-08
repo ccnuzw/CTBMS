@@ -11,6 +11,7 @@ import {
   ParseIntPipe,
   UnauthorizedException,
 } from '@nestjs/common';
+import { Request as ExpressRequest } from 'express';
 import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { PriceSubmissionService } from './price-submission.service';
 import {
@@ -24,6 +25,8 @@ import {
   BatchSubmitPriceDto,
 } from './dto';
 
+type AuthRequest = ExpressRequest & { user?: { id?: string } };
+
 @Controller('price-submissions')
 export class PriceSubmissionController {
   constructor(private readonly submissionService: PriceSubmissionService) { }
@@ -31,7 +34,7 @@ export class PriceSubmissionController {
   @Post()
   @ApiOperation({ summary: '创建填报批次' })
   @ApiResponse({ status: 201, description: '创建成功' })
-  create(@Body() dto: CreatePriceSubmissionDto, @Request() req: any) {
+  create(@Body() dto: CreatePriceSubmissionDto, @Request() req: AuthRequest) {
     const userId = req.user?.id;
     if (!userId) {
       throw new UnauthorizedException('User not authenticated');
@@ -42,8 +45,11 @@ export class PriceSubmissionController {
   @Post('batch-submit')
   @ApiOperation({ summary: '批量提交价格（跨采集点）' })
   @ApiResponse({ status: 201, description: '批量提交成功' })
-  batchSubmit(@Body() dto: BatchSubmitPriceDto, @Request() req: any) {
+  batchSubmit(@Body() dto: BatchSubmitPriceDto, @Request() req: AuthRequest) {
     const userId = req.user?.id;
+    if (!userId) {
+      throw new UnauthorizedException('User not authenticated');
+    }
     return this.submissionService.batchSubmit(dto, userId);
   }
 
@@ -57,8 +63,11 @@ export class PriceSubmissionController {
   @Get('statistics')
   @ApiOperation({ summary: '获取填报统计' })
   @ApiResponse({ status: 200, description: '统计数据' })
-  getStatistics(@Request() req: any) {
+  getStatistics(@Request() req: AuthRequest) {
     const userId = req.user?.id;
+    if (!userId) {
+      throw new UnauthorizedException('User not authenticated');
+    }
     return this.submissionService.getStatistics(userId);
   }
 
@@ -72,8 +81,11 @@ export class PriceSubmissionController {
   @Get('my')
   @ApiOperation({ summary: '获取我的填报列表' })
   @ApiResponse({ status: 200, description: '我的填报列表' })
-  findMy(@Request() req: any, @Query() query: QueryPriceSubmissionDto) {
+  findMy(@Request() req: AuthRequest, @Query() query: QueryPriceSubmissionDto) {
     const userId = req.user?.id;
+    if (!userId) {
+      throw new UnauthorizedException('User not authenticated');
+    }
     return this.submissionService.findAll({ ...query, submittedById: userId });
   }
 
@@ -98,16 +110,22 @@ export class PriceSubmissionController {
   @Post(':id/entries')
   @ApiOperation({ summary: '添加价格条目' })
   @ApiResponse({ status: 201, description: '添加成功' })
-  addEntry(@Param('id') id: string, @Body() dto: SubmitPriceEntryDto, @Request() req: any) {
+  addEntry(@Param('id') id: string, @Body() dto: SubmitPriceEntryDto, @Request() req: AuthRequest) {
     const userId = req.user?.id;
+    if (!userId) {
+      throw new UnauthorizedException('User not authenticated');
+    }
     return this.submissionService.addEntry(id, dto, userId);
   }
 
   @Post(':id/entries/bulk')
   @ApiOperation({ summary: '批量添加价格条目' })
   @ApiResponse({ status: 201, description: '批量添加成功' })
-  addEntries(@Param('id') id: string, @Body() dto: BulkSubmitPriceEntriesDto, @Request() req: any) {
+  addEntries(@Param('id') id: string, @Body() dto: BulkSubmitPriceEntriesDto, @Request() req: AuthRequest) {
     const userId = req.user?.id;
+    if (!userId) {
+      throw new UnauthorizedException('User not authenticated');
+    }
     return this.submissionService.addEntries(id, dto, userId);
   }
 
@@ -135,16 +153,22 @@ export class PriceSubmissionController {
   @Post(':id/copy-yesterday')
   @ApiOperation({ summary: '复制昨日数据' })
   @ApiResponse({ status: 200, description: '复制成功' })
-  copyYesterday(@Param('id') id: string, @Request() req: any) {
+  copyYesterday(@Param('id') id: string, @Request() req: AuthRequest) {
     const userId = req.user?.id;
+    if (!userId) {
+      throw new UnauthorizedException('User not authenticated');
+    }
     return this.submissionService.copyYesterdayData(id, userId);
   }
 
   @Post(':id/review')
   @ApiOperation({ summary: '审核整个填报批次' })
   @ApiResponse({ status: 200, description: '审核成功' })
-  reviewSubmission(@Param('id') id: string, @Body() dto: ReviewPriceSubmissionDto, @Request() req: any) {
+  reviewSubmission(@Param('id') id: string, @Body() dto: ReviewPriceSubmissionDto, @Request() req: AuthRequest) {
     const userId = req.user?.id;
+    if (!userId) {
+      throw new UnauthorizedException('User not authenticated');
+    }
     return this.submissionService.reviewSubmission(id, dto, userId);
   }
 }
@@ -157,16 +181,22 @@ export class PriceDataReviewController {
   @Post(':id/review')
   @ApiOperation({ summary: '审核单条价格数据' })
   @ApiResponse({ status: 200, description: '审核成功' })
-  reviewPriceData(@Param('id') id: string, @Body() dto: ReviewPriceDataDto, @Request() req: any) {
+  reviewPriceData(@Param('id') id: string, @Body() dto: ReviewPriceDataDto, @Request() req: AuthRequest) {
     const userId = req.user?.id;
+    if (!userId) {
+      throw new UnauthorizedException('User not authenticated');
+    }
     return this.submissionService.reviewPriceData(id, dto, userId);
   }
 
   @Post('batch-review')
   @ApiOperation({ summary: '批量审核价格数据' })
   @ApiResponse({ status: 200, description: '批量审核成功' })
-  batchReviewPriceData(@Body() dto: BatchReviewPriceDataDto, @Request() req: any) {
+  batchReviewPriceData(@Body() dto: BatchReviewPriceDataDto, @Request() req: AuthRequest) {
     const userId = req.user?.id;
+    if (!userId) {
+      throw new UnauthorizedException('User not authenticated');
+    }
     return this.submissionService.batchReviewPriceData(dto, userId);
   }
 }

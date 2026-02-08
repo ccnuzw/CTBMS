@@ -8,27 +8,32 @@ import {
   Delete,
   Query,
   Request,
+  UnauthorizedException,
 } from '@nestjs/common';
+import { Request as ExpressRequest } from 'express';
 import { CollectionPointAllocationService } from './collection-point-allocation.service';
 import {
   CreateCollectionPointAllocationDto,
   BatchCreateAllocationDto,
   UpdateCollectionPointAllocationDto,
   QueryCollectionPointAllocationDto,
+  AllocationMatrixQueryDto,
 } from './dto';
+
+type AuthRequest = ExpressRequest & { user?: { id?: string } };
 
 @Controller('collection-point-allocations')
 export class CollectionPointAllocationController {
   constructor(private readonly allocationService: CollectionPointAllocationService) {}
 
   @Post()
-  create(@Body() dto: CreateCollectionPointAllocationDto, @Request() req: any) {
+  create(@Body() dto: CreateCollectionPointAllocationDto, @Request() req: AuthRequest) {
     const assignedById = req.user?.id;
     return this.allocationService.create(dto, assignedById);
   }
 
   @Post('batch')
-  batchCreate(@Body() dto: BatchCreateAllocationDto, @Request() req: any) {
+  batchCreate(@Body() dto: BatchCreateAllocationDto, @Request() req: AuthRequest) {
     const assignedById = req.user?.id;
     return this.allocationService.batchCreate(dto, assignedById);
   }
@@ -44,13 +49,16 @@ export class CollectionPointAllocationController {
   }
 
   @Get('matrix')
-  getAllocationMatrix(@Query() query: any) {
+  getAllocationMatrix(@Query() query: AllocationMatrixQueryDto) {
     return this.allocationService.getAllocationMatrix(query);
   }
 
   @Get('my-assigned')
-  findMyAssigned(@Request() req: any, @Query('effectiveDate') effectiveDate?: string) {
+  findMyAssigned(@Request() req: AuthRequest, @Query('effectiveDate') effectiveDate?: string) {
     const userId = req.user?.id;
+    if (!userId) {
+      throw new UnauthorizedException('User not authenticated');
+    }
     const date = effectiveDate ? new Date(effectiveDate) : undefined;
     return this.allocationService.findMyAssignedPoints(userId, date);
   }

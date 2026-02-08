@@ -26,6 +26,7 @@ import {
 } from '@ant-design/icons';
 import { IntelItem } from '../types';
 import { ContentType } from '../../../types';
+import { useModalAutoFocus } from '@/hooks/useModalAutoFocus';
 
 const { Title, Text, Paragraph } = Typography;
 
@@ -88,6 +89,7 @@ export const RelationPanel: React.FC<RelationPanelProps> = ({
     const [detailOpen, setDetailOpen] = useState(false);
     const { data: detailData, isLoading: detailLoading } = useMarketIntel(detailId || '');
     const { data: dictionaries } = useDictionaries(['RELATION_TYPE', 'CONTENT_TYPE', 'INTEL_SOURCE_TYPE']);
+    const { containerRef, focusRef, modalProps } = useModalAutoFocus();
 
     const relationTypeMeta = useMemo(() => {
         const items = dictionaries?.RELATION_TYPE?.filter((item) => item.isActive) || [];
@@ -359,54 +361,61 @@ export const RelationPanel: React.FC<RelationPanelProps> = ({
                 title="情报详情"
                 open={detailOpen}
                 onCancel={() => setDetailOpen(false)}
-                footer={null}
+                footer={[
+                    <Button key="close" onClick={() => setDetailOpen(false)} ref={focusRef}>
+                        关闭
+                    </Button>,
+                ]}
                 width={560}
+                {...modalProps}
             >
-                {detailLoading ? (
-                    <Flex justify="center" align="center" style={{ padding: 24 }}>
-                        <Spin />
-                    </Flex>
-                ) : detailData ? (
-                    <Space direction="vertical" style={{ width: '100%' }} size={12}>
-                        <Flex align="center" gap={8} wrap="wrap">
-                            {detailData.contentType && (
-                                <Tag color={contentTypeMeta[detailData.contentType]?.color || 'blue'}>
-                                    {contentTypeMeta[detailData.contentType]?.label || detailData.contentType}
-                                </Tag>
-                            )}
-                            <Tag color={sourceTypeMeta[detailData.sourceType]?.color || 'default'}>
-                                {sourceTypeMeta[detailData.sourceType]?.label || detailData.sourceType}
-                            </Tag>
-                            {detailData.location && (
-                                <Tag bordered={false}>
-                                    <EnvironmentOutlined /> {detailData.location}
-                                </Tag>
-                            )}
+                <div ref={containerRef}>
+                    {detailLoading ? (
+                        <Flex justify="center" align="center" style={{ padding: 24 }}>
+                            <Spin />
                         </Flex>
+                    ) : detailData ? (
+                        <Space direction="vertical" style={{ width: '100%' }} size={12}>
+                            <Flex align="center" gap={8} wrap="wrap">
+                                {detailData.contentType && (
+                                    <Tag color={contentTypeMeta[detailData.contentType]?.color || 'blue'}>
+                                        {contentTypeMeta[detailData.contentType]?.label || detailData.contentType}
+                                    </Tag>
+                                )}
+                                <Tag color={sourceTypeMeta[detailData.sourceType]?.color || 'default'}>
+                                    {sourceTypeMeta[detailData.sourceType]?.label || detailData.sourceType}
+                                </Tag>
+                                {detailData.location && (
+                                    <Tag bordered={false}>
+                                        <EnvironmentOutlined /> {detailData.location}
+                                    </Tag>
+                                )}
+                            </Flex>
 
-                        <Text type="secondary" style={{ fontSize: 12 }}>
-                            生效时间：{detailData.effectiveTime ? new Date(detailData.effectiveTime).toLocaleString() : '-'}
-                        </Text>
+                            <Text type="secondary" style={{ fontSize: 12 }}>
+                                生效时间：{detailData.effectiveTime ? new Date(detailData.effectiveTime).toLocaleString() : '-'}
+                            </Text>
 
-                        <Divider style={{ margin: 0 }} />
+                            <Divider style={{ margin: 0 }} />
 
-                        <div>
-                            <Text strong>摘要</Text>
-                            <Paragraph style={{ marginTop: 6 }}>
-                                {stripHtml(detailData.summary) || '暂无摘要'}
-                            </Paragraph>
-                        </div>
+                            <div>
+                                <Text strong>摘要</Text>
+                                <Paragraph style={{ marginTop: 6 }}>
+                                    {stripHtml(detailData.summary) || '暂无摘要'}
+                                </Paragraph>
+                            </div>
 
-                        <div>
-                            <Text strong>原文内容</Text>
-                            <Paragraph style={{ marginTop: 6 }}>
-                                {stripHtml(detailData.rawContent) || '暂无原文内容'}
-                            </Paragraph>
-                        </div>
-                    </Space>
-                ) : (
-                    <Empty description="暂无详情数据" />
-                )}
+                            <div>
+                                <Text strong>原文内容</Text>
+                                <Paragraph style={{ marginTop: 6 }}>
+                                    {stripHtml(detailData.rawContent) || '暂无原文内容'}
+                                </Paragraph>
+                            </div>
+                        </Space>
+                    ) : (
+                        <Empty description="暂无详情数据" />
+                    )}
+                </div>
             </Modal>
         </div>
     );

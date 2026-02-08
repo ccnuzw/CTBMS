@@ -1,4 +1,5 @@
 import { Injectable, NotFoundException, ConflictException } from '@nestjs/common';
+import { CollectionPointType as PrismaCollectionPointType, IntelTaskType as PrismaIntelTaskType, Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import {
   CreateCollectionPointAllocationDto,
@@ -32,7 +33,7 @@ export class CollectionPointAllocationService {
     }
 
     // 1. 获取符合条件的用户
-    const userWhere: any = { status: 'ACTIVE' };
+    const userWhere: Prisma.UserWhereInput = { status: 'ACTIVE' };
     if (organizationId) userWhere.organizationId = organizationId;
     if (departmentId) userWhere.departmentId = departmentId;
 
@@ -63,8 +64,10 @@ export class CollectionPointAllocationService {
     });
 
     // 2. 获取符合条件的采集点
-    const pointWhere: any = { isActive: true };
-    if (pointType) pointWhere.type = pointType;
+    const pointWhere: Prisma.CollectionPointWhereInput = { isActive: true };
+    if (pointType && Object.values(PrismaCollectionPointType).includes(pointType as PrismaCollectionPointType)) {
+      pointWhere.type = pointType as PrismaCollectionPointType;
+    }
 
     // 搜索采集点：优先使用 pointKeyword，其次兼容 keyword
     const searchPointKw = pointKeyword || keyword;
@@ -222,7 +225,7 @@ export class CollectionPointAllocationService {
   async findAll(query: QueryCollectionPointAllocationDto) {
     const { userId, collectionPointId, commodity, isActive, page, pageSize } = query;
 
-    const where: any = {};
+    const where: Prisma.CollectionPointAllocationWhereInput = {};
     if (userId) where.userId = userId;
     if (collectionPointId) where.collectionPointId = collectionPointId;
     if (commodity !== undefined) where.commodity = commodity; // null也是有效值
@@ -428,7 +431,7 @@ export class CollectionPointAllocationService {
               assigneeId: userId,
               collectionPointId: allocation.collectionPointId,
               status: 'PENDING',
-              type: { in: ['PRICE_COLLECTION', 'INVENTORY_CHECK'] },
+              type: { in: [PrismaIntelTaskType.COLLECTION] },
             },
             select: { id: true, deadline: true, type: true },
           }),

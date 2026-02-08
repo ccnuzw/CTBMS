@@ -39,6 +39,7 @@ import {
 import { useMarketIntel, usePromoteToReport, useResearchReportByIntelId } from '../api/hooks';
 import { ReportType, REPORT_TYPE_LABELS } from '@packages/types';
 import { useDictionaries } from '@/hooks/useDictionaries';
+import { useModalAutoFocus } from '@/hooks/useModalAutoFocus';
 import DOMPurify from 'dompurify';
 import { DocumentPreview } from './research-report-detail/DocumentPreview';
 
@@ -70,6 +71,7 @@ export const DocumentDetailPage: React.FC = () => {
     const [selectedReportType, setSelectedReportType] = useState<ReportType>(ReportType.MARKET);
     const [readerView, setReaderView] = useState<'content' | 'original'>('content');
     const [contentMode, setContentMode] = useState<'summary' | 'full'>('full');
+    const { containerRef, focusRef, modalProps } = useModalAutoFocus();
 
     const handlePromoteToReport = async () => {
         if (!id) return;
@@ -530,8 +532,9 @@ export const DocumentDetailPage: React.FC = () => {
                 okText="开始生成"
                 okButtonProps={{ loading: promoteMutation.isPending }}
                 cancelText="取消"
+                {...modalProps}
             >
-                <div style={{ padding: '16px 0' }}>
+                <div ref={containerRef} style={{ padding: '16px 0' }}>
                     <Paragraph>
                         AI 将基于当前文档内容自动生成结构化研报，提取以下信息：
                     </Paragraph>
@@ -551,6 +554,7 @@ export const DocumentDetailPage: React.FC = () => {
                             onChange={setSelectedReportType}
                             style={{ width: '100%' }}
                             options={reportTypeOptions}
+                            ref={focusRef}
                         />
                     </div>
                 </div>

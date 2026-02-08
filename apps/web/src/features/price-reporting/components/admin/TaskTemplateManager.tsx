@@ -35,6 +35,7 @@ import {
   BankOutlined,
   EyeOutlined,
 } from '@ant-design/icons';
+import { useModalAutoFocus } from '@/hooks/useModalAutoFocus';
 import {
   useTaskTemplates,
   useCreateTaskTemplate,
@@ -57,9 +58,9 @@ const { TextArea } = Input;
 
 // 任务类型选项
 const TASK_TYPE_OPTIONS = [
-  { value: 'PRICE_COLLECTION', label: '价格采集', color: 'blue' },
-  { value: 'DAILY_REPORT', label: '市场日报', color: 'orange' },
-  { value: 'URGENT_VERIFICATION', label: '紧急核实', color: 'red' },
+  { value: 'COLLECTION', label: '采集任务', color: 'blue' },
+  { value: 'REPORT', label: '报告任务', color: 'orange' },
+  { value: 'VERIFICATION', label: '核实任务', color: 'red' },
 ];
 
 // 周期类型选项
@@ -146,6 +147,7 @@ export const TaskTemplateManager: React.FC = () => {
 
   const [form] = Form.useForm();
   const { message } = App.useApp();
+  const { containerRef, autoFocusFieldProps, modalProps } = useModalAutoFocus();
 
   // 数据查询
   const { data: templates, isLoading } = useTaskTemplates();
@@ -525,8 +527,10 @@ export const TaskTemplateManager: React.FC = () => {
         width={980}
         confirmLoading={createTemplate.isPending || updateTemplate.isPending}
         styles={{ body: { paddingTop: 12 } }}
+        {...modalProps}
       >
-        <Form form={form} layout="vertical">
+        <div ref={containerRef}>
+          <Form form={form} layout="vertical">
           <Row gutter={24}>
             <Col span={16}>
               <Card size="small" title="基础信息" style={{ marginBottom: 16 }}>
@@ -535,7 +539,7 @@ export const TaskTemplateManager: React.FC = () => {
                   label="模板名称"
                   rules={[{ required: true, message: '请输入模板名称' }]}
                 >
-                  <Input placeholder="如：每日港口价格采集" />
+                  <Input placeholder="如：每日港口采集任务" {...autoFocusFieldProps} />
                 </Form.Item>
 
                 <Form.Item name="description" label="任务描述">
@@ -789,8 +793,8 @@ export const TaskTemplateManager: React.FC = () => {
                     { required: true, message: '请选择分配模式' },
                     ({ getFieldValue }) => ({
                       validator(_, value) {
-                        if (getFieldValue('taskType') === 'PRICE_COLLECTION' && value !== 'BY_COLLECTION_POINT') {
-                          return Promise.reject(new Error('价格采集任务需要绑定采集点'));
+                        if (getFieldValue('taskType') === 'COLLECTION' && value !== 'BY_COLLECTION_POINT') {
+                          return Promise.reject(new Error('采集任务需要绑定采集点'));
                         }
                         return Promise.resolve();
                       },
@@ -818,12 +822,12 @@ export const TaskTemplateManager: React.FC = () => {
 
                 <Form.Item noStyle shouldUpdate={(prev, cur) => prev.taskType !== cur.taskType || prev.assigneeMode !== cur.assigneeMode}>
                   {({ getFieldValue }) => {
-                    if (getFieldValue('taskType') === 'PRICE_COLLECTION' && getFieldValue('assigneeMode') !== 'BY_COLLECTION_POINT') {
+                    if (getFieldValue('taskType') === 'COLLECTION' && getFieldValue('assigneeMode') !== 'BY_COLLECTION_POINT') {
                       return (
                         <Alert
                           type="warning"
                           showIcon
-                          message="价格采集任务需要绑定采集点，建议选择“按采集点负责人”"
+                          message="采集任务需要绑定采集点，建议选择“按采集点负责人”"
                           style={{ marginBottom: 12 }}
                         />
                       );
@@ -985,7 +989,7 @@ export const TaskTemplateManager: React.FC = () => {
                   <div>
                     <Text strong>1. 任务类型</Text>
                     <div style={{ marginTop: 4 }}>
-                      <Text type="secondary">价格采集必须绑定采集点；市场日报适合按部门/组织；紧急核实建议优先级设为高或紧急。</Text>
+                      <Text type="secondary">采集任务必须绑定采集点；报告类任务适合按部门/组织；核实任务建议优先级设为高或紧急。</Text>
                     </div>
                   </div>
                   <div>
@@ -1017,6 +1021,7 @@ export const TaskTemplateManager: React.FC = () => {
             </Col>
           </Row>
         </Form>
+        </div>
       </Modal>
       <DistributionPreview
         open={previewVisible}

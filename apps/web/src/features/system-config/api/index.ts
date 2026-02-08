@@ -164,12 +164,24 @@ export const useDeleteMappingRule = () => {
 };
 
 // AI Config Hooks
+export const useAIConfigs = (includeInactive: boolean = false) => {
+    return useQuery({
+        queryKey: ['ai-configs', includeInactive],
+        queryFn: async () => {
+            const params = new URLSearchParams();
+            if (includeInactive) params.append('includeInactive', 'true');
+            const res = await fetch(`${API_BASE}/ai-models?${params.toString()}`);
+            if (!res.ok) throw new Error('Failed to fetch AI configs');
+            return res.json() as Promise<AIModelConfig[]>;
+        },
+    });
+};
+
 export const useAIConfig = (key: string = 'DEFAULT') => {
     return useQuery({
         queryKey: ['ai-config', key],
         queryFn: async () => {
             const res = await fetch(`${API_BASE}/ai-models/${key}`);
-            // If 404/null, might need handling, but assuming always correct or returns null check
             if (!res.ok) throw new Error('Failed to fetch AI config');
             return res.json() as Promise<AIModelConfig>;
         },
@@ -190,6 +202,23 @@ export const useUpdateAIConfig = () => {
         },
         onSuccess: (_, variables) => {
             queryClient.invalidateQueries({ queryKey: ['ai-config', variables.configKey] });
+            queryClient.invalidateQueries({ queryKey: ['ai-configs'] });
+        },
+    });
+};
+
+export const useDeleteAIConfig = () => {
+    const queryClient = useQueryClient();
+    return useMutation({
+        mutationFn: async (key: string) => {
+            const res = await fetch(`${API_BASE}/ai-models/${key}`, {
+                method: 'DELETE',
+            });
+            if (!res.ok) throw new Error('Failed to delete AI config');
+            return res.json();
+        },
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['ai-configs'] });
         },
     });
 };
@@ -198,8 +227,11 @@ const AI_API_BASE = '/api/ai';
 
 export const useTestAIConnection = () => {
     return useMutation({
-        mutationFn: async () => {
-            const res = await fetch(`${AI_API_BASE}/test-connection`);
+        mutationFn: async (configKey?: string) => {
+            const params = new URLSearchParams();
+            if (configKey) params.append('configKey', configKey);
+            const res = await fetch(`${AI_API_BASE}/test-connection?${params.toString()}`);
+
             if (!res.ok) throw new Error('Network error during connection test');
             return res.json() as Promise<{
                 success: boolean;
@@ -208,7 +240,70 @@ export const useTestAIConnection = () => {
                 error?: string;
                 apiUrl?: string;
                 modelId?: string;
+                provider?: string;
             }>;
+        },
+    });
+};
+
+export const useTestAIModel = () => {
+    return useMutation({
+        mutationFn: async (payload: {
+            provider: string;
+            modelName: string;
+            apiKey?: string;
+            apiUrl?: string;
+            authType?: 'bearer' | 'api-key' | 'custom' | 'none';
+            headers?: Record<string, string>;
+            queryParams?: Record<string, string>;
+            pathOverrides?: Record<string, string>;
+            modelFetchMode?: 'official' | 'manual' | 'custom';
+            allowUrlProbe?: boolean;
+            timeoutMs?: number;
+            maxRetries?: number;
+            temperature?: number;
+            maxTokens?: number;
+            topP?: number;
+        }) => {
+            const res = await fetch(`${AI_API_BASE}/test-model`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload),
+            });
+            if (!res.ok) throw new Error('Network error during model test');
+            return res.json() as Promise<{
+                success: boolean;
+                message: string;
+                response?: string;
+                error?: string;
+                modelId?: string;
+                provider?: string;
+                apiUrl?: string;
+            }>;
+        },
+    });
+};
+
+export const useFetchAIModels = () => {
+    return useMutation({
+        mutationFn: async ({
+            provider,
+            apiKey,
+            apiUrl,
+            configKey,
+        }: { provider: string; apiKey?: string; apiUrl?: string; configKey?: string }) => {
+            const params = new URLSearchParams();
+            params.append('provider', provider);
+            if (apiKey) params.append('apiKey', apiKey);
+            if (apiUrl) params.append('apiUrl', apiUrl);
+            if (configKey) params.append('configKey', configKey);
+
+            const res = await fetch(`${AI_API_BASE}/models?${params.toString()}`);
+            if (!res.ok) {
+                const error = await res.json().catch(() => ({}));
+                throw new Error(error.message || 'Failed to fetch models');
+            }
+            return res.json() as Promise<{ models: string[]; activeUrl?: string; provider?: string; diagnostics?: Array<{ provider: string; message: string; activeUrl?: string }> }>;
         },
     });
 };

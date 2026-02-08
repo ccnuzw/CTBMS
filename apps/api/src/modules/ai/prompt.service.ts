@@ -1,6 +1,6 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
-import { IntelCategory, PromptTemplate } from '@prisma/client';
+import { IntelCategory, PromptTemplate, Prisma } from '@prisma/client';
 
 @Injectable()
 export class PromptService implements OnModuleInit {
@@ -31,7 +31,7 @@ export class PromptService implements OnModuleInit {
     /**
      * 获取并渲染模板
      */
-    async getRenderedPrompt(code: string, variables: Record<string, any> = {}): Promise<{ system: string; user: string } | null> {
+    async getRenderedPrompt(code: string, variables: Record<string, unknown> = {}): Promise<{ system: string; user: string } | null> {
         let template: PromptTemplate | null | undefined = this.templateCache.get(code);
 
         // 如果缓存没找到，尝试从库里查（防止新增后未刷新）
@@ -55,7 +55,7 @@ export class PromptService implements OnModuleInit {
         return { system, user };
     }
 
-    private renderString(template: string, variables: Record<string, any>): string {
+    private renderString(template: string, variables: Record<string, unknown>): string {
         return template.replace(/\{\{(\w+)\}\}/g, (_, key) => {
             return variables[key] !== undefined ? String(variables[key]) : `{{${key}}}`;
         });
@@ -73,7 +73,7 @@ export class PromptService implements OnModuleInit {
     /**
      * 创建模板
      */
-    async create(data: any) {
+    async create(data: Prisma.PromptTemplateUncheckedCreateInput) {
         const result = await this.prisma.promptTemplate.create({
             data: {
                 ...data,
@@ -87,7 +87,7 @@ export class PromptService implements OnModuleInit {
     /**
      * 更新模板
      */
-    async update(id: string, data: any) {
+    async update(id: string, data: Prisma.PromptTemplateUncheckedUpdateInput) {
         const result = await this.prisma.promptTemplate.update({
             where: { id },
             data: {
@@ -113,7 +113,7 @@ export class PromptService implements OnModuleInit {
     /**
      * 预览渲染结果
      */
-    async preview(code: string, variables: Record<string, any>) {
+    async preview(code: string, variables: Record<string, unknown>) {
         // First try to find in DB (in case it's a new draft not in cache yet, though we cache on create)
         // Actually for preview we might want to preview *unsaved* changes? 
         // For now let's preview based on code (saved template)

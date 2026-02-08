@@ -56,6 +56,7 @@ export const OrgUserManagement: React.FC = () => {
         <Row
             style={{
                 height: 'calc(100vh - 112px)',
+                width: '100%',
                 overflow: 'hidden',
                 background: token.colorBgLayout,
             }}

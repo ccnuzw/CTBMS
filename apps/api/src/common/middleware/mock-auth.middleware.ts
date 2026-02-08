@@ -1,11 +1,21 @@
 import { Injectable, NestMiddleware, Logger } from '@nestjs/common';
 import { Request, Response, NextFunction } from 'express';
 
+type AuthenticatedRequest = Request & {
+    user?: {
+        id: string;
+        username: string;
+        email: string;
+        name: string;
+        roles: string[];
+    };
+};
+
 @Injectable()
 export class MockAuthMiddleware implements NestMiddleware {
     private logger = new Logger('MockAuth');
 
-    use(req: any, res: Response, next: NextFunction) {
+    use(req: AuthenticatedRequest, res: Response, next: NextFunction) {
         const headerUserId = req.headers?.['x-virtual-user-id'];
         const virtualUserId = Array.isArray(headerUserId) ? headerUserId[0] : headerUserId;
         // Only if user is not already authenticated

@@ -1,8 +1,29 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma';
-import { CreatePriceDataDto, PriceDataQuery, PriceSubType as TypesPriceSubType } from '@packages/types';
+import { CreatePriceDataDto, PriceDataQuery } from '@packages/types';
 import { Decimal } from '@prisma/client/runtime/library';
-import { PriceSubType } from '@prisma/client';
+import { CollectionPointType, GeoLevel, PriceData, PriceSourceType, PriceSubType, Prisma } from '@prisma/client';
+
+type CollectionPointSummary = {
+    id: string;
+    code: string;
+    name: string;
+    shortName: string | null;
+    type: CollectionPointType;
+    regionCode?: string | null;
+    region?: {
+        code: string;
+        name: string;
+        shortName: string | null;
+    } | null;
+} | null;
+
+type PricePointGroup = {
+    point: CollectionPointSummary;
+    data: Array<{ date: Date; price: number; change: number | null }>;
+};
+
+type PriceDataRecord = PriceData & { collectionPoint?: CollectionPointSummary };
 
 @Injectable()
 export class PriceDataService {
@@ -111,19 +132,29 @@ export class PriceDataService {
         const page = Number(query.page) || 1;
         const pageSize = Number(query.pageSize) || 20;
 
-        const andFilters: any[] = [];
+        const andFilters: Prisma.PriceDataWhereInput[] = [];
         if (commodity) andFilters.push({ commodity });
         if (location) andFilters.push({ location: { contains: location, mode: 'insensitive' } });
         if (province) andFilters.push({ province });
         if (city) andFilters.push({ city });
         // if (enterpriseId) andFilters.push({ enterpriseId }); [REMOVED]
-        if (sourceType) andFilters.push({ sourceType });
-        if (sourceType) andFilters.push({ sourceType });
-        const subTypeList = this.parseCsv(subTypes);
-        if (subTypeList.length === 0 && subType) {
-            andFilters.push({ subType });
+        const resolvedSourceType = Object.values(PriceSourceType).includes(sourceType as PriceSourceType)
+            ? (sourceType as PriceSourceType)
+            : undefined;
+        if (resolvedSourceType) andFilters.push({ sourceType: resolvedSourceType });
+
+        const subTypeList = this.parseCsv(subTypes)
+            .filter((value): value is PriceSubType => Object.values(PriceSubType).includes(value as PriceSubType));
+        const resolvedSubType = Object.values(PriceSubType).includes(subType as PriceSubType)
+            ? (subType as PriceSubType)
+            : undefined;
+        if (subTypeList.length === 0 && resolvedSubType) {
+            andFilters.push({ subType: resolvedSubType });
         }
-        if (geoLevel) andFilters.push({ geoLevel });
+        const resolvedGeoLevel = Object.values(GeoLevel).includes(geoLevel as GeoLevel)
+            ? (geoLevel as GeoLevel)
+            : undefined;
+        if (resolvedGeoLevel) andFilters.push({ geoLevel: resolvedGeoLevel });
         if (subTypeList.length > 0) {
             andFilters.push({ subType: { in: subTypeList } });
         }
@@ -143,12 +174,13 @@ export class PriceDataService {
         }
 
         // 采集点类型过滤（含 REGIONAL 类型）
-        const pointTypeList = this.parseCsv(pointTypes);
+        const pointTypeList = this.parseCsv(pointTypes)
+            .filter((value): value is CollectionPointType => Object.values(CollectionPointType).includes(value as CollectionPointType));
         if (pointTypeList.length > 0) {
-            const orConditions: any[] = [];
+            const orConditions: Prisma.PriceDataWhereInput[] = [];
             orConditions.push({ collectionPoint: { type: { in: pointTypeList } } });
-            if (pointTypeList.includes('REGION')) {
-                orConditions.push({ sourceType: 'REGIONAL' });
+            if (pointTypeList.includes(CollectionPointType.REGION)) {
+                orConditions.push({ sourceType: PriceSourceType.REGIONAL });
             }
             if (orConditions.length > 0) {
                 andFilters.push({ OR: orConditions });
@@ -157,7 +189,7 @@ export class PriceDataService {
 
         // 日期范围
         if (startDate || endDate) {
-            const range: any = {};
+            const range: Prisma.DateTimeFilter = {};
             if (startDate) range.gte = new Date(startDate);
             if (endDate) range.lte = new Date(endDate);
             andFilters.push({ effectiveDate: range });
@@ -281,11 +313,12 @@ export class PriceDataService {
             endDate,
         );
 
-        const where: any = {
+        const where: Prisma.PriceDataWhereInput = {
             collectionPointId,
         };
         if (commodity) where.commodity = commodity;
-        const subTypeList = this.parseCsv(subTypes);
+        const subTypeList = this.parseCsv(subTypes)
+            .filter((value): value is PriceSubType => Object.values(PriceSubType).includes(value as PriceSubType));
         if (subTypeList.length > 0) {
             where.subType = { in: subTypeList };
         }
@@ -355,11 +388,12 @@ export class PriceDataService {
             endDate,
         );
 
-        const where: any = {
+        const where: Prisma.PriceDataWhereInput = {
             regionCode,
         };
         if (commodity) where.commodity = commodity;
-        const subTypeList = this.parseCsv(subTypes);
+        const subTypeList = this.parseCsv(subTypes)
+            .filter((value): value is PriceSubType => Object.values(PriceSubType).includes(value as PriceSubType));
         if (subTypeList.length > 0) {
             where.subType = { in: subTypeList };
         }
@@ -451,13 +485,14 @@ export class PriceDataService {
             endDate,
         );
 
-        const subTypeList = this.parseCsv(subTypes);
+        const subTypeList = this.parseCsv(subTypes)
+            .filter((value): value is PriceSubType => Object.values(PriceSubType).includes(value as PriceSubType));
 
         const data = await this.prisma.priceData.findMany({
             where: {
                 collectionPointId: { in: collectionPointIds },
                 commodity,
-                ...(subTypeList.length > 0 ? { subType: { in: subTypeList as PriceSubType[] } } : {}),
+                ...(subTypeList.length > 0 ? { subType: { in: subTypeList } } : {}),
                 effectiveDate: {
                     ...(resolvedStart ? { gte: resolvedStart } : {}),
                     ...(resolvedEnd ? { lte: resolvedEnd } : {}),
@@ -482,7 +517,7 @@ export class PriceDataService {
         });
 
         // 按采集点分组
-        const grouped: Record<string, { point: any; data: any[] }> = {};
+        const grouped: Record<string, PricePointGroup> = {};
         for (const item of data) {
             const pointId = item.collectionPointId!;
             if (!grouped[pointId]) {
@@ -527,7 +562,7 @@ export class PriceDataService {
     /**
      * 序列化 Decimal 字段
      */
-    private serializePriceData(data: any) {
+    private serializePriceData(data: PriceDataRecord) {
         return {
             ...data,
             price: Number(data.price),

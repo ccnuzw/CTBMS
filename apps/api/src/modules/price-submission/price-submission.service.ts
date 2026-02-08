@@ -1,8 +1,8 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { GeoLevel, IntelTaskType as PrismaIntelTaskType, PriceSourceType, PriceSubType, Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import {
   CreatePriceSubmissionDto,
-  UpdatePriceSubmissionDto,
   QueryPriceSubmissionDto,
   SubmitPriceEntryDto,
   BulkSubmitPriceEntriesDto,
@@ -118,7 +118,7 @@ export class PriceSubmissionService {
   async findAll(query: QueryPriceSubmissionDto) {
     const { submittedById, collectionPointId, status, effectiveDateStart, effectiveDateEnd, page, pageSize } = query;
 
-    const where: any = {};
+    const where: Prisma.PriceSubmissionWhereInput = {};
     if (submittedById) where.submittedById = submittedById;
     if (collectionPointId) where.collectionPointId = collectionPointId;
     if (status) where.status = status;
@@ -188,9 +188,9 @@ export class PriceSubmissionService {
           location: submission.collectionPoint.name,
           commodity: dto.commodity,
           price: dto.price,
-          subType: dto.subType as any,
-          sourceType: dto.sourceType as any,
-          geoLevel: dto.geoLevel as any,
+          subType: dto.subType as PriceSubType,
+          sourceType: dto.sourceType as PriceSourceType,
+          geoLevel: dto.geoLevel as GeoLevel,
           grade: dto.grade,
           moisture: dto.moisture,
           bulkDensity: dto.bulkDensity,
@@ -209,9 +209,9 @@ export class PriceSubmissionService {
       });
 
       return priceData;
-    } catch (error: any) {
+    } catch (error: unknown) {
       // P2002 is Prisma's unique constraint violation code
-      if (error.code === 'P2002') {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
         throw new BadRequestException(
           `该品种(${dto.commodity})在当日(${submission.effectiveDate.toISOString().split('T')[0]})已有${dto.subType}数据，请勿重复填报`
         );
@@ -247,9 +247,9 @@ export class PriceSubmissionService {
       data: {
         commodity: dto.commodity,
         price: dto.price,
-        subType: dto.subType as any,
-        sourceType: dto.sourceType as any,
-        geoLevel: dto.geoLevel as any,
+        subType: dto.subType as PriceSubType,
+        sourceType: dto.sourceType as PriceSourceType,
+        geoLevel: dto.geoLevel as GeoLevel,
         grade: dto.grade,
         moisture: dto.moisture,
         bulkDensity: dto.bulkDensity,
@@ -510,7 +510,7 @@ export class PriceSubmissionService {
           where: {
             assigneeId: userId,
             status: 'PENDING',
-            type: { in: ['PRICE_COLLECTION', 'INVENTORY_CHECK'] },
+            type: { in: [PrismaIntelTaskType.COLLECTION] },
             deadline: { gte: today },
           },
         })
@@ -638,7 +638,7 @@ export class PriceSubmissionService {
     startDate.setHours(0, 0, 0, 0);
     startDate.setDate(startDate.getDate() - days);
 
-    const where: any = {
+    const where: Prisma.PriceDataWhereInput = {
       collectionPointId,
       effectiveDate: { gte: startDate },
       reviewStatus: { in: [PriceReviewStatus.APPROVED, PriceReviewStatus.PENDING] },
@@ -679,11 +679,16 @@ export class PriceSubmissionService {
       entriesByPoint.get(entry.collectionPointId)!.push(entry);
     }
 
-    const results = {
+    const results: {
+      totalPoints: number;
+      successPoints: number;
+      failedPoints: number;
+      results: Array<{ pointId: string; success: boolean; count?: number; error?: string }>;
+    } = {
       totalPoints: entriesByPoint.size,
       successPoints: 0,
       failedPoints: 0,
-      results: [] as any[],
+      results: [],
     };
 
     // 2. 逐个采集点处理
@@ -717,9 +722,10 @@ export class PriceSubmissionService {
         results.successPoints++;
         results.results.push({ pointId, success: true, count: addedEntries.length });
 
-      } catch (error: any) {
+      } catch (error: unknown) {
         results.failedPoints++;
-        results.results.push({ pointId, success: false, error: error.message });
+        const message = error instanceof Error ? error.message : 'Unknown error';
+        results.results.push({ pointId, success: false, error: message });
       }
     }
 

@@ -1,7 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-// eslint-disable-next-line @typescript-eslint/no-require-imports
-// eslint-disable-next-line @typescript-eslint/no-require-imports
-const pdfParseLib = require('pdf-parse');
+import pdfParseLib from 'pdf-parse';
 const pdfParse = typeof pdfParseLib === 'function' ? pdfParseLib : pdfParseLib.default;
 import * as mammoth from 'mammoth';
 import * as XLSX from 'xlsx';

@@ -16,6 +16,7 @@ import {
 import PinyinMatch from 'pinyin-match';
 import { useCollectionPoints } from '../../api/hooks';
 import { useDictionary } from '@/hooks/useDictionaries';
+import { useModalAutoFocus } from '@/hooks/useModalAutoFocus';
 
 interface AdvancedPointSelectorProps {
     open: boolean;
@@ -73,6 +74,7 @@ export const AdvancedPointSelector: React.FC<AdvancedPointSelectorProps> = ({
     const [searchKeyword, setSearchKeyword] = useState('');
     const [internalTypeFilter, setInternalTypeFilter] = useState<string[]>(currentPointTypeFilter);
     const { data: pointTypeDict } = useDictionary('COLLECTION_POINT_TYPE');
+    const { containerRef, autoFocusFieldProps, modalProps } = useModalAutoFocus();
 
     const pointTypeLabels = useMemo(() => {
         const items = (pointTypeDict || []).filter((item) => item.isActive);
@@ -350,38 +352,40 @@ export const AdvancedPointSelector: React.FC<AdvancedPointSelectorProps> = ({
             width={900}
             styles={{ body: { padding: 0 } }}
             centered
+            {...modalProps}
         >
-            {/* 顶部类型筛选器 */}
-            <div style={{ padding: '12px 16px', borderBottom: `1px solid ${token.colorBorderSecondary}` }}>
-                <Flex justify="space-between" align="center">
-                    <Checkbox.Group
-                        value={internalTypeFilter}
-                        onChange={(vals) => setInternalTypeFilter(vals as string[])}
-                    >
-                        <Space size={8}>
-                            {pointTypeOrder.map(type => (
-                                <Checkbox key={type} value={type}>
-                                    <Space size={4}>
-                                        {POINT_TYPE_ICONS[type]}
-                                        <span style={{ fontSize: 12 }}>{pointTypeLabels[type] || type}</span>
-                                    </Space>
-                                </Checkbox>
-                            ))}
-                        </Space>
-                    </Checkbox.Group>
-                    <Button
-                        size="small"
-                        icon={<CheckSquareOutlined />}
-                        onClick={handleSelectAllVisible}
-                        disabled={availableCount === 0}
-                    >
-                        全选筛选结果
-                    </Button>
-                </Flex>
-            </div>
+            <div ref={containerRef}>
+                {/* 顶部类型筛选器 */}
+                <div style={{ padding: '12px 16px', borderBottom: `1px solid ${token.colorBorderSecondary}` }}>
+                    <Flex justify="space-between" align="center">
+                        <Checkbox.Group
+                            value={internalTypeFilter}
+                            onChange={(vals) => setInternalTypeFilter(vals as string[])}
+                        >
+                            <Space size={8}>
+                                {pointTypeOrder.map(type => (
+                                    <Checkbox key={type} value={type}>
+                                        <Space size={4}>
+                                            {POINT_TYPE_ICONS[type]}
+                                            <span style={{ fontSize: 12 }}>{pointTypeLabels[type] || type}</span>
+                                        </Space>
+                                    </Checkbox>
+                                ))}
+                            </Space>
+                        </Checkbox.Group>
+                        <Button
+                            size="small"
+                            icon={<CheckSquareOutlined />}
+                            onClick={handleSelectAllVisible}
+                            disabled={availableCount === 0}
+                        >
+                            全选筛选结果
+                        </Button>
+                    </Flex>
+                </div>
 
-            {/* 双栏布局 */}
-            <Flex style={{ height: 420 }}>
+                {/* 双栏布局 */}
+                <Flex style={{ height: 420 }}>
                 {/* 左侧：待选列表 */}
                 <div style={{ flex: 1, borderRight: `1px solid ${token.colorBorderSecondary}`, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
                     <div style={{ padding: '8px 12px', borderBottom: `1px solid ${token.colorBorderSecondary}` }}>
@@ -392,6 +396,7 @@ export const AdvancedPointSelector: React.FC<AdvancedPointSelectorProps> = ({
                             onChange={(e) => setSearchKeyword(e.target.value)}
                             size="small"
                             allowClear
+                            {...autoFocusFieldProps}
                         />
                     </div>
                     <div style={{ flex: 1, overflow: 'auto', padding: '8px 12px' }}>
@@ -433,6 +438,7 @@ export const AdvancedPointSelector: React.FC<AdvancedPointSelectorProps> = ({
                 <span>提示: 点击左侧条目添加，点击右侧标签的 × 移除</span>
                 <span>共选中 <strong style={{ color: token.colorPrimary }}>{targetKeys.length}</strong> 个采集点</span>
             </Flex>
+            </div>
         </Modal>
     );
 };

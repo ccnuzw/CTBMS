@@ -167,7 +167,12 @@ export const MyTaskBoard: React.FC = () => {
                                 >
                                     <Space direction="vertical" style={{ width: '100%' }}>
                                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start' }}>
-                                            <Text strong ellipsis={{ tooltip: task.title }} style={{ maxWidth: 180 }}>{task.title}</Text>
+                                            <Tooltip title={`完整标题: ${task.title}`}>
+                                                <Text strong ellipsis style={{ maxWidth: 180 }}>
+                                                    {/* Simplification: Use template name if available, as other info is in tags */}
+                                                    {(task as any).template?.name || task.title.replace(/\[(港口|站台|企业|地域|批发市场)\].*?\[/g, '[').replace(/\[.*?\]\s*$/, '')}
+                                                </Text>
+                                            </Tooltip>
                                             <Tag color={taskPriorityMeta.colors[task.priority] || (task.priority === IntelTaskPriority.URGENT ? 'red' : 'blue')}>
                                                 {taskPriorityMeta.labels[task.priority] || task.priority}
                                             </Tag>

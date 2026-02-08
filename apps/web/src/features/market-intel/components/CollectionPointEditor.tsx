@@ -16,6 +16,7 @@ import {
     Flex,
     Button,
     theme,
+    TimePicker,
 } from 'antd';
 import {
     SettingOutlined,
@@ -35,11 +36,14 @@ import {
     CollectionPointType,
     COLLECTION_POINT_TYPE_LABELS,
     COLLECTION_POINT_TYPE_ICONS,
+    CollectionPointFrequencyType,
+    COLLECTION_POINT_FREQUENCY_LABELS,
     type CreateCollectionPointDto,
 } from '@packages/types';
 import { useModalAutoFocus } from '../../../hooks/useModalAutoFocus';
 import { useRegionTree } from '../api/region';
 import { useDictionary } from '@/hooks/useDictionaries';
+import dayjs from 'dayjs';
 
 const { Text } = Typography;
 const { TextArea } = Input;
@@ -87,6 +91,7 @@ export const CollectionPointEditor: React.FC<CollectionPointEditorProps> = ({
 
     // Watch type field to conditionally show region selector
     const selectedType = Form.useWatch('type', form);
+    const frequencyType = Form.useWatch('frequencyType', form);
 
     // Convert region tree to Cascader options
     const regionOptions = useMemo(() => {
@@ -101,10 +106,19 @@ export const CollectionPointEditor: React.FC<CollectionPointEditorProps> = ({
 
     useEffect(() => {
         if (open && editData) {
-            form.setFieldsValue(editData);
+            const minute = editData.dispatchAtMinute ?? 540;
+            form.setFieldsValue({
+                ...editData,
+                dispatchTime: dayjs().hour(Math.floor(minute / 60)).minute(minute % 60),
+            });
         } else if (open && !editId) {
             form.resetFields();
-            form.setFieldsValue({ isActive: true, priority: 0 });
+            form.setFieldsValue({
+                isActive: true,
+                priority: 0,
+                frequencyType: CollectionPointFrequencyType.DAILY,
+                dispatchTime: dayjs().hour(9).minute(0),
+            });
         }
     }, [open, editData, editId, form]);
 
@@ -133,10 +147,17 @@ export const CollectionPointEditor: React.FC<CollectionPointEditorProps> = ({
                 'priority',
                 'isActive',
                 'description',
+                'frequencyType',
+                'weekdays',
+                'monthDays',
+                'dispatchAtMinute',
+                'shiftConfig',
                 // AI Config
                 'matchRegionCodes',
                 'isDataSource',
             ];
+            const dispatchTime = values.dispatchTime as dayjs.Dayjs | undefined;
+            const dispatchAtMinute = dispatchTime ? dispatchTime.hour() * 60 + dispatchTime.minute() : undefined;
             const filteredValues = Object.fromEntries(
                 Object.entries(values)
                     .filter(([key]) => allowedFields.includes(key))
@@ -145,6 +166,9 @@ export const CollectionPointEditor: React.FC<CollectionPointEditorProps> = ({
             );
 
             filteredValues.priority = Number(filteredValues.priority);
+            if (dispatchAtMinute !== undefined) {
+                filteredValues.dispatchAtMinute = dispatchAtMinute;
+            }
 
             if (isEdit) {
                 await updateMutation.mutateAsync({ id: editId, dto: filteredValues });
@@ -178,7 +202,7 @@ export const CollectionPointEditor: React.FC<CollectionPointEditorProps> = ({
                 <Form
                     form={form}
                     layout="vertical"
-                    initialValues={{ isActive: true, isDataSource: true, priority: 0 }}
+                    initialValues={{ isActive: true, isDataSource: true, priority: 0, frequencyType: CollectionPointFrequencyType.DAILY }}
                 >
                     {/* 基本信息 */}
                     <Divider orientation="left">
@@ -258,6 +282,71 @@ export const CollectionPointEditor: React.FC<CollectionPointEditorProps> = ({
                             </Form.Item>
                         </Col>
                     </Row>
+
+                    {/* 采集频率 */}
+                    <Divider orientation="left">
+                        <Space>
+                            <SettingOutlined />
+                            <Text strong>采集频率</Text>
+                        </Space>
+                    </Divider>
+
+                    <Row gutter={16}>
+                        <Col span={8}>
+                            <Form.Item name="frequencyType" label="频率类型">
+                                <Select
+                                    options={Object.entries(COLLECTION_POINT_FREQUENCY_LABELS).map(([value, label]) => ({
+                                        value,
+                                        label,
+                                    }))}
+                                />
+                            </Form.Item>
+                        </Col>
+                        <Col span={8}>
+                            <Form.Item name="dispatchTime" label="下发时间">
+                                <TimePicker format="HH:mm" />
+                            </Form.Item>
+                        </Col>
+                        <Col span={8}>
+                            <Form.Item name="shiftConfig" label="班次配置">
+                                <Input placeholder="可选，JSON/文本" />
+                            </Form.Item>
+                        </Col>
+                    </Row>
+
+                    {frequencyType === CollectionPointFrequencyType.WEEKLY && (
+                        <Form.Item name="weekdays" label="每周">
+                            <Select
+                                mode="multiple"
+                                placeholder="选择周几"
+                                options={[
+                                    { value: 1, label: '周一' },
+                                    { value: 2, label: '周二' },
+                                    { value: 3, label: '周三' },
+                                    { value: 4, label: '周四' },
+                                    { value: 5, label: '周五' },
+                                    { value: 6, label: '周六' },
+                                    { value: 7, label: '周日' },
+                                ]}
+                            />
+                        </Form.Item>
+                    )}
+
+                    {frequencyType === CollectionPointFrequencyType.MONTHLY && (
+                        <Form.Item name="monthDays" label="每月">
+                            <Select
+                                mode="multiple"
+                                placeholder="选择日期"
+                                options={[
+                                    ...Array.from({ length: 31 }, (_, index) => ({
+                                        value: index + 1,
+                                        label: `${index + 1}日`,
+                                    })),
+                                    { value: 0, label: '月末' },
+                                ]}
+                            />
+                        </Form.Item>
+                    )}
 
                     {/* 地理信息 */}
                     <Divider orientation="left">

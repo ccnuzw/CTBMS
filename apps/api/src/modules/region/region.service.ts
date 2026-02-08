@@ -1,4 +1,5 @@
 import { Injectable, NotFoundException, ConflictException } from '@nestjs/common';
+import { Prisma, AdministrativeRegion } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CreateRegionDto, UpdateRegionDto, RegionQueryDto } from './dto';
 import { RegionLevel } from '@packages/types';
@@ -29,7 +30,7 @@ export class RegionService {
     async findAll(query: RegionQueryDto) {
         const { level, parentCode, keyword, isActive } = query;
 
-        const where: any = {};
+        const where: Prisma.AdministrativeRegionWhereInput = {};
         if (level) where.level = level;
         if (parentCode !== undefined) where.parentCode = parentCode || null;
         if (isActive !== undefined) where.isActive = isActive;
@@ -58,8 +59,9 @@ export class RegionService {
         });
 
         // 构建树结构
-        const regionMap = new Map<string, any>();
-        const roots: any[] = [];
+        type RegionNode = AdministrativeRegion & { children: RegionNode[] };
+        const regionMap = new Map<string, RegionNode>();
+        const roots: RegionNode[] = [];
 
         // 第一遍：创建节点
         for (const region of allRegions) {
@@ -69,8 +71,14 @@ export class RegionService {
         // 第二遍：建立父子关系
         for (const region of allRegions) {
             const node = regionMap.get(region.code);
+            if (!node) {
+                continue;
+            }
             if (region.parentCode && regionMap.has(region.parentCode)) {
-                regionMap.get(region.parentCode).children.push(node);
+                const parent = regionMap.get(region.parentCode);
+                if (parent) {
+                    parent.children.push(node);
+                }
             } else if (region.level === rootLevel) {
                 roots.push(node);
             }

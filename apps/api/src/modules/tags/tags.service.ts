@@ -1,5 +1,5 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
-import { Tag, TagGroup, EntityTag, Prisma, TaggableEntityType as PrismaEntityType, TagScope as PrismaTagScope } from '@prisma/client';
+import { Tag, EntityTag, Prisma, TaggableEntityType as PrismaEntityType } from '@prisma/client';
 import {
     CreateTagDto,
     UpdateTagDto,

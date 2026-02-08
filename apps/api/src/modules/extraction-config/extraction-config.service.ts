@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
-import { RuleEngineService } from '../ai/rule-engine.service';
+import { RuleEngineService, RuleCondition } from '../ai/rule-engine.service';
 
 @Injectable()
 export class ExtractionConfigService {
@@ -139,8 +140,8 @@ export class ExtractionConfigService {
         targetType: string;
         eventTypeId?: string;
         insightTypeId?: string;
-        conditions: any;
-        outputConfig?: any;
+        conditions: Prisma.InputJsonValue;
+        outputConfig?: Prisma.InputJsonValue;
         commodities?: string[];
         regions?: string[];
         priority?: number;
@@ -155,8 +156,8 @@ export class ExtractionConfigService {
         priority: number;
         eventTypeId: string;
         insightTypeId: string;
-        conditions: any;
-        outputConfig: any;
+        conditions: Prisma.InputJsonValue;
+        outputConfig: Prisma.InputJsonValue;
         commodities: string[];
         regions: string[];
     }>) {
@@ -176,16 +177,16 @@ export class ExtractionConfigService {
         }
 
         // 使用规则引擎测试
+        const conditions = Array.isArray(rule.conditions) ? rule.conditions : [];
         const results = await this.ruleEngine.testConditions(
-            rule.conditions as any[],
+            conditions as unknown as RuleCondition[],
             testText,
         );
         return results;
     }
 
-    async testConditions(conditions: any[], testText: string) {
+    async testConditions(conditions: RuleCondition[], testText: string) {
         // 使用规则引擎测试条件
         return this.ruleEngine.testConditions(conditions, testText);
     }
 }
-

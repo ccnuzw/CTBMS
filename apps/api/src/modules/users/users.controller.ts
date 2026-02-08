@@ -11,6 +11,7 @@ import {
 } from '@nestjs/common';
 import { UsersService } from './users.service';
 import { CreateUserRequest, UpdateUserRequest, AssignRolesRequest } from './dto';
+import { UserStatus } from '@packages/types';
 
 @Controller('users')
 export class UsersController {
@@ -31,12 +32,52 @@ export class UsersController {
     findAll(
         @Query('organizationId') organizationId?: string,
         @Query('departmentId') departmentId?: string,
+        @Query('organizationIds') organizationIds?: string,
+        @Query('departmentIds') departmentIds?: string,
+        @Query('keyword') keyword?: string,
         @Query('status') status?: string,
     ) {
+        const normalizedOrgIds = organizationIds
+            ? organizationIds.split(',').map((item) => item.trim()).filter(Boolean)
+            : (organizationId ? [organizationId] : undefined);
+        const normalizedDeptIds = departmentIds
+            ? departmentIds.split(',').map((item) => item.trim()).filter(Boolean)
+            : (departmentId ? [departmentId] : undefined);
+
         return this.usersService.findAll({
-            organizationId,
-            departmentId,
-            status: status as any,
+            organizationIds: normalizedOrgIds,
+            departmentIds: normalizedDeptIds,
+            keyword,
+            status: status ? (status as UserStatus) : undefined,
+        });
+    }
+
+    /**
+     * 分页获取用户（筛选 + 分页）
+     */
+    @Get('paged')
+    findPaged(
+        @Query('organizationIds') organizationIds?: string,
+        @Query('departmentIds') departmentIds?: string,
+        @Query('keyword') keyword?: string,
+        @Query('status') status?: string,
+        @Query('page') page?: string,
+        @Query('pageSize') pageSize?: string,
+    ) {
+        const normalizedOrgIds = organizationIds
+            ? organizationIds.split(',').map((item) => item.trim()).filter(Boolean)
+            : undefined;
+        const normalizedDeptIds = departmentIds
+            ? departmentIds.split(',').map((item) => item.trim()).filter(Boolean)
+            : undefined;
+
+        return this.usersService.findPaged({
+            organizationIds: normalizedOrgIds,
+            departmentIds: normalizedDeptIds,
+            keyword,
+            status: status ? (status as UserStatus) : undefined,
+            page: page ? Number(page) : 1,
+            pageSize: pageSize ? Number(pageSize) : 20,
         });
     }
 

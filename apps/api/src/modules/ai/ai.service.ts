@@ -3,21 +3,42 @@ import {
     AIAnalysisResult,
     CollectionPointForRecognition,
     ContentType,
+    AIProvider,
 } from '@packages/types';
-import { IntelCategory } from '@prisma/client';
+import { AIModelConfig, IntelCategory } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { PromptService } from './prompt.service';
 import { RuleEngineService } from './rule-engine.service';
 import { ConfigService } from '../config/config.service';
-import { GoogleGenerativeAI } from '@google/generative-ai';
+import { AIProviderFactory } from './providers/provider.factory';
+import { AIRequestOptions } from './providers/base.provider';
+
+type TraceLog = {
+    timestamp: number;
+    stage: string;
+    message: string;
+    detail?: unknown;
+    level: 'info' | 'warn' | 'error' | 'debug';
+};
+
+type EventTypeSnapshot = {
+    code: string;
+    name: string;
+    description: string | null;
+};
+
+
+type AIEvent = NonNullable<AIAnalysisResult['events']>[number];
+type AIInsight = NonNullable<AIAnalysisResult['insights']>[number];
+type AIInsightExtended = AIInsight & { commodity?: string; sourceText?: string };
 
 /**
  * 上帝视角日志记录器
  */
 class TraceLogger {
-    private logs: any[] = [];
+    private logs: TraceLog[] = [];
 
-    log(stage: string, message: string, detail?: any, level: 'info' | 'warn' | 'error' | 'debug' = 'info') {
+    log(stage: string, message: string, detail?: unknown, level: TraceLog['level'] = 'info') {
         this.logs.push({
             timestamp: Date.now(),
             stage,
@@ -46,8 +67,8 @@ export class AIService implements OnModuleInit {
     private readonly modelId: string;
 
     // 采集点缓存（从数据库加载）
-    private collectionPointCache: any[] = [];
-    private eventTypeCache: any[] = [];
+    private collectionPointCache: CollectionPointForRecognition[] = [];
+    private eventTypeCache: EventTypeSnapshot[] = [];
     private cacheLastUpdated: Date | null = null;
     private readonly CACHE_TTL_MS = 5 * 60 * 1000; // 5分钟缓存
 
@@ -59,16 +80,40 @@ export class AIService implements OnModuleInit {
         private readonly promptService: PromptService,
         private readonly ruleEngineService: RuleEngineService,
         private readonly configService: ConfigService,
+        private readonly aiProviderFactory: AIProviderFactory,
     ) {
-        // Gemini API 配置 - now loaded dynamically via ConfigService in analyzeContent or onModuleInit
-        // But for backward compatibility/simplicity, we can still load env here, 
-        // OR better: load from ConfigService if available, fallback to ENV.
-        // However, ConfigService is async (needs DB access). 
-        // So we initialize basics here, but will override in methods.
+        // AI API 配置 - 优先从数据库 ConfigService 获取，此处仅初始化默认环境变量
         this.apiKey = process.env.GEMINI_API_KEY || '';
-        this.apiUrl = process.env.GEMINI_API_URL || 'https://generativelanguage.googleapis.com/v1';
+        this.apiUrl = process.env.GEMINI_API_URL || '';
         this.modelId = process.env.GEMINI_MODEL_ID || 'gemini-pro';
+    }
 
+    private resolveApiKey(
+        config?: AIModelConfig | null,
+        fallback?: string,
+        override?: string,
+    ): string {
+        if (override) return override;
+        if (config?.apiKey) return config.apiKey;
+        if (config?.apiKeyEnvVar) {
+            const envValue = process.env[config.apiKeyEnvVar];
+            if (envValue) return envValue;
+        }
+        return fallback || '';
+    }
+
+    private resolveApiUrl(
+        config?: AIModelConfig | null,
+        fallback?: string,
+        override?: string,
+    ): string {
+        if (override) return override;
+        return config?.apiUrl || fallback || '';
+    }
+
+    private resolveRecord(value?: unknown): Record<string, string> | undefined {
+        if (!value || typeof value !== 'object') return undefined;
+        return value as Record<string, string>;
     }
 
     /**
@@ -84,7 +129,7 @@ export class AIService implements OnModuleInit {
      */
     async refreshCollectionPointCache() {
         try {
-            this.collectionPointCache = await this.prisma.collectionPoint.findMany({
+            const points = await this.prisma.collectionPoint.findMany({
                 where: { isActive: true },
                 select: {
                     id: true,
@@ -102,6 +147,10 @@ export class AIService implements OnModuleInit {
                 },
                 orderBy: { priority: 'desc' },
             });
+            this.collectionPointCache = points.map((point) => ({
+                ...point,
+                type: point.type as CollectionPointForRecognition['type'],
+            }));
             this.cacheLastUpdated = new Date();
             this.logger.log(`采集点缓存已刷新，共 ${this.collectionPointCache.length} 条数据`);
         } catch (error) {
@@ -295,11 +344,11 @@ export class AIService implements OnModuleInit {
 
         try {
             // [NEW] Get Configuration from DB
-            const aiConfig = await this.configService.getAIModelConfig('DEFAULT');
+            const aiConfig = await this.configService.getDefaultAIConfig();
 
             // Resolve Config Priority: DB > ENV > Default
-            const currentApiKey = aiConfig?.apiKey || this.apiKey;
-            const currentApiUrl = aiConfig?.apiUrl || this.apiUrl;
+            const currentApiKey = this.resolveApiKey(aiConfig, this.apiKey);
+            const currentApiUrl = this.resolveApiUrl(aiConfig, this.apiUrl);
             const currentModelId = aiConfig?.modelName || this.modelId;
 
             // Log Configuration Source for Transparency
@@ -313,12 +362,13 @@ export class AIService implements OnModuleInit {
                 throw new Error('Valid API Key not found in Config (DEFAULT) or ENV.');
             }
 
-            // 调用真实的 Gemini API
-            traceLogger.log('AI', '准备调用 Gemini API', {
+            // 调用 AI API
+            traceLogger.log('AI', '准备调用 AI Provider', {
                 model: currentModelId,
-                configSource: aiConfig?.apiKey ? 'DATABASE' : 'ENVIRONMENT'
+                configSource: aiConfig?.apiKey ? 'DATABASE' : 'ENVIRONMENT',
+                provider: aiConfig?.provider || 'google'
             });
-            const aiResponse = await this.callGeminiAPI(content, category, base64Image, mimeType, traceLogger, aiConfig, currentApiUrl, contentType);
+            const aiResponse = await this.callAI(content, category, base64Image, mimeType, traceLogger, aiConfig, currentApiUrl, contentType);
 
             // [NEW] 调用规则引擎进行补充分析
             const ruleMatches = await this.ruleEngineService.applyRules(content);
@@ -328,7 +378,7 @@ export class AIService implements OnModuleInit {
             });
 
             // 使用 AI 返回的结果增强本地解析，并合并规则匹配结果
-            const result = this.enhanceWithAIResponse(content, category, aiResponse, traceLogger, contentType);
+            const result = this.enhanceWithAIResponse(content, category, aiResponse, traceLogger);
 
             // 合并规则匹配到事件列表
             // 合并规则匹配到事件列表
@@ -388,59 +438,282 @@ export class AIService implements OnModuleInit {
     /**
      * 测试 AI 连接
      */
-    async testConnection(): Promise<{
+    async testConnection(configKey: string = 'DEFAULT'): Promise<{
         success: boolean;
         message: string;
         apiUrl?: string;
         modelId?: string;
+        provider?: string;
         response?: string;
         error?: string;
     }> {
         // [NEW] Get Configuration from DB for testing
-        const aiConfig = await this.configService.getAIModelConfig('DEFAULT');
-        const currentApiKey = aiConfig?.apiKey || this.apiKey;
-        const currentApiUrl = aiConfig?.apiUrl || this.apiUrl;
+        const aiConfig = await this.prisma.aIModelConfig.findUnique({ where: { configKey } });
+        // Fallback to defaults if no config found (legacy behavior)
+        const currentApiKey = this.resolveApiKey(aiConfig, this.apiKey);
+        const currentApiUrl = this.resolveApiUrl(aiConfig, this.apiUrl);
         const currentModelId = aiConfig?.modelName || this.modelId;
+        const providerType = (aiConfig?.provider as AIProvider) || 'google';
 
         if (!currentApiKey) {
-            return { success: false, message: 'GEMINI_API_KEY 未配置 (Config/ENV)' };
-        }
-        if (!currentApiUrl) {
-            return { success: false, message: 'GEMINI_API_URL 未配置 (Config/ENV)' };
+            return { success: false, message: 'API Key 未配置', provider: providerType };
         }
 
         try {
-            const genAI = new GoogleGenerativeAI(currentApiKey);
-            const requestOptions: any = {};
-            if (currentApiUrl) {
-                requestOptions.baseUrl = currentApiUrl;
-            }
+            const provider = this.aiProviderFactory.getProvider(providerType);
+            const options: AIRequestOptions = {
+                modelName: currentModelId,
+                apiKey: currentApiKey,
+                apiUrl: currentApiUrl || undefined,
+                authType: aiConfig?.authType as AIRequestOptions['authType'],
+                headers: this.resolveRecord(aiConfig?.headers),
+                queryParams: this.resolveRecord(aiConfig?.queryParams),
+                pathOverrides: this.resolveRecord(aiConfig?.pathOverrides),
+                modelFetchMode: aiConfig?.modelFetchMode as AIRequestOptions['modelFetchMode'],
+                allowUrlProbe: aiConfig?.allowUrlProbe ?? undefined,
+                timeoutMs: aiConfig?.timeoutMs ?? undefined,
+                maxRetries: aiConfig?.maxRetries ?? undefined,
+            };
 
-            const model = genAI.getGenerativeModel({
-                model: currentModelId
-            }, requestOptions);
-
-            const result = await model.generateContent('Hello');
-            const response = await result.response;
-            const text = response.text();
+            const result = await provider.testConnection(options);
 
             return {
-                success: true,
-                message: 'AI 连接测试成功！',
+                success: result.success,
+                message: result.message,
                 apiUrl: currentApiUrl,
-                modelId: currentModelId,
-                response: text.substring(0, 200),
+                modelId: result.modelId,
+                provider: providerType,
+                response: result.response,
+                error: result.error
             };
         } catch (error) {
             const errorMessage = error instanceof Error ? error.message : String(error);
-            this.logger.error('Gemini SDK test error', error);
+            this.logger.error('AI Connection test error', error);
             return {
                 success: false,
                 message: `连接错误: ${errorMessage}`,
                 apiUrl: currentApiUrl,
                 modelId: currentModelId,
+                provider: providerType,
                 error: errorMessage,
             };
+        }
+    }
+
+    /**
+     * 直接测试指定模型是否可用（不保存配置）
+     */
+    async testModelDirect(payload: {
+        provider: AIProvider;
+        modelName: string;
+        apiKey?: string;
+        apiUrl?: string;
+        authType?: AIRequestOptions['authType'];
+        headers?: Record<string, string>;
+        queryParams?: Record<string, string>;
+        pathOverrides?: Record<string, string>;
+        modelFetchMode?: AIRequestOptions['modelFetchMode'];
+        allowUrlProbe?: boolean;
+        timeoutMs?: number;
+        maxRetries?: number;
+        temperature?: number;
+        maxTokens?: number;
+        topP?: number;
+    }): Promise<{
+        success: boolean;
+        message: string;
+        apiUrl?: string;
+        modelId?: string;
+        provider?: string;
+        response?: string;
+        error?: string;
+    }> {
+        const providerType = payload.provider || 'google';
+        const currentApiKey = payload.apiKey || this.apiKey;
+        const currentApiUrl = payload.apiUrl || this.apiUrl;
+        const modelName = payload.modelName || this.modelId;
+
+        if (!currentApiKey) {
+            return { success: false, message: 'API Key 未配置', provider: providerType };
+        }
+
+        try {
+            const provider = this.aiProviderFactory.getProvider(providerType);
+            const options: AIRequestOptions = {
+                modelName,
+                apiKey: currentApiKey,
+                apiUrl: currentApiUrl || undefined,
+                authType: payload.authType,
+                headers: payload.headers,
+                queryParams: payload.queryParams,
+                pathOverrides: payload.pathOverrides,
+                modelFetchMode: payload.modelFetchMode,
+                allowUrlProbe: payload.allowUrlProbe,
+                timeoutMs: payload.timeoutMs,
+                maxRetries: payload.maxRetries,
+                temperature: payload.temperature,
+                maxTokens: payload.maxTokens,
+                topP: payload.topP,
+            };
+
+            const result = await provider.testConnection(options);
+            return {
+                success: result.success,
+                message: result.message,
+                apiUrl: currentApiUrl,
+                modelId: result.modelId,
+                provider: providerType,
+                response: result.response,
+                error: result.error,
+            };
+        } catch (error) {
+            const errorMessage = error instanceof Error ? error.message : String(error);
+            this.logger.error('AI Model direct test error', error);
+            return {
+                success: false,
+                message: `连接错误: ${errorMessage}`,
+                apiUrl: currentApiUrl,
+                modelId: modelName,
+                provider: providerType,
+                error: errorMessage,
+            };
+        }
+    }
+
+    /**
+     * 获取可用模型列表
+     */
+    async getAvailableModels(
+        providerType?: string,
+        apiKey?: string,
+        apiUrl?: string,
+        configKey?: string,
+    ): Promise<{ models: string[]; activeUrl?: string; provider?: string; diagnostics?: Array<{ provider: string; message: string; activeUrl?: string }> }> {
+        try {
+            // Resolve configuration priority: Argument > DB Config > Env
+            let finalApiKey = apiKey;
+            let finalApiUrl = apiUrl;
+
+            const config = configKey
+                ? await this.prisma.aIModelConfig.findUnique({ where: { configKey } })
+                : null;
+
+            // Always fetch config to have fallback values, even if some args are provided
+            // This allows mixed usage (e.g., provided API Key but default URL from config)
+            const activeConfig = !config && providerType
+                ? (await this.configService.getAllAIModelConfigs()).find(c => c.provider === providerType && c.isActive)
+                : null;
+            const resolvedConfig = config || activeConfig;
+
+            if (!resolvedConfig && !providerType) {
+                throw new Error('Provider resolution failed: missing provider and configKey');
+            }
+
+            if (!finalApiKey) {
+                if (resolvedConfig) {
+                    finalApiKey = this.resolveApiKey(resolvedConfig, this.apiKey);
+                } else {
+                    // Fallback to environment variables if they match the provider
+                    if (providerType === 'google' && this.apiKey) {
+                        finalApiKey = this.apiKey;
+                    }
+                }
+            }
+
+            // Logic fix: Ensure apiUrl argument takes precedence, then config, then fallback
+            if (!finalApiUrl) {
+                if (resolvedConfig?.apiUrl) {
+                    finalApiUrl = resolvedConfig.apiUrl;
+                } else if (providerType === 'google' && this.apiUrl) {
+                     finalApiUrl = this.apiUrl;
+                }
+            }
+
+            if (!finalApiKey) {
+                throw new Error('API Key is required to fetch models');
+            }
+            const diagnostics: Array<{ provider: string; message: string; activeUrl?: string }> = [];
+
+            const providerCandidates: AIProvider[] = (() => {
+                if (providerType === 'auto') return ['openai', 'google'];
+                const requested = providerType as AIProvider | undefined;
+                if (requested) return [requested];
+                if (resolvedConfig?.provider) return [resolvedConfig.provider as AIProvider, 'openai', 'google'];
+                return ['openai', 'google'];
+            })();
+
+            for (const candidate of providerCandidates) {
+                const provider = this.aiProviderFactory.getProvider(candidate);
+                const options: AIRequestOptions = {
+                    modelName: 'model-listing-placeholder',
+                    apiKey: finalApiKey,
+                    apiUrl: finalApiUrl || undefined,
+                    authType: resolvedConfig?.authType as AIRequestOptions['authType'],
+                    headers: this.resolveRecord(resolvedConfig?.headers),
+                    queryParams: this.resolveRecord(resolvedConfig?.queryParams),
+                    pathOverrides: this.resolveRecord(resolvedConfig?.pathOverrides),
+                    modelFetchMode: resolvedConfig?.modelFetchMode as AIRequestOptions['modelFetchMode'],
+                    allowUrlProbe: resolvedConfig?.allowUrlProbe ?? undefined,
+                    timeoutMs: resolvedConfig?.timeoutMs ?? undefined,
+                    maxRetries: resolvedConfig?.maxRetries ?? undefined,
+                };
+
+                try {
+                    const result = await provider.getModels(options);
+                    if (result.models.length > 0) {
+                        if (resolvedConfig) {
+                            this.configService.upsertAIModelConfig(resolvedConfig.configKey, {
+                                configKey: resolvedConfig.configKey,
+                                provider: resolvedConfig.provider as AIProvider,
+                                modelName: resolvedConfig.modelName,
+                                apiUrl: resolvedConfig.apiUrl ?? undefined,
+                                apiKey: resolvedConfig.apiKey ?? undefined,
+                                apiKeyEnvVar: resolvedConfig.apiKeyEnvVar ?? undefined,
+                                authType: resolvedConfig.authType as AIRequestOptions['authType'],
+                                headers: this.resolveRecord(resolvedConfig.headers),
+                                queryParams: this.resolveRecord(resolvedConfig.queryParams),
+                                pathOverrides: this.resolveRecord(resolvedConfig.pathOverrides),
+                                modelFetchMode: resolvedConfig.modelFetchMode as AIRequestOptions['modelFetchMode'],
+                                allowUrlProbe: resolvedConfig.allowUrlProbe ?? undefined,
+                                temperature: resolvedConfig.temperature,
+                                maxTokens: resolvedConfig.maxTokens,
+                                topP: resolvedConfig.topP ?? undefined,
+                                topK: resolvedConfig.topK ?? undefined,
+                                isActive: resolvedConfig.isActive,
+                                isDefault: resolvedConfig.isDefault,
+                                timeoutMs: resolvedConfig.timeoutMs,
+                                maxRetries: resolvedConfig.maxRetries,
+                                availableModels: result.models,
+                            }).catch(err => {
+                                this.logger.warn(`Failed to update available models for ${resolvedConfig.configKey}`, err);
+                            });
+                        }
+
+                        return {
+                            ...result,
+                            provider: candidate,
+                            diagnostics,
+                        };
+                    }
+
+                    diagnostics.push({
+                        provider: candidate,
+                        message: '模型列表为空',
+                        activeUrl: result.activeUrl || finalApiUrl || undefined,
+                    });
+                } catch (error) {
+                    diagnostics.push({
+                        provider: candidate,
+                        message: error instanceof Error ? error.message : String(error),
+                        activeUrl: finalApiUrl || undefined,
+                    });
+                }
+            }
+
+            return { models: [], activeUrl: finalApiUrl || undefined, diagnostics };
+        } catch (error) {
+            this.logger.error(`Failed to fetch models for ${providerType}`, error);
+            throw new Error(`无法获取模型列表: ${error instanceof Error ? error.message : String(error)}`);
         }
     }
 
@@ -573,7 +846,7 @@ export class AIService implements OnModuleInit {
     /**
      * 构建 Prompt 变量
      */
-    private buildPromptVariables(content: string, category: IntelCategory, contentType?: ContentType): Record<string, any> {
+    private buildPromptVariables(content: string, category: IntelCategory, contentType?: ContentType): Record<string, unknown> {
         return {
             content,
             categoryInstructions: '',
@@ -585,19 +858,19 @@ export class AIService implements OnModuleInit {
     }
 
     /**
-     * 调用 Gemini API（支持中转服务，带重试机制）
+     * 调用 AI Provider (支持多供应商)
      */
-    private async callGeminiAPI(
+    private async callAI(
         content: string,
         category: IntelCategory,
         base64Image?: string,
         mimeType?: string,
         traceLogger?: TraceLogger,
-        aiConfig?: any, // Pass config object
-        currentApiUrl?: string, // [NEW] Pass specific URL
+        aiConfig?: AIModelConfig | null,
+        currentApiUrl?: string,
         contentType?: ContentType,
     ): Promise<string> {
-        // [NEW] 动态获取 Prompt
+        // 1. 动态获取 Prompt
         const promptCode = this.getPromptCodeForCategory(category, contentType);
         const variables = this.buildPromptVariables(content, category, contentType);
 
@@ -610,87 +883,50 @@ export class AIService implements OnModuleInit {
         const systemPrompt = prompt.system;
         const userPrompt = prompt.user;
 
-        // [FIX] Calculate dynamic values BEFORE logging
+        // 2. 准备配置参数
         const targetModel = aiConfig?.modelName || this.modelId;
-        const targetApiKey = aiConfig?.apiKey || this.apiKey;
+        const targetApiKey = this.resolveApiKey(aiConfig, this.apiKey);
+        const providerType = (aiConfig?.provider as AIProvider) || 'google';
 
-        traceLogger?.log('Prompt', '构建提示词完成 (Dynamic)', {
+        traceLogger?.log('Prompt', '构建提示词完成', {
             templateCode: promptCode,
-            systemPrompt,
-            userPrompt,
-            fullPrompt: `${systemPrompt}\n\n${userPrompt} `,
-            targetModel // Add to trace log
+            provider: providerType,
+            targetModel
         });
 
-        const fullPrompt = `${systemPrompt} \n\n${userPrompt} `;
+        // 3. 获取 Provider 实例
+        const provider = this.aiProviderFactory.getProvider(providerType);
 
-        // [FIX] Log the ACTUAL model being used
-        this.logger.debug(`[AI] Preparing request for model: ${targetModel} (Provider: Google)`);
+        const options: AIRequestOptions = {
+            modelName: targetModel,
+            apiKey: targetApiKey,
+            apiUrl: currentApiUrl || aiConfig?.apiUrl || undefined,
+            authType: aiConfig?.authType as AIRequestOptions['authType'],
+            headers: this.resolveRecord(aiConfig?.headers),
+            queryParams: this.resolveRecord(aiConfig?.queryParams),
+            pathOverrides: this.resolveRecord(aiConfig?.pathOverrides),
+            modelFetchMode: aiConfig?.modelFetchMode as AIRequestOptions['modelFetchMode'],
+            allowUrlProbe: aiConfig?.allowUrlProbe ?? undefined,
+            temperature: aiConfig?.temperature ?? 0.3,
+            maxTokens: aiConfig?.maxTokens ?? 8192,
+            topP: aiConfig?.topP ?? undefined,
+            timeoutMs: aiConfig?.timeoutMs ?? undefined,
+            maxRetries: aiConfig?.maxRetries ?? undefined,
+            images: base64Image && mimeType ? [{ base64: base64Image, mimeType }] : undefined
+        };
 
-        const genAI = new GoogleGenerativeAI(targetApiKey);
-
-        // Use dynamically configured URL if available
-        const requestOptions: any = {};
-        if (currentApiUrl) {
-            requestOptions.baseUrl = currentApiUrl;
-        }
-
-        const model = genAI.getGenerativeModel({
-            model: targetModel,
-            generationConfig: {
-                maxOutputTokens: 8192,
-                temperature: 0.3,
-            }
-        }, requestOptions);
-
-        const parts: any[] = [{ text: fullPrompt }];
-
-        // 如果有图片，添加到请求中
-        if (base64Image && mimeType) {
-            parts.push({
-                inlineData: {
-                    mimeType: mimeType,
-                    data: base64Image,
-                },
-            });
-        }
-
-        // 重试配置
-        const maxRetries = 3;
-        const baseDelayMs = 5000;
-
-        for (let attempt = 1; attempt <= maxRetries; attempt++) {
-            if (attempt > 1) {
-                traceLogger?.log('AI', `API 调用重试(${attempt} / ${maxRetries})`, null, 'warn');
-            }
+        // 4. 执行调用
+        try {
             const startTime = Date.now();
+            const text = await provider.generateResponse(systemPrompt, userPrompt, options);
 
-            try {
-                const result = await model.generateContent(parts);
-                const response = await result.response;
-                const text = response.text();
-
-                if (!text) {
-                    throw new Error('Empty response from Gemini SDK');
-                }
-
-                const latency = Date.now() - startTime;
-                traceLogger?.log('AI', '收到 AI 响应', { latencyMs: latency, responseLen: text.length });
-                return text;
-            } catch (error) {
-                const msg = error instanceof Error ? error.message : String(error);
-                const isRateLimited = msg.includes('429') || msg.includes('Too Many Requests');
-
-                if (isRateLimited && attempt < maxRetries) {
-                    const delayMs = baseDelayMs * attempt;
-                    await this.sleep(delayMs);
-                    continue;
-                }
-                throw error;
-            }
+            const latency = Date.now() - startTime;
+            traceLogger?.log('AI', '收到 AI 响应', { latencyMs: latency, responseLen: text.length });
+            return text;
+        } catch (error) {
+            traceLogger?.log('AI', 'Provider 调用失败', { error: String(error) }, 'error');
+            throw error;
         }
-
-        throw new Error('Max retries exceeded for Gemini API call');
     }
 
     private sleep(ms: number): Promise<void> {
@@ -702,22 +938,23 @@ export class AIService implements OnModuleInit {
      */
     async generateBriefing(context: string): Promise<string> {
         // [NEW] Get Configuration from DB
-        const aiConfig = await this.configService.getAIModelConfig('DEFAULT');
+        const aiConfig = await this.configService.getDefaultAIConfig();
 
         // Resolve Config Priority: DB > ENV > Default
-        const currentApiKey = aiConfig?.apiKey || this.apiKey;
-        const currentApiUrl = aiConfig?.apiUrl || this.apiUrl;
+        const currentApiKey = this.resolveApiKey(aiConfig, this.apiKey);
+        const currentApiUrl = this.resolveApiUrl(aiConfig, this.apiUrl);
         const currentModelId = aiConfig?.modelName || this.modelId;
+        const providerType = (aiConfig?.provider as AIProvider) || 'google';
 
         // Log Configuration Source for Briefing
         if (aiConfig?.apiKey) {
-            this.logger.log(`[Briefing Gen] Using DATABASE settings (Model: ${currentModelId}, URL: ${currentApiUrl})`);
+            this.logger.log(`[Briefing Gen] Using DATABASE settings (Model: ${currentModelId}, Provider: ${providerType})`);
         } else {
             this.logger.warn(`[Briefing Gen] Using ENVIRONMENT/DEFAULT settings. verify system config if logic is unexpected.`);
         }
 
         if (!currentApiKey) {
-            return `【系统错误】未配置 AI API Key (Database or ENV)，无法生成简报。`;
+            return `【系统错误】未配置 AI API Key，无法生成简报。`;
         }
 
         try {
@@ -726,19 +963,22 @@ export class AIService implements OnModuleInit {
                 throw new Error('简报模板 MARKET_INTEL_BRIEFING 未找到');
             }
 
-            const genAI = new GoogleGenerativeAI(currentApiKey);
-            const requestOptions: any = {};
-            if (currentApiUrl) {
-                requestOptions.baseUrl = currentApiUrl;
-            }
+            const provider = this.aiProviderFactory.getProvider(providerType);
+            const options: AIRequestOptions = {
+                modelName: currentModelId,
+                apiKey: currentApiKey,
+                apiUrl: currentApiUrl || undefined,
+                authType: aiConfig?.authType as AIRequestOptions['authType'],
+                headers: this.resolveRecord(aiConfig?.headers),
+                queryParams: this.resolveRecord(aiConfig?.queryParams),
+                pathOverrides: this.resolveRecord(aiConfig?.pathOverrides),
+                modelFetchMode: aiConfig?.modelFetchMode as AIRequestOptions['modelFetchMode'],
+                allowUrlProbe: aiConfig?.allowUrlProbe ?? undefined,
+                timeoutMs: aiConfig?.timeoutMs ?? undefined,
+                maxRetries: aiConfig?.maxRetries ?? undefined,
+            };
 
-            const model = genAI.getGenerativeModel({
-                model: currentModelId
-            }, requestOptions);
-
-            const result = await model.generateContent([prompt.system, prompt.user]);
-            const response = await result.response;
-            return response.text();
+            return await provider.generateResponse(prompt.system, prompt.user, options);
         } catch (error) {
             this.logger.error('Failed to generate briefing', error);
             throw new Error('智能简报生成失败，请稍后重试。');
@@ -753,7 +993,6 @@ export class AIService implements OnModuleInit {
         category: IntelCategory,
         aiResponse: string,
         traceLogger?: TraceLogger,
-        contentType?: ContentType,
     ): AIAnalysisResult {
         const localResult: AIAnalysisResult = {
             summary: 'AI Analysis',
@@ -830,7 +1069,9 @@ export class AIService implements OnModuleInit {
             }
 
             cleanJson = cleanJson.trim();
-            const aiResult = JSON.parse(cleanJson);
+            const aiResult = JSON.parse(cleanJson) as AIAnalysisResult & {
+                insights?: AIInsightExtended[];
+            };
 
 
 
@@ -839,7 +1080,7 @@ export class AIService implements OnModuleInit {
             localResult.tags = aiResult.tags || localResult.tags;
             localResult.sentiment = aiResult.sentiment || localResult.sentiment;
             localResult.marketSentiment = {
-                overall: this.normalizeSentiment(aiResult.marketSentiment?.overall),
+                overall: this.normalizeSentiment(aiResult.marketSentiment?.overall || 'neutral'),
                 score: aiResult.marketSentiment?.score || 50,
                 traders: aiResult.marketSentiment?.traders || '',
                 processors: aiResult.marketSentiment?.processors || '',
@@ -857,7 +1098,7 @@ export class AIService implements OnModuleInit {
             if (aiResult.regions) localResult.regions = aiResult.regions;
 
             // 处理价格点：保留 AI 提取的增强字段，同时进行采集点匹配和标准化
-            const pricePoints = aiResult.pricePoints?.length > 0
+            const pricePoints = Array.isArray(aiResult.pricePoints) && aiResult.pricePoints.length > 0
                 ? aiResult.pricePoints.map((p: {
                     location: string;
                     price: number;
@@ -894,8 +1135,8 @@ export class AIService implements OnModuleInit {
                 : localResult.pricePoints;
 
             // 处理事件
-            const events = aiResult.events?.length > 0
-                ? aiResult.events.map((e: any) => ({
+            const events = Array.isArray(aiResult.events) && aiResult.events.length > 0
+                ? aiResult.events.map((e: AIEvent) => ({
                     subject: e.subject,
                     action: e.action,
                     content: e.content,
@@ -909,8 +1150,8 @@ export class AIService implements OnModuleInit {
                 : localResult.events;
 
             // 处理洞察
-            const insights = aiResult.insights?.length > 0
-                ? aiResult.insights.map((i: any) => ({
+            const insights = Array.isArray(aiResult.insights) && aiResult.insights.length > 0
+                ? aiResult.insights.map((i: AIInsightExtended) => ({
                     title: i.title,
                     content: i.content,
                     direction: i.direction,
@@ -946,11 +1187,11 @@ export class AIService implements OnModuleInit {
                 events,
                 marketSentiment,
                 // 新增：洞察数据（用于生成 MarketInsight）
-                forecast: insights?.length > 0 ? {
-                    shortTerm: insights.find((i: any) => i.timeframe === 'short')?.content,
-                    mediumTerm: insights.find((i: any) => i.timeframe === 'medium')?.content,
-                    longTerm: insights.find((i: any) => i.timeframe === 'long')?.content,
-                    keyFactors: insights.flatMap((i: any) => i.factors || []).slice(0, 5),
+                forecast: insights && insights.length > 0 ? {
+                    shortTerm: insights.find(i => i.timeframe === 'short')?.content,
+                    mediumTerm: insights.find(i => i.timeframe === 'medium')?.content,
+                    longTerm: insights.find(i => i.timeframe === 'long')?.content,
+                    keyFactors: insights.flatMap(i => i.factors || []).slice(0, 5),
                 } : localResult.forecast,
             };
         } catch (parseError) {
@@ -982,18 +1223,17 @@ export class AIService implements OnModuleInit {
      * 映射价格主体类型 (Config Driven)
      */
     private mapSourceType(type: string | undefined, location: string): 'ENTERPRISE' | 'REGIONAL' | 'PORT' {
+        const validTypes = ['ENTERPRISE', 'PORT', 'REGIONAL'] as const;
+        type SourceTypeValue = typeof validTypes[number];
         if (type) {
-            const upper = type.toUpperCase();
-            if (upper === 'ENTERPRISE') return 'ENTERPRISE';
-            if (upper === 'PORT') return 'PORT';
-            if (upper === 'REGIONAL') return 'REGIONAL';
+            const upper = type.toUpperCase() as SourceTypeValue;
+            if (validTypes.includes(upper)) return upper;
         }
 
         // Use ConfigService for logic
         const matched = this.configService.evaluateMappingRule('PRICE_SOURCE_TYPE', location);
-        if (['ENTERPRISE', 'PORT', 'REGIONAL'].includes(matched)) {
-            return matched as any;
-        }
+        const normalized = matched.toUpperCase() as SourceTypeValue;
+        if (validTypes.includes(normalized)) return normalized;
 
         return 'REGIONAL'; // Default fallback
     }
@@ -1008,10 +1248,10 @@ export class AIService implements OnModuleInit {
         type: string | undefined,
         note: string | undefined,
     ): 'LISTED' | 'TRANSACTION' | 'ARRIVAL' | 'FOB' | 'STATION_ORIGIN' | 'STATION_DEST' | 'PURCHASE' | 'WHOLESALE' | 'OTHER' {
-        type SubTypeValue = 'LISTED' | 'TRANSACTION' | 'ARRIVAL' | 'FOB' | 'STATION_ORIGIN' | 'STATION_DEST' | 'PURCHASE' | 'WHOLESALE' | 'OTHER';
+        const validTypes = ['LISTED', 'TRANSACTION', 'ARRIVAL', 'FOB', 'STATION_ORIGIN', 'STATION_DEST', 'PURCHASE', 'WHOLESALE', 'OTHER'] as const;
+        type SubTypeValue = typeof validTypes[number];
         if (type) {
             const upper = type.toUpperCase() as SubTypeValue;
-            const validTypes: SubTypeValue[] = ['LISTED', 'TRANSACTION', 'ARRIVAL', 'FOB', 'STATION_ORIGIN', 'STATION_DEST', 'PURCHASE', 'WHOLESALE', 'OTHER'];
             if (validTypes.includes(upper)) return upper;
         }
 
@@ -1019,10 +1259,8 @@ export class AIService implements OnModuleInit {
         // Use ConfigService
         const matched = this.configService.evaluateMappingRule('PRICE_SUB_TYPE', context, 'LISTED');
         // Validate if result is a valid type, else return LISTED
-        const validTypes: SubTypeValue[] = ['LISTED', 'TRANSACTION', 'ARRIVAL', 'FOB', 'STATION_ORIGIN', 'STATION_DEST', 'PURCHASE', 'WHOLESALE', 'OTHER'];
-        if (validTypes.includes(matched as any)) {
-            return matched as any;
-        }
+        const normalized = matched.toUpperCase() as SubTypeValue;
+        if (validTypes.includes(normalized)) return normalized;
 
         return 'LISTED';
     }
@@ -1037,16 +1275,16 @@ export class AIService implements OnModuleInit {
         level: string | undefined,
         location: string,
     ): 'COUNTRY' | 'REGION' | 'PROVINCE' | 'CITY' | 'DISTRICT' | 'PORT' | 'STATION' | 'ENTERPRISE' {
-        type GeoLevelValue = 'COUNTRY' | 'REGION' | 'PROVINCE' | 'CITY' | 'DISTRICT' | 'PORT' | 'STATION' | 'ENTERPRISE';
+        const validLevels = ['COUNTRY', 'REGION', 'PROVINCE', 'CITY', 'DISTRICT', 'PORT', 'STATION', 'ENTERPRISE'] as const;
+        type GeoLevelValue = typeof validLevels[number];
         if (level) {
             const upper = level.toUpperCase() as GeoLevelValue;
-            const validLevels: GeoLevelValue[] = ['COUNTRY', 'REGION', 'PROVINCE', 'CITY', 'DISTRICT', 'PORT', 'STATION', 'ENTERPRISE'];
             if (validLevels.includes(upper)) return upper;
         }
 
         const matched = this.configService.evaluateMappingRule('GEO_LEVEL', location, 'CITY');
-        const validLevels: GeoLevelValue[] = ['COUNTRY', 'REGION', 'PROVINCE', 'CITY', 'DISTRICT', 'PORT', 'STATION', 'ENTERPRISE'];
-        if (validLevels.includes(matched as any)) return matched as any;
+        const normalized = matched.toUpperCase() as GeoLevelValue;
+        if (validLevels.includes(normalized)) return normalized;
 
         return 'CITY'; // Default
     }

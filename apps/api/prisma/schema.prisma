@@ -353,6 +353,14 @@ enum CollectionPointType {
   MARKET        // 批发市场
 }
 
+// 采集点频率类型
+enum CollectionPointFrequencyType {
+  DAILY
+  WEEKLY
+  MONTHLY
+  CUSTOM
+}
+
 // 采集点配置表
 model CollectionPoint {
   id            String               @id @default(uuid())
@@ -381,6 +389,13 @@ model CollectionPoint {
   priceSubTypes String[]                      // 支持的价格类型列表
   defaultSubType String?                      // 默认价格子类型（如 FOB、LISTED）
   isDataSource  Boolean              @default(true) // 是否作为数据来源点
+
+  // ===== 采集频率配置（内置）=====
+  frequencyType   CollectionPointFrequencyType @default(DAILY)
+  weekdays        Int[]              @default([]) // 1-7（周一~周日），仅 WEEKLY
+  monthDays       Int[]              @default([]) // 1-31，0=月末，仅 MONTHLY
+  dispatchAtMinute Int               @default(540) // 默认 09:00
+  shiftConfig     Json?                           // 班次/时段配置（可扩展）
 
   // [NEW] 品种-价格类型映射配置 (JSON format)
   // Structure: { name: string, allowedSubTypes: string[], defaultSubType?: string }[]
@@ -979,32 +994,13 @@ model PriceSubmission {
 // 任务调度系统
 // =============================================
 
-// 任务类型枚举 (12种)
+// 任务类型枚举（简化，全局复用）
 enum IntelTaskType {
-  // 1. 常规汇报
-  DAILY_REPORT       // 市场日报
-  WEEKLY_REPORT      // 周报
-  MONTHLY_REPORT     // 月报
-  RESEARCH_REPORT    // 深度研报
-
-  // 2. 一线采集
-  PRICE_COLLECTION   // 价格采集
-  INVENTORY_CHECK    // 库存盘点
-  FIELD_VISIT        // 实地走访
-  COMPETITOR_INFO    // 竞对情报
-
-  // 3. 特定事件
-  POLICY_ANALYSIS    // 政策解读
-  URGENT_VERIFICATION // 紧急核实
-  EXHIBITION_REPORT  // 会议/展会纪要
-
-  // 4. 数据维护
-  RESOURCE_UPDATE    // 客商/档案更新
-  
-  // 兼容旧枚举 (如果需要)
-  PRICE_REPORT       // @deprecated
-  FIELD_CHECK        // @deprecated
-  DOCUMENT_SCAN      // @deprecated
+  COLLECTION    // 采集任务
+  REPORT        // 报告任务
+  RESEARCH      // 调研任务
+  VERIFICATION  // 核实任务
+  OTHER         // 其他
 }
 
 // 任务优先级枚举
@@ -1021,6 +1017,11 @@ enum TaskCycleType {
   WEEKLY
   MONTHLY
   ONE_TIME
+}
+
+enum TaskScheduleMode {
+  POINT_DEFAULT
+  TEMPLATE_OVERRIDE
 }
 
 // 任务状态枚举
@@ -1092,6 +1093,14 @@ model IntelTask {
   templateId  String?
   template    IntelTaskTemplate?  @relation(fields: [templateId], references: [id])
 
+  // [NEW] 关联规则（用于规则分发监控）
+  ruleId      String?
+  rule        IntelTaskRule? @relation(fields: [ruleId], references: [id])
+
+  // [NEW] 任务组（协作/合并完成）
+  taskGroupId String?
+  taskGroup   IntelTaskGroup? @relation(fields: [taskGroupId], references: [id])
+
   // [NEW] 关联采集点（明确任务地点）
   collectionPointId String?
   collectionPoint   CollectionPoint? @relation(fields: [collectionPointId], references: [id])
@@ -1115,12 +1124,18 @@ model IntelTask {
   // [NEW] 任务操作历史
   history     IntelTaskHistory[]
 
+  // [NEW] 表单/审核流程绑定
+  formId      String?
+  workflowId  String?
+
   createdAt   DateTime        @default(now())
   updatedAt   DateTime        @updatedAt
   
   @@index([assigneeId, status])
   @@index([deadline])
   @@index([templateId])
+  @@index([ruleId])
+  @@index([taskGroupId])
   @@index([periodKey])
   @@unique([templateId, assigneeId, periodStart, collectionPointId, commodity])
 }
@@ -1134,7 +1149,9 @@ model IntelTaskTemplate {
   description     String?          // 任务描述模板
   taskType        IntelTaskType    // 生成的任务类型
   priority        IntelTaskPriority @default(MEDIUM)
-  
+  domain          String?          // 业务域（全局复用）
+  scheduleMode    TaskScheduleMode @default(TEMPLATE_OVERRIDE) // 采集任务的频率来源
+
   // 周期配置
   cycleType       TaskCycleType    @default(ONE_TIME)
   cycleConfig     Json?            // 兼容旧周期配置（逐步弃用）
@@ -1161,7 +1178,8 @@ model IntelTaskTemplate {
 
   // [NEW] 采集点分配规则
   collectionPointIds    String[]                 // 绑定的采集点列表
-  targetPointType       CollectionPointType?     // 按采集点类型批量生成
+  targetPointType       CollectionPointType?     // 按采集点类型批量生成（兼容旧字段）
+  targetPointTypes      CollectionPointType[]    @default([]) // 按采集点类型批量生成（多选）
   collectionPointId     String?                  // 单个采集点关联
   collectionPoint       CollectionPoint?         @relation(fields: [collectionPointId], references: [id])
   
@@ -1172,12 +1190,54 @@ model IntelTaskTemplate {
   
   // 关联
   tasks           IntelTask[]
+  rules           IntelTaskRule[]
   createdById     String
   
   createdAt       DateTime         @default(now())
   updatedAt       DateTime         @updatedAt
   
   @@index([isActive, nextRunAt])
+}
+
+// 任务分配规则（模板下多规则）
+model IntelTaskRule {
+  id               String   @id @default(uuid())
+  templateId       String
+  template         IntelTaskTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  tasks            IntelTask[]
+
+  scopeType        String   // POINT/USER/DEPARTMENT/ORGANIZATION/ROLE/QUERY
+  scopeQuery       Json?
+
+  frequencyType    TaskCycleType @default(DAILY)
+  weekdays         Int[]   @default([])
+  monthDays        Int[]   @default([])
+  dispatchAtMinute Int    @default(540)
+  duePolicy        Json?
+
+  assigneeStrategy String  @default("POINT_OWNER")
+  completionPolicy String  @default("EACH")
+  grouping         Boolean @default(false)
+  isActive         Boolean @default(true)
+
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@index([templateId])
+}
+
+// 协作任务组（用于 ANY_ONE/QUORUM/ALL 等策略）
+model IntelTaskGroup {
+  id          String   @id @default(uuid())
+  templateId  String?
+  ruleId      String?
+  status      String   @default("PENDING")
+  groupKey    String?
+
+  tasks       IntelTask[]
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 }
 
 // =============================================
@@ -1447,6 +1507,13 @@ model AIModelConfig {
   
   apiKeyEnvVar String?  // 环境变量名 (推荐)
   apiKey       String?  // 直接存储 (仅供测试或私有部署，需加密)
+
+  authType      String? // bearer | api-key | custom | none
+  headers       Json?
+  queryParams   Json?
+  pathOverrides Json?
+  modelFetchMode String? // official | manual | custom
+  allowUrlProbe Boolean? @default(true)
   
   temperature  Float    @default(0.3)
   maxTokens    Int      @default(8192)
@@ -1457,7 +1524,10 @@ model AIModelConfig {
   timeoutMs    Int      @default(30000)
   
   isActive     Boolean  @default(true)
-  
+  isDefault    Boolean  @default(false)
+
+  availableModels String[] @default([])
+
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 }

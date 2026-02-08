@@ -56,6 +56,7 @@ import {
     UpdateDictionaryItemDTO,
 } from '../types';
 import { DOMAIN_CATEGORIES, DOMAIN_CATEGORY_OPTIONS, DomainCategory } from '@/constants';
+import { useModalAutoFocus } from '@/hooks/useModalAutoFocus';
 
 const { Text, Paragraph } = Typography;
 
@@ -94,6 +95,16 @@ export const DataDictionaryPage = () => {
 
     const [itemModalOpen, setItemModalOpen] = useState(false);
     const [editingItem, setEditingItem] = useState<DictionaryItemModel | null>(null);
+    const {
+        containerRef: domainContainerRef,
+        autoFocusFieldProps: domainAutoFocusFieldProps,
+        modalProps: domainModalProps,
+    } = useModalAutoFocus();
+    const {
+        containerRef: itemContainerRef,
+        autoFocusFieldProps: itemAutoFocusFieldProps,
+        modalProps: itemModalProps,
+    } = useModalAutoFocus();
 
 
     const {
@@ -647,35 +658,41 @@ export const DataDictionaryPage = () => {
                 initialValues={
                     editingDomain || { isActive: true, isSystemDomain: false, usageLocations: [] }
                 }
-                modalProps={{ destroyOnClose: true }}
+                modalProps={{ destroyOnClose: true, ...domainModalProps }}
             >
-                <ProFormText
-                    name="code"
-                    label="编码"
-                    rules={[{ required: true, message: '请输入编码' }]}
-                    fieldProps={{ disabled: Boolean(editingDomain) }}
-                />
-                <ProFormText
-                    name="name"
-                    label="名称"
-                    rules={[{ required: true, message: '请输入名称' }]}
-                />
-                <ProFormSelect
-                    name="category"
-                    label="分类"
-                    options={DOMAIN_CATEGORY_OPTIONS}
-                    placeholder="选择分类"
-                />
-                <ProFormText name="usageHint" label="用途说明" placeholder="简短描述该字典域的用途" />
-                <ProFormSelect
-                    name="usageLocations"
-                    label="使用位置"
-                    mode="tags"
-                    placeholder="输入后回车添加"
-                />
-                <ProFormTextArea name="description" label="详细描述" fieldProps={{ rows: 2 }} />
-                <ProFormSwitch name="isSystemDomain" label="系统域（不可删除）" />
-                <ProFormSwitch name="isActive" label="启用" />
+                <div ref={domainContainerRef}>
+                    <ProFormText
+                        name="code"
+                        label="编码"
+                        rules={[{ required: true, message: '请输入编码' }]}
+                        fieldProps={{
+                            disabled: Boolean(editingDomain),
+                            ...(editingDomain ? {} : domainAutoFocusFieldProps),
+                        }}
+                    />
+                    <ProFormText
+                        name="name"
+                        label="名称"
+                        rules={[{ required: true, message: '请输入名称' }]}
+                        fieldProps={editingDomain ? domainAutoFocusFieldProps : undefined}
+                    />
+                    <ProFormSelect
+                        name="category"
+                        label="分类"
+                        options={DOMAIN_CATEGORY_OPTIONS}
+                        placeholder="选择分类"
+                    />
+                    <ProFormText name="usageHint" label="用途说明" placeholder="简短描述该字典域的用途" />
+                    <ProFormSelect
+                        name="usageLocations"
+                        label="使用位置"
+                        mode="tags"
+                        placeholder="输入后回车添加"
+                    />
+                    <ProFormTextArea name="description" label="详细描述" fieldProps={{ rows: 2 }} />
+                    <ProFormSwitch name="isSystemDomain" label="系统域（不可删除）" />
+                    <ProFormSwitch name="isActive" label="启用" />
+                </div>
             </ModalForm>
 
             {/* 字典项编辑弹窗 */}
@@ -695,34 +712,40 @@ export const DataDictionaryPage = () => {
                         }
                         : { isActive: true, sortOrder: 0 }
                 }
-                modalProps={{ destroyOnClose: true }}
+                modalProps={{ destroyOnClose: true, ...itemModalProps }}
             >
-                <ProFormText
-                    name="code"
-                    label="编码"
-                    rules={[{ required: true, message: '请输入编码' }]}
-                    fieldProps={{ disabled: Boolean(editingItem) }}
-                />
-                <ProFormText
-                    name="label"
-                    label="名称"
-                    rules={[{ required: true, message: '请输入名称' }]}
-                />
-                <ProFormSelect
-                    name="parentCode"
-                    label="父级编码"
-                    options={parentOptions}
-                    allowClear
-                    placeholder="可选"
-                />
-                <ProFormDigit name="sortOrder" label="排序" fieldProps={{ min: 0 }} />
-                <ProFormSwitch name="isActive" label="启用" />
-                <ProFormTextArea
-                    name="metaText"
-                    label="扩展属性 (JSON)"
-                    fieldProps={{ rows: 4 }}
-                    placeholder='例如：{"color":"blue","icon":"StarOutlined"}'
-                />
+                <div ref={itemContainerRef}>
+                    <ProFormText
+                        name="code"
+                        label="编码"
+                        rules={[{ required: true, message: '请输入编码' }]}
+                        fieldProps={{
+                            disabled: Boolean(editingItem),
+                            ...(editingItem ? {} : itemAutoFocusFieldProps),
+                        }}
+                    />
+                    <ProFormText
+                        name="label"
+                        label="名称"
+                        rules={[{ required: true, message: '请输入名称' }]}
+                        fieldProps={editingItem ? itemAutoFocusFieldProps : undefined}
+                    />
+                    <ProFormSelect
+                        name="parentCode"
+                        label="父级编码"
+                        options={parentOptions}
+                        allowClear
+                        placeholder="可选"
+                    />
+                    <ProFormDigit name="sortOrder" label="排序" fieldProps={{ min: 0 }} />
+                    <ProFormSwitch name="isActive" label="启用" />
+                    <ProFormTextArea
+                        name="metaText"
+                        label="扩展属性 (JSON)"
+                        fieldProps={{ rows: 4 }}
+                        placeholder='例如：{"color":"blue","icon":"StarOutlined"}'
+                    />
+                </div>
             </ModalForm>
         </PageContainer>
     );

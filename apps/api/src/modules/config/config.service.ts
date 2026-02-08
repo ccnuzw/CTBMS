@@ -8,6 +8,7 @@ import {
     CreateDictionaryItemDto,
     UpdateDictionaryItemDto,
 } from './dto/dictionary.dto';
+import { CreateAIModelConfigDto } from './dto/create-ai-model-config.dto';
 
 @Injectable()
 export class ConfigService implements OnModuleInit {
@@ -111,6 +112,34 @@ export class ConfigService implements OnModuleInit {
             await this.refreshCache();
         }
         return this.aiConfigCache.get(key) || null;
+    }
+
+    /**
+     * Get All AI Model Configs
+     */
+    async getAllAIModelConfigs(includeInactive: boolean = false): Promise<AIModelConfig[]> {
+        if (Date.now() - this.cacheLastUpdated > this.CACHE_TTL_MS) {
+            await this.refreshCache();
+        }
+
+        if (includeInactive) {
+            return this.prisma.aIModelConfig.findMany({
+                orderBy: { configKey: 'asc' }
+            });
+        }
+
+        return Array.from(this.aiConfigCache.values());
+    }
+
+    /**
+     * Delete AI Model Config
+     */
+    async deleteAIModelConfig(key: string) {
+        await this.prisma.aIModelConfig.delete({
+            where: { configKey: key }
+        });
+        await this.refreshCache();
+        return { success: true };
     }
 
     /**
@@ -443,7 +472,7 @@ export class ConfigService implements OnModuleInit {
     /**
      * CRUD: Create Rule
      */
-    async createMappingRule(data: any) {
+    async createMappingRule(data: Prisma.BusinessMappingRuleCreateInput) {
         const rule = await this.prisma.businessMappingRule.create({ data });
         await this.refreshCache();
         return rule;
@@ -452,7 +481,7 @@ export class ConfigService implements OnModuleInit {
     /**
      * CRUD: Update Rule
      */
-    async updateMappingRule(id: string, data: any) {
+    async updateMappingRule(id: string, data: Prisma.BusinessMappingRuleUpdateInput) {
         const rule = await this.prisma.businessMappingRule.update({
             where: { id },
             data,
@@ -482,13 +511,55 @@ export class ConfigService implements OnModuleInit {
     /**
      * CRUD: Config AI Model
      */
-    async upsertAIModelConfig(key: string, data: any) {
-        const config = await this.prisma.aIModelConfig.upsert({
-            where: { configKey: key },
-            create: { ...data, configKey: key },
-            update: data,
+    async upsertAIModelConfig(key: string, data: CreateAIModelConfigDto) {
+        const { configKey: ignoredConfigKey, ...updateData } = data;
+        void ignoredConfigKey;
+        const updateInput = updateData as Prisma.AIModelConfigUncheckedUpdateInput;
+
+        // Transaction handling for isDefault exclusivity
+        return this.prisma.$transaction(async (tx) => {
+            // If setting as default, unset others
+            if (data.isDefault) {
+                await tx.aIModelConfig.updateMany({
+                    where: { configKey: { not: key }, isDefault: true },
+                    data: { isDefault: false },
+                });
+            }
+
+            const config = await tx.aIModelConfig.upsert({
+                where: { configKey: key },
+                create: { ...data, configKey: key },
+                update: updateInput,
+            });
+
+            return config;
+        }).then(async (res) => {
+            await this.refreshCache();
+            return res;
         });
-        await this.refreshCache();
-        return config;
+    }
+
+    /**
+     * Get Default AI Config
+     * Priority: isDefault=true > configKey='DEFAULT' > First Available
+     */
+    async getDefaultAIConfig(): Promise<AIModelConfig | null> {
+        if (Date.now() - this.cacheLastUpdated > this.CACHE_TTL_MS) {
+            await this.refreshCache();
+        }
+
+        const configs = Array.from(this.aiConfigCache.values());
+
+        // 1. Check for explicit default
+        const explicitDefault = configs.find(c => c.isDefault && c.isActive);
+        if (explicitDefault) return explicitDefault;
+
+        // 2. Check for legacy 'DEFAULT' key
+        const legacyDefault = configs.find(c => c.configKey === 'DEFAULT' && c.isActive);
+        if (legacyDefault) return legacyDefault;
+
+        // 3. Fallback to first active
+        const firstActive = configs.find(c => c.isActive);
+        return firstActive || null;
     }
 }

@@ -194,6 +194,8 @@ export const UserFormModal: React.FC<UserFormModalProps> = ({
             onOpenChange={onOpenChange}
             onFinish={handleFinish}
             initialValues={initialValues}
+            grid
+            rowProps={{ gutter: [16, 0] }}
             modalProps={{
                 destroyOnClose: true,
                 focusTriggerAfterClose: false,
@@ -201,10 +203,8 @@ export const UserFormModal: React.FC<UserFormModalProps> = ({
             }}
             width={680}
             layout="vertical"
-            grid
-            rowProps={{ gutter: [16, 0] }}
         >
-            <div ref={containerRef}>
+            <div ref={containerRef} style={{ display: 'contents' }}>
                 {/* 提示信息 */}
                 {hint && (
                     <Col span={24}>

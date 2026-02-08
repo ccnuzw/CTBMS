@@ -282,10 +282,16 @@ export class EnterpriseService {
         }
 
         const { contacts, bankAccounts, ...enterpriseData } = dto;
+        void contacts;
+        void bankAccounts;
+        const updateData: Prisma.EnterpriseUncheckedUpdateInput = {
+            ...enterpriseData,
+            parentId: enterpriseData.parentId ?? undefined,
+        };
 
         return this.prisma.enterprise.update({
             where: { id },
-            data: enterpriseData,
+            data: updateData,
             include: {
                 parent: true,
                 contacts: true,

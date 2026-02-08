@@ -108,7 +108,7 @@ export const DocumentListView: React.FC<DocumentListViewProps> = ({
             title: '标题',
             key: 'name',
             render: (_, record) => {
-                const title = stripHtml(record.rawContent || '').split('\n')[0]?.replace(/[\[\]]/g, '') || '';
+                const title = stripHtml(record.rawContent || '').split('\n')[0]?.replace(/\[|\]/g, '') || '';
                 const displayTitle = title
                     ? (title.length > 50 ? title.substring(0, 50) + '...' : title)
                     : '未命名文档';
