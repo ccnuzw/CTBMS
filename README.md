@@ -110,6 +110,46 @@ pnpm install
 DATABASE_URL="postgresql://user:password@localhost:5432/ctbms_dev"
 ```
 
+### Docker 一键部署
+
+准备环境变量并启动完整栈服务：
+
+```bash
+# 1. 复制并填写根目录环境变量
+cp .env.example .env
+
+# 2. 一键构建并启动（包含 postgres / api / web / proxy）
+docker compose --env-file .env -f docker-compose-full.yml up -d --build
+```
+
+访问入口：
+
+```
+http://localhost:8000
+```
+
+说明：
+- `VITE_` 前缀变量只在前端构建期生效，修改后需重新 `--build`。
+- 数据库采用 healthcheck，API 会等待数据库就绪后再启动。
+- 上传文件挂载到 `uploads_data` 卷，容器重建不会丢失。
+
+停止与清理：
+
+```bash
+# 停止并移除容器与网络
+docker compose -f docker-compose-full.yml down
+
+# 如需清理数据卷（会删除数据库与上传文件）
+docker volume rm ctbms_postgres_data ctbms_uploads_data
+```
+
+提示：如果你自定义了 `COMPOSE_PROJECT_NAME`，卷名会带上前缀，可先执行以下命令查看实际卷名：
+
+```bash
+docker compose -f docker-compose-full.yml ls
+docker volume ls
+```
+
 ### 数据库初始化 (One-Click Deployment)
 
 推荐使用以下命令一次性完成 Schema 同步与全量数据初始化（包含行政区划、组织架构、配置规则及测试数据）：

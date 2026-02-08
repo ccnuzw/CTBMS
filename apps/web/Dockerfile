@@ -10,6 +10,9 @@ RUN turbo prune --scope=web --docker
 FROM base AS installer
 WORKDIR /app
 
+ARG VITE_GOOGLE_GENAI_API_KEY
+ENV VITE_GOOGLE_GENAI_API_KEY=$VITE_GOOGLE_GENAI_API_KEY
+
 COPY --from=builder /app/out/json/ .
 COPY --from=builder /app/out/pnpm-lock.yaml ./pnpm-lock.yaml
 COPY --from=builder /app/out/pnpm-workspace.yaml ./pnpm-workspace.yaml
