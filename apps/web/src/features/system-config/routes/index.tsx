@@ -4,6 +4,7 @@ import { LogicRulesPage } from '../components/LogicRulesPage';
 import { AIModelConfigPage } from '../components/AIModelConfigPage';
 import { PromptTemplatePage } from '../components/PromptTemplatePage';
 import { DataSeeding } from '../components/DataSeeding';
+import { DataDictionaryPage } from '../components/DataDictionaryPage';
 
 export const systemConfigRoutes: RouteObject[] = [
     {
@@ -20,6 +21,10 @@ export const systemConfigRoutes: RouteObject[] = [
             {
                 path: 'prompts',
                 element: <PromptTemplatePage />,
+            },
+            {
+                path: 'dictionaries',
+                element: <DataDictionaryPage />,
             },
             {
                 path: 'seeding',

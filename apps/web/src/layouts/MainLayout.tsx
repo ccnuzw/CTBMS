@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Layout, Menu, Input, Avatar, Space, theme as antTheme, Button, Typography, Badge, Dropdown, MenuProps, Grid, Drawer } from 'antd';
+import { Layout, Menu, Input, theme as antTheme, Button, Typography, Badge, Grid, Drawer } from 'antd';
 import {
     UserOutlined,
     DashboardOutlined,
@@ -20,6 +20,9 @@ import {
     ShopOutlined,
     GlobalOutlined,
     ScheduleOutlined,
+    FormOutlined,
+    AuditOutlined,
+    NodeIndexOutlined,
 } from '@ant-design/icons';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { ThemeSwitcher } from '../components/ThemeSwitcher';
@@ -45,35 +48,248 @@ export const MainLayout: React.FC = () => {
         }
     }, [location.pathname, isMobile]);
 
-    const getPageTitle = () => {
-        switch (location.pathname) {
-            case '/dashboard':
-                return '仪表盘概览';
-            case '/users':
-                return '用户管理';
-            case '/market/categories':
-                return '信息分类管理';
-            case '/market/info':
-                return '信息采集';
-            case '/organization':
-                return '组织管理';
-            case '/organization/departments':
-                return '部门管理';
-            case '/enterprise':
-                return '客商管理';
-            case '/system/tags':
-                return '全局标签管理';
-            case '/system/tag-groups':
-                return '标签组管理';
-            case '/system/config/rules':
-                return '业务规则配置';
-            case '/system/config/ai-models':
-                return 'AI 模型配置';
-            case '/system/config/prompts':
-                return '提示词模板管理';
-            default:
-                return 'CTBMS 系统管理';
+    const mainMenuItems = React.useMemo(() => [
+        {
+            key: '/dashboard',
+            icon: <DashboardOutlined />,
+            label: '仪表盘',
+        },
+        {
+            key: 'intel-center',
+            icon: <GlobalOutlined />,
+            label: '商情中心',
+            children: [
+                {
+                    key: 'intel-collection',
+                    icon: <NodeIndexOutlined />,
+                    label: '采集管理',
+                    children: [
+                        {
+                            key: '/intel/collection-points',
+                            icon: <SettingOutlined />,
+                            label: '采集点配置',
+                        },
+                        {
+                            key: '/intel/tasks',
+                            icon: <ScheduleOutlined />,
+                            label: '任务管理',
+                        },
+                        {
+                            key: '/price-reporting',
+                            icon: <FormOutlined />,
+                            label: '填报工作台',
+                        },
+                        {
+                            key: '/intel/monitor',
+                            icon: <AuditOutlined />,
+                            label: '任务监控',
+                        },
+                        {
+                            key: '/price-reporting/review',
+                            icon: <AuditOutlined />,
+                            label: '价格审核',
+                        },
+                        {
+                            key: '/intel/leaderboard',
+                            icon: <TeamOutlined />,
+                            label: '绩效排行',
+                        },
+                    ]
+                },
+                {
+                    key: '/intel',
+                    icon: <DashboardOutlined />,
+                    label: '全域驾驶舱',
+                },
+                {
+                    key: '/intel/dashboard',
+                    icon: <DashboardOutlined />,
+                    label: '简版看板',
+                },
+                {
+                    key: '/intel/workbench',
+                    icon: <SettingOutlined />,
+                    label: '业务工作台',
+                },
+                {
+                    key: '/intel/search',
+                    icon: <SearchOutlined />,
+                    label: '全景检索',
+                },
+                {
+                    key: '/intel/market-data',
+                    icon: <FileTextOutlined />,
+                    label: 'A类行情',
+                },
+                {
+                    key: '/intel/feed',
+                    icon: <FileTextOutlined />,
+                    label: 'B类情报流',
+                },
+                {
+                    key: '/intel/knowledge',
+                    icon: <FileTextOutlined />,
+                    label: '商情知识库',
+                },
+                {
+                    key: '/intel/extraction-config',
+                    icon: <SettingOutlined />,
+                    label: '配置中心',
+                },
+            ]
+        },
+        {
+            key: 'collection',
+            icon: <CloudOutlined />,
+            label: '信息采集管理',
+            children: [
+                {
+                    key: '/market/categories',
+                    icon: <AppstoreOutlined />,
+                    label: '信息分类',
+                },
+                {
+                    key: '/market/info',
+                    icon: <FileTextOutlined />,
+                    label: '信息采集',
+                },
+                {
+                    key: '/intel/entry',
+                    icon: <CloudOutlined />,
+                    label: '智能采集',
+                },
+            ]
+        },
+        {
+            key: 'org',
+            icon: <ApartmentOutlined />,
+            label: '组织与权限',
+            children: [
+                {
+                    key: '/organization/manage',
+                    icon: <TeamOutlined />,
+                    label: '统一管理',
+                },
+                {
+                    key: '/organization',
+                    icon: <BankOutlined />,
+                    label: '组织管理',
+                },
+                {
+                    key: '/organization/departments',
+                    icon: <ApartmentOutlined />,
+                    label: '部门管理',
+                },
+                {
+                    key: '/users',
+                    icon: <UserOutlined />,
+                    label: '用户管理',
+                },
+                {
+                    key: '/roles',
+                    icon: <SafetyCertificateOutlined />,
+                    label: '角色管理',
+                }
+            ]
+        },
+        {
+            key: '/enterprise',
+            icon: <ShopOutlined />,
+            label: '客商管理',
+        },
+        {
+            key: 'system',
+            icon: <SettingOutlined />,
+            label: '系统管理',
+            children: [
+                {
+                    key: '/system/tags',
+                    icon: <TagsOutlined />,
+                    label: '全局标签',
+                },
+                {
+                    key: '/system/tag-groups',
+                    icon: <AppstoreOutlined />,
+                    label: '标签组',
+                },
+                {
+                    key: '/system/regions',
+                    icon: <GlobalOutlined />,
+                    label: '行政区划',
+                },
+                {
+                    key: 'config-center',
+                    icon: <AppstoreOutlined />,
+                    label: '配置中心',
+                    children: [
+                        {
+                            key: '/system/config/rules',
+                            label: '业务规则',
+                        },
+                        {
+                            key: '/system/config/ai-models',
+                            label: 'AI 模型',
+                        },
+                        {
+                            key: '/system/config/prompts',
+                            label: '提示词库',
+                        },
+                        {
+                            key: '/system/config/dictionaries',
+                            label: '数据字典',
+                        }
+                    ]
+                },
+                {
+                    key: 'settings',
+                    icon: <SettingOutlined />,
+                    label: '设置中心',
+                    children: [
+                        {
+                            key: '/settings/general',
+                            label: '通用设置',
+                        },
+                        {
+                            key: '/settings/security',
+                            label: '安全设置',
+                        },
+                        {
+                            key: '/system/config/seeding',
+                            label: '数据初始化',
+                        }
+                    ]
+                }
+            ]
+        },
+    ], []);
+
+    const bottomMenuItems = React.useMemo(() => [
+        {
+            key: 'settings',
+            icon: <SettingOutlined />,
+            label: '系统设置',
+        },
+        {
+            key: 'help',
+            icon: <QuestionCircleOutlined />,
+            label: '帮助文档',
+        },
+    ], []);
+
+    const findMenuLabel = (items: any[], key: string): string | undefined => {
+        for (const item of items) {
+            if (item.key === key) return item.label;
+            if (item.children) {
+                const found = findMenuLabel(item.children, key);
+                if (found) return found;
+            }
         }
+        return undefined;
+    };
+
+    const getPageTitle = () => {
+        const found = findMenuLabel(mainMenuItems, location.pathname) || findMenuLabel(bottomMenuItems, location.pathname);
+        return found || 'CTBMS 系统管理';
     };
 
     return (
@@ -139,205 +355,7 @@ export const MainLayout: React.FC = () => {
                                 selectedKeys={[location.pathname]}
                                 onClick={({ key }) => navigate(key)}
                                 style={{ borderRight: 0, padding: '0 12px' }}
-                                items={[
-                                    {
-                                        key: '/dashboard',
-                                        icon: <DashboardOutlined />,
-                                        label: '仪表盘',
-                                    },
-                                    {
-                                        key: 'market',
-                                        icon: <CloudOutlined />,
-                                        label: '信息采集',
-                                        children: [
-                                            {
-                                                key: '/market/categories',
-                                                icon: <AppstoreOutlined />,
-                                                label: '信息分类',
-                                            },
-                                            {
-                                                key: '/market/info',
-                                                icon: <FileTextOutlined />,
-                                                label: '信息采集',
-                                            }
-                                        ]
-                                    },
-                                    {
-                                        key: 'org',
-                                        icon: <ApartmentOutlined />,
-                                        label: '组织架构',
-                                        children: [
-                                            {
-                                                key: '/organization/manage',
-                                                icon: <TeamOutlined />,
-                                                label: '统一管理',
-                                            },
-                                            {
-                                                key: '/organization',
-                                                icon: <BankOutlined />,
-                                                label: '组织管理',
-                                            },
-                                            {
-                                                key: '/organization/departments',
-                                                icon: <ApartmentOutlined />,
-                                                label: '部门管理',
-                                            },
-                                            {
-                                                key: '/users',
-                                                icon: <UserOutlined />,
-                                                label: '用户管理',
-                                            },
-                                            {
-                                                key: '/roles',
-                                                icon: <SafetyCertificateOutlined />,
-                                                label: '角色管理',
-                                            }
-                                        ]
-                                    },
-                                    {
-                                        key: '/enterprise',
-                                        icon: <ShopOutlined />,
-                                        label: '客商管理',
-                                    },
-                                    {
-                                        key: 'intel',
-                                        icon: <CloudOutlined />,
-                                        label: '商情中心',
-                                        children: [
-                                            {
-                                                key: '/intel',
-                                                icon: <DashboardOutlined />,
-                                                label: '全域驾驶舱',
-                                            },
-                                            {
-                                                key: '/intel/dashboard',
-                                                icon: <DashboardOutlined />,
-                                                label: '简版看板',
-                                            },
-                                            {
-                                                key: '/intel/workbench',
-                                                icon: <SettingOutlined />,
-                                                label: '业务工作台',
-                                            },
-                                            {
-                                                key: '/intel/search',
-                                                icon: <SearchOutlined />,
-                                                label: '全景检索',
-                                            },
-                                            {
-                                                key: '/intel/entry',
-                                                icon: <CloudOutlined />,
-                                                label: '智能采集',
-                                            },
-                                            {
-                                                key: '/intel/market-data',
-                                                icon: <FileTextOutlined />,
-                                                label: 'A类行情',
-                                            },
-                                            {
-                                                key: '/intel/feed',
-                                                icon: <FileTextOutlined />,
-                                                label: 'B类情报流',
-                                            },
-                                            {
-                                                key: '/intel/knowledge',
-                                                icon: <FileTextOutlined />,
-                                                label: 'C类知识库',
-                                            },
-                                            {
-                                                key: '/intel/research-reports',
-                                                icon: <FileTextOutlined />,
-                                                label: '研报管理',
-                                            },
-                                            {
-                                                key: '/intel/research-reports/dashboard',
-                                                icon: <DashboardOutlined />,
-                                                label: '研报仪表盘',
-                                            },
-
-                                            {
-                                                key: '/intel/leaderboard',
-                                                icon: <TeamOutlined />,
-                                                label: '绩效排行',
-                                            },
-                                            {
-                                                key: '/intel/tasks',
-                                                icon: <ScheduleOutlined />,
-                                                label: '任务分配',
-                                            },
-                                            {
-                                                key: '/intel/collection-points',
-                                                icon: <SettingOutlined />,
-                                                label: '采集点配置',
-                                            },
-                                            {
-                                                key: '/intel/extraction-config',
-                                                icon: <SettingOutlined />,
-                                                label: '配置中心',
-                                            },
-                                        ]
-                                    },
-                                    {
-                                        key: 'system',
-                                        icon: <SettingOutlined />,
-                                        label: '系统管理',
-                                        children: [
-                                            {
-                                                key: '/system/tags',
-                                                icon: <TagsOutlined />,
-                                                label: '全局标签',
-                                            },
-                                            {
-                                                key: '/system/tag-groups',
-                                                icon: <AppstoreOutlined />,
-                                                label: '标签组',
-                                            },
-                                            {
-                                                key: '/system/regions',
-                                                icon: <GlobalOutlined />,
-                                                label: '行政区划',
-                                            },
-                                            {
-                                                key: 'config-center',
-                                                icon: <AppstoreOutlined />,
-                                                label: '配置中心',
-                                                children: [
-                                                    {
-                                                        key: '/system/config/rules',
-                                                        label: '业务规则',
-                                                    },
-                                                    {
-                                                        key: '/system/config/ai-models',
-                                                        label: 'AI 模型',
-                                                    },
-                                                    {
-                                                        key: '/system/config/prompts',
-                                                        label: '提示词库',
-                                                    }
-                                                ]
-                                            },
-                                            {
-                                                key: 'settings',
-                                                icon: <SettingOutlined />,
-                                                label: '设置中心',
-                                                children: [
-                                                    {
-                                                        key: '/settings/general',
-                                                        label: '通用设置',
-                                                    },
-                                                    {
-                                                        key: '/settings/security',
-                                                        label: '安全设置',
-                                                    },
-                                                    {
-                                                        key: '/system/config/seeding',
-                                                        label: '数据初始化',
-                                                    }
-                                                ]
-                                            }
-                                        ]
-                                    },
-                                ]}
+                                items={mainMenuItems}
                             />
                         </div>
 
@@ -346,18 +364,7 @@ export const MainLayout: React.FC = () => {
                                 mode="inline"
                                 selectable={false}
                                 style={{ borderRight: 0 }}
-                                items={[
-                                    {
-                                        key: 'settings',
-                                        icon: <SettingOutlined />,
-                                        label: '系统设置',
-                                    },
-                                    {
-                                        key: 'help',
-                                        icon: <QuestionCircleOutlined />,
-                                        label: '帮助文档',
-                                    },
-                                ]}
+                                items={bottomMenuItems}
                             />
                             <div
                                 onClick={() => setCollapsed(!collapsed)}
@@ -417,160 +424,7 @@ export const MainLayout: React.FC = () => {
                             selectedKeys={[location.pathname]}
                             onClick={({ key }) => navigate(key)}
                             style={{ borderRight: 0, padding: '0 12px' }}
-                            items={[
-                                {
-                                    key: '/dashboard',
-                                    icon: <DashboardOutlined />,
-                                    label: '仪表盘',
-                                },
-                                {
-                                    key: 'market',
-                                    icon: <CloudOutlined />,
-                                    label: '信息采集',
-                                    children: [
-                                        {
-                                            key: '/market/categories',
-                                            icon: <AppstoreOutlined />,
-                                            label: '信息分类',
-                                        },
-                                        {
-                                            key: '/market/info',
-                                            icon: <FileTextOutlined />,
-                                            label: '信息采集',
-                                        }
-                                    ]
-                                },
-                                {
-                                    key: 'org',
-                                    icon: <ApartmentOutlined />,
-                                    label: '组织架构',
-                                    children: [
-                                        {
-                                            key: '/organization/manage',
-                                            icon: <TeamOutlined />,
-                                            label: '统一管理',
-                                        },
-                                        {
-                                            key: '/organization',
-                                            icon: <BankOutlined />,
-                                            label: '组织管理',
-                                        },
-                                        {
-                                            key: '/organization/departments',
-                                            icon: <ApartmentOutlined />,
-                                            label: '部门管理',
-                                        },
-                                        {
-                                            key: '/users',
-                                            icon: <UserOutlined />,
-                                            label: '用户管理',
-                                        },
-                                        {
-                                            key: '/roles',
-                                            icon: <SafetyCertificateOutlined />,
-                                            label: '角色管理',
-                                        }
-                                    ]
-                                },
-                                {
-                                    key: '/enterprise',
-                                    icon: <ShopOutlined />,
-                                    label: '客商管理',
-                                },
-                                {
-                                    key: 'intel',
-                                    icon: <CloudOutlined />,
-                                    label: '商情中心',
-                                    children: [
-                                        {
-                                            key: '/intel',
-                                            icon: <DashboardOutlined />,
-                                            label: '全域驾驶舱',
-                                        },
-                                        {
-                                            key: '/intel/entry',
-                                            icon: <CloudOutlined />,
-                                            label: '智能采集',
-                                        },
-                                        {
-                                            key: '/intel/feed',
-                                            icon: <FileTextOutlined />,
-                                            label: '情报流',
-                                        },
-                                        {
-                                            key: '/intel/research-reports',
-                                            icon: <FileTextOutlined />,
-                                            label: '研报管理',
-                                        },
-                                        {
-                                            key: '/intel/research-reports/dashboard',
-                                            icon: <DashboardOutlined />,
-                                            label: '研报仪表盘',
-                                        },
-                                        {
-                                            key: '/intel/leaderboard',
-                                            icon: <TeamOutlined />,
-                                            label: '绩效排行',
-                                        },
-                                        {
-                                            key: '/intel/tasks',
-                                            icon: <ScheduleOutlined />,
-                                            label: '任务分配',
-                                        },
-                                    ]
-                                },
-                                {
-                                    key: 'system',
-                                    icon: <SettingOutlined />,
-                                    label: '系统管理',
-                                    children: [
-                                        {
-                                            key: '/system/tags',
-                                            icon: <TagsOutlined />,
-                                            label: '全局标签',
-                                        },
-                                        {
-                                            key: '/system/tag-groups',
-                                            icon: <AppstoreOutlined />,
-                                            label: '标签组',
-                                        },
-                                        {
-                                            key: 'config-center',
-                                            icon: <AppstoreOutlined />,
-                                            label: '配置中心',
-                                            children: [
-                                                {
-                                                    key: '/system/config/rules',
-                                                    label: '业务规则',
-                                                },
-                                                {
-                                                    key: '/system/config/ai-models',
-                                                    label: 'AI 模型',
-                                                }
-                                            ]
-                                        },
-                                        {
-                                            key: 'settings',
-                                            icon: <SettingOutlined />,
-                                            label: '设置中心',
-                                            children: [
-                                                {
-                                                    key: '/settings/general',
-                                                    label: '通用设置',
-                                                },
-                                                {
-                                                    key: '/settings/security',
-                                                    label: '安全设置',
-                                                },
-                                                {
-                                                    key: '/system/config/seeding',
-                                                    label: '数据初始化',
-                                                }
-                                            ]
-                                        }
-                                    ]
-                                },
-                            ]}
+                            items={mainMenuItems}
                         />
                     </div>
 
@@ -579,18 +433,7 @@ export const MainLayout: React.FC = () => {
                             mode="inline"
                             selectable={false}
                             style={{ borderRight: 0 }}
-                            items={[
-                                {
-                                    key: 'settings',
-                                    icon: <SettingOutlined />,
-                                    label: '系统设置',
-                                },
-                                {
-                                    key: 'help',
-                                    icon: <QuestionCircleOutlined />,
-                                    label: '帮助文档',
-                                },
-                            ]}
+                            items={bottomMenuItems}
                         />
                     </div>
                 </div>

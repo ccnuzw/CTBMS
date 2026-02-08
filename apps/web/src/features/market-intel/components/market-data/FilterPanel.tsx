@@ -34,6 +34,8 @@ import dayjs, { Dayjs } from 'dayjs';
 import type { PriceSubType } from '@packages/types';
 import { useCollectionPoints, useProvinces } from '../../api/hooks';
 import { AdvancedPointSelector } from './AdvancedPointSelector';
+import { useDictionary } from '@/hooks/useDictionaries';
+import { usePriceSubTypeLabels } from '@/utils/priceSubType';
 
 const { Title, Text } = Typography;
 
@@ -46,7 +48,7 @@ const POINT_TYPE_ICONS: Record<string, React.ReactNode> = {
     STATION: <EnvironmentOutlined style={{ color: '#13c2c2' }} />,
 };
 
-const POINT_TYPE_LABELS: Record<string, string> = {
+const POINT_TYPE_LABELS_FALLBACK: Record<string, string> = {
     PORT: '港口',
     ENTERPRISE: '企业',
     MARKET: '市场',
@@ -62,21 +64,18 @@ const POINT_TYPE_COLORS: Record<string, string> = {
     STATION: 'cyan',
 };
 
-const PRICE_SUB_TYPE_LABELS: Record<string, string> = {
-    LISTED: '挂牌价',
-    TRANSACTION: '成交价',
-    ARRIVAL: '到港价',
-    FOB: '平舱价',
-    STATION_ORIGIN: '产区站台',
-    STATION_DEST: '销区站台',
-    PURCHASE: '收购价',
-    WHOLESALE: '批发价',
-    OTHER: '其他',
+const COMMODITY_LABELS_FALLBACK: Record<string, string> = {
+    CORN: '玉米',
+    WHEAT: '小麦',
+    SOYBEAN: '大豆',
+    RICE: '稻谷',
+    SORGHUM: '高粱',
+    BARLEY: '大麦',
 };
 
-const COMMODITIES = ['玉米', '大豆', '小麦', '高粱', '豆粕'];
 
-const TIME_RANGES = [
+
+const TIME_RANGES_FALLBACK = [
     { label: '7天', value: 7 },
     { label: '1月', value: 30 },
     { label: '3月', value: 90 },
@@ -118,6 +117,69 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
     const [debouncedKeyword, setDebouncedKeyword] = useState('');
     const [selectorVisible, setSelectorVisible] = useState(false);
     const [expanded, setExpanded] = useState(false);
+    const { data: commodityDict } = useDictionary('COMMODITY');
+    const { data: priceSubTypeDict } = useDictionary('PRICE_SUB_TYPE');
+    const { data: pointTypeDict } = useDictionary('COLLECTION_POINT_TYPE');
+    const { data: timeRangeDict } = useDictionary('TIME_RANGE');
+
+    // 将 TIME_RANGE 字典转换为适用于 Segmented/RangePicker 的格式
+    // 只显示常用的时间范围（7天/1月/3月/6月/1年）
+    const COMMON_TIME_RANGES = [7, 30, 90, 180, 365];
+    const timeRangeOptions = useMemo(() => {
+        const items = (timeRangeDict || []).filter(
+            (item) => item.isActive && COMMON_TIME_RANGES.includes((item.meta as any)?.days)
+        );
+        if (!items.length) return TIME_RANGES_FALLBACK;
+        return items
+            .sort((a, b) => ((a.meta as any)?.days || 0) - ((b.meta as any)?.days || 0))
+            .map((item) => ({
+                label: item.label,
+                value: (item.meta as any)?.days || 0,
+            }));
+    }, [timeRangeDict]);
+
+    // 品种选项：仅显示4个主要品种（玉米、小麦、大豆、稻谷）
+    const MAIN_COMMODITIES = ['CORN', 'WHEAT', 'SOYBEAN', 'RICE'];
+    const commodityOptions = useMemo(() => {
+        const items = (commodityDict || []).filter(
+            (item) => item.isActive && MAIN_COMMODITIES.includes(item.code)
+        );
+        if (!items.length) {
+            return MAIN_COMMODITIES.map((code) => ({
+                label: COMMODITY_LABELS_FALLBACK[code] || code,
+                value: code,
+            }));
+        }
+        // 按预设顺序排序
+        return items
+            .sort((a, b) => MAIN_COMMODITIES.indexOf(a.code) - MAIN_COMMODITIES.indexOf(b.code))
+            .map((item) => ({
+                // 对核心品种固定中文显示，避免字典被改成英文 code 后影响业务界面
+                label: COMMODITY_LABELS_FALLBACK[item.code] || item.label || item.code,
+                value: item.code,
+            }));
+    }, [commodityDict]);
+
+    // 统一的价格类型标签映射（字典优先，兜底中文）
+    const priceSubTypeLabels = usePriceSubTypeLabels(priceSubTypeDict);
+
+    const pointTypeLabels = useMemo(() => {
+        const items = (pointTypeDict || []).filter((item) => item.isActive);
+        if (!items.length) return POINT_TYPE_LABELS_FALLBACK;
+        return items.reduce<Record<string, string>>((acc, item) => {
+            acc[item.code] = item.label;
+            return acc;
+        }, {});
+    }, [pointTypeDict]);
+
+    const pointTypeOrder = useMemo(() => {
+        const items = (pointTypeDict || []).filter((item) => item.isActive);
+        if (!items.length) return Object.keys(POINT_TYPE_LABELS_FALLBACK);
+        return items
+            .slice()
+            .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0))
+            .map((item) => item.code);
+    }, [pointTypeDict]);
     const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({}); // 新增：控制每个类型组的展开/收起
 
     useEffect(() => {
@@ -175,7 +237,7 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
     const presetValue = useMemo(() => {
         if (!dateRange) return null;
         const days = dateRange[1].startOf('day').diff(dateRange[0].startOf('day'), 'day') + 1;
-        const preset = TIME_RANGES.find((item) => item.value === days);
+        const preset = timeRangeOptions.find((item) => item.value === days);
         return preset?.value ?? null;
     }, [dateRange]);
 
@@ -236,7 +298,7 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
                     </Text>
                     <Segmented
                         block
-                        options={COMMODITIES}
+                        options={commodityOptions}
                         value={commodity}
                         onChange={(val) => onCommodityChange(String(val))}
                         style={{ marginTop: 8 }}
@@ -251,7 +313,7 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
                     </Text>
                     <Segmented
                         block
-                        options={TIME_RANGES}
+                        options={timeRangeOptions}
                         value={presetValue ?? undefined}
                         onChange={(val) => {
                             const days = Number(val);
@@ -271,7 +333,7 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
                             }
                             onDateRangeChange([val[0], val[1]]);
                         }}
-                        presets={TIME_RANGES.map((item) => ({
+                        presets={timeRangeOptions.map((item) => ({
                             label: item.label,
                             value: [dayjs().subtract(item.value - 1, 'day'), dayjs()],
                         }))}
@@ -304,7 +366,7 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
                         style={{ width: '100%' }}
                         value={selectedSubTypes}
                         onChange={(vals) => onSelectedSubTypesChange(vals as PriceSubType[])}
-                        options={Object.entries(PRICE_SUB_TYPE_LABELS).map(([value, label]) => ({
+                        options={Object.entries(priceSubTypeLabels).map(([value, label]) => ({
                             label,
                             value,
                         }))}
@@ -394,11 +456,11 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
                         style={{ marginBottom: 8 }}
                     >
                         <Space wrap size={4}>
-                            {Object.entries(POINT_TYPE_LABELS).map(([key, label]) => (
+                            {pointTypeOrder.map((key) => (
                                 <Checkbox key={key} value={key}>
                                     <Flex align="center" gap={4}>
                                         {POINT_TYPE_ICONS[key]}
-                                        <span style={{ fontSize: 12 }}>{label}</span>
+                                        <span style={{ fontSize: 12 }}>{pointTypeLabels[key] || key}</span>
                                     </Flex>
                                 </Checkbox>
                             ))}
@@ -440,7 +502,7 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
                                     <Flex align="center" gap={6}>
                                         {POINT_TYPE_ICONS[type]}
                                         <Text strong style={{ fontSize: 12 }}>
-                                            {POINT_TYPE_LABELS[type] || type}
+                                            {pointTypeLabels[type] || type}
                                         </Text>
                                         <Badge
                                             count={points.length}

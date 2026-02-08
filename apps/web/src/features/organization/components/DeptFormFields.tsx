@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import {
     ProFormText,
     ProFormSelect,
@@ -6,6 +6,7 @@ import {
     ProFormTextArea,
     ProFormTreeSelect,
 } from '@ant-design/pro-components';
+import { useDictionary } from '@/hooks/useDictionaries';
 
 interface DeptFormFieldsProps {
     isEdit: boolean;
@@ -31,6 +32,19 @@ export const DeptFormFields: React.FC<DeptFormFieldsProps> = ({
     hideStatus = false,
     useSimpleMode = false,
 }) => {
+    const { data: statusDict } = useDictionary('ENTITY_STATUS');
+
+    const statusOptions = useMemo(() => {
+        const items = (statusDict || []).filter((item) => item.isActive);
+        if (!items.length) {
+            return [
+                { value: 'ACTIVE', label: '启用' },
+                { value: 'INACTIVE', label: '禁用' },
+            ];
+        }
+        return items.map((item) => ({ value: item.code, label: item.label }));
+    }, [statusDict]);
+
     return (
         <>
             <ProFormText
@@ -81,10 +95,7 @@ export const DeptFormFields: React.FC<DeptFormFieldsProps> = ({
                 <ProFormSelect
                     name="status"
                     label="状态"
-                    options={[
-                        { value: 'ACTIVE', label: '启用' },
-                        { value: 'INACTIVE', label: '禁用' },
-                    ]}
+                    options={statusOptions}
                 />
             )}
             <ProFormTextArea name="description" label="描述" placeholder="可选" />

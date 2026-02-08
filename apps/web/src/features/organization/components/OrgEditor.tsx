@@ -21,9 +21,10 @@ import {
     useUpdateOrganization,
 } from '../api/organizations';
 import { apiClient } from '../../../api/client';
+import { useDictionaries } from '@/hooks/useDictionaries';
 
 // 组织类型映射
-const ORG_TYPE_MAP: Record<OrganizationType, { label: string; color: string }> = {
+const ORG_TYPE_MAP_FALLBACK: Record<OrganizationType, { label: string; color: string }> = {
     HEADQUARTERS: { label: '总部', color: 'red' },
     REGION: { label: '大区', color: 'orange' },
     BRANCH: { label: '经营部', color: 'blue' },
@@ -55,6 +56,31 @@ const convertToTreeSelectData = (
 
 export const OrgEditor: React.FC = () => {
     const { message } = App.useApp();
+    const { data: dictionaries } = useDictionaries(['ORGANIZATION_TYPE', 'ENTITY_STATUS']);
+
+    const orgTypeMap = useMemo(() => {
+        const items = dictionaries?.ORGANIZATION_TYPE?.filter((item) => item.isActive) || [];
+        if (!items.length) return ORG_TYPE_MAP_FALLBACK;
+        const map = items.reduce<Partial<Record<OrganizationType, { label: string; color: string }>>>((acc, item) => {
+            acc[item.code as OrganizationType] = {
+                label: item.label,
+                color: (item.meta as { color?: string } | null)?.color || 'default',
+            };
+            return acc;
+        }, {});
+        return { ...ORG_TYPE_MAP_FALLBACK, ...map } as Record<OrganizationType, { label: string; color: string }>;
+    }, [dictionaries]);
+
+    const statusOptions = useMemo(() => {
+        const items = dictionaries?.ENTITY_STATUS?.filter((item) => item.isActive) || [];
+        if (!items.length) {
+            return [
+                { value: 'ACTIVE', label: '启用' },
+                { value: 'INACTIVE', label: '禁用' },
+            ];
+        }
+        return items.map((item) => ({ value: item.code, label: item.label }));
+    }, [dictionaries]);
     const navigate = useNavigate();
     const { id } = useParams<{ id: string }>();
     const screens = Grid.useBreakpoint();
@@ -173,10 +199,10 @@ export const OrgEditor: React.FC = () => {
                         label="组织类型"
                         placeholder="请选择类型"
                         rules={[{ required: true, message: '请选择类型' }]}
-                        options={Object.entries(ORG_TYPE_MAP).map(([key, val]) => ({
-                            value: key,
-                            label: val.label,
-                        }))}
+                    options={Object.entries(orgTypeMap).map(([key, val]) => ({
+                        value: key,
+                        label: val.label,
+                    }))}
                     />
                     <Form.Item name="parentId" label="上级组织">
                         <TreeSelect
@@ -190,10 +216,7 @@ export const OrgEditor: React.FC = () => {
                     <ProFormSelect
                         name="status"
                         label="状态"
-                        options={[
-                            { value: 'ACTIVE', label: '启用' },
-                            { value: 'INACTIVE', label: '禁用' },
-                        ]}
+                        options={statusOptions}
                     />
                     <ProFormTextArea name="description" label="描述" placeholder="请输入描述" />
                 </ProForm>

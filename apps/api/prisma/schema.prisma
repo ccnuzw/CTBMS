@@ -62,7 +62,16 @@ model User {
   marketIntels   MarketIntel[]
   intelStats     UserIntelStats?
   intelTasks     IntelTask[]       // 分配的采集任务
-  
+
+  // [NEW] 采集点分配关系
+  collectionPointAllocations CollectionPointAllocation[]
+
+  // [NEW] 价格填报批次
+  priceSubmissions PriceSubmission[]
+
+  // [NEW] 任务操作历史
+  taskHistory    IntelTaskHistory[]
+
   createdAt      DateTime     @default(now())
   updatedAt      DateTime     @updatedAt
 }
@@ -344,6 +353,14 @@ enum CollectionPointType {
   MARKET        // 批发市场
 }
 
+// 采集点频率类型
+enum CollectionPointFrequencyType {
+  DAILY
+  WEEKLY
+  MONTHLY
+  CUSTOM
+}
+
 // 采集点配置表
 model CollectionPoint {
   id            String               @id @default(uuid())
@@ -372,6 +389,18 @@ model CollectionPoint {
   priceSubTypes String[]                      // 支持的价格类型列表
   defaultSubType String?                      // 默认价格子类型（如 FOB、LISTED）
   isDataSource  Boolean              @default(true) // 是否作为数据来源点
+
+  // ===== 采集频率配置（内置）=====
+  frequencyType   CollectionPointFrequencyType @default(DAILY)
+  weekdays        Int[]              @default([]) // 1-7（周一~周日），仅 WEEKLY
+  monthDays       Int[]              @default([]) // 1-31，0=月末，仅 MONTHLY
+  dispatchAtMinute Int               @default(540) // 默认 09:00
+  shiftConfig     Json?                           // 班次/时段配置（可扩展）
+
+  // [NEW] 品种-价格类型映射配置 (JSON format)
+  // Structure: { name: string, allowedSubTypes: string[], defaultSubType?: string }[]
+  commodityConfigs Json?
+
 
   // [NEW] 市场经营主体属性 (替代原企业关联)
   isMarketEntity Boolean             @default(false)
@@ -417,6 +446,18 @@ model CollectionPoint {
 
   // [NEW] 关联的情报点链接
   intelLinks    IntelPointLink[]
+
+  // [NEW] 采集点分配关系
+  allocations   CollectionPointAllocation[]
+
+  // [NEW] 价格填报批次
+  priceSubmissions PriceSubmission[]
+
+  // [NEW] 关联的任务
+  intelTasks    IntelTask[]
+
+  // [NEW] 关联的任务模板
+  taskTemplates IntelTaskTemplate[]
   
   @@index([type])
   @@index([regionCode])
@@ -715,8 +756,7 @@ enum PriceSubType {
   TRANSACTION   // 成交价（实际成交）
   ARRIVAL       // 到港价（到达港口的价格）
   FOB           // 平舱价（船舱交货价）
-  STATION_ORIGIN    // 站台价-产区（东北站台发货价）
-  STATION_DEST      // 站台价-销区（销区站台到货价）
+  STATION       // 站台价
   PURCHASE      // 收购价（向农户/贸易商收购）
   WHOLESALE     // 批发价（批发市场价格）
   OTHER         // 其他
@@ -788,12 +828,30 @@ model PriceData {
   intelId       String?
   intel         MarketIntel? @relation(fields: [intelId], references: [id])
   authorId      String
-  
+
+  // ===== [NEW] 填报来源追踪 =====
+  inputMethod   PriceInputMethod  @default(AI_EXTRACTED)  // 录入方式
+
+  // ===== [NEW] 关联填报批次 =====
+  submissionId  String?
+  submission    PriceSubmission?  @relation(fields: [submissionId], references: [id])
+
+  // ===== [NEW] 审核流程 =====
+  reviewStatus  PriceReviewStatus @default(PENDING)       // 审核状态
+  reviewedById  String?                                    // 审核人ID
+  reviewedAt    DateTime?                                  // 审核时间
+  reviewNote    String?                                    // 审核备注
+
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
   
   // 唯一约束：同一天同一地点同一品种同一来源类型同一子类型
-  @@unique([effectiveDate, commodity, location, sourceType, subType])
+  // [MODIFIED] 使用 collectionPointId 替代 location 进行约束，提高严谨性
+  // 注意：PostgreSQL 中唯一索引允许多个 NULL 值，这符合"未关联采集点的数据不强制唯一"的特性（或者需业务层处理）
+  @@unique([effectiveDate, collectionPointId, commodity, sourceType, subType], map: "price_data_collection_point_unique")
+  // 保留旧索引用于非采集点数据的查询优化
+  @@unique([effectiveDate, commodity, location, sourceType, subType], map: "price_data_location_unique")
+
   @@index([sourceType, commodity, effectiveDate])
   @@index([geoLevel, effectiveDate])
   // @@index([enterpriseId, effectiveDate])
@@ -802,6 +860,9 @@ model PriceData {
   @@index([province, city, effectiveDate])
   @@index([collectionPointId, effectiveDate])       // 按采集点查询连续性数据
   @@index([regionCode, effectiveDate])              // 按行政区划聚合查询
+  @@index([inputMethod, effectiveDate])             // 按录入方式查询
+  @@index([reviewStatus])                           // 按审核状态查询
+  @@index([submissionId])                           // 按填报批次查询
 }
 
 // =============================================
@@ -859,35 +920,87 @@ model IntelPointLink {
 }
 
 // =============================================
+// 采集点-员工分配关系表
+// =============================================
+model CollectionPointAllocation {
+  id                String          @id @default(uuid())
+
+  // 关联用户
+  userId            String
+  user              User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // 关联采集点
+  collectionPointId String
+  collectionPoint   CollectionPoint @relation(fields: [collectionPointId], references: [id], onDelete: Cascade)
+
+  // 注：角色字段已移除，简化为统一"负责人"
+
+  // 分配信息
+  assignedById      String?         // 分配人
+  assignedAt        DateTime        @default(now())
+  commodity         String?         // [NEW] 负责品种，空表示负责该点所有品种
+  remark            String?         // 备注
+
+  // 状态
+  isActive          Boolean         @default(true)
+
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+
+  @@unique([userId, collectionPointId, commodity])
+  @@index([userId, isActive])
+  @@index([collectionPointId, isActive])
+}
+
+// =============================================
+// 价格填报批次
+// =============================================
+model PriceSubmission {
+  id                 String            @id @default(uuid())
+  batchCode          String            @unique  // 批次编号 PS-20260201-001
+
+  // 填报人
+  submittedById      String
+  submittedBy        User              @relation(fields: [submittedById], references: [id])
+
+  // 采集点
+  collectionPointId  String
+  collectionPoint    CollectionPoint   @relation(fields: [collectionPointId], references: [id])
+
+  // 时间
+  effectiveDate      DateTime          @db.Date
+  submittedAt        DateTime?
+
+  // 状态
+  status             SubmissionStatus  @default(DRAFT)
+  itemCount          Int               @default(0)
+  approvedCount      Int               @default(0)
+
+  // 关联任务（从任务入口创建时填充）
+  taskId             String?           @unique
+  task               IntelTask?
+
+  // 价格条目
+  priceData          PriceData[]
+
+  createdAt          DateTime          @default(now())
+  updatedAt          DateTime          @updatedAt
+
+  @@index([collectionPointId, effectiveDate])
+  @@index([submittedById, status])
+}
+
+// =============================================
 // 任务调度系统
 // =============================================
 
-// 任务类型枚举 (12种)
+// 任务类型枚举（简化，全局复用）
 enum IntelTaskType {
-  // 1. 常规汇报
-  DAILY_REPORT       // 市场日报
-  WEEKLY_REPORT      // 周报
-  MONTHLY_REPORT     // 月报
-  RESEARCH_REPORT    // 深度研报
-
-  // 2. 一线采集
-  PRICE_COLLECTION   // 价格采集
-  INVENTORY_CHECK    // 库存盘点
-  FIELD_VISIT        // 实地走访
-  COMPETITOR_INFO    // 竞对情报
-
-  // 3. 特定事件
-  POLICY_ANALYSIS    // 政策解读
-  URGENT_VERIFICATION // 紧急核实
-  EXHIBITION_REPORT  // 会议/展会纪要
-
-  // 4. 数据维护
-  RESOURCE_UPDATE    // 客商/档案更新
-  
-  // 兼容旧枚举 (如果需要)
-  PRICE_REPORT       // @deprecated
-  FIELD_CHECK        // @deprecated
-  DOCUMENT_SCAN      // @deprecated
+  COLLECTION    // 采集任务
+  REPORT        // 报告任务
+  RESEARCH      // 调研任务
+  VERIFICATION  // 核实任务
+  OTHER         // 其他
 }
 
 // 任务优先级枚举
@@ -906,11 +1019,48 @@ enum TaskCycleType {
   ONE_TIME
 }
 
+enum TaskScheduleMode {
+  POINT_DEFAULT
+  TEMPLATE_OVERRIDE
+}
+
 // 任务状态枚举
 enum IntelTaskStatus {
   PENDING
+  SUBMITTED // 已提交待审核
+  RETURNED  // 已驳回需修改
   COMPLETED
   OVERDUE
+}
+
+// =============================================
+// 采集点分配与价格填报枚举
+// =============================================
+
+// 注：AllocationRole 已简化移除，采集点分配统一为"负责人"角色
+
+// 价格录入方式
+enum PriceInputMethod {
+  AI_EXTRACTED      // 智能采集（AI从日报提取）
+  MANUAL_ENTRY      // 手动填报（业务人员录入）
+  BULK_IMPORT       // 批量导入（Excel/CSV）
+}
+
+// 价格审核状态
+enum PriceReviewStatus {
+  PENDING           // 待审核
+  APPROVED          // 已通过
+  REJECTED          // 已拒绝
+  AUTO_APPROVED     // 自动通过
+}
+
+// 填报批次状态
+enum SubmissionStatus {
+  DRAFT             // 草稿
+  SUBMITTED         // 已提交待审核
+  PARTIAL_APPROVED  // 部分通过
+  APPROVED          // 全部通过
+  REJECTED          // 已拒绝
 }
 
 model IntelTask {
@@ -942,6 +1092,25 @@ model IntelTask {
   // 关联模板
   templateId  String?
   template    IntelTaskTemplate?  @relation(fields: [templateId], references: [id])
+
+  // [NEW] 关联规则（用于规则分发监控）
+  ruleId      String?
+  rule        IntelTaskRule? @relation(fields: [ruleId], references: [id])
+
+  // [NEW] 任务组（协作/合并完成）
+  taskGroupId String?
+  taskGroup   IntelTaskGroup? @relation(fields: [taskGroupId], references: [id])
+
+  // [NEW] 关联采集点（明确任务地点）
+  collectionPointId String?
+  collectionPoint   CollectionPoint? @relation(fields: [collectionPointId], references: [id])
+
+  // [NEW] 关联具体品种（明确任务标的）
+  commodity         String?
+
+  // [NEW] 关联填报批次（任务完成时自动关联）
+  priceSubmissionId String?           @unique
+  priceSubmission   PriceSubmission?  @relation(fields: [priceSubmissionId], references: [id])
   
   // 状态
   status      IntelTaskStatus @default(PENDING)
@@ -951,15 +1120,24 @@ model IntelTask {
   // 关联完成的情报
   intelId     String?
   intel       MarketIntel?    @relation(fields: [intelId], references: [id])
-  
+
+  // [NEW] 任务操作历史
+  history     IntelTaskHistory[]
+
+  // [NEW] 表单/审核流程绑定
+  formId      String?
+  workflowId  String?
+
   createdAt   DateTime        @default(now())
   updatedAt   DateTime        @updatedAt
   
   @@index([assigneeId, status])
   @@index([deadline])
   @@index([templateId])
+  @@index([ruleId])
+  @@index([taskGroupId])
   @@index([periodKey])
-  @@unique([templateId, assigneeId, periodStart])
+  @@unique([templateId, assigneeId, periodStart, collectionPointId, commodity])
 }
 
 // 任务模板模型
@@ -971,7 +1149,9 @@ model IntelTaskTemplate {
   description     String?          // 任务描述模板
   taskType        IntelTaskType    // 生成的任务类型
   priority        IntelTaskPriority @default(MEDIUM)
-  
+  domain          String?          // 业务域（全局复用）
+  scheduleMode    TaskScheduleMode @default(TEMPLATE_OVERRIDE) // 采集任务的频率来源
+
   // 周期配置
   cycleType       TaskCycleType    @default(ONE_TIME)
   cycleConfig     Json?            // 兼容旧周期配置（逐步弃用）
@@ -991,10 +1171,17 @@ model IntelTaskTemplate {
   maxBackfillPeriods Int           @default(3)
   
   // 分配规则
-  assigneeMode    String           @default("MANUAL")  // MANUAL | ALL_ACTIVE | BY_DEPARTMENT | BY_ORGANIZATION
+  assigneeMode    String           @default("MANUAL")  // MANUAL | ALL_ACTIVE | BY_DEPARTMENT | BY_ORGANIZATION | BY_COLLECTION_POINT
   assigneeIds     String[]         // 手动指定的分配人列表
   departmentIds   String[]         // 按部门分配
   organizationIds String[]         // 按组织分配
+
+  // [NEW] 采集点分配规则
+  collectionPointIds    String[]                 // 绑定的采集点列表
+  targetPointType       CollectionPointType?     // 按采集点类型批量生成（兼容旧字段）
+  targetPointTypes      CollectionPointType[]    @default([]) // 按采集点类型批量生成（多选）
+  collectionPointId     String?                  // 单个采集点关联
+  collectionPoint       CollectionPoint?         @relation(fields: [collectionPointId], references: [id])
   
   // 状态
   isActive        Boolean          @default(true)
@@ -1003,12 +1190,54 @@ model IntelTaskTemplate {
   
   // 关联
   tasks           IntelTask[]
+  rules           IntelTaskRule[]
   createdById     String
   
   createdAt       DateTime         @default(now())
   updatedAt       DateTime         @updatedAt
   
   @@index([isActive, nextRunAt])
+}
+
+// 任务分配规则（模板下多规则）
+model IntelTaskRule {
+  id               String   @id @default(uuid())
+  templateId       String
+  template         IntelTaskTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  tasks            IntelTask[]
+
+  scopeType        String   // POINT/USER/DEPARTMENT/ORGANIZATION/ROLE/QUERY
+  scopeQuery       Json?
+
+  frequencyType    TaskCycleType @default(DAILY)
+  weekdays         Int[]   @default([])
+  monthDays        Int[]   @default([])
+  dispatchAtMinute Int    @default(540)
+  duePolicy        Json?
+
+  assigneeStrategy String  @default("POINT_OWNER")
+  completionPolicy String  @default("EACH")
+  grouping         Boolean @default(false)
+  isActive         Boolean @default(true)
+
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@index([templateId])
+}
+
+// 协作任务组（用于 ANY_ONE/QUORUM/ALL 等策略）
+model IntelTaskGroup {
+  id          String   @id @default(uuid())
+  templateId  String?
+  ruleId      String?
+  status      String   @default("PENDING")
+  groupKey    String?
+
+  tasks       IntelTask[]
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 }
 
 // =============================================
@@ -1225,6 +1454,48 @@ model BusinessMappingRule {
   @@index([domain, priority])
 }
 
+// =============================================
+// 统一数据字典 (Dictionary)
+// =============================================
+model DictionaryDomain {
+  id          String   @id @default(uuid())
+  code        String   @unique // 业务域编码 (e.g. "PRICE_SUB_TYPE", "USER_STATUS")
+  name        String
+  description String?
+  isActive    Boolean  @default(true)
+
+  // 元数据字段（界面展示增强）
+  category       String?   // 分类：USER_ORG, TAG_ENTERPRISE, REGION, PRICE, INTEL, MARKET
+  usageHint      String?   // 用途说明（简短）
+  usageLocations String[]  // 使用位置（组件/页面名称数组）
+  isSystemDomain Boolean   @default(true) // 是否系统域（不可删除）
+
+  items       DictionaryItem[]
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+
+model DictionaryItem {
+  id         String            @id @default(uuid())
+  domainCode String
+  domain     DictionaryDomain  @relation(fields: [domainCode], references: [code], onDelete: Cascade)
+
+  code       String
+  label      String
+  sortOrder  Int               @default(0)
+  isActive   Boolean           @default(true)
+  parentCode String?
+  meta       Json?
+
+  createdAt  DateTime          @default(now())
+  updatedAt  DateTime          @updatedAt
+
+  @@unique([domainCode, code])
+  @@index([domainCode])
+}
+
 // AI 模型配置 (AI Model Configuration)
 model AIModelConfig {
   id           String   @id @default(uuid())
@@ -1236,6 +1507,14 @@ model AIModelConfig {
   
   apiKeyEnvVar String?  // 环境变量名 (推荐)
   apiKey       String?  // 直接存储 (仅供测试或私有部署，需加密)
+
+  authType      String? // bearer | api-key | custom | none
+  headers       Json?
+  queryParams   Json?
+  pathOverrides Json?
+  modelFetchMode String? // official | manual | custom
+  allowUrlProbe Boolean? @default(true)
+  allowCompatPathFallback Boolean? @default(true)
   
   temperature  Float    @default(0.3)
   maxTokens    Int      @default(8192)
@@ -1246,7 +1525,31 @@ model AIModelConfig {
   timeoutMs    Int      @default(30000)
   
   isActive     Boolean  @default(true)
-  
+  isDefault    Boolean  @default(false)
+
+  availableModels String[] @default([])
+
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
+}
+
+// =============================================
+// 任务操作历史记录
+// =============================================
+model IntelTaskHistory {
+  id          String    @id @default(uuid())
+
+  taskId      String
+  task        IntelTask @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  operatorId  String
+  operator    User      @relation(fields: [operatorId], references: [id])
+
+  action      String    // STATUS_CHANGE, COMMENT, ASSIGN, etc.
+  details     Json?     // { from: "PENDING", to: "SUBMITTED", reason: "..." }
+
+  createdAt   DateTime  @default(now())
+
+  @@index([taskId])
+  @@index([operatorId])
 }

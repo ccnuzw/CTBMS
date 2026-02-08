@@ -1,11 +1,40 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
-import { User, UserStatus, Gender } from '@prisma/client';
+import { User, UserStatus, Gender, Prisma } from '@prisma/client';
 import { CreateUserDto, UpdateUserDto, AssignRolesDto } from '@packages/types';
 import { PrismaService } from '../../prisma';
 
 @Injectable()
 export class UsersService {
     constructor(private prisma: PrismaService) { }
+
+    private buildUserWhere(filters?: {
+        organizationIds?: string[];
+        departmentIds?: string[];
+        status?: UserStatus;
+        keyword?: string;
+    }): Prisma.UserWhereInput {
+        const where: Prisma.UserWhereInput = {};
+        if (filters?.organizationIds && filters.organizationIds.length > 0) {
+            where.organizationId = { in: filters.organizationIds };
+        }
+        if (filters?.departmentIds && filters.departmentIds.length > 0) {
+            where.departmentId = { in: filters.departmentIds };
+        }
+        if (filters?.status) {
+            where.status = filters.status;
+        }
+        const keyword = filters?.keyword?.trim();
+        if (keyword) {
+            where.OR = [
+                { name: { contains: keyword, mode: 'insensitive' } },
+                { username: { contains: keyword, mode: 'insensitive' } },
+                { email: { contains: keyword, mode: 'insensitive' } },
+                { phone: { contains: keyword } },
+                { employeeNo: { contains: keyword, mode: 'insensitive' } },
+            ];
+        }
+        return where;
+    }
 
     /**
      * 创建用户
@@ -142,16 +171,14 @@ export class UsersService {
      * 获取所有用户（支持筛选）
      */
     async findAll(filters?: {
-        organizationId?: string;
-        departmentId?: string;
+        organizationIds?: string[];
+        departmentIds?: string[];
         status?: UserStatus;
+        keyword?: string;
     }): Promise<User[]> {
+        const where = this.buildUserWhere(filters);
         return this.prisma.user.findMany({
-            where: {
-                organizationId: filters?.organizationId,
-                departmentId: filters?.departmentId,
-                status: filters?.status,
-            },
+            where,
             orderBy: [{ createdAt: 'desc' }],
             include: {
                 organization: true,
@@ -161,6 +188,44 @@ export class UsersService {
                 },
             },
         });
+    }
+
+    async findPaged(filters: {
+        organizationIds?: string[];
+        departmentIds?: string[];
+        status?: UserStatus;
+        keyword?: string;
+        page: number;
+        pageSize: number;
+    }) {
+        const where = this.buildUserWhere(filters);
+        const page = Math.max(1, Number(filters.page || 1));
+        const pageSize = Math.max(1, Math.min(200, Number(filters.pageSize || 20)));
+
+        const [data, total] = await Promise.all([
+            this.prisma.user.findMany({
+                where,
+                skip: (page - 1) * pageSize,
+                take: pageSize,
+                orderBy: [{ createdAt: 'desc' }],
+                include: {
+                    organization: true,
+                    department: true,
+                    roles: {
+                        include: { role: true },
+                    },
+                },
+            }),
+            this.prisma.user.count({ where }),
+        ]);
+
+        return {
+            data,
+            total,
+            page,
+            pageSize,
+            totalPages: Math.ceil(total / pageSize),
+        };
     }
 
     /**

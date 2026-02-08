@@ -1,5 +1,5 @@
 import React, { useRef } from 'react';
-import { Card, Segmented, Tabs, Input, Button, Radio, Space, Typography, Tooltip, App, Flex, theme, Tag, Upload, Alert, Divider } from 'antd';
+import { Card, Tabs, Input, Button, Radio, Space, Typography, Tooltip, App, Flex, theme, Upload, Alert, Divider } from 'antd';
 import {
     CloudUploadOutlined,
     AudioOutlined,
@@ -15,7 +15,6 @@ import {
 } from '@ant-design/icons';
 import {
     ContentType,
-    CONTENT_TYPE_LABELS,
     CONTENT_TYPE_DESCRIPTIONS,
     CONTENT_TYPE_SOURCE_OPTIONS,
     IntelSourceType,
@@ -23,6 +22,7 @@ import {
 } from '../types';
 import { DocumentUploader } from './DocumentUploader';
 import { useTestAI } from '../api';
+import { useDictionaries } from '@/hooks/useDictionaries';
 
 const { TextArea } = Input;
 const { Text } = Typography;
@@ -80,6 +80,16 @@ export const CollectionConsole: React.FC<CollectionConsoleProps> = ({
     const { message } = App.useApp();
     const fileInputRef = useRef<HTMLInputElement>(null);
     const testAIMutation = useTestAI();
+    const { data: dictionaries } = useDictionaries(['INTEL_SOURCE_TYPE']);
+
+    const sourceTypeLabels = React.useMemo(() => {
+        const items = dictionaries?.INTEL_SOURCE_TYPE?.filter((item) => item.isActive) || [];
+        if (!items.length) return INTEL_SOURCE_TYPE_LABELS;
+        return items.reduce<Record<string, string>>((acc, item) => {
+            acc[item.code] = item.label;
+            return acc;
+        }, {});
+    }, [dictionaries]);
 
     // 快捷填入 Prompt placeholder
     const getPlaceholder = () => {
@@ -222,33 +232,31 @@ export const CollectionConsole: React.FC<CollectionConsoleProps> = ({
             style={{ height: '100%', display: 'flex', flexDirection: 'column' }}
             bodyStyle={{ flex: 1, display: 'flex', flexDirection: 'column', padding: '20px 24px' }}
         >
-            {/* 1. Header: Content Type Selector */}
+            {/* 1. Header: 智能采集说明 */}
             <div style={{ marginBottom: 24 }}>
                 <Flex justify="space-between" align="center" style={{ marginBottom: 8 }}>
-                    <Text type="secondary" style={{ fontSize: 12 }}>
-                        采集入库通道
+                    <Text strong style={{ fontSize: 14 }}>
+                        <FileTextOutlined style={{ color: token.colorPrimary, marginRight: 8 }} />
+                        市场信息采集
                     </Text>
                 </Flex>
 
-                <Segmented
-                    block
-                    value={contentType}
-                    onChange={(val) => setContentType(val as ContentType)}
-                    options={Object.entries(CONTENT_TYPE_LABELS).map(([value, label]) => ({
-                        label,
-                        value,
-                        icon: value === ContentType.DAILY_REPORT ? <FileTextOutlined style={{ color: '#1890ff' }} /> :
-                            value === ContentType.RESEARCH_REPORT ? <InboxOutlined style={{ color: '#722ed1' }} /> :
-                                <InfoCircleOutlined style={{ color: '#faad14' }} />,
-                    }))}
-                    size="large"
-                />
-                <div style={{ marginTop: 8, padding: '8px 12px', background: token.colorFillAlter, borderRadius: 6 }}>
+                <div style={{ padding: '8px 12px', background: token.colorFillAlter, borderRadius: 6 }}>
                     <Text type="secondary" style={{ fontSize: 12 }}>
                         <InfoCircleOutlined style={{ marginRight: 6 }} />
                         {CONTENT_TYPE_DESCRIPTIONS[contentType]}
                     </Text>
                 </div>
+                <Alert
+                    type="info"
+                    showIcon={false}
+                    style={{ marginTop: 8, padding: '6px 12px' }}
+                    message={
+                        <Text type="secondary" style={{ fontSize: 12 }}>
+                            💡 研究报告、政策文件请前往「商情知识库」上传或创建
+                        </Text>
+                    }
+                />
             </div>
 
             {/* 2. Source Type Selector */}
@@ -264,7 +272,7 @@ export const CollectionConsole: React.FC<CollectionConsoleProps> = ({
                     >
                         {(CONTENT_TYPE_SOURCE_OPTIONS[contentType] || []).map((type) => (
                             <Radio.Button key={type} value={type}>
-                                {INTEL_SOURCE_TYPE_LABELS[type]}
+                                {sourceTypeLabels[type] || type}
                             </Radio.Button>
                         ))}
                     </Radio.Group>

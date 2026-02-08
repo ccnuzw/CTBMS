@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma';
 import { AIService } from '../ai/ai.service';
 import {
@@ -6,9 +6,35 @@ import {
     UpdateMarketIntelDto,
     MarketIntelQuery,
     AIAnalysisResult,
-    ContentType,
+    ContentType as TypesContentType,
 } from '@packages/types';
-import { IntelCategory } from '@prisma/client';
+import {
+    ContentType as PrismaContentType,
+    GeoLevel,
+    IntelCategory,
+    IntelSourceType as PrismaIntelSourceType,
+    PriceSourceType,
+    PriceSubType,
+    Prisma,
+} from '@prisma/client';
+
+type IntelligenceFeedQuery = {
+    startDate?: Date;
+    endDate?: Date;
+    eventTypeIds?: string[];
+    insightTypeIds?: string[];
+    sentiments?: string[];
+    commodities?: string[];
+    keyword?: string;
+    limit?: number;
+    sourceTypes?: string[];
+    regionCodes?: string[];
+    minScore?: number;
+    maxScore?: number;
+    processingStatus?: string[];
+    qualityLevel?: string[];
+    contentTypes?: string[];
+};
 
 @Injectable()
 export class MarketIntelService {
@@ -16,6 +42,20 @@ export class MarketIntelService {
         private prisma: PrismaService,
         private aiService: AIService,
     ) { }
+
+    private resolveIntelSourceTypes(values?: string[]) {
+        if (!values) return [];
+        return values.filter((value): value is PrismaIntelSourceType =>
+            Object.values(PrismaIntelSourceType).includes(value as PrismaIntelSourceType),
+        );
+    }
+
+    private resolveContentTypes(values?: string[]) {
+        if (!values) return [];
+        return values.filter((value): value is PrismaContentType =>
+            Object.values(PrismaContentType).includes(value as PrismaContentType),
+        );
+    }
 
     /**
      * AI 内容分析
@@ -26,7 +66,7 @@ export class MarketIntelService {
         location?: string,
         base64Image?: string,
         mimeType?: string,
-        contentType?: ContentType,
+        contentType?: TypesContentType,
     ) {
         return this.aiService.analyzeContent(content, category, location, base64Image, mimeType, contentType);
     }
@@ -57,8 +97,8 @@ export class MarketIntelService {
                 data: {
                     ...dto,
                     category: dto.category as IntelCategory,
-                    sourceType: dto.sourceType as any,
-                    contentType: dto.contentType as any,
+                    sourceType: dto.sourceType,
+                    contentType: dto.contentType,
                     totalScore,
                     authorId,
                 },
@@ -97,6 +137,185 @@ export class MarketIntelService {
     }
 
     /**
+     * 获取文档归档统计 (C类)
+     */
+    async getDocStats(days = 30) {
+        const now = new Date();
+        const startDate = new Date(now);
+        startDate.setDate(now.getDate() - days);
+
+        const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+
+        const [
+            total,
+            monthlyNew,
+            sourceGrouping,
+            scoreAgg,
+            trendGrouping,
+            intels
+        ] = await Promise.all([
+            // 总量
+            this.prisma.marketIntel.count({
+                where: { category: IntelCategory.C_DOCUMENT }
+            }),
+            // 本月新增
+            this.prisma.marketIntel.count({
+                where: {
+                    category: IntelCategory.C_DOCUMENT,
+                    createdAt: { gte: monthStart }
+                }
+            }),
+            // 来源分布
+            this.prisma.marketIntel.groupBy({
+                by: ['sourceType'],
+                where: { category: IntelCategory.C_DOCUMENT },
+                _count: true
+            }),
+            // 平均分
+            this.prisma.marketIntel.aggregate({
+                where: { category: IntelCategory.C_DOCUMENT },
+                _avg: { totalScore: true }
+            }),
+            // 趋势 (简化版：按天分组需用 raw query 或后期处理，这里用 groupBy effectiveTime 太细，暂取最近列表后期处理)
+            // 为简单起见，这里只取最近 N 天的数据在内存聚合
+            this.prisma.marketIntel.findMany({
+                where: {
+                    category: IntelCategory.C_DOCUMENT,
+                    createdAt: { gte: startDate }
+                },
+                select: { createdAt: true }
+            }),
+            // 取最近文档用于提取标签
+            this.prisma.marketIntel.findMany({
+                where: { category: IntelCategory.C_DOCUMENT },
+                orderBy: { createdAt: 'desc' },
+                take: 50,
+                select: { aiAnalysis: true }
+            })
+        ]);
+
+        // 处理趋势
+        const trendMap = new Map<string, number>();
+        // 初始化日期
+        for (let d = new Date(startDate); d <= now; d.setDate(d.getDate() + 1)) {
+            trendMap.set(d.toISOString().split('T')[0], 0);
+        }
+        trendGrouping.forEach(item => {
+            const date = item.createdAt.toISOString().split('T')[0];
+            if (trendMap.has(date)) {
+                trendMap.set(date, (trendMap.get(date) || 0) + 1);
+            }
+        });
+
+        const trend = Array.from(trendMap.entries())
+            .map(([date, count]) => ({ date, count }))
+            .sort((a, b) => a.date.localeCompare(b.date));
+
+        // 处理标签
+        const tagCount = new Map<string, number>();
+        intels.forEach(intel => {
+            const aiAnalysis = (intel.aiAnalysis ?? {}) as AIAnalysisResult;
+            const tags = Array.isArray(aiAnalysis.tags) ? aiAnalysis.tags : [];
+            tags.forEach(tag => {
+                if (typeof tag === 'string') {
+                    tagCount.set(tag, (tagCount.get(tag) || 0) + 1);
+                }
+            });
+        });
+
+        const topTags = Array.from(tagCount.entries())
+            .map(([tag, count]) => ({ tag, count }))
+            .sort((a, b) => b.count - a.count)
+            .slice(0, 20);
+
+        return {
+            total,
+            monthlyNew,
+            bySource: sourceGrouping.map(g => ({
+                name: g.sourceType,
+                value: g._count
+            })),
+            avgScore: Math.round(scoreAgg._avg.totalScore || 0),
+            trend,
+            topTags
+        };
+    }
+
+    /**
+     * 批量删除情报
+     */
+    async batchDelete(ids: string[]) {
+        console.log('[MarketIntelService.batchDelete] Deleting ids:', ids);
+        return this.prisma.marketIntel.deleteMany({
+            where: {
+                id: { in: ids },
+            },
+        });
+    }
+
+    /**
+     * 更新情报标签
+     */
+    async updateTags(id: string, tags: string[]) {
+        const intel = await this.prisma.marketIntel.findUnique({ where: { id } });
+        if (!intel) throw new NotFoundException('Intel not found');
+
+        const aiAnalysis = (intel.aiAnalysis ?? {}) as AIAnalysisResult;
+        aiAnalysis.tags = tags;
+
+        return this.prisma.marketIntel.update({
+            where: { id },
+            data: { aiAnalysis },
+        });
+    }
+
+    /**
+     * 批量更新情报标签
+     * @param ids ID列表
+     * @param addTags 要添加的标签
+     * @param removeTags 要移除的标签
+     */
+    async batchUpdateTags(ids: string[], addTags: string[], removeTags: string[]) {
+        // 1. 查出所有涉及的情报及其当前 AI 分析数据
+        const intels = await this.prisma.marketIntel.findMany({
+            where: { id: { in: ids } },
+            select: { id: true, aiAnalysis: true }
+        });
+
+        if (intels.length === 0) {
+            return { success: true, updatedCount: 0 };
+        }
+
+        // 2. 构建更新操作
+        const updates = intels.map(intel => {
+            const currentAnalysis = (intel.aiAnalysis ?? {}) as AIAnalysisResult;
+            let currentTags: string[] = Array.isArray(currentAnalysis.tags) ? currentAnalysis.tags : [];
+
+            // 移除指定标签
+            if (removeTags.length > 0) {
+                currentTags = currentTags.filter(t => !removeTags.includes(t));
+            }
+
+            // 添加新标签并去重
+            if (addTags.length > 0) {
+                currentTags = Array.from(new Set([...currentTags, ...addTags]));
+            }
+
+            currentAnalysis.tags = currentTags;
+
+            return this.prisma.marketIntel.update({
+                where: { id: intel.id },
+                data: { aiAnalysis: currentAnalysis }
+            });
+        });
+
+        // 3. 事务执行
+        await this.prisma.$transaction(updates);
+
+        return { success: true, updatedCount: intels.length };
+    }
+
+    /**
      * 批量创建价格数据（从日报解析结果）
      * 增强版：自动关联采集点和行政区划
      */
@@ -117,12 +336,22 @@ export class MarketIntelService {
             // [MODIFIED] 不再尝试创建或查找 Enterprise
             // 而是确保 collectionPointId 存在 (AI 应该返回，或者在前端确认)
 
+            const resolvedSourceType = Object.values(PriceSourceType).includes(point.sourceType as PriceSourceType)
+                ? (point.sourceType as PriceSourceType)
+                : PriceSourceType.REGIONAL;
+            const resolvedSubType = Object.values(PriceSubType).includes(point.subType as PriceSubType)
+                ? (point.subType as PriceSubType)
+                : PriceSubType.LISTED;
+            const resolvedGeoLevel = Object.values(GeoLevel).includes(point.geoLevel as GeoLevel)
+                ? (point.geoLevel as GeoLevel)
+                : GeoLevel.CITY;
+
             // 构建价格数据
             const priceData = {
                 // 价格分类
-                sourceType: (point.sourceType || 'REGIONAL') as any,
-                subType: (point.subType || 'LISTED') as any,
-                geoLevel: (point.geoLevel || 'CITY') as any,
+                sourceType: resolvedSourceType,
+                subType: resolvedSubType,
+                geoLevel: resolvedGeoLevel,
 
                 // 位置信息
                 location: point.location,
@@ -158,31 +387,38 @@ export class MarketIntelService {
                 authorId,
             };
 
-            // 使用 upsert 避免重复数据（基于唯一约束）
-            await this.prisma.priceData.upsert({
+            // 使用 findFirst + create/update 替代 upsert 以避免 Prisma 复合键类型问题
+            const existingPrice = await this.prisma.priceData.findFirst({
                 where: {
-                    effectiveDate_commodity_location_sourceType_subType: {
-                        effectiveDate: priceData.effectiveDate,
-                        commodity: priceData.commodity,
-                        location: priceData.location,
-                        sourceType: priceData.sourceType,
-                        subType: priceData.subType,
-                    },
-                },
-                update: {
-                    price: priceData.price,
-                    dayChange: priceData.dayChange,
-                    intelId: priceData.intelId,
-                    // enterpriseId: priceData.enterpriseId, [REMOVED]
-                    // 更新关联信息
-                    collectionPointId: priceData.collectionPointId,
-                    regionCode: priceData.regionCode,
-                    longitude: priceData.longitude,
-                    latitude: priceData.latitude,
-                    note: priceData.note,
-                },
-                create: priceData,
+                    effectiveDate: priceData.effectiveDate,
+                    commodity: priceData.commodity,
+                    location: priceData.location,
+                    sourceType: priceData.sourceType,
+                    subType: priceData.subType,
+                }
             });
+
+            if (existingPrice) {
+                await this.prisma.priceData.update({
+                    where: { id: existingPrice.id },
+                    data: {
+                        price: priceData.price,
+                        dayChange: priceData.dayChange,
+                        intelId: priceData.intelId,
+                        // enterpriseId: priceData.enterpriseId, [REMOVED]
+                        // 更新关联信息
+                        collectionPointId: priceData.collectionPointId,
+                        regionCode: priceData.regionCode,
+                        longitude: priceData.longitude,
+                        latitude: priceData.latitude,
+                        note: priceData.note,
+                    }
+                });
+            } else {
+                await this.prisma.priceData.create({
+                    data: priceData,
+                });
+            }
         }
     }
 
@@ -205,9 +441,9 @@ export class MarketIntelService {
         for (const event of aiAnalysis.events) {
             // 增强类型映射：优先使用 AI 返回的 eventTypeCode，否则使用默认
             let eventTypeId = defaultEventType.id;
-            if ((event as any).eventTypeCode) {
+            if (event.eventTypeCode) {
                 const matchedType = await this.prisma.eventTypeConfig.findUnique({
-                    where: { code: (event as any).eventTypeCode }
+                    where: { code: event.eventTypeCode }
                 });
                 if (matchedType) {
                     eventTypeId = matchedType.id;
@@ -282,7 +518,7 @@ export class MarketIntelService {
         // Query param conversion if coming from simple query object, though DTO usually handles it.
         // Assuming dto allows optional params.
 
-        const where: any = {};
+        const where: Prisma.MarketIntelWhereInput = {};
         if (category) where.category = category;
         if (sourceType) where.sourceType = sourceType;
         if (isFlagged !== undefined) where.isFlagged = isFlagged;
@@ -315,6 +551,7 @@ export class MarketIntelService {
                     author: {
                         select: { id: true, name: true, avatar: true },
                     },
+                    attachments: true,
                 },
             }),
             this.prisma.marketIntel.count({ where }),
@@ -339,6 +576,7 @@ export class MarketIntelService {
                 author: {
                     select: { id: true, name: true, avatar: true, position: true },
                 },
+                attachments: true,
             },
         });
 
@@ -369,8 +607,8 @@ export class MarketIntelService {
             data: {
                 ...dto,
                 category: dto.category as IntelCategory | undefined,
-                sourceType: dto.sourceType as any,
-                contentType: dto.contentType as any,
+                sourceType: dto.sourceType,
+                contentType: dto.contentType,
                 totalScore,
             },
             include: {
@@ -467,15 +705,15 @@ export class MarketIntelService {
                 break;
             case 'week':
                 // 获取本周一 (假设周一为一周开始)
-                const day = now.getDay() || 7; // Sunday is 0, make it 7
-                const diff = now.getDate() - day + (day === 0 ? -6 : 1); // Adjust when day is Sunday
-                // Actually simply: set to last Monday
-                const tempDate = new Date(now);
-                const currentDay = tempDate.getDay();
-                const distanceToMonday = currentDay === 0 ? 6 : currentDay - 1;
-                tempDate.setDate(tempDate.getDate() - distanceToMonday);
-                startDate = new Date(tempDate.getFullYear(), tempDate.getMonth(), tempDate.getDate());
-                break;
+                {
+                    // Actually simply: set to last Monday
+                    const tempDate = new Date(now);
+                    const currentDay = tempDate.getDay();
+                    const distanceToMonday = currentDay === 0 ? 6 : currentDay - 1;
+                    tempDate.setDate(tempDate.getDate() - distanceToMonday);
+                    startDate = new Date(tempDate.getFullYear(), tempDate.getMonth(), tempDate.getDate());
+                    break;
+                }
             case 'month':
                 startDate = new Date(now.getFullYear(), now.getMonth(), 1);
                 break;
@@ -636,7 +874,7 @@ export class MarketIntelService {
             pageSize = 20,
         } = query;
 
-        const where: any = {};
+        const where: Prisma.MarketEventWhereInput = {};
         if (eventTypeId) where.eventTypeId = eventTypeId;
         // if (enterpriseId) where.enterpriseId = enterpriseId; [REMOVED]
         if (collectionPointId) where.collectionPointId = collectionPointId;
@@ -761,7 +999,7 @@ export class MarketIntelService {
         regions?: string[];
     }) {
         const { startDate, endDate, commodities, regions } = query;
-        const where: any = {};
+        const where: Prisma.MarketEventWhereInput = {};
 
         if (startDate || endDate) {
             where.eventDate = {};
@@ -816,7 +1054,7 @@ export class MarketIntelService {
         commodities?: string[];
         regions?: string[];
     }) {
-        const where: any = {};
+        const where: Prisma.MarketEventWhereInput = {};
 
         // 构建筛选条件
         if (query?.startDate || query?.endDate) {
@@ -948,7 +1186,7 @@ export class MarketIntelService {
             pageSize = 20,
         } = query;
 
-        const where: any = {};
+        const where: Prisma.MarketInsightWhereInput = {};
         if (insightTypeId) where.insightTypeId = insightTypeId;
         if (direction) where.direction = direction;
         if (timeframe) where.timeframe = timeframe;
@@ -1201,7 +1439,7 @@ export class MarketIntelService {
             if (region) baseRegions.add(region);
         });
 
-        const orConditions: any[] = [
+        const orConditions: Prisma.MarketIntelWhereInput[] = [
             { effectiveTime: { gte: startTime, lte: endTime } },
         ];
 
@@ -1334,7 +1572,7 @@ export class MarketIntelService {
 
             const contentType =
                 candidate.contentType ||
-                (candidate.researchReport ? ContentType.RESEARCH_REPORT : ContentType.DAILY_REPORT);
+                (candidate.researchReport ? TypesContentType.RESEARCH_REPORT : TypesContentType.DAILY_REPORT);
 
             return {
                 id: candidate.id,
@@ -1365,7 +1603,7 @@ export class MarketIntelService {
             raw: p
         }));
 
-        // @ts-ignore
+
         return [...related, ...priceItems]
             .sort((a, b) => (b.similarity || 0) - (a.similarity || 0))
             .slice(0, limit);
@@ -1374,23 +1612,7 @@ export class MarketIntelService {
     /**
      * 综合情报流数据（事件 + 洞察 + 情报混合）
      */
-    async getIntelligenceFeed(query: {
-        startDate?: Date;
-        endDate?: Date;
-        eventTypeIds?: string[];
-        insightTypeIds?: string[];
-        sentiments?: string[];
-        commodities?: string[];
-        keyword?: string;
-        limit?: number;
-        sourceTypes?: any[];
-        regionCodes?: string[];
-        minScore?: number;
-        maxScore?: number;
-        processingStatus?: string[];
-        qualityLevel?: string[];
-        contentTypes?: string[];
-    }) {
+    async getIntelligenceFeed(query: IntelligenceFeedQuery) {
         const {
             startDate,
             endDate,
@@ -1410,16 +1632,18 @@ export class MarketIntelService {
         } = query;
 
         // 构建 Intel 查询条件 (用于关联过滤)
-        const intelWhere: any = {};
+        const intelWhere: Prisma.MarketIntelWhereInput = {};
 
-        if (sourceTypes && sourceTypes.length > 0) {
-            intelWhere.sourceType = { in: sourceTypes };
+        const resolvedSourceTypes = this.resolveIntelSourceTypes(sourceTypes);
+        if (resolvedSourceTypes.length > 0) {
+            intelWhere.sourceType = { in: resolvedSourceTypes };
         }
         if (regionCodes && regionCodes.length > 0) {
             intelWhere.region = { hasSome: regionCodes };
         }
-        if (contentTypes && contentTypes.length > 0) {
-            intelWhere.contentType = { in: contentTypes as any[] };
+        const resolvedContentTypes = this.resolveContentTypes(contentTypes);
+        if (resolvedContentTypes.length > 0) {
+            intelWhere.contentType = { in: resolvedContentTypes };
         }
 
         // 分数过滤
@@ -1430,11 +1654,11 @@ export class MarketIntelService {
         }
 
         // 状态和质量的多重条件
-        const intelAndConditions: any[] = [];
+        const intelAndConditions: Prisma.MarketIntelWhereInput[] = [];
 
         // 处理状态
         if (processingStatus && processingStatus.length > 0) {
-            const statusOR: any[] = [];
+            const statusOR: Prisma.MarketIntelWhereInput[] = [];
             if (processingStatus.includes('flagged')) statusOR.push({ isFlagged: true });
             // confirmed: 非 flagged 且有分析结果 (简化为非 flagged)
             if (processingStatus.includes('confirmed')) statusOR.push({ isFlagged: false });
@@ -1448,7 +1672,7 @@ export class MarketIntelService {
 
         // 质量评级
         if (qualityLevel && qualityLevel.length > 0) {
-            const qualityOR: any[] = [];
+            const qualityOR: Prisma.MarketIntelWhereInput[] = [];
             if (qualityLevel.includes('high')) qualityOR.push({ totalScore: { gte: 80 } });
             if (qualityLevel.includes('medium')) qualityOR.push({ totalScore: { gte: 50, lt: 80 } });
             if (qualityLevel.includes('low')) qualityOR.push({ totalScore: { lt: 50 } });
@@ -1463,9 +1687,9 @@ export class MarketIntelService {
         }
 
         // 构建查询条件
-        const eventWhere: any = {};
-        const insightWhere: any = {};
-        const reportWhere: any = {};
+        const eventWhere: Prisma.MarketEventWhereInput = {};
+        const insightWhere: Prisma.MarketInsightWhereInput = {};
+        const reportWhere: Prisma.ResearchReportWhereInput = {};
 
         if (startDate || endDate) {
             eventWhere.createdAt = {};
@@ -1497,7 +1721,6 @@ export class MarketIntelService {
             reportWhere.commodities = { hasSome: commodities };
         }
         if (keyword) {
-            const keywordLower = keyword.toLowerCase();
             eventWhere.OR = [
                 { subject: { contains: keyword, mode: 'insensitive' } },
                 { action: { contains: keyword, mode: 'insensitive' } },
@@ -1535,7 +1758,7 @@ export class MarketIntelService {
 
 
         // 并行查询事件、洞察和研报
-        // @ts-ignore
+
         const [events, insights, reports] = await Promise.all([
             this.prisma.marketEvent.findMany({
                 where: eventWhere,
@@ -1668,7 +1891,7 @@ export class MarketIntelService {
     async getDashboardStats(query: {
         startDate?: Date;
         endDate?: Date;
-        sourceTypes?: any[];
+        sourceTypes?: string[];
         regionCodes?: string[];
         commodities?: string[];
         processingStatus?: string[];
@@ -1687,30 +1910,33 @@ export class MarketIntelService {
         // 而是手动构建聚合查询。
 
         // --- 构建 Shared Where (基于 MarketIntel) ---
-        const intelWhere: any = {};
-        if (query.sourceTypes?.length) intelWhere.sourceType = { in: query.sourceTypes };
+        const intelWhere: Prisma.MarketIntelWhereInput = {};
+        const dashboardSourceTypes = this.resolveIntelSourceTypes(query.sourceTypes);
+        const dashboardContentTypes = this.resolveContentTypes(query.contentTypes);
+        if (dashboardSourceTypes.length) intelWhere.sourceType = { in: dashboardSourceTypes };
         if (query.regionCodes?.length) intelWhere.region = { hasSome: query.regionCodes };
-        if (query.contentTypes?.length) intelWhere.contentType = { in: query.contentTypes };
+        if (dashboardContentTypes.length) intelWhere.contentType = { in: dashboardContentTypes };
         if (query.minScore !== undefined || query.maxScore !== undefined) {
             intelWhere.totalScore = {};
             if (query.minScore !== undefined) intelWhere.totalScore.gte = query.minScore;
             if (query.maxScore !== undefined) intelWhere.totalScore.lte = query.maxScore;
         }
+        const intelAndConditions: Prisma.MarketIntelWhereInput[] = [];
         if (query.processingStatus?.length) {
-            const statusOR: any[] = [];
+            const statusOR: Prisma.MarketIntelWhereInput[] = [];
             if (query.processingStatus.includes('flagged')) statusOR.push({ isFlagged: true });
             if (query.processingStatus.includes('confirmed')) statusOR.push({ isFlagged: false });
-            if (statusOR.length) intelWhere.AND = [{ OR: statusOR }];
+            if (statusOR.length) intelAndConditions.push({ OR: statusOR });
         }
         if (query.qualityLevel?.length) {
-            const qualityOR: any[] = [];
+            const qualityOR: Prisma.MarketIntelWhereInput[] = [];
             if (query.qualityLevel.includes('high')) qualityOR.push({ totalScore: { gte: 80 } });
             if (query.qualityLevel.includes('medium')) qualityOR.push({ totalScore: { gte: 50, lt: 80 } });
             if (query.qualityLevel.includes('low')) qualityOR.push({ totalScore: { lt: 50 } });
-            if (qualityOR.length) {
-                if (!intelWhere.AND) intelWhere.AND = [];
-                intelWhere.AND.push({ OR: qualityOR });
-            }
+            if (qualityOR.length) intelAndConditions.push({ OR: qualityOR });
+        }
+        if (intelAndConditions.length) {
+            intelWhere.AND = intelAndConditions;
         }
         if (startDate || endDate) {
             intelWhere.effectiveTime = {};
@@ -1725,7 +1951,6 @@ export class MarketIntelService {
             todayCount,
             avgScore,
             sourceStats,
-            intelList // Fetch subset for keyword scan if needed, or rely on other tables
         ] = await Promise.all([
             this.prisma.marketIntel.count({ where: intelWhere }),
             this.prisma.marketIntel.count({
@@ -1739,15 +1964,13 @@ export class MarketIntelService {
                 by: ['sourceType'],
                 where: intelWhere,
                 _count: { sourceType: true }
-            }),
-            // 简单起见，不在这里做全量 Keyword 扫描，Keyword 主要过滤 Event/Insight
-            Promise.resolve([])
+            })
         ]);
 
         // --- Query 2: Commodity & Trend (Based on Event & Insight) ---
         // 需要构建 Event/Insight 的 where 条件，包含 intelWhere 作为关联
-        const eventWhere: any = { intel: intelWhere };
-        const insightWhere: any = { intel: intelWhere };
+        const eventWhere: Prisma.MarketEventWhereInput = { intel: intelWhere };
+        const insightWhere: Prisma.MarketInsightWhereInput = { intel: intelWhere };
 
         if (query.commodities?.length) {
             eventWhere.commodity = { in: query.commodities };
@@ -1867,7 +2090,7 @@ export class MarketIntelService {
      * 生成 AI 智能简报 (AI Smart Briefing)
      * 基于当前筛选的前 20 条高价值情报生成总结
      */
-    async generateSmartBriefing(query: any) {
+    async generateSmartBriefing(query: IntelligenceFeedQuery) {
         // 1. 获取 Top Items
         const items = await this.getIntelligenceFeed({ ...query, limit: 20 });
 
@@ -1877,9 +2100,9 @@ export class MarketIntelService {
 
         // 2. 构建 Prompt
         const lines = items.map((item, i) => {
-            const data: any = item.data;
-            const title = data.title || data.subject || '无标题';
-            const content = (data.content || data.summary || data.rawContent || '').substring(0, 100);
+            const data = item.data as Record<string, unknown>;
+            const title = (data.title || data.subject || '无标题') as string;
+            const content = String(data.content || data.summary || data.rawContent || '').substring(0, 100);
             const date = new Date(item.createdAt).toISOString().split('T')[0];
             return `${i + 1}. [${date}] ${title}: ${content}`;
         }).join('\n');
@@ -1920,9 +2143,6 @@ export class MarketIntelService {
 
             // Wait, the user explicitly asked for "AI".
             // I will leave a TODO or use a heuristic summary.
-
-            const commodities = [...new Set(items.map(i => (i.data as any).commodity).filter(Boolean))];
-            const regions = [...new Set(items.map(i => (i.data as any).region || (i.data as any).regionCode).filter(Boolean))];
 
             const summary = await this.aiService.generateBriefing(lines);
             return { summary };

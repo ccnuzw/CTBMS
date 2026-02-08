@@ -1,14 +1,16 @@
 import { Button, App, Popconfirm, Tag, Space, Modal, Typography, Divider, Descriptions, Switch } from 'antd';
-import { useState, useRef } from 'react';
+import { useMemo, useState, useRef } from 'react';
 import { ActionType, ProColumns, ProTable, ModalForm, ProFormText, ProFormSelect, ProFormDigit, ProFormSwitch, ProFormDependency } from '@ant-design/pro-components';
-import { useMappingRules, useCreateMappingRule, useUpdateMappingRule, useDeleteMappingRule } from '../api';
+import { useMappingRules, useCreateMappingRule, useUpdateMappingRule, useDeleteMappingRule, useDictionaryDomains } from '../api';
 import { BusinessMappingRule } from '../types';
 import { PlusOutlined, EditOutlined, DeleteOutlined, QuestionCircleOutlined } from '@ant-design/icons';
+import { useDictionaries } from '@/hooks/useDictionaries';
+import { useModalAutoFocus } from '@/hooks/useModalAutoFocus';
 
 const { Title, Paragraph, Text } = Typography;
 
 // Define Mappings
-const DOMAIN_ENUM = {
+const DOMAIN_FALLBACK = {
     PRICE_SOURCE_TYPE: { text: '价格来源 (Source)', status: 'Processing', color: 'geekblue' },
     PRICE_SUB_TYPE: { text: '价格类型 (SubType)', status: 'Default', color: 'geekblue' },
     SENTIMENT: { text: '情感倾向 (Sentiment)', status: 'Success', color: 'green' },
@@ -22,7 +24,7 @@ const MATCH_MODE_ENUM = {
 };
 
 // Target Options Definition
-const TARGET_OPTIONS: Record<string, Record<string, string>> = {
+const TARGET_OPTIONS_FALLBACK: Record<string, Record<string, string>> = {
     PRICE_SOURCE_TYPE: {
         ENTERPRISE: '企业 (ENTERPRISE)',
         REGIONAL: '区域 (REGIONAL)',
@@ -35,10 +37,10 @@ const TARGET_OPTIONS: Record<string, Record<string, string>> = {
         TRANSACTION: '成交价 (TRANSACTION)',
         ARRIVAL: '到港价 (ARRIVAL)',
         FOB: '平舱价 (FOB)',
-        STATION_ORIGIN: '站台-产区 (STATION_ORIGIN)',
-        STATION_DEST: '站台-销区 (STATION_DEST)',
+        STATION: '站台价 (STATION)',
         PURCHASE: '收购价 (PURCHASE)',
         WHOLESALE: '批发价 (WHOLESALE)',
+        OTHER: '其他 (OTHER)',
     },
     SENTIMENT: {
         positive: '积极/看涨 (positive)',
@@ -61,6 +63,9 @@ export const LogicRulesPage = () => {
     const { message } = App.useApp();
     const actionRef = useRef<ActionType>();
     const { data: rules, isLoading, refetch } = useMappingRules();
+    const { data: dictionaryDomains } = useDictionaryDomains(false);
+    const domainCodes = useMemo(() => (dictionaryDomains || []).map((domain) => domain.code), [dictionaryDomains]);
+    const { data: dictionaries } = useDictionaries(domainCodes);
     const createMutation = useCreateMappingRule();
     const updateMutation = useUpdateMappingRule();
     const deleteMutation = useDeleteMappingRule();
@@ -69,6 +74,61 @@ export const LogicRulesPage = () => {
     const [modalVisible, setModalVisible] = useState(false);
     const [helpVisible, setHelpVisible] = useState(false);
     const [currentRow, setCurrentRow] = useState<BusinessMappingRule | null>(null);
+    const {
+        containerRef: formContainerRef,
+        autoFocusFieldProps: formAutoFocusFieldProps,
+        modalProps: formModalProps,
+    } = useModalAutoFocus();
+    const {
+        containerRef: helpContainerRef,
+        focusRef: helpFocusRef,
+        modalProps: helpModalProps,
+    } = useModalAutoFocus();
+
+    const domainValueEnum = useMemo(() => {
+        if (!dictionaryDomains || dictionaryDomains.length === 0) {
+            return Object.entries(DOMAIN_FALLBACK).reduce<Record<string, string>>((acc, [code, meta]) => {
+                acc[code] = meta.text;
+                return acc;
+            }, {});
+        }
+        return dictionaryDomains.reduce<Record<string, string>>((acc, domain) => {
+            acc[domain.code] = `${domain.name} (${domain.code})`;
+            return acc;
+        }, {});
+    }, [dictionaryDomains]);
+
+    const domainLabelMap = useMemo(() => {
+        if (!dictionaryDomains || dictionaryDomains.length === 0) {
+            return Object.entries(DOMAIN_FALLBACK).reduce<Record<string, string>>((acc, [code, meta]) => {
+                acc[code] = meta.text;
+                return acc;
+            }, {});
+        }
+        return dictionaryDomains.reduce<Record<string, string>>((acc, domain) => {
+            acc[domain.code] = domain.name;
+            return acc;
+        }, {});
+    }, [dictionaryDomains]);
+
+    const domainColorMap = useMemo(() => {
+        return Object.entries(DOMAIN_FALLBACK).reduce<Record<string, string>>((acc, [code, meta]) => {
+            acc[code] = meta.color;
+            return acc;
+        }, {});
+    }, []);
+
+    const targetLabelMap = useMemo(() => {
+        if (!domainCodes.length || !dictionaries) return TARGET_OPTIONS_FALLBACK;
+        return domainCodes.reduce<Record<string, Record<string, string>>>((acc, code) => {
+            const items = dictionaries[code] || [];
+            acc[code] = items.reduce<Record<string, string>>((itemAcc, item) => {
+                itemAcc[item.code] = item.label;
+                return itemAcc;
+            }, {});
+            return acc;
+        }, {});
+    }, [domainCodes, dictionaries]);
 
     const handleEdit = (record: BusinessMappingRule) => {
         setCurrentRow(record);
@@ -124,8 +184,9 @@ export const LogicRulesPage = () => {
             dataIndex: 'domain',
             width: 180,
             render: (_, record) => {
-                const map = DOMAIN_ENUM[record.domain as keyof typeof DOMAIN_ENUM];
-                return <Tag color={map?.color}>{map?.text || record.domain}</Tag>;
+                const label = domainLabelMap[record.domain] || record.domain;
+                const color = domainColorMap[record.domain] || 'default';
+                return <Tag color={color}>{label}</Tag>;
             },
         },
         {
@@ -148,12 +209,12 @@ export const LogicRulesPage = () => {
             dataIndex: 'targetValue',
             width: 250,
             render: (_, record) => {
-                const domainOptions = TARGET_OPTIONS[record.domain] || {};
+                const domainOptions = targetLabelMap[record.domain] || {};
                 const friendly = domainOptions[record.targetValue];
                 return (
                     <Space>
                         <Tag color="blue">{record.targetValue}</Tag>
-                        {friendly && <span style={{ color: '#666', fontSize: 13 }}>{friendly.split('(')[0].trim()}</span>}
+                        {friendly && <span style={{ color: '#666', fontSize: 13 }}>{friendly}</span>}
                     </Space>
                 );
             },
@@ -255,22 +316,20 @@ export const LogicRulesPage = () => {
                     matchMode: 'CONTAINS'
                 }}
                 modalProps={{
-                    destroyOnClose: true
+                    destroyOnClose: true,
+                    ...formModalProps,
                 }}
             >
-                <ProFormSelect
-                    name="domain"
-                    label="业务域 (Domain)"
-                    tooltip="决定规则适用的场景。例如：解析价格类型请选'PriceSubType'，分析情感请选'Sentiment'。"
-                    placeholder="请选择业务场景"
-                    valueEnum={{
-                        PRICE_SOURCE_TYPE: '价格来源 (Source) - 识别报价方',
-                        PRICE_SUB_TYPE: '价格类型 (SubType) - 识别平舱/到港等',
-                        SENTIMENT: '情感倾向 (Sentiment) - 分析涨跌情绪',
-                        GEO_LEVEL: '地理层级 (Geo) - 识别省/市/港口',
-                    }}
-                    rules={[{ required: true }]}
-                />
+                <div ref={formContainerRef}>
+                    <ProFormSelect
+                        name="domain"
+                        label="业务域 (Domain)"
+                        tooltip="决定规则适用的场景。例如：解析价格类型请选'PriceSubType'，分析情感请选'Sentiment'。"
+                        placeholder="请选择业务场景"
+                        valueEnum={Object.keys(domainValueEnum).length ? domainValueEnum : undefined}
+                        rules={[{ required: true }]}
+                        fieldProps={formAutoFocusFieldProps as any}
+                    />
 
                 <ProFormSelect
                     name="matchMode"
@@ -294,7 +353,7 @@ export const LogicRulesPage = () => {
 
                 <ProFormDependency name={['domain']}>
                     {({ domain }) => {
-                        const options = TARGET_OPTIONS[domain] || {};
+                        const options = targetLabelMap[domain] || {};
                         const isKnownDomain = Object.keys(options).length > 0;
 
                         if (!isKnownDomain) {
@@ -337,16 +396,24 @@ export const LogicRulesPage = () => {
                     label="启用状态"
                 />
 
+                </div>
+
             </ModalForm>
 
             <Modal
                 title="业务规则配置指南"
                 open={helpVisible}
                 onCancel={() => setHelpVisible(false)}
-                footer={null}
+                footer={[
+                    <Button key="close" onClick={() => setHelpVisible(false)} ref={helpFocusRef}>
+                        关闭
+                    </Button>,
+                ]}
                 width={800}
+                {...helpModalProps}
             >
-                <Typography>
+                <div ref={helpContainerRef}>
+                    <Typography>
                     <Paragraph>
                         业务映射规则用于将非结构化的市场信息（如“平舱价”、“看涨”）转换为系统标准代码。规则修改后即时生效。
                     </Paragraph>
@@ -393,7 +460,8 @@ export const LogicRulesPage = () => {
                             <li><Text strong>目标值:</Text> 系统会自动根据业务域提供标准代码（如 FOB, ARRIVAL）及对应的中文说明，请在下拉菜单中直接选择。</li>
                         </ul>
                     </Paragraph>
-                </Typography>
+                    </Typography>
+                </div>
             </Modal>
         </div>
     );

@@ -26,6 +26,7 @@ import {
 } from '@ant-design/icons';
 import { IntelItem } from '../types';
 import { ContentType } from '../../../types';
+import { useModalAutoFocus } from '@/hooks/useModalAutoFocus';
 
 const { Title, Text, Paragraph } = Typography;
 
@@ -38,14 +39,16 @@ interface RelationPanelProps {
 
 import { useRelatedIntel } from '../../../api/related-hooks';
 import { useMarketIntel } from '../../../api/hooks';
+import { useDictionaries } from '@/hooks/useDictionaries';
+import { stripHtml } from '../utils';
 
-const RELATION_TYPE_LABELS: Record<string, { label: string; color: string }> = {
-    time: { label: '时间关联', color: 'blue' },
-    commodity: { label: '品种关联', color: 'green' },
-    region: { label: '区域关联', color: 'purple' },
-    chain: { label: '因果关联', color: 'orange' },
-    citation: { label: '引用关联', color: 'cyan' },
-    price_fluctuation: { label: '价格异动', color: 'red' },
+const RELATION_TYPE_META_FALLBACK: Record<string, { label: string; color: string }> = {
+    TIME: { label: '时间关联', color: 'blue' },
+    COMMODITY: { label: '品种关联', color: 'green' },
+    REGION: { label: '区域关联', color: 'purple' },
+    CHAIN: { label: '因果关联', color: 'orange' },
+    CITATION: { label: '引用关联', color: 'cyan' },
+    PRICE_FLUCTUATION: { label: '价格异动', color: 'red' },
 };
 
 const CONTENT_TYPE_ICONS: Record<string, React.ReactNode> = {
@@ -53,6 +56,23 @@ const CONTENT_TYPE_ICONS: Record<string, React.ReactNode> = {
     [ContentType.RESEARCH_REPORT]: <FileTextOutlined style={{ color: '#52c41a' }} />,
     [ContentType.POLICY_DOC]: <FileTextOutlined style={{ color: '#722ed1' }} />,
     'PRICE_DATA': <RiseOutlined style={{ color: '#f5222d' }} />,
+};
+
+const CONTENT_TYPE_META_FALLBACK: Record<string, { label: string; color: string }> = {
+    [ContentType.DAILY_REPORT]: { label: '市场信息', color: 'blue' },
+    [ContentType.RESEARCH_REPORT]: { label: '研究报告', color: 'green' },
+    [ContentType.POLICY_DOC]: { label: '政策文件', color: 'purple' },
+    PRICE_DATA: { label: '价格', color: 'volcano' },
+};
+
+const SOURCE_TYPE_META_FALLBACK: Record<string, { label: string; color: string }> = {
+    FIRST_LINE: { label: '一线采集', color: 'blue' },
+    COMPETITOR: { label: '竞对情报', color: 'volcano' },
+    OFFICIAL_GOV: { label: '官方发布', color: 'green' },
+    OFFICIAL: { label: '官方发布', color: 'green' },
+    RESEARCH_INST: { label: '研究机构', color: 'purple' },
+    MEDIA: { label: '媒体报道', color: 'orange' },
+    INTERNAL_REPORT: { label: '内部研报', color: 'geekblue' },
 };
 
 export const RelationPanel: React.FC<RelationPanelProps> = ({
@@ -68,25 +88,44 @@ export const RelationPanel: React.FC<RelationPanelProps> = ({
     const [detailId, setDetailId] = useState<string | null>(null);
     const [detailOpen, setDetailOpen] = useState(false);
     const { data: detailData, isLoading: detailLoading } = useMarketIntel(detailId || '');
+    const { data: dictionaries } = useDictionaries(['RELATION_TYPE', 'CONTENT_TYPE', 'INTEL_SOURCE_TYPE']);
+    const { containerRef, focusRef, modalProps } = useModalAutoFocus();
 
-    const contentTypeLabel = useMemo(() => {
-        return {
-            [ContentType.DAILY_REPORT]: '日报',
-            [ContentType.RESEARCH_REPORT]: '研报',
-            [ContentType.POLICY_DOC]: '政策',
-            'PRICE_DATA': '价格',
-        };
-    }, []);
+    const relationTypeMeta = useMemo(() => {
+        const items = dictionaries?.RELATION_TYPE?.filter((item) => item.isActive) || [];
+        if (!items.length) return RELATION_TYPE_META_FALLBACK;
+        return items.reduce<Record<string, { label: string; color: string }>>((acc, item) => {
+            const color = (item.meta as { color?: string } | null)?.color
+                || RELATION_TYPE_META_FALLBACK[item.code]?.color
+                || 'blue';
+            acc[item.code] = { label: item.label, color };
+            return acc;
+        }, { ...RELATION_TYPE_META_FALLBACK });
+    }, [dictionaries]);
 
-    const sourceTypeLabel = useMemo(() => {
-        return {
-            FIRST_LINE: '一线采集',
-            COMPETITOR: '竞对情报',
-            OFFICIAL: '官方发布',
-            RESEARCH_INST: '研究机构',
-            MEDIA: '媒体报道',
-        } as Record<string, string>;
-    }, []);
+    const contentTypeMeta = useMemo(() => {
+        const items = dictionaries?.CONTENT_TYPE?.filter((item) => item.isActive) || [];
+        if (!items.length) return CONTENT_TYPE_META_FALLBACK;
+        return items.reduce<Record<string, { label: string; color: string }>>((acc, item) => {
+            const color = (item.meta as { color?: string } | null)?.color
+                || CONTENT_TYPE_META_FALLBACK[item.code]?.color
+                || 'blue';
+            acc[item.code] = { label: item.label, color };
+            return acc;
+        }, { ...CONTENT_TYPE_META_FALLBACK });
+    }, [dictionaries]);
+
+    const sourceTypeMeta = useMemo(() => {
+        const items = dictionaries?.INTEL_SOURCE_TYPE?.filter((item) => item.isActive) || [];
+        if (!items.length) return SOURCE_TYPE_META_FALLBACK;
+        return items.reduce<Record<string, { label: string; color: string }>>((acc, item) => {
+            const color = (item.meta as { color?: string } | null)?.color
+                || SOURCE_TYPE_META_FALLBACK[item.code]?.color
+                || 'default';
+            acc[item.code] = { label: item.label, color };
+            return acc;
+        }, { ...SOURCE_TYPE_META_FALLBACK });
+    }, [dictionaries]);
 
     const handleOpenDetail = (intelId: string) => {
         setDetailId(intelId);
@@ -171,12 +210,10 @@ export const RelationPanel: React.FC<RelationPanelProps> = ({
                             >
                                 <Text strong>{selectedIntel.title || '未命名情报'}</Text>
                                 <Flex gap={4} style={{ marginTop: 8 }}>
-                                    <Tag bordered={false} color="blue">
+                                    <Tag bordered={false} color={contentTypeMeta[selectedIntel.contentType]?.color || 'blue'}>
                                         {CONTENT_TYPE_ICONS[selectedIntel.contentType]}
                                         <span style={{ marginLeft: 4 }}>
-                                            {selectedIntel.contentType === ContentType.DAILY_REPORT && '日报'}
-                                            {selectedIntel.contentType === ContentType.RESEARCH_REPORT && '研报'}
-                                            {selectedIntel.contentType === ContentType.POLICY_DOC && '政策'}
+                                            {contentTypeMeta[selectedIntel.contentType]?.label || selectedIntel.contentType}
                                         </span>
                                     </Tag>
                                     {selectedIntel.location && (
@@ -204,7 +241,7 @@ export const RelationPanel: React.FC<RelationPanelProps> = ({
                             <Timeline
                                 pending={isLoading ? '分析中...' : false}
                                 items={relatedItems.map((related: any, idx: number) => ({
-                                    color: RELATION_TYPE_LABELS[related.relationType]?.color || 'blue',
+                                    color: relationTypeMeta[related.relationType]?.color || 'blue',
                                     children: (
                                         <Card
                                             size="small"
@@ -229,10 +266,10 @@ export const RelationPanel: React.FC<RelationPanelProps> = ({
                                                     </Flex>
                                                     <Flex gap={4}>
                                                         <Tag
-                                                            color={RELATION_TYPE_LABELS[related.relationType]?.color}
+                                                            color={relationTypeMeta[related.relationType]?.color}
                                                             style={{ fontSize: 10 }}
                                                         >
-                                                            {RELATION_TYPE_LABELS[related.relationType]?.label}
+                                                            {relationTypeMeta[related.relationType]?.label || related.relationType}
                                                         </Tag>
                                                         {related.similarity && (
                                                             <Tag style={{ fontSize: 10 }}>
@@ -289,7 +326,7 @@ export const RelationPanel: React.FC<RelationPanelProps> = ({
                                             <ul style={{ paddingLeft: 16, margin: '4px 0 0 0', fontSize: 12 }}>
                                                 {Array.isArray(selectedIntel.researchReport.keyPoints) &&
                                                     selectedIntel.researchReport.keyPoints.map((p: any, i: number) => (
-                                                        <li key={i}>{typeof p === 'string' ? p : p.point}</li>
+                                                        <li key={i}>{stripHtml(typeof p === 'string' ? p : p.point)}</li>
                                                     ))}
                                             </ul>
                                         </>
@@ -312,7 +349,7 @@ export const RelationPanel: React.FC<RelationPanelProps> = ({
                                     ellipsis={{ rows: 6, expandable: true }}
                                     style={{ fontSize: 12, marginBottom: 0 }}
                                 >
-                                    {selectedIntel.rawContent || '暂无原文内容'}
+                                    {stripHtml(selectedIntel.rawContent) || '暂无原文内容'}
                                 </Paragraph>
                             </Card>
                         </div>
@@ -324,52 +361,61 @@ export const RelationPanel: React.FC<RelationPanelProps> = ({
                 title="情报详情"
                 open={detailOpen}
                 onCancel={() => setDetailOpen(false)}
-                footer={null}
+                footer={[
+                    <Button key="close" onClick={() => setDetailOpen(false)} ref={focusRef}>
+                        关闭
+                    </Button>,
+                ]}
                 width={560}
+                {...modalProps}
             >
-                {detailLoading ? (
-                    <Flex justify="center" align="center" style={{ padding: 24 }}>
-                        <Spin />
-                    </Flex>
-                ) : detailData ? (
-                    <Space direction="vertical" style={{ width: '100%' }} size={12}>
-                        <Flex align="center" gap={8} wrap="wrap">
-                            {detailData.contentType && (
-                                <Tag color="blue">
-                                    {contentTypeLabel[detailData.contentType as ContentType] || detailData.contentType}
-                                </Tag>
-                            )}
-                            <Tag>{sourceTypeLabel[detailData.sourceType] || detailData.sourceType}</Tag>
-                            {detailData.location && (
-                                <Tag bordered={false}>
-                                    <EnvironmentOutlined /> {detailData.location}
-                                </Tag>
-                            )}
+                <div ref={containerRef}>
+                    {detailLoading ? (
+                        <Flex justify="center" align="center" style={{ padding: 24 }}>
+                            <Spin />
                         </Flex>
+                    ) : detailData ? (
+                        <Space direction="vertical" style={{ width: '100%' }} size={12}>
+                            <Flex align="center" gap={8} wrap="wrap">
+                                {detailData.contentType && (
+                                    <Tag color={contentTypeMeta[detailData.contentType]?.color || 'blue'}>
+                                        {contentTypeMeta[detailData.contentType]?.label || detailData.contentType}
+                                    </Tag>
+                                )}
+                                <Tag color={sourceTypeMeta[detailData.sourceType]?.color || 'default'}>
+                                    {sourceTypeMeta[detailData.sourceType]?.label || detailData.sourceType}
+                                </Tag>
+                                {detailData.location && (
+                                    <Tag bordered={false}>
+                                        <EnvironmentOutlined /> {detailData.location}
+                                    </Tag>
+                                )}
+                            </Flex>
 
-                        <Text type="secondary" style={{ fontSize: 12 }}>
-                            生效时间：{detailData.effectiveTime ? new Date(detailData.effectiveTime).toLocaleString() : '-'}
-                        </Text>
+                            <Text type="secondary" style={{ fontSize: 12 }}>
+                                生效时间：{detailData.effectiveTime ? new Date(detailData.effectiveTime).toLocaleString() : '-'}
+                            </Text>
 
-                        <Divider style={{ margin: 0 }} />
+                            <Divider style={{ margin: 0 }} />
 
-                        <div>
-                            <Text strong>摘要</Text>
-                            <Paragraph style={{ marginTop: 6 }}>
-                                {detailData.summary || '暂无摘要'}
-                            </Paragraph>
-                        </div>
+                            <div>
+                                <Text strong>摘要</Text>
+                                <Paragraph style={{ marginTop: 6 }}>
+                                    {stripHtml(detailData.summary) || '暂无摘要'}
+                                </Paragraph>
+                            </div>
 
-                        <div>
-                            <Text strong>原文内容</Text>
-                            <Paragraph style={{ marginTop: 6 }}>
-                                {detailData.rawContent || '暂无原文内容'}
-                            </Paragraph>
-                        </div>
-                    </Space>
-                ) : (
-                    <Empty description="暂无详情数据" />
-                )}
+                            <div>
+                                <Text strong>原文内容</Text>
+                                <Paragraph style={{ marginTop: 6 }}>
+                                    {stripHtml(detailData.rawContent) || '暂无原文内容'}
+                                </Paragraph>
+                            </div>
+                        </Space>
+                    ) : (
+                        <Empty description="暂无详情数据" />
+                    )}
+                </div>
             </Modal>
         </div>
     );

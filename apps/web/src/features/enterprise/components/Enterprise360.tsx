@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
     Tabs,
     Typography,
@@ -42,19 +42,20 @@ import {
 } from '@packages/types';
 import { useEnterprise } from '../api';
 import { analyzeEnterpriseRisk, RiskAnalysisResult } from '../services/aiService';
+import { useDictionaries } from '@/hooks/useDictionaries';
 
 const { Title, Text, Paragraph } = Typography;
 const { useToken } = theme;
 
 // 联系人角色中文映射
-const ROLE_LABELS: Record<ContactRole, string> = {
+const ROLE_LABELS_FALLBACK: Record<ContactRole, string> = {
     [ContactRole.PROCUREMENT]: '采购决策线',
     [ContactRole.EXECUTION]: '执行运营线',
     [ContactRole.FINANCE]: '财务结算线',
     [ContactRole.MANAGEMENT]: '高层管理线',
 };
 
-const ROLE_COLORS: Record<ContactRole, string> = {
+const ROLE_COLORS_FALLBACK: Record<ContactRole, string> = {
     [ContactRole.PROCUREMENT]: 'blue',
     [ContactRole.EXECUTION]: 'orange',
     [ContactRole.FINANCE]: 'green',
@@ -62,7 +63,7 @@ const ROLE_COLORS: Record<ContactRole, string> = {
 };
 
 // 企业类型中文映射
-const TYPE_LABELS: Record<EnterpriseType, string> = {
+const TYPE_LABELS_FALLBACK: Record<EnterpriseType, string> = {
     [EnterpriseType.SUPPLIER]: '供应商',
     [EnterpriseType.CUSTOMER]: '客户',
     [EnterpriseType.LOGISTICS]: '物流商',
@@ -83,6 +84,37 @@ export const Enterprise360: React.FC<Enterprise360Props> = ({
     onEnterpriseClick,
 }) => {
     const { token } = useToken();
+    const { data: dictionaries } = useDictionaries(['CONTACT_ROLE', 'ENTERPRISE_TYPE']);
+
+    const roleLabels = useMemo(() => {
+        const items = dictionaries?.CONTACT_ROLE?.filter((item) => item.isActive) || [];
+        if (!items.length) return ROLE_LABELS_FALLBACK;
+        const map = items.reduce<Partial<Record<ContactRole, string>>>((acc, item) => {
+            acc[item.code as ContactRole] = item.label;
+            return acc;
+        }, {});
+        return { ...ROLE_LABELS_FALLBACK, ...map } as Record<ContactRole, string>;
+    }, [dictionaries]);
+
+    const roleColors = useMemo(() => {
+        const items = dictionaries?.CONTACT_ROLE?.filter((item) => item.isActive) || [];
+        if (!items.length) return ROLE_COLORS_FALLBACK;
+        const map = items.reduce<Partial<Record<ContactRole, string>>>((acc, item) => {
+            acc[item.code as ContactRole] = ((item.meta as { color?: string } | null)?.color || 'default') as string;
+            return acc;
+        }, {});
+        return { ...ROLE_COLORS_FALLBACK, ...map } as Record<ContactRole, string>;
+    }, [dictionaries]);
+
+    const typeLabels = useMemo(() => {
+        const items = dictionaries?.ENTERPRISE_TYPE?.filter((item) => item.isActive) || [];
+        if (!items.length) return TYPE_LABELS_FALLBACK;
+        const map = items.reduce<Partial<Record<EnterpriseType, string>>>((acc, item) => {
+            acc[item.code as EnterpriseType] = item.label;
+            return acc;
+        }, {});
+        return { ...TYPE_LABELS_FALLBACK, ...map } as Record<EnterpriseType, string>;
+    }, [dictionaries]);
     const { message } = App.useApp();
     const [activeTab, setActiveTab] = useState('overview');
 
@@ -240,7 +272,7 @@ export const Enterprise360: React.FC<Enterprise360Props> = ({
                         <div style={{ marginTop: token.marginXS }}>
                             {enterprise.types.map((type) => (
                                 <Tag key={type} color={type === EnterpriseType.GROUP ? 'purple' : 'default'}>
-                                    {TYPE_LABELS[type]}
+                                    {typeLabels[type]}
                                 </Tag>
                             ))}
                         </div>
@@ -461,7 +493,7 @@ export const Enterprise360: React.FC<Enterprise360Props> = ({
             children: (
                 <div style={{ padding: token.paddingSM }}>
                     {Object.entries(groupedContacts).length > 0 ? (
-                        Object.entries(ROLE_LABELS).map(([role, label]) => {
+                        Object.entries(roleLabels).map(([role, label]) => {
                             const contacts = groupedContacts[role as ContactRole];
                             if (!contacts || contacts.length === 0) return null;
 
@@ -471,7 +503,7 @@ export const Enterprise360: React.FC<Enterprise360Props> = ({
                                     size="small"
                                     title={
                                         <Space>
-                                            <Tag color={ROLE_COLORS[role as ContactRole]}>{label}</Tag>
+                                            <Tag color={roleColors[role as ContactRole]}>{label}</Tag>
                                             <Text type="secondary">{contacts.length} 人</Text>
                                         </Space>
                                     }
@@ -485,7 +517,9 @@ export const Enterprise360: React.FC<Enterprise360Props> = ({
                                                     avatar={
                                                         <Avatar
                                                             style={{
-                                                                backgroundColor: token[`color${ROLE_COLORS[contact.role].charAt(0).toUpperCase() + ROLE_COLORS[contact.role].slice(1)}` as keyof typeof token] as string || token.colorPrimary,
+                                                                backgroundColor: token[
+                                                                    `color${roleColors[contact.role].charAt(0).toUpperCase() + roleColors[contact.role].slice(1)}` as keyof typeof token
+                                                                ] as string || token.colorPrimary,
                                                             }}
                                                         >
                                                             {contact.name.charAt(0)}
@@ -564,7 +598,7 @@ export const Enterprise360: React.FC<Enterprise360Props> = ({
                         <Space style={{ marginTop: token.marginXS }}>
                             {enterprise.types.map((type) => (
                                 <Tag key={type} color={type === EnterpriseType.GROUP ? 'purple' : 'blue'}>
-                                    {TYPE_LABELS[type]}
+                                    {typeLabels[type]}
                                 </Tag>
                             ))}
                         </Space>

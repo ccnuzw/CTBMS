@@ -37,6 +37,7 @@ type ViewMode = 'line' | 'area' | 'comparison';
 
 interface TrendChartProps {
     commodity: string;
+    commodityLabel?: string;
     startDate?: Date;
     endDate?: Date;
     selectedPointIds: string[];
@@ -47,6 +48,7 @@ interface TrendChartProps {
 
 export const TrendChart: React.FC<TrendChartProps> = ({
     commodity,
+    commodityLabel,
     startDate,
     endDate,
     selectedPointIds,
@@ -139,7 +141,7 @@ export const TrendChart: React.FC<TrendChartProps> = ({
         if (!multiPointData || multiPointData.length === 0) return null;
 
         let allPrices: number[] = [];
-        let latestChanges: { name: string; change: number }[] = [];
+        const latestChanges: { name: string; change: number }[] = [];
 
         multiPointData.forEach((item) => {
             const prices = item.data.map((d) => d.price);
@@ -295,7 +297,7 @@ export const TrendChart: React.FC<TrendChartProps> = ({
                 <Flex align="center" gap={8}>
                     <LineChartOutlined style={{ color: token.colorPrimary }} />
                     <span>价格趋势分析</span>
-                    <Tag color="blue">{commodity}</Tag>
+                    <Tag color="blue">{commodityLabel || commodity}</Tag>
                 </Flex>
             }
             extra={

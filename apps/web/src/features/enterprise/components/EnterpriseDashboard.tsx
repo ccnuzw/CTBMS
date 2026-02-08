@@ -27,11 +27,12 @@ import { EnterpriseCardGrid } from './EnterpriseCardGrid';
 import { Enterprise360 } from './Enterprise360';
 import { EnterpriseEditor } from './EnterpriseEditor';
 import { GeoMap } from './GeoMap';
+import { useDictionary } from '@/hooks/useDictionaries';
 
 const { useToken } = theme;
 
 // 企业类型中文映射
-const ENTERPRISE_TYPE_OPTIONS = [
+const ENTERPRISE_TYPE_OPTIONS_FALLBACK = [
     { label: '全部类型', value: '' },
     { label: '供应商', value: EnterpriseType.SUPPLIER },
     { label: '客户', value: EnterpriseType.CUSTOMER },
@@ -42,6 +43,16 @@ const ENTERPRISE_TYPE_OPTIONS = [
 export const EnterpriseDashboard: React.FC = () => {
     const { token } = useToken();
     const screens = Grid.useBreakpoint();
+    const { data: enterpriseTypeDict } = useDictionary('ENTERPRISE_TYPE');
+
+    const enterpriseTypeOptions = useMemo(() => {
+        const items = (enterpriseTypeDict || []).filter((item) => item.isActive);
+        if (!items.length) return ENTERPRISE_TYPE_OPTIONS_FALLBACK;
+        return [
+            { label: '全部类型', value: '' },
+            ...items.map((item) => ({ label: item.label, value: item.code as EnterpriseType })),
+        ];
+    }, [enterpriseTypeDict]);
 
     // 筛选状态
     const [searchText, setSearchText] = useState('');
@@ -134,7 +145,7 @@ export const EnterpriseDashboard: React.FC = () => {
                                     setTypeFilter(v);
                                     setPage(1);
                                 }}
-                                options={ENTERPRISE_TYPE_OPTIONS}
+                                options={enterpriseTypeOptions}
                                 style={{ width: 120 }}
                                 suffixIcon={<FilterOutlined />}
                             />

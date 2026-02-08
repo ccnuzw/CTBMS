@@ -40,7 +40,7 @@ export interface IntelFilterState {
     status: ('pending' | 'confirmed' | 'flagged' | 'archived')[];
 
     // 质量评分
-    qualityLevel: ('high' | 'medium' | 'low')[];
+    qualityLevel: ('HIGH' | 'MEDIUM' | 'LOW')[];
 
     // 全文搜索
     keyword?: string;
@@ -84,7 +84,7 @@ export const BUILT_IN_PRESETS: FilterPreset[] = [
     {
         id: 'high-value',
         name: '高价值情报',
-        filter: { confidenceRange: [80, 100], qualityLevel: ['high'] },
+        filter: { confidenceRange: [80, 100], qualityLevel: ['HIGH'] },
         isBuiltIn: true,
         createdAt: new Date(),
     },
@@ -103,6 +103,46 @@ export const BUILT_IN_PRESETS: FilterPreset[] = [
         createdAt: new Date(),
     },
 ];
+
+// 市场心态类型
+export interface MarketSentiment {
+    overall: 'BULLISH' | 'BEARISH' | 'NEUTRAL' | 'MIXED';
+    score?: number;
+    traders?: string;
+    processors?: string;
+    farmers?: string;
+    summary?: string;
+}
+
+// 价格点类型
+export interface ExtractedPricePoint {
+    location: string;
+    price: number;
+    change: number | null;
+    unit?: string;
+    commodity?: string;
+    grade?: string;
+    note?: string;
+}
+
+// 后市预判类型
+export interface Forecast {
+    shortTerm?: string;
+    mediumTerm?: string;
+    longTerm?: string;
+    keyFactors?: string[];
+    riskLevel?: 'LOW' | 'MEDIUM' | 'HIGH';
+}
+
+// 洞察类型
+export interface Insight {
+    title: string;
+    content: string;
+    direction?: 'Bullish' | 'Bearish' | 'Neutral';
+    timeframe?: 'SHORT' | 'MEDIUM' | 'LONG';
+    confidence?: number;
+    factors?: string[];
+}
 
 // 情报项（统一类型）
 export interface IntelItem {
@@ -133,7 +173,12 @@ export interface IntelItem {
     // AI 分析
     confidence?: number;
     events?: any[];
-    insights?: any[];
+    insights?: Insight[];
+
+    // 新增：AI 分析扩展字段
+    pricePoints?: ExtractedPricePoint[];
+    marketSentiment?: MarketSentiment;
+    forecast?: Forecast;
 
     // 质量
     qualityScore?: number;
@@ -176,7 +221,7 @@ export interface RelatedIntel {
     id: string;
     title: string;
     contentType: ContentType;
-    relationType: 'time' | 'commodity' | 'region' | 'chain' | 'citation';
+    relationType: 'TIME' | 'COMMODITY' | 'REGION' | 'CHAIN' | 'CITATION' | 'PRICE_FLUCTUATION';
     similarity?: number;
     createdAt: Date;
 }

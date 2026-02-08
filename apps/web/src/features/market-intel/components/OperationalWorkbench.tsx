@@ -31,22 +31,44 @@ import {
 } from '@ant-design/icons';
 import { BarChart, Bar, Cell, Tooltip } from 'recharts';
 import { useMarketIntels } from '../api/hooks';
-import { IntelCategory, IntelSourceType, MarketIntelResponse } from '@packages/types';
+import { IntelCategory, IntelSourceType, MarketIntelResponse, INTEL_SOURCE_TYPE_LABELS } from '@packages/types';
+import { useDictionaries } from '@/hooks/useDictionaries';
 
 const { Title, Text, Paragraph } = Typography;
 
 type TimeRange = '24H' | '3D' | '7D';
 type ViewMode = 'CLUSTER' | 'STREAM';
 
-// 来源类型标签
-const INTEL_SOURCE_TYPE_LABELS: Record<string, string> = {
-    FIRST_LINE: '一线采集',
-    COMPETITOR: '竞对情报',
-    OFFICIAL: '官方发布',
-};
-
 export const OperationalWorkbench: React.FC = () => {
     const { token } = theme.useToken();
+    const { data: dictionaries } = useDictionaries(['INTEL_SOURCE_TYPE']);
+
+    const sourceTypeMeta = useMemo(() => {
+        const items = dictionaries?.INTEL_SOURCE_TYPE?.filter((item) => item.isActive) || [];
+        const fallbackColors: Record<string, string> = {
+            [IntelSourceType.FIRST_LINE]: 'blue',
+            [IntelSourceType.COMPETITOR]: 'volcano',
+            [IntelSourceType.OFFICIAL]: 'green',
+            [IntelSourceType.RESEARCH_INST]: 'purple',
+            [IntelSourceType.MEDIA]: 'orange',
+            [IntelSourceType.INTERNAL_REPORT]: 'geekblue',
+        };
+        if (!items.length) {
+            return {
+                labels: INTEL_SOURCE_TYPE_LABELS,
+                colors: fallbackColors,
+            };
+        }
+        return items.reduce<{ labels: Record<string, string>; colors: Record<string, string> }>(
+            (acc, item) => {
+                acc.labels[item.code] = item.label;
+                const color = (item.meta as { color?: string } | null)?.color || fallbackColors[item.code] || 'default';
+                acc.colors[item.code] = color;
+                return acc;
+            },
+            { labels: {}, colors: {} },
+        );
+    }, [dictionaries]);
 
     // 视图状态
     const [activeView, setActiveView] = useState<ViewMode>('CLUSTER');
@@ -91,7 +113,7 @@ export const OperationalWorkbench: React.FC = () => {
         if (onlyUrgent) {
             res = res.filter((c) => {
                 const aiAnalysis = c.aiAnalysis as any || {};
-                return aiAnalysis.sentiment === 'negative';
+                return aiAnalysis.sentiment === 'BEARISH' || aiAnalysis.sentiment === 'negative';
             });
         }
 
@@ -114,7 +136,7 @@ export const OperationalWorkbench: React.FC = () => {
                 groups[groupKey] = {
                     title: `${groupKey} 相关聚合`,
                     count: 0,
-                    sentiment: aiAnalysis.sentiment || 'neutral',
+                    sentiment: aiAnalysis.sentiment || 'NEUTRAL',
                     latestTime: intel.effectiveTime as unknown as string,
                     cards: [],
                 };
@@ -132,9 +154,9 @@ export const OperationalWorkbench: React.FC = () => {
     // 情绪统计
     const sentimentStats = useMemo(
         () => [
-            { name: '利好', value: filteredData.filter((c) => (c.aiAnalysis as any)?.sentiment === 'positive').length, color: token.colorSuccess },
-            { name: '中性', value: filteredData.filter((c) => (c.aiAnalysis as any)?.sentiment === 'neutral' || !(c.aiAnalysis as any)?.sentiment).length, color: token.colorTextSecondary },
-            { name: '利空', value: filteredData.filter((c) => (c.aiAnalysis as any)?.sentiment === 'negative').length, color: token.colorError },
+            { name: '利好', value: filteredData.filter((c) => (c.aiAnalysis as any)?.sentiment === 'BULLISH' || (c.aiAnalysis as any)?.sentiment === 'positive').length, color: token.colorSuccess },
+            { name: '中性', value: filteredData.filter((c) => (c.aiAnalysis as any)?.sentiment === 'NEUTRAL' || (c.aiAnalysis as any)?.sentiment === 'neutral' || !(c.aiAnalysis as any)?.sentiment).length, color: token.colorTextSecondary },
+            { name: '利空', value: filteredData.filter((c) => (c.aiAnalysis as any)?.sentiment === 'BEARISH' || (c.aiAnalysis as any)?.sentiment === 'negative').length, color: token.colorError },
         ],
         [filteredData, token],
     );
@@ -168,10 +190,10 @@ export const OperationalWorkbench: React.FC = () => {
 
     // 自选指标数据
     const watchlistItems = [
-        { name: '锦州港容重720', val: '2820', chg: '+10', type: 'up' as const },
-        { name: '鲅鱼圈水分15', val: '2815', chg: '0', type: 'flat' as const },
-        { name: '淀粉加工利润', val: '-50', chg: '-12', type: 'down' as const },
-        { name: '大连港到货量', val: '1.2万', chg: '+0.2', type: 'up' as const },
+        { name: '锦州港容重720', val: '2820', chg: '+10', type: 'UP' as const },
+        { name: '鲅鱼圈水分15', val: '2815', chg: '0', type: 'STABLE' as const },
+        { name: '淀粉加工利润', val: '-50', chg: '-12', type: 'DOWN' as const },
+        { name: '大连港到货量', val: '1.2万', chg: '+0.2', type: 'UP' as const },
     ];
 
     return (
@@ -250,7 +272,7 @@ export const OperationalWorkbench: React.FC = () => {
                                 onClick={() => toggleSource(src)}
                                 style={{ justifyContent: 'flex-start', textAlign: 'left' }}
                             >
-                                {INTEL_SOURCE_TYPE_LABELS[src]}
+                                {sourceTypeMeta.labels[src] || src}
                             </Button>
                         ))}
                     </Flex>
@@ -359,9 +381,9 @@ export const OperationalWorkbench: React.FC = () => {
                                                 hoverable
                                                 style={{
                                                     height: '100%',
-                                                    borderTop: `3px solid ${cluster.sentiment === 'negative'
+                                                    borderTop: `3px solid ${cluster.sentiment === 'BEARISH' || cluster.sentiment === 'negative'
                                                         ? token.colorError
-                                                        : cluster.sentiment === 'positive'
+                                                        : cluster.sentiment === 'BULLISH' || cluster.sentiment === 'positive'
                                                             ? token.colorSuccess
                                                             : token.colorBorder
                                                         }`,
@@ -406,9 +428,9 @@ export const OperationalWorkbench: React.FC = () => {
                                                             <div
                                                                 key={intel.id}
                                                                 style={{
-                                                                    borderLeft: `2px solid ${aiAnalysis.sentiment === 'positive'
+                                                                    borderLeft: `2px solid ${aiAnalysis.sentiment === 'BULLISH' || aiAnalysis.sentiment === 'positive'
                                                                         ? token.colorSuccess
-                                                                        : aiAnalysis.sentiment === 'negative'
+                                                                        : aiAnalysis.sentiment === 'BEARISH' || aiAnalysis.sentiment === 'negative'
                                                                             ? token.colorError
                                                                             : token.colorBorderSecondary
                                                                         }`,
@@ -442,16 +464,16 @@ export const OperationalWorkbench: React.FC = () => {
                                                 <Flex justify="space-between" align="center">
                                                     <Tag
                                                         color={
-                                                            cluster.sentiment === 'positive'
+                                                            cluster.sentiment === 'BULLISH' || cluster.sentiment === 'positive'
                                                                 ? 'success'
-                                                                : cluster.sentiment === 'negative'
+                                                                : cluster.sentiment === 'BEARISH' || cluster.sentiment === 'negative'
                                                                     ? 'error'
                                                                     : 'default'
                                                         }
                                                     >
-                                                        {cluster.sentiment === 'positive'
+                                                        {cluster.sentiment === 'BULLISH' || cluster.sentiment === 'positive'
                                                             ? '利好偏多'
-                                                            : cluster.sentiment === 'negative'
+                                                            : cluster.sentiment === 'BEARISH' || cluster.sentiment === 'negative'
                                                                 ? '利空预警'
                                                                 : '多空交织'}
                                                     </Tag>
@@ -489,8 +511,8 @@ export const OperationalWorkbench: React.FC = () => {
                                                     <div style={{ flex: 1 }}>
                                                         <Flex gap={8} style={{ marginBottom: 4 }}>
                                                             <Tag>{intel.location}</Tag>
-                                                            <Tag color={intel.sourceType === IntelSourceType.FIRST_LINE ? 'green' : undefined}>
-                                                                {INTEL_SOURCE_TYPE_LABELS[intel.sourceType]}
+                                                            <Tag color={sourceTypeMeta.colors[intel.sourceType] || 'default'}>
+                                                                {sourceTypeMeta.labels[intel.sourceType] || intel.sourceType}
                                                             </Tag>
                                                         </Flex>
                                                         <Text strong>{intel.summary || aiAnalysis.summary || intel.rawContent.slice(0, 100)}</Text>
@@ -514,9 +536,9 @@ export const OperationalWorkbench: React.FC = () => {
                                                                 height: 8,
                                                                 borderRadius: '50%',
                                                                 background:
-                                                                    aiAnalysis.sentiment === 'positive'
+                                                                    aiAnalysis.sentiment === 'BULLISH' || aiAnalysis.sentiment === 'positive'
                                                                         ? token.colorSuccess
-                                                                        : aiAnalysis.sentiment === 'negative'
+                                                                        : aiAnalysis.sentiment === 'BEARISH' || aiAnalysis.sentiment === 'negative'
                                                                             ? token.colorError
                                                                             : token.colorTextSecondary,
                                                             }}
@@ -611,17 +633,17 @@ export const OperationalWorkbench: React.FC = () => {
                                             {item.val}
                                         </Text>
                                         <div style={{ fontSize: 10 }}>
-                                            {item.type === 'up' && (
+                                            {item.type === 'UP' && (
                                                 <Text type="danger">
                                                     <RiseOutlined /> {item.chg}
                                                 </Text>
                                             )}
-                                            {item.type === 'down' && (
+                                            {item.type === 'DOWN' && (
                                                 <Text type="success">
                                                     <FallOutlined /> {item.chg}
                                                 </Text>
                                             )}
-                                            {item.type === 'flat' && <Text type="secondary">{item.chg}</Text>}
+                                            {item.type === 'STABLE' && <Text type="secondary">{item.chg}</Text>}
                                         </div>
                                     </div>
                                 </Flex>

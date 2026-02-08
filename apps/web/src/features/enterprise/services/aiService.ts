@@ -40,7 +40,6 @@ export const optimizeLogisticsRoute = async (
         coords: { x: s.latitude, y: s.longitude }
     }));
 
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const prompt = `
       作为物流优化专家，请为以下粮食运输路线进行路径规划优化。
       
@@ -115,7 +114,6 @@ export const analyzeEnterpriseRisk = async (
     // -------------------------------------------------------------------------------------
     // 1. Prompt Construction
     // -------------------------------------------------------------------------------------
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const prompt = `
       你是一家大型粮食贸易公司的资深风控分析师。
       请根据以下企业档案，分析潜在的贸易风险和机会。
@@ -162,7 +160,6 @@ export const suggestLogisticsStrategy = async (
     origin: EnterpriseResponse,
     destination: EnterpriseResponse
 ): Promise<string> => {
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const prompt = `
       你是一名大宗农产品物流调度专家。请提供一条物流策略建议。
       

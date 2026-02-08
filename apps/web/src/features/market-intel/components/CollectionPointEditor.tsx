@@ -13,13 +13,19 @@ import {
     Space,
     Typography,
     Cascader,
+    Flex,
+    Button,
+    theme,
+    TimePicker,
 } from 'antd';
 import {
+    SettingOutlined,
+    RobotOutlined,
+    MinusCircleOutlined,
+    PlusOutlined,
     ShopOutlined,
     EnvironmentOutlined,
     TagsOutlined,
-    SettingOutlined,
-    RobotOutlined,
 } from '@ant-design/icons';
 import {
     useCollectionPoint,
@@ -30,10 +36,16 @@ import {
     CollectionPointType,
     COLLECTION_POINT_TYPE_LABELS,
     COLLECTION_POINT_TYPE_ICONS,
+    CollectionPointFrequencyType,
+    COLLECTION_POINT_FREQUENCY_LABELS,
     type CreateCollectionPointDto,
+    type ShiftConfig,
 } from '@packages/types';
+import { ShiftConfigEditor } from './ShiftConfigEditor';
 import { useModalAutoFocus } from '../../../hooks/useModalAutoFocus';
 import { useRegionTree } from '../api/region';
+import { useDictionary } from '@/hooks/useDictionaries';
+import dayjs from 'dayjs';
 
 const { Text } = Typography;
 const { TextArea } = Input;
@@ -52,6 +64,7 @@ export const CollectionPointEditor: React.FC<CollectionPointEditorProps> = ({
     const [form] = Form.useForm();
     const isEdit = !!editId;
     const { message } = App.useApp();
+    const { token } = theme.useToken();
     const { containerRef, autoFocusFieldProps, modalProps } = useModalAutoFocus();
 
     const { data: editData, isLoading: loadingData } = useCollectionPoint(editId);
@@ -59,8 +72,32 @@ export const CollectionPointEditor: React.FC<CollectionPointEditorProps> = ({
     const updateMutation = useUpdateCollectionPoint();
     const { data: regionTree } = useRegionTree();
 
+    const { data: priceSubTypeDict } = useDictionary('PRICE_SUB_TYPE');
+    const priceSubTypeOptions = useMemo(() => {
+        const items = (priceSubTypeDict || []).filter((item) => item.isActive);
+        if (!items.length) {
+            // Fallback: 与字典 PRICE_SUB_TYPE 保持一致
+            return [
+                { value: 'LISTED', label: '挂牌价' },
+                { value: 'TRANSACTION', label: '成交价' },
+                { value: 'ARRIVAL', label: '到港价' },
+                { value: 'FOB', label: '平舱价' },
+                { value: 'STATION', label: '站台价' },
+                { value: 'PURCHASE', label: '收购价' },
+                { value: 'WHOLESALE', label: '批发价' },
+                { value: 'OTHER', label: '其他' },
+            ];
+        }
+        return items.map((item) => ({ value: item.code, label: item.label }));
+    }, [priceSubTypeDict]);
+
     // Watch type field to conditionally show region selector
     const selectedType = Form.useWatch('type', form);
+    const frequencyType = Form.useWatch('frequencyType', form);
+    const frequencyOptions = Object.entries(COLLECTION_POINT_FREQUENCY_LABELS).map(([value, label]) => ({
+        value,
+        label: value === CollectionPointFrequencyType.CUSTOM ? '自定义排期' : label,
+    }));
 
     // Convert region tree to Cascader options
     const regionOptions = useMemo(() => {
@@ -75,12 +112,44 @@ export const CollectionPointEditor: React.FC<CollectionPointEditorProps> = ({
 
     useEffect(() => {
         if (open && editData) {
-            form.setFieldsValue(editData);
+            const minute = editData.dispatchAtMinute ?? 540;
+            form.setFieldsValue({
+                ...editData,
+                dispatchTime: dayjs().hour(Math.floor(minute / 60)).minute(minute % 60),
+            });
         } else if (open && !editId) {
             form.resetFields();
-            form.setFieldsValue({ isActive: true, priority: 0 });
+            form.setFieldsValue({
+                isActive: true,
+                priority: 0,
+                frequencyType: CollectionPointFrequencyType.DAILY,
+                dispatchTime: dayjs().hour(9).minute(0),
+            });
         }
     }, [open, editData, editId, form]);
+
+    const normalizeShiftConfig = (raw?: unknown): ShiftConfig | undefined => {
+        if (!raw) return undefined;
+        let cfg = raw as ShiftConfig | undefined;
+        if (typeof raw === 'string') {
+            try {
+                cfg = JSON.parse(raw) as ShiftConfig;
+            } catch {
+                return undefined;
+            }
+        }
+        if (!cfg) return undefined;
+        const cleaned: ShiftConfig = {};
+        if (Array.isArray(cfg.dates) && cfg.dates.length > 0) cleaned.dates = cfg.dates.filter(Boolean);
+        if (Array.isArray(cfg.weekdays) && cfg.weekdays.length > 0) cleaned.weekdays = cfg.weekdays;
+        if (Array.isArray(cfg.monthDays) && cfg.monthDays.length > 0) cleaned.monthDays = cfg.monthDays;
+        if (cfg.intervalDays !== undefined && cfg.intervalDays !== null && cfg.intervalDays !== '') {
+            const value = Number(cfg.intervalDays);
+            if (Number.isFinite(value) && value > 0) cleaned.intervalDays = value;
+        }
+        if (cfg.startDate) cleaned.startDate = cfg.startDate;
+        return Object.keys(cleaned).length > 0 ? cleaned : undefined;
+    };
 
     const handleSubmit = async () => {
         try {
@@ -98,17 +167,26 @@ export const CollectionPointEditor: React.FC<CollectionPointEditorProps> = ({
                 'address',
                 'longitude',
                 'latitude',
-                'commodities',
+                'latitude',
+                'commodities', // Backend will derive this from configs if present
+                'priceSubTypes', // Backend will derive this from configs if present
                 'defaultSubType',
+                'commodityConfigs',
                 'enterpriseId',
                 'priority',
                 'isActive',
                 'description',
+                'frequencyType',
+                'weekdays',
+                'monthDays',
+                'dispatchAtMinute',
+                'shiftConfig',
                 // AI Config
                 'matchRegionCodes',
-                'priceSubTypes',
                 'isDataSource',
             ];
+            const dispatchTime = values.dispatchTime as dayjs.Dayjs | undefined;
+            const dispatchAtMinute = dispatchTime ? dispatchTime.hour() * 60 + dispatchTime.minute() : undefined;
             const filteredValues = Object.fromEntries(
                 Object.entries(values)
                     .filter(([key]) => allowedFields.includes(key))
@@ -117,6 +195,27 @@ export const CollectionPointEditor: React.FC<CollectionPointEditorProps> = ({
             );
 
             filteredValues.priority = Number(filteredValues.priority);
+            if (dispatchAtMinute !== undefined) {
+                filteredValues.dispatchAtMinute = dispatchAtMinute;
+            }
+            if (filteredValues.frequencyType !== CollectionPointFrequencyType.CUSTOM) {
+                delete filteredValues.shiftConfig;
+            } else {
+                const cleaned = normalizeShiftConfig(filteredValues.shiftConfig);
+                if (cleaned) {
+                    filteredValues.shiftConfig = cleaned;
+                } else {
+                    delete filteredValues.shiftConfig;
+                }
+                delete filteredValues.weekdays;
+                delete filteredValues.monthDays;
+            }
+            if (filteredValues.frequencyType !== CollectionPointFrequencyType.WEEKLY) {
+                delete filteredValues.weekdays;
+            }
+            if (filteredValues.frequencyType !== CollectionPointFrequencyType.MONTHLY) {
+                delete filteredValues.monthDays;
+            }
 
             if (isEdit) {
                 await updateMutation.mutateAsync({ id: editId, dto: filteredValues });
@@ -144,13 +243,14 @@ export const CollectionPointEditor: React.FC<CollectionPointEditorProps> = ({
             confirmLoading={isPending}
             width={700}
             destroyOnClose
+            focusTriggerAfterClose={false}
             afterOpenChange={modalProps.afterOpenChange}
         >
             <div ref={containerRef}>
                 <Form
                     form={form}
                     layout="vertical"
-                    initialValues={{ isActive: true, isDataSource: true, priority: 0 }}
+                    initialValues={{ isActive: true, isDataSource: true, priority: 0, frequencyType: CollectionPointFrequencyType.DAILY }}
                 >
                     {/* 基本信息 */}
                     <Divider orientation="left">
@@ -230,6 +330,73 @@ export const CollectionPointEditor: React.FC<CollectionPointEditorProps> = ({
                             </Form.Item>
                         </Col>
                     </Row>
+
+                    {/* 采集频率 */}
+                    <Divider orientation="left">
+                        <Space>
+                            <SettingOutlined />
+                            <Text strong>任务下发规则</Text>
+                        </Space>
+                    </Divider>
+
+                    <Row gutter={16}>
+                        <Col span={12}>
+                            <Form.Item
+                                name="frequencyType"
+                                label="下发频率"
+                                extra="选择“自定义排期”时请在下方设置规则"
+                            >
+                                <Select options={frequencyOptions} />
+                            </Form.Item>
+                        </Col>
+                        <Col span={12}>
+                            <Form.Item
+                                name="dispatchTime"
+                                label="任务生成时间（当天）"
+                                tooltip="到达该时间点后才会生成任务"
+                            >
+                                <TimePicker format="HH:mm" />
+                            </Form.Item>
+                        </Col>
+                    </Row>
+
+                    {frequencyType === CollectionPointFrequencyType.WEEKLY && (
+                        <Form.Item name="weekdays" label="每周">
+                            <Select
+                                mode="multiple"
+                                placeholder="选择周几"
+                                options={[
+                                    { value: 1, label: '周一' },
+                                    { value: 2, label: '周二' },
+                                    { value: 3, label: '周三' },
+                                    { value: 4, label: '周四' },
+                                    { value: 5, label: '周五' },
+                                    { value: 6, label: '周六' },
+                                    { value: 7, label: '周日' },
+                                ]}
+                            />
+                        </Form.Item>
+                    )}
+
+                    {frequencyType === CollectionPointFrequencyType.MONTHLY && (
+                        <Form.Item name="monthDays" label="每月">
+                            <Select
+                                mode="multiple"
+                                placeholder="选择日期"
+                                options={[
+                                    ...Array.from({ length: 31 }, (_, index) => ({
+                                        value: index + 1,
+                                        label: `${index + 1}日`,
+                                    })),
+                                    { value: 0, label: '月末' },
+                                ]}
+                            />
+                        </Form.Item>
+                    )}
+
+                    {frequencyType === CollectionPointFrequencyType.CUSTOM && (
+                        <ShiftConfigEditor open={open} resetKey={editId ?? 'new'} />
+                    )}
 
                     {/* 地理信息 */}
                     <Divider orientation="left">
@@ -336,54 +503,143 @@ export const CollectionPointEditor: React.FC<CollectionPointEditorProps> = ({
                     <Divider orientation="left">
                         <Space>
                             <TagsOutlined />
-                            <Text strong>业务属性</Text>
+                            <Text strong>业务属性 (品种与价格)</Text>
                         </Space>
                     </Divider>
 
-                    <Row gutter={16}>
-                        <Col span={12}>
-                            <Form.Item
-                                name="commodities"
-                                label="主营品种"
-                                tooltip="该采集点主要涉及的品种"
-                            >
-                                <Select
-                                    mode="tags"
-                                    placeholder="如：玉米、大豆"
-                                    options={[
-                                        { value: '玉米', label: '玉米' },
-                                        { value: '大豆', label: '大豆' },
-                                        { value: '小麦', label: '小麦' },
-                                        { value: '稻谷', label: '稻谷' },
-                                        { value: '高粱', label: '高粱' },
-                                        { value: '豆粕', label: '豆粕' },
-                                    ]}
-                                />
-                            </Form.Item>
-                        </Col>
-                        <Col span={12}>
-                            <Form.Item
-                                name="defaultSubType"
-                                label="默认价格子类型"
-                                tooltip="该采集点的价格默认分类"
-                            >
-                                <Select
-                                    allowClear
-                                    placeholder="选择默认价格子类型"
-                                    options={[
-                                        { value: 'LISTED', label: '挂牌价' },
-                                        { value: 'TRANSACTION', label: '成交价' },
-                                        { value: 'ARRIVAL', label: '到港价' },
-                                        { value: 'FOB', label: '平舱价' },
-                                        { value: 'STATION_ORIGIN', label: '站台价-产区' },
-                                        { value: 'STATION_DEST', label: '站台价-销区' },
-                                        { value: 'PURCHASE', label: '收购价' },
-                                        { value: 'WHOLESALE', label: '批发价' },
-                                    ]}
-                                />
-                            </Form.Item>
-                        </Col>
-                    </Row>
+                    <Form.List name="commodityConfigs">
+                        {(fields, { add, remove }) => (
+                            <Flex vertical gap={12}>
+                                {fields.map(({ key, name, ...restField }) => (
+                                    <div
+                                        key={key}
+                                        style={{
+                                            background: token.colorBgContainer,
+                                            border: `1px solid ${token.colorBorderSecondary}`,
+                                            borderRadius: token.borderRadiusLG,
+                                            padding: '16px',
+                                            position: 'relative',
+                                        }}
+                                    >
+                                        {/* 删除按钮 - 扩大点击区域 */}
+                                        <div
+                                            onClick={() => remove(name)}
+                                            style={{
+                                                position: 'absolute',
+                                                top: 4,
+                                                right: 4,
+                                                width: 32,
+                                                height: 32,
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                justifyContent: 'center',
+                                                cursor: 'pointer',
+                                                borderRadius: '50%',
+                                                transition: 'background-color 0.2s',
+                                                zIndex: 10,
+                                            }}
+                                            onMouseEnter={(e) => {
+                                                e.currentTarget.style.backgroundColor = token.colorErrorBg;
+                                            }}
+                                            onMouseLeave={(e) => {
+                                                e.currentTarget.style.backgroundColor = 'transparent';
+                                            }}
+                                        >
+                                            <MinusCircleOutlined
+                                                style={{
+                                                    color: token.colorError,
+                                                    fontSize: 18,
+                                                }}
+                                            />
+                                        </div>
+                                        <Row gutter={16}>
+                                            <Col xs={24} sm={8}>
+                                                <Form.Item
+                                                    {...restField}
+                                                    name={[name, 'name']}
+                                                    label="品种"
+                                                    rules={[{ required: true, message: '请选择' }]}
+                                                    style={{ marginBottom: 0 }}
+                                                >
+                                                    <Select
+                                                        placeholder="选择品种"
+                                                        options={[
+                                                            { value: 'CORN', label: '玉米' },
+                                                            { value: 'SOYBEAN', label: '大豆' },
+                                                            { value: 'WHEAT', label: '小麦' },
+                                                            { value: 'RICE', label: '稻谷' },
+                                                            { value: 'SORGHUM', label: '高粱' },
+                                                            { value: 'BARLEY', label: '大麦' },
+                                                        ]}
+                                                    />
+                                                </Form.Item>
+                                            </Col>
+                                            <Col xs={24} sm={10}>
+                                                <Form.Item
+                                                    {...restField}
+                                                    name={[name, 'allowedSubTypes']}
+                                                    label="允许的价格类型"
+                                                    rules={[{ required: true, message: '至少选一种' }]}
+                                                    style={{ marginBottom: 0 }}
+                                                >
+                                                    <Select
+                                                        mode="multiple"
+                                                        placeholder="可多选"
+                                                        options={priceSubTypeOptions}
+                                                        maxTagCount="responsive"
+                                                    />
+                                                </Form.Item>
+                                            </Col>
+                                            <Col xs={24} sm={6}>
+                                                <Form.Item
+                                                    shouldUpdate={(prev, curr) =>
+                                                        prev.commodityConfigs?.[name]?.allowedSubTypes !==
+                                                        curr.commodityConfigs?.[name]?.allowedSubTypes
+                                                    }
+                                                    style={{ marginBottom: 0 }}
+                                                >
+                                                    {({ getFieldValue }) => {
+                                                        const allowed = getFieldValue(['commodityConfigs', name, 'allowedSubTypes']) || [];
+                                                        return (
+                                                            <Form.Item
+                                                                {...restField}
+                                                                name={[name, 'defaultSubType']}
+                                                                label="默认类型"
+                                                                rules={[
+                                                                    { required: true, message: '必填' },
+                                                                    {
+                                                                        validator: async (_, value) => {
+                                                                            if (value && !allowed.includes(value)) {
+                                                                                return Promise.reject(new Error('无效'));
+                                                                            }
+                                                                        }
+                                                                    }
+                                                                ]}
+                                                                style={{ marginBottom: 0 }}
+                                                            >
+                                                                <Select
+                                                                    placeholder="选择"
+                                                                    options={priceSubTypeOptions.filter(o => allowed.includes(o.value))}
+                                                                />
+                                                            </Form.Item>
+                                                        );
+                                                    }}
+                                                </Form.Item>
+                                            </Col>
+                                        </Row>
+                                    </div>
+                                ))}
+                                <Button
+                                    type="dashed"
+                                    onClick={() => add({ name: '', allowedSubTypes: [], defaultSubType: '' })}
+                                    block
+                                    icon={<PlusOutlined />}
+                                >
+                                    添加经营品种
+                                </Button>
+                            </Flex>
+                        )}
+                    </Form.List>
 
                     {/* AI 智能提取配置 */}
                     <Divider orientation="left">
@@ -394,28 +650,7 @@ export const CollectionPointEditor: React.FC<CollectionPointEditorProps> = ({
                     </Divider>
 
                     <Row gutter={16}>
-                        <Col span={16}>
-                            <Form.Item
-                                name="priceSubTypes"
-                                label="支持的价格类型"
-                                tooltip="限制该站点允许提取的价格类型，防止幻觉"
-                            >
-                                <Select
-                                    mode="multiple"
-                                    allowClear
-                                    placeholder="选择该站点通常发布的价格类型"
-                                    options={[
-                                        { value: 'LISTED', label: '挂牌价' },
-                                        { value: 'TRANSACTION', label: '成交价' },
-                                        { value: 'ARRIVAL', label: '到港价' },
-                                        { value: 'FOB', label: '平舱价' },
-                                        { value: 'PURCHASE', label: '收购价' },
-                                        { value: 'WHOLESALE', label: '批发价' },
-                                    ]}
-                                />
-                            </Form.Item>
-                        </Col>
-                        <Col span={8}>
+                        <Col span={24}>
                             <Form.Item
                                 name="isDataSource"
                                 label="作为数据源"
@@ -455,9 +690,9 @@ export const CollectionPointEditor: React.FC<CollectionPointEditorProps> = ({
                     <Form.Item name="description" label="备注">
                         <TextArea rows={2} placeholder="可选备注信息" />
                     </Form.Item>
-                </Form >
-            </div >
-        </Modal >
+                </Form>
+            </div>
+        </Modal>
     );
 };
 

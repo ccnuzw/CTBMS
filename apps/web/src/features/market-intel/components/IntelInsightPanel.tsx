@@ -14,9 +14,6 @@ import {
 import {
     type AIAnalysisResult,
     ContentType,
-    CONTENT_TYPE_LABELS,
-    INTEL_SOURCE_TYPE_LABELS,
-    IntelSourceType,
 } from '../types';
 import { DailyReportInsight } from './DailyReportInsight';
 import { Timeline, Drawer, Collapse } from 'antd';

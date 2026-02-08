@@ -78,7 +78,17 @@ export const CollectionPointManager: React.FC = () => {
     const { data: stats } = useCollectionPointStats();
     const deleteMutation = useDeleteCollectionPoint();
 
+    const blurActiveElement = () => {
+        if (typeof document === 'undefined') return;
+        const active = document.activeElement;
+        if (active instanceof HTMLElement) {
+            active.blur();
+        }
+    };
+
     const handleEdit = (id?: string) => {
+        // 避免触发按钮在 aria-hidden 切换过程中保留焦点导致控制台警告
+        blurActiveElement();
         setEditingId(id);
         setEditorOpen(true);
     };
@@ -93,6 +103,8 @@ export const CollectionPointManager: React.FC = () => {
     };
 
     const handleEditorClose = (success?: boolean) => {
+        // 关闭前清理当前焦点，避免焦点停留在即将被隐藏的 modal 内容
+        blurActiveElement();
         setEditorOpen(false);
         setEditingId(undefined);
         if (success) refetch();
@@ -215,7 +227,10 @@ export const CollectionPointManager: React.FC = () => {
                     <Button
                         type="text"
                         icon={<QuestionCircleOutlined />}
-                        onClick={() => setHelpVisible(true)}
+                        onClick={() => {
+                            blurActiveElement();
+                            setHelpVisible(true);
+                        }}
                     >
                         使用说明
                     </Button>
@@ -335,13 +350,24 @@ export const CollectionPointManager: React.FC = () => {
                     </Flex>
                 }
                 open={helpVisible}
-                onCancel={() => setHelpVisible(false)}
+                onCancel={() => {
+                    blurActiveElement();
+                    setHelpVisible(false);
+                }}
                 footer={
-                    <Button type="primary" onClick={() => setHelpVisible(false)} ref={helpFocusRef}>
+                    <Button
+                        type="primary"
+                        onClick={() => {
+                            blurActiveElement();
+                            setHelpVisible(false);
+                        }}
+                        ref={helpFocusRef}
+                    >
                         我知道了
                     </Button>
                 }
                 width={700}
+                focusTriggerAfterClose={false}
                 afterOpenChange={helpModalProps.afterOpenChange}
             >
                 <div>

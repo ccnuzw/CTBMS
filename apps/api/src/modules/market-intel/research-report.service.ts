@@ -1,5 +1,5 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
-import { Prisma, ReportType as PrismaReportType, ReviewStatus as PrismaReviewStatus } from '@prisma/client';
+import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Prisma, ReportType as PrismaReportType, ReportPeriod as PrismaReportPeriod, ReviewStatus as PrismaReviewStatus } from '@prisma/client';
 import { PrismaService } from '../../prisma';
 import {
     CreateManualResearchReportDto,
@@ -9,10 +9,10 @@ import {
     ReportType as TypesReportType,
     ReportPeriod as TypesReportPeriod,
     ReviewStatus as TypesReviewStatus,
-    IntelCategory,
-    ContentType,
-    IntelSourceType,
+    PromoteToReportDto,
+    AIAnalysisResult,
 } from '@packages/types';
+import * as XLSX from 'xlsx';
 
 @Injectable()
 export class ResearchReportService {
@@ -28,6 +28,23 @@ export class ResearchReportService {
     private toPrismaReviewStatus(value?: TypesReviewStatus): PrismaReviewStatus | undefined;
     private toPrismaReviewStatus(value?: TypesReviewStatus) {
         return value ? PrismaReviewStatus[value] : undefined;
+    }
+
+    private toPrismaReportPeriod(value: TypesReportPeriod): PrismaReportPeriod;
+    private toPrismaReportPeriod(value?: TypesReportPeriod): PrismaReportPeriod | undefined;
+    private toPrismaReportPeriod(value?: TypesReportPeriod) {
+        return value ? PrismaReportPeriod[value] : undefined;
+    }
+
+    private mapInsightsToKeyPoints(insights?: AIAnalysisResult['insights']) {
+        if (!insights || insights.length === 0) return [];
+        return insights.map((i) => ({
+            point: i.title || i.content,
+            sentiment: i.direction === 'Bullish' ? 'positive'
+                : i.direction === 'Bearish' ? 'negative'
+                    : 'neutral',
+            confidence: i.confidence || 70,
+        }));
     }
 
     /**
@@ -100,7 +117,7 @@ export class ResearchReportService {
                 data: {
                     title: dto.title,
                     reportType: this.toPrismaReportType(dto.reportType),
-                    reportPeriod: dto.reportPeriod ? (dto.reportPeriod as any) : undefined, // 临时强转，需导入 Enum
+                    reportPeriod: this.toPrismaReportPeriod(dto.reportPeriod),
                     publishDate: dto.publishDate || new Date(),
                     source: dto.source,
                     summary: dto.summary,
@@ -126,7 +143,7 @@ export class ResearchReportService {
      */
     async findAll(options?: Partial<ResearchReportQuery>) {
         // ... (lines 123-163 unchanged)
-        const { reportType, reviewStatus, commodity, region, startDate, endDate, keyword, page = 1, pageSize = 20 } = options || {};
+        const { reportType, reviewStatus, commodity, region, startDate, endDate, keyword, title, source, page = 1, pageSize = 20 } = options || {};
 
         const where: Prisma.ResearchReportWhereInput = {};
 
@@ -139,6 +156,10 @@ export class ResearchReportService {
             if (startDate) where.publishDate.gte = startDate;
             if (endDate) where.publishDate.lte = endDate;
         }
+
+        // Specific fields search
+        if (title) where.title = { contains: title, mode: 'insensitive' };
+        if (source) where.source = { contains: source, mode: 'insensitive' };
 
         // 全文搜索：在标题、摘要、来源中搜索
         if (keyword) {
@@ -250,7 +271,7 @@ export class ResearchReportService {
     /**
      * 导出研报 - 返回 Buffer
      */
-    async export(ids?: string[], query?: any) {
+    async export(ids?: string[], query?: ResearchReportQuery) {
         let reports;
 
         if (ids && ids.length > 0) {
@@ -261,15 +282,16 @@ export class ResearchReportService {
         } else {
             // Reuse logic closely or just query
             const { reportType, reviewStatus, commodity, region, startDate, endDate, keyword } = query || {};
-            const where: any = {};
+            const where: Prisma.ResearchReportWhereInput = {};
             if (reportType) where.reportType = this.toPrismaReportType(reportType as TypesReportType);
             if (reviewStatus) where.reviewStatus = this.toPrismaReviewStatus(reviewStatus as TypesReviewStatus);
             if (commodity) where.commodities = { has: commodity };
             if (region) where.regions = { has: region };
             if (startDate || endDate) {
-                where.publishDate = {};
-                if (startDate) where.publishDate.gte = startDate;
-                if (endDate) where.publishDate.lte = endDate;
+                where.publishDate = {
+                    ...(startDate ? { gte: startDate } : {}),
+                    ...(endDate ? { lte: endDate } : {}),
+                };
             }
             if (keyword) {
                 where.OR = [
@@ -287,7 +309,6 @@ export class ResearchReportService {
         }
 
         // Generate Excel
-        const XLSX = require('xlsx');
         const data = reports.map(r => ({
             'ID': r.id,
             '标题': r.title,
@@ -344,6 +365,112 @@ export class ResearchReportService {
                 reviewedAt: new Date(),
             },
         });
+    }
+
+    /**
+     * 批量更新审核状态
+     */
+    async batchUpdateReviewStatus(ids: string[], status: TypesReviewStatus, reviewerId: string) {
+        if (!ids || ids.length === 0) {
+            return { updatedCount: 0 };
+        }
+
+        const prismaStatus = this.toPrismaReviewStatus(status) || (status as PrismaReviewStatus);
+
+        const result = await this.prisma.researchReport.updateMany({
+            where: { id: { in: ids } },
+            data: {
+                reviewStatus: prismaStatus,
+                reviewedById: reviewerId,
+                reviewedAt: new Date(),
+            },
+        });
+
+        return { updatedCount: result.count };
+    }
+
+    /**
+     * 将文档升级为研报 (Promote to Report)
+     * 核心接口：从已有的 MarketIntel 文档生成结构化研报
+     */
+    async promoteToReport(intelId: string, dto: PromoteToReportDto) {
+        // 1. 查找源文档
+        const intel = await this.prisma.marketIntel.findUnique({
+            where: { id: intelId },
+            include: {
+                attachments: true,
+                researchReport: true,
+            },
+        });
+
+        if (!intel) {
+            throw new NotFoundException(`文档 ID ${intelId} 不存在`);
+        }
+
+        // 2. 检查是否已有关联研报
+        if (intel.researchReport) {
+            throw new BadRequestException('该文档已生成研报，无法重复生成');
+        }
+
+        // 3. 从 AI 分析结果中提取结构化数据
+        const aiAnalysis = (intel.aiAnalysis ?? {}) as AIAnalysisResult;
+
+        // 构建研报数据
+        const title = aiAnalysis.extractedData?.title ||
+                      aiAnalysis.summary?.substring(0, 50) ||
+                      intel.summary?.substring(0, 50) ||
+                      '未命名研报';
+
+        const keyPoints = aiAnalysis.keyPoints || this.mapInsightsToKeyPoints(aiAnalysis.insights);
+
+        const prediction = aiAnalysis.prediction || (aiAnalysis.forecast ? {
+            direction: aiAnalysis.forecast.shortTerm?.includes('涨') ? 'UP' :
+                       aiAnalysis.forecast.shortTerm?.includes('跌') ? 'DOWN' : 'STABLE',
+            timeframe: 'SHORT_TERM',
+            reasoning: aiAnalysis.forecast.shortTerm || aiAnalysis.forecast.mediumTerm,
+        } : undefined);
+
+        const dataPoints = aiAnalysis.dataPoints || aiAnalysis.pricePoints?.slice(0, 5).map((p) => ({
+            metric: `${p.location} ${p.commodity || '玉米'}价格`,
+            value: String(p.price),
+            unit: p.unit || '元/吨',
+        })) || [];
+
+        const commodities = aiAnalysis.commodities ||
+                           (aiAnalysis.reportMeta?.commodity ? [aiAnalysis.reportMeta.commodity] : []);
+
+        const regions = aiAnalysis.regions || intel.region || [];
+
+        // 4. 创建研报
+        const report = await this.prisma.researchReport.create({
+            data: {
+                title,
+                reportType: this.toPrismaReportType(dto.reportType as TypesReportType),
+                publishDate: intel.effectiveTime || new Date(),
+                source: intel.sourceType || 'INTERNAL_REPORT',
+                summary: intel.rawContent || intel.summary || '',
+                keyPoints: keyPoints.length > 0 ? keyPoints : undefined,
+                prediction: prediction || undefined,
+                dataPoints: dataPoints.length > 0 ? dataPoints : undefined,
+                commodities,
+                regions,
+                intelId: intel.id,
+                reviewStatus: 'PENDING',
+            },
+            include: {
+                intel: {
+                    include: {
+                        attachments: true,
+                    },
+                },
+            },
+        });
+
+        return {
+            success: true,
+            reportId: report.id,
+            report,
+        };
     }
 
     /**

@@ -63,6 +63,26 @@ export const AssignRolesSchema = z.object({
     roleIds: z.array(z.string().uuid()),
 });
 
+const UserIdListSchema = z.preprocess(
+    (value) => {
+        if (Array.isArray(value)) return value;
+        if (typeof value === 'string') {
+            return value.split(',').map((item) => item.trim()).filter(Boolean);
+        }
+        return undefined;
+    },
+    z.array(z.string()).optional(),
+);
+
+export const UserQuerySchema = z.object({
+    organizationIds: UserIdListSchema.optional(),
+    departmentIds: UserIdListSchema.optional(),
+    keyword: z.string().optional(),
+    status: UserStatusEnum.optional(),
+    page: z.coerce.number().min(1).default(1),
+    pageSize: z.coerce.number().min(1).max(200).default(20),
+});
+
 // =============================================
 // 角色 Schema
 // =============================================
@@ -101,6 +121,7 @@ export type UserDto = z.infer<typeof UserSchema>;
 export type CreateUserDto = z.infer<typeof CreateUserSchema>;
 export type UpdateUserDto = z.infer<typeof UpdateUserSchema>;
 export type AssignRolesDto = z.infer<typeof AssignRolesSchema>;
+export type UserQuery = z.infer<typeof UserQuerySchema>;
 
 export type RoleDto = z.infer<typeof RoleSchema>;
 export type CreateRoleDto = z.infer<typeof CreateRoleSchema>;

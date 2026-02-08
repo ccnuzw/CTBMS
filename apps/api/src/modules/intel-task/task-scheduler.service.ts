@@ -1,8 +1,9 @@
 import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { PrismaService } from '../../prisma';
 import { IntelTaskTemplateService } from './intel-task-template.service';
-import { TaskCycleType } from '@packages/types';
+import { TaskCycleType, IntelTaskType, TaskScheduleMode } from '@packages/types';
 import { computeNextRunAt } from './intel-task-schedule.utils';
+import { IntelTaskTemplate } from '@prisma/client';
 
 @Injectable()
 export class TaskSchedulerService implements OnModuleInit, OnModuleDestroy {
@@ -52,7 +53,37 @@ export class TaskSchedulerService implements OnModuleInit, OnModuleDestroy {
         }
     }
 
-    private async processTemplate(template: any, now: Date) {
+    private async processTemplate(template: IntelTaskTemplate, now: Date) {
+        const scheduleMode = template.scheduleMode ?? TaskScheduleMode.TEMPLATE_OVERRIDE;
+        const isCollection = template.taskType === IntelTaskType.COLLECTION;
+        const targetPointTypes = Array.isArray(template.targetPointTypes)
+            ? template.targetPointTypes.filter(Boolean)
+            : (template.targetPointType ? [template.targetPointType] : []);
+
+        if (isCollection && scheduleMode === TaskScheduleMode.POINT_DEFAULT) {
+            if (targetPointTypes.length > 0) {
+                await this.templateService.executeTemplateByPointType(template.id, undefined);
+            } else {
+                await this.templateService.createTasksFromTemplate(template, {
+                    runAt: now,
+                    triggeredById: undefined,
+                });
+            }
+            return;
+        }
+
+        const hasRules = await this.prisma.intelTaskRule.findFirst({
+            where: { templateId: template.id, isActive: true },
+            select: { id: true },
+        });
+        if (hasRules) {
+            await this.templateService.createTasksFromTemplate(template, {
+                runAt: now,
+                triggeredById: undefined,
+            });
+            return;
+        }
+
         let nextRunAt = template.nextRunAt ? new Date(template.nextRunAt) : null;
 
         if (!nextRunAt) {
@@ -83,10 +114,17 @@ export class TaskSchedulerService implements OnModuleInit, OnModuleDestroy {
                 break;
             }
 
-            await this.templateService.createTasksFromTemplate(template, {
-                runAt: nextRunAt,
-                triggeredById: undefined,
-            });
+            // 使用统一的执行入口，支持按采集点类型批量生成
+            if (targetPointTypes.length > 0) {
+                // 按采集点类型批量生成任务
+                await this.templateService.executeTemplateByPointType(template.id, undefined);
+            } else {
+                // 原有逻辑：按分配规则生成任务
+                await this.templateService.createTasksFromTemplate(template, {
+                    runAt: nextRunAt,
+                    triggeredById: undefined,
+                });
+            }
 
             lastRunAt = nextRunAt;
             nextRunAt = computeNextRunAt(template, new Date(nextRunAt.getTime() + 1000));

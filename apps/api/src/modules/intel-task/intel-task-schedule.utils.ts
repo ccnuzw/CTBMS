@@ -1,8 +1,9 @@
 import { TaskCycleType } from '@packages/types';
+import { TaskCycleType as PrismaTaskCycleType } from '@prisma/client';
 
 type TemplateLike = {
-    cycleType: TaskCycleType;
-    cycleConfig?: any;
+    cycleType: TaskCycleType | PrismaTaskCycleType;
+    cycleConfig?: unknown;
     runAtMinute?: number;
     runDayOfWeek?: number | null;
     runDayOfMonth?: number | null;
@@ -165,7 +166,9 @@ export function computePeriodInfo(template: TemplateLike, anchorDate: Date, over
 export function computeNextRunAt(template: TemplateLike, fromDate: Date) {
     const cycleType = template.cycleType;
     const runAtMinute = clampMinute(template.runAtMinute ?? 0);
-    const legacy = template.cycleConfig || {};
+    const legacy = (template.cycleConfig ?? {}) as Record<string, unknown>;
+    const legacyWeekDay = typeof legacy.weekDay === 'number' ? legacy.weekDay : undefined;
+    const legacyMonthDay = typeof legacy.monthDay === 'number' ? legacy.monthDay : undefined;
 
     let baseDate = new Date(fromDate);
     if (template.activeFrom && baseDate < template.activeFrom) {
@@ -181,7 +184,7 @@ export function computeNextRunAt(template: TemplateLike, fromDate: Date) {
     }
 
     if (cycleType === TaskCycleType.WEEKLY) {
-        const runDay = template.runDayOfWeek ?? legacy.weekDay ?? 1; // 1=Mon..7=Sun
+        const runDay = template.runDayOfWeek ?? legacyWeekDay ?? 1; // 1=Mon..7=Sun
         const start = startOfWeekMonday(baseDate);
         const candidate = new Date(start);
         candidate.setDate(candidate.getDate() + Math.max(0, Math.min(6, runDay - 1)));
@@ -193,7 +196,7 @@ export function computeNextRunAt(template: TemplateLike, fromDate: Date) {
     }
 
     if (cycleType === TaskCycleType.MONTHLY) {
-        const runDay = template.runDayOfMonth ?? legacy.monthDay ?? 1;
+        const runDay = template.runDayOfMonth ?? legacyMonthDay ?? 1;
         const start = startOfMonth(baseDate);
         const lastDay = getLastDayOfMonth(start);
         const day = runDay === 0 || runDay > lastDay ? lastDay : runDay;

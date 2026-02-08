@@ -25,6 +25,7 @@ import { useDepartments } from '../api/departments';
 import { UserStatus, UpdateUserDto } from '@packages/types';
 import type { SelectedNode } from './OrgDeptTree';
 import { UserFormModal, USER_STATUS_CONFIG } from '../../users/components/UserFormModal';
+import { useModalAutoFocus } from '@/hooks/useModalAutoFocus';
 
 interface UserCardListProps {
     selectedNode: SelectedNode | null;
@@ -47,6 +48,7 @@ export const UserCardList: React.FC<UserCardListProps> = ({
     const [createModalOpen, setCreateModalOpen] = useState(false);
     const [assignModalOpen, setAssignModalOpen] = useState(false);
     const [selectedUnassignedUsers, setSelectedUnassignedUsers] = useState<string[]>([]);
+    const { containerRef, focusRef, modalProps } = useModalAutoFocus();
 
     // 构建筛选参数
     const filters = useMemo(() => {
@@ -291,44 +293,48 @@ export const UserCardList: React.FC<UserCardListProps> = ({
                 okText="确认分配"
                 cancelText="取消"
                 confirmLoading={updateUserMutation.isPending}
+                okButtonProps={{ ref: focusRef } as any}
+                {...modalProps}
             >
-                <div style={{ marginBottom: 16 }}>
-                    <span style={{ color: token.colorTextSecondary }}>
-                        共 {unassignedUsers.length} 名未分配用户
-                    </span>
+                <div ref={containerRef}>
+                    <div style={{ marginBottom: 16 }}>
+                        <span style={{ color: token.colorTextSecondary }}>
+                            共 {unassignedUsers.length} 名未分配用户
+                        </span>
+                    </div>
+                    <List
+                        dataSource={unassignedUsers}
+                        style={{ maxHeight: 400, overflow: 'auto' }}
+                        renderItem={(user) => (
+                            <List.Item style={{ padding: '8px 0' }}>
+                                <Checkbox
+                                    checked={selectedUnassignedUsers.includes(user.id)}
+                                    onChange={(e) => {
+                                        if (e.target.checked) {
+                                            setSelectedUnassignedUsers([...selectedUnassignedUsers, user.id]);
+                                        } else {
+                                            setSelectedUnassignedUsers(
+                                                selectedUnassignedUsers.filter((id) => id !== user.id)
+                                            );
+                                        }
+                                    }}
+                                >
+                                    <Flex align="center" gap={8}>
+                                        <Avatar size="small" icon={<UserOutlined />}>
+                                            {user.name?.slice(0, 1)}
+                                        </Avatar>
+                                        <span>{user.name}</span>
+                                        {user.employeeNo && (
+                                            <span style={{ color: token.colorTextSecondary, fontSize: 12 }}>
+                                                ({user.employeeNo})
+                                            </span>
+                                        )}
+                                    </Flex>
+                                </Checkbox>
+                            </List.Item>
+                        )}
+                    />
                 </div>
-                <List
-                    dataSource={unassignedUsers}
-                    style={{ maxHeight: 400, overflow: 'auto' }}
-                    renderItem={(user) => (
-                        <List.Item style={{ padding: '8px 0' }}>
-                            <Checkbox
-                                checked={selectedUnassignedUsers.includes(user.id)}
-                                onChange={(e) => {
-                                    if (e.target.checked) {
-                                        setSelectedUnassignedUsers([...selectedUnassignedUsers, user.id]);
-                                    } else {
-                                        setSelectedUnassignedUsers(
-                                            selectedUnassignedUsers.filter((id) => id !== user.id)
-                                        );
-                                    }
-                                }}
-                            >
-                                <Flex align="center" gap={8}>
-                                    <Avatar size="small" icon={<UserOutlined />}>
-                                        {user.name?.slice(0, 1)}
-                                    </Avatar>
-                                    <span>{user.name}</span>
-                                    {user.employeeNo && (
-                                        <span style={{ color: token.colorTextSecondary, fontSize: 12 }}>
-                                            ({user.employeeNo})
-                                        </span>
-                                    )}
-                                </Flex>
-                            </Checkbox>
-                        </List.Item>
-                    )}
-                />
             </Modal>
         </Flex>
     );

@@ -58,6 +58,9 @@ async function main() {
     // 2. 播种 Prompt 模板
     runSeedScript('seed-prompts.ts');
 
+    // 2.5 数据字典 (统一枚举/标签)
+    runSeedScript('seed-dictionaries.ts');
+
     // 3. 执行全量业务数据恢复
     console.log('🚀 开始全量业务数据恢复...');
 

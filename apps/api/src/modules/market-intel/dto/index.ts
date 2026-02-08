@@ -4,6 +4,7 @@ import {
     MarketIntelQuerySchema,
     AnalyzeContentSchema,
     CreateManualResearchReportSchema,
+    PromoteToReportSchema,
 } from '@packages/types';
 import { createZodDto } from 'nestjs-zod';
 
@@ -13,3 +14,4 @@ export class MarketIntelQueryRequest extends createZodDto(MarketIntelQuerySchema
 export class AnalyzeContentRequest extends createZodDto(AnalyzeContentSchema) { }
 
 export class CreateManualResearchReportRequest extends createZodDto(CreateManualResearchReportSchema) { }
+export class PromoteToReportRequest extends createZodDto(PromoteToReportSchema) { }

@@ -41,10 +41,11 @@ import {
     CartesianGrid,
 } from 'recharts';
 import { useOffset, usePlotArea, useXAxis, useYAxis } from 'recharts/es6/hooks';
+import { useDictionary } from '@/hooks/useDictionaries';
 
 const { Text } = Typography;
 
-const POINT_TYPE_LABELS: Record<string, string> = {
+const POINT_TYPE_LABELS_FALLBACK: Record<string, string> = {
     PORT: '港口',
     ENTERPRISE: '企业',
     MARKET: '市场',
@@ -128,6 +129,16 @@ export const ComparisonPanel: React.FC<ComparisonPanelProps> = ({
     onFocusPoint,
 }) => {
     const { token } = theme.useToken();
+    const { data: pointTypeDict } = useDictionary('COLLECTION_POINT_TYPE');
+
+    const pointTypeLabels = useMemo(() => {
+        const items = (pointTypeDict || []).filter((item) => item.isActive);
+        if (!items.length) return POINT_TYPE_LABELS_FALLBACK;
+        return items.reduce<Record<string, string>>((acc, item) => {
+            acc[item.code] = item.label;
+            return acc;
+        }, {});
+    }, [pointTypeDict]);
 
     const [sortMetric, setSortMetric] = useState<SortMetric>('changePct');
     const [groupMode, setGroupMode] = useState<GroupMode>('all');
@@ -308,7 +319,7 @@ export const ComparisonPanel: React.FC<ComparisonPanelProps> = ({
         const groups: Record<string, RankingItem[]> = {};
         sortedItems.forEach((item) => {
             const key = groupMode === 'type'
-                ? (POINT_TYPE_LABELS[item.type || ''] || item.type || '其他')
+                ? (pointTypeLabels[item.type || ''] || item.type || '其他')
                 : item.regionLabel;
             if (!groups[key]) groups[key] = [];
             groups[key].push(item);

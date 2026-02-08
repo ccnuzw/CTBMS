@@ -1,11 +1,11 @@
 import { Injectable, NotFoundException, ConflictException } from '@nestjs/common';
+import { CollectionPointType as PrismaCollectionPointType, Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import {
     CreateCollectionPointDto,
     UpdateCollectionPointDto,
-    CollectionPointQueryDto,
 } from './dto';
-import { CollectionPointType } from '@packages/types';
+import { CollectionPointQuery } from '@packages/types';
 
 @Injectable()
 export class CollectionPointService {
@@ -23,11 +23,29 @@ export class CollectionPointService {
             throw new ConflictException(`采集点编码 ${dto.code} 已存在`);
         }
 
+        // 处理 commodityConfigs -> commodities, priceSubTypes
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+        const { commodityConfigs, ...restDto } = dto;
+        const processedDto = { ...restDto };
+
+        if (dto.commodityConfigs && dto.commodityConfigs.length > 0) {
+            const commodities = dto.commodityConfigs.map(c => c.name);
+            // 提取所有配置中出现过的 subType，去重
+            const subTypes = new Set<string>();
+            dto.commodityConfigs.forEach(c => {
+                c.allowedSubTypes.forEach(t => subTypes.add(t));
+            });
+
+            processedDto.commodities = commodities;
+            processedDto.priceSubTypes = Array.from(subTypes);
+        }
+
         return this.prisma.collectionPoint.create({
             data: {
-                ...dto,
+                ...processedDto,
+                commodityConfigs: dto.commodityConfigs as unknown as Prisma.InputJsonValue,
                 createdById,
-            },
+            } as Prisma.CollectionPointUncheckedCreateInput,
             include: {
                 region: true,
                 enterprise: {
@@ -40,13 +58,29 @@ export class CollectionPointService {
     /**
      * 分页查询采集点
      */
-    async findAll(query: CollectionPointQueryDto) {
-        const { page, pageSize, type, regionCode, keyword, isActive } = query;
+    async findAll(query: CollectionPointQuery) {
+        const { page, pageSize, type, regionCode, keyword, isActive, allocationStatus } = query;
+        const types = query.types as PrismaCollectionPointType[] | undefined;
 
-        const where: any = {};
-        if (type) where.type = type;
+        const where: Prisma.CollectionPointWhereInput = {};
+        if (types && types.length > 0) {
+            const resolvedTypes = types.filter((value): value is PrismaCollectionPointType =>
+                Object.values(PrismaCollectionPointType).includes(value),
+            );
+            if (resolvedTypes.length > 0) {
+                where.type = { in: resolvedTypes };
+            }
+        } else if (type && Object.values(PrismaCollectionPointType).includes(type as PrismaCollectionPointType)) {
+            where.type = type as PrismaCollectionPointType;
+        }
         if (regionCode) where.regionCode = regionCode;
         if (isActive !== undefined) where.isActive = isActive;
+        if (allocationStatus === 'ALLOCATED') {
+            where.allocations = { some: { isActive: true } };
+        } else if (allocationStatus === 'UNALLOCATED') {
+            where.allocations = { none: { isActive: true } };
+        }
+
         if (keyword) {
             where.OR = [
                 { name: { contains: keyword, mode: 'insensitive' } },
@@ -66,6 +100,14 @@ export class CollectionPointService {
                     region: true,
                     enterprise: {
                         select: { id: true, name: true, shortName: true },
+                    },
+                    allocations: {
+                        where: { isActive: true },
+                        include: {
+                            user: {
+                                select: { id: true, name: true, avatar: true, username: true },
+                            },
+                        },
                     },
                 },
             }),
@@ -118,9 +160,29 @@ export class CollectionPointService {
             }
         }
 
+        // 处理 commodityConfigs -> commodities, priceSubTypes
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+        const { commodityConfigs, ...restDto } = dto;
+        const processedDto = { ...restDto };
+
+        if (dto.commodityConfigs && dto.commodityConfigs.length > 0) {
+            const commodities = dto.commodityConfigs.map(c => c.name);
+            // 提取所有配置中出现过的 subType，去重
+            const subTypes = new Set<string>();
+            dto.commodityConfigs.forEach(c => {
+                c.allowedSubTypes.forEach(t => subTypes.add(t));
+            });
+
+            processedDto.commodities = commodities;
+            processedDto.priceSubTypes = Array.from(subTypes);
+        }
+
         return this.prisma.collectionPoint.update({
             where: { id },
-            data: dto,
+            data: {
+                ...processedDto,
+                commodityConfigs: dto.commodityConfigs as unknown as Prisma.InputJsonValue,
+            } as Prisma.CollectionPointUncheckedUpdateInput,
             include: {
                 region: true,
                 enterprise: {
@@ -175,13 +237,14 @@ export class CollectionPointService {
             try {
                 await this.prisma.collectionPoint.upsert({
                     where: { code: point.code },
-                    update: { ...point },
-                    create: { ...point, createdById },
+                    update: { ...point } as Prisma.CollectionPointUncheckedUpdateInput,
+                    create: { ...point, createdById } as Prisma.CollectionPointUncheckedCreateInput,
                 });
                 results.success++;
-            } catch (error: any) {
+            } catch (error: unknown) {
                 results.failed++;
-                results.errors.push(`${point.code}: ${error.message}`);
+                const message = error instanceof Error ? error.message : String(error);
+                results.errors.push(`${point.code}: ${message}`);
             }
         }
 

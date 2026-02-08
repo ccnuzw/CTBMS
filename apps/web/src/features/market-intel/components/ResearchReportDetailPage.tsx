@@ -1,14 +1,16 @@
 
-import React, { useState } from 'react';
+import React, { useMemo, useRef, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { PageContainer } from '@ant-design/pro-components';
-import { Row, Col, Spin, Button, Space, App, Typography, Card, Tag, theme, FloatButton, Anchor, Divider, List } from 'antd';
-import { ArrowLeftOutlined, DownloadOutlined as DownloadIcon, ClockCircleOutlined, EyeOutlined } from '@ant-design/icons';
-import { useResearchReport, useIncrementViewCount, useIncrementDownloadCount } from '../api/hooks';
+import { Row, Col, Spin, Button, Space, App, Typography, Card, Tag, theme, FloatButton, Anchor, Divider, List, Alert } from 'antd';
+import { ArrowLeftOutlined, DownloadOutlined as DownloadIcon, ClockCircleOutlined, EyeOutlined, FileTextOutlined, LinkOutlined } from '@ant-design/icons';
+import { useResearchReport, useIncrementViewCount, useIncrementDownloadCount, useMarketIntel } from '../api/hooks';
 import { AIAnalysisPanel } from './research-report-detail/AIAnalysisPanel';
 import { DocumentPreview } from './research-report-detail/DocumentPreview';
 import { RelatedReports } from './research-report-detail/RelatedReports';
-import { REPORT_TYPE_LABELS, REVIEW_STATUS_LABELS, ReviewStatus } from '@packages/types';
+import { REPORT_TYPE_LABELS } from '@packages/types';
+import { REVIEW_STATUS_LABELS } from '@/constants';
+import { useDictionaries } from '@/hooks/useDictionaries';
 import dayjs from 'dayjs';
 
 export const ResearchReportDetailPage: React.FC = () => {
@@ -20,17 +22,79 @@ export const ResearchReportDetailPage: React.FC = () => {
     const { data: report, isLoading, error } = useResearchReport(id || '');
     const { mutate: incrementView } = useIncrementViewCount();
     const { mutate: incrementDownload } = useIncrementDownloadCount();
+    const viewIncrementedRef = useRef(false);
+    const { data: dictionaries } = useDictionaries(['REPORT_TYPE', 'REVIEW_STATUS']);
+
+    const reportTypeLabels = useMemo(() => {
+        const items = dictionaries?.REPORT_TYPE?.filter((item) => item.isActive) || [];
+        if (!items.length) return REPORT_TYPE_LABELS;
+        return items.reduce<Record<string, string>>((acc, item) => {
+            acc[item.code] = item.label;
+            return acc;
+        }, {});
+    }, [dictionaries]);
+
+    const reportTypeColors = useMemo(() => {
+        const items = dictionaries?.REPORT_TYPE?.filter((item) => item.isActive) || [];
+        const fallbackColors: Record<string, string> = {
+            POLICY: 'volcano',
+            MARKET: 'blue',
+            RESEARCH: 'purple',
+            INDUSTRY: 'cyan',
+        };
+        if (!items.length) return fallbackColors;
+        return items.reduce<Record<string, string>>((acc, item) => {
+            const color = (item.meta as { color?: string } | null)?.color || fallbackColors[item.code] || 'blue';
+            acc[item.code] = color;
+            return acc;
+        }, {});
+    }, [dictionaries]);
+
+    const reviewStatusMeta = useMemo(() => {
+        const items = dictionaries?.REVIEW_STATUS?.filter((item) => item.isActive) || [];
+        const fallbackColors: Record<string, string> = {
+            PENDING: 'processing',
+            APPROVED: 'success',
+            REJECTED: 'error',
+            ARCHIVED: 'default',
+        };
+        if (!items.length) {
+            return {
+                labels: REVIEW_STATUS_LABELS,
+                colors: fallbackColors,
+            };
+        }
+        return items.reduce<{ labels: Record<string, string>; colors: Record<string, string> }>(
+            (acc, item) => {
+                acc.labels[item.code] = item.label;
+                const color = (item.meta as { color?: string } | null)?.color || fallbackColors[item.code] || 'default';
+                acc.colors[item.code] = color;
+                return acc;
+            },
+            { labels: {}, colors: {} },
+        );
+    }, [dictionaries]);
+
+    // Fetch linked source document if intelId exists
+    const linkedIntelId = (report as any)?.intelId || (report as any)?.intel?.id;
+    const { data: sourceDocument } = useMarketIntel(linkedIntelId || '');
 
     // 本地轻量状态，保证下载/阅读后数值即时反馈
     const [localViewCount, setLocalViewCount] = useState<number>();
     const [localDownloadCount, setLocalDownloadCount] = useState<number>();
     const [readerView, setReaderView] = useState<'content' | 'original'>('content');
 
-    // Increment view count on mount
+    // Increment view count on mount (guard against repeated runs)
     React.useEffect(() => {
-        if (id) {
+        if (!id) return;
+        if (!viewIncrementedRef.current) {
             incrementView(id);
+            viewIncrementedRef.current = true;
         }
+    }, [id, incrementView]);
+
+    React.useEffect(() => {
+        viewIncrementedRef.current = false;
     }, [id]);
 
     // 同步远端数据到本地状态
@@ -50,8 +114,6 @@ export const ResearchReportDetailPage: React.FC = () => {
 
     const handleDownload = (attachmentId?: string) => {
         if (id) {
-            const attachments = (report as any).intel?.attachments;
-
             if (attachments && attachments.length > 0) {
                 const targetAttachmentId = attachmentId || attachments[0].id;
                 incrementDownload(id);
@@ -65,34 +127,32 @@ export const ResearchReportDetailPage: React.FC = () => {
         }
     };
 
-    // Determine preview URL (Support PDF and Images)
-    const attachments = (report as any).intel?.attachments as Array<{
-        id: string;
-        filename: string;
-        mimeType: string;
-    }> | undefined;
-    let previewUrl = undefined;
-    if (attachments && attachments.length > 0) {
-        const att = attachments[0];
-        // Relaxed check: Check MimeType OR Filename extension
-        const isPdf = att.mimeType === 'application/pdf' || att.filename.toLowerCase().endsWith('.pdf');
-        const isImage = att.mimeType.startsWith('image/') || /\.(jpg|jpeg|png|webp)$/i.test(att.filename);
-        const isWord = att.mimeType === 'application/msword' || att.mimeType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' || /\.(doc|docx)$/i.test(att.filename);
-        const isPpt = att.mimeType === 'application/vnd.ms-powerpoint' || att.mimeType === 'application/vnd.openxmlformats-officedocument.presentationml.presentation' || /\.(ppt|pptx)$/i.test(att.filename);
+    const attachments = useMemo(() => {
+        const raw = ((report as any).intel?.attachments || []) as Array<{
+            id: string;
+            filename?: string;
+            fileName?: string;
+            mimeType?: string;
+            fileUrl?: string;
+        }>;
+        return raw.map((att) => ({
+            ...att,
+            filename: att.filename || att.fileName,
+        }));
+    }, [report]);
 
-        if (isPdf || isImage || isWord || isPpt) {
-            previewUrl = `/api/market-intel/attachments/${att.id}/download?inline=true`;
-        }
-    }
+    const [selectedAttachmentId, setSelectedAttachmentId] = useState<string | undefined>(attachments[0]?.id);
+
+    React.useEffect(() => {
+        setSelectedAttachmentId(attachments[0]?.id);
+    }, [report?.id, attachments]);
+
+    const selectedAttachment = attachments.find((att) => att.id === selectedAttachmentId) || attachments[0];
+    const previewUrl = selectedAttachment
+        ? (selectedAttachment.fileUrl || `/api/market-intel/attachments/${selectedAttachment.id}/download?inline=true`)
+        : undefined;
 
     const heroBackground = `linear-gradient(135deg, ${token.colorPrimaryBg} 0%, ${token.colorBgLayout} 100%)`;
-
-    const reviewStatusColorMap: Record<ReviewStatus, string> = {
-        [ReviewStatus.PENDING]: 'processing',
-        [ReviewStatus.APPROVED]: 'success',
-        [ReviewStatus.REJECTED]: 'error',
-        [ReviewStatus.ARCHIVED]: 'default',
-    };
 
     const publishDate = dayjs(report.publishDate || report.createdAt).format('YYYY-MM-DD');
 
@@ -100,18 +160,27 @@ export const ResearchReportDetailPage: React.FC = () => {
     const regionTags = report.regions?.slice(0, 6) || [];
 
     const statusTag = (
-        <Tag color={reviewStatusColorMap[report.reviewStatus]} style={{ marginLeft: 8 }}>
-            {REVIEW_STATUS_LABELS[report.reviewStatus]}
+        <Tag color={reviewStatusMeta.colors[report.reviewStatus] || 'default'} style={{ marginLeft: 8 }}>
+            {reviewStatusMeta.labels[report.reviewStatus] || report.reviewStatus}
         </Tag>
     );
 
     const anchorItems = [
+        linkedIntelId ? { key: 'source', href: '#report-source', title: '源文档' } : null,
         { key: 'highlights', href: '#report-highlights', title: '关键观点' },
         { key: 'reader', href: '#report-reader', title: '正文/原文' },
         { key: 'data', href: '#report-data', title: '关键数据' },
         attachments && attachments.length > 0 ? { key: 'attachments', href: '#report-attachments', title: '附件列表' } : null,
         { key: 'related', href: '#report-related', title: '相关研报' },
     ].filter(Boolean) as { key: string; href: string; title: string }[];
+
+    const handleBack = () => {
+        if (window.history.length > 1) {
+            navigate(-1);
+        } else {
+            navigate('/intel/knowledge?tab=library&content=reports');
+        }
+    };
 
     return (
         <PageContainer
@@ -134,7 +203,9 @@ export const ResearchReportDetailPage: React.FC = () => {
                                 {statusTag}
                             </Typography.Title>
                             <Space size="small" wrap>
-                                <Tag color="blue">{REPORT_TYPE_LABELS[report.reportType] || report.reportType}</Tag>
+                                <Tag color={reportTypeColors[report.reportType] || 'blue'}>
+                                    {reportTypeLabels[report.reportType] || report.reportType}
+                                </Tag>
                                 {commodityTags.map((item) => <Tag key={`commodity-${item}`}>{item}</Tag>)}
                                 {report.commodities?.length > 6 && <Tag>+{report.commodities.length - 6}</Tag>}
                                 {regionTags.map((item) => <Tag key={`region-${item}`}>{item}</Tag>)}
@@ -150,7 +221,8 @@ export const ResearchReportDetailPage: React.FC = () => {
                     <Col xs={24} md={8}>
                         <Space direction="vertical" style={{ width: '100%', alignItems: 'flex-end' }} size="small">
                             <Space wrap>
-                                <Button icon={<ArrowLeftOutlined />} onClick={() => navigate('/intel/research-reports')}>返回</Button>
+                                <Button icon={<ArrowLeftOutlined />} onClick={handleBack}>返回</Button>
+                                <Button onClick={() => navigate(`/intel/knowledge/reports/${id}/edit`)}>编辑</Button>
                                 <Button type="primary" icon={<DownloadIcon />} onClick={() => handleDownload()}>下载原文</Button>
                             </Space>
                             <Space size="middle" wrap>
@@ -165,6 +237,52 @@ export const ResearchReportDetailPage: React.FC = () => {
             <Row gutter={[24, 24]}>
                 <Col xs={24} lg={18}>
                     <Space direction="vertical" size="large" style={{ width: '100%' }}>
+                        {/* Source Document Section */}
+                        {linkedIntelId && (
+                            <div id="report-source">
+                                <Alert
+                                    type="info"
+                                    showIcon
+                                    icon={<LinkOutlined />}
+                                    style={{ borderRadius: token.borderRadius }}
+                                    message={
+                                        <Space>
+                                            <FileTextOutlined />
+                                            <Typography.Text strong>基于以下素材生成</Typography.Text>
+                                        </Space>
+                                    }
+                                    description={
+                                        <div style={{ marginTop: 8 }}>
+                                            <Space direction="vertical" size="small">
+                                                <Typography.Text>
+                                                    {sourceDocument?.summary?.substring(0, 100) ||
+                                                        sourceDocument?.rawContent?.substring(0, 100) ||
+                                                        '源文档'}
+                                                    {((sourceDocument?.summary?.length || 0) > 100 ||
+                                                        (sourceDocument?.rawContent?.length || 0) > 100) && '...'}
+                                                </Typography.Text>
+                                                <Space>
+                                                    <Button
+                                                        type="link"
+                                                        size="small"
+                                                        style={{ padding: 0 }}
+                                                        onClick={() => navigate(`/intel/knowledge/documents/${linkedIntelId}`)}
+                                                    >
+                                                        查看原始文档
+                                                    </Button>
+                                                    {sourceDocument?.createdAt && (
+                                                        <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                                                            上传于 {dayjs(sourceDocument.createdAt).format('YYYY-MM-DD HH:mm')}
+                                                        </Typography.Text>
+                                                    )}
+                                                </Space>
+                                            </Space>
+                                        </div>
+                                    }
+                                />
+                            </div>
+                        )}
+
                         <div id="report-highlights">
                             <AIAnalysisPanel report={report} mode="summary" />
                         </div>
@@ -173,9 +291,12 @@ export const ResearchReportDetailPage: React.FC = () => {
                             <DocumentPreview
                                 fileUrl={previewUrl}
                                 content={displayContent}
-                                fileName={attachments?.[0]?.filename}
-                                mimeType={attachments?.[0]?.mimeType}
-                                onDownload={() => handleDownload()}
+                                fileName={selectedAttachment?.filename}
+                                mimeType={selectedAttachment?.mimeType}
+                                attachments={attachments}
+                                selectedAttachmentId={selectedAttachment?.id}
+                                onAttachmentChange={setSelectedAttachmentId}
+                                onDownload={() => handleDownload(selectedAttachment?.id)}
                                 view={readerView}
                                 onViewChange={setReaderView}
                             />
@@ -190,6 +311,12 @@ export const ResearchReportDetailPage: React.FC = () => {
                                         renderItem={(item: any) => (
                                             <List.Item
                                                 actions={[
+                                                    <Button key="preview" size="small" type="link" onClick={() => {
+                                                        setSelectedAttachmentId(item.id);
+                                                        setReaderView('original');
+                                                    }}>
+                                                        预览
+                                                    </Button>,
                                                     <Button key="download" size="small" type="link" onClick={() => handleDownload(item.id)}>
                                                         下载
                                                     </Button>
@@ -213,7 +340,7 @@ export const ResearchReportDetailPage: React.FC = () => {
                         <Divider style={{ margin: '8px 0' }} />
 
                         <div id="report-related">
-                            <RelatedReports currentReportId={report.id} />
+                            <RelatedReports currentReportId={report.id} report={report} />
                         </div>
                     </Space>
                 </Col>

@@ -1,5 +1,5 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
-import { MarketInfo, TaggableEntityType as PrismaEntityType } from '@prisma/client';
+import { TaggableEntityType as PrismaEntityType } from '@prisma/client';
 import { CreateInfoDto, UpdateInfoDto, TaggableEntityType } from '@packages/types';
 import { PrismaService } from '../../prisma';
 import { TagsService } from '../tags/tags.service';
@@ -18,7 +18,6 @@ export class InfoService {
         const info = await this.prisma.marketInfo.create({
             data: {
                 ...rest,
-                // @ts-ignore - Handle null attachments
                 attachments: rest.attachments ?? undefined,
                 category: {
                     connect: { id: categoryId }
@@ -98,7 +97,6 @@ export class InfoService {
             where: { id },
             data: {
                 ...rest,
-                // @ts-ignore - Handle null attachments
                 attachments: rest.attachments ?? undefined,
                 category: categoryId ? {
                     connect: { id: categoryId }
@@ -154,4 +152,3 @@ export class InfoService {
         });
     }
 }
-

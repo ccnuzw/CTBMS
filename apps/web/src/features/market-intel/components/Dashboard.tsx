@@ -37,6 +37,7 @@ import { PriceAnomalyList } from './dashboard/widgets/PriceAnomalyList';
 import { IntelCompositionChart } from './dashboard/widgets/IntelCompositionChart';
 import { DEFAULT_FILTER_STATE } from './intel-feed/types';
 import { Leaderboard } from './Leaderboard';
+import { useVirtualUser } from '@/features/auth/virtual-user';
 
 const { Title, Text } = Typography;
 
@@ -46,7 +47,8 @@ const { Title, Text } = Typography;
  */
 export const Dashboard: React.FC = () => {
     const { token } = theme.useToken();
-    const currentUserId = 'system-user-placeholder'; // 暂时硬编码
+    const { currentUser } = useVirtualUser();
+    const currentUserId = currentUser?.id || '';
 
     // 获取真实数据
     const { data: aData, isLoading: aLoading } = useMarketIntels({
@@ -291,7 +293,10 @@ export const Dashboard: React.FC = () => {
                                 </div>
                             ))
                         ) : (
-                            <Empty description="暂无待办任务" image={Empty.PRESENTED_IMAGE_SIMPLE} />
+                            <Empty
+                                description="暂无待办任务"
+                                image={Empty.PRESENTED_IMAGE_SIMPLE}
+                            />
                         )}
                         <Text type="secondary" style={{ fontSize: 11, display: 'block', marginTop: 12, textAlign: 'center' }}>
                             系统规则: 早9点未报送自动记录违规

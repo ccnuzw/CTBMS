@@ -79,6 +79,14 @@ export enum CollectionPointType {
     MARKET = 'MARKET',
 }
 
+// 采集点频率类型
+export enum CollectionPointFrequencyType {
+    DAILY = 'DAILY',
+    WEEKLY = 'WEEKLY',
+    MONTHLY = 'MONTHLY',
+    CUSTOM = 'CUSTOM',
+}
+
 export const COLLECTION_POINT_TYPE_LABELS: Record<CollectionPointType, string> = {
     [CollectionPointType.ENTERPRISE]: '企业',
     [CollectionPointType.PORT]: '港口',
@@ -95,6 +103,33 @@ export const COLLECTION_POINT_TYPE_ICONS: Record<CollectionPointType, string> = 
     [CollectionPointType.MARKET]: '🏪',
 };
 
+export const COLLECTION_POINT_FREQUENCY_LABELS: Record<CollectionPointFrequencyType, string> = {
+    [CollectionPointFrequencyType.DAILY]: '每日',
+    [CollectionPointFrequencyType.WEEKLY]: '每周',
+    [CollectionPointFrequencyType.MONTHLY]: '每月',
+    [CollectionPointFrequencyType.CUSTOM]: '自定义',
+};
+
+export const ShiftConfigSchema = z.object({
+    dates: z.array(z.string()).optional(),
+    weekdays: z.array(z.number().min(1).max(7)).optional(),
+    monthDays: z.array(z.number().min(0).max(31)).optional(),
+    intervalDays: z.union([z.number().min(1), z.string().min(1)]).optional(),
+    startDate: z.string().optional(),
+}).passthrough();
+
+export type ShiftConfig = z.infer<typeof ShiftConfigSchema>;
+
+const ShiftConfigInputSchema = z.union([ShiftConfigSchema, z.string(), z.null()]).optional();
+
+// 品种配置接口
+export interface CommodityConfig {
+    name: string; // 品种名称 (e.g. "玉米")
+    allowedSubTypes: string[]; // 允许的价格类型
+    defaultSubType?: string; // 默认价格类型
+}
+
+
 // 创建采集点 DTO
 export const CreateCollectionPointSchema = z.object({
     code: z.string().min(1, '编码不能为空').max(50),
@@ -107,10 +142,23 @@ export const CreateCollectionPointSchema = z.object({
     longitude: z.number().min(-180).max(180).optional(),
     latitude: z.number().min(-90).max(90).optional(),
     commodities: z.array(z.string()).optional().default([]),
+    commodityConfigs: z.array(z.object({
+        name: z.string(),
+        allowedSubTypes: z.array(z.string()),
+        defaultSubType: z.string().optional(),
+    })).optional().default([]),
     // AI 提取增强配置
+
     matchRegionCodes: z.array(z.string()).optional().default([]),
     priceSubTypes: z.array(z.string()).optional().default([]),
     isDataSource: z.boolean().optional().default(true),
+
+    // 采集频率配置（内置）
+    frequencyType: z.nativeEnum(CollectionPointFrequencyType).optional().default(CollectionPointFrequencyType.DAILY),
+    weekdays: z.array(z.number().min(1).max(7)).optional().default([]),
+    monthDays: z.array(z.number().min(0).max(31)).optional().default([]),
+    dispatchAtMinute: z.number().min(0).max(1439).optional().default(540),
+    shiftConfig: ShiftConfigInputSchema,
 
     defaultSubType: z.string().optional(),
     enterpriseId: z.string().optional(),
@@ -137,11 +185,24 @@ export const CollectionPointResponseSchema = z.object({
     longitude: z.number().nullable(),
     latitude: z.number().nullable(),
     commodities: z.array(z.string()),
+    commodityConfigs: z.array(z.object({
+        name: z.string(),
+        allowedSubTypes: z.array(z.string()),
+        defaultSubType: z.string().nullable().optional(),
+    })).optional().nullable(),
 
     // AI 提取增强配置
+
     matchRegionCodes: z.array(z.string()),
     priceSubTypes: z.array(z.string()),
     isDataSource: z.boolean(),
+
+    // 采集频率配置（内置）
+    frequencyType: z.nativeEnum(CollectionPointFrequencyType),
+    weekdays: z.array(z.number()),
+    monthDays: z.array(z.number()),
+    dispatchAtMinute: z.number(),
+    shiftConfig: z.union([ShiftConfigSchema, z.string()]).nullable().optional(),
 
     defaultSubType: z.string().nullable(),
     enterpriseId: z.string().nullable(),
@@ -150,6 +211,14 @@ export const CollectionPointResponseSchema = z.object({
         name: z.string(),
         shortName: z.string().nullable(),
     }).optional(),
+    allocations: z.array(z.object({
+        user: z.object({
+            id: z.string(),
+            name: z.string(),
+            avatar: z.string().nullable(),
+            username: z.string(),
+        })
+    })).optional(),
     priority: z.number(),
     isActive: z.boolean(),
     description: z.string().nullable(),
@@ -160,9 +229,20 @@ export const CollectionPointResponseSchema = z.object({
 // 采集点查询 Schema
 export const CollectionPointQuerySchema = z.object({
     type: z.nativeEnum(CollectionPointType).optional(),
+    types: z.preprocess(
+        (value) => {
+            if (Array.isArray(value)) return value;
+            if (typeof value === 'string') {
+                return value.split(',').map((item) => item.trim()).filter(Boolean);
+            }
+            return undefined;
+        },
+        z.array(z.nativeEnum(CollectionPointType)).optional(),
+    ),
     regionCode: z.string().optional(),
     keyword: z.string().optional(),
     isActive: z.coerce.boolean().optional(),
+    allocationStatus: z.enum(['ALLOCATED', 'UNALLOCATED']).optional(),
     page: z.coerce.number().min(1).default(1),
     pageSize: z.coerce.number().min(1).max(1000).default(20),
 });

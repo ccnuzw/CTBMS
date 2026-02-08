@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
     ProForm,
     ProFormText,
@@ -15,6 +15,7 @@ import { useGlobalTags } from '../../tags/api/tags';
 import { useCreateInfo, useUpdateInfo } from '../api/info';
 import { CreateInfoDto, InfoStatus, TagScope } from '@packages/types';
 import { apiClient } from '../../../api/client';
+import { useDictionary } from '@/hooks/useDictionaries';
 
 export const InfoEditor: React.FC = () => {
     const navigate = useNavigate();
@@ -26,6 +27,7 @@ export const InfoEditor: React.FC = () => {
     const { data: categories } = useCategories();
     // 使用全局标签 API，过滤 MARKET_INFO 作用域的标签
     const { data: tags } = useGlobalTags({ scope: TagScope.MARKET_INFO });
+    const { data: infoStatusDict } = useDictionary('INFO_STATUS');
     // const { data: infoData, isLoading: isInfoLoading } = useInfo(id || ''); // Removed to avoid double fetch
 
 
@@ -34,6 +36,21 @@ export const InfoEditor: React.FC = () => {
 
     const [content, setContent] = useState('');
     const [fileList, setFileList] = useState<UploadFile[]>([]);
+
+    const infoStatusOptions = useMemo(() => {
+        const items = (infoStatusDict || []).filter((item) => item.isActive);
+        if (!items.length) {
+            return {
+                DRAFT: '草稿',
+                PUBLISHED: '发布',
+                ARCHIVED: '归档',
+            };
+        }
+        return items.reduce<Record<string, string>>((acc, item) => {
+            acc[item.code] = item.label;
+            return acc;
+        }, {});
+    }, [infoStatusDict]);
 
     // 获取文件类型图标
     const getFileIcon = (filename: string): string => {
@@ -268,11 +285,7 @@ export const InfoEditor: React.FC = () => {
                     <ProFormSelect
                         name="status"
                         label="状态"
-                        valueEnum={{
-                            DRAFT: '草稿',
-                            PUBLISHED: '发布',
-                            ARCHIVED: '归档'
-                        }}
+                        valueEnum={infoStatusOptions}
                         colProps={isMobile ? { span: 24 } : undefined}
                         fieldProps={{
                             size: isMobile ? 'large' : 'middle',

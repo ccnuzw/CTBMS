@@ -1,9 +1,11 @@
 
-import React from 'react';
+import React, { useMemo } from 'react';
 import { Card, Descriptions, Tag, Space, Button, Divider } from 'antd';
-import { ResearchReportResponse, REVIEW_STATUS_LABELS, ReviewStatus, REPORT_TYPE_LABELS } from '@packages/types';
+import { ResearchReportResponse, ReviewStatus, REPORT_TYPE_LABELS } from '@packages/types';
+import { REVIEW_STATUS_LABELS, REVIEW_STATUS_COLORS } from '@/constants';
 import { EyeOutlined, DownloadOutlined, ClockCircleOutlined, UserOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
+import { useDictionaries } from '@/hooks/useDictionaries';
 
 interface ReportMetaCardProps {
     report: ResearchReportResponse;
@@ -11,11 +13,36 @@ interface ReportMetaCardProps {
 }
 
 export const ReportMetaCard: React.FC<ReportMetaCardProps> = ({ report, onDownload }) => {
-    const statusColors = {
-        [ReviewStatus.PENDING]: 'orange',
-        [ReviewStatus.APPROVED]: 'green',
-        [ReviewStatus.REJECTED]: 'red',
-        [ReviewStatus.ARCHIVED]: 'default',
+    const { data: dictionaries } = useDictionaries(['REPORT_TYPE']);
+
+    const reportTypeLabels = useMemo(() => {
+        const items = dictionaries?.REPORT_TYPE?.filter((item) => item.isActive) || [];
+        if (!items.length) return REPORT_TYPE_LABELS;
+        return items.reduce<Record<string, string>>((acc, item) => {
+            acc[item.code] = item.label;
+            return acc;
+        }, {});
+    }, [dictionaries]);
+
+    const reportTypeColors = useMemo(() => {
+        const items = dictionaries?.REPORT_TYPE?.filter((item) => item.isActive) || [];
+        const fallbackColors: Record<string, string> = {
+            POLICY: 'volcano',
+            MARKET: 'blue',
+            RESEARCH: 'purple',
+            INDUSTRY: 'cyan',
+        };
+        if (!items.length) return fallbackColors;
+        return items.reduce<Record<string, string>>((acc, item) => {
+            const color = (item.meta as { color?: string } | null)?.color || fallbackColors[item.code] || 'blue';
+            acc[item.code] = color;
+            return acc;
+        }, {});
+    }, [dictionaries]);
+
+    const reviewStatusMeta = {
+        labels: REVIEW_STATUS_LABELS,
+        colors: REVIEW_STATUS_COLORS,
     };
 
     return (
@@ -36,7 +63,9 @@ export const ReportMetaCard: React.FC<ReportMetaCardProps> = ({ report, onDownlo
                     </Space>
                 </Descriptions.Item>
                 <Descriptions.Item label="报告类型">
-                    <Tag>{REPORT_TYPE_LABELS[report.reportType] || report.reportType}</Tag>
+                    <Tag color={reportTypeColors[report.reportType] || 'blue'}>
+                        {reportTypeLabels[report.reportType] || report.reportType}
+                    </Tag>
                 </Descriptions.Item>
                 <Descriptions.Item label="涉及品种">
                     <Space wrap>
@@ -49,8 +78,8 @@ export const ReportMetaCard: React.FC<ReportMetaCardProps> = ({ report, onDownlo
                     </Space>
                 </Descriptions.Item>
                 <Descriptions.Item label="审核状态">
-                    <Tag color={statusColors[report.reviewStatus]}>
-                        {REVIEW_STATUS_LABELS[report.reviewStatus]}
+                    <Tag color={reviewStatusMeta.colors[report.reviewStatus] || 'default'}>
+                        {reviewStatusMeta.labels[report.reviewStatus] || report.reviewStatus}
                     </Tag>
                 </Descriptions.Item>
                 <Descriptions.Item label="版本">

@@ -14,23 +14,70 @@ export interface UserWithRelations extends UserDto {
 export interface UserFilters {
     organizationId?: string;
     departmentId?: string;
+    organizationIds?: string[];
+    departmentIds?: string[];
+    keyword?: string;
     status?: string;
+    page?: number;
+    pageSize?: number;
 }
 
 // 获取用户列表（支持筛选）
-export const useUsers = (filters?: UserFilters) => {
+export const useUsers = (filters?: UserFilters, options?: { enabled?: boolean }) => {
     return useQuery<UserWithRelations[]>({
         queryKey: ['users', filters],
         queryFn: async () => {
             const params = new URLSearchParams();
-            if (filters?.organizationId) params.append('organizationId', filters.organizationId);
-            if (filters?.departmentId) params.append('departmentId', filters.departmentId);
+            if (filters?.organizationIds && filters.organizationIds.length > 0) {
+                params.append('organizationIds', filters.organizationIds.join(','));
+            } else if (filters?.organizationId) {
+                params.append('organizationId', filters.organizationId);
+            }
+            if (filters?.departmentIds && filters.departmentIds.length > 0) {
+                params.append('departmentIds', filters.departmentIds.join(','));
+            } else if (filters?.departmentId) {
+                params.append('departmentId', filters.departmentId);
+            }
+            if (filters?.keyword) params.append('keyword', filters.keyword);
             if (filters?.status) params.append('status', filters.status);
 
             const res = await fetch(`${API_BASE}?${params.toString()}`);
             if (!res.ok) throw new Error('获取用户列表失败');
             return res.json();
         },
+        enabled: options?.enabled ?? true,
+    });
+};
+
+export interface UserPageResponse {
+    data: UserWithRelations[];
+    total: number;
+    page: number;
+    pageSize: number;
+    totalPages: number;
+}
+
+export const useUsersPaged = (filters?: UserFilters, options?: { enabled?: boolean }) => {
+    return useQuery<UserPageResponse>({
+        queryKey: ['users-paged', filters],
+        queryFn: async () => {
+            const params = new URLSearchParams();
+            if (filters?.organizationIds && filters.organizationIds.length > 0) {
+                params.append('organizationIds', filters.organizationIds.join(','));
+            }
+            if (filters?.departmentIds && filters.departmentIds.length > 0) {
+                params.append('departmentIds', filters.departmentIds.join(','));
+            }
+            if (filters?.keyword) params.append('keyword', filters.keyword);
+            if (filters?.status) params.append('status', filters.status);
+            if (filters?.page) params.append('page', String(filters.page));
+            if (filters?.pageSize) params.append('pageSize', String(filters.pageSize));
+
+            const res = await fetch(`${API_BASE}/paged?${params.toString()}`);
+            if (!res.ok) throw new Error('获取用户列表失败');
+            return res.json();
+        },
+        enabled: options?.enabled ?? true,
     });
 };
 

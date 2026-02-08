@@ -39,12 +39,30 @@ import {
 } from 'recharts';
 import { useMarketIntels } from '../api/hooks';
 import { IntelCategory, MarketIntelResponse } from '@packages/types';
+import { useDictionaries } from '@/hooks/useDictionaries';
 
 const { Title, Text, Paragraph } = Typography;
 
 type TimeRange = '7D' | '30D' | '90D' | 'YTD' | 'ALL';
 
 import { ChartContainer } from './ChartContainer';
+
+// 品种 fallback（与字典 COMMODITY 保持一致）
+const COMMODITY_OPTIONS_FALLBACK = [
+    { label: '🌽 玉米', value: 'CORN' },
+    { label: '🌾 小麦', value: 'WHEAT' },
+    { label: '🫘 大豆', value: 'SOYBEAN' },
+    { label: '🌾 稻谷', value: 'RICE' },
+    { label: '🌾 高粱', value: 'SORGHUM' },
+    { label: '🌾 大麦', value: 'BARLEY' },
+];
+
+const REGION_OPTIONS_FALLBACK = [
+    { label: '🌍 全国全域', value: 'ALL' },
+    { label: '辽宁产区', value: '辽宁' },
+    { label: '吉林产区', value: '吉林' },
+    { label: '南方销区', value: '南方' },
+];
 
 // KPI 卡片组件
 const KpiCard: React.FC<{
@@ -88,11 +106,24 @@ const KpiCard: React.FC<{
 
 export const SuperDashboard: React.FC = () => {
     const { token } = theme.useToken();
+    const { data: dictionaries } = useDictionaries(['COMMODITY', 'SUPER_DASHBOARD_REGION']);
 
     // 状态
     const [timeRange, setTimeRange] = useState<TimeRange>('30D');
     const [selectedRegion, setSelectedRegion] = useState('ALL');
-    const [selectedCommodity, setSelectedCommodity] = useState('玉米');
+    const [selectedCommodity, setSelectedCommodity] = useState('CORN');
+
+    const commodityOptions = useMemo(() => {
+        const items = dictionaries?.COMMODITY?.filter((item) => item.isActive) || [];
+        if (!items.length) return COMMODITY_OPTIONS_FALLBACK;
+        return items.map((item) => ({ label: item.label, value: item.code }));
+    }, [dictionaries]);
+
+    const regionOptions = useMemo(() => {
+        const items = dictionaries?.SUPER_DASHBOARD_REGION?.filter((item) => item.isActive) || [];
+        if (!items.length) return REGION_OPTIONS_FALLBACK;
+        return items.map((item) => ({ label: item.label, value: item.code }));
+    }, [dictionaries]);
 
     // 获取真实数据
     const { data: aData, isLoading: aLoading } = useMarketIntels({
@@ -159,15 +190,15 @@ export const SuperDashboard: React.FC = () => {
             aCards.length > 1 ? ((aCards[aCards.length - 2].aiAnalysis as any).extractedData?.price as number) : 0;
         const priceChange = latestPrice && prevPrice ? ((latestPrice - prevPrice) / prevPrice) * 100 : 0;
 
-        const pos = bCards.filter((c) => (c.aiAnalysis as any)?.sentiment === 'positive').length;
-        const neg = bCards.filter((c) => (c.aiAnalysis as any)?.sentiment === 'negative').length;
+        const pos = bCards.filter((c) => (c.aiAnalysis as any)?.sentiment === 'BULLISH').length;
+        const neg = bCards.filter((c) => (c.aiAnalysis as any)?.sentiment === 'BEARISH').length;
         const totalSent = bCards.length;
         const sentimentScore = totalSent
             ? Math.round(((pos + 0.5 * (totalSent - pos - neg)) / totalSent) * 100)
             : 50;
 
         // 这里仅作为演示，真实场景应该有一个 explicitly 的 isFlagged 字段，暂时用 negative 来模拟
-        const riskCount = bCards.filter((c) => (c.aiAnalysis as any)?.sentiment === 'negative').length;
+        const riskCount = bCards.filter((c) => (c.aiAnalysis as any)?.sentiment === 'BEARISH').length;
 
         return { latestPrice, priceChange, sentimentScore, riskCount, totalVolume: filteredCards.length };
     }, [filteredCards]);
@@ -194,7 +225,7 @@ export const SuperDashboard: React.FC = () => {
             }
 
             if (c.category === IntelCategory.B_SEMI_STRUCTURED) {
-                const score = aiAnalysis.sentiment === 'positive' ? 10 : aiAnalysis.sentiment === 'negative' ? -10 : 2;
+                const score = aiAnalysis.sentiment === 'BULLISH' ? 10 : aiAnalysis.sentiment === 'BEARISH' ? -10 : 2;
                 entry.sentimentScore += score;
             }
         });
@@ -312,23 +343,14 @@ export const SuperDashboard: React.FC = () => {
                             onChange={setSelectedCommodity}
                             style={{ width: 100 }}
                             size="small"
-                            options={[
-                                { label: '🌽 玉米', value: '玉米' },
-                                { label: '🫘 大豆', value: '大豆' },
-                                { label: '🌾 水稻', value: '水稻' },
-                            ]}
+                            options={commodityOptions}
                         />
                         <Select
                             value={selectedRegion}
                             onChange={setSelectedRegion}
                             style={{ width: 120 }}
                             size="small"
-                            options={[
-                                { label: '🌍 全国全域', value: 'ALL' },
-                                { label: '辽宁产区', value: '辽宁' },
-                                { label: '吉林产区', value: '吉林' },
-                                { label: '南方销区', value: '南方' },
-                            ]}
+                            options={regionOptions}
                         />
                         <div style={{ width: 1, height: 24, background: token.colorBorder }} />
                         <Segmented
@@ -528,7 +550,7 @@ export const SuperDashboard: React.FC = () => {
                                         <div
                                             key={c.id}
                                             style={{
-                                                borderLeft: `2px solid ${aiAnalysis.sentiment === 'negative' ? token.colorError : token.colorPrimary}`,
+                                                borderLeft: `2px solid ${aiAnalysis.sentiment === 'BEARISH' ? token.colorError : token.colorPrimary}`,
                                                 paddingLeft: 12,
                                                 marginBottom: 12,
                                             }}

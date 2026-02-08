@@ -12,8 +12,8 @@ import { CollectionPointService } from './collection-point.service';
 import {
     CreateCollectionPointDto,
     UpdateCollectionPointDto,
-    CollectionPointQueryDto,
 } from './dto';
+import { CollectionPointQuery, CollectionPointType } from '@packages/types';
 
 @Controller('collection-points')
 export class CollectionPointController {
@@ -31,8 +31,51 @@ export class CollectionPointController {
      * 分页查询采集点
      */
     @Get()
-    findAll(@Query() query: CollectionPointQueryDto) {
-        return this.service.findAll(query);
+    findAll(@Query() query: Record<string, string | string[] | undefined>) {
+        const parseBoolean = (value: string | string[] | undefined) => {
+            if (value === undefined) return undefined;
+            const raw = Array.isArray(value) ? value[0] : value;
+            if (raw === undefined) return undefined;
+            const normalized = String(raw).toLowerCase();
+            if (['true', '1', 'yes'].includes(normalized)) return true;
+            if (['false', '0', 'no'].includes(normalized)) return false;
+            return undefined;
+        };
+
+        const parseNumber = (value: string | string[] | undefined, fallback: number, min = 1, max?: number) => {
+            const raw = Array.isArray(value) ? value[0] : value;
+            const parsed = Number(raw);
+            if (!Number.isFinite(parsed)) return fallback;
+            const clamped = Math.max(min, parsed);
+            if (max !== undefined) return Math.min(max, clamped);
+            return clamped;
+        };
+
+        const parseStringArray = (value: string | string[] | undefined) => {
+            if (value === undefined) return undefined;
+            if (Array.isArray(value)) return value.map((item) => item.trim()).filter(Boolean);
+            return value.split(',').map((item) => item.trim()).filter(Boolean);
+        };
+
+        const types = parseStringArray(query.types) as CollectionPointType[] | undefined;
+        const keywordRaw = Array.isArray(query.keyword) ? query.keyword[0] : query.keyword;
+        const keyword = keywordRaw?.trim() || undefined;
+
+        const parsed: CollectionPointQuery = {
+            type: (Array.isArray(query.type) ? query.type[0] : query.type) as CollectionPointType | undefined,
+            types,
+            regionCode: Array.isArray(query.regionCode) ? query.regionCode[0] : query.regionCode,
+            keyword,
+            isActive: parseBoolean(query.isActive),
+            allocationStatus: (Array.isArray(query.allocationStatus) ? query.allocationStatus[0] : query.allocationStatus) as
+                | 'ALLOCATED'
+                | 'UNALLOCATED'
+                | undefined,
+            page: parseNumber(query.page, 1, 1),
+            pageSize: parseNumber(query.pageSize, 20, 1, 1000),
+        };
+
+        return this.service.findAll(parsed);
     }
 
     /**

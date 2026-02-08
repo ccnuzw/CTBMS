@@ -322,14 +322,16 @@ export const GeoMap: React.FC<GeoMapProps> = ({ enterprises, onSelectEnterprise,
 
         // Also check for children in the selectedEnterprise object itself (if detailed data is available)
         const nestedChildren = (selectedEnterprise.children || []).filter(
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            (c: any) => c.latitude && c.longitude && !visibleChildren.find((vc) => vc.id === c.id)
+            (c: { id: string; latitude?: number | null; longitude?: number | null }) => (
+                c.latitude
+                && c.longitude
+                && !visibleChildren.find((vc) => vc.id === c.id)
+            )
         );
 
         return [...visibleChildren, ...nestedChildren].map((child) => ({
             id: child.id,
             from: centerPos,
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
             to: [child.latitude!, child.longitude!] as L.LatLngTuple,
             name: child.name,
         }));

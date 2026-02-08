@@ -23,6 +23,8 @@ import {
     MailOutlined,
     PhoneOutlined,
     CheckCircleOutlined,
+    LoginOutlined,
+    LogoutOutlined,
     SwapOutlined,
     GlobalOutlined,
     ClusterOutlined,
@@ -43,6 +45,8 @@ import {
     STATUS_OPTIONS,
     USER_STATUS_CONFIG,
 } from '../../users/components/UserFormModal';
+import { useDictionary } from '@/hooks/useDictionaries';
+import { useVirtualUser } from '@/features/auth/virtual-user';
 
 interface UserDetailPanelProps {
     userId: string | null;
@@ -54,6 +58,30 @@ export const UserDetailPanel: React.FC<UserDetailPanelProps> = ({
     onUserDeleted,
 }) => {
     const { token } = theme.useToken();
+    const { data: genderDict } = useDictionary('GENDER');
+    const { data: userStatusDict } = useDictionary('USER_STATUS');
+
+    const genderOptions = useMemo(() => {
+        const items = (genderDict || []).filter((item) => item.isActive);
+        if (!items.length) return [...GENDER_OPTIONS];
+        return items.map((item) => ({ value: item.code, label: item.label }));
+    }, [genderDict]);
+
+    const statusOptions = useMemo(() => {
+        const items = (userStatusDict || []).filter((item) => item.isActive);
+        if (!items.length) return [...STATUS_OPTIONS];
+        return items.map((item) => ({ value: item.code, label: item.label }));
+    }, [userStatusDict]);
+
+    const statusConfigMap = useMemo(() => {
+        const items = (userStatusDict || []).filter((item) => item.isActive);
+        if (!items.length) return USER_STATUS_CONFIG;
+        return items.reduce<Record<string, { color: string; label: string }>>((acc, item) => {
+            const color = (item.meta as { color?: string } | null)?.color || 'default';
+            acc[item.code] = { color, label: item.label };
+            return acc;
+        }, {});
+    }, [userStatusDict]);
     const { message } = App.useApp();
 
     // 状态
@@ -70,6 +98,7 @@ export const UserDetailPanel: React.FC<UserDetailPanelProps> = ({
     const { data: allDepartments } = useDepartments(); // 获取所有部门用于显示层级
     const updateMutation = useUpdateUser();
     const deleteMutation = useDeleteUser();
+    const { user: virtualUser, setUser: setVirtualUser } = useVirtualUser();
 
     // 自动聚焦 hook
     const { focusRef, modalProps: transferModalProps } = useModalAutoFocus();
@@ -79,6 +108,8 @@ export const UserDetailPanel: React.FC<UserDetailPanelProps> = ({
         setIsEditing(false);
         setEditData({});
     }, [userId]);
+
+    const isCurrentVirtualUser = virtualUser?.id === user?.id;
 
     // 开始编辑
     const handleStartEdit = () => {
@@ -162,6 +193,28 @@ export const UserDetailPanel: React.FC<UserDetailPanelProps> = ({
         } catch (error) {
             message.error((error as Error).message || '调岗失败');
         }
+    };
+
+    const handleVirtualLogin = () => {
+        if (!user) return;
+        if (isCurrentVirtualUser) {
+            setVirtualUser(null);
+            message.success('已切换为系统管理员');
+            return;
+        }
+
+        setVirtualUser({
+            id: user.id,
+            name: user.name,
+            email: user.email ?? null,
+            avatar: user.avatar ?? null,
+            organizationName: user.organization?.name ?? null,
+            departmentName: user.department?.name ?? null,
+            roleNames: user.roles?.map((role) => role.role.name).filter(Boolean),
+            employeeNo: user.employeeNo ?? null,
+            position: user.position ?? null,
+        });
+        message.success(`已切换为当前登录用户：${user.name}`);
     };
 
     // 获取组织类型图标
@@ -282,7 +335,7 @@ export const UserDetailPanel: React.FC<UserDetailPanelProps> = ({
         );
     }
 
-    const statusConfig = USER_STATUS_CONFIG[user.status as UserStatus] || USER_STATUS_CONFIG.ACTIVE;
+    const statusConfig = statusConfigMap[user.status as UserStatus] || statusConfigMap.ACTIVE;
 
     return (
         <Flex
@@ -316,6 +369,13 @@ export const UserDetailPanel: React.FC<UserDetailPanelProps> = ({
 
                 {/* 操作按钮 */}
                 <Flex gap={8}>
+                    <Button
+                        type={isCurrentVirtualUser ? 'default' : 'primary'}
+                        icon={isCurrentVirtualUser ? <LogoutOutlined /> : <LoginOutlined />}
+                        onClick={handleVirtualLogin}
+                    >
+                        {isCurrentVirtualUser ? '切回管理员' : '虚拟登录'}
+                    </Button>
                     {isEditing ? (
                         <>
                             <Button icon={<CloseOutlined />} onClick={handleCancelEdit}>
@@ -382,6 +442,11 @@ export const UserDetailPanel: React.FC<UserDetailPanelProps> = ({
                             >
                                 {statusConfig.label}
                             </Tag>
+                            {isCurrentVirtualUser && (
+                                <Tag color="blue" style={{ margin: 0 }} bordered={false}>
+                                    当前登录
+                                </Tag>
+                            )}
                         </Flex>
                     </Flex>
                 </Flex>
@@ -409,11 +474,11 @@ export const UserDetailPanel: React.FC<UserDetailPanelProps> = ({
                         />
                         <InfoItem
                             label="性别"
-                            value={GENDER_OPTIONS.find((o) => o.value === user.gender)?.label}
+                            value={genderOptions.find((o) => o.value === user.gender)?.label}
                             isEditing={isEditing}
                             editValue={editData.gender ?? undefined}
                             type="select"
-                            options={[...GENDER_OPTIONS]}
+                            options={genderOptions}
                             onChange={(v) => setEditData((prev) => ({ ...prev, gender: v as Gender }))}
                         />
                         <InfoItem
@@ -451,7 +516,7 @@ export const UserDetailPanel: React.FC<UserDetailPanelProps> = ({
                             isEditing={isEditing}
                             editValue={editData.status}
                             type="select"
-                            options={[...STATUS_OPTIONS]}
+                            options={statusOptions}
                             onChange={(v) => setEditData((prev) => ({ ...prev, status: v as UserStatus }))}
                         />
                         <InfoItem

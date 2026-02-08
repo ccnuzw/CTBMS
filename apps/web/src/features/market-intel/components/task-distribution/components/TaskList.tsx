@@ -7,10 +7,10 @@ import {
     IntelTaskStatus,
     IntelTaskType,
     INTEL_TASK_PRIORITY_LABELS,
-    INTEL_TASK_STATUS_LABELS,
     INTEL_TASK_TYPE_LABELS,
     IntelTaskResponse
 } from '@packages/types';
+import { INTEL_TASK_STATUS_LABELS } from '@/constants';
 import { useCompleteTask, useTaskMetrics, useTaskMetricsByOrg, useTaskMetricsByDept } from '../../../api/tasks';
 import { useOrganizations } from '../../../../organization/api/organizations';
 import { useDepartments } from '../../../../organization/api/departments';

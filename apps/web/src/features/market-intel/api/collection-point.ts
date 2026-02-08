@@ -21,9 +21,11 @@ export function useCollectionPoints(query: Partial<CollectionPointQuery> = {}) {
         queryFn: async () => {
             const params = new URLSearchParams();
             if (query.type) params.append('type', query.type);
+            if (query.types && query.types.length > 0) params.append('types', query.types.join(','));
             if (query.regionCode) params.append('regionCode', query.regionCode);
             if (query.keyword) params.append('keyword', query.keyword);
             if (query.isActive !== undefined) params.append('isActive', String(query.isActive));
+            if (query.allocationStatus) params.append('allocationStatus', query.allocationStatus);
             if (query.page) params.append('page', String(query.page));
             if (query.pageSize) params.append('pageSize', String(query.pageSize));
 

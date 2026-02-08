@@ -26,18 +26,19 @@ import { useUsers, useDeleteUser, useAssignRoles, UserWithRelations } from '../a
 import { useRoles } from '../api/roles';
 import { useModalAutoFocus } from '../../../hooks/useModalAutoFocus';
 import { UserFormModal } from './UserFormModal';
+import { useDictionary } from '@/hooks/useDictionaries';
 
 const { Text } = Typography;
 
 // 性别显示
-const genderMap: Record<string, { text: string; icon: React.ReactNode; color: string }> = {
+const GENDER_MAP_FALLBACK: Record<string, { text: string; icon: React.ReactNode; color: string }> = {
     MALE: { text: '男', icon: <ManOutlined />, color: 'blue' },
     FEMALE: { text: '女', icon: <WomanOutlined />, color: 'magenta' },
     OTHER: { text: '其他', icon: null, color: 'default' },
 };
 
 // 状态显示
-const statusMap: Record<string, { text: string; color: string }> = {
+const STATUS_MAP_FALLBACK: Record<string, { text: string; color: string }> = {
     ACTIVE: { text: '在职', color: 'success' },
     PROBATION: { text: '试用期', color: 'processing' },
     RESIGNED: { text: '离职', color: 'default' },
@@ -49,11 +50,59 @@ export const UserList: React.FC = () => {
     const { token } = theme.useToken();
     const actionRef = useRef<ActionType>();
     const { message } = App.useApp();
+    const { data: genderDict } = useDictionary('GENDER');
+    const { data: userStatusDict } = useDictionary('USER_STATUS');
 
     const { data: users, isLoading, refetch } = useUsers();
     const { data: roles } = useRoles();
     const deleteUserMutation = useDeleteUser();
     const assignRolesMutation = useAssignRoles();
+
+    const genderMap = useMemo(() => {
+        const items = (genderDict || []).filter((item) => item.isActive);
+        if (!items.length) return GENDER_MAP_FALLBACK;
+        return items.reduce<Record<string, { text: string; icon: React.ReactNode; color: string }>>((acc, item) => {
+            const icon = item.code === 'MALE' ? <ManOutlined /> : item.code === 'FEMALE' ? <WomanOutlined /> : null;
+            acc[item.code] = { text: item.label, icon, color: 'default' };
+            return acc;
+        }, {});
+    }, [genderDict]);
+
+    const statusMap = useMemo(() => {
+        const items = (userStatusDict || []).filter((item) => item.isActive);
+        if (!items.length) return STATUS_MAP_FALLBACK;
+        return items.reduce<Record<string, { text: string; color: string }>>((acc, item) => {
+            const color = (item.meta as { color?: string } | null)?.color || 'default';
+            acc[item.code] = { text: item.label, color };
+            return acc;
+        }, {});
+    }, [userStatusDict]);
+
+    const statusValueEnum = useMemo(() => {
+        const items = (userStatusDict || []).filter((item) => item.isActive);
+        if (!items.length) {
+            return {
+                ACTIVE: { text: '在职', status: 'Success' },
+                PROBATION: { text: '试用期', status: 'Processing' },
+                RESIGNED: { text: '离职', status: 'Default' },
+                SUSPENDED: { text: '停职', status: 'Error' },
+            };
+        }
+        const statusMapForValueEnum: Record<string, string> = {
+            success: 'Success',
+            warning: 'Processing',
+            error: 'Error',
+            default: 'Default',
+        };
+        return items.reduce<Record<string, { text: string; status: string }>>((acc, item) => {
+            const color = (item.meta as { color?: string } | null)?.color || 'default';
+            acc[item.code] = {
+                text: item.label,
+                status: statusMapForValueEnum[color] || 'Default',
+            };
+            return acc;
+        }, {});
+    }, [userStatusDict]);
 
     const [modalVisible, setModalVisible] = useState(false);
     const [roleModalVisible, setRoleModalVisible] = useState(false);
@@ -235,12 +284,7 @@ export const UserList: React.FC = () => {
             title: '状态',
             dataIndex: 'status',
             width: 90,
-            valueEnum: {
-                ACTIVE: { text: '在职', status: 'Success' },
-                PROBATION: { text: '试用期', status: 'Processing' },
-                RESIGNED: { text: '离职', status: 'Default' },
-                SUSPENDED: { text: '停职', status: 'Error' },
-            },
+            valueEnum: statusValueEnum,
         },
         {
             title: '操作',

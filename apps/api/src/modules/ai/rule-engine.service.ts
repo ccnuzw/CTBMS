@@ -1,10 +1,11 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 
 /**
  * 规则条件结构
  */
-interface RuleCondition {
+export interface RuleCondition {
     id: string;
     leftType: 'KEYWORD' | 'COLLECTION_POINT' | 'NUMBER' | 'DATE' | 'REGION' | 'COMMODITY';
     leftValue?: string[];
@@ -28,7 +29,7 @@ interface ExtractionRule {
     eventTypeId?: string;
     insightTypeId?: string;
     conditions: RuleCondition[];
-    outputConfig: any;
+    outputConfig: Prisma.JsonValue;
     priority: number;
 }
 
@@ -48,8 +49,14 @@ export interface RuleMatchResult {
         action?: string;
         value?: string;
     };
-    outputConfig: any;
+    outputConfig: Prisma.JsonValue;
 }
+
+type ExtractedData = {
+    subject?: string;
+    action?: string;
+    value?: string;
+};
 
 /**
  * 规则引擎服务
@@ -326,16 +333,20 @@ export class RuleEngineService implements OnModuleInit {
 
             case 'SAME_SENTENCE':
                 // 同一句子内
-                const sentenceStart = this.findSentenceStart(text, leftIndex);
-                const sentenceEnd = this.findSentenceEnd(text, leftIndex);
-                return { start: sentenceStart, end: sentenceEnd };
+                {
+                    const sentenceStart = this.findSentenceStart(text, leftIndex);
+                    const sentenceEnd = this.findSentenceEnd(text, leftIndex);
+                    return { start: sentenceStart, end: sentenceEnd };
+                }
 
             case 'SAME_PARAGRAPH':
                 // 同一段落内
-                const paraStart = text.lastIndexOf('\n', leftIndex) + 1;
-                let paraEnd = text.indexOf('\n', leftIndex);
-                if (paraEnd === -1) paraEnd = text.length;
-                return { start: paraStart, end: paraEnd };
+                {
+                    const paraStart = text.lastIndexOf('\n', leftIndex) + 1;
+                    let paraEnd = text.indexOf('\n', leftIndex);
+                    if (paraEnd === -1) paraEnd = text.length;
+                    return { start: paraStart, end: paraEnd };
+                }
 
             default:
                 return { start: afterLeft, end: Math.min(afterLeft + 100, text.length) };
@@ -374,10 +385,10 @@ export class RuleEngineService implements OnModuleInit {
     async testConditions(
         conditions: RuleCondition[],
         text: string,
-    ): Promise<Array<{ sourceText: string; extractedData: any }>> {
+    ): Promise<Array<{ sourceText: string; extractedData: ExtractedData }>> {
         await this.ensureCache();
 
-        const results: Array<{ sourceText: string; extractedData: any }> = [];
+        const results: Array<{ sourceText: string; extractedData: ExtractedData }> = [];
 
         for (const condition of conditions) {
             const matches = this.matchCondition(condition, text);

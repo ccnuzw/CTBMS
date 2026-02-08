@@ -1,5 +1,8 @@
 
 import { Injectable, OnModuleInit, Logger, MessageEvent } from '@nestjs/common';
+import { spawn } from 'child_process';
+import * as fs from 'fs';
+import * as path from 'path';
 import { Observable } from 'rxjs';
 import { PrismaService } from '../../prisma/prisma.service';
 
@@ -30,9 +33,6 @@ export class InitService implements OnModuleInit {
      */
     streamSeed(): Observable<MessageEvent> {
         return new Observable((observer) => {
-            const spawn = require('child_process').spawn;
-            const path = require('path');
-
             // Determine script path:
             // In dev (ts-node): logic in seed.ts handles .ts execution
             // In prod (node): we run the compiled JS
@@ -43,8 +43,6 @@ export class InitService implements OnModuleInit {
             // Let's use the logic:
             // If running in .ts source, use ts-node
             // If running in .js dist, use node
-
-            const fs = require('fs');
 
             // Logic:
             // 1. Prioritize 'prisma/seed.ts' (Dev/Local) - Allows immediate editing without rebuild
@@ -82,14 +80,14 @@ export class InitService implements OnModuleInit {
                 observer.next({ data: { type, message: data } } as MessageEvent);
             };
 
-            child.stdout.on('data', (data: any) => {
+            child.stdout.on('data', (data: Buffer) => {
                 const lines = data.toString().split('\n');
                 lines.forEach((line: string) => {
                     if (line.trim()) send(line, 'stdout');
                 });
             });
 
-            child.stderr.on('data', (data: any) => {
+            child.stderr.on('data', (data: Buffer) => {
                 const lines = data.toString().split('\n');
                 lines.forEach((line: string) => {
                     if (line.trim()) send(line, 'stderr');
@@ -119,7 +117,7 @@ export class InitService implements OnModuleInit {
         });
     }
 
-    private async measureTime(label: string, fn: () => Promise<any>) {
+    private async measureTime(label: string, fn: () => Promise<unknown>) {
         const start = Date.now();
         const result = await fn();
         const duration = Date.now() - start;
@@ -138,6 +136,7 @@ export class InitService implements OnModuleInit {
         try {
             // 1. Transaction Data (Leaves)
             await this.measureTime('Clear PriceData', () => this.prisma.priceData.deleteMany());
+            await this.measureTime('Clear PriceSubmission', () => this.prisma.priceSubmission.deleteMany());
 
             // 2. Intelligence Data
             await this.measureTime('Clear MarketInsight', () => this.prisma.marketInsight.deleteMany());
@@ -173,8 +172,9 @@ export class InitService implements OnModuleInit {
             // Use TRUNCATE fallback for self-referencing table
             try {
                 await this.measureTime('Clear AdministrativeRegions', () => this.prisma.administrativeRegion.deleteMany());
-            } catch (e: any) {
-                this.logger.warn(`Failed to clear AdministrativeRegions via deleteMany (${e.message}). Trying raw TRUNCATE...`);
+            } catch (e: unknown) {
+                const message = e instanceof Error ? e.message : String(e);
+                this.logger.warn(`Failed to clear AdministrativeRegions via deleteMany (${message}). Trying raw TRUNCATE...`);
                 // Use TRUNCATE CASCADE to force wipe.
                 await this.measureTime('Truncate AdministrativeRegions', () =>
                     this.prisma.$executeRawUnsafe('TRUNCATE TABLE "AdministrativeRegion" CASCADE;')
@@ -205,8 +205,10 @@ export class InitService implements OnModuleInit {
             this.logger.log('✅ Data Cleansing Completed (Full System Wipe).');
             return { success: true, message: 'Full system data cleared successfully.' };
 
-        } catch (error: any) {
-            this.logger.error(`❌ Data Cleansing Failed: ${error.message}`, error.stack);
+        } catch (error: unknown) {
+            const message = error instanceof Error ? error.message : String(error);
+            const stack = error instanceof Error ? error.stack : undefined;
+            this.logger.error(`❌ Data Cleansing Failed: ${message}`, stack);
             throw error;
         }
     }

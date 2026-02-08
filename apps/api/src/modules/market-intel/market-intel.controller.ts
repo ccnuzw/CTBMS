@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, Patch, Param, Delete, Query, Put, UseInterceptors, UploadedFile, ParseFilePipe, MaxFileSizeValidator, FileTypeValidator, Res, BadRequestException } from '@nestjs/common';
+import { Controller, Get, Post, Body, Patch, Param, Delete, Query, Put, UseInterceptors, UploadedFile, Res, BadRequestException } from '@nestjs/common';
 import { Response } from 'express';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { MarketIntelService } from './market-intel.service';
@@ -11,15 +11,18 @@ import {
     MarketIntelQueryRequest,
     AnalyzeContentRequest,
     CreateManualResearchReportRequest,
+    PromoteToReportRequest,
 } from './dto';
 import {
     CreatePriceDataDto,
     PriceDataQuery,
     ContentType,
     IntelCategory,
+    IntelSourceType,
     CreateResearchReportDto,
     UpdateResearchReportDto,
     ResearchReportQuery,
+    ReviewStatus,
 } from '@packages/types';
 import { IntelAttachmentService } from './intel-attachment.service';
 
@@ -71,7 +74,7 @@ export class MarketIntelController {
     async analyze(@Body() dto: AnalyzeContentRequest) {
         return this.marketIntelService.analyze(
             dto.content as string,
-            dto.category as any,
+            dto.category as IntelCategory,
             dto.location,
             dto.base64Image,
             dto.mimeType,
@@ -82,6 +85,38 @@ export class MarketIntelController {
     @Get('test-ai')
     async testAI() {
         return this.marketIntelService.testAI();
+    }
+
+    @Post('documents/batch-delete')
+    async batchDelete(@Body() body: { ids: string[] }) {
+        if (!body.ids || !Array.isArray(body.ids)) {
+            throw new BadRequestException('ids array is required');
+        }
+        return this.marketIntelService.batchDelete(body.ids);
+    }
+
+    @Post('documents/batch-tags')
+    async batchUpdateTags(@Body() body: { ids: string[], addTags?: string[], removeTags?: string[] }) {
+        if (!body.ids || !Array.isArray(body.ids)) {
+            throw new BadRequestException('ids array is required');
+        }
+        return this.marketIntelService.batchUpdateTags(body.ids, body.addTags || [], body.removeTags || []);
+    }
+
+    @Get('documents/stats')
+    async getDocStats(@Query('days') days?: number) {
+        return this.marketIntelService.getDocStats(days ? Number(days) : 30);
+    }
+
+    @Patch(':id/tags')
+    async updateTags(
+        @Param('id') id: string,
+        @Body() body: { tags: string[] },
+    ) {
+        if (!body.tags || !Array.isArray(body.tags)) {
+            throw new BadRequestException('tags array is required');
+        }
+        return this.marketIntelService.updateTags(id, body.tags);
     }
 
     // --- A类：价格数据 ---
@@ -220,7 +255,7 @@ export class MarketIntelController {
     }
 
     @Post('dashboard/briefing')
-    async generateSmartBriefing(@Body() body: any) {
+    async generateSmartBriefing(@Body() body: { startDate?: string; endDate?: string; [key: string]: unknown }) {
         return this.marketIntelService.generateSmartBriefing({
             ...body,
             startDate: body.startDate ? new Date(body.startDate) : undefined,
@@ -342,8 +377,8 @@ export class MarketIntelController {
             ...query,
             startDate: query.startDate ? new Date(query.startDate) : undefined,
             endDate: query.endDate ? new Date(query.endDate) : undefined,
-            page: query.page ? parseInt(query.page as any, 10) : 1,
-            pageSize: query.pageSize ? parseInt(query.pageSize as any, 10) : 20,
+            page: query.page ? Number(query.page) : 1,
+            pageSize: query.pageSize ? Number(query.pageSize) : 20,
         };
         return this.researchReportService.findAll(options);
     }
@@ -356,8 +391,13 @@ export class MarketIntelController {
     }
 
     @Get('research-reports/stats')
-    async getResearchReportStats() {
-        return this.researchReportService.getStats();
+    async getResearchReportStats(@Query('days') days?: string) {
+        return this.researchReportService.getStats({ days: days ? parseInt(days, 10) : undefined });
+    }
+
+    @Get('research-reports/by-intel/:intelId')
+    async findResearchReportByIntelId(@Param('intelId') intelId: string) {
+        return this.researchReportService.findByIntelId(intelId);
     }
 
     @Get('research-reports/:id')
@@ -380,8 +420,16 @@ export class MarketIntelController {
         return this.researchReportService.batchRemove(body.ids);
     }
 
+    @Post('research-reports/batch-review')
+    async batchReviewResearchReports(@Body() body: { ids: string[]; status: ReviewStatus; reviewerId: string }) {
+        if (!body.ids || !Array.isArray(body.ids)) {
+            throw new BadRequestException('ids array is required');
+        }
+        return this.researchReportService.batchUpdateReviewStatus(body.ids, body.status, body.reviewerId);
+    }
+
     @Post('research-reports/export')
-    async exportResearchReports(@Body() body: { ids?: string[], query?: any }, @Res() res: Response) {
+    async exportResearchReports(@Body() body: { ids?: string[]; query?: ResearchReportQuery }, @Res() res: Response) {
         const buffer = await this.researchReportService.export(body.ids, body.query);
         res.set({
             'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
@@ -407,6 +455,16 @@ export class MarketIntelController {
         @Body() body: { status: 'PENDING' | 'APPROVED' | 'REJECTED'; reviewerId: string },
     ) {
         return this.researchReportService.updateReviewStatus(id, body.status, body.reviewerId);
+    }
+
+    // --- 文档升级为研报 (Promote to Report) ---
+
+    @Post(':id/promote-to-report')
+    async promoteToReport(
+        @Param('id') intelId: string,
+        @Body() dto: PromoteToReportRequest,
+    ) {
+        return this.researchReportService.promoteToReport(intelId, dto);
     }
 
 
@@ -447,7 +505,7 @@ export class MarketIntelController {
             commodities: splitOrUndefined(commodities),
             keyword: keyword?.trim() || undefined,
             limit: parseInt(limit, 10),
-            sourceTypes: splitOrUndefined(sourceTypes) as any[] | undefined,
+            sourceTypes: splitOrUndefined(sourceTypes),
             regionCodes: splitOrUndefined(regionCodes),
             minScore: minScore ? parseInt(minScore, 10) : undefined,
             maxScore: maxScore ? parseInt(maxScore, 10) : undefined,
@@ -535,10 +593,14 @@ export class MarketIntelController {
             mappedCategory = IntelCategory.B_SEMI_STRUCTURED;
         }
 
+        const resolvedSourceType = Object.values(IntelSourceType).includes(sourceType as IntelSourceType)
+            ? (sourceType as IntelSourceType)
+            : IntelSourceType.OFFICIAL;
+
         const intel = await this.marketIntelService.create({
             category: mappedCategory,
             contentType: inputContentType,
-            sourceType: (sourceType as any) || 'OFFICIAL',
+            sourceType: resolvedSourceType,
             rawContent,
             effectiveTime: new Date(),
             location: location || '未指定',

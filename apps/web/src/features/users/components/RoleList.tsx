@@ -37,9 +37,22 @@ import {
     ProFormSwitch,
 } from '@ant-design/pro-components';
 import { useModalAutoFocus } from '../../../hooks/useModalAutoFocus';
+import { useDictionary } from '@/hooks/useDictionaries';
 
 export const RoleList: React.FC = () => {
     const { message } = App.useApp();
+    const { data: statusDict } = useDictionary('ENTITY_STATUS');
+
+    const statusOptions = useMemo(() => {
+        const items = (statusDict || []).filter((item) => item.isActive);
+        if (!items.length) {
+            return [
+                { value: 'ACTIVE', label: '启用' },
+                { value: 'INACTIVE', label: '禁用' },
+            ];
+        }
+        return items.map((item) => ({ value: item.code, label: item.label }));
+    }, [statusDict]);
     const screens = Grid.useBreakpoint();
     const { token } = theme.useToken();
     const actionRef = useRef<ActionType>();
@@ -196,10 +209,7 @@ export const RoleList: React.FC = () => {
             <ProFormSelect
                 name="status"
                 label="状态"
-                options={[
-                    { value: 'ACTIVE', label: '启用' },
-                    { value: 'INACTIVE', label: '禁用' },
-                ]}
+                options={statusOptions}
             />
             <ProFormTextArea name="description" label="描述" placeholder="请输入描述" />
         </div>

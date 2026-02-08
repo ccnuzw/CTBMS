@@ -16,6 +16,11 @@ services:
       - postgres_data:/var/lib/postgresql/data
     networks:
       - ctbms_network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-ctbms} -d ${POSTGRES_DB:-ctbms_prod}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
 
   # Backend API Service
   api:
@@ -25,12 +30,15 @@ services:
     container_name: ctbms_api
     restart: always
     depends_on:
-      - postgres
+      postgres:
+        condition: service_healthy
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER:-ctbms}:${POSTGRES_PASSWORD:-ctbms_password}@postgres:5432/${POSTGRES_DB:-ctbms_prod}?schema=public
       PORT: 3000
       # Add other necessary env vars here, passed from .env
       GEMINI_API_KEY: ${GEMINI_API_KEY}
+    volumes:
+      - uploads_data:/app/uploads
     networks:
       - ctbms_network
 
@@ -39,6 +47,8 @@ services:
     build:
       context: .
       dockerfile: apps/web/Dockerfile
+      args:
+        VITE_GOOGLE_GENAI_API_KEY: ${VITE_GOOGLE_GENAI_API_KEY}
     container_name: ctbms_web
     restart: always
     environment:
@@ -67,6 +77,7 @@ services:
 
 volumes:
   postgres_data:
+  uploads_data:
 
 
 networks:

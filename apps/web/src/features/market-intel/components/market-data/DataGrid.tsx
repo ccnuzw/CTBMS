@@ -12,6 +12,8 @@ import {
 } from '@ant-design/icons';
 import { usePriceData } from '../../api/hooks';
 import type { PriceDataResponse, PriceSubType } from '@packages/types';
+import { useDictionary } from '@/hooks/useDictionaries';
+import { usePriceSubTypeLabels } from '@/utils/priceSubType';
 
 const { Text } = Typography;
 
@@ -24,7 +26,7 @@ const POINT_TYPE_ICONS: Record<string, React.ReactNode> = {
     STATION: <EnvironmentOutlined style={{ color: '#13c2c2' }} />,
 };
 
-const POINT_TYPE_LABELS: Record<string, string> = {
+const POINT_TYPE_LABELS_FALLBACK: Record<string, string> = {
     PORT: '港口',
     ENTERPRISE: '企业',
     MARKET: '市场',
@@ -32,16 +34,15 @@ const POINT_TYPE_LABELS: Record<string, string> = {
     STATION: '站台',
 };
 
-const PRICE_SUB_TYPE_LABELS: Record<string, string> = {
-    LISTED: '挂牌价',
-    TRANSACTION: '成交价',
-    ARRIVAL: '到港价',
-    FOB: '平舱价',
-    STATION_ORIGIN: '产区站台',
-    STATION_DEST: '销区站台',
-    PURCHASE: '收购价',
-    WHOLESALE: '批发价',
-    OTHER: '其他',
+
+
+const COMMODITY_LABELS_FALLBACK: Record<string, string> = {
+    CORN: '玉米',
+    WHEAT: '小麦',
+    SOYBEAN: '大豆',
+    RICE: '稻谷',
+    SORGHUM: '高粱',
+    BARLEY: '大麦',
 };
 
 interface DataGridProps {
@@ -64,6 +65,38 @@ export const DataGrid: React.FC<DataGridProps> = ({
     subTypes,
 }) => {
     const { token } = theme.useToken();
+    const { data: priceSubTypeDict } = useDictionary('PRICE_SUB_TYPE');
+    const { data: pointTypeDict } = useDictionary('COLLECTION_POINT_TYPE');
+    const { data: commodityDict } = useDictionary('COMMODITY');
+
+    // 统一的价格类型标签映射（字典优先，兜底中文）
+    const priceSubTypeLabels = usePriceSubTypeLabels(priceSubTypeDict);
+
+    const pointTypeLabels = useMemo(() => {
+        const items = (pointTypeDict || []).filter((item) => item.isActive);
+        if (!items.length) return POINT_TYPE_LABELS_FALLBACK;
+        return items.reduce<Record<string, string>>((acc, item) => {
+            acc[item.code] = item.label;
+            return acc;
+        }, {});
+    }, [pointTypeDict]);
+
+    const commodityLabels = useMemo(() => {
+        const baseMap: Record<string, string> = {};
+        Object.entries(COMMODITY_LABELS_FALLBACK).forEach(([code, label]) => {
+            baseMap[code] = label;
+            baseMap[label] = label;
+        });
+
+        const items = (commodityDict || []).filter((item) => item.isActive);
+        if (!items.length) return baseMap;
+        return items.reduce<Record<string, string>>((acc, item) => {
+            const preferredLabel = COMMODITY_LABELS_FALLBACK[item.code] || item.label;
+            acc[item.code] = preferredLabel;
+            acc[item.label] = preferredLabel;
+            return acc;
+        }, { ...baseMap });
+    }, [commodityDict]);
 
     // 获取价格数据
     const { data: priceDataResult, isLoading } = usePriceData({
@@ -143,9 +176,9 @@ export const DataGrid: React.FC<DataGridProps> = ({
                 return [
                     new Date(item.effectiveDate).toLocaleDateString(),
                     item.location,
-                    POINT_TYPE_LABELS[pointType] || pointType || '-',
-                    item.commodity,
-                    PRICE_SUB_TYPE_LABELS[item.subType] || item.subType,
+                    pointTypeLabels[pointType] || pointType || '-',
+                    commodityLabels[item.commodity] || item.commodity,
+                    priceSubTypeLabels[item.subType] || item.subType,
                     item.price,
                     item.dayChange ?? '',
                     item.moisture ?? '',
@@ -217,7 +250,7 @@ export const DataGrid: React.FC<DataGridProps> = ({
             dataIndex: 'commodity',
             key: 'commodity',
             width: 80,
-            render: (commodity: string) => <Tag>{commodity}</Tag>,
+            render: (commodity: string) => <Tag>{commodityLabels[commodity] || commodity}</Tag>,
         },
         {
             title: '价格类型',
@@ -225,9 +258,9 @@ export const DataGrid: React.FC<DataGridProps> = ({
             key: 'subType',
             width: 100,
             render: (subType: string) => (
-                <Tag color="blue">{PRICE_SUB_TYPE_LABELS[subType] || subType}</Tag>
+                <Tag color="blue">{priceSubTypeLabels[subType] || subType}</Tag>
             ),
-            filters: Object.entries(PRICE_SUB_TYPE_LABELS).map(([key, label]) => ({
+            filters: Object.entries(priceSubTypeLabels).map(([key, label]) => ({
                 text: label,
                 value: key,
             })),

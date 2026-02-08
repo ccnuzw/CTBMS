@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import {
     PageContainer,
     ProForm,
@@ -12,6 +12,7 @@ import { App, Card, Grid } from 'antd';
 import { useNavigate, useParams } from 'react-router-dom';
 import { CreateRoleDto, UpdateRoleDto } from '@packages/types';
 import { useCreateRole, useUpdateRole } from '../api/roles';
+import { useDictionary } from '@/hooks/useDictionaries';
 
 export const RoleEditor: React.FC = () => {
     const { message } = App.useApp();
@@ -23,6 +24,18 @@ export const RoleEditor: React.FC = () => {
 
     const createRole = useCreateRole();
     const updateRole = useUpdateRole();
+    const { data: statusDict } = useDictionary('ENTITY_STATUS');
+
+    const statusOptions = useMemo(() => {
+        const items = (statusDict || []).filter((item) => item.isActive);
+        if (!items.length) {
+            return [
+                { value: 'ACTIVE', label: '启用' },
+                { value: 'INACTIVE', label: '禁用' },
+            ];
+        }
+        return items.map((item) => ({ value: item.code, label: item.label }));
+    }, [statusDict]);
 
     const loadData = async () => {
         if (!isEdit || !id) {
@@ -114,10 +127,7 @@ export const RoleEditor: React.FC = () => {
                     <ProFormSelect
                         name="status"
                         label="状态"
-                        options={[
-                            { value: 'ACTIVE', label: '启用' },
-                            { value: 'INACTIVE', label: '禁用' },
-                        ]}
+                        options={statusOptions}
                     />
                     <ProFormTextArea name="description" label="描述" placeholder="请输入描述" />
                 </ProForm>

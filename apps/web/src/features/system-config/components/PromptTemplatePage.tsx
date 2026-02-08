@@ -1,11 +1,12 @@
 
 import { Button, App, Popconfirm, Tag, Space, Drawer } from 'antd';
-import { useState, useRef } from 'react';
+import { useMemo, useState, useRef } from 'react';
 import { ActionType, ProColumns, ProTable, ModalForm, ProFormText, ProFormTextArea, ProFormSelect, ProFormSwitch } from '@ant-design/pro-components';
 import { usePrompts, useCreatePrompt, useUpdatePrompt, useDeletePrompt, usePreviewPrompt } from '../api';
 import { PromptTemplate } from '../types';
 import { PlusOutlined, EditOutlined, DeleteOutlined, EyeOutlined } from '@ant-design/icons';
 import { useModalAutoFocus } from '../../../hooks/useModalAutoFocus';
+import { useDictionary } from '@/hooks/useDictionaries';
 
 const GENERIC_PROMPT_VARS = {
     content: "这是一个测试内容...",
@@ -22,6 +23,7 @@ export const PromptTemplatePage = () => {
     const updateMutation = useUpdatePrompt();
     const deleteMutation = useDeletePrompt();
     const previewMutation = usePreviewPrompt();
+    const { data: intelCategoryDict } = useDictionary('INTEL_CATEGORY');
 
     // State for Modal
     const [modalVisible, setModalVisible] = useState(false);
@@ -34,6 +36,43 @@ export const PromptTemplatePage = () => {
     // Auto Focus Hook
     const { containerRef, autoFocusFieldProps, modalProps } = useModalAutoFocus();
     const isEditMode = !!currentRow;
+
+    const categoryValueEnum = useMemo(() => {
+        const items = (intelCategoryDict || []).filter((item) => item.isActive);
+        const fallback = {
+            A_STRUCTURED: { text: 'A类-结构化', status: 'Processing' },
+            B_SEMI_STRUCTURED: { text: 'B类-半结构化', status: 'Warning' },
+            C_DOCUMENT: { text: 'C类-文档', status: 'Success' },
+        };
+        if (!items.length) return fallback;
+        const statusMap: Record<string, string> = {
+            processing: 'Processing',
+            success: 'Success',
+            warning: 'Warning',
+            error: 'Error',
+            default: 'Default',
+        };
+        return items.reduce<Record<string, { text: string; status: string }>>((acc, item) => {
+            const color = (item.meta as { color?: string } | null)?.color || 'default';
+            acc[item.code] = { text: item.label, status: statusMap[color] || 'Default' };
+            return acc;
+        }, {});
+    }, [intelCategoryDict]);
+
+    const categoryOptions = useMemo(() => {
+        const items = (intelCategoryDict || []).filter((item) => item.isActive);
+        if (!items.length) {
+            return [
+                { label: 'A类-结构化', value: 'A_STRUCTURED' },
+                { label: 'B类-半结构化', value: 'B_SEMI_STRUCTURED' },
+                { label: 'C类-文档', value: 'C_DOCUMENT' },
+            ];
+        }
+        return items.map((item) => ({
+            label: item.label,
+            value: item.code,
+        }));
+    }, [intelCategoryDict]);
 
     const handleEdit = (record: PromptTemplate) => {
         setCurrentRow(record);
@@ -102,12 +141,7 @@ export const PromptTemplatePage = () => {
         {
             title: '分类',
             dataIndex: 'category',
-            valueEnum: {
-                A_STRUCTURED: { text: 'A类-结构化', status: 'Processing' },
-                B_SEMI_STRUCTURED: { text: 'B类-半结构化', status: 'Warning' },
-                C_DOCUMENT: { text: 'C类-文档', status: 'Success' },
-
-            },
+            valueEnum: categoryValueEnum,
             width: 150,
         },
         {
@@ -223,11 +257,7 @@ export const PromptTemplatePage = () => {
                     <ProFormSelect
                         name="category"
                         label="业务分类"
-                        valueEnum={{
-                            A_STRUCTURED: 'A类-结构化',
-                            B_SEMI_STRUCTURED: 'B类-半结构化',
-                            C_DOCUMENT: 'C类-文档',
-                        }}
+                        options={categoryOptions}
                         rules={[{ required: true }]}
                     />
 

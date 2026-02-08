@@ -25,18 +25,29 @@ import {
 import { useQueryClient } from '@tanstack/react-query';
 import { FilterPanel, TrendChart, ComparisonPanel, DataGrid, InsightCards } from './market-data';
 import { useModalAutoFocus } from '@/hooks/useModalAutoFocus';
+import { useDictionary } from '@/hooks/useDictionaries';
 import type { PriceSubType } from '@packages/types';
 
 const { Title, Text, Paragraph } = Typography;
 
 type TabKey = 'trend' | 'comparison' | 'data';
 
+const COMMODITY_LABELS_FALLBACK: Record<string, string> = {
+    CORN: '玉米',
+    WHEAT: '小麦',
+    SOYBEAN: '大豆',
+    RICE: '稻谷',
+    SORGHUM: '高粱',
+    BARLEY: '大麦',
+};
+
 export const MarketData: React.FC = () => {
     const { token } = theme.useToken();
     const queryClient = useQueryClient();
+    const { data: commodityDict } = useDictionary('COMMODITY');
 
-    // 筛选状态
-    const [commodity, setCommodity] = useState('玉米');
+    // 筛选状态 - 存储 code (如 CORN)
+    const [commodity, setCommodity] = useState('CORN');
     const [dateRange, setDateRange] = useState<[Dayjs, Dayjs] | null>(() => [
         dayjs().subtract(29, 'day'),
         dayjs(),
@@ -50,6 +61,16 @@ export const MarketData: React.FC = () => {
     const [helpVisible, setHelpVisible] = useState(false);
     const { containerRef, modalProps, focusRef } = useModalAutoFocus();
 
+    // 显示文案统一使用中文兜底，避免字典被改成英文后界面显示 code
+    const commodityDisplayLabel = useMemo(() => {
+        const fallbackLabel = COMMODITY_LABELS_FALLBACK[commodity];
+        if (fallbackLabel) return fallbackLabel;
+
+        if (!commodityDict) return commodity;
+        const found = commodityDict.find((item) => item.code === commodity);
+        return found?.label || commodity;
+    }, [commodity, commodityDict]);
+
     const { startDate, endDate } = useMemo(() => {
         if (!dateRange) return { startDate: undefined, endDate: undefined };
         return {
@@ -57,6 +78,7 @@ export const MarketData: React.FC = () => {
             endDate: dateRange[1].endOf('day').toDate(),
         };
     }, [dateRange]);
+
 
     // 刷新数据
     const handleRefresh = () => {
@@ -88,6 +110,7 @@ export const MarketData: React.FC = () => {
                     {/* 趋势图表 */}
                     <TrendChart
                         commodity={commodity}
+                        commodityLabel={commodityDisplayLabel}
                         startDate={startDate}
                         endDate={endDate}
                         selectedPointIds={selectedPointIds}
