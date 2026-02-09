@@ -182,6 +182,18 @@ export const KnowledgeDetailPage: React.FC = () => {
       ]}
     >
       <KnowledgeTopActionsBar
+        contextBackLabel={
+          backTo.includes('workbench')
+            ? '返回工作台'
+            : backTo.includes('/dashboard')
+              ? '返回看板'
+              : undefined
+        }
+        onContextBack={
+          backTo.includes('workbench') || backTo.includes('/dashboard')
+            ? () => navigate(backTo)
+            : undefined
+        }
         onBackLibrary={() => navigate('/intel/knowledge?tab=library')}
         onCreateReport={() => navigate('/intel/knowledge/reports/create')}
         generatingWeekly={weeklyRollupMutation.isPending}

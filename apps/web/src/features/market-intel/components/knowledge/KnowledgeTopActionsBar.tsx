@@ -7,6 +7,8 @@ type Props = {
   onBackLibrary: () => void;
   onCreateReport: () => void;
   onGenerateWeekly: () => void;
+  contextBackLabel?: string;
+  onContextBack?: () => void;
   generatingWeekly?: boolean;
   rightExtra?: React.ReactNode;
 };
@@ -15,6 +17,8 @@ export const KnowledgeTopActionsBar: React.FC<Props> = ({
   onBackLibrary,
   onCreateReport,
   onGenerateWeekly,
+  contextBackLabel,
+  onContextBack,
   generatingWeekly,
   rightExtra,
 }) => {
@@ -22,6 +26,9 @@ export const KnowledgeTopActionsBar: React.FC<Props> = ({
     <Card style={{ marginBottom: 16, borderRadius: 12, borderColor: '#e9edf5' }}>
       <Space style={{ width: '100%', justifyContent: 'space-between' }} wrap>
         <Space wrap>
+          {contextBackLabel && onContextBack ? (
+            <Button onClick={onContextBack}>{contextBackLabel}</Button>
+          ) : null}
           <Button icon={<BookOutlined />} onClick={onBackLibrary}>
             返回知识库
           </Button>

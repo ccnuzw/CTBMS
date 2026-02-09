@@ -179,18 +179,11 @@ export const KnowledgeDashboardPage: React.FC = () => {
         <Button key="back" icon={<ArrowLeftOutlined />} onClick={handleBack}>
           返回上一页
         </Button>,
-        fromWorkbench ? (
-          <Button
-            key="back-workbench"
-            icon={<ArrowLeftOutlined />}
-            onClick={() => navigate('/intel/knowledge?tab=workbench')}
-          >
-            返回工作台
-          </Button>
-        ) : null,
-      ].filter(Boolean)}
+      ]}
     >
       <KnowledgeTopActionsBar
+        contextBackLabel={fromWorkbench ? '返回工作台' : undefined}
+        onContextBack={fromWorkbench ? () => navigate('/intel/knowledge?tab=workbench') : undefined}
         onBackLibrary={() => navigate('/intel/knowledge?tab=library&from=dashboard')}
         onCreateReport={() => navigate('/intel/knowledge/reports/create')}
         generatingWeekly={weeklyRollupMutation.isPending}
