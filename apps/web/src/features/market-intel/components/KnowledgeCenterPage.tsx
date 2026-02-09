@@ -1,10 +1,4 @@
-import {
-  ArrowLeftOutlined,
-  BarChartOutlined,
-  ReloadOutlined,
-  SearchOutlined,
-  ThunderboltOutlined,
-} from '@ant-design/icons';
+import { SearchOutlined } from '@ant-design/icons';
 import { PageContainer } from '@ant-design/pro-components';
 import {
   Button,
@@ -26,6 +20,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { useGenerateWeeklyRollup, useKnowledgeItems } from '../api/knowledge-hooks';
 import { KNOWLEDGE_TYPE_LABELS } from '../constants/knowledge-labels';
+import { KnowledgeTopActionsBar } from './knowledge/KnowledgeTopActionsBar';
 
 const { Text } = Typography;
 const FILTER_STORAGE_KEY = 'knowledge-center-filters-v1';
@@ -255,6 +250,41 @@ export const KnowledgeCenterPage: React.FC = () => {
         </Space>
       </Card>
 
+      <KnowledgeTopActionsBar
+        contextBackLabel={
+          from === 'workbench' ? '返回工作台' : from === 'dashboard' ? '返回看板' : undefined
+        }
+        onContextBack={
+          from === 'workbench'
+            ? () => navigate('/intel/knowledge?tab=workbench')
+            : from === 'dashboard'
+              ? () => navigate('/intel/knowledge/dashboard?from=dashboard')
+              : undefined
+        }
+        onBackLibrary={() => navigate('/intel/knowledge?tab=library')}
+        onQuickEntry={() => navigate('/intel/entry')}
+        onCreateReport={() => navigate('/intel/knowledge/reports/create')}
+        onOpenDashboard={() =>
+          navigate(
+            from === 'workbench'
+              ? '/intel/knowledge/dashboard?from=workbench'
+              : from === 'dashboard'
+                ? '/intel/knowledge/dashboard?from=dashboard'
+                : '/intel/knowledge/dashboard',
+          )
+        }
+        generatingWeekly={weeklyRollupMutation.isPending}
+        onGenerateWeekly={async () => {
+          try {
+            await weeklyRollupMutation.mutateAsync({ triggerAnalysis: true });
+            message.success('周报已生成并完成关联');
+          } catch (error) {
+            message.error('周报生成失败，请稍后重试');
+            console.error(error);
+          }
+        }}
+      />
+
       <Card style={{ marginTop: 16 }}>
         <Row gutter={[12, 12]} align="middle">
           <Col xs={24} lg={15}>
@@ -300,55 +330,6 @@ export const KnowledgeCenterPage: React.FC = () => {
                 查询
               </Button>
               <Button onClick={resetFilters}>重置</Button>
-            </Space>
-          </Col>
-
-          <Col xs={24} lg={9}>
-            <Space
-              wrap
-              style={{ width: '100%', justifyContent: screens.lg ? 'flex-end' : 'flex-start' }}
-            >
-              <Button
-                icon={<ThunderboltOutlined />}
-                type="primary"
-                loading={weeklyRollupMutation.isPending}
-                onClick={async () => {
-                  try {
-                    await weeklyRollupMutation.mutateAsync({ triggerAnalysis: true });
-                    message.success('周报已生成并完成关联');
-                  } catch (error) {
-                    message.error('周报生成失败，请稍后重试');
-                    console.error(error);
-                  }
-                }}
-              >
-                生成本周周报
-              </Button>
-              {from === 'workbench' ? (
-                <Button
-                  icon={<ArrowLeftOutlined />}
-                  onClick={() => navigate('/intel/knowledge?tab=workbench')}
-                >
-                  返回工作台
-                </Button>
-              ) : null}
-              <Button
-                icon={<BarChartOutlined />}
-                onClick={() =>
-                  navigate(
-                    from === 'workbench'
-                      ? '/intel/knowledge/dashboard?from=workbench'
-                      : from === 'dashboard'
-                        ? '/intel/knowledge/dashboard?from=dashboard'
-                        : '/intel/knowledge/dashboard',
-                  )
-                }
-              >
-                分析看板
-              </Button>
-              <Button icon={<ReloadOutlined />} onClick={() => window.location.reload()}>
-                刷新
-              </Button>
             </Space>
           </Col>
         </Row>
