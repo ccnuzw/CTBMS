@@ -23,10 +23,18 @@ import {
     FilterOutlined,
 } from '@ant-design/icons';
 import { useQueryClient } from '@tanstack/react-query';
-import { FilterPanel, TrendChart, ComparisonPanel, DataGrid, InsightCards } from './market-data';
+import {
+    FilterPanel,
+    TrendChart,
+    ComparisonPanel,
+    DataGrid,
+    InsightCards,
+    ContinuityHealthPanel,
+} from './market-data';
 import { useModalAutoFocus } from '@/hooks/useModalAutoFocus';
 import { useDictionary } from '@/hooks/useDictionaries';
 import type { PriceSubType } from '@packages/types';
+import type { PriceQualityTag } from './market-data/quality';
 
 const { Title, Text, Paragraph } = Typography;
 
@@ -56,6 +64,7 @@ export const MarketData: React.FC = () => {
     const [selectedProvince, setSelectedProvince] = useState<string | undefined>();
     const [pointTypeFilter, setPointTypeFilter] = useState<string[]>([]);
     const [selectedSubTypes, setSelectedSubTypes] = useState<PriceSubType[]>([]);
+    const [selectedQualityTags, setSelectedQualityTags] = useState<PriceQualityTag[]>([]);
     const [activeTab, setActiveTab] = useState<TabKey>('trend');
     const [focusedPointId, setFocusedPointId] = useState<string | null>(null);
     const [helpVisible, setHelpVisible] = useState(false);
@@ -86,6 +95,7 @@ export const MarketData: React.FC = () => {
         queryClient.invalidateQueries({ queryKey: ['multi-point-compare'] });
         queryClient.invalidateQueries({ queryKey: ['price-by-collection-point'] });
         queryClient.invalidateQueries({ queryKey: ['price-by-region'] });
+        queryClient.invalidateQueries({ queryKey: ['price-continuity-health'] });
     };
 
     const tabItems = [
@@ -99,6 +109,15 @@ export const MarketData: React.FC = () => {
             ),
             children: (
                 <Space direction="vertical" size={16} style={{ width: '100%' }}>
+                    <ContinuityHealthPanel
+                        commodity={commodity}
+                        startDate={startDate}
+                        endDate={endDate}
+                        selectedRegionCode={selectedProvince}
+                        pointTypes={pointTypeFilter}
+                        subTypes={selectedSubTypes}
+                        selectedPointIds={selectedPointIds}
+                    />
                     {/* 智能洞察 */}
                     <InsightCards
                         commodity={commodity}
@@ -162,6 +181,7 @@ export const MarketData: React.FC = () => {
                     selectedProvince={selectedProvince}
                     pointTypeFilter={pointTypeFilter}
                     subTypes={selectedSubTypes}
+                    selectedQualityTags={selectedQualityTags}
                 />
             ),
         },
@@ -218,6 +238,8 @@ export const MarketData: React.FC = () => {
                 onPointTypeFilterChange={setPointTypeFilter}
                 selectedSubTypes={selectedSubTypes}
                 onSelectedSubTypesChange={setSelectedSubTypes}
+                selectedQualityTags={selectedQualityTags}
+                onSelectedQualityTagsChange={setSelectedQualityTags}
             />
 
             {/* 主内容区 */}

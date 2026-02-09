@@ -8,7 +8,10 @@
         "start": "nest start",
         "dev": "nest start --watch",
         "lint": "eslint \"{src,apps,libs,test}/**/*.ts\" --fix",
-        "type-check": "tsc --noEmit"
+        "type-check": "tsc --noEmit",
+        "alerts:migrate-rules": "ts-node prisma/migrate-market-alert-rules.ts",
+        "alerts:check-migration": "ts-node prisma/check-market-alert-migration.ts",
+        "alerts:seed-rules": "ts-node prisma/seed-market-alert-rules.ts"
     },
     "dependencies": {
         "@google/generative-ai": "^0.24.1",

@@ -12,6 +12,7 @@ import {
 } from '@ant-design/icons';
 import { usePriceData } from '../../api/hooks';
 import type { PriceDataResponse, PriceSubType } from '@packages/types';
+import { PRICE_QUALITY_TAG_LABELS, PriceQualityTag } from './quality';
 import { useDictionary } from '@/hooks/useDictionaries';
 import { usePriceSubTypeLabels } from '@/utils/priceSubType';
 
@@ -45,6 +46,13 @@ const COMMODITY_LABELS_FALLBACK: Record<string, string> = {
     BARLEY: '大麦',
 };
 
+const QUALITY_TAG_COLORS: Record<PriceQualityTag, string> = {
+    [PriceQualityTag.RAW]: 'default',
+    [PriceQualityTag.IMPUTED]: 'processing',
+    [PriceQualityTag.CORRECTED]: 'warning',
+    [PriceQualityTag.LATE]: 'error',
+};
+
 interface DataGridProps {
     commodity: string;
     startDate?: Date;
@@ -53,7 +61,10 @@ interface DataGridProps {
     selectedProvince?: string;
     pointTypeFilter?: string[];
     subTypes?: PriceSubType[];
+    selectedQualityTags?: PriceQualityTag[];
 }
+
+type PriceDataRow = PriceDataResponse & { qualityTag?: PriceQualityTag };
 
 export const DataGrid: React.FC<DataGridProps> = ({
     commodity,
@@ -63,6 +74,7 @@ export const DataGrid: React.FC<DataGridProps> = ({
     selectedProvince,
     pointTypeFilter,
     subTypes,
+    selectedQualityTags,
 }) => {
     const { token } = theme.useToken();
     const { data: priceSubTypeDict } = useDictionary('PRICE_SUB_TYPE');
@@ -107,14 +119,23 @@ export const DataGrid: React.FC<DataGridProps> = ({
         collectionPointIds: selectedPointIds,
         pointTypes: pointTypeFilter,
         subTypes: subTypes as PriceSubType[],
+        qualityTags: selectedQualityTags,
         pageSize: 1000, // 扩大以支持足够的本地过滤
     }, {
         enabled: selectedPointIds.length > 0,
     });
 
-    const priceDataList = priceDataResult?.data || [];
+    const priceDataList: PriceDataRow[] = (priceDataResult?.data || []) as PriceDataRow[];
 
-    const filteredData = priceDataList;
+    const filteredData = useMemo(() => {
+        if (!selectedQualityTags || selectedQualityTags.length === 0) {
+            return priceDataList;
+        }
+        return priceDataList.filter((item) => {
+            const tag = (item.qualityTag || PriceQualityTag.RAW) as PriceQualityTag;
+            return selectedQualityTags.includes(tag as PriceQualityTag);
+        });
+    }, [priceDataList, selectedQualityTags]);
 
     const quality = useMemo(() => {
         if (!filteredData || filteredData.length === 0) return null;
@@ -165,6 +186,7 @@ export const DataGrid: React.FC<DataGridProps> = ({
             '地理层级',
             '行政区划',
             '来源类型',
+            '质量标签',
             '备注',
         ].join(',') + '\n';
 
@@ -187,6 +209,7 @@ export const DataGrid: React.FC<DataGridProps> = ({
                     item.geoLevel ?? '',
                     item.regionCode ?? '',
                     item.sourceType ?? '',
+                    PRICE_QUALITY_TAG_LABELS[(item.qualityTag || PriceQualityTag.RAW) as PriceQualityTag],
                     item.note ?? '',
                 ].map(csvEscape).join(',');
             })
@@ -198,7 +221,7 @@ export const DataGrid: React.FC<DataGridProps> = ({
         link.click();
     };
 
-    const columns: ColumnsType<PriceDataResponse> = [
+    const columns: ColumnsType<PriceDataRow> = [
         {
             title: '日期',
             dataIndex: 'effectiveDate',
@@ -239,7 +262,7 @@ export const DataGrid: React.FC<DataGridProps> = ({
             dataIndex: 'province',
             key: 'province',
             width: 80,
-            render: (province: string | null, record: PriceDataResponse) => (
+            render: (province: string | null, record: PriceDataRow) => (
                 <Text type="secondary" style={{ fontSize: 12 }}>
                     {province || record.city || '-'}
                 </Text>
@@ -303,6 +326,21 @@ export const DataGrid: React.FC<DataGridProps> = ({
             width: 70,
             align: 'right',
             render: (moisture: number | null) => (moisture ? `${moisture}%` : '-'),
+        },
+        {
+            title: '质量',
+            dataIndex: 'qualityTag',
+            key: 'qualityTag',
+            width: 100,
+            render: (qualityTag: PriceQualityTag | undefined) => {
+                const tag = (qualityTag || PriceQualityTag.RAW) as PriceQualityTag;
+                return <Tag color={QUALITY_TAG_COLORS[tag]}>{PRICE_QUALITY_TAG_LABELS[tag]}</Tag>;
+            },
+            filters: Object.values(PriceQualityTag).map((tag) => ({
+                text: PRICE_QUALITY_TAG_LABELS[tag],
+                value: tag,
+            })),
+            onFilter: (value, record) => (record.qualityTag || PriceQualityTag.RAW) === value,
         },
         {
             title: '备注',

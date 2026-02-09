@@ -279,6 +279,20 @@ export const useReviewTask = () => {
     });
 };
 
+export const useCancelTask = () => {
+    const queryClient = useQueryClient();
+    return useMutation({
+        mutationFn: async ({ id, operatorId, reason }: { id: string; operatorId?: string; reason?: string }) => {
+            const { data: res } = await apiClient.post<IntelTaskResponse>(`${BASE_URL}/${id}/cancel`, { operatorId, reason });
+            return res;
+        },
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['intel-tasks'] });
+            queryClient.invalidateQueries({ queryKey: ['my-intel-tasks'] });
+        },
+    });
+};
+
 // --- Templates ---
 
 export const useTaskTemplates = () => {

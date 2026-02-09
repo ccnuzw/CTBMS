@@ -614,6 +614,59 @@ enum ReviewStatus {
   ARCHIVED   // 已归档
 }
 
+// =============================================
+// Knowledge V2: 统一知识库
+// =============================================
+
+enum KnowledgeType {
+  DAILY
+  WEEKLY
+  MONTHLY
+  RESEARCH
+  POLICY
+  FLASH
+  THIRD_PARTY
+}
+
+enum KnowledgePeriodType {
+  DAY
+  WEEK
+  MONTH
+  QUARTER
+  YEAR
+  ADHOC
+}
+
+enum KnowledgeStatus {
+  DRAFT
+  PENDING_REVIEW
+  APPROVED
+  REJECTED
+  PUBLISHED
+  ARCHIVED
+}
+
+enum KnowledgeContentFormat {
+  PLAIN
+  MARKDOWN
+  HTML
+}
+
+enum KnowledgeRelationType {
+  DERIVED_FROM
+  CITES
+  SAME_TOPIC
+  FOLLOW_UP
+  CONTRADICTS
+  WEEKLY_ROLLUP_OF
+}
+
+enum KnowledgeTagSource {
+  AI
+  RULE
+  MANUAL
+}
+
 // 商情情报主表
 model MarketIntel {
   id            String          @id @default(uuid())
@@ -723,6 +776,118 @@ model ResearchReport {
   @@index([reviewStatus])
 }
 
+model KnowledgeItem {
+  id                 String                 @id @default(uuid())
+  type               KnowledgeType
+  title              String
+  contentFormat      KnowledgeContentFormat @default(HTML)
+  contentPlain       String                 @db.Text
+  contentRich        String?                @db.Text
+  sourceType         String?
+  publishAt          DateTime?
+  effectiveAt        DateTime?
+  periodType         KnowledgePeriodType    @default(ADHOC)
+  periodKey          String?
+  location           String?
+  region             String[]               @default([])
+  commodities        String[]               @default([])
+  status             KnowledgeStatus        @default(DRAFT)
+  authorId           String
+  reviewerId         String?
+  reviewedAt         DateTime?
+  version            Int                    @default(1)
+  parentVersionId    String?
+  parentVersion      KnowledgeItem?         @relation("KnowledgeVersion", fields: [parentVersionId], references: [id])
+  childVersions      KnowledgeItem[]        @relation("KnowledgeVersion")
+  originLegacyType   String?
+  originLegacyId     String?
+  qualityScore       Int                    @default(0)
+  createdAt          DateTime               @default(now())
+  updatedAt          DateTime               @updatedAt
+
+  analysis           KnowledgeAnalysis?
+  attachments        KnowledgeAttachment[]
+  relationsFrom      KnowledgeRelation[]    @relation("KnowledgeRelationFrom")
+  relationsTo        KnowledgeRelation[]    @relation("KnowledgeRelationTo")
+  tagMaps            KnowledgeTagMap[]
+
+  @@index([type, publishAt])
+  @@index([periodType, periodKey])
+  @@index([status, publishAt])
+  @@index([sourceType, status])
+  @@index([authorId])
+  @@index([originLegacyType, originLegacyId])
+}
+
+model KnowledgeAnalysis {
+  id               String        @id @default(uuid())
+  knowledgeId      String        @unique
+  knowledge        KnowledgeItem @relation(fields: [knowledgeId], references: [id], onDelete: Cascade)
+  summary          String?       @db.Text
+  sentiment        String?
+  confidenceScore  Int?
+  reportType       String?
+  reportPeriod     String?
+  keyPoints        Json?
+  prediction       Json?
+  dataPoints       Json?
+  events           Json?
+  insights         Json?
+  marketSentiment  Json?
+  tags             String[]       @default([])
+  traceLogs        Json?
+  modelName        String?
+  provider         String?
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+}
+
+model KnowledgeAttachment {
+  id           String        @id @default(uuid())
+  knowledgeId  String
+  knowledge    KnowledgeItem @relation(fields: [knowledgeId], references: [id], onDelete: Cascade)
+  filename     String
+  mimeType     String
+  fileSize     Int
+  storagePath  String
+  ocrText      String?       @db.Text
+  sha256       String?
+  createdAt    DateTime      @default(now())
+
+  @@index([knowledgeId])
+}
+
+model KnowledgeRelation {
+  id               String                @id @default(uuid())
+  fromKnowledgeId  String
+  toKnowledgeId    String
+  relationType     KnowledgeRelationType
+  weight           Int                   @default(50)
+  evidence         String?               @db.Text
+  createdAt        DateTime              @default(now())
+
+  fromKnowledge    KnowledgeItem         @relation("KnowledgeRelationFrom", fields: [fromKnowledgeId], references: [id], onDelete: Cascade)
+  toKnowledge      KnowledgeItem         @relation("KnowledgeRelationTo", fields: [toKnowledgeId], references: [id], onDelete: Cascade)
+
+  @@unique([fromKnowledgeId, toKnowledgeId, relationType])
+  @@index([fromKnowledgeId])
+  @@index([toKnowledgeId])
+}
+
+model KnowledgeTagMap {
+  id            String             @id @default(uuid())
+  knowledgeId   String
+  knowledge     KnowledgeItem      @relation(fields: [knowledgeId], references: [id], onDelete: Cascade)
+  tagCode       String
+  tagSource     KnowledgeTagSource @default(AI)
+  score         Int                @default(50)
+  createdAt     DateTime           @default(now())
+
+  @@unique([knowledgeId, tagCode, tagSource])
+  @@index([knowledgeId])
+  @@index([tagCode])
+}
+
 // 情报员统计表
 model UserIntelStats {
   id                String   @id @default(uuid())
@@ -772,6 +937,39 @@ enum GeoLevel {
   PORT          // 港口
   STATION       // 站台
   ENTERPRISE    // 企业点位
+}
+
+// 预警规则类型
+enum MarketAlertRuleType {
+  DAY_CHANGE_ABS
+  DAY_CHANGE_PCT
+  DEVIATION_FROM_MEAN_PCT
+  CONTINUOUS_DAYS
+}
+
+// 预警等级
+enum MarketAlertSeverity {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+// 预警状态
+enum MarketAlertStatus {
+  OPEN
+  ACKNOWLEDGED
+  CLOSED
+}
+
+// 预警动作日志类型
+enum MarketAlertAction {
+  CREATE
+  UPDATE_HIT
+  ACK
+  CLOSE
+  REOPEN
+  AUTO_CLOSE
 }
 
 model PriceData {
@@ -863,6 +1061,81 @@ model PriceData {
   @@index([inputMethod, effectiveDate])             // 按录入方式查询
   @@index([reviewStatus])                           // 按审核状态查询
   @@index([submissionId])                           // 按填报批次查询
+}
+
+// =============================================
+// A类：预警规则与实例
+// =============================================
+
+model MarketAlertRule {
+  id           String             @id @default(uuid())
+  name         String
+  type         MarketAlertRuleType
+  threshold    Decimal?           @db.Decimal(10, 2)
+  days         Int?
+  direction    String?
+  severity     MarketAlertSeverity @default(MEDIUM)
+  priority     Int                @default(0)
+  isActive     Boolean            @default(true)
+  legacyRuleId String?            @unique
+
+  instances    MarketAlertInstance[]
+
+  createdAt    DateTime           @default(now())
+  updatedAt    DateTime           @updatedAt
+
+  @@index([isActive, priority])
+  @@index([type])
+}
+
+model MarketAlertInstance {
+  id               String              @id @default(uuid())
+  ruleId           String
+  rule             MarketAlertRule     @relation(fields: [ruleId], references: [id])
+  status           MarketAlertStatus   @default(OPEN)
+  severity         MarketAlertSeverity
+  dedupeKey        String
+  pointId          String
+  pointName        String
+  pointType        String
+  regionLabel      String?
+  commodity        String
+  triggerDate      DateTime
+  firstTriggeredAt DateTime
+  lastTriggeredAt  DateTime
+  triggerValue     Decimal             @db.Decimal(10, 2)
+  thresholdValue   Decimal             @db.Decimal(10, 2)
+  message          String
+  note             String?
+  closedReason     String?
+
+  logs             MarketAlertStatusLog[]
+
+  createdAt        DateTime            @default(now())
+  updatedAt        DateTime            @updatedAt
+
+  @@index([ruleId, createdAt])
+  @@index([status, severity, triggerDate])
+  @@index([commodity, triggerDate])
+  @@index([dedupeKey])
+}
+
+model MarketAlertStatusLog {
+  id         String            @id @default(uuid())
+  instanceId String
+  instance   MarketAlertInstance @relation(fields: [instanceId], references: [id], onDelete: Cascade)
+  action     MarketAlertAction
+  fromStatus MarketAlertStatus?
+  toStatus   MarketAlertStatus
+  operator   String
+  note       String?
+  reason     String?
+  meta       Json?
+
+  createdAt  DateTime          @default(now())
+
+  @@index([instanceId, createdAt])
+  @@index([action, createdAt])
 }
 
 // =============================================
@@ -1031,6 +1304,7 @@ enum IntelTaskStatus {
   RETURNED  // 已驳回需修改
   COMPLETED
   OVERDUE
+  CANCELLED // 已取消
 }
 
 // =============================================
@@ -1114,6 +1388,7 @@ model IntelTask {
   
   // 状态
   status      IntelTaskStatus @default(PENDING)
+  returnReason String?           // 驳回原因
   completedAt DateTime?
   isLate      Boolean         @default(false)
   

@@ -150,9 +150,78 @@ export const ResearchReportCreatePage = () => {
         return items.map((item) => ({ label: item.label, value: item.code }));
     }, [dictionaries]);
 
+    const normalizeDictValue = (value?: string | null) => (value || '').trim().toUpperCase();
+
+    const predictionDirectionValueMap = useMemo(() => {
+        const map: Record<string, string> = {
+            POSITIVE: 'BULLISH',
+            NEGATIVE: 'BEARISH',
+            STABLE: 'NEUTRAL',
+            VOLATILE: 'MIXED',
+        };
+
+        Object.keys(MARKET_SENTIMENT_LABELS).forEach((code) => {
+            map[normalizeDictValue(code)] = normalizeDictValue(code);
+        });
+
+        const items = dictionaries?.MARKET_SENTIMENT?.filter((item) => item.isActive) || [];
+        items.forEach((item) => {
+            const normalizedCode = normalizeDictValue(item.code);
+            map[normalizedCode] = normalizedCode;
+            const aliases = ((item.meta as { aliases?: string[] } | null)?.aliases || [])
+                .filter((alias): alias is string => Boolean(alias));
+            aliases.forEach((alias) => {
+                map[normalizeDictValue(alias)] = normalizedCode;
+            });
+        });
+
+        return map;
+    }, [dictionaries]);
+
+    const predictionTimeframeValueMap = useMemo(() => {
+        const map: Record<string, string> = {
+            SHORT_TERM: 'SHORT',
+            MEDIUM_TERM: 'MEDIUM',
+            LONG_TERM: 'LONG',
+            'SHORT-TERM': 'SHORT',
+            'MEDIUM-TERM': 'MEDIUM',
+            'LONG-TERM': 'LONG',
+        };
+
+        Object.keys(PREDICTION_TIMEFRAME_LABELS).forEach((code) => {
+            map[normalizeDictValue(code)] = normalizeDictValue(code);
+        });
+
+        const items = dictionaries?.PREDICTION_TIMEFRAME?.filter((item) => item.isActive) || [];
+        items.forEach((item) => {
+            const normalizedCode = normalizeDictValue(item.code);
+            map[normalizedCode] = normalizedCode;
+            const aliases = ((item.meta as { aliases?: string[] } | null)?.aliases || [])
+                .filter((alias): alias is string => Boolean(alias));
+            aliases.forEach((alias) => {
+                map[normalizeDictValue(alias)] = normalizedCode;
+            });
+        });
+
+        return map;
+    }, [dictionaries]);
+
+    const normalizePredictionDirection = (value?: string | null): string | undefined => {
+        if (!value) return undefined;
+        const normalized = normalizeDictValue(value);
+        return predictionDirectionValueMap[normalized] || value;
+    };
+
+    const normalizePredictionTimeframe = (value?: string | null): string | undefined => {
+        if (!value) return undefined;
+        const normalized = normalizeDictValue(value);
+        return predictionTimeframeValueMap[normalized] || value;
+    };
+
     // Pre-fill form in edit mode
     useEffect(() => {
         if (isEditMode && existingReport) {
+            const existingPrediction = (existingReport.prediction || {}) as any;
             form.setFieldsValue({
                 title: existingReport.title,
                 reportType: existingReport.reportType,
@@ -162,11 +231,21 @@ export const ResearchReportCreatePage = () => {
                 regions: existingReport.regions,
                 summary: existingReport.summary,
                 keyPoints: existingReport.keyPoints,
-                prediction: existingReport.prediction,
+                prediction: {
+                    ...existingPrediction,
+                    direction: normalizePredictionDirection(existingPrediction.direction),
+                    timeframe: normalizePredictionTimeframe(existingPrediction.timeframe),
+                },
                 dataPoints: existingReport.dataPoints,
             });
         }
-    }, [isEditMode, existingReport, form]);
+    }, [
+        isEditMode,
+        existingReport,
+        form,
+        predictionDirectionValueMap,
+        predictionTimeframeValueMap,
+    ]);
 
     // Check if has AI analysis data
     const hasAiData = (keyPointsWatch?.length || 0) > 0 || predictionWatch?.direction || (dataPointsWatch?.length || 0) > 0;
@@ -326,8 +405,8 @@ export const ResearchReportCreatePage = () => {
 
                 if (shouldApply('prediction') && result.prediction) {
                     updates.prediction = {
-                        direction: result.prediction.direction,
-                        timeframe: result.prediction.timeframe,
+                        direction: normalizePredictionDirection(result.prediction.direction),
+                        timeframe: normalizePredictionTimeframe(result.prediction.timeframe),
                         reasoning: result.prediction.logic || result.prediction.reasoning,
                     };
                     extractedFields.push('后市预判');

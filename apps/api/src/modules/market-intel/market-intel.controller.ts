@@ -82,9 +82,106 @@ export class MarketIntelController {
         );
     }
 
+    @Post('generate-insight')
+    async generateInsight(@Body() dto: { content: string }) {
+        return { summary: await this.marketIntelService.generateInsight(dto.content) };
+    }
+
     @Get('test-ai')
     async testAI() {
         return this.marketIntelService.testAI();
+    }
+
+    /**
+     * 全景检索：聚合搜索接口
+     * 一次请求返回价格数据、市场情报、文档三类数据及统计摘要
+     */
+    @Get('universal-search')
+    async universalSearch(
+        @Query('keyword') keyword: string,
+        @Query('startDate') startDate?: string,
+        @Query('endDate') endDate?: string,
+        @Query('sentiment') sentiment?: 'positive' | 'negative' | 'neutral',
+        @Query('commodities') commodities?: string,
+        @Query('sourceTypes') sourceTypes?: string,
+        @Query('regionCodes') regionCodes?: string,
+        @Query('pricePageSize') pricePageSize = '20',
+        @Query('intelPageSize') intelPageSize = '10',
+        @Query('docPageSize') docPageSize = '10',
+    ) {
+        if (!keyword || !keyword.trim()) {
+            throw new BadRequestException('keyword is required');
+        }
+        const split = (s?: string) => s ? s.split(',').filter(Boolean) : undefined;
+        return this.marketIntelService.universalSearch({
+            keyword: keyword.trim(),
+            startDate: startDate ? new Date(startDate) : undefined,
+            endDate: endDate ? new Date(endDate) : undefined,
+            sentiment,
+            commodities: split(commodities),
+            sourceTypes: split(sourceTypes),
+            regionCodes: split(regionCodes),
+            pricePageSize: parseInt(pricePageSize, 10),
+            intelPageSize: parseInt(intelPageSize, 10),
+            docPageSize: parseInt(docPageSize, 10),
+        });
+    }
+
+    /**
+     * 搜索建议：提供自动补全功能
+     */
+    @Get('search-suggestions')
+    async getSearchSuggestions(
+        @Query('prefix') prefix: string,
+        @Query('limit') limit = '10',
+    ) {
+        return this.marketIntelService.getSearchSuggestions(prefix || '', parseInt(limit, 10));
+    }
+
+    /**
+     * 全文搜索增强：支持多关键词、相关性评分、分页
+     */
+    @Get('full-text-search')
+    async fullTextSearch(
+        @Query('keywords') keywords: string,
+        @Query('category') category?: string,
+        @Query('startDate') startDate?: string,
+        @Query('endDate') endDate?: string,
+        @Query('page') page = '1',
+        @Query('pageSize') pageSize = '20',
+    ) {
+        if (!keywords || !keywords.trim()) {
+            throw new BadRequestException('keywords is required');
+        }
+        return this.marketIntelService.fullTextSearch({
+            keywords: keywords.trim(),
+            category: category as IntelCategory | undefined,
+            startDate: startDate ? new Date(startDate) : undefined,
+            endDate: endDate ? new Date(endDate) : undefined,
+            page: parseInt(page, 10),
+            pageSize: parseInt(pageSize, 10),
+        });
+    }
+
+    /**
+     * 知识图谱关联：基于标签、品种、区域查找关联内容
+     */
+    @Get('related-content')
+    async getRelatedContent(
+        @Query('intelId') intelId?: string,
+        @Query('tags') tags?: string,
+        @Query('commodities') commodities?: string,
+        @Query('regionCodes') regionCodes?: string,
+        @Query('limit') limit = '10',
+    ) {
+        const split = (v?: string) => (v ? v.split(',').filter(Boolean) : []);
+        return this.marketIntelService.getRelatedContent({
+            intelId,
+            tags: split(tags),
+            commodities: split(commodities),
+            regionCodes: split(regionCodes),
+            limit: parseInt(limit, 10),
+        });
     }
 
     @Post('documents/batch-delete')
@@ -130,6 +227,94 @@ export class MarketIntelController {
     @Get('price-data')
     async findAllPriceData(@Query() query: PriceDataQuery) {
         return this.priceDataService.findAll(query);
+    }
+
+    @Get('price-data/continuity-health')
+    async getPriceContinuityHealth(@Query() query: PriceDataQuery & { days?: string }) {
+        return this.priceDataService.getContinuityHealth(query);
+    }
+
+    @Get('alerts/rules')
+    async getAlertRules() {
+        return this.priceDataService.listAlertRules();
+    }
+
+    @Post('alerts/rules')
+    async createAlertRule(
+        @Body()
+        body: {
+            name: string;
+            type: 'DAY_CHANGE_ABS' | 'DAY_CHANGE_PCT' | 'DEVIATION_FROM_MEAN_PCT' | 'CONTINUOUS_DAYS';
+            threshold?: number;
+            days?: number;
+            direction?: 'UP' | 'DOWN' | 'BOTH';
+            severity?: 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
+            priority?: number;
+            isActive?: boolean;
+        },
+    ) {
+        return this.priceDataService.createAlertRule(body);
+    }
+
+    @Put('alerts/rules/:id')
+    async updateAlertRule(
+        @Param('id') id: string,
+        @Body()
+        body: {
+            name?: string;
+            type?: 'DAY_CHANGE_ABS' | 'DAY_CHANGE_PCT' | 'DEVIATION_FROM_MEAN_PCT' | 'CONTINUOUS_DAYS';
+            threshold?: number;
+            days?: number;
+            direction?: 'UP' | 'DOWN' | 'BOTH';
+            severity?: 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
+            priority?: number;
+            isActive?: boolean;
+        },
+    ) {
+        return this.priceDataService.updateAlertRule(id, body);
+    }
+
+    @Delete('alerts/rules/:id')
+    async deleteAlertRule(@Param('id') id: string) {
+        return this.priceDataService.removeAlertRule(id);
+    }
+
+    @Post('alerts/evaluate')
+    async evaluateAlerts(
+        @Query()
+        query: PriceDataQuery & {
+            days?: string;
+            limit?: string;
+        },
+    ) {
+        return this.priceDataService.evaluateAlerts(query);
+    }
+
+    @Get('alerts')
+    async getAlerts(
+        @Query()
+        query: PriceDataQuery & {
+            days?: string;
+            severity?: 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
+            status?: 'OPEN' | 'ACKNOWLEDGED' | 'CLOSED';
+            limit?: string;
+            refresh?: string;
+        },
+    ) {
+        return this.priceDataService.getAlerts(query);
+    }
+
+    @Get('alerts/:id/logs')
+    async getAlertLogs(@Param('id') id: string) {
+        return this.priceDataService.listAlertLogs(id);
+    }
+
+    @Patch('alerts/:id/status')
+    async updateAlertStatus(
+        @Param('id') id: string,
+        @Body() body: { status: 'OPEN' | 'ACKNOWLEDGED' | 'CLOSED'; note?: string; reason?: string; operator?: string },
+    ) {
+        return this.priceDataService.updateAlertStatus(id, body.status, body.note, body.reason, body.operator);
     }
 
     @Get('price-data/trend')
@@ -255,7 +440,7 @@ export class MarketIntelController {
     }
 
     @Post('dashboard/briefing')
-    async generateSmartBriefing(@Body() body: { startDate?: string; endDate?: string; [key: string]: unknown }) {
+    async generateSmartBriefing(@Body() body: { startDate?: string; endDate?: string;[key: string]: unknown }) {
         return this.marketIntelService.generateSmartBriefing({
             ...body,
             startDate: body.startDate ? new Date(body.startDate) : undefined,

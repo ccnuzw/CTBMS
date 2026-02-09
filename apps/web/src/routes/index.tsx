@@ -10,146 +10,162 @@ import { OrgList, DeptList, OrgUserManagement } from '../features/organization';
 import { GlobalTagList, TagGroupList } from '../features/tags';
 import { EnterpriseDashboard } from '../features/enterprise';
 import {
-    SuperDashboard,
-    Dashboard,
-    DataEntry,
-    Leaderboard,
-    IntelligenceFeed,
-    MarketData,
-    KnowledgeBase,
-    OperationalWorkbench,
-    UniversalSearch,
-    CollectionPointConfigCenter,
-    RegionManager,
-    TaskDistributionPage,
-    TaskMonitor,
-    ResearchReportListPage,
-    ResearchReportDetailPage,
-    ResearchReportDashboard,
-    ResearchReportCreatePage,
-    KnowledgePortal,
-    KnowledgeTabs,
-    Workbench,
-    DocumentDetailPage,
+  SuperDashboard,
+  Dashboard,
+  DataEntry,
+  Leaderboard,
+  AlertCenterPage,
+  IntelligenceFeed,
+  MarketData,
+  KnowledgeBase,
+  OperationalWorkbench,
+  UniversalSearch,
+  CollectionPointConfigCenter,
+  RegionManager,
+  TaskDistributionPage,
+  TaskMonitor,
+  ResearchReportListPage,
+  ResearchReportDashboard,
+  ResearchReportCreatePage,
+  KnowledgePortal,
+  KnowledgeTabs,
+  Workbench,
+  KnowledgeCenterPage,
+  KnowledgeDetailPage,
+  KnowledgeDashboardPage,
+  LegacyKnowledgeRedirectPage,
 } from '../features/market-intel';
 import { ExtractionConfigPage } from '../features/extraction-config';
 import { systemConfigRoutes } from '../features/system-config';
 import {
-    PriceReportingDashboard,
-    PriceEntryForm,
-    PriceReviewPanel,
-    BatchPriceEntryTable,
+  PriceReportingDashboard,
+  PriceEntryForm,
+  PriceReviewPanel,
+  BatchPriceEntryTable,
 } from '../features/price-reporting';
 
 export const router = createBrowserRouter([
-    {
-        path: '/',
-        element: <MainLayout />,
+  {
+    path: '/',
+    element: <MainLayout />,
+    children: [
+      {
+        index: true,
+        element: <Navigate to="/dashboard" replace />,
+      },
+
+      {
+        path: 'dashboard',
+        element: <DashboardPage />,
+      },
+      {
+        path: 'users',
+        element: <UserList />,
+      },
+      {
+        path: 'roles',
+        element: <RoleList />,
+      },
+      {
+        path: 'market/categories',
+        element: <CategoryList />,
+      },
+      {
+        path: 'market/info',
         children: [
-            {
-                index: true,
-                element: <Navigate to="/dashboard" replace />,
-            },
-
-            {
-                path: 'dashboard',
-                element: <DashboardPage />,
-            },
-            {
-                path: 'users',
-                element: <UserList />,
-            },
-            {
-                path: 'roles',
-                element: <RoleList />,
-            },
-            {
-                path: 'market/categories',
-                element: <CategoryList />,
-            },
-            {
-                path: 'market/info',
-                children: [
-                    { index: true, element: <InfoList /> },
-                    { path: 'new', element: <InfoEditor /> },
-                    { path: 'edit/:id', element: <InfoEditor /> },
-                ]
-            },
-            {
-                path: 'organization',
-                children: [
-                    { index: true, element: <OrgList /> },
-                    { path: 'departments', element: <DeptList /> },
-                    { path: 'manage', element: <OrgUserManagement /> },
-                ]
-            },
-            {
-                path: 'enterprise',
-                element: <EnterpriseDashboard />,
-            },
-            {
-                path: 'system',
-                children: [
-                    { path: 'tags', element: <GlobalTagList /> },
-                    { path: 'tag-groups', element: <TagGroupList /> },
-                    { path: 'regions', element: <RegionManager /> },
-                    ...systemConfigRoutes, // [NEW] Add System Config Routes
-                ]
-            },
-            {
-                path: 'intel',
-                children: [
-                    { index: true, element: <SuperDashboard /> },
-                    { path: 'dashboard', element: <Dashboard /> },
-                    { path: 'workbench', element: <OperationalWorkbench /> },
-                    { path: 'search', element: <UniversalSearch /> },
-
-                    { path: 'entry', element: <DataEntry /> },
-                    { path: 'market-data', element: <MarketData /> },
-                    { path: 'feed', element: <IntelligenceFeed /> },
-                    { path: 'feed/:id', element: <IntelligenceFeed /> },
-
-                    {
-                        path: 'knowledge',
-                        children: [
-                            { index: true, element: <KnowledgeTabs /> },
-                            { path: 'workbench', element: <Workbench /> },
-                            { path: 'documents/:id', element: <DocumentDetailPage /> },
-                            { path: 'reports/create', element: <ResearchReportCreatePage /> },
-                            { path: 'reports/:id', element: <ResearchReportDetailPage /> },
-                            { path: 'reports/:id/edit', element: <ResearchReportCreatePage /> },
-                        ]
-                    },
-                    { path: 'leaderboard', element: <Leaderboard /> },
-                    { path: 'collection-points', element: <CollectionPointConfigCenter /> },
-                    { path: 'tasks', element: <TaskDistributionPage /> },
-                    { path: 'monitor', element: <TaskMonitor /> },
-                    { path: 'extraction-config', element: <ExtractionConfigPage /> },
-                ]
-            },
-            // 价格填报模块路由
-            {
-                path: 'price-reporting',
-                children: [
-                    { index: true, element: <PriceReportingDashboard /> },
-                    { path: 'bulk', element: <BatchPriceEntryTable /> },
-                    { path: 'submit/:pointId', element: <PriceEntryForm /> },
-                    { path: 'review', element: <PriceReviewPanel /> },
-                ]
-            },
-            // 历史设置中心路由兼容（菜单/书签）
-            {
-                path: 'settings',
-                children: [
-                    { path: 'general', element: <Navigate to="/system/config/rules" replace /> },
-                    { path: 'security', element: <Navigate to="/system/config/ai-models" replace /> },
-                ],
-            },
-            // 全局兜底，避免 React Router 默认 ErrorBoundary 报 no route matched
-            {
-                path: '*',
-                element: <Navigate to="/dashboard" replace />,
-            },
+          { index: true, element: <InfoList /> },
+          { path: 'new', element: <InfoEditor /> },
+          { path: 'edit/:id', element: <InfoEditor /> },
         ],
-    },
+      },
+      {
+        path: 'organization',
+        children: [
+          { index: true, element: <OrgList /> },
+          { path: 'departments', element: <DeptList /> },
+          { path: 'manage', element: <OrgUserManagement /> },
+        ],
+      },
+      {
+        path: 'enterprise',
+        element: <EnterpriseDashboard />,
+      },
+      {
+        path: 'system',
+        children: [
+          { path: 'tags', element: <GlobalTagList /> },
+          { path: 'tag-groups', element: <TagGroupList /> },
+          { path: 'regions', element: <RegionManager /> },
+          ...systemConfigRoutes, // [NEW] Add System Config Routes
+        ],
+      },
+      {
+        path: 'intel',
+        children: [
+          { index: true, element: <SuperDashboard /> },
+          { path: 'dashboard', element: <Dashboard /> },
+          { path: 'workbench', element: <OperationalWorkbench /> },
+          { path: 'search', element: <UniversalSearch /> },
+
+          { path: 'entry', element: <DataEntry /> },
+          { path: 'market-data', element: <MarketData /> },
+          { path: 'alerts', element: <AlertCenterPage /> },
+          { path: 'feed', element: <IntelligenceFeed /> },
+          { path: 'feed/:id', element: <IntelligenceFeed /> },
+
+          {
+            path: 'knowledge',
+            children: [
+              { index: true, element: <KnowledgeTabs /> },
+              { path: 'workbench', element: <Workbench /> },
+              { path: 'items', element: <KnowledgeCenterPage /> },
+              { path: 'dashboard', element: <KnowledgeDashboardPage /> },
+              { path: 'items/:id', element: <KnowledgeDetailPage /> },
+              { path: 'legacy/:source/:id', element: <LegacyKnowledgeRedirectPage /> },
+              { path: 'documents/:id', element: <LegacyKnowledgeRedirectPage source="intel" /> },
+              { path: 'reports/create', element: <ResearchReportCreatePage /> },
+              { path: 'reports/:id', element: <LegacyKnowledgeRedirectPage source="report" /> },
+              { path: 'reports/:id/edit', element: <ResearchReportCreatePage /> },
+            ],
+          },
+          { path: 'leaderboard', element: <Leaderboard /> },
+          { path: 'collection-points', element: <CollectionPointConfigCenter /> },
+          { path: 'tasks', element: <TaskDistributionPage /> },
+          { path: 'monitor', element: <TaskMonitor /> },
+          { path: 'extraction-config', element: <ExtractionConfigPage /> },
+        ],
+      },
+      {
+        path: 'intel/research-reports',
+        element: <Navigate to="/intel/knowledge?tab=library&content=reports" replace />,
+      },
+      {
+        path: 'intel/research-reports/:id',
+        element: <LegacyKnowledgeRedirectPage source="report" />,
+      },
+      // 价格填报模块路由
+      {
+        path: 'price-reporting',
+        children: [
+          { index: true, element: <PriceReportingDashboard /> },
+          { path: 'bulk', element: <BatchPriceEntryTable /> },
+          { path: 'submit/:pointId', element: <PriceEntryForm /> },
+          { path: 'review', element: <PriceReviewPanel /> },
+        ],
+      },
+      // 历史设置中心路由兼容（菜单/书签）
+      {
+        path: 'settings',
+        children: [
+          { path: 'general', element: <Navigate to="/system/config/rules" replace /> },
+          { path: 'security', element: <Navigate to="/system/config/ai-models" replace /> },
+        ],
+      },
+      // 全局兜底，避免 React Router 默认 ErrorBoundary 报 no route matched
+      {
+        path: '*',
+        element: <Navigate to="/dashboard" replace />,
+      },
+    ],
+  },
 ]);

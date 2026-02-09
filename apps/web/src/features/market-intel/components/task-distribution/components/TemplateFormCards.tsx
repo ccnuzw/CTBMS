@@ -697,7 +697,7 @@ export const TemplateFormCards: React.FC<TemplateFormCardsProps> = ({ form, cont
                                                 </Col>
                                             )}
                                             <Col span={showTemplateSchedule ? 12 : 24}>
-                                                <Form.Item name="deadlineOffset" label="截止偏移（小时）">
+                                                <Form.Item name="deadlineOffset" label="完成时限（小时）" tooltip="任务分发后多少小时内需完成">
                                                     <InputNumber min={1} max={72} style={{ width: '100%' }} />
                                                 </Form.Item>
                                             </Col>

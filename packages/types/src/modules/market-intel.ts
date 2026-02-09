@@ -542,6 +542,14 @@ export enum GeoLevel {
   ENTERPRISE = 'ENTERPRISE',  // 企业点位
 }
 
+// 数据质量标签（用于连续性健康分析）
+export enum PriceQualityTag {
+  RAW = 'RAW',              // 原始数据
+  IMPUTED = 'IMPUTED',      // 补录/估算
+  CORRECTED = 'CORRECTED',  // 修正
+  LATE = 'LATE',            // 延迟上报
+}
+
 // 标签映射
 export const PRICE_SOURCE_TYPE_LABELS: Record<PriceSourceType, string> = {
   [PriceSourceType.ENTERPRISE]: '企业收购价',
@@ -570,6 +578,13 @@ export const GEO_LEVEL_LABELS: Record<GeoLevel, string> = {
   [GeoLevel.PORT]: '港口',
   [GeoLevel.STATION]: '站台',
   [GeoLevel.ENTERPRISE]: '企业点位',
+};
+
+export const PRICE_QUALITY_TAG_LABELS: Record<PriceQualityTag, string> = {
+  [PriceQualityTag.RAW]: '原始',
+  [PriceQualityTag.IMPUTED]: '补录/估算',
+  [PriceQualityTag.CORRECTED]: '修正',
+  [PriceQualityTag.LATE]: '延迟',
 };
 
 export const CreatePriceDataSchema = z.object({
@@ -676,6 +691,7 @@ export const PriceDataResponseSchema = z.object({
 
   // 备注
   note: z.string().nullable(),
+  qualityTag: z.nativeEnum(PriceQualityTag).optional(),
 
   // 关联
   intelId: z.string().nullable(),
@@ -700,6 +716,7 @@ export const PriceDataQuerySchema = z.object({
   collectionPointIds: z.array(z.string()).default([]),
   regionCode: z.string().optional(),
   pointTypes: z.array(z.string()).optional(),
+  qualityTags: z.array(z.nativeEnum(PriceQualityTag)).optional(),
   startDate: z.coerce.date().optional(),
   endDate: z.coerce.date().optional(),
   keyword: z.string().optional(),
@@ -710,6 +727,171 @@ export const PriceDataQuerySchema = z.object({
 export type CreatePriceDataDto = z.infer<typeof CreatePriceDataSchema>;
 export type PriceDataResponse = z.infer<typeof PriceDataResponseSchema>;
 export type PriceDataQuery = z.infer<typeof PriceDataQuerySchema>;
+
+export const PriceContinuityPointSchema = z.object({
+  pointId: z.string(),
+  pointName: z.string(),
+  pointType: z.string(),
+  regionLabel: z.string().nullable().optional(),
+  coverageRate: z.number(),
+  timelinessScore: z.number(),
+  anomalyRate: z.number(),
+  lateRate: z.number(),
+  score: z.number(),
+  grade: z.enum(['A', 'B', 'C', 'D']),
+  latestDate: z.coerce.date().nullable(),
+  recordCount: z.number().int(),
+  missingDays: z.number().int(),
+});
+
+export const PriceContinuitySummarySchema = z.object({
+  overallScore: z.number(),
+  coverageRate: z.number(),
+  anomalyRate: z.number(),
+  lateRate: z.number(),
+  expectedDays: z.number().int(),
+  pointCount: z.number().int(),
+  healthyPoints: z.number().int(),
+  riskPoints: z.number().int(),
+  startDate: z.coerce.date().nullable(),
+  endDate: z.coerce.date().nullable(),
+});
+
+export const PriceContinuityHealthResponseSchema = z.object({
+  summary: PriceContinuitySummarySchema,
+  points: z.array(PriceContinuityPointSchema),
+});
+
+export type PriceContinuityPoint = z.infer<typeof PriceContinuityPointSchema>;
+export type PriceContinuitySummary = z.infer<typeof PriceContinuitySummarySchema>;
+export type PriceContinuityHealthResponse = z.infer<typeof PriceContinuityHealthResponseSchema>;
+
+// =============================================
+// A类：预警中心 (Market Alert)
+// =============================================
+
+export enum MarketAlertRuleType {
+  DAY_CHANGE_ABS = 'DAY_CHANGE_ABS',
+  DAY_CHANGE_PCT = 'DAY_CHANGE_PCT',
+  DEVIATION_FROM_MEAN_PCT = 'DEVIATION_FROM_MEAN_PCT',
+  CONTINUOUS_DAYS = 'CONTINUOUS_DAYS',
+}
+
+export enum MarketAlertSeverity {
+  LOW = 'LOW',
+  MEDIUM = 'MEDIUM',
+  HIGH = 'HIGH',
+  CRITICAL = 'CRITICAL',
+}
+
+export enum MarketAlertStatus {
+  OPEN = 'OPEN',
+  ACKNOWLEDGED = 'ACKNOWLEDGED',
+  CLOSED = 'CLOSED',
+}
+
+export enum MarketAlertAction {
+  CREATE = 'CREATE',
+  UPDATE_HIT = 'UPDATE_HIT',
+  ACK = 'ACK',
+  CLOSE = 'CLOSE',
+  REOPEN = 'REOPEN',
+  AUTO_CLOSE = 'AUTO_CLOSE',
+}
+
+export const MarketAlertRuleSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  type: z.nativeEnum(MarketAlertRuleType),
+  threshold: z.number().nullable().optional(),
+  days: z.number().int().nullable().optional(),
+  direction: z.enum(['UP', 'DOWN', 'BOTH']).nullable().optional(),
+  severity: z.nativeEnum(MarketAlertSeverity),
+  priority: z.number().int(),
+  isActive: z.boolean(),
+  legacyRuleId: z.string().nullable().optional(),
+  createdAt: z.date(),
+  updatedAt: z.date(),
+});
+
+export const CreateMarketAlertRuleSchema = z.object({
+  name: z.string().min(1, '规则名称不能为空'),
+  type: z.nativeEnum(MarketAlertRuleType),
+  threshold: z.number().positive().optional(),
+  days: z.number().int().min(2).optional(),
+  direction: z.enum(['UP', 'DOWN', 'BOTH']).optional().default('BOTH'),
+  severity: z.nativeEnum(MarketAlertSeverity).optional().default(MarketAlertSeverity.MEDIUM),
+  priority: z.number().int().optional().default(0),
+  isActive: z.boolean().optional().default(true),
+});
+
+export const UpdateMarketAlertRuleSchema = CreateMarketAlertRuleSchema.partial();
+
+export const MarketAlertSchema = z.object({
+  id: z.string(),
+  ruleId: z.string(),
+  ruleName: z.string(),
+  ruleType: z.nativeEnum(MarketAlertRuleType),
+  severity: z.nativeEnum(MarketAlertSeverity),
+  status: z.nativeEnum(MarketAlertStatus),
+  pointId: z.string(),
+  pointName: z.string(),
+  pointType: z.string(),
+  regionLabel: z.string().nullable().optional(),
+  commodity: z.string(),
+  triggerDate: z.date(),
+  firstTriggeredAt: z.date(),
+  lastTriggeredAt: z.date(),
+  triggerValue: z.number(),
+  thresholdValue: z.number(),
+  message: z.string(),
+  note: z.string().nullable().optional(),
+  closedReason: z.string().nullable().optional(),
+  createdAt: z.date(),
+  updatedAt: z.date(),
+});
+
+export const MarketAlertStatusLogSchema = z.object({
+  id: z.string(),
+  instanceId: z.string(),
+  action: z.nativeEnum(MarketAlertAction),
+  fromStatus: z.nativeEnum(MarketAlertStatus).nullable().optional(),
+  toStatus: z.nativeEnum(MarketAlertStatus),
+  operator: z.string(),
+  note: z.string().nullable().optional(),
+  reason: z.string().nullable().optional(),
+  meta: z.any().nullable().optional(),
+  createdAt: z.date(),
+});
+
+export const AlertListResponseSchema = z.object({
+  total: z.number().int(),
+  data: z.array(MarketAlertSchema),
+});
+
+export const EvaluateAlertsResponseSchema = z.object({
+  evaluatedAt: z.date(),
+  total: z.number().int(),
+  created: z.number().int(),
+  updated: z.number().int(),
+  closed: z.number().int().optional(),
+});
+
+export const UpdateAlertStatusRequestSchema = z.object({
+  status: z.nativeEnum(MarketAlertStatus),
+  note: z.string().optional(),
+  reason: z.string().optional(),
+  operator: z.string().optional(),
+});
+
+export type MarketAlertRule = z.infer<typeof MarketAlertRuleSchema>;
+export type CreateMarketAlertRuleDto = z.infer<typeof CreateMarketAlertRuleSchema>;
+export type UpdateMarketAlertRuleDto = z.infer<typeof UpdateMarketAlertRuleSchema>;
+export type MarketAlert = z.infer<typeof MarketAlertSchema>;
+export type MarketAlertStatusLog = z.infer<typeof MarketAlertStatusLogSchema>;
+export type AlertListResponse = z.infer<typeof AlertListResponseSchema>;
+export type EvaluateAlertsResponse = z.infer<typeof EvaluateAlertsResponseSchema>;
+export type UpdateAlertStatusRequest = z.infer<typeof UpdateAlertStatusRequestSchema>;
 
 // =============================================
 // C类：附件 (IntelAttachment)
@@ -891,6 +1073,7 @@ export enum IntelTaskStatus {
   RETURNED = 'RETURNED',   // 已驳回需修改
   COMPLETED = 'COMPLETED',
   OVERDUE = 'OVERDUE',
+  CANCELLED = 'CANCELLED', // 已取消
 }
 
 export enum IntelTaskPriority {
@@ -1374,3 +1557,52 @@ export type GetCalendarSummaryDto = z.infer<typeof GetCalendarSummarySchema>;
 export type CalendarSummaryItem = z.infer<typeof CalendarSummaryItemSchema>;
 export type CalendarSummaryTypeStat = z.infer<typeof CalendarSummaryTypeStatSchema>;
 export type CalendarSummaryResponse = z.infer<typeof CalendarSummaryResponseSchema>;
+
+// =============================================
+// 全景检索：聚合搜索 (Universal Search)
+// =============================================
+
+export const UniversalSearchQuerySchema = z.object({
+  keyword: z.string().min(1, '搜索关键词不能为空'),
+  startDate: z.coerce.date().optional(),
+  endDate: z.coerce.date().optional(),
+  sentiment: z.enum(['positive', 'negative', 'neutral']).optional(),
+  commodities: z.array(z.string()).optional(),
+  sourceTypes: z.array(z.nativeEnum(IntelSourceType)).optional(),
+  regionCodes: z.array(z.string()).optional(),
+  pricePageSize: z.coerce.number().min(1).max(100).default(20),
+  intelPageSize: z.coerce.number().min(1).max(50).default(10),
+  docPageSize: z.coerce.number().min(1).max(50).default(10),
+});
+
+export const UniversalSearchSummarySchema = z.object({
+  priceRange: z.object({
+    min: z.number().nullable(),
+    max: z.number().nullable(),
+    avg: z.number().nullable(),
+  }),
+  sentiment: z.enum(['positive', 'negative', 'neutral', 'mixed']),
+  topTags: z.array(z.string()),
+  entityMentions: z.array(z.string()),
+  totalResults: z.number(),
+});
+
+export const UniversalSearchResponseSchema = z.object({
+  prices: z.object({
+    data: z.array(PriceDataResponseSchema),
+    total: z.number(),
+  }),
+  intels: z.object({
+    data: z.array(MarketIntelResponseSchema),
+    total: z.number(),
+  }),
+  docs: z.object({
+    data: z.array(MarketIntelResponseSchema),
+    total: z.number(),
+  }),
+  summary: UniversalSearchSummarySchema,
+});
+
+export type UniversalSearchQuery = z.infer<typeof UniversalSearchQuerySchema>;
+export type UniversalSearchSummary = z.infer<typeof UniversalSearchSummarySchema>;
+export type UniversalSearchResponse = z.infer<typeof UniversalSearchResponseSchema>;

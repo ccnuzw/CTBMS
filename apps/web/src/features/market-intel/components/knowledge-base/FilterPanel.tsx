@@ -10,10 +10,34 @@ import {
 } from '@ant-design/icons';
 import { theme } from 'antd';
 import { IntelSourceType, INTEL_SOURCE_TYPE_LABELS } from '@packages/types';
-import { useDictionary } from '@/hooks/useDictionaries';
+import { useDictionaries } from '@/hooks/useDictionaries';
 
 const { Title, Text } = Typography;
 
+const TOPIC_LABEL_DOMAINS = [
+    'COMMODITY',
+    'INTEL_SOURCE_TYPE',
+    'CONTENT_TYPE',
+    'REPORT_TYPE',
+    'REPORT_PERIOD',
+    'MARKET_SENTIMENT',
+    'PREDICTION_TIMEFRAME',
+    'RISK_LEVEL',
+    'MARKET_TREND',
+    'QUALITY_LEVEL',
+    'TIME_RANGE',
+    'RELATION_TYPE',
+    'INTEL_CATEGORY',
+];
+
+const TOPIC_LABELS_FALLBACK: Record<string, string> = {
+    SOYBEAN_MEAL: '豆粕',
+    SOYBEAN_OIL: '豆油',
+    SUGAR: '白糖',
+    COTTON: '棉花',
+    HOG: '生猪',
+    UREA: '尿素',
+};
 
 
 export type TimeRange = '1M' | '3M' | '6M' | 'YTD' | 'ALL';
@@ -44,10 +68,10 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
     style
 }) => {
     const { token } = theme.useToken();
-    const { data: sourceItems } = useDictionary('INTEL_SOURCE_TYPE');
+    const { data: dictionaries } = useDictionaries(TOPIC_LABEL_DOMAINS);
 
     const sourceTypeMeta = useMemo(() => {
-        const items = sourceItems?.filter((item) => item.isActive) || [];
+        const items = dictionaries?.INTEL_SOURCE_TYPE?.filter((item) => item.isActive) || [];
         const fallbackColors: Record<string, string> = {
             [IntelSourceType.FIRST_LINE]: 'blue',
             [IntelSourceType.COMPETITOR]: 'warning',
@@ -71,7 +95,27 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
             return item.code;
         });
         return { labels, colors, options };
-    }, [sourceItems]);
+    }, [dictionaries]);
+
+    const topicLabelMap = useMemo(() => {
+        const labels: Record<string, string> = {};
+        TOPIC_LABEL_DOMAINS.forEach((domainCode) => {
+            const items = dictionaries?.[domainCode]?.filter((item) => item.isActive) || [];
+            items.forEach((item) => {
+                labels[item.code] = item.label;
+            });
+        });
+        return labels;
+    }, [dictionaries]);
+
+    const getTopicLabel = (topic: string) => {
+        const normalized = topic.replace(/^#/, '').trim();
+        return topicLabelMap[normalized]
+            || topicLabelMap[topic]
+            || TOPIC_LABELS_FALLBACK[normalized]
+            || normalized
+            || topic;
+    };
 
     const getSourceIcon = (source: string) => {
         switch (source) {
@@ -167,7 +211,7 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
                             }}
                             onClick={() => toggleTag(tag)}
                         >
-                            {tag} ({count})
+                            {getTopicLabel(tag)} ({count})
                         </Tag>
                     ))}
                 </Flex>

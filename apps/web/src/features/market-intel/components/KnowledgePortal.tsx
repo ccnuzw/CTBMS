@@ -18,7 +18,7 @@ import {
 import { stripHtml } from '@packages/utils';
 import { useNavigate } from 'react-router-dom';
 import { useResearchReports, useMarketIntels, useResearchReportStats, useMarketIntelStats, useHotTopics } from '../api/hooks';
-import { IntelCategory, ReportType, IntelSourceType, ReviewStatus } from '@packages/types';
+import { IntelCategory, INTEL_SOURCE_TYPE_LABELS, ReviewStatus } from '@packages/types';
 import { useDictionary } from '@/hooks/useDictionaries';
 
 const { Title, Text, Paragraph } = Typography;
@@ -43,6 +43,7 @@ export const KnowledgePortal: React.FC = () => {
     const { token } = theme.useToken();
     const navigate = useNavigate();
     const { data: reportTypeDict } = useDictionary('REPORT_TYPE');
+    const { data: sourceTypeDict } = useDictionary('INTEL_SOURCE_TYPE');
 
     const reportTypeLabels = useMemo(() => {
         const items = (reportTypeDict || []).filter((item) => item.isActive);
@@ -61,6 +62,15 @@ export const KnowledgePortal: React.FC = () => {
             return acc;
         }, {});
     }, [reportTypeDict]);
+
+    const sourceTypeLabels = useMemo(() => {
+        const items = (sourceTypeDict || []).filter((item) => item.isActive);
+        if (!items.length) return INTEL_SOURCE_TYPE_LABELS as Record<string, string>;
+        return items.reduce<Record<string, string>>((acc, item) => {
+            acc[item.code] = item.label;
+            return acc;
+        }, {});
+    }, [sourceTypeDict]);
 
     // 获取最新研报
     const { data: reportsData, isLoading: reportsLoading } = useResearchReports({
@@ -241,7 +251,7 @@ export const KnowledgePortal: React.FC = () => {
                         {/* 热门话题 */}
                         <Card title={<Space><BarChartOutlined style={{ color: token.colorError }} />热门话题风向</Space>}>
                             <Flex wrap="wrap" gap={8} style={{ minHeight: 120 }}>
-                                {hotTopicsData?.map((topic: any) => (
+                                {hotTopicsData?.map((topic) => (
                                     <Tag
                                         key={topic.topic}
                                         color="blue"
@@ -251,9 +261,9 @@ export const KnowledgePortal: React.FC = () => {
                                             margin: 0,
                                             userSelect: 'none'
                                         }}
-                                        onClick={() => navigate(`/intel/search?q=${topic.topic}`)}
+                                        onClick={() => navigate(`/intel/search?q=${encodeURIComponent(topic.topic)}`)}
                                     >
-                                        {topic.topic} <span style={{ opacity: 0.6, fontSize: 11 }}>{topic.count}</span>
+                                        {topic.displayTopic || topic.topic} <span style={{ opacity: 0.6, fontSize: 11 }}>{topic.count}</span>
                                     </Tag>
                                 ))}
                                 {(!hotTopicsData || hotTopicsData.length === 0) && <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无热门话题" />}
@@ -295,7 +305,7 @@ export const KnowledgePortal: React.FC = () => {
                                                         {new Date(item.effectiveTime).toLocaleDateString()}
                                                     </Text>
                                                     <Tag style={{ fontSize: 10, lineHeight: '18px' }}>
-                                                        {item.sourceType}
+                                                        {sourceTypeLabels[item.sourceType] || item.sourceType}
                                                     </Tag>
                                                 </Space>
                                             }

@@ -1,14 +1,14 @@
 import React, { useMemo } from 'react';
-import { Badge, Button, Space, Typography, Tag, Select, Segmented, Table, Tooltip } from 'antd';
+import { Badge, Button, Space, Typography, Tag, Select, Segmented, Table, Tooltip, Popconfirm } from 'antd';
 import { ProCard, ProTable } from '@ant-design/pro-components';
-import { CheckCircleOutlined, ClockCircleOutlined, ExclamationCircleOutlined, AppstoreOutlined, BarsOutlined, FormOutlined } from '@ant-design/icons';
+import { CheckCircleOutlined, ClockCircleOutlined, ExclamationCircleOutlined, AppstoreOutlined, BarsOutlined, FormOutlined, CloseCircleOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import {
     IntelTaskStatus,
     IntelTaskResponse,
     IntelTaskPriority
 } from '@packages/types';
-import { useCompleteTask, useTasks } from '../../../api/tasks';
+import { useCompleteTask, useCancelTask, useTasks } from '../../../api/tasks';
 import { useUsers } from '../../../../users/api/users';
 import { useVirtualUser, ADMIN_USER } from '@/features/auth/virtual-user';
 import { useDictionaries } from '@/hooks/useDictionaries';
@@ -29,6 +29,7 @@ export const MyTaskBoard: React.FC = () => {
     const { data } = useTasks(taskQuery); // Get all my tasks
     const tasks = data?.data || [];
     const completeMutation = useCompleteTask();
+    const cancelMutation = useCancelTask();
 
     const taskTypeLabels = useMemo(() => {
         const items = dictionaries?.INTEL_TASK_TYPE?.filter((item) => item.isActive) || [];
@@ -188,7 +189,7 @@ export const MyTaskBoard: React.FC = () => {
                                         )}
 
                                         {col.status !== IntelTaskStatus.COMPLETED && (
-                                            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 8 }}>
+                                            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 8, gap: 8 }}>
                                                 <Button
                                                     size="small"
                                                     type={col.status === IntelTaskStatus.OVERDUE ? 'primary' : 'default'}
@@ -200,6 +201,25 @@ export const MyTaskBoard: React.FC = () => {
                                                 >
                                                     完成
                                                 </Button>
+                                                <Popconfirm
+                                                    title="确定取消此任务？"
+                                                    description="取消后任务将从列表中移除"
+                                                    onConfirm={(e) => {
+                                                        e?.stopPropagation();
+                                                        cancelMutation.mutate({ id: task.id, operatorId: currentUser?.id });
+                                                    }}
+                                                    onCancel={(e) => e?.stopPropagation()}
+                                                    okText="确定"
+                                                    cancelText="取消"
+                                                >
+                                                    <Button
+                                                        size="small"
+                                                        icon={<CloseCircleOutlined />}
+                                                        onClick={(e) => e.stopPropagation()}
+                                                    >
+                                                        取消
+                                                    </Button>
+                                                </Popconfirm>
                                             </div>
                                         )}
                                     </Space>
@@ -265,7 +285,24 @@ export const MyTaskBoard: React.FC = () => {
                                     onClick={() => completeMutation.mutate({ id: record.id })}
                                 >
                                     完成
-                                </Button>
+                                </Button>,
+                                <Popconfirm
+                                    key="cancel"
+                                    title="确定取消此任务？"
+                                    description="取消后任务将从列表中移除"
+                                    onConfirm={() => cancelMutation.mutate({ id: record.id, operatorId: currentUser?.id })}
+                                    okText="确定"
+                                    cancelText="取消"
+                                >
+                                    <Button
+                                        type="text"
+                                        size="small"
+                                        icon={<CloseCircleOutlined />}
+                                        disabled={record.status === IntelTaskStatus.COMPLETED}
+                                    >
+                                        取消
+                                    </Button>
+                                </Popconfirm>
                             ]
                         }
                     ]}

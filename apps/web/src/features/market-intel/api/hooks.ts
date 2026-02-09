@@ -337,6 +337,15 @@ export const useAnalyzeContent = () => {
     });
 };
 
+export const useGenerateInsight = () => {
+    return useMutation({
+        mutationFn: async (data: { content: string }) => {
+            const res = await apiClient.post<{ summary: string }>('/market-intel/generate-insight', data);
+            return res.data;
+        },
+    });
+};
+
 // AI 连接测试结果
 interface AITestResult {
     success: boolean;
@@ -651,7 +660,9 @@ interface UsePriceDataOptions {
     enabled?: boolean;
 }
 
-export const usePriceData = (query?: Partial<PriceDataQuery>, options?: UsePriceDataOptions) => {
+type PriceDataQueryWithQuality = Partial<PriceDataQuery> & { qualityTags?: string[] };
+
+export const usePriceData = (query?: PriceDataQueryWithQuality, options?: UsePriceDataOptions) => {
     return useQuery<PaginatedResponse<PriceDataResponse>>({
         queryKey: ['price-data', query],
         queryFn: async () => {
@@ -678,6 +689,299 @@ export const usePriceData = (query?: Partial<PriceDataQuery>, options?: UsePrice
             return res.data;
         },
         enabled: options?.enabled ?? true,
+    });
+};
+
+interface PriceContinuityHealthQuery extends Partial<PriceDataQuery> {
+    days?: number;
+}
+
+interface PriceContinuityHealthPoint {
+    pointId: string;
+    pointName: string;
+    pointType: string;
+    regionLabel?: string | null;
+    coverageRate: number;
+    timelinessScore: number;
+    anomalyRate: number;
+    lateRate: number;
+    score: number;
+    grade: 'A' | 'B' | 'C' | 'D';
+    latestDate: Date | null;
+    recordCount: number;
+    missingDays: number;
+}
+
+interface PriceContinuityHealthResponse {
+    summary: {
+        overallScore: number;
+        coverageRate: number;
+        anomalyRate: number;
+        lateRate: number;
+        expectedDays: number;
+        pointCount: number;
+        healthyPoints: number;
+        riskPoints: number;
+        startDate: Date | null;
+        endDate: Date | null;
+    };
+    points: PriceContinuityHealthPoint[];
+}
+
+export const usePriceContinuityHealth = (
+    query?: PriceContinuityHealthQuery,
+    options?: UsePriceDataOptions,
+) => {
+    return useQuery<PriceContinuityHealthResponse>({
+        queryKey: ['price-continuity-health', query],
+        queryFn: async () => {
+            const params = new URLSearchParams();
+            if (query) {
+                Object.entries(query).forEach(([key, value]) => {
+                    if (value !== undefined && value !== null) {
+                        if (value instanceof Date) {
+                            params.append(key, value.toISOString());
+                        } else if (Array.isArray(value)) {
+                            if (value.length > 0) {
+                                params.append(key, value.join(','));
+                            }
+                        } else {
+                            params.append(key, String(value));
+                        }
+                    }
+                });
+            }
+            const res = await apiClient.get<PriceContinuityHealthResponse>(
+                `/market-intel/price-data/continuity-health?${params.toString()}`,
+            );
+            return res.data;
+        },
+        enabled: options?.enabled ?? true,
+    });
+};
+
+type AlertRuleType = 'DAY_CHANGE_ABS' | 'DAY_CHANGE_PCT' | 'DEVIATION_FROM_MEAN_PCT' | 'CONTINUOUS_DAYS';
+type AlertSeverity = 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
+type AlertStatus = 'OPEN' | 'ACKNOWLEDGED' | 'CLOSED';
+
+export interface MarketAlertRule {
+    id: string;
+    name: string;
+    type: AlertRuleType;
+    threshold?: number;
+    days?: number;
+    direction?: 'UP' | 'DOWN' | 'BOTH';
+    severity: AlertSeverity;
+    isActive: boolean;
+    priority: number;
+    createdAt: Date;
+    updatedAt: Date;
+}
+
+export interface MarketAlert {
+    id: string;
+    ruleId: string;
+    ruleName: string;
+    ruleType: AlertRuleType;
+    severity: AlertSeverity;
+    status: AlertStatus;
+    note?: string;
+    pointId: string;
+    pointName: string;
+    pointType: string;
+    regionLabel: string | null;
+    commodity: string;
+    date: Date;
+    value: number;
+    threshold: number;
+    message: string;
+    updatedAt?: Date;
+}
+
+interface AlertListResponse {
+    total: number;
+    data: MarketAlert[];
+}
+
+export interface AlertStatusLog {
+    id: string;
+    instanceId: string;
+    action: 'CREATE' | 'UPDATE_HIT' | 'ACK' | 'CLOSE' | 'REOPEN' | 'AUTO_CLOSE';
+    fromStatus?: AlertStatus | null;
+    toStatus: AlertStatus;
+    operator: string;
+    note?: string | null;
+    reason?: string | null;
+    meta?: Record<string, unknown> | null;
+    createdAt: Date;
+}
+
+export interface EvaluateAlertsResponse {
+    evaluatedAt: Date;
+    total: number;
+    created: number;
+    updated: number;
+    closed?: number;
+}
+
+interface AlertQuery extends Partial<PriceDataQuery> {
+    days?: number;
+    severity?: AlertSeverity;
+    status?: AlertStatus;
+    limit?: number;
+    refresh?: boolean;
+}
+
+export const useAlertRules = () => {
+    return useQuery<MarketAlertRule[]>({
+        queryKey: ['alert-rules'],
+        queryFn: async () => {
+            const res = await apiClient.get<MarketAlertRule[]>('/market-intel/alerts/rules');
+            return res.data;
+        },
+    });
+};
+
+export const useCreateAlertRule = () => {
+    const queryClient = useQueryClient();
+    return useMutation({
+        mutationFn: async (payload: Omit<MarketAlertRule, 'id' | 'createdAt' | 'updatedAt'>) => {
+            const res = await apiClient.post<MarketAlertRule[]>('/market-intel/alerts/rules', payload);
+            return res.data;
+        },
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['alert-rules'] });
+            queryClient.invalidateQueries({ queryKey: ['alerts'] });
+        },
+    });
+};
+
+export const useUpdateAlertRule = () => {
+    const queryClient = useQueryClient();
+    return useMutation({
+        mutationFn: async ({
+            id,
+            payload,
+        }: {
+            id: string;
+            payload: Partial<Omit<MarketAlertRule, 'id' | 'createdAt' | 'updatedAt'>>;
+        }) => {
+            const res = await apiClient.put<MarketAlertRule[]>(`/market-intel/alerts/rules/${id}`, payload);
+            return res.data;
+        },
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['alert-rules'] });
+            queryClient.invalidateQueries({ queryKey: ['alerts'] });
+        },
+    });
+};
+
+export const useDeleteAlertRule = () => {
+    const queryClient = useQueryClient();
+    return useMutation({
+        mutationFn: async (id: string) => {
+            const res = await apiClient.delete<{ success: boolean }>(`/market-intel/alerts/rules/${id}`);
+            return res.data;
+        },
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['alert-rules'] });
+            queryClient.invalidateQueries({ queryKey: ['alerts'] });
+        },
+    });
+};
+
+export const useAlerts = (query?: AlertQuery) => {
+    return useQuery<AlertListResponse>({
+        queryKey: ['alerts', query],
+        queryFn: async () => {
+            const params = new URLSearchParams();
+            if (query) {
+                Object.entries(query).forEach(([key, value]) => {
+                    if (value !== undefined && value !== null) {
+                        if (value instanceof Date) {
+                            params.append(key, value.toISOString());
+                        } else if (Array.isArray(value)) {
+                            if (value.length > 0) {
+                                params.append(key, value.join(','));
+                            }
+                        } else {
+                            params.append(key, String(value));
+                        }
+                    }
+                });
+            }
+            const res = await apiClient.get<AlertListResponse>(`/market-intel/alerts?${params.toString()}`);
+            return res.data;
+        },
+    });
+};
+
+export const useEvaluateAlerts = () => {
+    const queryClient = useQueryClient();
+    return useMutation({
+        mutationFn: async (query?: Omit<AlertQuery, 'status' | 'refresh'>) => {
+            const params = new URLSearchParams();
+            if (query) {
+                Object.entries(query).forEach(([key, value]) => {
+                    if (value !== undefined && value !== null) {
+                        if (value instanceof Date) {
+                            params.append(key, value.toISOString());
+                        } else if (Array.isArray(value)) {
+                            if (value.length > 0) {
+                                params.append(key, value.join(','));
+                            }
+                        } else {
+                            params.append(key, String(value));
+                        }
+                    }
+                });
+            }
+            const suffix = params.toString();
+            const res = await apiClient.post<EvaluateAlertsResponse>(
+                `/market-intel/alerts/evaluate${suffix ? `?${suffix}` : ''}`,
+            );
+            return res.data;
+        },
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['alerts'] });
+        },
+    });
+};
+
+export const useAlertLogs = (id?: string) => {
+    return useQuery<AlertStatusLog[]>({
+        queryKey: ['alerts', 'logs', id],
+        enabled: !!id,
+        queryFn: async () => {
+            const res = await apiClient.get<AlertStatusLog[]>(`/market-intel/alerts/${id}/logs`);
+            return res.data;
+        },
+    });
+};
+
+export const useUpdateAlertStatus = () => {
+    const queryClient = useQueryClient();
+    return useMutation({
+        mutationFn: async ({
+            id,
+            status,
+            note,
+            reason,
+            operator,
+        }: {
+            id: string;
+            status: AlertStatus;
+            note?: string;
+            reason?: string;
+            operator?: string;
+        }) => {
+            const res = await apiClient.patch(`/market-intel/alerts/${id}/status`, { status, note, reason, operator });
+            return res.data;
+        },
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['alerts'] });
+            queryClient.invalidateQueries({ queryKey: ['alerts', 'logs'] });
+        },
     });
 };
 
@@ -1384,6 +1688,7 @@ export const useInsightStats = () => {
 
 export interface HotTopic {
     topic: string;
+    displayTopic?: string;
     count: number;
 }
 
@@ -1395,5 +1700,224 @@ export const useHotTopics = (limit = 20) => {
             return res.data;
         },
         refetchInterval: 60000,
+    });
+};
+
+// =============================================
+// 全景检索：聚合搜索 (Universal Search)
+// =============================================
+
+export interface UniversalSearchQuery {
+    keyword: string;
+    startDate?: Date;
+    endDate?: Date;
+    sentiment?: 'positive' | 'negative' | 'neutral';
+    commodities?: string[];
+    sourceTypes?: string[];
+    regionCodes?: string[];
+    pricePageSize?: number;
+    intelPageSize?: number;
+    docPageSize?: number;
+}
+
+export interface UniversalSearchSummary {
+    priceRange: {
+        min: number | null;
+        max: number | null;
+        avg: number | null;
+    };
+    sentiment: 'positive' | 'negative' | 'neutral' | 'mixed';
+    topTags: string[];
+    entityMentions: string[];
+    totalResults: number;
+}
+
+export interface UniversalSearchResponse {
+    prices: { data: PriceDataResponse[]; total: number };
+    intels: { data: MarketIntelResponse[]; total: number };
+    docs: { data: MarketIntelResponse[]; total: number };
+    summary: UniversalSearchSummary;
+}
+
+/**
+ * 全景检索 Hook - 一次请求返回三类数据及统计摘要
+ */
+export const useUniversalSearch = (query?: Partial<UniversalSearchQuery>, options?: { enabled?: boolean }) => {
+    return useQuery<UniversalSearchResponse>({
+        queryKey: ['universal-search', query],
+        queryFn: async () => {
+            const params = new URLSearchParams();
+            if (query) {
+                Object.entries(query).forEach(([key, value]) => {
+                    if (value !== undefined && value !== null) {
+                        if (value instanceof Date) {
+                            params.append(key, value.toISOString());
+                        } else if (Array.isArray(value)) {
+                            if (value.length > 0) {
+                                params.append(key, value.join(','));
+                            }
+                        } else {
+                            params.append(key, String(value));
+                        }
+                    }
+                });
+            }
+            const res = await apiClient.get<UniversalSearchResponse>(
+                `/market-intel/universal-search?${params.toString()}`,
+            );
+            return res.data;
+        },
+        enabled: options?.enabled ?? (!!query?.keyword && query.keyword.length >= 2),
+    });
+};
+
+// =============================================
+// 搜索建议 (Search Suggestions)
+// =============================================
+
+export interface SearchSuggestion {
+    text: string;
+    type: 'collection_point' | 'commodity' | 'tag';
+    count?: number;
+}
+
+export interface SearchSuggestionsResponse {
+    suggestions: SearchSuggestion[];
+}
+
+/**
+ * 搜索建议 Hook - 提供自动补全功能
+ */
+export const useSearchSuggestions = (prefix?: string, options?: { enabled?: boolean }) => {
+    return useQuery<SearchSuggestionsResponse>({
+        queryKey: ['search-suggestions', prefix],
+        queryFn: async () => {
+            const res = await apiClient.get<SearchSuggestionsResponse>(
+                `/market-intel/search-suggestions?prefix=${encodeURIComponent(prefix || '')}`,
+            );
+            return res.data;
+        },
+        enabled: options?.enabled ?? (!!prefix && prefix.length >= 1),
+        staleTime: 30000, // 30秒内不重新请求相同前缀
+    });
+};
+
+// =============================================
+// 全文搜索增强 (Full-Text Search)
+// =============================================
+
+export interface FullTextSearchQuery {
+    keywords: string;
+    category?: string;
+    startDate?: Date;
+    endDate?: Date;
+    page?: number;
+    pageSize?: number;
+}
+
+export interface FullTextSearchResult extends MarketIntelResponse {
+    relevanceScore: number;
+    matchedKeywords: string[];
+}
+
+export interface FullTextSearchResponse {
+    data: FullTextSearchResult[];
+    total: number;
+    page: number;
+    pageSize: number;
+    keywords: string[]; // 分词后的关键词列表（供高亮使用）
+}
+
+/**
+ * 全文搜索 Hook - 支持多关键词、相关性排序、分页
+ */
+export const useFullTextSearch = (query?: Partial<FullTextSearchQuery>, options?: { enabled?: boolean }) => {
+    return useQuery<FullTextSearchResponse>({
+        queryKey: ['full-text-search', query],
+        queryFn: async () => {
+            const params = new URLSearchParams();
+            if (query) {
+                if (query.keywords) params.append('keywords', query.keywords);
+                if (query.category) params.append('category', query.category);
+                if (query.startDate) params.append('startDate', query.startDate.toISOString());
+                if (query.endDate) params.append('endDate', query.endDate.toISOString());
+                if (query.page) params.append('page', String(query.page));
+                if (query.pageSize) params.append('pageSize', String(query.pageSize));
+            }
+            const res = await apiClient.get<FullTextSearchResponse>(
+                `/market-intel/full-text-search?${params.toString()}`,
+            );
+            return res.data;
+        },
+        enabled: options?.enabled ?? (!!query?.keywords && query.keywords.length >= 2),
+    });
+};
+
+// =============================================
+// 关联内容 (Related Content / Knowledge Graph)
+// =============================================
+
+export interface RelatedContentQuery {
+    intelId?: string;
+    tags?: string[];
+    commodities?: string[];
+    regionCodes?: string[];
+    limit?: number;
+}
+
+export interface RelatedContentResponse {
+    relatedIntels: Array<{
+        id: string;
+        category: string;
+        rawContent: string;
+        summary: string | null;
+        effectiveTime: string;
+        location: string;
+        totalScore: number;
+        relationScore: number;
+    }>;
+    relatedKnowledge: Array<{
+        id: string;
+        type: string;
+        title: string;
+        publishAt: string | null;
+        commodities: string[];
+        region: string[];
+        analysis?: { summary?: string };
+    }>;
+    relatedPrices: Array<{
+        id: string;
+        commodity: string;
+        price: number;
+        location: string;
+        effectiveDate: string;
+        collectionPoint?: { name: string; shortName?: string };
+    }>;
+    sourceTags: string[];
+    sourceCommodities: string[];
+    sourceRegions: string[];
+}
+
+/**
+ * 关联内容 Hook - 基于标签/品种/区域查找关联内容
+ */
+export const useRelatedContent = (query?: Partial<RelatedContentQuery>, options?: { enabled?: boolean }) => {
+    return useQuery<RelatedContentResponse>({
+        queryKey: ['related-content', query],
+        queryFn: async () => {
+            const params = new URLSearchParams();
+            if (query) {
+                if (query.intelId) params.append('intelId', query.intelId);
+                if (query.tags?.length) params.append('tags', query.tags.join(','));
+                if (query.commodities?.length) params.append('commodities', query.commodities.join(','));
+                if (query.regionCodes?.length) params.append('regionCodes', query.regionCodes.join(','));
+                if (query.limit) params.append('limit', String(query.limit));
+            }
+            const res = await apiClient.get<RelatedContentResponse>(
+                `/market-intel/related-content?${params.toString()}`,
+            );
+            return res.data;
+        },
+        enabled: options?.enabled ?? (!!query?.intelId || (query?.tags?.length ?? 0) > 0 || (query?.commodities?.length ?? 0) > 0),
     });
 };

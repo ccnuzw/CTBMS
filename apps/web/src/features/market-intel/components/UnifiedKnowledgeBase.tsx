@@ -38,6 +38,8 @@ const { Title, Text } = Typography;
 
 type ContentType = 'all' | 'documents' | 'reports' | 'favorites';
 
+const normalizeTag = (tag: string) => tag.replace(/^#/, '').trim();
+
 export const UnifiedKnowledgeBase: React.FC = () => {
     const { token } = theme.useToken();
     const screens = Grid.useBreakpoint();
@@ -202,7 +204,9 @@ export const UnifiedKnowledgeBase: React.FC = () => {
         allItems.forEach((doc) => {
             const tags = doc.aiAnalysis?.tags || [];
             tags.forEach((tag: string) => {
-                counts[tag] = (counts[tag] || 0) + 1;
+                const normalizedTag = normalizeTag(tag);
+                if (!normalizedTag) return;
+                counts[normalizedTag] = (counts[normalizedTag] || 0) + 1;
             });
         });
         return Object.entries(counts).sort((a, b) => b[1] - a[1]);
@@ -215,7 +219,7 @@ export const UnifiedKnowledgeBase: React.FC = () => {
                 return false;
             }
             if (selectedTags.size > 0) {
-                const hasTag = (doc.aiAnalysis?.tags || []).some((t: string) => selectedTags.has(t));
+                const hasTag = (doc.aiAnalysis?.tags || []).some((t: string) => selectedTags.has(normalizeTag(t)));
                 if (!hasTag) return false;
             }
             return true;

@@ -23,38 +23,39 @@ import { IntelTaskModule } from './modules/intel-task';
 import { ConfigModule } from './modules/config/config.module';
 import { CollectionPointAllocationModule } from './modules/collection-point-allocation';
 import { PriceSubmissionModule } from './modules/price-submission';
+import { KnowledgeModule } from './modules/knowledge/knowledge.module';
 
 @Module({
-    imports: [
-        ScheduleModule.forRoot(),
-        PrismaModule,
-        AIModule,
-        UsersModule,
-        MarketCategoryModule,
-        MarketInfoModule,
-        OrganizationModule,
-        DepartmentModule,
-        RoleModule,
-        InitModule,
-        TagsModule,
-        TagGroupsModule,
-        EnterpriseModule,
-        MarketIntelModule, // Keep this, even if we removed Task from it, it has other providers (though we might have removed too much from it? No, we kept services)
-        CollectionPointModule,
-        RegionModule,
-        ExtractionConfigModule,
-        IntelTaskModule,
-        ConfigModule,
-        CollectionPointAllocationModule,
-        PriceSubmissionModule,
-    ],
-    controllers: [AppController],
-    providers: [],
+  imports: [
+    ScheduleModule.forRoot(),
+    PrismaModule,
+    AIModule,
+    UsersModule,
+    MarketCategoryModule,
+    MarketInfoModule,
+    OrganizationModule,
+    DepartmentModule,
+    RoleModule,
+    InitModule,
+    TagsModule,
+    TagGroupsModule,
+    EnterpriseModule,
+    MarketIntelModule, // Keep this, even if we removed Task from it, it has other providers (though we might have removed too much from it? No, we kept services)
+    CollectionPointModule,
+    RegionModule,
+    ExtractionConfigModule,
+    IntelTaskModule,
+    ConfigModule,
+    CollectionPointAllocationModule,
+    PriceSubmissionModule,
+    KnowledgeModule,
+  ],
+  controllers: [AppController],
+  providers: [],
 })
 export class AppModule implements NestModule {
-    configure(consumer: MiddlewareConsumer) {
-        consumer.apply(LoggerMiddleware).forRoutes('*');
-        consumer.apply(MockAuthMiddleware).forRoutes('*');
-    }
+  configure(consumer: MiddlewareConsumer) {
+    consumer.apply(LoggerMiddleware).forRoutes('*');
+    consumer.apply(MockAuthMiddleware).forRoutes('*');
+  }
 }
-

@@ -124,10 +124,11 @@ export class PromptService implements OnModuleInit {
      * 种子数据：如果数据库为空，初始化默认模板
      */
     private async seedDefaultTemplates() {
-        const count = await this.prisma.promptTemplate.count();
-        if (count > 0) return;
+        // const count = await this.prisma.promptTemplate.count();
+        // if (count > 0) return; 
 
-        this.logger.log('初始化默认 Prompt 模板...');
+        // 改为增量检查，确保新添加的模版能被初始化
+        this.logger.log('检查默认 Prompt 模板...');
 
         const defaults = [
             {
@@ -185,7 +186,7 @@ export class PromptService implements OnModuleInit {
             {
                 code: 'MARKET_INTEL_BRIEFING',
                 name: '智能简报生成',
-                category: 'B_SEMI_STRUCTURED' as IntelCategory, // 复用B类或任意
+                category: 'B_SEMI_STRUCTURED' as IntelCategory,
                 system: `你是一名资深的大宗商品市场分析师。请根据提供的市场情报片段，撰写一份【每日市场动态简报】。
 要求：
 1. 宏观视角：先概述整体市场情绪（看涨/看跌/持稳）。
@@ -194,21 +195,48 @@ export class PromptService implements OnModuleInit {
 4. 字数控制：300-500字。
 5. 格式：Markdown，重点加粗。`,
                 user: `基于以下情报数据生成简报：\n\n{{content}}`
+            },
+            {
+                code: 'MARKET_INTEL_UNIVERSAL_INSIGHT',
+                name: '全景检索智能综述',
+                category: 'B_SEMI_STRUCTURED' as IntelCategory,
+                system: `你是 CTBMS 的首席市场分析师。你的任务是根据全景检索结果，为用户生成一份深度的【市场搜索综述】。
+请基于提供的多维度数据（价格、情感、情报、文档），进行综合分析。
+
+输出结构要求：
+1. **核心观点**：开篇一句话给出市场定性（如：震荡偏强、底部支撑明显等）及核心逻辑。
+2. **价格表现**：结合最高/最低价及均价，分析价格波动特征。
+3. **市场心态与博弈**：解读多空双方情绪，分析供需博弈情况。
+4. **关键驱动因素**：列出影响市场的1-3个关键因子（如政策、天气、库存）。
+5. **短期预判**：给出未来 3-7 天的趋势预判。
+
+注意：
+- 保持客观专业，论据充分。
+- 使用 Markdown 格式排版，使用加粗强调关键数据。
+- 字数控制在 400-600 字之间。`,
+                user: `{{content}}`
             }
         ];
 
         for (const t of defaults) {
-            await this.prisma.promptTemplate.create({
-                data: {
-                    code: t.code,
-                    name: t.name,
-                    category: t.category,
-                    systemPrompt: t.system,
-                    userPrompt: t.user,
-                    version: 1,
-                }
+            const exists = await this.prisma.promptTemplate.findUnique({
+                where: { code: t.code }
             });
+
+            if (!exists) {
+                await this.prisma.promptTemplate.create({
+                    data: {
+                        code: t.code,
+                        name: t.name,
+                        category: t.category,
+                        systemPrompt: t.system,
+                        userPrompt: t.user,
+                        version: 1,
+                    }
+                });
+                this.logger.log(`Created default template: ${t.code}`);
+            }
         }
-        this.logger.log('默认 Prompt 模板初始化完成');
+        this.logger.log('默认 Prompt 模板检查完成');
     }
 }

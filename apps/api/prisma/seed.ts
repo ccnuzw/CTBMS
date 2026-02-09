@@ -92,6 +92,9 @@ async function main() {
     // 9. 逻辑映射规则 (Logic Rules - AI 标准化关键)
     runSeedScript('seed-logic-rules.ts');
 
+    // 9.5 A类预警规则
+    runSeedScript('seed-market-alert-rules.ts');
+
     // 10. 历史价格数据 (Historical Price Data - 图表演示)
     // 注意: 依赖于采集点数据优先初始化
     runSeedScript('seed-price-history.ts');

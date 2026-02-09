@@ -34,6 +34,7 @@ import dayjs, { Dayjs } from 'dayjs';
 import type { PriceSubType } from '@packages/types';
 import { useCollectionPoints, useProvinces } from '../../api/hooks';
 import { AdvancedPointSelector } from './AdvancedPointSelector';
+import { PRICE_QUALITY_TAG_OPTIONS, type PriceQualityTag } from './quality';
 import { useDictionary } from '@/hooks/useDictionaries';
 import { usePriceSubTypeLabels } from '@/utils/priceSubType';
 
@@ -96,6 +97,8 @@ interface FilterPanelProps {
     onPointTypeFilterChange: (types: string[]) => void;
     selectedSubTypes: PriceSubType[];
     onSelectedSubTypesChange: (types: PriceSubType[]) => void;
+    selectedQualityTags: PriceQualityTag[];
+    onSelectedQualityTagsChange: (types: PriceQualityTag[]) => void;
 }
 
 export const FilterPanel: React.FC<FilterPanelProps> = ({
@@ -111,6 +114,8 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
     onPointTypeFilterChange,
     selectedSubTypes,
     onSelectedSubTypesChange,
+    selectedQualityTags,
+    onSelectedQualityTagsChange,
 }) => {
     const { token } = theme.useToken();
     const [searchKeyword, setSearchKeyword] = useState('');
@@ -370,6 +375,35 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
                             label,
                             value,
                         }))}
+                        size="small"
+                        maxTagCount="responsive"
+                    />
+                </div>
+
+                {/* ===== 数据质量 ===== */}
+                <div
+                    style={{
+                        marginBottom: 16,
+                        padding: 12,
+                        background: token.colorFillQuaternary,
+                        borderRadius: token.borderRadius,
+                    }}
+                >
+                    <Flex align="center" gap={6} style={{ marginBottom: 8 }}>
+                        <FilterOutlined style={{ color: token.colorPrimary }} />
+                        <Text strong style={{ fontSize: 12 }}>数据质量</Text>
+                    </Flex>
+                    <Text type="secondary" style={{ fontSize: 11, display: 'block', marginBottom: 8 }}>
+                        可多选，留空表示全部质量标签
+                    </Text>
+                    <Select
+                        mode="multiple"
+                        allowClear
+                        placeholder="选择质量标签"
+                        style={{ width: '100%' }}
+                        value={selectedQualityTags}
+                        onChange={(vals) => onSelectedQualityTagsChange(vals as PriceQualityTag[])}
+                        options={PRICE_QUALITY_TAG_OPTIONS}
                         size="small"
                         maxTagCount="responsive"
                     />

@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
-import { Alert, Card, Segmented, Space, Typography, Popover, Tag, App, Modal, Divider, Button } from 'antd';
+import { Card, Segmented, Space, Typography, App } from 'antd';
 import {
-  InfoCircleOutlined,
   EnvironmentOutlined,
   CheckCircleOutlined,
   ExclamationCircleOutlined,
@@ -10,7 +9,7 @@ import {
 import { useAllocationStatistics } from '../../price-reporting/api/hooks';
 import { AllocationMatrix } from './AllocationMatrix';
 import { PointAllocationManager } from '../../price-reporting/components/admin/PointAllocationManager';
-import { useModalAutoFocus } from '@/hooks/useModalAutoFocus';
+import { AllocationConfigHelp } from './AllocationConfigHelp';
 
 type AllocationCenterMode = 'BY_USER' | 'POINT_COVERAGE';
 
@@ -18,22 +17,13 @@ interface CollectionPointAllocationCenterProps {
   defaultMode?: AllocationCenterMode;
 }
 
-const { Text, Title, Paragraph } = Typography;
+const { Text } = Typography;
 
 export const CollectionPointAllocationCenter: React.FC<CollectionPointAllocationCenterProps> = ({
   defaultMode = 'BY_USER',
 }) => {
   const [mode, setMode] = useState<AllocationCenterMode>(defaultMode);
-  const [isHelpModalOpen, setIsHelpModalOpen] = useState(false);
   const { data: stats } = useAllocationStatistics();
-  const { containerRef, focusRef, modalProps } = useModalAutoFocus();
-  const blurActiveElement = () => {
-    if (typeof document === 'undefined') return;
-    const active = document.activeElement;
-    if (active instanceof HTMLElement) {
-      active.blur();
-    }
-  };
 
   return (
     <App>
@@ -52,16 +42,7 @@ export const CollectionPointAllocationCenter: React.FC<CollectionPointAllocation
                       { label: '按采集点分配', value: 'POINT_COVERAGE' },
                     ]}
                   />
-                  <Tag
-                    icon={<InfoCircleOutlined />}
-                    style={{ cursor: 'pointer', margin: 0 }}
-                    onClick={() => {
-                      blurActiveElement();
-                      setIsHelpModalOpen(true);
-                    }}
-                  >
-                    配置说明
-                  </Tag>
+                  <AllocationConfigHelp />
                 </Space>
               </div>
               <Text type="secondary" style={{ fontSize: 13 }}>
@@ -150,77 +131,6 @@ export const CollectionPointAllocationCenter: React.FC<CollectionPointAllocation
           <PointAllocationManager embedded defaultAllocationStatus="UNALLOCATED" />
         )}
       </div>
-
-      <Modal
-        title="采集任务分配配置说明"
-        open={isHelpModalOpen}
-        onCancel={() => {
-          blurActiveElement();
-          setIsHelpModalOpen(false);
-        }}
-        footer={[
-          <Button
-            key="close"
-            onClick={() => {
-              blurActiveElement();
-              setIsHelpModalOpen(false);
-            }}
-            ref={focusRef}
-          >
-            关闭
-          </Button>,
-        ]}
-        width={600}
-        focusTriggerAfterClose={false}
-        {...modalProps}
-      >
-        <div ref={containerRef}>
-          <Typography>
-            <Title level={4}>1. 分配模式说明</Title>
-            <Paragraph>
-              系统提供两种视角的分配模式，以满足不同的管理需求：
-            </Paragraph>
-            <ul>
-              <li>
-                <Text strong>按员工分配</Text>：
-                以“人”为核心。适用于为新员工分配任务，或调整某个负责人的管辖范围。您可以清晰地看到某个人负责了哪些点，并进行增减。
-              </li>
-              <li>
-                <Text strong>按采集点分配</Text>：
-                以“点”为核心。适用于排查遗漏（补齐）或区域性调整。您可以专注于哪些点还没有人管，快速指定负责人。
-              </li>
-            </ul>
-
-            <Divider />
-
-            <Title level={4}>2. 操作流程详细指引</Title>
-
-            <Title level={5}>模式一：按员工分配</Title>
-            <ol>
-              <li><Text>定位员工</Text>：在左侧组织树中选择部门，或直接搜索员工姓名。</li>
-              <li><Text>查看现状</Text>：选中员工后，右侧将显示其当前负责的所有采集点。</li>
-              <li><Text>新增/调整</Text>：点击“分配采集点”按钮，在弹窗中勾选新的采集点进行添加；或在列表中移除不再负责的点。</li>
-            </ol>
-
-            <Title level={5}>模式二：按采集点分配</Title>
-            <ol>
-              <li><Text>筛选范围</Text>：使用顶部的筛选栏，可以只看“未分配”的采集点，也可以按区域查找。</li>
-              <li><Text>批量指派</Text>：勾选列表中的一个或多个采集点，点击“变更负责人”或“分配”。</li>
-              <li><Text>确认生效</Text>：选择目标负责人后提交，系统将立即更新归属关系。</li>
-            </ol>
-
-            <Divider />
-
-            <Title level={4}>3. 常见问题</Title>
-            <Paragraph>
-              <ul>
-                <li><Text>Q: 一个采集点可以有多个负责人吗？</Text><br />A: 通常情况下一个采集点建议归属唯一的负责人，具体取决于系统的业务规则配置。</li>
-                <li><Text>Q: 分配后对方什么时候能看到？</Text><br />A: 分配操作是实时生效的，负责人刷新移动端或Web端即可看到新的任务。</li>
-              </ul>
-            </Paragraph>
-          </Typography>
-        </div>
-      </Modal>
     </App>
   );
 };

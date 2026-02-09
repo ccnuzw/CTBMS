@@ -531,496 +531,496 @@ export const TaskTemplateManager: React.FC = () => {
       >
         <div ref={containerRef}>
           <Form form={form} layout="vertical">
-          <Row gutter={24}>
-            <Col span={16}>
-              <Card size="small" title="基础信息" style={{ marginBottom: 16 }}>
-                <Form.Item
-                  name="name"
-                  label="模板名称"
-                  rules={[{ required: true, message: '请输入模板名称' }]}
-                >
-                  <Input placeholder="如：每日港口采集任务" {...autoFocusFieldProps} />
-                </Form.Item>
+            <Row gutter={24}>
+              <Col span={16}>
+                <Card size="small" title="基础信息" style={{ marginBottom: 16 }}>
+                  <Form.Item
+                    name="name"
+                    label="模板名称"
+                    rules={[{ required: true, message: '请输入模板名称' }]}
+                  >
+                    <Input placeholder="如：每日港口采集任务" {...autoFocusFieldProps} />
+                  </Form.Item>
 
-                <Form.Item name="description" label="任务描述">
-                  <TextArea rows={2} placeholder="任务说明和要求" />
-                </Form.Item>
+                  <Form.Item name="description" label="任务描述">
+                    <TextArea rows={2} placeholder="任务说明和要求" />
+                  </Form.Item>
 
-                <Row gutter={16}>
-                  <Col span={12}>
-                    <Form.Item
-                      name="taskType"
-                      label="任务类型"
-                      rules={[{ required: true, message: '请选择任务类型' }]}
-                    >
-                      <Select options={TASK_TYPE_OPTIONS.map((t) => ({ value: t.value, label: t.label }))} />
-                    </Form.Item>
-                  </Col>
-                  <Col span={12}>
-                    <Form.Item name="priority" label="优先级">
-                      <Select
-                        options={PRIORITY_OPTIONS.map((p) => ({
-                          value: p.value,
-                          label: <Tag color={p.color}>{p.label}</Tag>,
-                        }))}
-                      />
-                    </Form.Item>
-                  </Col>
-                </Row>
-              </Card>
-
-              <Card size="small" title="周期配置" style={{ marginBottom: 16 }}>
-                <Row gutter={16}>
-                  <Col span={12}>
-                    <Form.Item
-                      name="cycleType"
-                      label="执行周期"
-                      rules={[{ required: true, message: '请选择周期' }]}
-                    >
-                      <Select
-                        optionLabelProp="label"
-                        onChange={(value) => {
-                          if (value === 'WEEKLY') {
-                            form.setFieldsValue({
-                              runDayOfWeek: form.getFieldValue('runDayOfWeek') ?? 1,
-                              dueDayOfWeek: form.getFieldValue('dueDayOfWeek') ?? 7,
-                              runDayOfMonth: undefined,
-                              dueDayOfMonth: undefined,
-                            });
-                          } else if (value === 'MONTHLY') {
-                            form.setFieldsValue({
-                              runDayOfMonth: form.getFieldValue('runDayOfMonth') ?? 1,
-                              dueDayOfMonth: form.getFieldValue('dueDayOfMonth') ?? 0,
-                              runDayOfWeek: undefined,
-                              dueDayOfWeek: undefined,
-                            });
-                          } else {
-                            form.setFieldsValue({
-                              runDayOfWeek: undefined,
-                              dueDayOfWeek: undefined,
-                              runDayOfMonth: undefined,
-                              dueDayOfMonth: undefined,
-                            });
-                          }
-                        }}
-                        options={CYCLE_TYPE_OPTIONS.map((c) => ({
-                          value: c.value,
-                          label: c.label,
-                          description: c.description,
-                        }))}
-                        optionRender={(option) => (
-                          <div>
-                            <div>{option.data.label}</div>
-                            <Text type="secondary" style={{ fontSize: 12 }}>
-                              {option.data.description}
-                            </Text>
-                          </div>
-                        )}
-                      />
-                    </Form.Item>
-                  </Col>
-                  <Col span={12}>
-                    <Form.Item name="deadlineOffset" label="截止偏移（小时）">
-                      <InputNumber min={1} max={72} style={{ width: '100%' }} />
-                    </Form.Item>
-                  </Col>
-                </Row>
-
-                <Form.Item noStyle shouldUpdate={(prev, cur) => prev.cycleType !== cur.cycleType}>
-                  {({ getFieldValue }) => {
-                    const cycleType = getFieldValue('cycleType');
-
-                    if (cycleType === 'WEEKLY') {
-                      return (
-                        <Row gutter={16}>
-                          <Col span={12}>
-                            <Form.Item
-                              name="runDayOfWeek"
-                              label="分发日（周）"
-                              rules={[{ required: true, message: '请选择分发日' }]}
-                            >
-                              <Select options={WEEKDAY_OPTIONS} />
-                            </Form.Item>
-                          </Col>
-                          <Col span={12}>
-                            <Form.Item
-                              name="dueDayOfWeek"
-                              label="截止日（周）"
-                              rules={[
-                                { required: true, message: '请选择截止日' },
-                                ({ getFieldValue }) => ({
-                                  validator(_, value) {
-                                    const runDay = getFieldValue('runDayOfWeek');
-                                    if (runDay && value != null && value < runDay) {
-                                      return Promise.reject(new Error('截止日不能早于分发日'));
-                                    }
-                                    return Promise.resolve();
-                                  },
-                                }),
-                              ]}
-                            >
-                              <Select options={WEEKDAY_OPTIONS} />
-                            </Form.Item>
-                          </Col>
-                        </Row>
-                      );
-                    }
-
-                    if (cycleType === 'MONTHLY') {
-                      return (
-                        <Row gutter={16}>
-                          <Col span={12}>
-                            <Form.Item
-                              name="runDayOfMonth"
-                              label="分发日（月）"
-                              rules={[{ required: true, message: '请选择分发日' }]}
-                              extra="选择月末将自动适配不同月份天数"
-                            >
-                              <Select options={MONTH_DAY_OPTIONS} />
-                            </Form.Item>
-                          </Col>
-                          <Col span={12}>
-                            <Form.Item
-                              name="dueDayOfMonth"
-                              label="截止日（月）"
-                              rules={[
-                                { required: true, message: '请选择截止日' },
-                                ({ getFieldValue }) => ({
-                                  validator(_, value) {
-                                    const runDay = getFieldValue('runDayOfMonth');
-                                    if (runDay == null || value == null) return Promise.resolve();
-                                    const runValue = runDay === 0 ? 32 : runDay;
-                                    const dueValue = value === 0 ? 32 : value;
-                                    if (dueValue < runValue) {
-                                      return Promise.reject(new Error('截止日不能早于分发日'));
-                                    }
-                                    return Promise.resolve();
-                                  },
-                                }),
-                              ]}
-                              extra="选择月末将自动适配不同月份天数"
-                            >
-                              <Select options={MONTH_DAY_OPTIONS} />
-                            </Form.Item>
-                          </Col>
-                        </Row>
-                      );
-                    }
-
-                    return null;
-                  }}
-                </Form.Item>
-
-                <Row gutter={16}>
-                  <Col span={12}>
-                    <Form.Item label="下发时间">
-                      <Space>
-                        <Form.Item name="runAtHour" noStyle>
-                          <InputNumber min={0} max={23} placeholder="时" style={{ width: 80 }} />
-                        </Form.Item>
-                        <span>:</span>
-                        <Form.Item name="runAtMin" noStyle>
-                          <InputNumber min={0} max={59} placeholder="分" style={{ width: 80 }} />
-                        </Form.Item>
-                      </Space>
-                    </Form.Item>
-                  </Col>
-                  <Col span={12}>
-                    <Form.Item label="截止时间">
-                      <Space>
-                        <Form.Item name="dueAtHour" noStyle>
-                          <InputNumber min={0} max={23} placeholder="时" style={{ width: 80 }} />
-                        </Form.Item>
-                        <span>:</span>
-                        <Form.Item name="dueAtMin" noStyle>
-                          <InputNumber min={0} max={59} placeholder="分" style={{ width: 80 }} />
-                        </Form.Item>
-                      </Space>
-                    </Form.Item>
-                  </Col>
-                </Row>
-              </Card>
-
-              <Card size="small" title="高级配置" style={{ marginBottom: 16 }}>
-                <Row gutter={16}>
-                  <Col span={12}>
-                    <Form.Item name="activeFrom" label="生效时间">
-                      <DatePicker showTime style={{ width: '100%' }} />
-                    </Form.Item>
-                  </Col>
-                  <Col span={12}>
-                    <Form.Item
-                      name="activeUntil"
-                      label="失效时间"
-                      dependencies={['activeFrom']}
-                      rules={[
-                        ({ getFieldValue }) => ({
-                          validator(_, value) {
-                            const start = getFieldValue('activeFrom');
-                            if (!start || !value) return Promise.resolve();
-                            if (dayjs(value).isBefore(dayjs(start))) {
-                              return Promise.reject(new Error('失效时间不能早于生效时间'));
-                            }
-                            return Promise.resolve();
-                          },
-                        }),
-                      ]}
-                    >
-                      <DatePicker showTime style={{ width: '100%' }} />
-                    </Form.Item>
-                  </Col>
-                </Row>
-
-                <Row gutter={16}>
-                  <Col span={24}>
-                    <Form.Item name="maxBackfillPeriods" label="允许补发周期数">
-                      <InputNumber min={0} max={365} style={{ width: '100%' }} />
-                    </Form.Item>
-                  </Col>
-                </Row>
-
-                <Form.Item name="allowLate" label="允许延期" valuePropName="checked">
-                  <Switch checkedChildren="允许" unCheckedChildren="不允许" />
-                </Form.Item>
-              </Card>
-
-              <Card size="small" title="分配范围" style={{ marginBottom: 16 }}>
-                <Form.Item
-                  name="assigneeMode"
-                  label="分配模式"
-                  dependencies={['taskType']}
-                  rules={[
-                    { required: true, message: '请选择分配模式' },
-                    ({ getFieldValue }) => ({
-                      validator(_, value) {
-                        if (getFieldValue('taskType') === 'COLLECTION' && value !== 'BY_COLLECTION_POINT') {
-                          return Promise.reject(new Error('采集任务需要绑定采集点'));
-                        }
-                        return Promise.resolve();
-                      },
-                    }),
-                  ]}
-                >
-                  <Select
-                    onChange={handleAssigneeModeChange}
-                    optionLabelProp="label"
-                    options={ASSIGNEE_MODE_OPTIONS.map((m) => ({
-                      value: m.value,
-                      label: m.label,
-                      description: m.description,
-                    }))}
-                    optionRender={(option) => (
-                      <div>
-                        <div>{option.data.label}</div>
-                        <Text type="secondary" style={{ fontSize: 12 }}>
-                          {option.data.description}
-                        </Text>
-                      </div>
-                    )}
-                  />
-                </Form.Item>
-
-                <Form.Item noStyle shouldUpdate={(prev, cur) => prev.taskType !== cur.taskType || prev.assigneeMode !== cur.assigneeMode}>
-                  {({ getFieldValue }) => {
-                    if (getFieldValue('taskType') === 'COLLECTION' && getFieldValue('assigneeMode') !== 'BY_COLLECTION_POINT') {
-                      return (
-                        <Alert
-                          type="warning"
-                          showIcon
-                          message="采集任务需要绑定采集点，建议选择“按采集点负责人”"
-                          style={{ marginBottom: 12 }}
+                  <Row gutter={16}>
+                    <Col span={12}>
+                      <Form.Item
+                        name="taskType"
+                        label="任务类型"
+                        rules={[{ required: true, message: '请选择任务类型' }]}
+                      >
+                        <Select options={TASK_TYPE_OPTIONS.map((t) => ({ value: t.value, label: t.label }))} />
+                      </Form.Item>
+                    </Col>
+                    <Col span={12}>
+                      <Form.Item name="priority" label="优先级">
+                        <Select
+                          options={PRIORITY_OPTIONS.map((p) => ({
+                            value: p.value,
+                            label: <Tag color={p.color}>{p.label}</Tag>,
+                          }))}
                         />
-                      );
-                    }
-                    return null;
-                  }}
-                </Form.Item>
+                      </Form.Item>
+                    </Col>
+                  </Row>
+                </Card>
 
-                <Form.Item noStyle shouldUpdate={(prev, cur) => prev.assigneeMode !== cur.assigneeMode}>
-                  {({ getFieldValue }) => {
-                    const mode = getFieldValue('assigneeMode');
+                <Card size="small" title="周期配置" style={{ marginBottom: 16 }}>
+                  <Row gutter={16}>
+                    <Col span={12}>
+                      <Form.Item
+                        name="cycleType"
+                        label="执行周期"
+                        rules={[{ required: true, message: '请选择周期' }]}
+                      >
+                        <Select
+                          optionLabelProp="label"
+                          onChange={(value) => {
+                            if (value === 'WEEKLY') {
+                              form.setFieldsValue({
+                                runDayOfWeek: form.getFieldValue('runDayOfWeek') ?? 1,
+                                dueDayOfWeek: form.getFieldValue('dueDayOfWeek') ?? 7,
+                                runDayOfMonth: undefined,
+                                dueDayOfMonth: undefined,
+                              });
+                            } else if (value === 'MONTHLY') {
+                              form.setFieldsValue({
+                                runDayOfMonth: form.getFieldValue('runDayOfMonth') ?? 1,
+                                dueDayOfMonth: form.getFieldValue('dueDayOfMonth') ?? 0,
+                                runDayOfWeek: undefined,
+                                dueDayOfWeek: undefined,
+                              });
+                            } else {
+                              form.setFieldsValue({
+                                runDayOfWeek: undefined,
+                                dueDayOfWeek: undefined,
+                                runDayOfMonth: undefined,
+                                dueDayOfMonth: undefined,
+                              });
+                            }
+                          }}
+                          options={CYCLE_TYPE_OPTIONS.map((c) => ({
+                            value: c.value,
+                            label: c.label,
+                            description: c.description,
+                          }))}
+                          optionRender={(option) => (
+                            <div>
+                              <div>{option.data.label}</div>
+                              <Text type="secondary" style={{ fontSize: 12 }}>
+                                {option.data.description}
+                              </Text>
+                            </div>
+                          )}
+                        />
+                      </Form.Item>
+                    </Col>
+                    <Col span={12}>
+                      <Form.Item name="deadlineOffset" label="完成时限（小时）" tooltip="任务分发后多少小时内需完成">
+                        <InputNumber min={1} max={72} style={{ width: '100%' }} />
+                      </Form.Item>
+                    </Col>
+                  </Row>
 
-                    if (mode === 'MANUAL') {
-                      return (
-                        <Form.Item
-                          name="assigneeIds"
-                          label="指定业务员"
-                          rules={[{ required: true, message: '请选择至少一名业务员' }]}
-                        >
-                          <Select
-                            mode="multiple"
-                            placeholder="搜索并选择业务员"
-                            loading={usersLoading}
-                            showSearch
-                            optionFilterProp="label"
-                            maxTagCount={5}
-                            options={users.map((u) => ({
-                              value: u.id,
-                              label: `${u.name} (${u.department?.name || '未分配部门'})`,
-                            }))}
+                  <Form.Item noStyle shouldUpdate={(prev, cur) => prev.cycleType !== cur.cycleType}>
+                    {({ getFieldValue }) => {
+                      const cycleType = getFieldValue('cycleType');
+
+                      if (cycleType === 'WEEKLY') {
+                        return (
+                          <Row gutter={16}>
+                            <Col span={12}>
+                              <Form.Item
+                                name="runDayOfWeek"
+                                label="分发日（周）"
+                                rules={[{ required: true, message: '请选择分发日' }]}
+                              >
+                                <Select options={WEEKDAY_OPTIONS} />
+                              </Form.Item>
+                            </Col>
+                            <Col span={12}>
+                              <Form.Item
+                                name="dueDayOfWeek"
+                                label="截止日（周）"
+                                rules={[
+                                  { required: true, message: '请选择截止日' },
+                                  ({ getFieldValue }) => ({
+                                    validator(_, value) {
+                                      const runDay = getFieldValue('runDayOfWeek');
+                                      if (runDay && value != null && value < runDay) {
+                                        return Promise.reject(new Error('截止日不能早于分发日'));
+                                      }
+                                      return Promise.resolve();
+                                    },
+                                  }),
+                                ]}
+                              >
+                                <Select options={WEEKDAY_OPTIONS} />
+                              </Form.Item>
+                            </Col>
+                          </Row>
+                        );
+                      }
+
+                      if (cycleType === 'MONTHLY') {
+                        return (
+                          <Row gutter={16}>
+                            <Col span={12}>
+                              <Form.Item
+                                name="runDayOfMonth"
+                                label="分发日（月）"
+                                rules={[{ required: true, message: '请选择分发日' }]}
+                                extra="选择月末将自动适配不同月份天数"
+                              >
+                                <Select options={MONTH_DAY_OPTIONS} />
+                              </Form.Item>
+                            </Col>
+                            <Col span={12}>
+                              <Form.Item
+                                name="dueDayOfMonth"
+                                label="截止日（月）"
+                                rules={[
+                                  { required: true, message: '请选择截止日' },
+                                  ({ getFieldValue }) => ({
+                                    validator(_, value) {
+                                      const runDay = getFieldValue('runDayOfMonth');
+                                      if (runDay == null || value == null) return Promise.resolve();
+                                      const runValue = runDay === 0 ? 32 : runDay;
+                                      const dueValue = value === 0 ? 32 : value;
+                                      if (dueValue < runValue) {
+                                        return Promise.reject(new Error('截止日不能早于分发日'));
+                                      }
+                                      return Promise.resolve();
+                                    },
+                                  }),
+                                ]}
+                                extra="选择月末将自动适配不同月份天数"
+                              >
+                                <Select options={MONTH_DAY_OPTIONS} />
+                              </Form.Item>
+                            </Col>
+                          </Row>
+                        );
+                      }
+
+                      return null;
+                    }}
+                  </Form.Item>
+
+                  <Row gutter={16}>
+                    <Col span={12}>
+                      <Form.Item label="下发时间">
+                        <Space>
+                          <Form.Item name="runAtHour" noStyle>
+                            <InputNumber min={0} max={23} placeholder="时" style={{ width: 80 }} />
+                          </Form.Item>
+                          <span>:</span>
+                          <Form.Item name="runAtMin" noStyle>
+                            <InputNumber min={0} max={59} placeholder="分" style={{ width: 80 }} />
+                          </Form.Item>
+                        </Space>
+                      </Form.Item>
+                    </Col>
+                    <Col span={12}>
+                      <Form.Item label="截止时间">
+                        <Space>
+                          <Form.Item name="dueAtHour" noStyle>
+                            <InputNumber min={0} max={23} placeholder="时" style={{ width: 80 }} />
+                          </Form.Item>
+                          <span>:</span>
+                          <Form.Item name="dueAtMin" noStyle>
+                            <InputNumber min={0} max={59} placeholder="分" style={{ width: 80 }} />
+                          </Form.Item>
+                        </Space>
+                      </Form.Item>
+                    </Col>
+                  </Row>
+                </Card>
+
+                <Card size="small" title="高级配置" style={{ marginBottom: 16 }}>
+                  <Row gutter={16}>
+                    <Col span={12}>
+                      <Form.Item name="activeFrom" label="生效时间">
+                        <DatePicker showTime style={{ width: '100%' }} />
+                      </Form.Item>
+                    </Col>
+                    <Col span={12}>
+                      <Form.Item
+                        name="activeUntil"
+                        label="失效时间"
+                        dependencies={['activeFrom']}
+                        rules={[
+                          ({ getFieldValue }) => ({
+                            validator(_, value) {
+                              const start = getFieldValue('activeFrom');
+                              if (!start || !value) return Promise.resolve();
+                              if (dayjs(value).isBefore(dayjs(start))) {
+                                return Promise.reject(new Error('失效时间不能早于生效时间'));
+                              }
+                              return Promise.resolve();
+                            },
+                          }),
+                        ]}
+                      >
+                        <DatePicker showTime style={{ width: '100%' }} />
+                      </Form.Item>
+                    </Col>
+                  </Row>
+
+                  <Row gutter={16}>
+                    <Col span={24}>
+                      <Form.Item name="maxBackfillPeriods" label="允许补发周期数">
+                        <InputNumber min={0} max={365} style={{ width: '100%' }} />
+                      </Form.Item>
+                    </Col>
+                  </Row>
+
+                  <Form.Item name="allowLate" label="允许延期" valuePropName="checked">
+                    <Switch checkedChildren="允许" unCheckedChildren="不允许" />
+                  </Form.Item>
+                </Card>
+
+                <Card size="small" title="分配范围" style={{ marginBottom: 16 }}>
+                  <Form.Item
+                    name="assigneeMode"
+                    label="分配模式"
+                    dependencies={['taskType']}
+                    rules={[
+                      { required: true, message: '请选择分配模式' },
+                      ({ getFieldValue }) => ({
+                        validator(_, value) {
+                          if (getFieldValue('taskType') === 'COLLECTION' && value !== 'BY_COLLECTION_POINT') {
+                            return Promise.reject(new Error('采集任务需要绑定采集点'));
+                          }
+                          return Promise.resolve();
+                        },
+                      }),
+                    ]}
+                  >
+                    <Select
+                      onChange={handleAssigneeModeChange}
+                      optionLabelProp="label"
+                      options={ASSIGNEE_MODE_OPTIONS.map((m) => ({
+                        value: m.value,
+                        label: m.label,
+                        description: m.description,
+                      }))}
+                      optionRender={(option) => (
+                        <div>
+                          <div>{option.data.label}</div>
+                          <Text type="secondary" style={{ fontSize: 12 }}>
+                            {option.data.description}
+                          </Text>
+                        </div>
+                      )}
+                    />
+                  </Form.Item>
+
+                  <Form.Item noStyle shouldUpdate={(prev, cur) => prev.taskType !== cur.taskType || prev.assigneeMode !== cur.assigneeMode}>
+                    {({ getFieldValue }) => {
+                      if (getFieldValue('taskType') === 'COLLECTION' && getFieldValue('assigneeMode') !== 'BY_COLLECTION_POINT') {
+                        return (
+                          <Alert
+                            type="warning"
+                            showIcon
+                            message="采集任务需要绑定采集点，建议选择“按采集点负责人”"
+                            style={{ marginBottom: 12 }}
                           />
-                        </Form.Item>
-                      );
-                    }
+                        );
+                      }
+                      return null;
+                    }}
+                  </Form.Item>
 
-                    if (mode === 'BY_COLLECTION_POINT') {
-                      return (
-                        <>
-                          <Form.Item label="采集点范围">
-                            <Segmented
-                              value={pointScope}
-                              onChange={(value) => handlePointScopeChange(value as 'TYPE' | 'POINTS')}
-                              options={[
-                                { label: '按类型', value: 'TYPE' },
-                                { label: '按采集点', value: 'POINTS' },
-                              ]}
+                  <Form.Item noStyle shouldUpdate={(prev, cur) => prev.assigneeMode !== cur.assigneeMode}>
+                    {({ getFieldValue }) => {
+                      const mode = getFieldValue('assigneeMode');
+
+                      if (mode === 'MANUAL') {
+                        return (
+                          <Form.Item
+                            name="assigneeIds"
+                            label="指定业务员"
+                            rules={[{ required: true, message: '请选择至少一名业务员' }]}
+                          >
+                            <Select
+                              mode="multiple"
+                              placeholder="搜索并选择业务员"
+                              loading={usersLoading}
+                              showSearch
+                              optionFilterProp="label"
+                              maxTagCount={5}
+                              options={users.map((u) => ({
+                                value: u.id,
+                                label: `${u.name} (${u.department?.name || '未分配部门'})`,
+                              }))}
                             />
                           </Form.Item>
+                        );
+                      }
 
-                          {pointScope === 'TYPE' && (
-                            <Form.Item
-                              name="targetPointType"
-                              label="目标采集点类型"
-                              rules={[{ required: true, message: '请选择采集点类型' }]}
-                              extra="选择后将自动为该类型所有采集点的负责人创建任务"
-                            >
-                              <Select
-                                allowClear
-                                placeholder="选择采集点类型"
-                                options={POINT_TYPE_OPTIONS.map((t) => ({
-                                  value: t.value,
-                                  label: `${t.icon} ${t.label}`,
-                                }))}
+                      if (mode === 'BY_COLLECTION_POINT') {
+                        return (
+                          <>
+                            <Form.Item label="采集点范围">
+                              <Segmented
+                                value={pointScope}
+                                onChange={(value) => handlePointScopeChange(value as 'TYPE' | 'POINTS')}
+                                options={[
+                                  { label: '按类型', value: 'TYPE' },
+                                  { label: '按采集点', value: 'POINTS' },
+                                ]}
                               />
                             </Form.Item>
-                          )}
 
-                          {pointScope === 'POINTS' && (
-                            <Form.Item
-                              name="collectionPointIds"
-                              label="指定采集点"
-                              rules={[{ required: true, message: '请选择采集点' }]}
-                              extra="将为这些采集点的负责人生成任务，并绑定到具体采集点"
-                            >
-                              <Select
-                                mode="multiple"
-                                placeholder="搜索并选择采集点"
-                                loading={pointsLoading}
-                                showSearch
-                                optionFilterProp="label"
-                                maxTagCount={5}
-                                options={collectionPointOptions}
-                              />
-                            </Form.Item>
-                          )}
+                            {pointScope === 'TYPE' && (
+                              <Form.Item
+                                name="targetPointType"
+                                label="目标采集点类型"
+                                rules={[{ required: true, message: '请选择采集点类型' }]}
+                                extra="选择后将自动为该类型所有采集点的负责人创建任务"
+                              >
+                                <Select
+                                  allowClear
+                                  placeholder="选择采集点类型"
+                                  options={POINT_TYPE_OPTIONS.map((t) => ({
+                                    value: t.value,
+                                    label: `${t.icon} ${t.label}`,
+                                  }))}
+                                />
+                              </Form.Item>
+                            )}
 
-                          <Alert
-                            type="info"
-                            showIcon
-                            message="采集类任务会绑定采集点，便于后续填报、统计和追溯"
-                          />
-                        </>
-                      );
-                    }
+                            {pointScope === 'POINTS' && (
+                              <Form.Item
+                                name="collectionPointIds"
+                                label="指定采集点"
+                                rules={[{ required: true, message: '请选择采集点' }]}
+                                extra="将为这些采集点的负责人生成任务，并绑定到具体采集点"
+                              >
+                                <Select
+                                  mode="multiple"
+                                  placeholder="搜索并选择采集点"
+                                  loading={pointsLoading}
+                                  showSearch
+                                  optionFilterProp="label"
+                                  maxTagCount={5}
+                                  options={collectionPointOptions}
+                                />
+                              </Form.Item>
+                            )}
 
-                    if (mode === 'BY_DEPARTMENT') {
-                      return (
-                        <Form.Item
-                          name="departmentIds"
-                          label={
-                            <Space>
-                              <ApartmentOutlined />
-                              <span>选择部门</span>
-                            </Space>
-                          }
-                          rules={[{ required: true, message: '请选择至少一个部门' }]}
-                          extra="将为所选部门的所有成员创建任务"
-                        >
-                          <OrgDeptTreeSelect
-                            mode="dept"
-                            multiple
-                            showUserCount
-                            placeholder="选择目标部门"
-                          />
-                        </Form.Item>
-                      );
-                    }
+                            <Alert
+                              type="info"
+                              showIcon
+                              message="采集类任务会绑定采集点，便于后续填报、统计和追溯"
+                            />
+                          </>
+                        );
+                      }
 
-                    if (mode === 'BY_ORGANIZATION') {
-                      return (
-                        <Form.Item
-                          name="organizationIds"
-                          label={
-                            <Space>
-                              <BankOutlined />
-                              <span>选择组织</span>
-                            </Space>
-                          }
-                          rules={[{ required: true, message: '请选择至少一个组织' }]}
-                          extra="将为所选组织的所有成员创建任务"
-                        >
-                          <OrgDeptTreeSelect
-                            mode="org"
-                            multiple
-                            showUserCount
-                            placeholder="选择目标组织"
-                          />
-                        </Form.Item>
-                      );
-                    }
+                      if (mode === 'BY_DEPARTMENT') {
+                        return (
+                          <Form.Item
+                            name="departmentIds"
+                            label={
+                              <Space>
+                                <ApartmentOutlined />
+                                <span>选择部门</span>
+                              </Space>
+                            }
+                            rules={[{ required: true, message: '请选择至少一个部门' }]}
+                            extra="将为所选部门的所有成员创建任务"
+                          >
+                            <OrgDeptTreeSelect
+                              mode="dept"
+                              multiple
+                              showUserCount
+                              placeholder="选择目标部门"
+                            />
+                          </Form.Item>
+                        );
+                      }
 
-                    return null;
-                  }}
-                </Form.Item>
+                      if (mode === 'BY_ORGANIZATION') {
+                        return (
+                          <Form.Item
+                            name="organizationIds"
+                            label={
+                              <Space>
+                                <BankOutlined />
+                                <span>选择组织</span>
+                              </Space>
+                            }
+                            rules={[{ required: true, message: '请选择至少一个组织' }]}
+                            extra="将为所选组织的所有成员创建任务"
+                          >
+                            <OrgDeptTreeSelect
+                              mode="org"
+                              multiple
+                              showUserCount
+                              placeholder="选择目标组织"
+                            />
+                          </Form.Item>
+                        );
+                      }
 
-                <Form.Item name="isActive" label="启用状态" valuePropName="checked" style={{ marginBottom: 0 }}>
-                  <Switch checkedChildren="启用" unCheckedChildren="禁用" />
-                </Form.Item>
-              </Card>
-            </Col>
-            <Col span={8}>
-              <Card size="small" title="使用说明" style={{ position: 'sticky', top: 0 }}>
-                <Space direction="vertical" size={12} style={{ width: '100%' }}>
-                  <Alert
-                    type="info"
-                    showIcon
-                    message="建议先配置模板，再预览分发结果"
-                  />
-                  <div>
-                    <Text strong>1. 任务类型</Text>
-                    <div style={{ marginTop: 4 }}>
-                      <Text type="secondary">采集任务必须绑定采集点；报告类任务适合按部门/组织；核实任务建议优先级设为高或紧急。</Text>
+                      return null;
+                    }}
+                  </Form.Item>
+
+                  <Form.Item name="isActive" label="启用状态" valuePropName="checked" style={{ marginBottom: 0 }}>
+                    <Switch checkedChildren="启用" unCheckedChildren="禁用" />
+                  </Form.Item>
+                </Card>
+              </Col>
+              <Col span={8}>
+                <Card size="small" title="使用说明" style={{ position: 'sticky', top: 0 }}>
+                  <Space direction="vertical" size={12} style={{ width: '100%' }}>
+                    <Alert
+                      type="info"
+                      showIcon
+                      message="建议先配置模板，再预览分发结果"
+                    />
+                    <div>
+                      <Text strong>1. 任务类型</Text>
+                      <div style={{ marginTop: 4 }}>
+                        <Text type="secondary">采集任务必须绑定采集点；报告类任务适合按部门/组织；核实任务建议优先级设为高或紧急。</Text>
+                      </div>
                     </div>
-                  </div>
-                  <div>
-                    <Text strong>2. 周期配置</Text>
-                    <div style={{ marginTop: 4 }}>
-                      <Text type="secondary">每日/每周/每月/一次性。周/月任务需设置分发日与截止日，截止日不能早于分发日。</Text>
+                    <div>
+                      <Text strong>2. 周期配置</Text>
+                      <div style={{ marginTop: 4 }}>
+                        <Text type="secondary">每日/每周/每月/一次性。周/月任务需设置分发日与截止日，截止日不能早于分发日。</Text>
+                      </div>
                     </div>
-                  </div>
-                  <div>
-                    <Text strong>3. 高级配置</Text>
-                    <div style={{ marginTop: 4 }}>
-                      <Text type="secondary">生效/失效时间控制模板周期，允许补发用于补齐历史周期，允许延期用于特殊情况延长截止。</Text>
+                    <div>
+                      <Text strong>3. 高级配置</Text>
+                      <div style={{ marginTop: 4 }}>
+                        <Text type="secondary">生效/失效时间控制模板周期，允许补发用于补齐历史周期，允许延期用于特殊情况延长截止。</Text>
+                      </div>
                     </div>
-                  </div>
-                  <div>
-                    <Text strong>4. 分配范围</Text>
-                    <div style={{ marginTop: 4 }}>
-                      <Text type="secondary">按采集点负责人支持“按类型/按采集点”两种方式；按部门/组织会给所有成员生成任务。</Text>
+                    <div>
+                      <Text strong>4. 分配范围</Text>
+                      <div style={{ marginTop: 4 }}>
+                        <Text type="secondary">按采集点负责人支持“按类型/按采集点”两种方式；按部门/组织会给所有成员生成任务。</Text>
+                      </div>
                     </div>
-                  </div>
-                  <div>
-                    <Text strong>5. 预览分发</Text>
-                    <div style={{ marginTop: 4 }}>
-                      <Text type="secondary">预览可查看将生成的任务数与未分配采集点，确认无误后执行。</Text>
+                    <div>
+                      <Text strong>5. 预览分发</Text>
+                      <div style={{ marginTop: 4 }}>
+                        <Text type="secondary">预览可查看将生成的任务数与未分配采集点，确认无误后执行。</Text>
+                      </div>
                     </div>
-                  </div>
-                </Space>
-              </Card>
-            </Col>
-          </Row>
-        </Form>
+                  </Space>
+                </Card>
+              </Col>
+            </Row>
+          </Form>
         </div>
       </Modal>
       <DistributionPreview

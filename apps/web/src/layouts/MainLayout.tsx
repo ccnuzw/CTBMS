@@ -122,6 +122,11 @@ export const MainLayout: React.FC = () => {
                     label: 'A类行情',
                 },
                 {
+                    key: '/intel/alerts',
+                    icon: <BellOutlined />,
+                    label: 'A类预警',
+                },
+                {
                     key: '/intel/feed',
                     icon: <FileTextOutlined />,
                     label: 'B类情报流',
