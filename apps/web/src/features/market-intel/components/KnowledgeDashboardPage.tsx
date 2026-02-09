@@ -16,7 +16,7 @@ import {
   message,
 } from 'antd';
 import { useMemo, useState } from 'react';
-import { ArrowLeftOutlined, AppstoreOutlined, ThunderboltOutlined } from '@ant-design/icons';
+import { ArrowLeftOutlined, ThunderboltOutlined } from '@ant-design/icons';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   useGenerateWeeklyRollup,
@@ -185,6 +185,7 @@ export const KnowledgeDashboardPage: React.FC = () => {
         contextBackLabel={fromWorkbench ? '返回工作台' : undefined}
         onContextBack={fromWorkbench ? () => navigate('/intel/knowledge?tab=workbench') : undefined}
         onBackLibrary={() => navigate('/intel/knowledge?tab=library&from=dashboard')}
+        onQuickEntry={() => navigate('/intel/entry')}
         onCreateReport={() => navigate('/intel/knowledge/reports/create')}
         generatingWeekly={weeklyRollupMutation.isPending}
         onGenerateWeekly={async () => {
@@ -229,9 +230,6 @@ export const KnowledgeDashboardPage: React.FC = () => {
                 { value: 12, label: '12周' },
               ]}
             />
-            <Button icon={<AppstoreOutlined />} onClick={() => navigate('/intel/entry')}>
-              快速采集
-            </Button>
           </Space>
         </Space>
       </Card>

@@ -195,6 +195,8 @@ export const KnowledgeDetailPage: React.FC = () => {
             : undefined
         }
         onBackLibrary={() => navigate('/intel/knowledge?tab=library')}
+        onQuickEntry={() => navigate('/intel/entry')}
+        onOpenDashboard={() => navigate('/intel/knowledge/dashboard?from=library')}
         onCreateReport={() => navigate('/intel/knowledge/reports/create')}
         generatingWeekly={weeklyRollupMutation.isPending}
         onGenerateWeekly={async () => {

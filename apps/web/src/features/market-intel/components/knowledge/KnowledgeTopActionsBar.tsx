@@ -4,9 +4,11 @@ import { Button, Card, Space, Typography } from 'antd';
 const { Text } = Typography;
 
 type Props = {
-  onBackLibrary: () => void;
-  onCreateReport: () => void;
-  onGenerateWeekly: () => void;
+  onBackLibrary?: () => void;
+  onQuickEntry?: () => void;
+  onOpenDashboard?: () => void;
+  onCreateReport?: () => void;
+  onGenerateWeekly?: () => void;
   contextBackLabel?: string;
   onContextBack?: () => void;
   generatingWeekly?: boolean;
@@ -15,6 +17,8 @@ type Props = {
 
 export const KnowledgeTopActionsBar: React.FC<Props> = ({
   onBackLibrary,
+  onQuickEntry,
+  onOpenDashboard,
   onCreateReport,
   onGenerateWeekly,
   contextBackLabel,
@@ -29,20 +33,28 @@ export const KnowledgeTopActionsBar: React.FC<Props> = ({
           {contextBackLabel && onContextBack ? (
             <Button onClick={onContextBack}>{contextBackLabel}</Button>
           ) : null}
-          <Button icon={<BookOutlined />} onClick={onBackLibrary}>
-            返回知识库
-          </Button>
-          <Button icon={<FormOutlined />} onClick={onCreateReport}>
-            新建研报
-          </Button>
-          <Button
-            icon={<ThunderboltOutlined />}
-            type="primary"
-            loading={generatingWeekly}
-            onClick={onGenerateWeekly}
-          >
-            生成本周周报
-          </Button>
+          {onBackLibrary ? (
+            <Button icon={<BookOutlined />} onClick={onBackLibrary}>
+              返回知识库
+            </Button>
+          ) : null}
+          {onQuickEntry ? <Button onClick={onQuickEntry}>快速采集</Button> : null}
+          {onCreateReport ? (
+            <Button icon={<FormOutlined />} onClick={onCreateReport}>
+              新建研报
+            </Button>
+          ) : null}
+          {onGenerateWeekly ? (
+            <Button
+              icon={<ThunderboltOutlined />}
+              type="primary"
+              loading={generatingWeekly}
+              onClick={onGenerateWeekly}
+            >
+              生成本周周报
+            </Button>
+          ) : null}
+          {onOpenDashboard ? <Button onClick={onOpenDashboard}>分析看板</Button> : null}
         </Space>
         <Text type="secondary">统一操作栏：沉淀、生成、回查</Text>
         {rightExtra}
