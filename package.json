@@ -10,6 +10,11 @@
     "dev:web": "turbo run dev --filter=web",
     "lint": "turbo run lint",
     "type-check": "turbo run type-check",
+    "workflow:smoke": "pnpm --filter @packages/types build && pnpm --filter api run workflow:risk-gate:smoke && pnpm --filter api run workflow:has-risk-summary:smoke",
+    "workflow:smoke:extended": "pnpm --filter @packages/types build && pnpm --filter api run workflow:risk-gate:smoke && (pnpm --filter api run workflow:has-risk-summary:smoke || pnpm --filter api run workflow:has-risk-summary:smoke) && pnpm --filter api run workflow:execution-filters:smoke",
+    "workflow:smoke:gate": "pnpm --filter @packages/types build && pnpm --filter api run workflow:risk-gate:smoke && (pnpm --filter api run workflow:has-risk-summary:smoke || pnpm --filter api run workflow:has-risk-summary:smoke) && pnpm --filter api run workflow:execution-filters:smoke && pnpm --filter api run test:e2e:workflow-execution-filters",
+    "workflow:backfill:risk-summary:dry-run": "pnpm --filter api run workflow:risk-summary:backfill:dry-run",
+    "workflow:backfill:risk-summary:report": "pnpm --filter api run workflow:risk-summary:backfill:report",
     "format": "prettier --write \"**/*.{ts,tsx,md}\""
   },
   "devDependencies": {

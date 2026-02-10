@@ -83,6 +83,27 @@ export class WorkflowExecutionService {
         const outputsByNode = new Map<string, Record<string, unknown>>();
         const skipReasonByNode = new Map<string, string>();
         let softFailureCount = 0;
+        const buildExecutionOutputSnapshot = (nodeCount: number) => {
+            const latestExecutedNodeId = Array.from(outputsByNode.keys()).at(-1);
+            const latestExecutedNode = latestExecutedNodeId
+                ? sortedNodes.find((node) => node.id === latestExecutedNodeId)
+                : undefined;
+            const latestRiskGateNode = [...sortedNodes]
+                .reverse()
+                .find((node) => node.type === 'risk-gate' && outputsByNode.has(node.id));
+            const latestRiskGateOutput = latestRiskGateNode
+                ? outputsByNode.get(latestRiskGateNode.id)
+                : undefined;
+            const riskGateSummary = this.extractRiskGateSummary(latestRiskGateOutput);
+
+            return {
+                nodeCount,
+                latestNodeId: latestExecutedNode?.id ?? null,
+                latestNodeType: latestExecutedNode?.type ?? null,
+                softFailureCount,
+                riskGate: riskGateSummary,
+            };
+        };
 
         try {
             for (const node of sortedNodes) {
@@ -226,18 +247,12 @@ export class WorkflowExecutionService {
                 }
             }
 
-            const latestNode = sortedNodes.at(-1);
             const completed = await this.prisma.workflowExecution.update({
                 where: { id: execution.id },
                 data: {
                     status: 'SUCCESS',
                     completedAt: new Date(),
-                    outputSnapshot: this.toJsonValue({
-                        nodeCount: sortedNodes.length,
-                        latestNodeId: latestNode?.id ?? null,
-                        latestNodeType: latestNode?.type ?? null,
-                        softFailureCount,
-                    }),
+                    outputSnapshot: this.toJsonValue(buildExecutionOutputSnapshot(sortedNodes.length)),
                 },
                 include: {
                     nodeExecutions: {
@@ -254,6 +269,7 @@ export class WorkflowExecutionService {
                     status: 'FAILED',
                     completedAt: new Date(),
                     errorMessage: error instanceof Error ? error.message : '执行失败',
+                    outputSnapshot: this.toJsonValue(buildExecutionOutputSnapshot(outputsByNode.size)),
                 },
             });
             throw error;
@@ -376,6 +392,100 @@ export class WorkflowExecutionService {
         if (query.status) {
             conditions.push({ status: query.status });
         }
+        if (query.riskLevel) {
+            conditions.push({
+                OR: [
+                    {
+                        outputSnapshot: {
+                            path: ['riskGate', 'riskLevel'],
+                            equals: query.riskLevel,
+                        },
+                    },
+                    {
+                        nodeExecutions: {
+                            some: {
+                                nodeType: 'risk-gate',
+                                outputSnapshot: {
+                                    path: ['riskLevel'],
+                                    equals: query.riskLevel,
+                                },
+                            },
+                        },
+                    },
+                ],
+            });
+        }
+        if (query.degradeAction) {
+            conditions.push({
+                OR: [
+                    {
+                        outputSnapshot: {
+                            path: ['riskGate', 'degradeAction'],
+                            equals: query.degradeAction,
+                        },
+                    },
+                    {
+                        nodeExecutions: {
+                            some: {
+                                nodeType: 'risk-gate',
+                                outputSnapshot: {
+                                    path: ['degradeAction'],
+                                    equals: query.degradeAction,
+                                },
+                            },
+                        },
+                    },
+                ],
+            });
+        }
+        const riskProfileCode = query.riskProfileCode?.trim();
+        if (riskProfileCode) {
+            conditions.push({
+                OR: [
+                    {
+                        outputSnapshot: {
+                            path: ['riskGate', 'riskProfileCode'],
+                            string_contains: riskProfileCode,
+                        },
+                    },
+                    {
+                        nodeExecutions: {
+                            some: {
+                                nodeType: 'risk-gate',
+                                outputSnapshot: {
+                                    path: ['riskProfileCode'],
+                                    string_contains: riskProfileCode,
+                                },
+                            },
+                        },
+                    },
+                ],
+            });
+        }
+        const riskReasonKeyword = query.riskReasonKeyword?.trim();
+        if (riskReasonKeyword) {
+            conditions.push({
+                OR: [
+                    {
+                        outputSnapshot: {
+                            path: ['riskGate', 'blockReason'],
+                            string_contains: riskReasonKeyword,
+                        },
+                    },
+                    {
+                        nodeExecutions: {
+                            some: {
+                                nodeType: 'risk-gate',
+                                outputSnapshot: {
+                                    path: ['blockReason'],
+                                    string_contains: riskReasonKeyword,
+                                },
+                            },
+                        },
+                    },
+                ],
+            });
+        }
         if (query.hasSoftFailure) {
             conditions.push({
                 status: 'SUCCESS',
@@ -393,6 +503,68 @@ export class WorkflowExecutionService {
                     },
                 },
             });
+        }
+        if (query.hasRiskBlocked) {
+            conditions.push({
+                OR: [
+                    {
+                        outputSnapshot: {
+                            path: ['riskGate', 'riskGateBlocked'],
+                            equals: true,
+                        },
+                    },
+                    {
+                        nodeExecutions: {
+                            some: {
+                                nodeType: 'risk-gate',
+                                outputSnapshot: {
+                                    path: ['riskGateBlocked'],
+                                    equals: true,
+                                },
+                            },
+                        },
+                    },
+                ],
+            });
+        }
+        if (query.hasRiskGateNode !== undefined) {
+            conditions.push(
+                query.hasRiskGateNode
+                    ? {
+                        nodeExecutions: {
+                            some: {
+                                nodeType: 'risk-gate',
+                            },
+                        },
+                    }
+                    : {
+                        nodeExecutions: {
+                            none: {
+                                nodeType: 'risk-gate',
+                            },
+                        },
+                    },
+            );
+        }
+        if (query.hasRiskSummary !== undefined) {
+            const riskSummaryPath = ['riskGate', 'summarySchemaVersion'];
+            conditions.push(
+                query.hasRiskSummary
+                    ? {
+                        NOT: {
+                            outputSnapshot: {
+                                path: riskSummaryPath,
+                                equals: Prisma.AnyNull,
+                            },
+                        },
+                    }
+                    : {
+                        outputSnapshot: {
+                            path: riskSummaryPath,
+                            equals: Prisma.AnyNull,
+                        },
+                    },
+            );
         }
 
         const versionCode = query.versionCode?.trim();
@@ -452,6 +624,76 @@ export class WorkflowExecutionService {
             return {};
         }
         return meta as Record<string, unknown>;
+    }
+
+    private extractRiskGateSummary(outputSnapshot?: Record<string, unknown>): Record<string, unknown> | null {
+        if (!outputSnapshot) {
+            return null;
+        }
+
+        const meta = this.readMeta(outputSnapshot);
+        const riskGateMeta = this.readObject(meta.riskGate);
+        const blockers = this.readStringArray(outputSnapshot.blockers);
+        const blockerCount = this.readNumber(outputSnapshot.blockerCount);
+
+        return {
+            summarySchemaVersion: this.readString(outputSnapshot.summarySchemaVersion) ?? '1.0',
+            riskLevel: this.readString(outputSnapshot.riskLevel),
+            riskGatePassed: this.readBoolean(outputSnapshot.riskGatePassed),
+            riskGateBlocked: this.readBoolean(outputSnapshot.riskGateBlocked),
+            blockReason: this.readString(outputSnapshot.blockReason),
+            degradeAction: this.readString(outputSnapshot.degradeAction),
+            blockers,
+            blockerCount: blockerCount ?? blockers.length,
+            riskProfileCode: this.readString(outputSnapshot.riskProfileCode)
+                ?? this.readString(riskGateMeta?.riskProfileCode),
+            threshold: this.readString(outputSnapshot.threshold)
+                ?? this.readString(riskGateMeta?.threshold),
+            blockedByRiskLevel: this.readBoolean(outputSnapshot.blockedByRiskLevel)
+                ?? this.readBoolean(riskGateMeta?.blockedByRiskLevel),
+            hardBlock: this.readBoolean(outputSnapshot.hardBlock)
+                ?? this.readBoolean(riskGateMeta?.hardBlock),
+            riskEvaluatedAt: this.readString(outputSnapshot.riskEvaluatedAt),
+        };
+    }
+
+    private readObject(value: unknown): Record<string, unknown> | null {
+        if (!value || typeof value !== 'object' || Array.isArray(value)) {
+            return null;
+        }
+        return value as Record<string, unknown>;
+    }
+
+    private readString(value: unknown): string | null {
+        if (typeof value !== 'string') {
+            return null;
+        }
+        const normalized = value.trim();
+        return normalized ? normalized : null;
+    }
+
+    private readBoolean(value: unknown): boolean | null {
+        if (typeof value === 'boolean') {
+            return value;
+        }
+        return null;
+    }
+
+    private readNumber(value: unknown): number | null {
+        if (typeof value === 'number' && Number.isFinite(value)) {
+            return value;
+        }
+        return null;
+    }
+
+    private readStringArray(value: unknown): string[] {
+        if (!Array.isArray(value)) {
+            return [];
+        }
+
+        return value
+            .map((item) => this.readString(item))
+            .filter((item): item is string => Boolean(item));
     }
 
     private toJsonValue(value: unknown): Prisma.InputJsonValue {

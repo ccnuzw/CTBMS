@@ -1,0 +1,26 @@
+# Workflow Smoke Failure Cases
+
+## 1. Purpose
+This document records common workflow smoke failure cases and their handling playbook.
+
+## 2. Failure Samples
+
+| Case ID | Symptom | Typical Root Cause | Verify Command | Handling |
+|---|---|---|---|---|
+| WF-SMOKE-001 | `PrismaClientInitializationError: Can't reach database server` | Local Postgres is not running or `DATABASE_URL` points to wrong host/port | `pnpm --filter api exec prisma migrate status` | Start Postgres, verify `apps/api/.env`, then rerun smoke |
+| WF-SMOKE-002 | `P3005` / migration pending during smoke | Current DB schema is behind code migration | `pnpm --filter api exec prisma migrate deploy` | Apply migrations before running smoke/e2e |
+| WF-SMOKE-003 | `Execution with summary must not be returned when hasRiskSummary=false` assertion failed | `buildAccessibleWhere` hasRiskSummary condition changed incorrectly | `pnpm --filter api run workflow:has-risk-summary:smoke` | Check `workflow-execution.service.ts` JSON path filter logic |
+| WF-SMOKE-004 | `hasRiskGateNode=false` still returns risk node executions | Node type storage changed (not `risk-gate`) or filter clause regressed | `pnpm --filter api run workflow:execution-filters:smoke` | Verify node type constants and `nodeExecutions.none` condition |
+| WF-SMOKE-005 | `riskLevel=HIGH` query returns empty | `riskGate.riskLevel` not written to `outputSnapshot` or fallback node query broken | `pnpm --filter api run workflow:execution-filters:smoke` | Validate execution snapshot and node snapshot fields |
+| WF-SMOKE-006 | `degradeAction=HOLD` query mismatch | Degrade action enum changed without query/schema alignment | `pnpm --filter api run workflow:execution-filters:smoke` | Align `@packages/types` enum and backend query conditions |
+| WF-SMOKE-007 | `startedAtFrom 不能晚于 startedAtTo` | Invalid query parameters in UI or test data | `pnpm --filter api run workflow:execution-filters:smoke` | Correct query param order and add UI guard |
+| WF-SMOKE-008 | `UnauthorizedException: User not authenticated` in API tests | Missing `x-virtual-user-id` header in test request | `pnpm --filter api run test:e2e:workflow-execution-filters` | Add header in test helper or middleware chain |
+| WF-SMOKE-009 | `runId already exists` while persisting backfill audit | Reused runId in custom scripts or manual insert conflict | `pnpm --filter api run workflow:risk-summary:backfill -- --dry-run` | Ensure runId is generated per run and avoid manual duplicates |
+| WF-SMOKE-010 | Backfill report shows `eligible > 0` but `updated = 0` unexpectedly | Missing `--overwrite` for existing summary or summary extraction failed | `pnpm --filter api run workflow:risk-summary:backfill -- --dry-run --limit=200` | Check mode (`only-missing` vs `overwrite`) and inspect failure samples |
+
+## 3. Recommended Triage Order
+
+1. Verify database connectivity and migration status (`WF-SMOKE-001`, `WF-SMOKE-002`).
+2. Run targeted smoke command for the failing assertion domain.
+3. Compare `outputSnapshot.riskGate` and `nodeExecutions.outputSnapshot` fields.
+4. If regression is confirmed, patch and rerun `pnpm workflow:smoke:gate`.

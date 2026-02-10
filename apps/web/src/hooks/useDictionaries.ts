@@ -22,8 +22,9 @@ export const useDictionary = (domain: string, options: UseDictionaryOptions = {}
       return data;
     },
     enabled: Boolean(domain) && (options.enabled ?? true),
-    staleTime: 0, // 暂时禁用缓存以调试
+    staleTime: 10 * 60 * 1000,
     cacheTime: 60 * 60 * 1000,
+    refetchOnWindowFocus: false,
     retry: 2,
     initialData: [],
   });

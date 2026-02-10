@@ -84,6 +84,11 @@ export const MainLayout: React.FC = () => {
             icon: <ScheduleOutlined />,
             label: '运行中心',
           },
+          {
+            key: '/workflow/rules',
+            icon: <DatabaseOutlined />,
+            label: '规则中心',
+          },
         ],
       },
       {

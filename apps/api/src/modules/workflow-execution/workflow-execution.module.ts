@@ -6,6 +6,7 @@ import { ManualTriggerNodeExecutor } from './engine/node-executors/manual-trigge
 import { NotifyNodeExecutor } from './engine/node-executors/notify-node.executor';
 import { PassthroughNodeExecutor } from './engine/node-executors/passthrough-node.executor';
 import { RulePackEvalNodeExecutor } from './engine/node-executors/rule-pack-eval.executor';
+import { RiskGateNodeExecutor } from './engine/node-executors/risk-gate.executor';
 
 @Module({
     controllers: [WorkflowExecutionController],
@@ -14,6 +15,7 @@ import { RulePackEvalNodeExecutor } from './engine/node-executors/rule-pack-eval
         NodeExecutorRegistry,
         ManualTriggerNodeExecutor,
         RulePackEvalNodeExecutor,
+        RiskGateNodeExecutor,
         NotifyNodeExecutor,
         PassthroughNodeExecutor,
     ],

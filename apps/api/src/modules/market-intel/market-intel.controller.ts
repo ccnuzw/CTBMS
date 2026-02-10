@@ -394,6 +394,7 @@ export class MarketIntelController {
     @Query('subTypes') subTypes?: string,
     @Query('reviewScope') reviewScope?: string,
     @Query('sourceScope') sourceScope?: string,
+    @Query('includeData') includeData?: string,
   ) {
     return this.priceDataService.getByRegion(
       regionCode,
@@ -404,6 +405,7 @@ export class MarketIntelController {
       subTypes,
       reviewScope,
       sourceScope,
+      ['true', '1', 'yes'].includes((includeData || '').toLowerCase()),
     );
   }
 

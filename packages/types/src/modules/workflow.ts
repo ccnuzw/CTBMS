@@ -36,6 +36,8 @@ export const WorkflowRunPolicySchema = z
 
 export const WorkflowRuntimeStatusEnum = z.enum(['DRAFT', 'REVIEW', 'ACTIVE', 'ARCHIVED']);
 export const WorkflowTriggerTypeEnum = z.enum(['MANUAL', 'API', 'SCHEDULE', 'EVENT', 'ON_DEMAND']);
+export const WorkflowRiskLevelEnum = z.enum(['LOW', 'MEDIUM', 'HIGH', 'EXTREME']);
+export const WorkflowRiskDegradeActionEnum = z.enum(['HOLD', 'REDUCE', 'REVIEW_ONLY']);
 export const WorkflowExecutionStatusEnum = z.enum([
     'PENDING',
     'RUNNING',
@@ -165,12 +167,46 @@ export const UpdateWorkflowDefinitionSchema = z.object({
     isActive: z.boolean().optional(),
 });
 
+const parseQueryBooleanValue = (value: unknown): unknown => {
+    if (value === undefined || value === null) {
+        return undefined;
+    }
+    if (typeof value === 'boolean') {
+        return value;
+    }
+    if (typeof value === 'number') {
+        if (value === 1) {
+            return true;
+        }
+        if (value === 0) {
+            return false;
+        }
+        return value;
+    }
+    if (typeof value === 'string') {
+        const normalized = value.trim().toLowerCase();
+        if (!normalized) {
+            return undefined;
+        }
+        if (['true', '1', 'yes', 'y', 'on'].includes(normalized)) {
+            return true;
+        }
+        if (['false', '0', 'no', 'n', 'off'].includes(normalized)) {
+            return false;
+        }
+    }
+    return value;
+};
+
+const QueryBooleanOptionalSchema = z.preprocess(parseQueryBooleanValue, z.boolean().optional());
+const QueryBooleanWithDefaultTrueSchema = QueryBooleanOptionalSchema.transform((value) => value ?? true);
+
 export const WorkflowDefinitionQuerySchema = z.object({
     keyword: z.string().optional(),
     mode: WorkflowModeEnum.optional(),
     usageMethod: WorkflowUsageMethodEnum.optional(),
     status: WorkflowDefinitionStatusEnum.optional(),
-    includePublic: z.coerce.boolean().default(true),
+    includePublic: QueryBooleanWithDefaultTrueSchema,
     page: z.coerce.number().int().min(1).default(1),
     pageSize: z.coerce.number().int().min(1).max(200).default(20),
 });
@@ -188,8 +224,15 @@ export const WorkflowExecutionQuerySchema = z.object({
     versionCode: z.string().max(60).optional(),
     triggerType: WorkflowTriggerTypeEnum.optional(),
     status: WorkflowExecutionStatusEnum.optional(),
-    hasSoftFailure: z.coerce.boolean().optional(),
-    hasErrorRoute: z.coerce.boolean().optional(),
+    riskLevel: WorkflowRiskLevelEnum.optional(),
+    degradeAction: WorkflowRiskDegradeActionEnum.optional(),
+    riskProfileCode: z.string().max(80).optional(),
+    riskReasonKeyword: z.string().max(120).optional(),
+    hasSoftFailure: QueryBooleanOptionalSchema,
+    hasErrorRoute: QueryBooleanOptionalSchema,
+    hasRiskBlocked: QueryBooleanOptionalSchema,
+    hasRiskGateNode: QueryBooleanOptionalSchema,
+    hasRiskSummary: QueryBooleanOptionalSchema,
     keyword: z.string().max(120).optional(),
     startedAtFrom: z.coerce.date().optional(),
     startedAtTo: z.coerce.date().optional(),
@@ -280,6 +323,8 @@ export type WorkflowTemplateSource = z.infer<typeof WorkflowTemplateSourceEnum>;
 export type WorkflowEdgeType = z.infer<typeof WorkflowEdgeTypeEnum>;
 export type WorkflowNodeOnErrorPolicy = z.infer<typeof WorkflowNodeOnErrorPolicyEnum>;
 export type WorkflowTriggerType = z.infer<typeof WorkflowTriggerTypeEnum>;
+export type WorkflowRiskLevel = z.infer<typeof WorkflowRiskLevelEnum>;
+export type WorkflowRiskDegradeAction = z.infer<typeof WorkflowRiskDegradeActionEnum>;
 export type WorkflowExecutionStatus = z.infer<typeof WorkflowExecutionStatusEnum>;
 export type NodeExecutionStatus = z.infer<typeof NodeExecutionStatusEnum>;
 

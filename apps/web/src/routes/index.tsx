@@ -47,6 +47,7 @@ import {
 } from '../features/price-reporting';
 import { WorkflowDefinitionPage } from '../features/workflow-studio';
 import { WorkflowExecutionPage } from '../features/workflow-runtime';
+import { DecisionRulePackPage } from '../features/workflow-rule-center';
 
 export const router = createBrowserRouter([
   {
@@ -101,6 +102,10 @@ export const router = createBrowserRouter([
       {
         path: 'workflow/executions',
         element: <WorkflowExecutionPage />,
+      },
+      {
+        path: 'workflow/rules',
+        element: <DecisionRulePackPage />,
       },
       {
         path: 'system',

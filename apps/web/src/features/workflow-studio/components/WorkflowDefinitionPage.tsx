@@ -36,6 +36,7 @@ import {
     useWorkflowDefinitions,
     useWorkflowVersions,
 } from '../api';
+import { useDecisionRulePacks } from '../../workflow-rule-center/api';
 
 const { Title, Text } = Typography;
 const { TextArea } = Input;
@@ -45,6 +46,7 @@ interface CreateWorkflowDefinitionFormValues extends CreateWorkflowDefinitionDto
     defaultRetryCount?: number;
     defaultRetryBackoffMs?: number;
     defaultOnError?: WorkflowNodeOnErrorPolicy;
+    defaultRulePackCode?: string;
 }
 
 const modeOptions: { label: string; value: WorkflowMode }[] = [
@@ -86,6 +88,90 @@ const buildInitialDslSnapshot = (
         onError: WorkflowNodeOnErrorPolicy;
     },
 ) => {
+    const normalizedRulePackCode = values.defaultRulePackCode?.trim();
+    const hasRulePackNode = Boolean(normalizedRulePackCode);
+    const riskProfileCode = 'CORN_RISK_BASE';
+    const nodes = [
+        {
+            id: 'n_trigger',
+            type: 'manual-trigger',
+            name: '手工触发',
+            enabled: true,
+            config: {},
+            runtimePolicy,
+        },
+        ...(hasRulePackNode
+            ? [
+                {
+                    id: 'n_rule_pack',
+                    type: 'rule-pack-eval',
+                    name: '规则包评估',
+                    enabled: true,
+                    config: {
+                        rulePackCode: normalizedRulePackCode,
+                        ruleVersionPolicy: 'LOCKED',
+                        minHitScore: 60,
+                    },
+                    runtimePolicy,
+                },
+            ]
+            : []),
+        {
+            id: 'n_risk_gate',
+            type: 'risk-gate',
+            name: '风险闸门',
+            enabled: true,
+            config: {
+                riskProfileCode,
+                degradeAction: 'HOLD',
+            },
+            runtimePolicy,
+        },
+        {
+            id: 'n_notify',
+            type: 'notify',
+            name: '结果输出',
+            enabled: true,
+            config: { channels: ['DASHBOARD'] },
+            runtimePolicy,
+        },
+    ];
+    const edges = hasRulePackNode
+        ? [
+            {
+                id: 'e_trigger_rule_pack',
+                from: 'n_trigger',
+                to: 'n_rule_pack',
+                edgeType: 'control-edge' as const,
+            },
+            {
+                id: 'e_rule_pack_risk_gate',
+                from: 'n_rule_pack',
+                to: 'n_risk_gate',
+                edgeType: 'control-edge' as const,
+            },
+            {
+                id: 'e_risk_gate_notify',
+                from: 'n_risk_gate',
+                to: 'n_notify',
+                edgeType: 'control-edge' as const,
+            },
+        ]
+        : [
+            {
+                id: 'e_trigger_risk_gate',
+                from: 'n_trigger',
+                to: 'n_risk_gate',
+                edgeType: 'control-edge' as const,
+            },
+            {
+                id: 'e_risk_gate_notify',
+                from: 'n_risk_gate',
+                to: 'n_notify',
+                edgeType: 'control-edge' as const,
+            },
+        ];
+
     return {
         workflowId: values.workflowId,
         name: values.name,
@@ -94,32 +180,8 @@ const buildInitialDslSnapshot = (
         version: '1.0.0',
         status: 'DRAFT' as const,
         templateSource: 'PRIVATE' as const,
-        nodes: [
-            {
-                id: 'n_trigger',
-                type: 'manual-trigger',
-                name: '手工触发',
-                enabled: true,
-                config: {},
-                runtimePolicy,
-            },
-            {
-                id: 'n_notify',
-                type: 'notify',
-                name: '结果输出',
-                enabled: true,
-                config: { channels: ['DASHBOARD'] },
-                runtimePolicy,
-            },
-        ],
-        edges: [
-            {
-                id: 'e_trigger_notify',
-                from: 'n_trigger',
-                to: 'n_notify',
-                edgeType: 'control-edge' as const,
-            },
-        ],
+        nodes,
+        edges,
         runPolicy: {
             nodeDefaults: runtimePolicy,
         },
@@ -142,11 +204,25 @@ export const WorkflowDefinitionPage: React.FC = () => {
         pageSize: 100,
     });
     const { data: versions, isLoading: isVersionLoading } = useWorkflowVersions(selectedDefinition?.id);
+    const { data: activeRulePacks, isLoading: isRulePackLoading } = useDecisionRulePacks({
+        includePublic: true,
+        isActive: true,
+        page: 1,
+        pageSize: 100,
+    });
     const createMutation = useCreateWorkflowDefinition();
     const createVersionMutation = useCreateWorkflowVersion();
     const publishMutation = usePublishWorkflowVersion();
     const triggerExecutionMutation = useTriggerWorkflowExecution();
     const validateDslMutation = useValidateWorkflowDsl();
+    const rulePackOptions = useMemo(
+        () =>
+            (activeRulePacks?.data || []).map((pack) => ({
+                label: `${pack.name} (${pack.rulePackCode})`,
+                value: pack.rulePackCode,
+            })),
+        [activeRulePacks?.data],
+    );
 
     const definitionColumns = useMemo<ColumnsType<WorkflowDefinitionDto>>(
         () => [
@@ -299,6 +375,7 @@ export const WorkflowDefinitionPage: React.FC = () => {
                 defaultRetryCount,
                 defaultRetryBackoffMs,
                 defaultOnError,
+                defaultRulePackCode,
                 ...definitionPayload
             } = values;
 
@@ -312,7 +389,10 @@ export const WorkflowDefinitionPage: React.FC = () => {
             await createMutation.mutateAsync({
                 ...definitionPayload,
                 templateSource: 'PRIVATE',
-                dslSnapshot: buildInitialDslSnapshot(values, runtimePolicy),
+                dslSnapshot: buildInitialDslSnapshot(
+                    { ...values, defaultRulePackCode },
+                    runtimePolicy,
+                ),
             });
             message.success('流程创建成功');
             setCreateVisible(false);
@@ -490,6 +570,20 @@ export const WorkflowDefinitionPage: React.FC = () => {
                     </Form.Item>
                     <Form.Item label="使用方式" name="usageMethod" rules={[{ required: true }]}>
                         <Select options={usageMethodOptions} />
+                    </Form.Item>
+                    <Form.Item
+                        label="默认规则包（可选）"
+                        name="defaultRulePackCode"
+                        extra="选择后将生成 trigger -> rule-pack-eval -> risk-gate -> notify；未选择时为 trigger -> risk-gate -> notify。"
+                    >
+                        <Select
+                            allowClear
+                            showSearch
+                            loading={isRulePackLoading}
+                            options={rulePackOptions}
+                            optionFilterProp="label"
+                            placeholder="请选择规则包编码"
+                        />
                     </Form.Item>
                     <Form.Item label="默认超时(ms)" name="defaultTimeoutMs" rules={[{ required: true }]}>
                         <InputNumber style={{ width: '100%' }} min={1000} max={120000} step={1000} />

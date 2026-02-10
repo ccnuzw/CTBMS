@@ -40,6 +40,8 @@ export class WorkflowDefinitionService {
             dto.templateSource,
         );
         this.ensureDslValid(normalizedDsl);
+        this.ensureRiskGateBindingsValid(normalizedDsl);
+        await this.ensureRulePackBindingsValid(ownerUserId, normalizedDsl);
 
         const created = await this.prisma.$transaction(async (tx) => {
             const definition = await tx.workflowDefinition.create({
@@ -174,6 +176,8 @@ export class WorkflowDefinitionService {
             definition.templateSource,
         );
         this.ensureDslValid(normalizedDsl);
+        this.ensureRiskGateBindingsValid(normalizedDsl);
+        await this.ensureRulePackBindingsValid(definition.ownerUserId, normalizedDsl);
 
         const nextVersionCode = this.nextVersionCode(definition.latestVersionCode);
         const createdVersion = await this.prisma.$transaction(async (tx) => {
@@ -229,6 +233,8 @@ export class WorkflowDefinitionService {
                 issues: publishValidation.issues,
             });
         }
+        this.ensureRiskGateBindingsValid(parsedDsl.data);
+        await this.ensureRulePackBindingsValid(ownerUserId, parsedDsl.data);
 
         return this.prisma.$transaction(async (tx) => {
             await tx.workflowVersion.updateMany({
@@ -344,6 +350,61 @@ export class WorkflowDefinitionService {
         }
     }
 
+    private ensureRiskGateBindingsValid(dslSnapshot: WorkflowDsl): void {
+        const invalidNodeIds = dslSnapshot.nodes
+            .filter((node) => node.type === 'risk-gate')
+            .filter((node) => {
+                const config = node.config as Record<string, unknown>;
+                return typeof config.riskProfileCode !== 'string' || !config.riskProfileCode.trim();
+            })
+            .map((node) => node.id);
+
+        if (invalidNodeIds.length > 0) {
+            throw new BadRequestException(
+                `risk-gate 节点缺少 riskProfileCode 配置: ${invalidNodeIds.join(', ')}`,
+            );
+        }
+    }
+
+    private async ensureRulePackBindingsValid(ownerUserId: string, dslSnapshot: WorkflowDsl): Promise<void> {
+        const ruleNodeTypes = new Set(['rule-pack-eval', 'rule-eval', 'alert-check']);
+        const rulePackCodes = Array.from(
+            new Set(
+                dslSnapshot.nodes
+                    .filter((node) => ruleNodeTypes.has(node.type))
+                    .map((node) => {
+                        const config = node.config as Record<string, unknown>;
+                        return typeof config.rulePackCode === 'string' ? config.rulePackCode.trim() : '';
+                    }),
+            ),
+        );
+        if (rulePackCodes.length === 0) {
+            return;
+        }
+
+        const invalidCodes = rulePackCodes.filter((code) => !code);
+        if (invalidCodes.length > 0) {
+            throw new BadRequestException('规则节点缺少 rulePackCode 配置');
+        }
+
+        const packs = await this.prisma.decisionRulePack.findMany({
+            where: {
+                rulePackCode: { in: rulePackCodes },
+                isActive: true,
+                OR: [{ ownerUserId }, { templateSource: 'PUBLIC' }],
+            },
+            select: { rulePackCode: true },
+        });
+        const existingCodes = new Set(packs.map((pack) => pack.rulePackCode));
+        const missingCodes = rulePackCodes.filter((code) => !existingCodes.has(code));
+
+        if (missingCodes.length > 0) {
+            throw new BadRequestException(
+                `规则包不存在、已停用或无权限访问: ${missingCodes.join(', ')}`,
+            );
+        }
+    }
+
     private normalizeDslForDefinition(
         sourceDsl: WorkflowDsl | undefined,
         workflowId: string,
@@ -372,6 +433,16 @@ export class WorkflowDefinitionService {
                         config: {},
                     },
                     {
+                        id: 'n_risk_gate',
+                        type: 'risk-gate',
+                        name: '风险闸门',
+                        enabled: true,
+                        config: {
+                            riskProfileCode: 'CORN_RISK_BASE',
+                            degradeAction: 'HOLD',
+                        },
+                    },
+                    {
                         id: 'n_notify',
                         type: 'notify',
                         name: '结果输出',
@@ -381,8 +452,14 @@ export class WorkflowDefinitionService {
                 ],
                 edges: [
                     {
-                        id: 'e_trigger_notify',
+                        id: 'e_trigger_risk_gate',
                         from: 'n_trigger',
+                        to: 'n_risk_gate',
+                        edgeType: 'control-edge',
+                    },
+                    {
+                        id: 'e_risk_gate_notify',
+                        from: 'n_risk_gate',
                         to: 'n_notify',
                         edgeType: 'control-edge',
                     },

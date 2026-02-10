@@ -1,6 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
     NodeExecutionDto,
+    WorkflowRiskDegradeAction,
+    WorkflowRiskLevel,
     WorkflowExecutionDto,
     WorkflowExecutionStatus,
     WorkflowTriggerType,
@@ -37,8 +39,15 @@ export interface WorkflowExecutionQuery {
     versionCode?: string;
     triggerType?: WorkflowTriggerType;
     status?: WorkflowExecutionStatus;
+    riskLevel?: WorkflowRiskLevel;
+    degradeAction?: WorkflowRiskDegradeAction;
+    riskProfileCode?: string;
+    riskReasonKeyword?: string;
     hasSoftFailure?: boolean;
     hasErrorRoute?: boolean;
+    hasRiskBlocked?: boolean;
+    hasRiskGateNode?: boolean;
+    hasRiskSummary?: boolean;
     keyword?: string;
     startedAtFrom?: string;
     startedAtTo?: string;
