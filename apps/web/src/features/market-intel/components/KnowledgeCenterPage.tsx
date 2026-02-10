@@ -20,7 +20,6 @@ import { useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { useGenerateWeeklyRollup, useKnowledgeItems } from '../api/knowledge-hooks';
 import { KNOWLEDGE_TYPE_LABELS } from '../constants/knowledge-labels';
-import { KnowledgeTopActionsBar } from './knowledge/KnowledgeTopActionsBar';
 
 const { Text } = Typography;
 const FILTER_STORAGE_KEY = 'knowledge-center-filters-v1';
@@ -118,17 +117,7 @@ export const KnowledgeCenterPage: React.FC = () => {
           <Button
             type="link"
             onClick={() =>
-              navigate(`/intel/knowledge/items/${record.id}`, {
-                state: {
-                  from:
-                    from === 'workbench'
-                      ? 'workbench'
-                      : from === 'dashboard'
-                        ? 'dashboard'
-                        : 'library',
-                  returnTo: `${location.pathname}${location.search}`,
-                },
-              })
+              navigate(`/intel/knowledge/items/${record.id}`)
             }
             style={{
               paddingInline: 0,
@@ -207,140 +196,84 @@ export const KnowledgeCenterPage: React.FC = () => {
     localStorage.removeItem(FILTER_STORAGE_KEY);
   };
 
-  return (
-    <PageContainer title="知识中心 V2" subTitle="统一沉淀日报、周报、研报与AI报告">
-      <Row gutter={[16, 16]}>
-        <Col xs={24} md={8}>
-          <Card>
-            <Statistic title="总匹配条数" value={total} suffix="条" />
-          </Card>
-        </Col>
-        <Col xs={24} md={8}>
-          <Card>
-            <Statistic title="当前页条数" value={rows.length} suffix="条" />
-          </Card>
-        </Col>
-        <Col xs={24} md={8}>
-          <Card>
-            <Statistic title="周报（当前页）" value={statusStats.weekly} suffix="条" />
-          </Card>
-        </Col>
-      </Row>
 
-      <Card style={{ marginTop: 16 }} bodyStyle={{ paddingBottom: 12 }}>
-        <Space direction="vertical" style={{ width: '100%' }} size={12}>
-          <Segmented
-            block={screens.xs}
-            value={type || 'ALL'}
-            onChange={(value) => {
-              const next = String(value);
-              setType(next === 'ALL' ? undefined : next);
-              setPage(1);
-            }}
-            options={[
-              { label: '全部', value: 'ALL' },
-              { label: '日报', value: 'DAILY' },
-              { label: '周报', value: 'WEEKLY' },
-              { label: '月报', value: 'MONTHLY' },
-              { label: '研报', value: 'RESEARCH' },
-              { label: 'AI报告', value: 'AI_REPORT' },
-            ]}
-          />
-          <Text type="secondary">当前视图：{activeTypeLabel}，默认仅展示已发布内容。</Text>
+  return (
+    <PageContainer title={false}>
+      <Card bodyStyle={{ paddingBottom: 12 }}>
+        <Space direction="vertical" style={{ width: '100%' }} size={16}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: 16 }}>
+            <Segmented
+              value={type || 'ALL'}
+              onChange={(value) => {
+                const next = String(value);
+                setType(next === 'ALL' ? undefined : next);
+                setPage(1);
+              }}
+              options={[
+                { label: '全部', value: 'ALL' },
+                { label: '日报', value: 'DAILY' },
+                { label: '周报', value: 'WEEKLY' },
+                { label: '月报', value: 'MONTHLY' },
+                { label: '研报', value: 'RESEARCH' },
+                { label: 'AI报告', value: 'AI_REPORT' },
+              ]}
+            />
+            <Space wrap>
+              <b>检索结果：</b> <Text type="secondary">共 {total} 条</Text>
+            </Space>
+          </div>
+
+          <Row gutter={[12, 12]} align="middle">
+            <Col xs={24} lg={24}>
+              <Space wrap style={{ width: '100%' }}>
+                <Select
+                  allowClear
+                  placeholder="状态"
+                  style={{ width: 150 }}
+                  value={status}
+                  onChange={(value) => {
+                    setStatus(value);
+                    setPage(1);
+                  }}
+                  options={[
+                    { label: '已发布', value: 'PUBLISHED' },
+                    { label: '审核中', value: 'PENDING_REVIEW' },
+                    { label: '草稿', value: 'DRAFT' },
+                  ]}
+                />
+                <Select
+                  value={quickRange}
+                  style={{ width: 150 }}
+                  onChange={(value) => {
+                    setQuickRange(value);
+                    setPage(1);
+                  }}
+                  options={[
+                    { label: '全部时间', value: 'ALL' },
+                    { label: '本周', value: 'THIS_WEEK' },
+                    { label: '本月', value: 'THIS_MONTH' },
+                  ]}
+                />
+                <Input
+                  value={keywordInput}
+                  onChange={(event) => setKeywordInput(event.target.value)}
+                  onPressEnter={triggerSearch}
+                  placeholder="输入标题或正文关键词"
+                  style={{ width: 320 }}
+                  prefix={<SearchOutlined />}
+                  allowClear
+                />
+                <Button onClick={triggerSearch} type="primary">
+                  查询
+                </Button>
+                <Button onClick={resetFilters}>重置</Button>
+              </Space>
+            </Col>
+          </Row>
         </Space>
       </Card>
 
-      <KnowledgeTopActionsBar
-        contextBackLabel={
-          from === 'workbench' ? '返回工作台' : from === 'dashboard' ? '返回看板' : undefined
-        }
-        onContextBack={
-          from === 'workbench'
-            ? () => navigate('/intel/knowledge?tab=workbench')
-            : from === 'dashboard'
-              ? () => navigate('/intel/knowledge/dashboard?from=dashboard')
-              : undefined
-        }
-        onBackLibrary={() => navigate('/intel/knowledge?tab=library')}
-        onQuickEntry={() => navigate('/intel/entry')}
-        onCreateReport={() => navigate('/intel/knowledge/reports/create')}
-        onOpenDashboard={() =>
-          navigate(
-            from === 'workbench'
-              ? '/intel/knowledge/dashboard?from=workbench'
-              : from === 'dashboard'
-                ? '/intel/knowledge/dashboard?from=dashboard'
-                : '/intel/knowledge/dashboard',
-          )
-        }
-        generatingWeekly={weeklyRollupMutation.isPending}
-        onGenerateWeekly={async () => {
-          try {
-            await weeklyRollupMutation.mutateAsync({ triggerAnalysis: true });
-            message.success('周报已生成并完成关联');
-          } catch (error) {
-            message.error('周报生成失败，请稍后重试');
-            console.error(error);
-          }
-        }}
-      />
-
-      <Card style={{ marginTop: 16 }}>
-        <Row gutter={[12, 12]} align="middle">
-          <Col xs={24} lg={15}>
-            <Space wrap style={{ width: '100%' }}>
-              <Select
-                allowClear
-                placeholder="状态"
-                style={{ width: 170 }}
-                value={status}
-                onChange={(value) => {
-                  setStatus(value);
-                  setPage(1);
-                }}
-                options={[
-                  { label: '已发布', value: 'PUBLISHED' },
-                  { label: '审核中', value: 'PENDING_REVIEW' },
-                  { label: '草稿', value: 'DRAFT' },
-                ]}
-              />
-              <Select
-                value={quickRange}
-                style={{ width: 150 }}
-                onChange={(value) => {
-                  setQuickRange(value);
-                  setPage(1);
-                }}
-                options={[
-                  { label: '全部时间', value: 'ALL' },
-                  { label: '本周', value: 'THIS_WEEK' },
-                  { label: '本月', value: 'THIS_MONTH' },
-                ]}
-              />
-              <Input
-                value={keywordInput}
-                onChange={(event) => setKeywordInput(event.target.value)}
-                onPressEnter={triggerSearch}
-                placeholder="输入标题或正文关键词"
-                style={{ width: screens.xs ? '100%' : 320 }}
-                prefix={<SearchOutlined />}
-                allowClear
-              />
-              <Button onClick={triggerSearch} type="primary">
-                查询
-              </Button>
-              <Button onClick={resetFilters}>重置</Button>
-            </Space>
-          </Col>
-        </Row>
-      </Card>
-
-      <Card style={{ marginTop: 16 }} bodyStyle={{ paddingTop: 12 }}>
-        <div style={{ marginBottom: 12 }}>
-          <Text type="secondary">
-            检索结果：共 {total} 条，当前页 {rows.length} 条
-          </Text>
-        </div>
+      <Card style={{ marginTop: 16 }} bodyStyle={{ padding: 0 }}>
         <Table
           rowKey="id"
           loading={isLoading}

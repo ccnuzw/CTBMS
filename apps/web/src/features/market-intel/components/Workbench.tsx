@@ -95,10 +95,20 @@ export const Workbench: React.FC = () => {
   };
 
   return (
-    <div style={{ padding: 20, background: '#f5f7fb', minHeight: '100%' }}>
+    <div style={{ padding: '0 24px 24px 24px', background: '#f5f7fb', minHeight: '100%' }}>
       <Space direction="vertical" style={{ width: '100%' }} size={16}>
-        <div style={{ width: '100%', maxWidth: 1440, margin: '0 auto' }}>
-          <Space direction="vertical" style={{ width: '100%' }} size={16}>
+        {/* Overview Row: Header Controls included in title area */}
+        <TodayTaskPanel
+          todayDocs={todayDocs}
+          weeklyReports={weeklyReports}
+          pendingReports={pendingCount}
+          weeklyReady={weeklyReady}
+          weeklyReportId={weeklyReportId}
+          generatingWeekly={weeklyRollupMutation.isPending}
+          //   onQuickEntry={() => navigate('/intel/entry')} // Removed as it's in QuickActions
+          onGenerateWeekly={handleGenerateWeekly}
+          onOpenWeeklyReport={(id) => navigate(`/intel/knowledge/items/${id}`)}
+          headerExtra={
             <WorkbenchHeaderBar
               days={days}
               mode={mode}
@@ -106,72 +116,61 @@ export const Workbench: React.FC = () => {
               onDaysChange={setDays}
               onModeChange={handleModeChange}
               onRefresh={refetch}
-              onOpenLibrary={() => navigate('/intel/knowledge?tab=library&from=workbench')}
-              onOpenDashboard={() => navigate('/intel/knowledge/dashboard?from=workbench')}
             />
+          }
+        />
 
-            <Row gutter={[16, 16]}>
-              <Col xs={24} lg={16}>
-                <TodayTaskPanel
-                  todayDocs={todayDocs}
-                  weeklyReports={weeklyReports}
-                  pendingReports={pendingCount}
-                  weeklyReady={weeklyReady}
-                  weeklyReportId={weeklyReportId}
-                  generatingWeekly={weeklyRollupMutation.isPending}
-                  onQuickEntry={() => navigate('/intel/entry')}
-                  onGenerateWeekly={handleGenerateWeekly}
-                  onOpenWeeklyReport={(id) =>
-                    navigate(`/intel/knowledge/items/${id}`, { state: { from: 'workbench' } })
+        <Row gutter={[16, 16]}>
+          {/* Left Main Column */}
+          <Col xs={24} lg={16}>
+            <Space direction="vertical" style={{ width: '100%' }} size={16}>
+              <QuickActionsPanel
+                onUploadDoc={() => navigate('/intel/entry')}
+                onGenerateFromDoc={() => navigate('/intel/knowledge/items?content=reports')}
+                onCreateReport={() => navigate('/intel/knowledge/reports/create')}
+                onOpenKnowledge={() => navigate('/intel/knowledge/items')}
+              />
+
+              {mode === 'compact' && (
+                <div style={{ textAlign: 'center' }}>
+                  <Button
+                    type="text"
+                    icon={showPreview ? <UpOutlined /> : <DownOutlined />}
+                    onClick={() => setShowPreview((prev) => !prev)}
+                  >
+                    {showPreview ? '收起分析预览' : '展开分析预览'}
+                  </Button>
+                </div>
+              )}
+
+              {(mode === 'full' || showPreview) && (
+                <AnalysisPreviewPanel
+                  trend={docStats?.trend || []}
+                  sourceData={docStats?.bySource || []}
+                  hotTopics={hotTopics || []}
+                  loading={isLoading}
+                  onOpenDashboard={() => navigate('/intel/knowledge/dashboard')}
+                  onOpenSearchTopic={(topic) =>
+                    navigate(`/intel/search?q=${encodeURIComponent(topic)}`)
                   }
                 />
-              </Col>
-              <Col xs={24} lg={8}>
-                <PendingQueuePanel
-                  loading={pendingLoading}
-                  items={(pendingReports?.data || []).map((item) => ({
-                    id: item.id,
-                    title: item.title,
-                    source: item.source,
-                  }))}
-                  onOpen={(id) => navigate(`/intel/knowledge/legacy/report/${id}?from=workbench`)}
-                />
-              </Col>
-            </Row>
+              )}
+            </Space>
+          </Col>
 
-            <QuickActionsPanel
-              onUploadDoc={() => navigate('/intel/entry')}
-              onGenerateFromDoc={() =>
-                navigate('/intel/knowledge?tab=library&from=workbench&content=reports')
-              }
-              onCreateReport={() => navigate('/intel/knowledge/reports/create')}
-              onOpenKnowledge={() => navigate('/intel/knowledge?tab=library&from=workbench')}
+          {/* Right Side Column */}
+          <Col xs={24} lg={8}>
+            <PendingQueuePanel
+              loading={pendingLoading}
+              items={(pendingReports?.data || []).map((item) => ({
+                id: item.id,
+                title: item.title,
+                source: item.source,
+              }))}
+              onOpen={(id) => navigate(`/intel/knowledge/items/${id}`)}
             />
-
-            {mode === 'compact' && (
-              <Button
-                type="default"
-                icon={showPreview ? <UpOutlined /> : <DownOutlined />}
-                onClick={() => setShowPreview((prev) => !prev)}
-              >
-                {showPreview ? '收起分析预览' : '展开分析预览'}
-              </Button>
-            )}
-
-            {(mode === 'full' || showPreview) && (
-              <AnalysisPreviewPanel
-                trend={docStats?.trend || []}
-                sourceData={docStats?.bySource || []}
-                hotTopics={hotTopics || []}
-                loading={isLoading}
-                onOpenDashboard={() => navigate('/intel/knowledge/dashboard?from=workbench')}
-                onOpenSearchTopic={(topic) =>
-                  navigate(`/intel/search?q=${encodeURIComponent(topic)}`)
-                }
-              />
-            )}
-          </Space>
-        </div>
+          </Col>
+        </Row>
       </Space>
     </div>
   );

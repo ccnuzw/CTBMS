@@ -24,6 +24,9 @@ import {
     FormOutlined,
     AuditOutlined,
     NodeIndexOutlined,
+    ThunderboltOutlined,
+    DatabaseOutlined,
+    BarChartOutlined,
 } from '@ant-design/icons';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { ThemeSwitcher } from '../components/ThemeSwitcher';
@@ -145,9 +148,31 @@ export const MainLayout: React.FC = () => {
                     label: 'B类情报流',
                 },
                 {
-                    key: '/intel/knowledge',
+                    key: 'intel-knowledge',
                     icon: <FileTextOutlined />,
                     label: '商情知识库',
+                    children: [
+                        {
+                            key: '/intel/knowledge/workbench',
+                            icon: <ThunderboltOutlined />,
+                            label: '知识工作台',
+                        },
+                        {
+                            key: '/intel/knowledge/items',
+                            icon: <DatabaseOutlined />,
+                            label: '知识列表',
+                        },
+                        {
+                            key: '/intel/knowledge/dashboard',
+                            icon: <BarChartOutlined />,
+                            label: '分析看板',
+                        },
+                        {
+                            key: '/intel/knowledge/reports/create',
+                            icon: <FormOutlined />,
+                            label: '新建研报',
+                        },
+                    ]
                 },
                 {
                     key: '/intel/extraction-config',

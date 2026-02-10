@@ -27,8 +27,8 @@ import {
   ResearchReportListPage,
   ResearchReportDashboard,
   ResearchReportCreatePage,
-  KnowledgePortal,
-  KnowledgeTabs,
+  KnowledgeLayout,
+  KnowledgeDefaultRedirect,
   Workbench,
   KnowledgeCenterPage,
   KnowledgeDetailPage,
@@ -118,10 +118,31 @@ export const router = createBrowserRouter([
           {
             path: 'knowledge',
             children: [
-              { index: true, element: <KnowledgeTabs /> },
-              { path: 'workbench', element: <Workbench /> },
-              { path: 'items', element: <KnowledgeCenterPage /> },
-              { path: 'dashboard', element: <KnowledgeDashboardPage /> },
+              { index: true, element: <KnowledgeDefaultRedirect /> },
+              {
+                path: 'workbench',
+                element: (
+                  <KnowledgeLayout>
+                    <Workbench />
+                  </KnowledgeLayout>
+                ),
+              },
+              {
+                path: 'items',
+                element: (
+                  <KnowledgeLayout>
+                    <KnowledgeCenterPage />
+                  </KnowledgeLayout>
+                ),
+              },
+              {
+                path: 'dashboard',
+                element: (
+                  <KnowledgeLayout>
+                    <KnowledgeDashboardPage />
+                  </KnowledgeLayout>
+                ),
+              },
               { path: 'items/:id', element: <KnowledgeDetailPage /> },
               { path: 'legacy/:source/:id', element: <LegacyKnowledgeRedirectPage /> },
               { path: 'documents/:id', element: <LegacyKnowledgeRedirectPage source="intel" /> },
@@ -129,7 +150,6 @@ export const router = createBrowserRouter([
               { path: 'reports/:id', element: <LegacyKnowledgeRedirectPage source="report" /> },
 
               { path: 'reports/:id/edit', element: <ResearchReportCreatePage /> },
-
             ],
           },
           { path: 'leaderboard', element: <Leaderboard /> },

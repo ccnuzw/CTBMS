@@ -14,10 +14,10 @@ type Props = {
   pendingReports: number;
   weeklyReady: boolean;
   weeklyReportId?: string;
-  onQuickEntry: () => void;
   onGenerateWeekly: () => void;
   onOpenWeeklyReport?: (id: string) => void;
   generatingWeekly?: boolean;
+  headerExtra?: React.ReactNode;
 };
 
 export const TodayTaskPanel: React.FC<Props> = ({
@@ -26,15 +26,15 @@ export const TodayTaskPanel: React.FC<Props> = ({
   pendingReports,
   weeklyReady,
   weeklyReportId,
-  onQuickEntry,
   onGenerateWeekly,
   onOpenWeeklyReport,
   generatingWeekly,
+  headerExtra,
 }) => {
   return (
     <Card
-      title="今日任务"
-      extra={<Text type="secondary">优先完成高频操作</Text>}
+      title="商情工作台"
+      extra={headerExtra}
       style={{ borderRadius: 14, borderColor: '#e9edf5', height: '100%' }}
       bodyStyle={{ paddingBottom: 14 }}
     >
@@ -61,9 +61,6 @@ export const TodayTaskPanel: React.FC<Props> = ({
       </Row>
 
       <Space style={{ marginTop: 16 }} wrap size={[8, 8]}>
-        <Button type="primary" onClick={onQuickEntry}>
-          快速采集
-        </Button>
         <Button
           icon={<ThunderboltOutlined />}
           loading={generatingWeekly}

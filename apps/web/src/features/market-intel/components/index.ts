@@ -29,11 +29,12 @@ export { KnowledgeDashboardPage } from './KnowledgeDashboardPage';
 export { LegacyKnowledgeRedirectPage } from './LegacyKnowledgeRedirectPage';
 export { KnowledgeRelationGraph } from './KnowledgeRelationGraph';
 export * from './task-distribution';
-export * from './KnowledgePortal';
-export * from './KnowledgeTabs';
+export * from './KnowledgeLayout';
+export * from './KnowledgeDefaultRedirect';
 export * from './DocumentStatsDashboard';
 export { AllocationMatrix } from './AllocationMatrix';
 export { CollectionPointAllocationCenter } from './CollectionPointAllocationCenter';
 export { DistributionPreview } from './DistributionPreview';
 export { ReportEntryForm } from './ReportEntryForm';
 export { ReviewWorkbench } from './ReviewWorkbench';
+

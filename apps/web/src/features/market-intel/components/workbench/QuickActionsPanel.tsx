@@ -1,5 +1,5 @@
 import { BookOutlined, FileAddOutlined, FileSearchOutlined, FormOutlined } from '@ant-design/icons';
-import { Button, Card, Col, Row, Typography } from 'antd';
+import { Button, Card, Col, Row, Space, Typography } from 'antd';
 
 const { Paragraph, Text } = Typography;
 
@@ -27,57 +27,37 @@ export const QuickActionsPanel: React.FC<Props> = ({
   const actions: ActionItem[] = [
     {
       key: 'upload',
-      title: '上传文档入库',
-      description: '上传 PDF/Word，自动解析入库。',
+      title: '上传文档',
+      description: '上传 PDF/Word，自动解析入库',
       icon: <FileAddOutlined />,
       onClick: onUploadDoc,
     },
     {
       key: 'doc2report',
-      title: '从文档生成研报',
-      description: '从知识文档快速生成结构化研报。',
+      title: '文档转研报',
+      description: '从知识文档快速生成结构化研报',
       icon: <FileSearchOutlined />,
       onClick: onGenerateFromDoc,
     },
     {
       key: 'create',
       title: '新建研报',
-      description: '直接创建专题研报并进入编辑。',
+      description: '直接创建专题研报',
       icon: <FormOutlined />,
       onClick: onCreateReport,
-    },
-    {
-      key: 'knowledge',
-      title: '进入知识库',
-      description: '查看日报、周报、研报与政策库。',
-      icon: <BookOutlined />,
-      onClick: onOpenKnowledge,
     },
   ];
 
   return (
-    <Card title="快捷入口" style={{ borderRadius: 14, borderColor: '#e9edf5' }}>
-      <Row gutter={[12, 12]}>
+    <Card bodyStyle={{ padding: '12px 16px' }} style={{ borderRadius: 12, borderColor: '#e9edf5' }}>
+      <Space size={16} wrap>
+        <Text strong style={{ marginRight: 8 }}>快捷操作：</Text>
         {actions.map((action) => (
-          <Col xs={24} sm={12} key={action.key}>
-            <Card
-              size="small"
-              hoverable
-              style={{ borderRadius: 12, borderColor: '#edf1f7', height: '100%' }}
-            >
-              <Text strong>
-                {action.icon} {action.title}
-              </Text>
-              <Paragraph type="secondary" style={{ marginTop: 8, marginBottom: 12 }}>
-                {action.description}
-              </Paragraph>
-              <Button type="link" onClick={action.onClick} style={{ paddingInline: 0 }}>
-                立即进入
-              </Button>
-            </Card>
-          </Col>
+          <Button key={action.key} icon={action.icon} onClick={action.onClick}>
+            {action.title}
+          </Button>
         ))}
-      </Row>
+      </Space>
     </Card>
   );
 };

@@ -28,6 +28,8 @@ import { KnowledgeTopActionsBar } from './knowledge/KnowledgeTopActionsBar';
 
 const { Text } = Typography;
 
+import { Line } from '@ant-design/plots';
+
 const SENTIMENT_COLOR: Record<string, string> = {
   BULLISH: 'green',
   BEARISH: 'red',
@@ -48,57 +50,6 @@ const RISK_COLOR: Record<string, string> = {
   HIGH: '#f5222d',
   MEDIUM: '#fa8c16',
   LOW: '#52c41a',
-};
-
-const ConfidenceLineChart: React.FC<{
-  values: Array<{ label: string; value: number }>;
-}> = ({ values }) => {
-  if (values.length === 0) return <Empty description="暂无置信度趋势数据" />;
-
-  const width = 640;
-  const height = 220;
-  const padding = 30;
-  const max = 100;
-  const min = 0;
-
-  const points = values
-    .map((item, index) => {
-      const x = padding + (index * (width - padding * 2)) / Math.max(1, values.length - 1);
-      const y = height - padding - ((item.value - min) / (max - min)) * (height - padding * 2);
-      return `${x},${y}`;
-    })
-    .join(' ');
-
-  return (
-    <div style={{ overflowX: 'auto' }}>
-      <svg width={width} height={height} role="img" aria-label="confidence trend">
-        <line
-          x1={padding}
-          y1={height - padding}
-          x2={width - padding}
-          y2={height - padding}
-          stroke="#d9d9d9"
-        />
-        <line x1={padding} y1={padding} x2={padding} y2={height - padding} stroke="#d9d9d9" />
-        <polyline fill="none" stroke="#1677ff" strokeWidth="3" points={points} />
-        {values.map((item, index) => {
-          const x = padding + (index * (width - padding * 2)) / Math.max(1, values.length - 1);
-          const y = height - padding - ((item.value - min) / (max - min)) * (height - padding * 2);
-          return (
-            <g key={`${item.label}-${index}`}>
-              <circle cx={x} cy={y} r={4} fill="#1677ff" />
-              <text x={x} y={height - 8} textAnchor="middle" fontSize="10" fill="#8c8c8c">
-                {item.label}
-              </text>
-              <text x={x} y={y - 8} textAnchor="middle" fontSize="10" fill="#262626">
-                {item.value}
-              </text>
-            </g>
-          );
-        })}
-      </svg>
-    </div>
-  );
 };
 
 export const KnowledgeDashboardPage: React.FC = () => {
@@ -144,31 +95,43 @@ export const KnowledgeDashboardPage: React.FC = () => {
     };
   }, [topicEvolution]);
 
-  const fromWorkbench = searchParams.get('from') === 'workbench';
-  const dashboardSearch = searchParams.toString();
-  const dashboardReturnTo = `/intel/knowledge/dashboard${dashboardSearch ? `?${dashboardSearch}` : ''}`;
-
-  const backFallback = useMemo(() => {
-    const from = searchParams.get('from');
-    if (from === 'workbench') return '/intel/knowledge?tab=workbench';
-    if (from === 'library') return '/intel/knowledge?tab=library';
-    return '/intel/knowledge?tab=library';
-  }, [searchParams]);
-
   const handleBack = () => {
     if (window.history.length > 1) {
       navigate(-1);
       return;
     }
-    navigate(backFallback);
+    navigate('/intel/knowledge/items');
   };
 
   const jumpToLibraryByType = (type?: string) => {
-    const params = new URLSearchParams();
-    params.set('tab', 'library');
-    params.set('from', 'dashboard');
-    if (type === 'RESEARCH') params.set('content', 'reports');
-    navigate(`/intel/knowledge?${params.toString()}`);
+    // Navigate to items page with filter by type
+    // Since we don't have direct query param mapping for this in current Items page logic (it uses localStorage/state),
+    // we might need to pass state or just navigate.
+    // Ideally Items page should support URL params.
+    // For now simple navigate.
+    navigate('/intel/knowledge/items');
+  };
+
+  const lineConfig = {
+    data: confidenceSeries,
+    xField: 'label',
+    yField: 'value',
+    point: {
+      size: 5,
+      shape: 'diamond',
+    },
+    label: {
+      style: {
+        fill: '#aaa',
+      },
+    },
+    color: '#1677ff',
+    height: 220,
+    autoFit: true,
+    yAxis: {
+      max: 100,
+      min: 0,
+    }
   };
 
   return (
@@ -181,24 +144,6 @@ export const KnowledgeDashboardPage: React.FC = () => {
         </Button>,
       ]}
     >
-      <KnowledgeTopActionsBar
-        contextBackLabel={fromWorkbench ? '返回工作台' : undefined}
-        onContextBack={fromWorkbench ? () => navigate('/intel/knowledge?tab=workbench') : undefined}
-        onBackLibrary={() => navigate('/intel/knowledge?tab=library&from=dashboard')}
-        onQuickEntry={() => navigate('/intel/entry')}
-        onCreateReport={() => navigate('/intel/knowledge/reports/create')}
-        generatingWeekly={weeklyRollupMutation.isPending}
-        onGenerateWeekly={async () => {
-          try {
-            await weeklyRollupMutation.mutateAsync({ triggerAnalysis: true });
-            message.success('已生成本周周报，请稍候刷新看板');
-          } catch (error) {
-            message.error('周报生成失败，请稍后重试');
-            console.error(error);
-          }
-        }}
-      />
-
       <Card style={{ marginBottom: 16 }}>
         <Space
           wrap
@@ -342,14 +287,7 @@ export const KnowledgeDashboardPage: React.FC = () => {
                       <Button
                         type="link"
                         style={{ paddingInline: 0 }}
-                        onClick={() =>
-                          navigate(`/intel/knowledge/items/${record.id}`, {
-                            state: {
-                              from: fromWorkbench ? 'workbench' : 'dashboard',
-                              returnTo: dashboardReturnTo,
-                            },
-                          })
-                        }
+                        onClick={() => navigate(`/intel/knowledge/items/${record.id}`)}
                       >
                         {value}
                       </Button>
@@ -391,7 +329,7 @@ export const KnowledgeDashboardPage: React.FC = () => {
         <Col xs={24} lg={14}>
           <Card title="主题演化">
             <Card size="small" title="置信度趋势" style={{ marginBottom: 12 }}>
-              <ConfidenceLineChart values={confidenceSeries} />
+              <Line {...lineConfig} />
             </Card>
 
             <Table
@@ -411,9 +349,9 @@ export const KnowledgeDashboardPage: React.FC = () => {
                     <Tag color={SENTIMENT_COLOR[value] || 'default'}>
                       {value
                         ? topicEvolution?.trend.find((item) => item.id === record.id)
-                            ?.sentimentLabel ||
-                          SENTIMENT_LABEL[value] ||
-                          value
+                          ?.sentimentLabel ||
+                        SENTIMENT_LABEL[value] ||
+                        value
                         : '暂无'}
                     </Tag>
                   ),
@@ -427,9 +365,9 @@ export const KnowledgeDashboardPage: React.FC = () => {
                     <Tag color={value === 'HIGH' ? 'red' : value === 'MEDIUM' ? 'orange' : 'green'}>
                       {value
                         ? topicEvolution?.trend.find((item) => item.id === record.id)
-                            ?.riskLevelLabel ||
-                          RISK_LABEL[value] ||
-                          value
+                          ?.riskLevelLabel ||
+                        RISK_LABEL[value] ||
+                        value
                         : '暂无'}
                     </Tag>
                   ),
@@ -451,14 +389,7 @@ export const KnowledgeDashboardPage: React.FC = () => {
                   render: (_value, record) => (
                     <Button
                       type="link"
-                      onClick={() =>
-                        navigate(`/intel/knowledge/items/${record.id}`, {
-                          state: {
-                            from: fromWorkbench ? 'workbench' : 'dashboard',
-                            returnTo: dashboardReturnTo,
-                          },
-                        })
-                      }
+                      onClick={() => navigate(`/intel/knowledge/items/${record.id}`)}
                     >
                       查看
                     </Button>
