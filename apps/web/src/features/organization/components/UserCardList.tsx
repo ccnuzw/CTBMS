@@ -137,10 +137,13 @@ export const UserCardList: React.FC<UserCardListProps> = ({
   const {
     data: scopedUsers,
     isLoading,
+    isFetching,
     refetch,
   } = useUsers(userFilters, {
     enabled: !!selectedNode,
   });
+
+  const shouldShowLoading = !!selectedNode && (isLoading || isFetching);
 
   // 未归属用户用于“分配”弹窗
   const { data: usersForAssign } = useUsers(
@@ -258,7 +261,7 @@ export const UserCardList: React.FC<UserCardListProps> = ({
 
       {/* 用户列表 */}
       <div style={{ flex: 1, overflow: 'auto' }}>
-        {isLoading ? (
+        {shouldShowLoading ? (
           <Flex justify="center" align="center" style={{ height: 200 }}>
             <Spin />
           </Flex>

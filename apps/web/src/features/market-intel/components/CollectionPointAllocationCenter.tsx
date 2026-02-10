@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Card, Segmented, Space, Typography, App } from 'antd';
+import { Card, Segmented, Space, Typography, App, theme } from 'antd';
 import {
   EnvironmentOutlined,
   CheckCircleOutlined,
@@ -24,12 +24,21 @@ export const CollectionPointAllocationCenter: React.FC<CollectionPointAllocation
 }) => {
   const [mode, setMode] = useState<AllocationCenterMode>(defaultMode);
   const { data: stats } = useAllocationStatistics();
+  const { token } = theme.useToken();
 
   return (
     <App>
       <div>
         <Card size="small" style={{ marginBottom: 16 }} bodyStyle={{ padding: 12 }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 16 }}>
+          <div
+            style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'flex-start',
+              flexWrap: 'wrap',
+              gap: 16,
+            }}
+          >
             {/* Left Side: Controls */}
             <Space direction="vertical" size={8}>
               <div style={{ display: 'flex', alignItems: 'center' }}>
@@ -55,75 +64,87 @@ export const CollectionPointAllocationCenter: React.FC<CollectionPointAllocation
             {/* Right Side: Compact Stats */}
             <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
               {/* Total */}
-              <div style={{
-                background: '#f5f5f5',
-                padding: '8px 16px',
-                borderRadius: 6,
-                display: 'flex',
-                flexDirection: 'column',
-                minWidth: 120
-              }}>
-                <span style={{ fontSize: 12, color: '#888' }}>采集点总数</span>
-                <span style={{ fontSize: 20, fontWeight: 600 }}>
-                  <EnvironmentOutlined style={{ marginRight: 6, fontSize: 16, color: '#888' }} />
+              <div
+                style={{
+                  background: token.colorFillQuaternary,
+                  border: `1px solid ${token.colorBorderSecondary}`,
+                  padding: '8px 16px',
+                  borderRadius: 6,
+                  display: 'flex',
+                  flexDirection: 'column',
+                  minWidth: 120,
+                }}
+              >
+                <span style={{ fontSize: 12, color: token.colorTextSecondary }}>采集点总数</span>
+                <span style={{ fontSize: 20, fontWeight: 600, color: token.colorText }}>
+                  <EnvironmentOutlined
+                    style={{ marginRight: 6, fontSize: 16, color: token.colorTextSecondary }}
+                  />
                   {stats?.total || 0}
                 </span>
               </div>
 
               {/* Allocated */}
-              <div style={{
-                background: '#f6ffed',
-                border: '1px solid #b7eb8f',
-                padding: '8px 16px',
-                borderRadius: 6,
-                display: 'flex',
-                flexDirection: 'column',
-                minWidth: 120
-              }}>
-                <span style={{ fontSize: 12, color: '#52c41a' }}>已分配</span>
-                <span style={{ fontSize: 20, fontWeight: 600, color: '#52c41a' }}>
+              <div
+                style={{
+                  background: token.colorSuccessBg,
+                  border: `1px solid ${token.colorSuccessBorder}`,
+                  padding: '8px 16px',
+                  borderRadius: 6,
+                  display: 'flex',
+                  flexDirection: 'column',
+                  minWidth: 120,
+                }}
+              >
+                <span style={{ fontSize: 12, color: token.colorSuccess }}>已分配</span>
+                <span style={{ fontSize: 20, fontWeight: 600, color: token.colorSuccessText }}>
                   <CheckCircleOutlined style={{ marginRight: 6, fontSize: 16 }} />
                   {stats?.allocated || 0}
                 </span>
               </div>
 
               {/* Unallocated */}
-              <div style={{
-                background: '#fff1f0',
-                border: '1px solid #ffa39e',
-                padding: '8px 16px',
-                borderRadius: 6,
-                display: 'flex',
-                flexDirection: 'column',
-                minWidth: 120
-              }}>
+              <div
+                style={{
+                  background: token.colorErrorBg,
+                  border: `1px solid ${token.colorErrorBorder}`,
+                  padding: '8px 16px',
+                  borderRadius: 6,
+                  display: 'flex',
+                  flexDirection: 'column',
+                  minWidth: 120,
+                }}
+              >
                 <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                  <Text type="secondary" style={{ fontSize: 12 }}>未分配</Text>
+                  <Text style={{ fontSize: 12, color: token.colorError }}>未分配</Text>
                 </div>
-                <span style={{ fontSize: 20, fontWeight: 600, color: '#ff4d4f' }}>
+                <span style={{ fontSize: 20, fontWeight: 600, color: token.colorErrorText }}>
                   <ExclamationCircleOutlined style={{ marginRight: 6, fontSize: 16 }} />
                   {stats?.unallocated || 0}
                 </span>
               </div>
 
               {/* Rate */}
-              <div style={{
-                background: '#f0f5ff',
-                padding: '8px 16px',
-                borderRadius: 6,
-                display: 'flex',
-                flexDirection: 'column',
-                minWidth: 120
-              }}>
-                <span style={{ fontSize: 12, color: '#1890ff' }}>分配率</span>
-                <span style={{ fontSize: 20, fontWeight: 600, color: '#1890ff' }}>
+              <div
+                style={{
+                  background: token.colorInfoBg,
+                  border: `1px solid ${token.colorInfoBorder}`,
+                  padding: '8px 16px',
+                  borderRadius: 6,
+                  display: 'flex',
+                  flexDirection: 'column',
+                  minWidth: 120,
+                }}
+              >
+                <span style={{ fontSize: 12, color: token.colorInfo }}>分配率</span>
+                <span style={{ fontSize: 20, fontWeight: 600, color: token.colorInfoText }}>
                   <PieChartOutlined style={{ marginRight: 6, fontSize: 16 }} />
                   {stats?.total ? Math.round((stats.allocated / stats.total) * 100) : 0}%
                 </span>
               </div>
             </div>
-          </div >
-        </Card >
+          </div>
+        </Card>
 
         {mode === 'BY_USER' ? (
           <AllocationMatrix />

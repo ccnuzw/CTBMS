@@ -1,5 +1,5 @@
 import { BookOutlined, FormOutlined, ThunderboltOutlined } from '@ant-design/icons';
-import { Button, Card, Space, Typography } from 'antd';
+import { Button, Card, Space, Typography, theme } from 'antd';
 
 const { Text } = Typography;
 
@@ -26,8 +26,9 @@ export const KnowledgeTopActionsBar: React.FC<Props> = ({
   generatingWeekly,
   rightExtra,
 }) => {
+  const { token } = theme.useToken();
   return (
-    <Card style={{ marginBottom: 16, borderRadius: 12, borderColor: '#e9edf5' }}>
+    <Card style={{ marginBottom: 16, borderRadius: 12, borderColor: token.colorBorderSecondary }}>
       <Space style={{ width: '100%', justifyContent: 'space-between' }} wrap>
         <Space wrap>
           {contextBackLabel && onContextBack ? (

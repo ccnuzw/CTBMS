@@ -7,6 +7,8 @@ on:
       - 'apps/api/src/modules/workflow-execution/**'
       - 'apps/api/src/scripts/**'
       - 'apps/api/test/**'
+      - 'scripts/workflow-smoke-runner.mjs'
+      - 'scripts/workflow-report-validate.mjs'
       - 'packages/types/src/modules/workflow.ts'
       - 'apps/api/package.json'
       - 'package.json'
@@ -57,4 +59,50 @@ jobs:
         run: pnpm --filter api exec prisma migrate deploy
 
       - name: Run workflow smoke gate
+        id: smoke_gate
+        continue-on-error: true
         run: pnpm workflow:smoke:gate
+
+      - name: Run workflow perf guardrail
+        id: perf_gate
+        continue-on-error: true
+        run: pnpm workflow:perf:risk-gate:gate
+
+      - name: Validate workflow reports
+        if: always()
+        run: pnpm workflow:reports:validate -- --summary-markdown-file=logs/workflow-reports-summary.md
+
+      - name: Publish workflow report summary
+        if: always()
+        run: |
+          if [ -f "logs/workflow-reports-summary.md" ]; then
+            cat logs/workflow-reports-summary.md >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "workflow report summary file not found" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Upload workflow reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: workflow-reports
+          if-no-files-found: warn
+          retention-days: 14
+          path: |
+            logs/workflow-smoke-*.json
+            logs/workflow-reports-summary.md
+            apps/api/logs/workflow-perf-risk-gate-baseline.json
+
+      - name: Enforce workflow gate result
+        if: always()
+        run: |
+          failed=0
+          if [ "${{ steps.smoke_gate.outcome }}" != "success" ]; then
+            echo "workflow smoke gate failed"
+            failed=1
+          fi
+          if [ "${{ steps.perf_gate.outcome }}" != "success" ]; then
+            echo "workflow perf guardrail failed"
+            failed=1
+          fi
+          exit $failed

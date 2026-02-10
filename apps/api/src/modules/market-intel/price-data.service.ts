@@ -146,33 +146,48 @@ export class PriceDataService {
   }
 
   private resolveReviewStatuses(scope?: string | null) {
+    const approved = PriceReviewStatus.APPROVED;
+    const pending = PriceReviewStatus.PENDING;
+    const autoApproved =
+      (PriceReviewStatus as unknown as Record<string, PriceReviewStatus>).AUTO_APPROVED ||
+      ('AUTO_APPROVED' as PriceReviewStatus);
+    const defaultStatuses = [approved, autoApproved, pending].filter(
+      (status): status is PriceReviewStatus => Boolean(status),
+    );
     const normalized = (scope || '').trim().toUpperCase();
     if (!normalized || normalized === 'APPROVED_AND_PENDING') {
-      return [
-        PriceReviewStatus.APPROVED,
-        PriceReviewStatus.AUTO_APPROVED,
-        PriceReviewStatus.PENDING,
-      ];
+      return defaultStatuses;
     }
     if (normalized === 'APPROVED_ONLY') {
-      return [PriceReviewStatus.APPROVED, PriceReviewStatus.AUTO_APPROVED];
+      return [approved, autoApproved].filter((status): status is PriceReviewStatus =>
+        Boolean(status),
+      );
     }
     if (normalized === 'ALL') {
       return null;
     }
-    return [PriceReviewStatus.APPROVED, PriceReviewStatus.AUTO_APPROVED, PriceReviewStatus.PENDING];
+    return defaultStatuses;
   }
 
   private resolveInputMethods(scope?: string | null) {
+    const aiExtracted = PriceInputMethod.AI_EXTRACTED;
+    const manualEntry =
+      (PriceInputMethod as unknown as Record<string, PriceInputMethod>).MANUAL_ENTRY ||
+      ('MANUAL_ENTRY' as PriceInputMethod);
+    const bulkImport =
+      (PriceInputMethod as unknown as Record<string, PriceInputMethod>).BULK_IMPORT ||
+      ('BULK_IMPORT' as PriceInputMethod);
     const normalized = (scope || '').trim().toUpperCase();
     if (!normalized || normalized === 'ALL') {
       return null;
     }
     if (normalized === 'AI_ONLY') {
-      return [PriceInputMethod.AI_EXTRACTED];
+      return [aiExtracted].filter(Boolean) as PriceInputMethod[];
     }
     if (normalized === 'MANUAL_ONLY') {
-      return [PriceInputMethod.MANUAL_ENTRY, PriceInputMethod.BULK_IMPORT];
+      return [manualEntry, bulkImport].filter((method): method is PriceInputMethod =>
+        Boolean(method),
+      );
     }
     return null;
   }
@@ -1873,6 +1888,9 @@ export class PriceDataService {
     const inputMethods = this.resolveInputMethods(sourceScope);
     const normalizedRegionLevel = this.normalizeRegionLevel(regionLevel);
     const normalizedRegionWindow = this.normalizeRegionWindow(regionWindow);
+    const regionalSourceType =
+      (PriceSourceType as unknown as Record<string, PriceSourceType>).REGIONAL ||
+      ('REGIONAL' as PriceSourceType);
     const dayMs = 24 * 60 * 60 * 1000;
     const startOfDay = (value: Date) => {
       const date = new Date(value);
@@ -2107,13 +2125,13 @@ export class PriceDataService {
       regionClauses.push(Prisma.sql`p."commodity" IN (${Prisma.join(commodityCandidates)})`);
     }
     if (subTypeList.length > 0) {
-      regionClauses.push(Prisma.sql`p."subType" IN (${Prisma.join(subTypeList)})`);
+      regionClauses.push(Prisma.sql`p."subType"::text IN (${Prisma.join(subTypeList)})`);
     }
     if (reviewStatuses && reviewStatuses.length > 0) {
-      regionClauses.push(Prisma.sql`p."reviewStatus" IN (${Prisma.join(reviewStatuses)})`);
+      regionClauses.push(Prisma.sql`p."reviewStatus"::text IN (${Prisma.join(reviewStatuses)})`);
     }
     if (inputMethods && inputMethods.length > 0) {
-      regionClauses.push(Prisma.sql`p."inputMethod" IN (${Prisma.join(inputMethods)})`);
+      regionClauses.push(Prisma.sql`p."inputMethod"::text IN (${Prisma.join(inputMethods)})`);
     }
     if (regionQueryStart) {
       regionClauses.push(Prisma.sql`p."effectiveDate" >= ${regionQueryStart}`);
@@ -2130,12 +2148,12 @@ export class PriceDataService {
           SELECT 1
           FROM "CollectionPoint" cp
           WHERE cp."id" = p."collectionPointId"
-            AND cp."type" IN (${Prisma.join(pointTypeList)})
+            AND cp."type"::text IN (${Prisma.join(pointTypeList)})
         )
       `;
       if (pointTypeList.includes(CollectionPointType.REGION)) {
         regionClauses.push(
-          Prisma.sql`(${pointTypeCondition} OR p."sourceType" = ${PriceSourceType.REGIONAL})`,
+          Prisma.sql`(${pointTypeCondition} OR p."sourceType"::text = ${regionalSourceType})`,
         );
       } else {
         regionClauses.push(pointTypeCondition);

@@ -54,6 +54,15 @@ const POINT_TYPE_LABELS_FALLBACK: Record<string, string> = {
     STATION: '站台',
 };
 
+const COMMODITY_LABELS_FALLBACK: Record<string, string> = {
+    CORN: '玉米',
+    WHEAT: '小麦',
+    SOYBEAN: '大豆',
+    RICE: '稻谷',
+    SORGHUM: '高粱',
+    BARLEY: '大麦',
+};
+
 type SortMetric = 'changePct' | 'volatility' | 'periodChangePct';
 
 type GroupMode = 'all' | 'type' | 'region';
@@ -128,6 +137,7 @@ export const ComparisonPanel: React.FC<ComparisonPanelProps> = ({
 }) => {
     const { token } = theme.useToken();
     const { data: pointTypeDict } = useDictionary('COLLECTION_POINT_TYPE');
+    const { data: commodityDict } = useDictionary('COMMODITY');
 
     const pointTypeLabels = useMemo(() => {
         const items = (pointTypeDict || []).filter((item) => item.isActive);
@@ -137,6 +147,14 @@ export const ComparisonPanel: React.FC<ComparisonPanelProps> = ({
             return acc;
         }, {});
     }, [pointTypeDict]);
+
+    const commodityDisplayLabel = useMemo(() => {
+        const fallbackLabel = COMMODITY_LABELS_FALLBACK[commodity];
+        if (fallbackLabel) return fallbackLabel;
+
+        const match = (commodityDict || []).find((item) => item.code === commodity && item.isActive);
+        return match?.label || commodity;
+    }, [commodity, commodityDict]);
 
     const [sortMetric, setSortMetric] = useState<SortMetric>('changePct');
     const [groupMode, setGroupMode] = useState<GroupMode>('all');
@@ -791,7 +809,7 @@ export const ComparisonPanel: React.FC<ComparisonPanelProps> = ({
                             <Flex align="center" gap={8}>
                                 <BarChartOutlined style={{ color: token.colorPrimary }} />
                                 <span>综合排行 (Top 10)</span>
-                                <Tag color="blue">{commodity}</Tag>
+                                <Tag color="blue">{commodityDisplayLabel}</Tag>
                             </Flex>
                         }
                         bodyStyle={{ padding: '12px 16px' }}

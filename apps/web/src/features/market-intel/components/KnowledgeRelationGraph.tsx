@@ -1,4 +1,15 @@
-import { Card, Empty, Segmented, Slider, Space, Switch, Tag, Tooltip, Typography } from 'antd';
+import {
+  Card,
+  Empty,
+  Segmented,
+  Slider,
+  Space,
+  Switch,
+  Tag,
+  Tooltip,
+  Typography,
+  theme,
+} from 'antd';
 import { useMemo, useState } from 'react';
 import { KNOWLEDGE_RELATION_LABELS, KNOWLEDGE_TYPE_LABELS } from '../constants/knowledge-labels';
 
@@ -47,6 +58,7 @@ const NODE_TYPE_COLORS: Record<string, string> = {
 };
 
 export const KnowledgeRelationGraph: React.FC<Props> = ({ center, outgoing, incoming, onJump }) => {
+  const { token } = theme.useToken();
   const [relationType, setRelationType] = useState<string>('ALL');
   const [minWeight, setMinWeight] = useState<number>(0);
   const [onlyKeyChain, setOnlyKeyChain] = useState<boolean>(false);
@@ -69,7 +81,7 @@ export const KnowledgeRelationGraph: React.FC<Props> = ({ center, outgoing, inco
   const visibleIncoming = filterRelations(incoming).slice(0, 15);
 
   const renderNode = (node: Node, relation: Relation, direction: 'left' | 'right') => {
-    const lineColor = RELATION_COLORS[relation.relationType] || '#8c8c8c';
+    const lineColor = RELATION_COLORS[relation.relationType] || token.colorTextTertiary;
     return (
       <Tooltip
         title={`${RELATION_LABELS[relation.relationType] || relation.relationType} | 权重 ${relation.weight}${relation.evidence ? ` | ${relation.evidence}` : ''}`}
@@ -81,9 +93,9 @@ export const KnowledgeRelationGraph: React.FC<Props> = ({ center, outgoing, inco
             borderRadius: 10,
             padding: '8px 10px',
             maxWidth: 230,
-            background: '#fff',
+            background: token.colorBgContainer,
             cursor: 'pointer',
-            boxShadow: '0 4px 12px rgba(0,0,0,0.06)',
+            boxShadow: token.boxShadowSecondary,
             textAlign: direction === 'left' ? 'right' : 'left',
           }}
         >
@@ -160,7 +172,7 @@ export const KnowledgeRelationGraph: React.FC<Props> = ({ center, outgoing, inco
                   <div
                     style={{
                       width: 22,
-                      borderTop: `2px solid ${RELATION_COLORS[relation.relationType] || '#8c8c8c'}`,
+                      borderTop: `2px solid ${RELATION_COLORS[relation.relationType] || token.colorTextTertiary}`,
                     }}
                   />
                 </div>
@@ -170,11 +182,11 @@ export const KnowledgeRelationGraph: React.FC<Props> = ({ center, outgoing, inco
 
           <div
             style={{
-              border: '2px solid #1677ff',
+              border: `2px solid ${token.colorPrimary}`,
               borderRadius: 12,
               padding: '16px 14px',
               textAlign: 'center',
-              background: 'linear-gradient(160deg, #f0f5ff 0%, #ffffff 100%)',
+              background: `linear-gradient(160deg, ${token.colorPrimaryBg} 0%, ${token.colorBgContainer} 100%)`,
             }}
           >
             <Text strong>{center.title}</Text>
@@ -192,7 +204,7 @@ export const KnowledgeRelationGraph: React.FC<Props> = ({ center, outgoing, inco
                   <div
                     style={{
                       width: 22,
-                      borderTop: `2px solid ${RELATION_COLORS[relation.relationType] || '#8c8c8c'}`,
+                      borderTop: `2px solid ${RELATION_COLORS[relation.relationType] || token.colorTextTertiary}`,
                     }}
                   />
                   {renderNode(relation.toKnowledge, relation, 'right')}

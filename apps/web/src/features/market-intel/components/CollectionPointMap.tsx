@@ -1,6 +1,6 @@
 import React, { useMemo } from 'react';
 import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
-import { Button, Tag, Space, Typography, Card } from 'antd';
+import { Button, Tag, Space, Typography, Card, theme } from 'antd';
 import { UserOutlined, EnvironmentOutlined } from '@ant-design/icons';
 import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
@@ -37,8 +37,8 @@ const createColoredIcon = (color: string) => {
   });
 };
 
-const redIcon = createColoredIcon('#ff4d4f');   // Unassigned
-const blueIcon = createColoredIcon('#1890ff');  // Assigned
+const redIcon = createColoredIcon('#ff4d4f'); // Unassigned
+const blueIcon = createColoredIcon('#1890ff'); // Assigned
 const greenIcon = createColoredIcon('#52c41a'); // Assigned to current user
 
 const POINT_TYPE_LABELS_FALLBACK: Record<string, string> = {
@@ -61,7 +61,7 @@ const FitBounds = ({ points }: { points: any[] }) => {
 
   React.useEffect(() => {
     if (points.length > 0) {
-      const bounds = L.latLngBounds(points.map(p => [p.latitude || 39.9, p.longitude || 116.4]));
+      const bounds = L.latLngBounds(points.map((p) => [p.latitude || 39.9, p.longitude || 116.4]));
       map.fitBounds(bounds, { padding: [50, 50] });
     }
   }, [points, map]);
@@ -73,9 +73,10 @@ export const CollectionPointMap: React.FC<CollectionPointMapProps> = ({
   points,
   selectedUserId,
   onAssign,
-  onUnassign
+  onUnassign,
 }) => {
   const { data: pointTypeDict } = useDictionary('COLLECTION_POINT_TYPE');
+  const { token } = theme.useToken();
 
   const pointTypeLabels = useMemo(() => {
     const items = (pointTypeDict || []).filter((item) => item.isActive);
@@ -86,19 +87,19 @@ export const CollectionPointMap: React.FC<CollectionPointMapProps> = ({
     }, {});
   }, [pointTypeDict]);
   // Filter valid points
-  const validPoints = useMemo(() =>
-    points.filter(p => p.latitude && p.longitude),
-    [points]);
+  const validPoints = useMemo(() => points.filter((p) => p.latitude && p.longitude), [points]);
 
   if (validPoints.length === 0) {
     return (
-      <div style={{
-        height: '100%',
-        display: 'flex',
-        justifyContent: 'center',
-        alignItems: 'center',
-        background: '#f0f2f5'
-      }}>
+      <div
+        style={{
+          height: '100%',
+          display: 'flex',
+          justifyContent: 'center',
+          alignItems: 'center',
+          background: token.colorBgLayout,
+        }}
+      >
         <Typography.Text type="secondary">暂无坐标数据</Typography.Text>
       </div>
     );
@@ -118,8 +119,10 @@ export const CollectionPointMap: React.FC<CollectionPointMapProps> = ({
 
         <FitBounds points={validPoints} />
 
-        {validPoints.map(point => {
-          const isAssignedToCurrentUser = selectedUserId ? point.allocatedUserIds.includes(selectedUserId) : false;
+        {validPoints.map((point) => {
+          const isAssignedToCurrentUser = selectedUserId
+            ? point.allocatedUserIds.includes(selectedUserId)
+            : false;
           const isAssigned = point.isAllocated;
 
           let icon = redIcon;
@@ -127,11 +130,7 @@ export const CollectionPointMap: React.FC<CollectionPointMapProps> = ({
           else if (isAssigned) icon = blueIcon;
 
           return (
-            <Marker
-              key={point.pointId}
-              position={[point.latitude, point.longitude]}
-              icon={icon}
-            >
+            <Marker key={point.pointId} position={[point.latitude, point.longitude]} icon={icon}>
               <Popup>
                 <Card
                   size="small"
@@ -141,9 +140,11 @@ export const CollectionPointMap: React.FC<CollectionPointMapProps> = ({
                   bodyStyle={{ padding: '8px 0 0 0' }}
                 >
                   <Space direction="vertical" style={{ width: '100%' }}>
-                  <Tag>{pointTypeLabels[point.pointType] || point.pointType}</Tag>
+                    <Tag>{pointTypeLabels[point.pointType] || point.pointType}</Tag>
                     {isAssignedToCurrentUser ? (
-                      <Tag color="success" icon={<UserOutlined />}>我负责的点</Tag>
+                      <Tag color="success" icon={<UserOutlined />}>
+                        我负责的点
+                      </Tag>
                     ) : isAssigned ? (
                       <Tag color="processing">已分配 ({point.allocatedUserIds.length}人)</Tag>
                     ) : (
@@ -181,20 +182,39 @@ export const CollectionPointMap: React.FC<CollectionPointMapProps> = ({
       </MapContainer>
 
       {/* Legend */}
-      <div style={{
-        position: 'absolute',
-        bottom: 20,
-        right: 20,
-        zIndex: 1000,
-        background: 'white',
-        padding: '8px 12px',
-        borderRadius: '4px',
-        boxShadow: '0 2px 8px rgba(0,0,0,0.15)'
-      }}>
+      <div
+        style={{
+          position: 'absolute',
+          bottom: 20,
+          right: 20,
+          zIndex: 1000,
+          background: token.colorBgElevated,
+          border: `1px solid ${token.colorBorderSecondary}`,
+          color: token.colorText,
+          padding: '8px 12px',
+          borderRadius: '4px',
+          boxShadow: token.boxShadowSecondary,
+        }}
+      >
         <Space direction="vertical" size={4}>
-          <Space><div style={{ width: 10, height: 10, background: '#ff4d4f', borderRadius: '50%' }} /> 未分配</Space>
-          <Space><div style={{ width: 10, height: 10, background: '#1890ff', borderRadius: '50%' }} /> 已分配</Space>
-          <Space><div style={{ width: 10, height: 10, background: '#52c41a', borderRadius: '50%' }} /> 当前用户负责</Space>
+          <Space>
+            <div
+              style={{ width: 10, height: 10, background: token.colorError, borderRadius: '50%' }}
+            />{' '}
+            未分配
+          </Space>
+          <Space>
+            <div
+              style={{ width: 10, height: 10, background: token.colorPrimary, borderRadius: '50%' }}
+            />{' '}
+            已分配
+          </Space>
+          <Space>
+            <div
+              style={{ width: 10, height: 10, background: token.colorSuccess, borderRadius: '50%' }}
+            />{' '}
+            当前用户负责
+          </Space>
         </Space>
       </div>
     </div>
