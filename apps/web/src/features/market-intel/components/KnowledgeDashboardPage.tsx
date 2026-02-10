@@ -16,11 +16,9 @@ import {
   Typography,
 } from 'antd';
 import { useMemo, useState } from 'react';
-import { ArrowLeftOutlined, ThunderboltOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import { useDictionary } from '@/hooks/useDictionaries';
 import {
-  useGenerateWeeklyRollup,
   useTopicEvolution,
   useWeeklyOverview,
 } from '../api/knowledge-hooks';
@@ -75,12 +73,13 @@ export const KnowledgeDashboardPage: React.FC = () => {
 
   const { data: weeklyOverview } = useWeeklyOverview();
   const { data: topicEvolution, isLoading } = useTopicEvolution({ commodity, weeks });
-  const weeklyRollupMutation = useGenerateWeeklyRollup();
 
-  const byTypeRows = useMemo(() => {
-    const byType = weeklyOverview?.sourceStats.byType || {};
-    return Object.entries(byType).map(([type, count]) => ({ type, count }));
-  }, [weeklyOverview]);
+
+  /* 移除风险分布计算逻辑 */
+
+
+
+
 
   const confidenceSeries = useMemo(
     () =>
@@ -90,41 +89,6 @@ export const KnowledgeDashboardPage: React.FC = () => {
       })),
     [topicEvolution],
   );
-
-  const riskDistribution = useMemo(() => {
-    const counts = { HIGH: 0, MEDIUM: 0, LOW: 0 };
-    (topicEvolution?.trend || []).forEach((item) => {
-      if (item.riskLevel === 'HIGH') counts.HIGH += 1;
-      else if (item.riskLevel === 'MEDIUM') counts.MEDIUM += 1;
-      else counts.LOW += 1;
-    });
-    const total = Math.max(1, counts.HIGH + counts.MEDIUM + counts.LOW);
-    return {
-      counts,
-      percentages: {
-        HIGH: Math.round((counts.HIGH / total) * 100),
-        MEDIUM: Math.round((counts.MEDIUM / total) * 100),
-        LOW: Math.round((counts.LOW / total) * 100),
-      },
-    };
-  }, [topicEvolution]);
-
-  const handleBack = () => {
-    if (window.history.length > 1) {
-      navigate(-1);
-      return;
-    }
-    navigate('/intel/knowledge/items');
-  };
-
-  const jumpToLibraryByType = (type?: string) => {
-    // Navigate to items page with filter by type
-    // Since we don't have direct query param mapping for this in current Items page logic (it uses localStorage/state),
-    // we might need to pass state or just navigate.
-    // Ideally Items page should support URL params.
-    // For now simple navigate.
-    navigate('/intel/knowledge/items');
-  };
 
   const lineConfig = {
     data: confidenceSeries,
@@ -149,15 +113,7 @@ export const KnowledgeDashboardPage: React.FC = () => {
   };
 
   return (
-    <PageContainer
-      title="知识分析看板"
-      subTitle="周报质量、来源构成与主题演化"
-      extra={[
-        <Button key="back" icon={<ArrowLeftOutlined />} onClick={handleBack}>
-          返回上一页
-        </Button>,
-      ]}
-    >
+    <PageContainer>
       <Card style={{ marginBottom: 16 }}>
         <Space
           wrap
@@ -226,127 +182,12 @@ export const KnowledgeDashboardPage: React.FC = () => {
 
       {!weeklyOverview?.found && (
         <Card style={{ marginTop: 16 }}>
-          <Space style={{ width: '100%', justifyContent: 'space-between' }} wrap>
-            <Text type="secondary">当前周期暂无周报汇总数据，可先生成本周周报后再查看看板。</Text>
-            <Button
-              icon={<ThunderboltOutlined />}
-              type="primary"
-              loading={weeklyRollupMutation.isPending}
-              onClick={async () => {
-                try {
-                  await weeklyRollupMutation.mutateAsync({ triggerAnalysis: true });
-                  message.success('已生成本周周报，请稍候刷新看板');
-                } catch (error) {
-                  message.error('周报生成失败，请稍后重试');
-                  console.error(error);
-                }
-              }}
-            >
-              立即生成
-            </Button>
-          </Space>
+          <Empty description="当前周期暂无周报汇总数据" />
         </Card>
       )}
 
       <Row gutter={[16, 16]} style={{ marginTop: 4 }}>
-        <Col xs={24} lg={10}>
-          <Card title="本周来源构成" style={{ marginBottom: 16 }}>
-            {byTypeRows.length === 0 ? (
-              <Empty description="暂无来源数据" />
-            ) : (
-              <Table
-                rowKey="type"
-                pagination={false}
-                size="small"
-                dataSource={byTypeRows}
-                columns={[
-                  {
-                    title: '类型',
-                    dataIndex: 'type',
-                    key: 'type',
-                    render: (value) => <Tag>{TYPE_LABEL[value] || value}</Tag>,
-                  },
-                  { title: '数量', dataIndex: 'count', key: 'count' },
-                  {
-                    title: '操作',
-                    key: 'action',
-                    width: 90,
-                    render: (_value, record) => (
-                      <Button type="link" onClick={() => jumpToLibraryByType(record.type)}>
-                        查看
-                      </Button>
-                    ),
-                  },
-                ]}
-              />
-            )}
-          </Card>
-
-          <Card title="关键来源" style={{ marginBottom: 16 }}>
-            {weeklyOverview?.topSources?.length ? (
-              <Table
-                rowKey="id"
-                size="small"
-                pagination={false}
-                dataSource={weeklyOverview.topSources.slice(0, 6)}
-                columns={[
-                  {
-                    title: '标题',
-                    dataIndex: 'title',
-                    key: 'title',
-                    ellipsis: true,
-                    render: (value, record) => (
-                      <Button
-                        type="link"
-                        style={{
-                          paddingInline: 0,
-                          maxWidth: '100%',
-                          overflow: 'hidden',
-                          textOverflow: 'ellipsis',
-                          display: 'inline-block',
-                          verticalAlign: 'middle',
-                          lineHeight: 1.5715,
-                        }}
-                        onClick={() => navigate(`/intel/knowledge/items/${record.id}`)}
-                      >
-                        {value}
-                      </Button>
-                    ),
-                  },
-                  {
-                    title: '类型',
-                    dataIndex: 'typeLabel',
-                    key: 'typeLabel',
-                    width: 80,
-                    render: (value) => <Tag>{value}</Tag>,
-                  },
-                ]}
-              />
-            ) : (
-              <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无关键来源" />
-            )}
-          </Card>
-
-          <Card title="风险分布">
-            <Space direction="vertical" style={{ width: '100%' }}>
-              {(['HIGH', 'MEDIUM', 'LOW'] as const).map((level) => (
-                <div key={level}>
-                  <Space style={{ width: '100%', justifyContent: 'space-between' }}>
-                    <Text>{RISK_LABEL[level]}</Text>
-                    <Text type="secondary">{riskDistribution.counts[level]} 周</Text>
-                  </Space>
-                  <Progress
-                    percent={riskDistribution.percentages[level]}
-                    strokeColor={RISK_COLOR[level]}
-                    trailColor="#f5f5f5"
-                  />
-                </div>
-              ))}
-            </Space>
-          </Card>
-        </Col>
-
-        <Col xs={24} lg={14}>
+        <Col span={24}>
           <Card title="主题演化">
             <Card size="small" title="置信度趋势" style={{ marginBottom: 12 }}>
               <Line {...lineConfig} />
@@ -418,27 +259,6 @@ export const KnowledgeDashboardPage: React.FC = () => {
                 },
               ]}
             />
-
-            {topicEvolution?.trend?.length === 0 && (
-              <div style={{ marginTop: 12 }}>
-                <Button
-                  icon={<ThunderboltOutlined />}
-                  type="primary"
-                  loading={weeklyRollupMutation.isPending}
-                  onClick={async () => {
-                    try {
-                      await weeklyRollupMutation.mutateAsync({ triggerAnalysis: true });
-                      message.success('已生成本周周报，请稍候查看分析看板数据');
-                    } catch (error) {
-                      message.error('周报生成失败，请稍后重试');
-                      console.error(error);
-                    }
-                  }}
-                >
-                  生成本周周报数据
-                </Button>
-              </div>
-            )}
           </Card>
         </Col>
       </Row>

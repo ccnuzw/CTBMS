@@ -26,6 +26,7 @@ import {
 } from '@ant-design/icons';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useMarketIntels, useBatchDeleteMarketIntel, useResearchReports, useBatchUpdateTags, useBatchDeleteResearchReports } from '../api/hooks';
+import { useGenerateWeeklyRollup } from '../api/knowledge-hooks';
 import { IntelCategory, IntelSourceType } from '@packages/types';
 import { FilterPanel, TimeRange } from './knowledge-base/FilterPanel';
 import { DocumentCardView, DocItem } from './knowledge-base/DocumentCardView';
@@ -75,6 +76,7 @@ export const UnifiedKnowledgeBase: React.FC = () => {
     const batchDeleteMutation = useBatchDeleteMarketIntel();
     const batchDeleteReportsMutation = useBatchDeleteResearchReports();
     const batchUpdateTagsMutation = useBatchUpdateTags();
+    const weeklyRollupMutation = useGenerateWeeklyRollup();
 
     // Calculate time range
     const dateRange = useMemo(() => {
@@ -388,6 +390,18 @@ export const UnifiedKnowledgeBase: React.FC = () => {
                                     {filteredItems.length} 条内容（共 {totalCount}）
                                 </Text>
                             </div>
+                            <Button
+                                icon={<ThunderboltOutlined />}
+                                onClick={() => {
+                                    weeklyRollupMutation.mutate({ triggerAnalysis: true }, {
+                                        onSuccess: () => message.success('周报生成任务已提交'),
+                                        onError: () => message.error('提交失败')
+                                    });
+                                }}
+                                loading={weeklyRollupMutation.isPending}
+                            >
+                                生成本周周报
+                            </Button>
                             {selectedDocIds.size > 0 && (
                                 <Space>
                                     <Button

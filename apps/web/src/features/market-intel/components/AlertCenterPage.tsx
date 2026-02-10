@@ -152,8 +152,10 @@ export const AlertCenterPage: React.FC = () => {
     };
 
     const handleRunEvaluate = async () => {
-        await evaluateAlerts.mutateAsync(query);
-        message.success('预警重算完成');
+        const result = await evaluateAlerts.mutateAsync(query);
+        message.success(
+            `预警重算完成：命中 ${result.total}，新建 ${result.created}，更新 ${result.updated}，自动关闭 ${result.closed ?? 0}`,
+        );
     };
 
     const openCloseModal = (record: MarketAlert) => {
@@ -273,7 +275,14 @@ export const AlertCenterPage: React.FC = () => {
     ];
 
     const logItems = (alertLogsQuery.data || []).map((log: AlertStatusLog) => ({
-        color: log.action === 'CLOSE' ? 'red' : log.action === 'ACK' ? 'blue' : 'green',
+        color:
+            log.action === 'CLOSE'
+                ? 'red'
+                : log.action === 'AUTO_CLOSE'
+                  ? 'orange'
+                  : log.action === 'ACK'
+                    ? 'blue'
+                    : 'green',
         children: (
             <Flex vertical gap={2}>
                 <Text strong>{`${log.action} ${log.fromStatus ? `${log.fromStatus} -> ` : ''}${log.toStatus}`}</Text>

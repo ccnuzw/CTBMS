@@ -33,6 +33,7 @@ import {
 } from './market-data';
 import { useModalAutoFocus } from '@/hooks/useModalAutoFocus';
 import { useDictionary } from '@/hooks/useDictionaries';
+import { useProvinces } from '../api/hooks';
 import { PriceReviewScope, PriceSourceScope, type PriceSubType } from '@packages/types';
 import type { PriceQualityTag } from './market-data/quality';
 
@@ -53,6 +54,7 @@ export const MarketData: React.FC = () => {
     const { token } = theme.useToken();
     const queryClient = useQueryClient();
     const { data: commodityDict } = useDictionary('COMMODITY');
+    const { data: provinces } = useProvinces();
 
     // 筛选状态 - 存储 code (如 CORN)
     const [commodity, setCommodity] = useState('CORN');
@@ -170,6 +172,22 @@ export const MarketData: React.FC = () => {
                     onFocusPoint={(id) => {
                         setFocusedPointId(id);
                         setActiveTab('trend');
+                    }}
+                    onDrilldownPoint={(id) => {
+                        setSelectedPointIds([id]);
+                        setFocusedPointId(id);
+                        setActiveTab('data');
+                    }}
+                    onDrilldownRegion={(regionName, level) => {
+                        if (level === 'province') {
+                            const match = (provinces || []).find(
+                                (item) => item.name === regionName || item.shortName === regionName,
+                            );
+                            if (match) {
+                                setSelectedProvince(match.code);
+                            }
+                        }
+                        setActiveTab('data');
                     }}
                 />
             ),

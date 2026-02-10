@@ -18,6 +18,7 @@ import {
     InputNumber,
     Tooltip,
     Input,
+    Button,
 } from 'antd';
 import {
     ArrowUpOutlined,
@@ -71,6 +72,8 @@ interface ComparisonPanelProps {
     reviewScope?: PriceReviewScope;
     sourceScope?: PriceSourceScope;
     onFocusPoint?: (id: string) => void;
+    onDrilldownPoint?: (id: string) => void;
+    onDrilldownRegion?: (regionName: string, level: 'province' | 'city' | 'district') => void;
 }
 
 interface RankingItem {
@@ -120,6 +123,8 @@ export const ComparisonPanel: React.FC<ComparisonPanelProps> = ({
     reviewScope,
     sourceScope,
     onFocusPoint,
+    onDrilldownPoint,
+    onDrilldownRegion,
 }) => {
     const { token } = theme.useToken();
     const { data: pointTypeDict } = useDictionary('COLLECTION_POINT_TYPE');
@@ -143,6 +148,7 @@ export const ComparisonPanel: React.FC<ComparisonPanelProps> = ({
     const [deviationThreshold, setDeviationThreshold] = useState(5);
     const [changeThreshold, setChangeThreshold] = useState(20);
     const [showDebug, setShowDebug] = useState(false);
+    const [showAdvanced, setShowAdvanced] = useState(false);
     const [regionSort, setRegionSort] = useState<'avg' | 'count' | 'delta' | 'volatility'>('avg');
     const [regionWindow, setRegionWindow] = useState<'7' | '30' | '90' | 'all'>('30');
     const [regionView, setRegionView] = useState<'all' | 'top' | 'bottom'>('all');
@@ -358,8 +364,14 @@ export const ComparisonPanel: React.FC<ComparisonPanelProps> = ({
                             key={item.id}
                             align="center"
                             gap={12}
-                            onClick={() => onFocusPoint?.(item.id)}
-                            style={{ cursor: onFocusPoint ? 'pointer' : 'default' }}
+                            onClick={() => {
+                                if (onDrilldownPoint) {
+                                    onDrilldownPoint(item.id);
+                                    return;
+                                }
+                                onFocusPoint?.(item.id);
+                            }}
+                            style={{ cursor: onDrilldownPoint || onFocusPoint ? 'pointer' : 'default' }}
                         >
                             <Text
                                 strong
@@ -673,92 +685,103 @@ export const ComparisonPanel: React.FC<ComparisonPanelProps> = ({
                 size="small"
                 bodyStyle={{ padding: '12px 16px' }}
             >
-                <Flex wrap="wrap" gap={12} align="center" justify="space-between">
-                    <Flex wrap="wrap" gap={12} align="center">
-                        <Tooltip title="涨跌幅=日涨跌/最新价；波动率=(区间最大-最小)/均价；区间涨幅=(末日-首日)/首日">
-                            <Select
+                <Space direction="vertical" size={10} style={{ width: '100%' }}>
+                    <Flex wrap="wrap" gap={12} align="center" justify="space-between">
+                        <Flex wrap="wrap" gap={12} align="center">
+                            <Tooltip title="涨跌幅=日涨跌/最新价；波动率=(区间最大-最小)/均价；区间涨幅=(末日-首日)/首日">
+                                <Select
+                                    size="small"
+                                    value={sortMetric}
+                                    onChange={(val) => setSortMetric(val)}
+                                    options={[
+                                        { label: '涨跌幅', value: 'changePct' },
+                                        { label: '波动率', value: 'volatility' },
+                                        { label: '区间涨幅', value: 'periodChangePct' },
+                                    ]}
+                                    style={{ width: 120 }}
+                                />
+                            </Tooltip>
+                            <Segmented
                                 size="small"
-                                value={sortMetric}
-                                onChange={(val) => setSortMetric(val)}
+                                value={groupMode}
+                                onChange={(val) => setGroupMode(val as GroupMode)}
                                 options={[
-                                    { label: '涨跌幅', value: 'changePct' },
-                                    { label: '波动率', value: 'volatility' },
-                                    { label: '区间涨幅', value: 'periodChangePct' },
+                                    { label: '总榜', value: 'all' },
+                                    { label: '按类型', value: 'type' },
+                                    { label: '按区域', value: 'region' },
                                 ]}
-                                style={{ width: 120 }}
                             />
-                        </Tooltip>
-                        <Segmented
+                            <Segmented
+                                size="small"
+                                value={viewMode}
+                                onChange={(val) => setViewMode(val as ViewMode)}
+                                options={[
+                                    { label: '榜单', value: 'list' },
+                                    { label: '区间', value: 'range' },
+                                ]}
+                            />
+                        </Flex>
+                        <Button
                             size="small"
-                            value={groupMode}
-                            onChange={(val) => setGroupMode(val as GroupMode)}
-                            options={[
-                                { label: '总榜', value: 'all' },
-                                { label: '按类型', value: 'type' },
-                                { label: '按区域', value: 'region' },
-                            ]}
-                        />
-                        <Segmented
-                            size="small"
-                            value={viewMode}
-                            onChange={(val) => setViewMode(val as ViewMode)}
-                            options={[
-                                { label: '榜单', value: 'list' },
-                                { label: '区间', value: 'range' },
-                            ]}
-                        />
-                        <Tooltip title="按基准日=100 进行指数化展示">
-                            <Flex align="center" gap={6}>
-                                <Text type="secondary" style={{ fontSize: 12 }}>指数化</Text>
-                                <Switch size="small" checked={indexMode} onChange={setIndexMode} />
-                            </Flex>
-                        </Tooltip>
+                            type={showAdvanced ? 'primary' : 'default'}
+                            onClick={() => setShowAdvanced((prev) => !prev)}
+                        >
+                            {showAdvanced ? '收起高级' : '展开高级'}
+                        </Button>
                     </Flex>
 
-                    <Flex wrap="wrap" gap={12} align="center">
-                        <Tooltip title="选择基准点进行价差对比">
-                            <Select
-                                size="small"
-                                value={baselineKey}
-                                onChange={(val) => setBaselineKey(val)}
-                                options={baselineOptions}
-                                style={{ width: 140 }}
-                            />
-                        </Tooltip>
-                        <Tooltip title="仅展示异常点位">
-                            <Flex align="center" gap={6}>
-                                <Text type="secondary" style={{ fontSize: 12 }}>仅异常</Text>
-                                <Switch size="small" checked={onlyAnomalies} onChange={setOnlyAnomalies} />
-                            </Flex>
-                        </Tooltip>
-                        <Flex align="center" gap={6}>
-                            <Text type="secondary" style={{ fontSize: 12 }}>偏离%</Text>
-                            <InputNumber
-                                size="small"
-                                min={1}
-                                max={20}
-                                value={deviationThreshold}
-                                onChange={(val) => setDeviationThreshold(Number(val) || 5)}
-                                style={{ width: 70 }}
-                            />
-                            <Text type="secondary" style={{ fontSize: 12 }}>涨跌</Text>
-                            <InputNumber
-                                size="small"
-                                min={1}
-                                max={100}
-                                value={changeThreshold}
-                                onChange={(val) => setChangeThreshold(Number(val) || 20)}
-                                style={{ width: 70 }}
-                            />
-                            <Tooltip title="显示分布图调试信息">
+                    {showAdvanced && (
+                        <Flex wrap="wrap" gap={12} align="center">
+                            <Tooltip title="按基准日=100 进行指数化展示">
                                 <Flex align="center" gap={6}>
-                                    <Text type="secondary" style={{ fontSize: 12 }}>调试</Text>
-                                    <Switch size="small" checked={showDebug} onChange={setShowDebug} />
+                                    <Text type="secondary" style={{ fontSize: 12 }}>指数化</Text>
+                                    <Switch size="small" checked={indexMode} onChange={setIndexMode} />
                                 </Flex>
                             </Tooltip>
+                            <Tooltip title="选择基准点进行价差对比">
+                                <Select
+                                    size="small"
+                                    value={baselineKey}
+                                    onChange={(val) => setBaselineKey(val)}
+                                    options={baselineOptions}
+                                    style={{ width: 140 }}
+                                />
+                            </Tooltip>
+                            <Tooltip title="仅展示异常点位">
+                                <Flex align="center" gap={6}>
+                                    <Text type="secondary" style={{ fontSize: 12 }}>仅异常</Text>
+                                    <Switch size="small" checked={onlyAnomalies} onChange={setOnlyAnomalies} />
+                                </Flex>
+                            </Tooltip>
+                            <Flex align="center" gap={6}>
+                                <Text type="secondary" style={{ fontSize: 12 }}>偏离%</Text>
+                                <InputNumber
+                                    size="small"
+                                    min={1}
+                                    max={20}
+                                    value={deviationThreshold}
+                                    onChange={(val) => setDeviationThreshold(Number(val) || 5)}
+                                    style={{ width: 70 }}
+                                />
+                                <Text type="secondary" style={{ fontSize: 12 }}>涨跌</Text>
+                                <InputNumber
+                                    size="small"
+                                    min={1}
+                                    max={100}
+                                    value={changeThreshold}
+                                    onChange={(val) => setChangeThreshold(Number(val) || 20)}
+                                    style={{ width: 70 }}
+                                />
+                                <Tooltip title="显示分布图调试信息">
+                                    <Flex align="center" gap={6}>
+                                        <Text type="secondary" style={{ fontSize: 12 }}>调试</Text>
+                                        <Switch size="small" checked={showDebug} onChange={setShowDebug} />
+                                    </Flex>
+                                </Tooltip>
+                            </Flex>
                         </Flex>
-                    </Flex>
-                </Flex>
+                    )}
+                </Space>
             </Card>
 
             <Row gutter={[16, 16]}>
@@ -975,25 +998,29 @@ export const ComparisonPanel: React.FC<ComparisonPanelProps> = ({
                                         { label: '波动率', value: 'volatility' },
                                     ]}
                                 />
-                                <Segmented
-                                    size="small"
-                                    value={regionView}
-                                    onChange={(val) => setRegionView(val as 'all' | 'top' | 'bottom')}
-                                    options={[
-                                        { label: '全部', value: 'all' },
-                                        { label: 'Top', value: 'top' },
-                                        { label: 'Bottom', value: 'bottom' },
-                                    ]}
-                                />
-                                <Segmented
-                                    size="small"
-                                    value={regionDetail}
-                                    onChange={(val) => setRegionDetail(val as 'compact' | 'detail')}
-                                    options={[
-                                        { label: '简洁', value: 'compact' },
-                                        { label: '详情', value: 'detail' },
-                                    ]}
-                                />
+                                {showAdvanced && (
+                                    <Segmented
+                                        size="small"
+                                        value={regionView}
+                                        onChange={(val) => setRegionView(val as 'all' | 'top' | 'bottom')}
+                                        options={[
+                                            { label: '全部', value: 'all' },
+                                            { label: 'Top', value: 'top' },
+                                            { label: 'Bottom', value: 'bottom' },
+                                        ]}
+                                    />
+                                )}
+                                {showAdvanced && (
+                                    <Segmented
+                                        size="small"
+                                        value={regionDetail}
+                                        onChange={(val) => setRegionDetail(val as 'compact' | 'detail')}
+                                        options={[
+                                            { label: '简洁', value: 'compact' },
+                                            { label: '详情', value: 'detail' },
+                                        ]}
+                                    />
+                                )}
                             </Flex>
                         </div>
                         <Row gutter={[16, 16]}>
@@ -1037,7 +1064,9 @@ export const ComparisonPanel: React.FC<ComparisonPanelProps> = ({
                                                 width: '100%',
                                                 display: 'flex',
                                                 flexDirection: 'column',
+                                                cursor: onDrilldownRegion ? 'pointer' : 'default',
                                             }}
+                                            onClick={() => onDrilldownRegion?.(item.region, regionLevel)}
                                         >
                                             <div
                                                 style={{

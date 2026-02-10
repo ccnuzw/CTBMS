@@ -1096,6 +1096,8 @@ export class PriceDataService {
     const hits = await this.buildAlertHits(query);
     let created = 0;
     let updated = 0;
+    let closed = 0;
+    const activeDedupeKeys = new Set(hits.map((hit) => hit.dedupeKey));
 
     for (const hit of hits) {
       await this.prisma.$transaction(async (tx) => {
@@ -1177,12 +1179,92 @@ export class PriceDataService {
       });
     }
 
+    const daysValue = Number(query.days) || 30;
+    const { startDate: resolvedStart, endDate: resolvedEnd } = this.resolveDateRange(
+      daysValue,
+      query.startDate,
+      query.endDate,
+    );
+    const collectionPointIdList = this.parseCsv(query.collectionPointIds);
+    const pointTypeList = this.parseCsv(query.pointTypes).filter(
+      (value): value is CollectionPointType =>
+        Object.values(CollectionPointType).includes(value as CollectionPointType),
+    );
+
+    const staleFilters: Prisma.MarketAlertInstanceWhereInput[] = [
+      { status: { in: [MarketAlertStatus.OPEN, MarketAlertStatus.ACKNOWLEDGED] } },
+    ];
+    const commodityFilter = this.buildCommodityFilter(query.commodity);
+    if (commodityFilter) {
+      staleFilters.push(
+        typeof commodityFilter === 'string'
+          ? { commodity: commodityFilter }
+          : { commodity: commodityFilter },
+      );
+    }
+    if (resolvedStart || resolvedEnd) {
+      staleFilters.push({
+        triggerDate: {
+          ...(resolvedStart ? { gte: resolvedStart } : {}),
+          ...(resolvedEnd ? { lte: resolvedEnd } : {}),
+        },
+      });
+    }
+    if (collectionPointIdList.length > 0) {
+      staleFilters.push({ pointId: { in: collectionPointIdList } });
+    }
+    if (pointTypeList.length > 0) {
+      staleFilters.push({ pointType: { in: pointTypeList } });
+    }
+    if (query.regionCode) {
+      staleFilters.push({
+        OR: [
+          { pointId: { contains: query.regionCode } },
+          { regionLabel: { contains: query.regionCode, mode: 'insensitive' } },
+        ],
+      });
+    }
+    if (activeDedupeKeys.size > 0) {
+      staleFilters.push({ dedupeKey: { notIn: Array.from(activeDedupeKeys) } });
+    }
+
+    const staleAlerts = await this.prisma.marketAlertInstance.findMany({
+      where: { AND: staleFilters },
+      select: { id: true, status: true, dedupeKey: true },
+    });
+    if (staleAlerts.length > 0) {
+      const autoCloseReason = '命中条件已解除，系统自动关闭';
+      await this.prisma.$transaction(async (tx) => {
+        for (const staleAlert of staleAlerts) {
+          await tx.marketAlertInstance.update({
+            where: { id: staleAlert.id },
+            data: {
+              status: MarketAlertStatus.CLOSED,
+              closedReason: autoCloseReason,
+            },
+          });
+          await tx.marketAlertStatusLog.create({
+            data: {
+              instanceId: staleAlert.id,
+              action: MarketAlertAction.AUTO_CLOSE,
+              fromStatus: staleAlert.status,
+              toStatus: MarketAlertStatus.CLOSED,
+              operator: 'system-auto-evaluator',
+              reason: autoCloseReason,
+              meta: { dedupeKey: staleAlert.dedupeKey },
+            },
+          });
+        }
+      });
+      closed = staleAlerts.length;
+    }
+
     return {
       evaluatedAt: new Date(),
       total: hits.length,
       created,
       updated,
-      closed: 0,
+      closed,
     };
   }
 

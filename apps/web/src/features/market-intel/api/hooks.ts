@@ -1432,6 +1432,9 @@ interface CollectionPointItem {
 interface CollectionPointListResponse {
     data: CollectionPointItem[];
     total: number;
+    page: number;
+    pageSize: number;
+    totalPages: number;
 }
 
 
@@ -1439,24 +1442,68 @@ interface UseCollectionPointsOptions {
     enabled?: boolean;
 }
 
+interface CollectionPointListQuery {
+    type?: string;
+    types?: string[];
+    regionCode?: string;
+    keyword?: string;
+    isActive?: boolean;
+    allocationStatus?: 'ALLOCATED' | 'UNALLOCATED';
+    page?: number;
+    pageSize?: number;
+}
+
+const normalizeCollectionPointListQuery = (
+    queryOrType?: CollectionPointListQuery | string,
+    keyword?: string,
+): CollectionPointListQuery => {
+    if (typeof queryOrType === 'string') {
+        return {
+            type: queryOrType || undefined,
+            keyword: keyword || undefined,
+        };
+    }
+    return queryOrType || {};
+};
+
 export const useCollectionPoints = (
-    type?: string,
+    queryOrType?: CollectionPointListQuery | string,
     keyword?: string,
     options?: UseCollectionPointsOptions,
 ) => {
+    const query = normalizeCollectionPointListQuery(queryOrType, keyword);
+    const normalizedTypes = query.types || [];
+    const page = query.page || 1;
+    const pageSize = query.pageSize || 20;
+
     return useQuery<CollectionPointListResponse>({
-        queryKey: ['collection-points', type, keyword],
+        queryKey: [
+            'collection-points-lite',
+            query.type,
+            normalizedTypes.join(','),
+            query.regionCode,
+            query.keyword,
+            query.isActive,
+            query.allocationStatus,
+            page,
+            pageSize,
+        ],
         queryFn: async () => {
             const params = new URLSearchParams();
-            if (type) params.append('type', type);
-            if (keyword) params.append('keyword', keyword);
-            params.append('pageSize', '200');
+            if (query.type) params.append('type', query.type);
+            if (normalizedTypes.length > 0) params.append('types', normalizedTypes.join(','));
+            if (query.regionCode) params.append('regionCode', query.regionCode);
+            if (query.keyword) params.append('keyword', query.keyword);
+            if (query.isActive !== undefined) params.append('isActive', String(query.isActive));
+            if (query.allocationStatus) params.append('allocationStatus', query.allocationStatus);
+            params.append('page', String(page));
+            params.append('pageSize', String(pageSize));
             const res = await apiClient.get<CollectionPointListResponse>(
                 `/collection-points?${params.toString()}`,
             );
             return res.data;
         },
-        enabled: options?.enabled,
+        enabled: options?.enabled ?? true,
     });
 };
 

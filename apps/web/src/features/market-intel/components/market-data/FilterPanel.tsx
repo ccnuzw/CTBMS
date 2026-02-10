@@ -17,6 +17,7 @@ import {
     theme,
     Tooltip,
     Button,
+    Pagination,
 } from 'antd';
 import {
     FilterOutlined,
@@ -87,6 +88,8 @@ const TIME_RANGES_FALLBACK = [
     { label: '6月', value: 180 },
     { label: '1年', value: 365 },
 ];
+
+const POINT_PAGE_SIZE = 40;
 
 interface FilterPanelProps {
     commodity: string;
@@ -197,6 +200,10 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
             .map((item) => item.code);
     }, [pointTypeDict]);
     const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({}); // 新增：控制每个类型组的展开/收起
+    const [pointPage, setPointPage] = useState(1);
+    const [pointCache, setPointCache] = useState<
+        Record<string, { id: string; name: string; type: string }>
+    >({});
 
     useEffect(() => {
         const handler = setTimeout(() => {
@@ -209,38 +216,46 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
     // 只有当有类型过滤或有搜索关键词时才加载数据
     const keywordReady = debouncedKeyword.length >= 2;
     const shouldFetch = pointTypeFilter.length > 0 || keywordReady;
+    const collectionPointQuery = useMemo(
+        () => ({
+            types: pointTypeFilter.length > 0 ? pointTypeFilter : undefined,
+            keyword: keywordReady ? debouncedKeyword : undefined,
+            isActive: true,
+            page: pointPage,
+            pageSize: POINT_PAGE_SIZE,
+        }),
+        [pointTypeFilter, keywordReady, debouncedKeyword, pointPage],
+    );
     const { data: collectionPointsData, isLoading: isLoadingPoints } = useCollectionPoints(
-        undefined,
+        collectionPointQuery,
         undefined,
         { enabled: shouldFetch },
     );
     const collectionPoints = collectionPointsData?.data || [];
+
+    useEffect(() => {
+        setPointPage(1);
+    }, [pointTypeFilter, debouncedKeyword]);
+
+    useEffect(() => {
+        if (collectionPoints.length === 0) return;
+        setPointCache((prev) => {
+            const next = { ...prev };
+            collectionPoints.forEach((point) => {
+                next[point.id] = { id: point.id, name: point.name, type: point.type };
+            });
+            return next;
+        });
+    }, [collectionPoints]);
 
     // 获取省份列表
     const { data: provinces } = useProvinces();
 
     // 按类型分组的采集点
     const groupedPoints = React.useMemo(() => {
-        const filtered = collectionPoints.filter((point) => {
-            // 类型过滤
-            if (pointTypeFilter.length > 0 && !pointTypeFilter.includes(point.type)) {
-                return false;
-            }
-            // 关键词过滤
-            if (keywordReady) {
-                const keyword = debouncedKeyword.toLowerCase();
-                return (
-                    point.name.toLowerCase().includes(keyword) ||
-                    (point.shortName?.toLowerCase().includes(keyword) ?? false) ||
-                    point.code.toLowerCase().includes(keyword)
-                );
-            }
-            return true;
-        });
-
         // 按类型分组
-        const groups: Record<string, typeof filtered> = {};
-        filtered.forEach((point) => {
+        const groups: Record<string, typeof collectionPoints> = {};
+        collectionPoints.forEach((point) => {
             if (!groups[point.type]) {
                 groups[point.type] = [];
             }
@@ -248,7 +263,7 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
         });
 
         return groups;
-    }, [collectionPoints, pointTypeFilter, debouncedKeyword, keywordReady]);
+    }, [collectionPoints]);
 
     const presetValue = useMemo(() => {
         if (!dateRange) return null;
@@ -528,11 +543,12 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
                             // 联动逻辑：取消勾选类型时，同时取消该类型下已选中的采集点
                             const removedTypes = pointTypeFilter.filter(t => !newTypes.includes(t));
                             if (removedTypes.length > 0) {
-                                // 找到要移除的类型下的所有采集点ID
-                                const pointsToRemove = collectionPoints
-                                    .filter(p => removedTypes.includes(p.type))
-                                    .map(p => p.id);
-                                const newSelectedIds = selectedPointIds.filter(id => !pointsToRemove.includes(id));
+                                // 基于本地缓存中的点位类型做联动移除
+                                const newSelectedIds = selectedPointIds.filter((id) => {
+                                    const cached = pointCache[id];
+                                    if (!cached) return true;
+                                    return !removedTypes.includes(cached.type);
+                                });
                                 if (newSelectedIds.length !== selectedPointIds.length) {
                                     onSelectedPointIdsChange(newSelectedIds);
                                 }
@@ -569,7 +585,7 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
                     {!shouldFetch ? (
                         <Empty
                             image={Empty.PRESENTED_IMAGE_SIMPLE}
-                            description={<span style={{ fontSize: 12 }}>请选择类型或使用"高级选择"</span>}
+                            description={<span style={{ fontSize: 12 }}>请选择类型或输入至少2个字</span>}
                         />
                     ) : isLoadingPoints ? (
                         <Flex justify="center" style={{ padding: 32 }}>
@@ -655,6 +671,23 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
                     )}
                 </div>
 
+                {shouldFetch && (
+                    <Flex justify="space-between" align="center" style={{ marginTop: 8 }}>
+                        <Text type="secondary" style={{ fontSize: 11 }}>
+                            共 {collectionPointsData?.total || 0} 个
+                        </Text>
+                        <Pagination
+                            size="small"
+                            simple
+                            current={collectionPointsData?.page || pointPage}
+                            pageSize={collectionPointsData?.pageSize || POINT_PAGE_SIZE}
+                            total={collectionPointsData?.total || 0}
+                            showSizeChanger={false}
+                            onChange={(page) => setPointPage(page)}
+                        />
+                    </Flex>
+                )}
+
                 <Divider style={{ margin: '12px 0' }} />
 
                 {/* 已选采集点详情列表 */}
@@ -668,17 +701,16 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
                         </Flex>
                         <Space size={[4, 4]} wrap>
                             {selectedPointIds.map(id => {
-                                const point = collectionPoints.find(p => p.id === id);
-                                if (!point) return null;
+                                const point = pointCache[id];
                                 return (
                                     <Tag
                                         key={id}
                                         closable
-                                        color={POINT_TYPE_COLORS[point.type]}
+                                        color={point ? POINT_TYPE_COLORS[point.type] : undefined}
                                         onClose={() => togglePoint(id)}
                                         style={{ fontSize: 11, margin: 0 }}
                                     >
-                                        {point.name}
+                                        {point?.name || id.slice(0, 8)}
                                     </Tag>
                                 );
                             })}
