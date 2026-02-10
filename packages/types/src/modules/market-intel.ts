@@ -546,6 +546,20 @@ export enum PriceQualityTag {
   LATE = 'LATE',            // 延迟上报
 }
 
+// 数据口径：审核范围
+export enum PriceReviewScope {
+  APPROVED_ONLY = 'APPROVED_ONLY',
+  APPROVED_AND_PENDING = 'APPROVED_AND_PENDING',
+  ALL = 'ALL',
+}
+
+// 数据口径：数据来源范围
+export enum PriceSourceScope {
+  AI_ONLY = 'AI_ONLY',
+  MANUAL_ONLY = 'MANUAL_ONLY',
+  ALL = 'ALL',
+}
+
 // 标签映射
 export const PRICE_SOURCE_TYPE_LABELS: Record<PriceSourceType, string> = {
   [PriceSourceType.ENTERPRISE]: '企业收购价',
@@ -714,6 +728,8 @@ export const PriceDataQuerySchema = z.object({
   regionCode: z.string().optional(),
   pointTypes: z.array(z.string()).optional(),
   qualityTags: z.array(z.nativeEnum(PriceQualityTag)).optional(),
+  reviewScope: z.nativeEnum(PriceReviewScope).optional(),
+  sourceScope: z.nativeEnum(PriceSourceScope).optional(),
   startDate: z.coerce.date().optional(),
   endDate: z.coerce.date().optional(),
   keyword: z.string().optional(),

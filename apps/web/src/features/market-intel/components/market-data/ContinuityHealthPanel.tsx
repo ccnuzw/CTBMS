@@ -3,7 +3,7 @@ import dayjs from 'dayjs';
 import { Card, Col, Empty, Flex, Row, Skeleton, Statistic, Table, Tag, Typography, theme } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import { SafetyCertificateOutlined } from '@ant-design/icons';
-import type { PriceSubType } from '@packages/types';
+import type { PriceReviewScope, PriceSourceScope, PriceSubType } from '@packages/types';
 import { usePriceContinuityHealth } from '../../api/hooks';
 
 const { Text } = Typography;
@@ -16,6 +16,8 @@ interface ContinuityHealthPanelProps {
     pointTypes?: string[];
     subTypes?: PriceSubType[];
     selectedPointIds?: string[];
+    reviewScope?: PriceReviewScope;
+    sourceScope?: PriceSourceScope;
 }
 
 type HealthRow = {
@@ -47,6 +49,8 @@ export const ContinuityHealthPanel: React.FC<ContinuityHealthPanelProps> = ({
     pointTypes,
     subTypes,
     selectedPointIds,
+    reviewScope,
+    sourceScope,
 }) => {
     const { token } = theme.useToken();
     const { data, isLoading } = usePriceContinuityHealth(
@@ -58,6 +62,8 @@ export const ContinuityHealthPanel: React.FC<ContinuityHealthPanelProps> = ({
             pointTypes,
             subTypes,
             collectionPointIds: selectedPointIds,
+            reviewScope,
+            sourceScope,
         },
         { enabled: !!commodity && (selectedPointIds?.length || 0) > 0 },
     );

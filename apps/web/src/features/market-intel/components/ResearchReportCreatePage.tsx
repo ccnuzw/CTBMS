@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect } from 'react';
 import { PageContainer, ProForm, ProCard, ProFormText, ProFormSelect, ProFormDatePicker, ProFormList, ProFormDigit, ProFormTextArea, ProFormItem } from '@ant-design/pro-components';
-import { App, Form, Space, Typography, Button, Badge, Row, Col, Empty, Result, Tag, theme, Progress } from 'antd';
-import { FileWordOutlined, ThunderboltOutlined, FileSearchOutlined, RobotOutlined, CheckCircleOutlined, BulbOutlined, LineChartOutlined, BarChartOutlined } from '@ant-design/icons';
+import { App, Form, Space, Typography, Button, Badge, Row, Col, Empty, Result, Tag, theme, Progress, Modal } from 'antd';
+import { FileWordOutlined, ThunderboltOutlined, FileSearchOutlined, RobotOutlined, CheckCircleOutlined, BulbOutlined, LineChartOutlined, BarChartOutlined, ExpandAltOutlined } from '@ant-design/icons';
 import { useNavigate, useParams } from 'react-router-dom';
 import {
     ReportType,
@@ -106,6 +106,8 @@ export const ResearchReportCreatePage = () => {
         'MARKET_SENTIMENT',
         'PREDICTION_TIMEFRAME',
     ]);
+
+    const [isPreviewModalOpen, setIsPreviewModalOpen] = useState(false);
 
     // Computed Options
     const commodityOptions = stats?.commodityDistribution?.map((item: any) => ({
@@ -469,8 +471,8 @@ export const ResearchReportCreatePage = () => {
             mime?.includes('powerpoint');
     };
 
-    const renderDocumentPreview = () => {
-        const previewHeight = 360;
+    const renderDocumentPreview = (customHeight?: number | string) => {
+        const previewHeight = customHeight || 360;
         if (!uploadedAttachment) {
             return (
                 <Empty
@@ -551,7 +553,6 @@ export const ResearchReportCreatePage = () => {
                             icon={<ThunderboltOutlined />}
                             onClick={() => handleAnalyzeEditorContent(['all'])}
                             loading={analyzeMutation.isPending}
-                            size="large"
                         >
                             AI 深度分析
                         </Button>,
@@ -727,7 +728,7 @@ export const ResearchReportCreatePage = () => {
                         </Col>
                         {/* 右侧上下文面板 (约 25%) */}
                         <Col xs={24} lg={6} style={{ display: 'flex', flexDirection: 'column' }}>
-                            <div style={{ position: 'sticky', top: 88, display: 'flex', flexDirection: 'column', gap: 16 }}>
+                            <div style={{ position: 'sticky', top: 60, marginTop: 0, display: 'flex', flexDirection: 'column', gap: 16 }}>
                                 <ProCard
                                     title={<Space><FileSearchOutlined />原文资料</Space>}
                                     bordered
@@ -735,6 +736,15 @@ export const ResearchReportCreatePage = () => {
                                     size="small"
                                     style={{ maxHeight: 520, overflow: 'hidden' }}
                                     bodyStyle={{ padding: 12 }}
+                                    extra={
+                                        <Button
+                                            type="text"
+                                            icon={<ExpandAltOutlined />}
+                                            onClick={() => setIsPreviewModalOpen(true)}
+                                            disabled={!uploadedAttachment}
+                                            title="放大预览"
+                                        />
+                                    }
                                 >
                                     <div style={{ maxHeight: 420, overflow: 'auto' }}>
                                         {renderDocumentPreview()}
@@ -801,14 +811,15 @@ export const ResearchReportCreatePage = () => {
                         </Col>
                     </Row>
 
+
                     {/* ============ 下层：AI 智能分析结果区 ============ */}
-                    <ProCard
+                    < ProCard
                         title={
-                            <Space>
+                            < Space >
                                 <RobotOutlined style={{ color: token.colorPrimary }} />
                                 <span>AI 智能分析结果</span>
                                 {hasAiData && <Badge status="success" text="已提取" />}
-                            </Space>
+                            </Space >
                         }
                         bordered
                         headerBordered
@@ -1051,9 +1062,22 @@ export const ResearchReportCreatePage = () => {
                             </Col>
                         </Row>
                     </ProCard>
-                </ProForm>
-            </PageContainer>
+                </ProForm >
+            </PageContainer >
 
+            <Modal
+                title="原文资料预览"
+                open={isPreviewModalOpen}
+                onCancel={() => setIsPreviewModalOpen(false)}
+                width={1000}
+                footer={null}
+                bodyStyle={{ height: '70vh', padding: 0, overflow: 'hidden' }}
+                destroyOnClose
+            >
+                <div style={{ height: '100%', overflow: 'auto', padding: 16 }}>
+                    {renderDocumentPreview('100%')}
+                </div>
+            </Modal>
         </>
     );
 };

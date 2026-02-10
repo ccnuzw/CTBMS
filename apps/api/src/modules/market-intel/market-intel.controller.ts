@@ -348,6 +348,8 @@ export class MarketIntelController {
         @Query('startDate') startDate?: string,
         @Query('endDate') endDate?: string,
         @Query('subTypes') subTypes?: string,
+        @Query('reviewScope') reviewScope?: string,
+        @Query('sourceScope') sourceScope?: string,
     ) {
         return this.priceDataService.getByCollectionPoint(
             collectionPointId,
@@ -356,6 +358,8 @@ export class MarketIntelController {
             startDate ? new Date(startDate) : undefined,
             endDate ? new Date(endDate) : undefined,
             subTypes,
+            reviewScope,
+            sourceScope,
         );
     }
 
@@ -370,6 +374,8 @@ export class MarketIntelController {
         @Query('startDate') startDate?: string,
         @Query('endDate') endDate?: string,
         @Query('subTypes') subTypes?: string,
+        @Query('reviewScope') reviewScope?: string,
+        @Query('sourceScope') sourceScope?: string,
     ) {
         return this.priceDataService.getByRegion(
             regionCode,
@@ -378,6 +384,8 @@ export class MarketIntelController {
             startDate ? new Date(startDate) : undefined,
             endDate ? new Date(endDate) : undefined,
             subTypes,
+            reviewScope,
+            sourceScope,
         );
     }
 
@@ -392,6 +400,8 @@ export class MarketIntelController {
         @Query('startDate') startDate?: string,
         @Query('endDate') endDate?: string,
         @Query('subTypes') subTypes?: string,
+        @Query('reviewScope') reviewScope?: string,
+        @Query('sourceScope') sourceScope?: string,
     ) {
         const collectionPointIds = ids.split(',').filter(id => id.trim());
         return this.priceDataService.getMultiPointTrend(
@@ -401,7 +411,44 @@ export class MarketIntelController {
             startDate ? new Date(startDate) : undefined,
             endDate ? new Date(endDate) : undefined,
             subTypes,
+            reviewScope,
+            sourceScope,
         );
+    }
+
+    /**
+     * 对比分析聚合数据（排行/分布/区域统计/质量概览）
+     */
+    @Get('price-data/compare-analytics')
+    async getPriceCompareAnalytics(
+        @Query('ids') ids?: string,
+        @Query('commodity') commodity?: string,
+        @Query('days') days = '30',
+        @Query('startDate') startDate?: string,
+        @Query('endDate') endDate?: string,
+        @Query('subTypes') subTypes?: string,
+        @Query('regionCode') regionCode?: string,
+        @Query('pointTypes') pointTypes?: string,
+        @Query('reviewScope') reviewScope?: string,
+        @Query('sourceScope') sourceScope?: string,
+        @Query('regionLevel') regionLevel?: string,
+        @Query('regionWindow') regionWindow?: string,
+    ) {
+        const collectionPointIds = (ids || '').split(',').filter(id => id.trim());
+        return this.priceDataService.getCompareAnalytics({
+            collectionPointIds,
+            commodity,
+            days: parseInt(days, 10),
+            startDate: startDate ? new Date(startDate) : undefined,
+            endDate: endDate ? new Date(endDate) : undefined,
+            subTypes,
+            regionCode,
+            pointTypes,
+            reviewScope,
+            sourceScope,
+            regionLevel,
+            regionWindow,
+        });
     }
 
     // --- B类增强：市场事件 ---

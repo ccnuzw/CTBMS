@@ -11,17 +11,25 @@ export const useDictionary = (domain: string, options: UseDictionaryOptions = {}
     return useQuery({
         queryKey: ['dictionary', domain, options.includeInactive ?? false],
         queryFn: async () => {
-            const { data } = await apiClient.get<DictionaryItem[]>(`/config/dictionaries/${domain}`, {
-                params: { includeInactive: options.includeInactive },
-            });
-            return data;
+            console.log(`[useDictionary] Fetching ${domain}...`);
+            const params: Record<string, any> = {};
+            if (options.includeInactive) {
+                params.includeInactive = 'true';
+            }
+
+            try {
+                const { data } = await apiClient.get<DictionaryItem[]>(`/config/dictionaries/${domain}`, { params });
+                console.log(`[useDictionary] Fetched ${domain}:`, data?.length);
+                return data;
+            } catch (error) {
+                console.error(`[useDictionary] Error fetching ${domain}:`, error);
+                throw error;
+            }
         },
         enabled: Boolean(domain) && (options.enabled ?? true),
-        staleTime: 30 * 60 * 1000, // 字典数据缓存30分钟，相对稳定
-        cacheTime: 60 * 60 * 1000, // 1小时后垃圾回收 (v4 syntax)
-        retry: 3, // 字典查询失败时重试
-        retryDelay: attemptIndex => Math.min(1000 * 2 ** attemptIndex, 5000), // 指数退避
-        // 初始数据设为空数组，避免 undefined
+        staleTime: 0, // 暂时禁用缓存以调试
+        cacheTime: 60 * 60 * 1000,
+        retry: 2,
         initialData: [],
     });
 };

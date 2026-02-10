@@ -9,7 +9,7 @@ import {
     ThunderboltOutlined,
 } from '@ant-design/icons';
 import { useMultiPointCompare } from '../../api/hooks';
-import type { PriceSubType } from '@packages/types';
+import type { PriceReviewScope, PriceSourceScope, PriceSubType } from '@packages/types';
 
 const { Text } = Typography;
 
@@ -19,6 +19,8 @@ interface InsightCardsProps {
     endDate?: Date;
     selectedPointIds: string[];
     subTypes?: PriceSubType[];
+    reviewScope?: PriceReviewScope;
+    sourceScope?: PriceSourceScope;
 }
 
 interface InsightItem {
@@ -34,6 +36,8 @@ export const InsightCards: React.FC<InsightCardsProps> = ({
     endDate,
     selectedPointIds,
     subTypes,
+    reviewScope,
+    sourceScope,
 }) => {
     const { token } = theme.useToken();
 
@@ -42,6 +46,8 @@ export const InsightCards: React.FC<InsightCardsProps> = ({
         startDate,
         endDate,
         subTypes,
+        reviewScope,
+        sourceScope,
     });
 
     // 生成智能洞察

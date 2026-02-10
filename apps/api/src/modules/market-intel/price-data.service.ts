@@ -10,6 +10,8 @@ import {
   MarketAlertSeverity,
   MarketAlertStatus,
   PriceData,
+  PriceInputMethod,
+  PriceReviewStatus,
   PriceSourceType,
   PriceSubType,
   Prisma,
@@ -93,6 +95,9 @@ type AlertHit = {
   message: string;
 };
 
+type RegionAnalyticsLevel = 'province' | 'city' | 'district';
+type RegionAnalyticsWindow = '7' | '30' | '90' | 'all';
+
 @Injectable()
 export class PriceDataService {
   constructor(private prisma: PrismaService) {}
@@ -124,6 +129,34 @@ export class PriceDataService {
       .map((item) => this.normalizePriceSubType(item))
       .filter((item): item is PriceSubType => Boolean(item));
     return [...new Set(parsed)];
+  }
+
+  private resolveReviewStatuses(scope?: string | null) {
+    const normalized = (scope || '').trim().toUpperCase();
+    if (!normalized || normalized === 'APPROVED_AND_PENDING') {
+      return [PriceReviewStatus.APPROVED, PriceReviewStatus.AUTO_APPROVED, PriceReviewStatus.PENDING];
+    }
+    if (normalized === 'APPROVED_ONLY') {
+      return [PriceReviewStatus.APPROVED, PriceReviewStatus.AUTO_APPROVED];
+    }
+    if (normalized === 'ALL') {
+      return null;
+    }
+    return [PriceReviewStatus.APPROVED, PriceReviewStatus.AUTO_APPROVED, PriceReviewStatus.PENDING];
+  }
+
+  private resolveInputMethods(scope?: string | null) {
+    const normalized = (scope || '').trim().toUpperCase();
+    if (!normalized || normalized === 'ALL') {
+      return null;
+    }
+    if (normalized === 'AI_ONLY') {
+      return [PriceInputMethod.AI_EXTRACTED];
+    }
+    if (normalized === 'MANUAL_ONLY') {
+      return [PriceInputMethod.MANUAL_ENTRY, PriceInputMethod.BULK_IMPORT];
+    }
+    return null;
   }
 
   private resolveDateRange(days = 30, startDate?: Date | string, endDate?: Date | string) {
@@ -195,6 +228,44 @@ export class PriceDataService {
     if (score >= 70) return 'B';
     if (score >= 60) return 'C';
     return 'D';
+  }
+
+  private quantile(sorted: number[], q: number) {
+    if (sorted.length === 0) return 0;
+    const pos = (sorted.length - 1) * q;
+    const base = Math.floor(pos);
+    const rest = pos - base;
+    if (sorted[base + 1] !== undefined) {
+      return sorted[base] + rest * (sorted[base + 1] - sorted[base]);
+    }
+    return sorted[base];
+  }
+
+  private normalizeRegionLevel(level?: string | null): RegionAnalyticsLevel {
+    const value = (level || '').trim().toLowerCase();
+    if (value === 'province' || value === 'district') return value;
+    return 'city';
+  }
+
+  private normalizeRegionWindow(window?: string | null): RegionAnalyticsWindow {
+    const value = (window || '').trim().toLowerCase();
+    if (value === '7' || value === '30' || value === '90' || value === 'all') {
+      return value;
+    }
+    return '30';
+  }
+
+  private getRegionNameByLevel(
+    row: Pick<PriceData, 'province' | 'city' | 'district' | 'region' | 'location'>,
+    level: RegionAnalyticsLevel,
+  ) {
+    if (level === 'province') {
+      return row.province || row.region?.[0] || row.location || '其他';
+    }
+    if (level === 'district') {
+      return row.district || row.region?.[2] || row.region?.[1] || row.location || '其他';
+    }
+    return row.city || row.region?.[1] || row.region?.[0] || row.location || '其他';
   }
 
   private parseAlertRulePayload(value: string): AlertRulePayload | null {
@@ -419,6 +490,8 @@ export class PriceDataService {
       collectionPointIds,
       regionCode,
       pointTypes,
+      reviewScope,
+      sourceScope,
     } = query;
     const qualityTags = (query as { qualityTags?: string[] | string }).qualityTags;
     // Query 参数从 URL 传入时都是字符串，需要转换
@@ -450,6 +523,14 @@ export class PriceDataService {
     if (resolvedGeoLevel) andFilters.push({ geoLevel: resolvedGeoLevel });
     if (subTypeList.length > 0) {
       andFilters.push({ subType: { in: subTypeList } });
+    }
+    const reviewStatuses = this.resolveReviewStatuses(reviewScope);
+    if (reviewStatuses && reviewStatuses.length > 0) {
+      andFilters.push({ reviewStatus: { in: reviewStatuses } });
+    }
+    const inputMethods = this.resolveInputMethods(sourceScope);
+    if (inputMethods && inputMethods.length > 0) {
+      andFilters.push({ inputMethod: { in: inputMethods } });
     }
 
     // 采集点过滤
@@ -569,6 +650,8 @@ export class PriceDataService {
       subTypes,
       collectionPointIds,
       collectionPointId,
+      reviewScope,
+      sourceScope,
       days,
     } = query;
     const daysValue = Number(days) || 30;
@@ -593,6 +676,14 @@ export class PriceDataService {
     if (subTypeList.length > 0) andFilters.push({ subType: { in: subTypeList } });
     if (collectionPointIdList.length > 0) {
       andFilters.push({ collectionPointId: { in: [...new Set(collectionPointIdList)] } });
+    }
+    const reviewStatuses = this.resolveReviewStatuses(reviewScope);
+    if (reviewStatuses && reviewStatuses.length > 0) {
+      andFilters.push({ reviewStatus: { in: reviewStatuses } });
+    }
+    const inputMethods = this.resolveInputMethods(sourceScope);
+    if (inputMethods && inputMethods.length > 0) {
+      andFilters.push({ inputMethod: { in: inputMethods } });
     }
     if (pointTypeList.length > 0) {
       const orConditions: Prisma.PriceDataWhereInput[] = [];
@@ -850,6 +941,8 @@ export class PriceDataService {
     );
     const subTypeList = this.parsePriceSubTypes(query.subTypes);
     const collectionPointIdList = this.parseCsv(query.collectionPointIds);
+    const reviewStatuses = this.resolveReviewStatuses((query as { reviewScope?: string }).reviewScope);
+    const inputMethods = this.resolveInputMethods((query as { sourceScope?: string }).sourceScope);
 
     const andFilters: Prisma.PriceDataWhereInput[] = [];
     if (commodityFilter) andFilters.push({ commodity: commodityFilter });
@@ -863,6 +956,12 @@ export class PriceDataService {
     }
     if (query.regionCode) andFilters.push({ regionCode: query.regionCode });
     if (subTypeList.length > 0) andFilters.push({ subType: { in: subTypeList } });
+    if (reviewStatuses && reviewStatuses.length > 0) {
+      andFilters.push({ reviewStatus: { in: reviewStatuses } });
+    }
+    if (inputMethods && inputMethods.length > 0) {
+      andFilters.push({ inputMethod: { in: inputMethods } });
+    }
     if (collectionPointIdList.length > 0) {
       andFilters.push({ collectionPointId: { in: collectionPointIdList } });
     }
@@ -1348,6 +1447,8 @@ export class PriceDataService {
     startDate?: Date,
     endDate?: Date,
     subTypes?: string | string[],
+    reviewScope?: string,
+    sourceScope?: string,
   ) {
     const { startDate: resolvedStart, endDate: resolvedEnd } = this.resolveDateRange(
       days,
@@ -1363,6 +1464,14 @@ export class PriceDataService {
     const subTypeList = this.parsePriceSubTypes(subTypes);
     if (subTypeList.length > 0) {
       where.subType = { in: subTypeList };
+    }
+    const reviewStatuses = this.resolveReviewStatuses(reviewScope);
+    if (reviewStatuses && reviewStatuses.length > 0) {
+      where.reviewStatus = { in: reviewStatuses };
+    }
+    const inputMethods = this.resolveInputMethods(sourceScope);
+    if (inputMethods && inputMethods.length > 0) {
+      where.inputMethod = { in: inputMethods };
     }
     if (resolvedStart || resolvedEnd) {
       where.effectiveDate = {};
@@ -1424,6 +1533,8 @@ export class PriceDataService {
     startDate?: Date,
     endDate?: Date,
     subTypes?: string | string[],
+    reviewScope?: string,
+    sourceScope?: string,
   ) {
     const { startDate: resolvedStart, endDate: resolvedEnd } = this.resolveDateRange(
       days,
@@ -1439,6 +1550,14 @@ export class PriceDataService {
     const subTypeList = this.parsePriceSubTypes(subTypes);
     if (subTypeList.length > 0) {
       where.subType = { in: subTypeList };
+    }
+    const reviewStatuses = this.resolveReviewStatuses(reviewScope);
+    if (reviewStatuses && reviewStatuses.length > 0) {
+      where.reviewStatus = { in: reviewStatuses };
+    }
+    const inputMethods = this.resolveInputMethods(sourceScope);
+    if (inputMethods && inputMethods.length > 0) {
+      where.inputMethod = { in: inputMethods };
     }
     if (resolvedStart || resolvedEnd) {
       where.effectiveDate = {};
@@ -1521,6 +1640,8 @@ export class PriceDataService {
     startDate?: Date,
     endDate?: Date,
     subTypes?: string | string[],
+    reviewScope?: string,
+    sourceScope?: string,
   ) {
     const { startDate: resolvedStart, endDate: resolvedEnd } = this.resolveDateRange(
       days,
@@ -1530,12 +1651,16 @@ export class PriceDataService {
 
     const subTypeList = this.parsePriceSubTypes(subTypes);
     const commodityFilter = this.buildCommodityFilter(commodity);
+    const reviewStatuses = this.resolveReviewStatuses(reviewScope);
+    const inputMethods = this.resolveInputMethods(sourceScope);
 
     const data = await this.prisma.priceData.findMany({
       where: {
         collectionPointId: { in: collectionPointIds },
         ...(commodityFilter ? { commodity: commodityFilter } : {}),
         ...(subTypeList.length > 0 ? { subType: { in: subTypeList } } : {}),
+        ...(reviewStatuses && reviewStatuses.length > 0 ? { reviewStatus: { in: reviewStatuses } } : {}),
+        ...(inputMethods && inputMethods.length > 0 ? { inputMethod: { in: inputMethods } } : {}),
         effectiveDate: {
           ...(resolvedStart ? { gte: resolvedStart } : {}),
           ...(resolvedEnd ? { lte: resolvedEnd } : {}),
@@ -1577,6 +1702,512 @@ export class PriceDataService {
     }
 
     return Object.values(grouped);
+  }
+
+  /**
+   * 对比分析聚合数据
+   * 将前端本地统计迁移到后端统一口径计算
+   */
+  async getCompareAnalytics(query: {
+    collectionPointIds: string[];
+    commodity?: string;
+    days?: number;
+    startDate?: Date;
+    endDate?: Date;
+    subTypes?: string | string[];
+    regionCode?: string;
+    pointTypes?: string | string[];
+    reviewScope?: string;
+    sourceScope?: string;
+    regionLevel?: string;
+    regionWindow?: string;
+  }) {
+    const {
+      collectionPointIds,
+      commodity,
+      days = 30,
+      startDate,
+      endDate,
+      subTypes,
+      regionCode,
+      pointTypes,
+      reviewScope,
+      sourceScope,
+      regionLevel,
+      regionWindow,
+    } = query;
+    const uniquePointIds = [...new Set((collectionPointIds || []).filter(Boolean))];
+    const { startDate: resolvedStart, endDate: resolvedEnd } = this.resolveDateRange(
+      days,
+      startDate,
+      endDate,
+    );
+    const commodityFilter = this.buildCommodityFilter(commodity);
+    const subTypeList = this.parsePriceSubTypes(subTypes);
+    const reviewStatuses = this.resolveReviewStatuses(reviewScope);
+    const inputMethods = this.resolveInputMethods(sourceScope);
+    const normalizedRegionLevel = this.normalizeRegionLevel(regionLevel);
+    const normalizedRegionWindow = this.normalizeRegionWindow(regionWindow);
+    const dayMs = 24 * 60 * 60 * 1000;
+    const startOfDay = (value: Date) => {
+      const date = new Date(value);
+      date.setHours(0, 0, 0, 0);
+      return date;
+    };
+    const calcExpectedDays = (start?: Date, end?: Date) => {
+      if (!start || !end) return null;
+      return Math.max(
+        1,
+        Math.floor((startOfDay(end).getTime() - startOfDay(start).getTime()) / dayMs) + 1,
+      );
+    };
+
+    // 1) 采集点对比（排行/分布）
+    const compareFilters: Prisma.PriceDataWhereInput[] = [];
+    if (uniquePointIds.length > 0) {
+      compareFilters.push({ collectionPointId: { in: uniquePointIds } });
+    }
+    if (commodityFilter) compareFilters.push({ commodity: commodityFilter });
+    if (subTypeList.length > 0) compareFilters.push({ subType: { in: subTypeList } });
+    if (reviewStatuses && reviewStatuses.length > 0) {
+      compareFilters.push({ reviewStatus: { in: reviewStatuses } });
+    }
+    if (inputMethods && inputMethods.length > 0) {
+      compareFilters.push({ inputMethod: { in: inputMethods } });
+    }
+    if (resolvedStart || resolvedEnd) {
+      compareFilters.push({
+        effectiveDate: {
+          ...(resolvedStart ? { gte: resolvedStart } : {}),
+          ...(resolvedEnd ? { lte: resolvedEnd } : {}),
+        },
+      });
+    }
+
+    const compareRows = uniquePointIds.length
+      ? await this.prisma.priceData.findMany({
+          where: compareFilters.length > 0 ? { AND: compareFilters } : {},
+          orderBy: [{ effectiveDate: 'asc' }, { createdAt: 'asc' }],
+          include: {
+            collectionPoint: {
+              select: {
+                id: true,
+                code: true,
+                name: true,
+                shortName: true,
+                type: true,
+                regionCode: true,
+                region: {
+                  select: { code: true, name: true, shortName: true },
+                },
+              },
+            },
+          },
+        })
+      : [];
+
+    const groupedByPoint = new Map<string, typeof compareRows>();
+    for (const row of compareRows) {
+      if (!row.collectionPointId) continue;
+      if (!groupedByPoint.has(row.collectionPointId)) {
+        groupedByPoint.set(row.collectionPointId, []);
+      }
+      groupedByPoint.get(row.collectionPointId)!.push(row);
+    }
+
+    const latestRecords = Array.from(groupedByPoint.values())
+      .map((list) => list[list.length - 1])
+      .filter(Boolean);
+    const meanLatestPrice =
+      latestRecords.length > 0
+        ? latestRecords.reduce((sum, row) => sum + Number(row.price), 0) / latestRecords.length
+        : null;
+    const compareExpectedDays =
+      startDate && endDate ? calcExpectedDays(resolvedStart, resolvedEnd) : null;
+
+    const ranking = Array.from(groupedByPoint.entries())
+      .map(([pointId, rows]) => {
+        if (rows.length === 0) return null;
+        const sortedRows = [...rows].sort(
+          (a, b) => a.effectiveDate.getTime() - b.effectiveDate.getTime(),
+        );
+        const first = sortedRows[0];
+        const latest = sortedRows[sortedRows.length - 1];
+        const prices = sortedRows.map((row) => Number(row.price));
+        const minPrice = Math.min(...prices);
+        const maxPrice = Math.max(...prices);
+        const avgPrice = prices.reduce((sum, value) => sum + value, 0) / prices.length;
+        const latestPrice = Number(latest.price);
+        const latestChange = latest.dayChange ? Number(latest.dayChange) : 0;
+        const firstPrice = Number(first.price);
+        const periodChange = latestPrice - firstPrice;
+        const pointName =
+          latest.collectionPoint?.shortName || latest.collectionPoint?.name || latest.location;
+        const regionLabel =
+          latest.collectionPoint?.region?.shortName ||
+          latest.collectionPoint?.region?.name ||
+          latest.city ||
+          latest.province ||
+          '未知';
+
+        return {
+          id: pointId,
+          name: pointName,
+          code: latest.collectionPoint?.code || '',
+          type: latest.collectionPoint?.type,
+          regionLabel,
+          price: latestPrice,
+          change: latestChange,
+          changePct: latestPrice ? (latestChange / latestPrice) * 100 : 0,
+          periodChange,
+          periodChangePct: firstPrice ? (periodChange / firstPrice) * 100 : 0,
+          volatility: avgPrice ? ((maxPrice - minPrice) / avgPrice) * 100 : 0,
+          minPrice,
+          maxPrice,
+          avgPrice,
+          basePrice: firstPrice,
+          indexPrice: firstPrice ? (latestPrice / firstPrice) * 100 : 0,
+          indexChange: firstPrice ? (latestChange / firstPrice) * 100 : 0,
+          samples: sortedRows.length,
+          missingDays:
+            compareExpectedDays !== null
+              ? Math.max(0, compareExpectedDays - sortedRows.length)
+              : null,
+        };
+      })
+      .filter(
+        (
+          item,
+        ): item is {
+          id: string;
+          name: string;
+          code: string;
+          type: CollectionPointType | undefined;
+          regionLabel: string;
+          price: number;
+          change: number;
+          changePct: number;
+          periodChange: number;
+          periodChangePct: number;
+          volatility: number;
+          minPrice: number;
+          maxPrice: number;
+          avgPrice: number;
+          basePrice: number;
+          indexPrice: number;
+          indexChange: number;
+          samples: number;
+          missingDays: number | null;
+        } => Boolean(item),
+      );
+
+    const distribution = Array.from(groupedByPoint.entries())
+      .map(([pointId, rows]) => {
+        if (rows.length === 0) return null;
+        const sorted = rows
+          .map((row) => Number(row.price))
+          .filter((value) => Number.isFinite(value))
+          .sort((a, b) => a - b);
+        if (sorted.length === 0) return null;
+        const latest = rows[rows.length - 1];
+        const pointName =
+          latest.collectionPoint?.shortName || latest.collectionPoint?.name || latest.location;
+        const avg = sorted.reduce((sum, value) => sum + value, 0) / sorted.length;
+        return {
+          id: pointId,
+          name: pointName,
+          min: sorted[0],
+          max: sorted[sorted.length - 1],
+          q1: this.quantile(sorted, 0.25),
+          median: this.quantile(sorted, 0.5),
+          q3: this.quantile(sorted, 0.75),
+          avg,
+        };
+      })
+      .filter(
+        (
+          item,
+        ): item is {
+          id: string;
+          name: string;
+          min: number;
+          max: number;
+          q1: number;
+          median: number;
+          q3: number;
+          avg: number;
+        } => Boolean(item),
+      );
+
+    // 2) 区域统计与质量概览（不依赖 selectedPointIds）
+    const regionFilters: Prisma.PriceDataWhereInput[] = [];
+    if (commodityFilter) regionFilters.push({ commodity: commodityFilter });
+    if (subTypeList.length > 0) regionFilters.push({ subType: { in: subTypeList } });
+    if (reviewStatuses && reviewStatuses.length > 0) {
+      regionFilters.push({ reviewStatus: { in: reviewStatuses } });
+    }
+    if (inputMethods && inputMethods.length > 0) {
+      regionFilters.push({ inputMethod: { in: inputMethods } });
+    }
+    if (resolvedStart || resolvedEnd) {
+      regionFilters.push({
+        effectiveDate: {
+          ...(resolvedStart ? { gte: resolvedStart } : {}),
+          ...(resolvedEnd ? { lte: resolvedEnd } : {}),
+        },
+      });
+    }
+    if (regionCode) {
+      regionFilters.push({ regionCode });
+    }
+    const pointTypeList = this.parseCsv(pointTypes).filter((value): value is CollectionPointType =>
+      Object.values(CollectionPointType).includes(value as CollectionPointType),
+    );
+    if (pointTypeList.length > 0) {
+      const orConditions: Prisma.PriceDataWhereInput[] = [];
+      orConditions.push({ collectionPoint: { type: { in: pointTypeList } } });
+      if (pointTypeList.includes(CollectionPointType.REGION)) {
+        orConditions.push({ sourceType: PriceSourceType.REGIONAL });
+      }
+      regionFilters.push({ OR: orConditions });
+    }
+
+    const regionRows = await this.prisma.priceData.findMany({
+      where: regionFilters.length > 0 ? { AND: regionFilters } : {},
+      orderBy: [{ effectiveDate: 'asc' }, { createdAt: 'asc' }],
+      select: {
+        effectiveDate: true,
+        price: true,
+        location: true,
+        region: true,
+        province: true,
+        city: true,
+        district: true,
+      },
+    });
+
+    const qualityDateSet = new Set<string>();
+    let latestQualityDate: Date | null = null;
+    for (const row of regionRows) {
+      qualityDateSet.add(this.toDateKey(row.effectiveDate));
+      if (!latestQualityDate || row.effectiveDate > latestQualityDate) {
+        latestQualityDate = row.effectiveDate;
+      }
+    }
+    const qualityExpectedDays =
+      startDate && endDate ? calcExpectedDays(resolvedStart, resolvedEnd) : null;
+    const qualityMissingDays =
+      qualityExpectedDays !== null ? Math.max(0, qualityExpectedDays - qualityDateSet.size) : null;
+    const latestRegionAvg = latestQualityDate
+      ? (() => {
+          const latestKey = this.toDateKey(latestQualityDate);
+          const latestRows = regionRows.filter(
+            (row) => this.toDateKey(row.effectiveDate) === latestKey,
+          );
+          if (latestRows.length === 0) return null;
+          return (
+            latestRows.reduce((sum, row) => sum + Number(row.price), 0) / latestRows.length
+          );
+        })()
+      : null;
+
+    const emptyRegionSummary = {
+      list: [] as Array<{
+        region: string;
+        avgPrice: number;
+        count: number;
+        minPrice: number;
+        maxPrice: number;
+        q1: number;
+        median: number;
+        q3: number;
+        std: number;
+        volatility: number;
+        missingRate: number;
+        latestTs: number;
+        hasPrev: boolean;
+        delta: number;
+        deltaPct: number;
+      }>,
+      overallAvg: null as number | null,
+      minAvg: 0,
+      maxAvg: 0,
+      rangeMin: 0,
+      rangeMax: 0,
+      windowLabel: '',
+      expectedDays: 0,
+    };
+
+    if (regionRows.length === 0) {
+      return {
+        ranking,
+        distribution,
+        meta: {
+          meanLatestPrice,
+          expectedDays: compareExpectedDays,
+          selectedPointCount: uniquePointIds.length,
+        },
+        latestRegionAvg,
+        quality: {
+          totalSamples: 0,
+          latestDate: null,
+          missingDays: qualityMissingDays,
+        },
+        regions: emptyRegionSummary,
+      };
+    }
+
+    let latestDate: Date | null = null;
+    let earliestDate: Date | null = null;
+    const groupedRegionEntries: Record<string, Array<{ ts: number; price: number }>> = {};
+    for (const row of regionRows) {
+      const day = startOfDay(row.effectiveDate);
+      if (!latestDate || day > latestDate) latestDate = day;
+      if (!earliestDate || day < earliestDate) earliestDate = day;
+      const regionName = this.getRegionNameByLevel(row, normalizedRegionLevel);
+      if (!groupedRegionEntries[regionName]) {
+        groupedRegionEntries[regionName] = [];
+      }
+      groupedRegionEntries[regionName].push({ ts: day.getTime(), price: Number(row.price) });
+    }
+
+    const windowEnd =
+      endDate && !Number.isNaN(endDate.getTime())
+        ? startOfDay(endDate)
+        : latestDate || startOfDay(new Date());
+    const windowDays = normalizedRegionWindow === 'all' ? null : Number(normalizedRegionWindow);
+    const windowStart = windowDays
+      ? new Date(windowEnd.getTime() - (windowDays - 1) * dayMs)
+      : startDate && !Number.isNaN(startDate.getTime())
+        ? startOfDay(startDate)
+        : earliestDate || new Date(windowEnd.getTime() - 29 * dayMs);
+    const regionExpectedDays = Math.max(
+      1,
+      Math.floor((windowEnd.getTime() - windowStart.getTime()) / dayMs) + 1,
+    );
+
+    const prevWindowEnd = windowDays ? new Date(windowStart.getTime() - dayMs) : null;
+    const prevWindowStart =
+      windowDays && prevWindowEnd
+        ? new Date(prevWindowEnd.getTime() - (windowDays - 1) * dayMs)
+        : null;
+
+    const windowStartTs = windowStart.getTime();
+    const windowEndTs = windowEnd.getTime();
+    const prevStartTs = prevWindowStart?.getTime() ?? 0;
+    const prevEndTs = prevWindowEnd?.getTime() ?? 0;
+
+    const regionList = Object.entries(groupedRegionEntries)
+      .map(([region, entries]) => {
+        const windowItems = entries.filter((entry) => entry.ts >= windowStartTs && entry.ts <= windowEndTs);
+        if (windowItems.length === 0) return null;
+        const prices = windowItems.map((entry) => entry.price);
+        const sorted = [...prices].sort((a, b) => a - b);
+        const avgPrice = prices.reduce((sum, value) => sum + value, 0) / prices.length;
+        const minPrice = sorted[0];
+        const maxPrice = sorted[sorted.length - 1];
+        const q1 = this.quantile(sorted, 0.25);
+        const median = this.quantile(sorted, 0.5);
+        const q3 = this.quantile(sorted, 0.75);
+        const variance =
+          prices.reduce((sum, value) => sum + Math.pow(value - avgPrice, 2), 0) / prices.length;
+        const std = Math.sqrt(variance);
+        const volatility = avgPrice ? (maxPrice - minPrice) / avgPrice : 0;
+        const uniqueDays = new Set(
+          windowItems.map((entry) => this.toDateKey(new Date(entry.ts))),
+        ).size;
+        const missingRate = regionExpectedDays > 0 ? 1 - uniqueDays / regionExpectedDays : 0;
+        const latestTs = Math.max(...windowItems.map((entry) => entry.ts));
+
+        let prevAvg: number | null = null;
+        if (windowDays && prevWindowStart && prevWindowEnd) {
+          const prevItems = entries.filter((entry) => entry.ts >= prevStartTs && entry.ts <= prevEndTs);
+          if (prevItems.length > 0) {
+            prevAvg = prevItems.reduce((sum, value) => sum + value.price, 0) / prevItems.length;
+          }
+        }
+        const hasPrev = prevAvg !== null;
+        const delta = hasPrev ? avgPrice - (prevAvg as number) : 0;
+        const deltaPct = hasPrev && prevAvg ? (delta / prevAvg) * 100 : 0;
+
+        return {
+          region,
+          avgPrice,
+          count: windowItems.length,
+          minPrice,
+          maxPrice,
+          q1,
+          median,
+          q3,
+          std,
+          volatility,
+          missingRate,
+          latestTs,
+          hasPrev,
+          delta,
+          deltaPct,
+        };
+      })
+      .filter(
+        (
+          item,
+        ): item is {
+          region: string;
+          avgPrice: number;
+          count: number;
+          minPrice: number;
+          maxPrice: number;
+          q1: number;
+          median: number;
+          q3: number;
+          std: number;
+          volatility: number;
+          missingRate: number;
+          latestTs: number;
+          hasPrev: boolean;
+          delta: number;
+          deltaPct: number;
+        } => Boolean(item),
+      );
+
+    const overallAvg =
+      regionList.length > 0
+        ? regionList.reduce((sum, item) => sum + item.avgPrice, 0) / regionList.length
+        : null;
+    const minAvg =
+      regionList.length > 0 ? Math.min(...regionList.map((item) => item.avgPrice)) : 0;
+    const maxAvg =
+      regionList.length > 0 ? Math.max(...regionList.map((item) => item.avgPrice)) : 0;
+    const rangeMin =
+      regionList.length > 0 ? Math.min(...regionList.map((item) => item.minPrice)) : 0;
+    const rangeMax =
+      regionList.length > 0 ? Math.max(...regionList.map((item) => item.maxPrice)) : 0;
+
+    return {
+      ranking,
+      distribution,
+      meta: {
+        meanLatestPrice,
+        expectedDays: compareExpectedDays,
+        selectedPointCount: uniquePointIds.length,
+      },
+      latestRegionAvg,
+      quality: {
+        totalSamples: regionRows.length,
+        latestDate: latestQualityDate,
+        missingDays: qualityMissingDays,
+      },
+      regions: {
+        list: regionList,
+        overallAvg,
+        minAvg,
+        maxAvg,
+        rangeMin,
+        rangeMax,
+        windowLabel: normalizedRegionWindow === 'all' ? '当前筛选区间' : `近 ${normalizedRegionWindow} 天`,
+        expectedDays: regionExpectedDays,
+      },
+    };
   }
 
   /**

@@ -33,7 +33,7 @@ import {
 } from './market-data';
 import { useModalAutoFocus } from '@/hooks/useModalAutoFocus';
 import { useDictionary } from '@/hooks/useDictionaries';
-import type { PriceSubType } from '@packages/types';
+import { PriceReviewScope, PriceSourceScope, type PriceSubType } from '@packages/types';
 import type { PriceQualityTag } from './market-data/quality';
 
 const { Title, Text, Paragraph } = Typography;
@@ -65,6 +65,8 @@ export const MarketData: React.FC = () => {
     const [pointTypeFilter, setPointTypeFilter] = useState<string[]>([]);
     const [selectedSubTypes, setSelectedSubTypes] = useState<PriceSubType[]>([]);
     const [selectedQualityTags, setSelectedQualityTags] = useState<PriceQualityTag[]>([]);
+    const [reviewScope, setReviewScope] = useState<PriceReviewScope>(PriceReviewScope.APPROVED_AND_PENDING);
+    const [sourceScope, setSourceScope] = useState<PriceSourceScope>(PriceSourceScope.ALL);
     const [activeTab, setActiveTab] = useState<TabKey>('trend');
     const [focusedPointId, setFocusedPointId] = useState<string | null>(null);
     const [helpVisible, setHelpVisible] = useState(false);
@@ -116,6 +118,8 @@ export const MarketData: React.FC = () => {
                         selectedRegionCode={selectedProvince}
                         pointTypes={pointTypeFilter}
                         subTypes={selectedSubTypes}
+                        reviewScope={reviewScope}
+                        sourceScope={sourceScope}
                         selectedPointIds={selectedPointIds}
                     />
                     {/* 智能洞察 */}
@@ -125,6 +129,8 @@ export const MarketData: React.FC = () => {
                         endDate={endDate}
                         selectedPointIds={selectedPointIds}
                         subTypes={selectedSubTypes}
+                        reviewScope={reviewScope}
+                        sourceScope={sourceScope}
                     />
                     {/* 趋势图表 */}
                     <TrendChart
@@ -135,6 +141,8 @@ export const MarketData: React.FC = () => {
                         selectedPointIds={selectedPointIds}
                         selectedRegionCode={selectedProvince}
                         subTypes={selectedSubTypes}
+                        reviewScope={reviewScope}
+                        sourceScope={sourceScope}
                         highlightPointId={focusedPointId}
                     />
                 </Space>
@@ -157,6 +165,8 @@ export const MarketData: React.FC = () => {
                     selectedProvince={selectedProvince}
                     pointTypeFilter={pointTypeFilter}
                     subTypes={selectedSubTypes}
+                    reviewScope={reviewScope}
+                    sourceScope={sourceScope}
                     onFocusPoint={(id) => {
                         setFocusedPointId(id);
                         setActiveTab('trend');
@@ -182,6 +192,8 @@ export const MarketData: React.FC = () => {
                     pointTypeFilter={pointTypeFilter}
                     subTypes={selectedSubTypes}
                     selectedQualityTags={selectedQualityTags}
+                    reviewScope={reviewScope}
+                    sourceScope={sourceScope}
                 />
             ),
         },
@@ -240,6 +252,10 @@ export const MarketData: React.FC = () => {
                 onSelectedSubTypesChange={setSelectedSubTypes}
                 selectedQualityTags={selectedQualityTags}
                 onSelectedQualityTagsChange={setSelectedQualityTags}
+                reviewScope={reviewScope}
+                onReviewScopeChange={setReviewScope}
+                sourceScope={sourceScope}
+                onSourceScopeChange={setSourceScope}
             />
 
             {/* 主内容区 */}

@@ -1,5 +1,6 @@
 import { PageContainer } from '@ant-design/pro-components';
 import {
+  App,
   Button,
   Card,
   Col,
@@ -13,18 +14,18 @@ import {
   Table,
   Tag,
   Typography,
-  message,
 } from 'antd';
 import { useMemo, useState } from 'react';
 import { ArrowLeftOutlined, ThunderboltOutlined } from '@ant-design/icons';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
+import { useDictionary } from '@/hooks/useDictionaries';
 import {
   useGenerateWeeklyRollup,
   useTopicEvolution,
   useWeeklyOverview,
 } from '../api/knowledge-hooks';
 import { KNOWLEDGE_SENTIMENT_LABELS, KNOWLEDGE_TYPE_LABELS } from '../constants/knowledge-labels';
-import { KnowledgeTopActionsBar } from './knowledge/KnowledgeTopActionsBar';
+
 
 const { Text } = Typography;
 
@@ -53,11 +54,24 @@ const RISK_COLOR: Record<string, string> = {
 };
 
 export const KnowledgeDashboardPage: React.FC = () => {
+  const { message } = App.useApp();
   const screens = Grid.useBreakpoint();
   const navigate = useNavigate();
-  const [searchParams] = useSearchParams();
-  const [weeks, setWeeks] = useState(8);
+  const { data: commodityDict } = useDictionary('COMMODITY');
+  const { data: timeRangeDict } = useDictionary('TIME_RANGE');
+  const [timeRange, setTimeRange] = useState('90D');
   const [commodity, setCommodity] = useState<string | undefined>(undefined);
+
+  // Convert timeRange to weeks for API
+  const weeks = useMemo(() => {
+    const map: Record<string, number> = {
+      '30D': 4,
+      '90D': 12,
+      '180D': 26,
+      '365D': 52,
+    };
+    return map[timeRange] || 12;
+  }, [timeRange]);
 
   const { data: weeklyOverview } = useWeeklyOverview();
   const { data: topicEvolution, isLoading } = useTopicEvolution({ commodity, weeks });
@@ -156,24 +170,21 @@ export const KnowledgeDashboardPage: React.FC = () => {
               placeholder="按品种筛选"
               style={{ width: 160 }}
               onChange={(value) => setCommodity(value)}
-              options={[
-                { value: 'SOYBEAN_MEAL', label: '豆粕' },
-                { value: 'SOYBEAN_OIL', label: '豆油' },
-                { value: 'SUGAR', label: '白糖' },
-                { value: 'COTTON', label: '棉花' },
-                { value: 'HOG', label: '生猪' },
-                { value: 'UREA', label: '尿素' },
-              ]}
+              options={(commodityDict || []).map((item) => ({
+                value: item.code,
+                label: item.label,
+              }))}
             />
             <Select
-              value={weeks}
-              style={{ width: 100 }}
-              onChange={(value) => setWeeks(value)}
-              options={[
-                { value: 4, label: '4周' },
-                { value: 8, label: '8周' },
-                { value: 12, label: '12周' },
-              ]}
+              value={timeRange}
+              style={{ width: 120 }}
+              onChange={(value) => setTimeRange(value)}
+              options={(timeRangeDict || [])
+                .filter((item) => ['30D', '90D', '180D', '365D'].includes(item.code))
+                .map((item) => ({
+                  value: item.code,
+                  label: item.label,
+                }))}
             />
           </Space>
         </Space>
@@ -283,10 +294,19 @@ export const KnowledgeDashboardPage: React.FC = () => {
                     title: '标题',
                     dataIndex: 'title',
                     key: 'title',
+                    ellipsis: true,
                     render: (value, record) => (
                       <Button
                         type="link"
-                        style={{ paddingInline: 0 }}
+                        style={{
+                          paddingInline: 0,
+                          maxWidth: '100%',
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          display: 'inline-block',
+                          verticalAlign: 'middle',
+                          lineHeight: 1.5715,
+                        }}
                         onClick={() => navigate(`/intel/knowledge/items/${record.id}`)}
                       >
                         {value}
@@ -339,7 +359,7 @@ export const KnowledgeDashboardPage: React.FC = () => {
               size="small"
               dataSource={topicEvolution?.trend || []}
               columns={[
-                { title: '周期', dataIndex: 'periodKey', key: 'periodKey', width: 110 },
+                { title: '周期', dataIndex: 'periodKey', key: 'periodKey', width: 100 },
                 {
                   title: '情绪',
                   dataIndex: 'sentiment',
@@ -376,8 +396,9 @@ export const KnowledgeDashboardPage: React.FC = () => {
                   title: '摘要',
                   dataIndex: 'summary',
                   key: 'summary',
+                  ellipsis: true,
                   render: (value) => (
-                    <Text ellipsis={{ tooltip: value }} style={{ maxWidth: 340 }}>
+                    <Text ellipsis={{ tooltip: value }} style={{ maxWidth: '100%' }}>
                       {value || '-'}
                     </Text>
                   ),

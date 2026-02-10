@@ -93,7 +93,7 @@ export const KnowledgeLayout: React.FC<{ children?: React.ReactNode }> = ({ chil
                     </div>
                 </Card>
             </div>
-            <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+            <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column' }}>
                 {children || <Outlet />}
             </div>
         </div>

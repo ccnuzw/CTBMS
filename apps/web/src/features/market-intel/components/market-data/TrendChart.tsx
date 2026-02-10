@@ -17,7 +17,7 @@ import {
 } from 'recharts';
 import { useMultiPointCompare, usePriceByRegion } from '../../api/hooks';
 import { ChartContainer } from '../ChartContainer';
-import type { PriceSubType } from '@packages/types';
+import type { PriceReviewScope, PriceSourceScope, PriceSubType } from '@packages/types';
 
 const { Text } = Typography;
 
@@ -43,6 +43,8 @@ interface TrendChartProps {
     selectedPointIds: string[];
     selectedRegionCode?: string;
     subTypes?: PriceSubType[];
+    reviewScope?: PriceReviewScope;
+    sourceScope?: PriceSourceScope;
     highlightPointId?: string | null;
 }
 
@@ -54,6 +56,8 @@ export const TrendChart: React.FC<TrendChartProps> = ({
     selectedPointIds,
     selectedRegionCode,
     subTypes,
+    reviewScope,
+    sourceScope,
     highlightPointId,
 }) => {
     const { token } = theme.useToken();
@@ -71,6 +75,8 @@ export const TrendChart: React.FC<TrendChartProps> = ({
         startDate,
         endDate,
         subTypes,
+        reviewScope,
+        sourceScope,
     });
 
     const highlightName = useMemo(() => {
@@ -83,7 +89,7 @@ export const TrendChart: React.FC<TrendChartProps> = ({
     const { data: regionData, isLoading: isLoadingRegion } = usePriceByRegion(
         selectedRegionCode || '',
         commodity,
-        { startDate, endDate, subTypes },
+        { startDate, endDate, subTypes, reviewScope, sourceScope },
     );
 
     // 只有当实际上正在请求区域数据时，才计入 loading

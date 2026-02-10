@@ -11,7 +11,7 @@ import {
     EnvironmentOutlined,
 } from '@ant-design/icons';
 import { usePriceData } from '../../api/hooks';
-import type { PriceDataResponse, PriceSubType } from '@packages/types';
+import type { PriceDataResponse, PriceReviewScope, PriceSourceScope, PriceSubType } from '@packages/types';
 import { PRICE_QUALITY_TAG_LABELS, PriceQualityTag } from './quality';
 import { useDictionary } from '@/hooks/useDictionaries';
 import {
@@ -66,6 +66,8 @@ interface DataGridProps {
     pointTypeFilter?: string[];
     subTypes?: PriceSubType[];
     selectedQualityTags?: PriceQualityTag[];
+    reviewScope?: PriceReviewScope;
+    sourceScope?: PriceSourceScope;
 }
 
 type PriceDataRow = PriceDataResponse & { qualityTag?: PriceQualityTag };
@@ -79,6 +81,8 @@ export const DataGrid: React.FC<DataGridProps> = ({
     pointTypeFilter,
     subTypes,
     selectedQualityTags,
+    reviewScope,
+    sourceScope,
 }) => {
     const { token } = theme.useToken();
     const { data: priceSubTypeDict } = useDictionary('PRICE_SUB_TYPE');
@@ -125,6 +129,8 @@ export const DataGrid: React.FC<DataGridProps> = ({
         pointTypes: pointTypeFilter,
         subTypes: subTypes as PriceSubType[],
         qualityTags: selectedQualityTags,
+        reviewScope,
+        sourceScope,
         pageSize: 1000, // 扩大以支持足够的本地过滤
     }, {
         enabled: selectedPointIds.length > 0,

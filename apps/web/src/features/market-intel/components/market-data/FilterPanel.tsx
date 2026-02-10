@@ -32,6 +32,7 @@ import {
 } from '@ant-design/icons';
 import dayjs, { Dayjs } from 'dayjs';
 import type { PriceSubType } from '@packages/types';
+import { PriceReviewScope, PriceSourceScope } from '@packages/types';
 import { useCollectionPoints, useProvinces } from '../../api/hooks';
 import { AdvancedPointSelector } from './AdvancedPointSelector';
 import { PRICE_QUALITY_TAG_OPTIONS, type PriceQualityTag } from './quality';
@@ -102,6 +103,10 @@ interface FilterPanelProps {
     onSelectedSubTypesChange: (types: PriceSubType[]) => void;
     selectedQualityTags: PriceQualityTag[];
     onSelectedQualityTagsChange: (types: PriceQualityTag[]) => void;
+    reviewScope: PriceReviewScope;
+    onReviewScopeChange: (scope: PriceReviewScope) => void;
+    sourceScope: PriceSourceScope;
+    onSourceScopeChange: (scope: PriceSourceScope) => void;
 }
 
 export const FilterPanel: React.FC<FilterPanelProps> = ({
@@ -119,6 +124,10 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
     onSelectedSubTypesChange,
     selectedQualityTags,
     onSelectedQualityTagsChange,
+    reviewScope,
+    onReviewScopeChange,
+    sourceScope,
+    onSourceScopeChange,
 }) => {
     const { token } = theme.useToken();
     const [searchKeyword, setSearchKeyword] = useState('');
@@ -410,6 +419,46 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
                         size="small"
                         maxTagCount="responsive"
                     />
+                </div>
+
+                {/* ===== 数据口径 ===== */}
+                <div
+                    style={{
+                        marginBottom: 16,
+                        padding: 12,
+                        background: token.colorFillQuaternary,
+                        borderRadius: token.borderRadius,
+                    }}
+                >
+                    <Flex align="center" gap={6} style={{ marginBottom: 8 }}>
+                        <FilterOutlined style={{ color: token.colorPrimary }} />
+                        <Text strong style={{ fontSize: 12 }}>数据口径</Text>
+                    </Flex>
+                    <Text type="secondary" style={{ fontSize: 11, display: 'block', marginBottom: 8 }}>
+                        控制审核状态与数据来源范围
+                    </Text>
+                    <Space direction="vertical" size={8} style={{ width: '100%' }}>
+                        <Select
+                            size="small"
+                            value={reviewScope}
+                            onChange={(value) => onReviewScopeChange(value as PriceReviewScope)}
+                            options={[
+                                { label: '审核通过+待审', value: PriceReviewScope.APPROVED_AND_PENDING },
+                                { label: '仅审核通过', value: PriceReviewScope.APPROVED_ONLY },
+                                { label: '全部状态', value: PriceReviewScope.ALL },
+                            ]}
+                        />
+                        <Select
+                            size="small"
+                            value={sourceScope}
+                            onChange={(value) => onSourceScopeChange(value as PriceSourceScope)}
+                            options={[
+                                { label: '全部来源', value: PriceSourceScope.ALL },
+                                { label: '仅AI提取', value: PriceSourceScope.AI_ONLY },
+                                { label: '仅人工填报', value: PriceSourceScope.MANUAL_ONLY },
+                            ]}
+                        />
+                    </Space>
                 </div>
 
                 {/* ===== 区域参考 ===== */}

@@ -27,9 +27,9 @@ import {
     AimOutlined,
     InfoCircleOutlined,
 } from '@ant-design/icons';
-import { useMultiPointCompare, usePriceData } from '../../api/hooks';
+import { usePriceCompareAnalytics } from '../../api/hooks';
 import { ChartContainer } from '../ChartContainer';
-import type { PriceSubType } from '@packages/types';
+import type { PriceReviewScope, PriceSourceScope, PriceSubType } from '@packages/types';
 import {
     ResponsiveContainer,
     ComposedChart,
@@ -68,6 +68,8 @@ interface ComparisonPanelProps {
     selectedProvince?: string;
     pointTypeFilter?: string[];
     subTypes?: PriceSubType[];
+    reviewScope?: PriceReviewScope;
+    sourceScope?: PriceSourceScope;
     onFocusPoint?: (id: string) => void;
 }
 
@@ -107,17 +109,6 @@ interface DistributionItem {
     avg: number;
 }
 
-const computeQuantile = (sorted: number[], q: number) => {
-    if (sorted.length === 0) return 0;
-    const pos = (sorted.length - 1) * q;
-    const base = Math.floor(pos);
-    const rest = pos - base;
-    if (sorted[base + 1] !== undefined) {
-        return sorted[base] + rest * (sorted[base + 1] - sorted[base]);
-    }
-    return sorted[base];
-};
-
 export const ComparisonPanel: React.FC<ComparisonPanelProps> = ({
     commodity,
     startDate,
@@ -126,6 +117,8 @@ export const ComparisonPanel: React.FC<ComparisonPanelProps> = ({
     selectedProvince,
     pointTypeFilter,
     subTypes,
+    reviewScope,
+    sourceScope,
     onFocusPoint,
 }) => {
     const { token } = theme.useToken();
@@ -157,110 +150,42 @@ export const ComparisonPanel: React.FC<ComparisonPanelProps> = ({
     const [regionLevel, setRegionLevel] = useState<'province' | 'city' | 'district'>('city');
     const [regionDetail, setRegionDetail] = useState<'compact' | 'detail'>('compact');
 
-    const expectedDays = useMemo(() => {
-        if (!startDate || !endDate) return null;
-        return dayjs(endDate).startOf('day').diff(dayjs(startDate).startOf('day'), 'day') + 1;
-    }, [startDate, endDate]);
-
-    // 多采集点数据
-    const { data: multiPointData, isLoading } = useMultiPointCompare(
-        selectedPointIds,
-        commodity,
-        { startDate, endDate, subTypes },
-    );
-
-    // 获取价格数据用于区域统计 (受筛选器控制)
-    const { data: priceDataResult } = usePriceData({
+    const { data: compareAnalytics, isLoading } = usePriceCompareAnalytics({
+        collectionPointIds: selectedPointIds,
         commodity,
         startDate,
         endDate,
+        subTypes,
         regionCode: selectedProvince,
         pointTypes: pointTypeFilter,
-        subTypes,
-        pageSize: 1000,
+        reviewScope,
+        sourceScope,
+        regionLevel,
+        regionWindow,
     }, {
-        enabled: selectedPointIds.length > 0,
+        enabled: selectedPointIds.length > 0 && !!commodity,
     });
 
-    const priceDataList = priceDataResult?.data || [];
-
-    const latestRegionAvg = useMemo(() => {
-        if (priceDataList.length === 0) return null;
-        let latestDate: Date | null = null;
-        priceDataList.forEach((item) => {
-            const d = new Date(item.effectiveDate);
-            if (!latestDate || d > latestDate) latestDate = d;
-        });
-        if (!latestDate) return null;
-        const latestKey = dayjs(latestDate).format('YYYY-MM-DD');
-        const latestItems = priceDataList.filter((item) => dayjs(item.effectiveDate).format('YYYY-MM-DD') === latestKey);
-        if (latestItems.length === 0) return null;
-        const sum = latestItems.reduce((acc, item) => acc + item.price, 0);
-        return sum / latestItems.length;
-    }, [priceDataList]);
+    const latestRegionAvg = useMemo(
+        () => compareAnalytics?.latestRegionAvg ?? null,
+        [compareAnalytics],
+    );
 
     const baseItems = useMemo<RankingItem[]>(() => {
-        if (!multiPointData) return [];
+        const ranking = compareAnalytics?.ranking || [];
+        const meanLatest = compareAnalytics?.meta.meanLatestPrice || 0;
 
-        const latestPrices: number[] = [];
-        multiPointData.forEach((item) => {
-            const latest = item.data[item.data.length - 1];
-            if (latest) latestPrices.push(latest.price);
-        });
-        const meanLatest = latestPrices.length > 0
-            ? latestPrices.reduce((sum, v) => sum + v, 0) / latestPrices.length
-            : 0;
-
-        return multiPointData.map((item) => {
-            const latestData = item.data[item.data.length - 1];
-            const firstData = item.data[0];
-            const prices = item.data.map((d) => d.price);
-            const minPrice = prices.length > 0 ? Math.min(...prices) : 0;
-            const maxPrice = prices.length > 0 ? Math.max(...prices) : 0;
-            const avgPrice = prices.length > 0 ? prices.reduce((a, b) => a + b, 0) / prices.length : 0;
-
-            const price = latestData?.price || 0;
-            const change = latestData?.change || 0;
-            const changePct = price ? (change / price) * 100 : 0;
-            const periodChange = latestData && firstData ? latestData.price - firstData.price : 0;
-            const periodChangePct = firstData?.price ? (periodChange / firstData.price) * 100 : 0;
-            const volatility = avgPrice > 0 ? ((maxPrice - minPrice) / avgPrice) * 100 : 0;
-            const basePrice = firstData?.price || 0;
-            const indexPrice = basePrice ? (price / basePrice) * 100 : 0;
-            const indexChange = basePrice ? (change / basePrice) * 100 : 0;
-            const missingDays = expectedDays ? Math.max(0, expectedDays - item.data.length) : null;
-
-            const deviationPct = meanLatest ? Math.abs((price - meanLatest) / meanLatest) * 100 : 0;
-            const isAnomaly = deviationPct >= deviationThreshold || Math.abs(change) >= changeThreshold;
-
-            const regionLabel = item.point.region?.shortName || item.point.region?.name || item.point.regionCode || '未知';
-
+        return ranking.map((item) => {
+            const deviationPct = meanLatest ? Math.abs((item.price - meanLatest) / meanLatest) * 100 : 0;
+            const isAnomaly = deviationPct >= deviationThreshold || Math.abs(item.change) >= changeThreshold;
             return {
-                id: item.point.id,
-                name: item.point.shortName || item.point.name,
-                code: item.point.code,
-                type: item.point.type,
-                regionLabel,
-                price,
-                change,
-                changePct,
-                periodChange,
-                periodChangePct,
-                volatility,
-                minPrice,
-                maxPrice,
-                avgPrice,
-                basePrice,
-                indexPrice,
-                indexChange,
-                samples: item.data.length,
-                missingDays,
+                ...item,
                 isAnomaly,
                 baselineDiff: null,
                 baselineDiffPct: null,
             };
         });
-    }, [multiPointData, expectedDays, deviationThreshold, changeThreshold]);
+    }, [compareAnalytics, deviationThreshold, changeThreshold]);
 
     useEffect(() => {
         if (baselineKey === 'region' && !latestRegionAvg) {
@@ -331,160 +256,27 @@ export const ComparisonPanel: React.FC<ComparisonPanelProps> = ({
     }, [groupMode, sortedItems]);
 
     const distributionItems = useMemo<DistributionItem[]>(() => {
-        if (!multiPointData || sortedItems.length === 0) return [];
-        const map = new Map<string, DistributionItem>();
-
-        multiPointData.forEach((item) => {
-            const prices = item.data.map((d) => d.price).filter((v) => Number.isFinite(v));
-            if (prices.length === 0) return;
-            const sorted = [...prices].sort((a, b) => a - b);
-            const min = sorted[0];
-            const max = sorted[sorted.length - 1];
-            const q1 = computeQuantile(sorted, 0.25);
-            const median = computeQuantile(sorted, 0.5);
-            const q3 = computeQuantile(sorted, 0.75);
-            const avg = sorted.reduce((sum, v) => sum + v, 0) / sorted.length;
-
-            map.set(item.point.id, {
-                id: item.point.id,
-                name: item.point.shortName || item.point.name,
-                min,
-                max,
-                q1,
-                median,
-                q3,
-                avg,
-            });
-        });
-
+        const distribution = compareAnalytics?.distribution || [];
+        if (distribution.length === 0 || sortedItems.length === 0) return [];
+        const distributionById = new Map(distribution.map((item) => [item.id, item] as const));
         return sortedItems
-            .map((item) => map.get(item.id))
+            .map((item) => distributionById.get(item.id))
             .filter((item): item is DistributionItem => Boolean(item))
             .slice(0, 12);
-    }, [multiPointData, sortedItems]);
+    }, [compareAnalytics, sortedItems]);
 
     const regionSummary = useMemo(() => {
-        if (!priceDataList || priceDataList.length === 0) {
-            return {
-                list: [],
-                overallAvg: null as number | null,
-                minAvg: 0,
-                maxAvg: 0,
-                rangeMin: 0,
-                rangeMax: 0,
-                windowLabel: '',
-                expectedDays: 0,
-            };
-        }
-
-        let latestDate: dayjs.Dayjs | null = null;
-        let earliestDate: dayjs.Dayjs | null = null;
-        const grouped: Record<string, Array<{ ts: number; price: number }>> = {};
-
-        priceDataList.forEach((item) => {
-            const regionName = (() => {
-                if (regionLevel === 'province') {
-                    return item.province || item.region?.[0] || item.location || '其他';
-                }
-                if (regionLevel === 'district') {
-                    return item.district || item.region?.[2] || item.region?.[1] || item.location || '其他';
-                }
-                return item.city || item.region?.[1] || item.region?.[0] || item.location || '其他';
-            })();
-            const day = dayjs(item.effectiveDate).startOf('day');
-            if (!latestDate || day.isAfter(latestDate)) latestDate = day;
-            if (!earliestDate || day.isBefore(earliestDate)) earliestDate = day;
-            if (!grouped[regionName]) grouped[regionName] = [];
-            grouped[regionName].push({ ts: day.valueOf(), price: item.price });
-        });
-
-        const windowEnd = (endDate ? dayjs(endDate).startOf('day') : latestDate) ?? dayjs();
-        const windowDays = regionWindow === 'all' ? null : Number(regionWindow);
-        const windowStart = windowDays
-            ? windowEnd.subtract(windowDays - 1, 'day')
-            : (startDate ? dayjs(startDate).startOf('day') : earliestDate ?? windowEnd.subtract(29, 'day'));
-        const expectedDays = windowEnd.diff(windowStart, 'day') + 1;
-
-        const prevWindowEnd = windowDays ? windowStart.subtract(1, 'day') : null;
-        const prevWindowStart = windowDays ? prevWindowEnd!.subtract(windowDays - 1, 'day') : null;
-
-        const windowStartTs = windowStart.valueOf();
-        const windowEndTs = windowEnd.valueOf();
-        const prevStartTs = prevWindowStart?.valueOf() ?? 0;
-        const prevEndTs = prevWindowEnd?.valueOf() ?? 0;
-
-        const list = Object.entries(grouped).map(([region, entries]) => {
-            const windowItems = entries.filter((e) => e.ts >= windowStartTs && e.ts <= windowEndTs);
-            if (windowItems.length === 0) {
-                return null;
-            }
-
-            const prices = windowItems.map((e) => e.price);
-            const sorted = [...prices].sort((a, b) => a - b);
-            const avgPrice = prices.reduce((sum, v) => sum + v, 0) / prices.length;
-            const minPrice = sorted[0];
-            const maxPrice = sorted[sorted.length - 1];
-            const q1 = computeQuantile(sorted, 0.25);
-            const median = computeQuantile(sorted, 0.5);
-            const q3 = computeQuantile(sorted, 0.75);
-            const variance = prices.reduce((sum, v) => sum + Math.pow(v - avgPrice, 2), 0) / prices.length;
-            const std = Math.sqrt(variance);
-            const volatility = avgPrice ? (maxPrice - minPrice) / avgPrice : 0;
-            const uniqueDays = new Set(windowItems.map((e) => dayjs(e.ts).format('YYYY-MM-DD'))).size;
-            const missingRate = expectedDays > 0 ? 1 - uniqueDays / expectedDays : 0;
-            const latestTs = Math.max(...windowItems.map((e) => e.ts));
-
-            let prevAvg = null as number | null;
-            if (windowDays && prevWindowStart && prevWindowEnd) {
-                const prevItems = entries.filter((e) => e.ts >= prevStartTs && e.ts <= prevEndTs);
-                if (prevItems.length > 0) {
-                    prevAvg = prevItems.reduce((sum, v) => sum + v.price, 0) / prevItems.length;
-                }
-            }
-            const hasPrev = prevAvg !== null;
-            const delta = hasPrev ? avgPrice - (prevAvg as number) : 0;
-            const deltaPct = hasPrev && prevAvg ? (delta / prevAvg) * 100 : 0;
-
-            return {
-                region,
-                avgPrice,
-                count: windowItems.length,
-                minPrice,
-                maxPrice,
-                q1,
-                median,
-                q3,
-                std,
-                volatility,
-                missingRate,
-                latestTs,
-                hasPrev,
-                delta,
-                deltaPct,
-            };
-        }).filter((item): item is NonNullable<typeof item> => Boolean(item));
-
-        const overallAvg = list.length > 0
-            ? list.reduce((sum, item) => sum + item.avgPrice, 0) / list.length
-            : null;
-
-        const minAvg = list.length > 0 ? Math.min(...list.map((item) => item.avgPrice)) : 0;
-        const maxAvg = list.length > 0 ? Math.max(...list.map((item) => item.avgPrice)) : 0;
-        const rangeMin = list.length > 0 ? Math.min(...list.map((item) => item.minPrice)) : 0;
-        const rangeMax = list.length > 0 ? Math.max(...list.map((item) => item.maxPrice)) : 0;
-        const windowLabel = regionWindow === 'all' ? '当前筛选区间' : `近 ${regionWindow} 天`;
-
-        return {
-            list,
-            overallAvg,
-            minAvg,
-            maxAvg,
-            rangeMin,
-            rangeMax,
-            windowLabel,
-            expectedDays,
+        return compareAnalytics?.regions || {
+            list: [],
+            overallAvg: null as number | null,
+            minAvg: 0,
+            maxAvg: 0,
+            rangeMin: 0,
+            rangeMax: 0,
+            windowLabel: '',
+            expectedDays: 0,
         };
-    }, [priceDataList, startDate, endDate, regionWindow, regionLevel]);
+    }, [compareAnalytics]);
 
     const regionList = useMemo(() => {
         const keyword = regionKeyword.trim();
@@ -511,29 +303,7 @@ export const ComparisonPanel: React.FC<ComparisonPanelProps> = ({
         return filtered.slice(-topN);
     }, [regionSummary.list, regionSort, regionKeyword, regionView]);
 
-    const quality = useMemo(() => {
-        if (!priceDataList || priceDataList.length === 0) return null;
-        const dateSet = new Set<string>();
-        let latestDate: Date | null = null;
-
-        priceDataList.forEach((item) => {
-            const date = new Date(item.effectiveDate);
-            dateSet.add(dayjs(date).format('YYYY-MM-DD'));
-            if (!latestDate || date > latestDate) latestDate = date;
-        });
-
-        let missingDays: number | null = null;
-        if (startDate && endDate) {
-            const expected = dayjs(endDate).startOf('day').diff(dayjs(startDate).startOf('day'), 'day') + 1;
-            missingDays = Math.max(0, expected - dateSet.size);
-        }
-
-        return {
-            totalSamples: priceDataList.length,
-            latestDate,
-            missingDays,
-        };
-    }, [priceDataList, startDate, endDate]);
+    const quality = useMemo(() => compareAnalytics?.quality || null, [compareAnalytics]);
 
     if (selectedPointIds.length === 0) {
         return (

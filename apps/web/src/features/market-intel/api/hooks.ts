@@ -1080,7 +1080,14 @@ interface CollectionPointPriceData {
 export const usePriceByCollectionPoint = (
     collectionPointId: string,
     commodity?: string,
-    daysOrParams: number | { startDate?: Date; endDate?: Date; days?: number; subTypes?: string[] } = 30,
+    daysOrParams: number | {
+        startDate?: Date;
+        endDate?: Date;
+        days?: number;
+        subTypes?: string[];
+        reviewScope?: string;
+        sourceScope?: string;
+    } = 30,
 ) => {
     const paramsValue = typeof daysOrParams === 'number' ? { days: daysOrParams } : daysOrParams;
     const normalizedSubTypes = normalizePriceSubTypeList(paramsValue?.subTypes);
@@ -1093,6 +1100,8 @@ export const usePriceByCollectionPoint = (
             paramsValue?.startDate?.toISOString(),
             paramsValue?.endDate?.toISOString(),
             normalizedSubTypes.join(','),
+            paramsValue?.reviewScope,
+            paramsValue?.sourceScope,
         ],
         queryFn: async () => {
             const params = new URLSearchParams();
@@ -1103,6 +1112,8 @@ export const usePriceByCollectionPoint = (
             if (normalizedSubTypes.length > 0) {
                 params.append('subTypes', normalizedSubTypes.join(','));
             }
+            if (paramsValue?.reviewScope) params.append('reviewScope', paramsValue.reviewScope);
+            if (paramsValue?.sourceScope) params.append('sourceScope', paramsValue.sourceScope);
             const res = await apiClient.get<CollectionPointPriceData>(
                 `/market-intel/price-data/by-collection-point/${collectionPointId}?${params.toString()}`,
             );
@@ -1149,7 +1160,14 @@ interface RegionPriceData {
 export const usePriceByRegion = (
     regionCode: string,
     commodity?: string,
-    daysOrParams: number | { startDate?: Date; endDate?: Date; days?: number; subTypes?: string[] } = 30,
+    daysOrParams: number | {
+        startDate?: Date;
+        endDate?: Date;
+        days?: number;
+        subTypes?: string[];
+        reviewScope?: string;
+        sourceScope?: string;
+    } = 30,
 ) => {
     const paramsValue = typeof daysOrParams === 'number' ? { days: daysOrParams } : daysOrParams;
     const normalizedSubTypes = normalizePriceSubTypeList(paramsValue?.subTypes);
@@ -1162,6 +1180,8 @@ export const usePriceByRegion = (
             paramsValue?.startDate?.toISOString(),
             paramsValue?.endDate?.toISOString(),
             normalizedSubTypes.join(','),
+            paramsValue?.reviewScope,
+            paramsValue?.sourceScope,
         ],
         queryFn: async () => {
             const params = new URLSearchParams();
@@ -1172,6 +1192,8 @@ export const usePriceByRegion = (
             if (normalizedSubTypes.length > 0) {
                 params.append('subTypes', normalizedSubTypes.join(','));
             }
+            if (paramsValue?.reviewScope) params.append('reviewScope', paramsValue.reviewScope);
+            if (paramsValue?.sourceScope) params.append('sourceScope', paramsValue.sourceScope);
             const res = await apiClient.get<RegionPriceData>(
                 `/market-intel/price-data/by-region/${regionCode}?${params.toString()}`,
             );
@@ -1205,7 +1227,14 @@ interface MultiPointTrendItem {
 export const useMultiPointCompare = (
     collectionPointIds: string[],
     commodity: string,
-    daysOrParams: number | { startDate?: Date; endDate?: Date; days?: number; subTypes?: string[] } = 30,
+    daysOrParams: number | {
+        startDate?: Date;
+        endDate?: Date;
+        days?: number;
+        subTypes?: string[];
+        reviewScope?: string;
+        sourceScope?: string;
+    } = 30,
 ) => {
     const paramsValue = typeof daysOrParams === 'number' ? { days: daysOrParams } : daysOrParams;
     const normalizedSubTypes = normalizePriceSubTypeList(paramsValue?.subTypes);
@@ -1218,6 +1247,8 @@ export const useMultiPointCompare = (
             paramsValue?.startDate?.toISOString(),
             paramsValue?.endDate?.toISOString(),
             normalizedSubTypes.join(','),
+            paramsValue?.reviewScope,
+            paramsValue?.sourceScope,
         ],
         queryFn: async () => {
             const params = new URLSearchParams();
@@ -1229,12 +1260,153 @@ export const useMultiPointCompare = (
             if (normalizedSubTypes.length > 0) {
                 params.append('subTypes', normalizedSubTypes.join(','));
             }
+            if (paramsValue?.reviewScope) params.append('reviewScope', paramsValue.reviewScope);
+            if (paramsValue?.sourceScope) params.append('sourceScope', paramsValue.sourceScope);
             const res = await apiClient.get<MultiPointTrendItem[]>(
                 `/market-intel/price-data/compare?${params.toString()}`,
             );
             return res.data;
         },
         enabled: collectionPointIds.length > 0 && !!commodity,
+    });
+};
+
+interface CompareRankingItem {
+    id: string;
+    name: string;
+    code: string;
+    type?: string;
+    regionLabel: string;
+    price: number;
+    change: number;
+    changePct: number;
+    periodChange: number;
+    periodChangePct: number;
+    volatility: number;
+    minPrice: number;
+    maxPrice: number;
+    avgPrice: number;
+    basePrice: number;
+    indexPrice: number;
+    indexChange: number;
+    samples: number;
+    missingDays: number | null;
+}
+
+interface CompareDistributionItem {
+    id: string;
+    name: string;
+    min: number;
+    max: number;
+    q1: number;
+    median: number;
+    q3: number;
+    avg: number;
+}
+
+interface CompareRegionItem {
+    region: string;
+    avgPrice: number;
+    count: number;
+    minPrice: number;
+    maxPrice: number;
+    q1: number;
+    median: number;
+    q3: number;
+    std: number;
+    volatility: number;
+    missingRate: number;
+    latestTs: number;
+    hasPrev: boolean;
+    delta: number;
+    deltaPct: number;
+}
+
+interface PriceCompareAnalyticsResponse {
+    ranking: CompareRankingItem[];
+    distribution: CompareDistributionItem[];
+    meta: {
+        meanLatestPrice: number | null;
+        expectedDays: number | null;
+        selectedPointCount: number;
+    };
+    latestRegionAvg: number | null;
+    quality: {
+        totalSamples: number;
+        latestDate: Date | null;
+        missingDays: number | null;
+    };
+    regions: {
+        list: CompareRegionItem[];
+        overallAvg: number | null;
+        minAvg: number;
+        maxAvg: number;
+        rangeMin: number;
+        rangeMax: number;
+        windowLabel: string;
+        expectedDays: number;
+    };
+}
+
+interface PriceCompareAnalyticsQuery {
+    collectionPointIds: string[];
+    commodity?: string;
+    startDate?: Date;
+    endDate?: Date;
+    days?: number;
+    subTypes?: string[];
+    regionCode?: string;
+    pointTypes?: string[];
+    reviewScope?: string;
+    sourceScope?: string;
+    regionLevel?: 'province' | 'city' | 'district';
+    regionWindow?: '7' | '30' | '90' | 'all';
+}
+
+export const usePriceCompareAnalytics = (
+    query: PriceCompareAnalyticsQuery,
+    options?: UsePriceDataOptions,
+) => {
+    const normalizedSubTypes = normalizePriceSubTypeList(query.subTypes);
+    const normalizedPointTypes = query.pointTypes || [];
+    return useQuery<PriceCompareAnalyticsResponse>({
+        queryKey: [
+            'price-compare-analytics',
+            query.collectionPointIds,
+            query.commodity,
+            query.days,
+            query.startDate?.toISOString(),
+            query.endDate?.toISOString(),
+            normalizedSubTypes.join(','),
+            query.regionCode,
+            normalizedPointTypes.join(','),
+            query.reviewScope,
+            query.sourceScope,
+            query.regionLevel,
+            query.regionWindow,
+        ],
+        queryFn: async () => {
+            const params = new URLSearchParams();
+            if (query.collectionPointIds.length > 0) {
+                params.append('ids', query.collectionPointIds.join(','));
+            }
+            if (query.commodity) params.append('commodity', query.commodity);
+            if (query.startDate) params.append('startDate', query.startDate.toISOString());
+            if (query.endDate) params.append('endDate', query.endDate.toISOString());
+            if (query.days) params.append('days', String(query.days));
+            if (normalizedSubTypes.length > 0) params.append('subTypes', normalizedSubTypes.join(','));
+            if (query.regionCode) params.append('regionCode', query.regionCode);
+            if (normalizedPointTypes.length > 0) params.append('pointTypes', normalizedPointTypes.join(','));
+            if (query.reviewScope) params.append('reviewScope', query.reviewScope);
+            if (query.sourceScope) params.append('sourceScope', query.sourceScope);
+            if (query.regionLevel) params.append('regionLevel', query.regionLevel);
+            if (query.regionWindow) params.append('regionWindow', query.regionWindow);
+            const res = await apiClient.get<PriceCompareAnalyticsResponse>(
+                `/market-intel/price-data/compare-analytics?${params.toString()}`,
+            );
+            return res.data;
+        },
+        enabled: (options?.enabled ?? true) && query.collectionPointIds.length > 0 && !!query.commodity,
     });
 };
 

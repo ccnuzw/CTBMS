@@ -249,13 +249,21 @@ export const KnowledgeDetailPage: React.FC = () => {
                 locale={{ emptyText: '暂无出向关系' }}
                 renderItem={(item) => (
                   <List.Item>
-                    <Space>
-                      <Tag color="geekblue">
+                    <div style={{ display: 'flex', width: '100%', alignItems: 'center', gap: 8 }}>
+                      <Tag color="geekblue" style={{ flexShrink: 0 }}>
                         {RELATION_LABEL_MAP[item.relationType] || item.relationType}
                       </Tag>
-                      <Text type="secondary">权重 {item.weight}</Text>
                       <Button
                         type="link"
+                        style={{
+                          flex: 1,
+                          textAlign: 'left',
+                          padding: 0,
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          whiteSpace: 'nowrap',
+                          display: 'block',
+                        }}
                         onClick={() =>
                           item.toKnowledge?.id &&
                           navigate(`/intel/knowledge/items/${item.toKnowledge.id}`)
@@ -263,7 +271,10 @@ export const KnowledgeDetailPage: React.FC = () => {
                       >
                         {item.toKnowledge?.title || '-'}
                       </Button>
-                    </Space>
+                      <Text type="secondary" style={{ flexShrink: 0, fontSize: 12 }}>
+                        权重 {item.weight}
+                      </Text>
+                    </div>
                   </List.Item>
                 )}
               />
@@ -274,24 +285,7 @@ export const KnowledgeDetailPage: React.FC = () => {
         <Col xs={24} lg={8}>
           <Space direction="vertical" style={{ width: '100%' }} size={16}>
             <Card title="基础信息">
-              <Breadcrumb
-                items={[
-                  {
-                    title: (
-                      <Button
-                        type="link"
-                        style={{ paddingInline: 0 }}
-                        onClick={() => navigate(backTo)}
-                      >
-                        {navPath[0]}
-                      </Button>
-                    ),
-                  },
-                  { title: navPath[1] },
-                ]}
-                style={{ marginBottom: 10 }}
-              />
-              <Descriptions column={1} size="small" colon={false}>
+              <Descriptions column={1} size="small" colon>
                 <Descriptions.Item label="周期类型">
                   {detail.periodTypeLabel ||
                     PERIOD_LABEL_MAP[detail.periodType] ||
@@ -374,12 +368,21 @@ export const KnowledgeDetailPage: React.FC = () => {
                 locale={{ emptyText: '暂无入向关系' }}
                 renderItem={(item) => (
                   <List.Item>
-                    <Space>
-                      <Tag color="purple">
+                    <div style={{ display: 'flex', width: '100%', alignItems: 'center', gap: 8 }}>
+                      <Tag color="purple" style={{ flexShrink: 0 }}>
                         {RELATION_LABEL_MAP[item.relationType] || item.relationType}
                       </Tag>
                       <Button
                         type="link"
+                        style={{
+                          flex: 1,
+                          textAlign: 'left',
+                          padding: 0,
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          whiteSpace: 'nowrap',
+                          display: 'block',
+                        }}
                         onClick={() =>
                           item.fromKnowledge?.id &&
                           navigate(`/intel/knowledge/items/${item.fromKnowledge.id}`)
@@ -387,7 +390,7 @@ export const KnowledgeDetailPage: React.FC = () => {
                       >
                         {item.fromKnowledge?.title || '-'}
                       </Button>
-                    </Space>
+                    </div>
                   </List.Item>
                 )}
               />
