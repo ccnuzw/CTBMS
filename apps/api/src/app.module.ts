@@ -24,6 +24,9 @@ import { ConfigModule } from './modules/config/config.module';
 import { CollectionPointAllocationModule } from './modules/collection-point-allocation';
 import { PriceSubmissionModule } from './modules/price-submission';
 import { KnowledgeModule } from './modules/knowledge/knowledge.module';
+import { WorkflowDefinitionModule } from './modules/workflow-definition';
+import { WorkflowExecutionModule } from './modules/workflow-execution';
+import { DecisionRuleModule } from './modules/decision-rule';
 
 @Module({
   imports: [
@@ -49,6 +52,9 @@ import { KnowledgeModule } from './modules/knowledge/knowledge.module';
     CollectionPointAllocationModule,
     PriceSubmissionModule,
     KnowledgeModule,
+    WorkflowDefinitionModule,
+    WorkflowExecutionModule,
+    DecisionRuleModule,
   ],
   controllers: [AppController],
   providers: [],

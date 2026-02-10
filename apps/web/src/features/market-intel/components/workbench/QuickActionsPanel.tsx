@@ -1,5 +1,5 @@
 import { BookOutlined, FileAddOutlined, FileSearchOutlined, FormOutlined } from '@ant-design/icons';
-import { Button, Card, Col, Row, Space, Typography } from 'antd';
+import { Button, Card, Col, Row, Space, Typography, theme } from 'antd';
 
 const { Paragraph, Text } = Typography;
 
@@ -24,6 +24,7 @@ export const QuickActionsPanel: React.FC<Props> = ({
   onCreateReport,
   onOpenKnowledge,
 }) => {
+  const { token } = theme.useToken();
   const actions: ActionItem[] = [
     {
       key: 'upload',
@@ -49,7 +50,7 @@ export const QuickActionsPanel: React.FC<Props> = ({
   ];
 
   return (
-    <Card bodyStyle={{ padding: '12px 16px' }} style={{ borderRadius: 12, borderColor: '#e9edf5' }}>
+    <Card bodyStyle={{ padding: '12px 16px' }} style={{ borderRadius: 12, borderColor: token.colorBorderSecondary }}>
       <Space size={16} wrap>
         <Text strong style={{ marginRight: 8 }}>快捷操作：</Text>
         {actions.map((action) => (

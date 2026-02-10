@@ -38,11 +38,11 @@ export const KnowledgeLayout: React.FC<{ children?: React.ReactNode }> = ({ chil
     };
 
     return (
-        <div style={{ height: '100%', display: 'flex', flexDirection: 'column', background: '#f5f7fb' }}>
+        <div style={{ height: '100%', display: 'flex', flexDirection: 'column', background: token.colorBgLayout }}>
             <div style={{ padding: '16px 24px 0 24px', flexShrink: 0 }}>
                 <Card
                     bodyStyle={{ padding: '12px 16px' }}
-                    style={{ borderRadius: 12, marginBottom: 16, borderColor: '#e9edf5' }}
+                    style={{ borderRadius: 12, marginBottom: 16, borderColor: token.colorBorderSecondary }}
                 >
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                         <Segmented

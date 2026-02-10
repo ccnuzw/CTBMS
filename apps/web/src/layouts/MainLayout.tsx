@@ -70,6 +70,23 @@ export const MainLayout: React.FC = () => {
         label: '仪表盘',
       },
       {
+        key: 'workflow-center',
+        icon: <NodeIndexOutlined />,
+        label: '策略与编排',
+        children: [
+          {
+            key: '/workflow/definitions',
+            icon: <SettingOutlined />,
+            label: '流程定义',
+          },
+          {
+            key: '/workflow/executions',
+            icon: <ScheduleOutlined />,
+            label: '运行中心',
+          },
+        ],
+      },
+      {
         key: '/workstation',
         icon: <DesktopOutlined />,
         label: '我的工作台',

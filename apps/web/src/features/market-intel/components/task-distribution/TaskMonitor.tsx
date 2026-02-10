@@ -1,5 +1,5 @@
 import React, { useRef, useState } from 'react';
-import { Button, Tag, Space, Typography, App, Modal, Input, Tabs } from 'antd';
+import { Button, Tag, Space, Typography, App, Modal, Input, Tabs, theme } from 'antd';
 import { ActionType, ProColumns, ProTable } from '@ant-design/pro-components';
 import dayjs from 'dayjs';
 import {
@@ -23,6 +23,7 @@ const { TextArea } = Input;
 
 export const TaskMonitor: React.FC = () => {
   const { message, modal } = App.useApp();
+  const { token } = theme.useToken();
   const actionRef = useRef<ActionType>();
   const { currentUser } = useVirtualUser();
   const { data: users = [] } = useUsers({ status: 'ACTIVE' });
@@ -331,7 +332,7 @@ export const TaskMonitor: React.FC = () => {
               </Space>
               <div>
                 <Text strong>任务描述:</Text>
-                <div style={{ marginTop: 8, padding: 12, background: '#f5f5f5', borderRadius: 4 }}>
+                <div style={{ marginTop: 8, padding: 12, background: token.colorFillAlter, borderRadius: 4 }}>
                   {currentTask.description || '无描述'}
                 </div>
               </div>
@@ -339,7 +340,7 @@ export const TaskMonitor: React.FC = () => {
                 <div>
                   <Text strong>任务要求:</Text>
                   <div
-                    style={{ marginTop: 8, padding: 12, background: '#f5f5f5', borderRadius: 4 }}
+                    style={{ marginTop: 8, padding: 12, background: token.colorFillAlter, borderRadius: 4 }}
                   >
                     {currentTask.requirements}
                   </div>

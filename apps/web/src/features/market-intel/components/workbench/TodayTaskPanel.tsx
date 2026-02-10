@@ -4,7 +4,7 @@ import {
   FileTextOutlined,
   ThunderboltOutlined,
 } from '@ant-design/icons';
-import { Button, Card, Col, Row, Space, Statistic, Tag, Typography } from 'antd';
+import { Button, Card, Col, Row, Space, Statistic, Tag, Typography, theme } from 'antd';
 
 const { Text } = Typography;
 
@@ -31,11 +31,12 @@ export const TodayTaskPanel: React.FC<Props> = ({
   generatingWeekly,
   headerExtra,
 }) => {
+  const { token } = theme.useToken();
   return (
     <Card
       title="商情工作台"
       extra={headerExtra}
-      style={{ borderRadius: 14, borderColor: '#e9edf5', height: '100%' }}
+      style={{ borderRadius: 14, borderColor: token.colorBorderSecondary, height: '100%' }}
       bodyStyle={{ paddingBottom: 14 }}
     >
       <Row gutter={[16, 16]}>

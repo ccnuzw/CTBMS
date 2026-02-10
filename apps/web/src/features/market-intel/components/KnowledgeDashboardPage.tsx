@@ -14,16 +14,14 @@ import {
   Table,
   Tag,
   Typography,
+  theme,
 } from 'antd';
 import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useDictionary } from '@/hooks/useDictionaries';
-import {
-  useTopicEvolution,
-  useWeeklyOverview,
-} from '../api/knowledge-hooks';
+import { useTheme } from '@/theme/ThemeContext';
+import { useTopicEvolution, useWeeklyOverview } from '../api/knowledge-hooks';
 import { KNOWLEDGE_SENTIMENT_LABELS, KNOWLEDGE_TYPE_LABELS } from '../constants/knowledge-labels';
-
 
 const { Text } = Typography;
 
@@ -53,6 +51,9 @@ const RISK_COLOR: Record<string, string> = {
 
 export const KnowledgeDashboardPage: React.FC = () => {
   const { message } = App.useApp();
+  const { token } = theme.useToken();
+  const { isDarkMode } = useTheme();
+  const plotTheme = isDarkMode ? 'classicDark' : 'classic';
   const screens = Grid.useBreakpoint();
   const navigate = useNavigate();
   const { data: commodityDict } = useDictionary('COMMODITY');
@@ -74,12 +75,7 @@ export const KnowledgeDashboardPage: React.FC = () => {
   const { data: weeklyOverview } = useWeeklyOverview();
   const { data: topicEvolution, isLoading } = useTopicEvolution({ commodity, weeks });
 
-
   /* 移除风险分布计算逻辑 */
-
-
-
-
 
   const confidenceSeries = useMemo(
     () =>
@@ -92,6 +88,7 @@ export const KnowledgeDashboardPage: React.FC = () => {
 
   const lineConfig = {
     data: confidenceSeries,
+    theme: plotTheme,
     xField: 'label',
     yField: 'value',
     point: {
@@ -100,16 +97,28 @@ export const KnowledgeDashboardPage: React.FC = () => {
     },
     label: {
       style: {
-        fill: '#aaa',
+        fill: token.colorText,
       },
     },
     color: '#1677ff',
     height: 220,
     autoFit: true,
+    xAxis: {
+      label: {
+        style: {
+          fill: token.colorText,
+        },
+      },
+    },
     yAxis: {
       max: 100,
       min: 0,
-    }
+      label: {
+        style: {
+          fill: token.colorText,
+        },
+      },
+    },
   };
 
   return (
@@ -210,9 +219,9 @@ export const KnowledgeDashboardPage: React.FC = () => {
                     <Tag color={SENTIMENT_COLOR[value] || 'default'}>
                       {value
                         ? topicEvolution?.trend.find((item) => item.id === record.id)
-                          ?.sentimentLabel ||
-                        SENTIMENT_LABEL[value] ||
-                        value
+                            ?.sentimentLabel ||
+                          SENTIMENT_LABEL[value] ||
+                          value
                         : '暂无'}
                     </Tag>
                   ),
@@ -226,9 +235,9 @@ export const KnowledgeDashboardPage: React.FC = () => {
                     <Tag color={value === 'HIGH' ? 'red' : value === 'MEDIUM' ? 'orange' : 'green'}>
                       {value
                         ? topicEvolution?.trend.find((item) => item.id === record.id)
-                          ?.riskLevelLabel ||
-                        RISK_LABEL[value] ||
-                        value
+                            ?.riskLevelLabel ||
+                          RISK_LABEL[value] ||
+                          value
                         : '暂无'}
                     </Tag>
                   ),

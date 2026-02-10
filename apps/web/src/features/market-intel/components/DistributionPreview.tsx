@@ -1,5 +1,5 @@
 import React from 'react';
-import { Modal, Table, Row, Col, Card, Tag, Alert, Typography, Button, Space, Statistic, Divider } from 'antd';
+import { Modal, Table, Row, Col, Card, Tag, Alert, Typography, Button, Space, Statistic, Divider, theme } from 'antd';
 import { DistributionPreviewResponse } from '@packages/types';
 import {
   UserOutlined,
@@ -31,6 +31,7 @@ export const DistributionPreview: React.FC<DistributionPreviewProps> = ({
   onExecute,
   executing
 }) => {
+  const { token } = theme.useToken();
   const { containerRef, focusRef, modalProps } = useModalAutoFocus();
 
   if (!data) return null;
@@ -69,21 +70,21 @@ export const DistributionPreview: React.FC<DistributionPreviewProps> = ({
         if (!points || points.length === 0) return <Text type="secondary">-</Text>;
         // 如果数量太多，只显示前几个
         if (points.length > 3) {
-            return (
-                <div style={{ maxWidth: 300 }}>
-                    {points.slice(0, 3).map((p: any) => (
-                        <Tag key={p.id}>{p.name}</Tag>
-                    ))}
-                    <Tag>+{points.length - 3} ...</Tag>
-                </div>
-            );
+          return (
+            <div style={{ maxWidth: 300 }}>
+              {points.slice(0, 3).map((p: any) => (
+                <Tag key={p.id}>{p.name}</Tag>
+              ))}
+              <Tag>+{points.length - 3} ...</Tag>
+            </div>
+          );
         }
         return (
-            <div style={{ maxWidth: 300 }}>
-                {points.map((p: any) => (
-                    <Tag key={p.id}>{p.name}</Tag>
-                ))}
-            </div>
+          <div style={{ maxWidth: 300 }}>
+            {points.map((p: any) => (
+              <Tag key={p.id}>{p.name}</Tag>
+            ))}
+          </div>
         );
       },
     },
@@ -127,32 +128,32 @@ export const DistributionPreview: React.FC<DistributionPreviewProps> = ({
       <div ref={containerRef}>
         <Row gutter={16} style={{ marginBottom: 24 }}>
           <Col span={8}>
-            <Card bordered={false} style={{ background: '#f6ffed', textAlign: 'center' }}>
+            <Card bordered={false} style={{ background: token.colorSuccessBg, textAlign: 'center' }}>
               <Statistic
                 title="将生成的任务总数"
                 value={data.totalTasks}
                 prefix={<CheckCircleOutlined />}
-                valueStyle={{ color: '#3f8600' }}
+                valueStyle={{ color: token.colorSuccess }}
               />
             </Card>
           </Col>
           <Col span={8}>
-            <Card bordered={false} style={{ background: '#e6f7ff', textAlign: 'center' }}>
+            <Card bordered={false} style={{ background: token.colorInfoBg, textAlign: 'center' }}>
               <Statistic
                 title="涉及业务员人数"
                 value={data.totalAssignees}
                 prefix={<UserOutlined />}
-                valueStyle={{ color: '#1890ff' }}
+                valueStyle={{ color: token.colorInfo }}
               />
             </Card>
           </Col>
           <Col span={8}>
-            <Card bordered={false} style={{ background: '#fff7e6', textAlign: 'center' }}>
+            <Card bordered={false} style={{ background: token.colorWarningBg, textAlign: 'center' }}>
               <Statistic
                 title="未分配采集点"
                 value={data.unassignedPoints?.length || 0}
                 prefix={<WarningOutlined />}
-                valueStyle={{ color: '#fa8c16' }}
+                valueStyle={{ color: token.colorWarning }}
               />
             </Card>
           </Col>

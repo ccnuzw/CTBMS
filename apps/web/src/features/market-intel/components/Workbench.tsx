@@ -1,5 +1,5 @@
 import { DownOutlined, UpOutlined } from '@ant-design/icons';
-import { Button, Col, Row, Space, message } from 'antd';
+import { Button, Col, Row, Space, message, theme } from 'antd';
 import { useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { ReviewStatus } from '@packages/types';
@@ -20,6 +20,7 @@ type Mode = 'compact' | 'full';
 
 export const Workbench: React.FC = () => {
   const navigate = useNavigate();
+  const { token } = theme.useToken();
   const [searchParams, setSearchParams] = useSearchParams();
 
   const persistedMode = (localStorage.getItem('knowledge-workbench-mode') as Mode | null) || null;
@@ -95,7 +96,7 @@ export const Workbench: React.FC = () => {
   };
 
   return (
-    <div style={{ padding: '0 24px 24px 24px', background: '#f5f7fb', minHeight: '100%' }}>
+    <div style={{ padding: '0 24px 24px 24px', background: token.colorBgLayout, minHeight: '100%' }}>
       <Space direction="vertical" style={{ width: '100%' }} size={16}>
         {/* Overview Row: Header Controls included in title area */}
         <TodayTaskPanel

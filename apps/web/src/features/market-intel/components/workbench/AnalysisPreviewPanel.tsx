@@ -1,12 +1,23 @@
 import { Area, Pie } from '@ant-design/plots';
 import { BarChartOutlined } from '@ant-design/icons';
-import { Button, Card, Col, Empty, Row, Space, Tag, Typography } from 'antd';
+import { Button, Card, Col, Empty, Row, Space, Tag, Typography, theme } from 'antd';
+import { INTEL_SOURCE_TYPE_LABELS, IntelSourceType } from '@packages/types';
+import { useTheme } from '@/theme/ThemeContext';
 
 const { Text } = Typography;
 
 type TrendPoint = { date: string; count: number };
 type SourcePoint = { name: string; value: number };
 type HotTopic = { topic: string; displayTopic?: string; count: number };
+
+const SOURCE_LABEL_MAP: Record<string, string> = {
+  ...INTEL_SOURCE_TYPE_LABELS,
+  // Fallbacks for legacy or other types if needed
+  NEWS_MEDIA: '新闻媒体',
+  SOCIAL_MEDIA: '社交媒体',
+  ENTERPRISE: '企业公告',
+  OTHER: '其他来源',
+};
 
 type Props = {
   trend: TrendPoint[];
@@ -25,28 +36,60 @@ export const AnalysisPreviewPanel: React.FC<Props> = ({
   onOpenDashboard,
   onOpenSearchTopic,
 }) => {
+  const { token } = theme.useToken();
+  const { isDarkMode } = useTheme();
+  const plotTheme = isDarkMode ? 'classicDark' : 'classic';
+
   const trendConfig = {
     data: trend,
+    theme: plotTheme,
     xField: 'date',
     yField: 'count',
     smooth: true,
     areaStyle: () => ({ fillOpacity: 0.16 }),
     height: 220,
+    xAxis: {
+      label: {
+        style: {
+          fill: token.colorText,
+        },
+      },
+    },
+    yAxis: {
+      label: {
+        style: {
+          fill: token.colorText,
+        },
+      },
+    },
   };
 
   const sourceConfig = {
     data: sourceData,
+    theme: plotTheme,
     angleField: 'value',
     colorField: 'name',
     radius: 0.75,
-    legend: { position: 'bottom' as const },
+    legend: { position: 'bottom' as const, itemName: { style: { fill: token.colorText } } },
     height: 220,
+    label: {
+      text: (d: any) => `${d.value}`,
+      style: {
+        fill: token.colorText,
+      },
+    },
   };
+
+  const mappedSourceData = sourceData.map((item) => ({
+    ...item,
+    name:
+      SOURCE_LABEL_MAP[item.name as IntelSourceType] || SOURCE_LABEL_MAP[item.name] || item.name,
+  }));
 
   return (
     <Card
       title="分析预览"
-      style={{ borderRadius: 14, borderColor: '#e9edf5' }}
+      style={{ borderRadius: 14, borderColor: token.colorBorderSecondary }}
       extra={
         <Button icon={<BarChartOutlined />} type="link" onClick={onOpenDashboard}>
           查看完整看板
@@ -76,7 +119,7 @@ export const AnalysisPreviewPanel: React.FC<Props> = ({
             ) : sourceData.length === 0 ? (
               <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无来源分布" />
             ) : (
-              <Pie {...sourceConfig} />
+              <Pie {...sourceConfig} data={mappedSourceData} />
             )}
           </Card>
         </Col>

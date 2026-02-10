@@ -92,6 +92,9 @@ async function main() {
     // 9. 逻辑映射规则 (Logic Rules - AI 标准化关键)
     runSeedScript('seed-logic-rules.ts');
 
+    // 9.2 决策规则包（工作流规则节点）
+    runSeedScript('seed-decision-rules.ts');
+
     // 9.5 A类预警规则
     runSeedScript('seed-market-alert-rules.ts');
 

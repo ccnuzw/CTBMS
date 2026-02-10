@@ -69,7 +69,7 @@ export class MarketIntelService {
     private prisma: PrismaService,
     private aiService: AIService,
     private knowledgeService: KnowledgeService,
-  ) { }
+  ) {}
 
   private resolveIntelSourceTypes(values?: string[]) {
     if (!values) return [];
@@ -197,15 +197,13 @@ export class MarketIntelService {
    * 支持从 C 类日报自动提取 A 类价格数据
    */
   async create(dto: CreateMarketIntelDto, authorId: string) {
-    console.log('[MarketIntelService.create] Start', { dto, authorId });
     // 计算总分
     const totalScore = Math.round(
       (dto.completenessScore || 0) * 0.4 +
-      (dto.scarcityScore || 0) * 0.3 +
-      (dto.validationScore || 0) * 0.3,
+        (dto.scarcityScore || 0) * 0.3 +
+        (dto.validationScore || 0) * 0.3,
     );
 
-    console.log('[MarketIntelService.create] Creating Main Record...');
     try {
       const intel = await this.prisma.marketIntel.create({
         data: {
@@ -222,27 +220,19 @@ export class MarketIntelService {
           },
         },
       });
-      console.log('[MarketIntelService.create] Main Record Created', intel.id);
-
       // 如果 aiAnalysis 包含 pricePoints，自动批量写入 PriceData
       const aiAnalysis = dto.aiAnalysis as AIAnalysisResult | undefined;
       if (aiAnalysis?.pricePoints && aiAnalysis.pricePoints.length > 0) {
-        console.log(
-          '[MarketIntelService.create] Creating PriceData...',
-          aiAnalysis.pricePoints.length,
-        );
         await this.batchCreatePriceData(intel.id, authorId, dto.effectiveTime, aiAnalysis);
       }
 
       // 自动批量写入 MarketEvent (B类)和 MarketInsight (C类)
       if (aiAnalysis) {
-        console.log('[MarketIntelService.create] Creating Events/Insights...');
         await this.batchCreateEvents(intel.id, dto.effectiveTime, aiAnalysis);
         await this.batchCreateInsights(intel.id, dto.effectiveTime, aiAnalysis);
       }
 
       // 更新情报员统计
-      console.log('[MarketIntelService.create] Updating Stats...');
       await this.updateAuthorStats(authorId);
 
       // Knowledge V2 双写（失败不影响主流程）
@@ -252,7 +242,6 @@ export class MarketIntelService {
         console.warn('[MarketIntelService.create] Knowledge V2 sync failed:', syncError);
       }
 
-      console.log('[MarketIntelService.create] Done');
       return intel;
     } catch (error) {
       console.error('[MarketIntelService.create] FAILED', error);
@@ -362,7 +351,6 @@ export class MarketIntelService {
    * 批量删除情报
    */
   async batchDelete(ids: string[]) {
-    console.log('[MarketIntelService.batchDelete] Deleting ids:', ids);
     return this.prisma.marketIntel.deleteMany({
       where: {
         id: { in: ids },
@@ -833,16 +821,15 @@ export class MarketIntelService {
       case 'day':
         startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
         break;
-      case 'week': // 获取本周一 (假设周一为一周开始)
-        {
-          // Actually simply: set to last Monday
-          const tempDate = new Date(now);
-          const currentDay = tempDate.getDay();
-          const distanceToMonday = currentDay === 0 ? 6 : currentDay - 1;
-          tempDate.setDate(tempDate.getDate() - distanceToMonday);
-          startDate = new Date(tempDate.getFullYear(), tempDate.getMonth(), tempDate.getDate());
-          break;
-        }
+      case 'week': { // 获取本周一 (假设周一为一周开始)
+        // Actually simply: set to last Monday
+        const tempDate = new Date(now);
+        const currentDay = tempDate.getDay();
+        const distanceToMonday = currentDay === 0 ? 6 : currentDay - 1;
+        tempDate.setDate(tempDate.getDate() - distanceToMonday);
+        startDate = new Date(tempDate.getFullYear(), tempDate.getMonth(), tempDate.getDate());
+        break;
+      }
       case 'month':
         startDate = new Date(now.getFullYear(), now.getMonth(), 1);
         break;
@@ -2352,10 +2339,10 @@ export class MarketIntelService {
           ...(commodities?.length ? { commodity: { in: commodities } } : {}),
           OR: keyword
             ? [
-              { location: { contains: keyword, mode: 'insensitive' } },
-              { commodity: { contains: keyword, mode: 'insensitive' } },
-              { note: { contains: keyword, mode: 'insensitive' } },
-            ]
+                { location: { contains: keyword, mode: 'insensitive' } },
+                { commodity: { contains: keyword, mode: 'insensitive' } },
+                { note: { contains: keyword, mode: 'insensitive' } },
+              ]
             : undefined,
         },
         take: pricePageSize,
@@ -2373,10 +2360,10 @@ export class MarketIntelService {
           ...dateFilter,
           OR: keyword
             ? [
-              { rawContent: { contains: keyword, mode: 'insensitive' } },
-              { summary: { contains: keyword, mode: 'insensitive' } },
-              { location: { contains: keyword, mode: 'insensitive' } },
-            ]
+                { rawContent: { contains: keyword, mode: 'insensitive' } },
+                { summary: { contains: keyword, mode: 'insensitive' } },
+                { location: { contains: keyword, mode: 'insensitive' } },
+              ]
             : undefined,
         },
         take: intelPageSize,
@@ -2393,10 +2380,10 @@ export class MarketIntelService {
           ...dateFilter,
           OR: keyword
             ? [
-              { rawContent: { contains: keyword, mode: 'insensitive' } },
-              { summary: { contains: keyword, mode: 'insensitive' } },
-              { location: { contains: keyword, mode: 'insensitive' } },
-            ]
+                { rawContent: { contains: keyword, mode: 'insensitive' } },
+                { summary: { contains: keyword, mode: 'insensitive' } },
+                { location: { contains: keyword, mode: 'insensitive' } },
+              ]
             : undefined,
         },
         take: docPageSize,
@@ -2424,7 +2411,11 @@ export class MarketIntelService {
     let negativeCount = 0;
 
     combinedIntels.forEach((intel) => {
-      const analysis = intel.aiAnalysis as { tags?: string[]; entities?: string[]; sentiment?: string } | null;
+      const analysis = intel.aiAnalysis as {
+        tags?: string[];
+        entities?: string[];
+        sentiment?: string;
+      } | null;
       if (analysis?.tags) allTags.push(...analysis.tags);
       if (analysis?.entities) allEntities.push(...analysis.entities);
       if (analysis?.sentiment === 'positive') positiveCount++;
@@ -2469,9 +2460,9 @@ export class MarketIntelService {
           ...(commodities?.length ? { commodity: { in: commodities } } : {}),
           OR: keyword
             ? [
-              { location: { contains: keyword, mode: 'insensitive' } },
-              { commodity: { contains: keyword, mode: 'insensitive' } },
-            ]
+                { location: { contains: keyword, mode: 'insensitive' } },
+                { commodity: { contains: keyword, mode: 'insensitive' } },
+              ]
             : undefined,
         },
       }),
@@ -2481,9 +2472,9 @@ export class MarketIntelService {
           ...dateFilter,
           OR: keyword
             ? [
-              { rawContent: { contains: keyword, mode: 'insensitive' } },
-              { summary: { contains: keyword, mode: 'insensitive' } },
-            ]
+                { rawContent: { contains: keyword, mode: 'insensitive' } },
+                { summary: { contains: keyword, mode: 'insensitive' } },
+              ]
             : undefined,
         },
       }),
@@ -2493,9 +2484,9 @@ export class MarketIntelService {
           ...dateFilter,
           OR: keyword
             ? [
-              { rawContent: { contains: keyword, mode: 'insensitive' } },
-              { summary: { contains: keyword, mode: 'insensitive' } },
-            ]
+                { rawContent: { contains: keyword, mode: 'insensitive' } },
+                { summary: { contains: keyword, mode: 'insensitive' } },
+              ]
             : undefined,
         },
       }),
@@ -2573,7 +2564,11 @@ export class MarketIntelService {
     });
 
     // 组合结果
-    const suggestions: { text: string; type: 'collection_point' | 'commodity' | 'tag'; count?: number }[] = [];
+    const suggestions: {
+      text: string;
+      type: 'collection_point' | 'commodity' | 'tag';
+      count?: number;
+    }[] = [];
 
     // 添加采集点建议
     collectionPoints.forEach((cp) => {
@@ -2762,9 +2757,13 @@ export class MarketIntelService {
       });
 
       if (sourceIntel) {
-        const analysis = sourceIntel.aiAnalysis as { tags?: string[]; commodities?: string[] } | null;
+        const analysis = sourceIntel.aiAnalysis as {
+          tags?: string[];
+          commodities?: string[];
+        } | null;
         if (analysis?.tags) sourceTags = [...new Set([...sourceTags, ...analysis.tags])];
-        if (analysis?.commodities) sourceCommodities = [...new Set([...sourceCommodities, ...analysis.commodities])];
+        if (analysis?.commodities)
+          sourceCommodities = [...new Set([...sourceCommodities, ...analysis.commodities])];
         sourceRegions = [...new Set([...sourceRegions, ...sourceIntel.region])];
       }
     }
@@ -2783,8 +2782,8 @@ export class MarketIntelService {
             // 标签匹配
             ...(sourceTags.length > 0
               ? sourceTags.map((tag) => ({
-                aiAnalysis: { path: ['tags'], array_contains: tag },
-              }))
+                  aiAnalysis: { path: ['tags'], array_contains: tag },
+                }))
               : []),
             // 区域匹配
             ...(sourceRegions.length > 0 ? [{ region: { hasSome: sourceRegions } }] : []),
@@ -2808,7 +2807,9 @@ export class MarketIntelService {
         where: {
           status: 'PUBLISHED',
           OR: [
-            ...(sourceCommodities.length > 0 ? [{ commodities: { hasSome: sourceCommodities } }] : []),
+            ...(sourceCommodities.length > 0
+              ? [{ commodities: { hasSome: sourceCommodities } }]
+              : []),
             ...(sourceRegions.length > 0 ? [{ region: { hasSome: sourceRegions } }] : []),
           ],
         },
@@ -2827,23 +2828,23 @@ export class MarketIntelService {
       // 3. 关联价格数据
       sourceCommodities.length > 0
         ? this.prisma.priceData.findMany({
-          where: {
-            commodity: { in: sourceCommodities },
-            effectiveDate: { gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) }, // 最近 7 天
-          },
-          take: limit,
-          orderBy: { effectiveDate: 'desc' },
-          select: {
-            id: true,
-            commodity: true,
-            price: true,
-            location: true,
-            effectiveDate: true,
-            collectionPoint: {
-              select: { name: true, shortName: true },
+            where: {
+              commodity: { in: sourceCommodities },
+              effectiveDate: { gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) }, // 最近 7 天
             },
-          },
-        })
+            take: limit,
+            orderBy: { effectiveDate: 'desc' },
+            select: {
+              id: true,
+              commodity: true,
+              price: true,
+              location: true,
+              effectiveDate: true,
+              collectionPoint: {
+                select: { name: true, shortName: true },
+              },
+            },
+          })
         : Promise.resolve([]),
     ]);
 

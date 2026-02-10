@@ -1,5 +1,9 @@
 import { Injectable, NotFoundException, ConflictException } from '@nestjs/common';
-import { CollectionPointType as PrismaCollectionPointType, IntelTaskType as PrismaIntelTaskType, Prisma } from '@prisma/client';
+import {
+  CollectionPointType as PrismaCollectionPointType,
+  IntelTaskType as PrismaIntelTaskType,
+  Prisma,
+} from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import {
   CreateCollectionPointAllocationDto,
@@ -11,7 +15,7 @@ import {
 
 @Injectable()
 export class CollectionPointAllocationService {
-  constructor(private prisma: PrismaService) { }
+  constructor(private prisma: PrismaService) {}
 
   /**
    * 获取分配矩阵数据
@@ -20,7 +24,14 @@ export class CollectionPointAllocationService {
     const { organizationId, departmentId, pointType, keyword, userKeyword, pointKeyword } = query;
 
     // 性能优化：如果没有筛选条件，不返回数据（避免加载全量数据）
-    if (!organizationId && !departmentId && !pointType && !keyword && !userKeyword && !pointKeyword) {
+    if (
+      !organizationId &&
+      !departmentId &&
+      !pointType &&
+      !keyword &&
+      !userKeyword &&
+      !pointKeyword
+    ) {
       return {
         points: [],
         users: [],
@@ -65,7 +76,10 @@ export class CollectionPointAllocationService {
 
     // 2. 获取符合条件的采集点
     const pointWhere: Prisma.CollectionPointWhereInput = { isActive: true };
-    if (pointType && Object.values(PrismaCollectionPointType).includes(pointType as PrismaCollectionPointType)) {
+    if (
+      pointType &&
+      Object.values(PrismaCollectionPointType).includes(pointType as PrismaCollectionPointType)
+    ) {
       pointWhere.type = pointType as PrismaCollectionPointType;
     }
 
@@ -96,7 +110,7 @@ export class CollectionPointAllocationService {
     });
 
     // 3. 组装矩阵数据
-    const matrixPoints = points.map(point => ({
+    const matrixPoints = points.map((point) => ({
       pointId: point.id,
       pointName: point.name,
       pointType: point.type,
@@ -104,11 +118,11 @@ export class CollectionPointAllocationService {
       longitude: point.longitude,
       commodities: point.commodities,
       allocations: point.allocations,
-      allocatedUserIds: point.allocations.map(a => a.userId),
+      allocatedUserIds: point.allocations.map((a) => a.userId),
       isAllocated: point.allocations.length > 0,
     }));
 
-    const matrixUsers = users.map(user => ({
+    const matrixUsers = users.map((user) => ({
       id: user.id,
       name: user.name,
       organizationName: user.organization?.name,
@@ -120,8 +134,8 @@ export class CollectionPointAllocationService {
     // 4. 计算统计数据
     const stats = {
       totalPoints: points.length,
-      allocatedPoints: matrixPoints.filter(p => p.isAllocated).length,
-      unallocatedPoints: matrixPoints.filter(p => !p.isAllocated).length,
+      allocatedPoints: matrixPoints.filter((p) => p.isAllocated).length,
+      unallocatedPoints: matrixPoints.filter((p) => !p.isAllocated).length,
     };
 
     return {
@@ -147,7 +161,9 @@ export class CollectionPointAllocationService {
 
     if (existing) {
       if (existing.isActive) {
-        throw new ConflictException(`该用户已分配到此采集点${dto.commodity ? ` (${dto.commodity})` : ' (全品种)'}`);
+        throw new ConflictException(
+          `该用户已分配到此采集点${dto.commodity ? ` (${dto.commodity})` : ' (全品种)'}`,
+        );
       }
       // 如果存在但已停用，重新激活
       return this.prisma.collectionPointAllocation.update({
@@ -160,7 +176,9 @@ export class CollectionPointAllocationService {
         },
         include: {
           user: { select: { id: true, name: true, username: true, avatar: true } },
-          collectionPoint: { select: { id: true, code: true, name: true, type: true, regionCode: true } },
+          collectionPoint: {
+            select: { id: true, code: true, name: true, type: true, regionCode: true },
+          },
         },
       });
     }
@@ -190,7 +208,9 @@ export class CollectionPointAllocationService {
       },
       include: {
         user: { select: { id: true, name: true, username: true, avatar: true } },
-        collectionPoint: { select: { id: true, code: true, name: true, type: true, regionCode: true } },
+        collectionPoint: {
+          select: { id: true, code: true, name: true, type: true, regionCode: true },
+        },
       },
     });
   }
@@ -213,7 +233,11 @@ export class CollectionPointAllocationService {
         );
         results.push({ success: true, data: result });
       } catch (error) {
-        results.push({ success: false, userId: allocation.userId, error: (error as Error).message });
+        results.push({
+          success: false,
+          userId: allocation.userId,
+          error: (error as Error).message,
+        });
       }
     }
     return results;
@@ -236,7 +260,9 @@ export class CollectionPointAllocationService {
         where,
         include: {
           user: { select: { id: true, name: true, username: true, avatar: true } },
-          collectionPoint: { select: { id: true, code: true, name: true, type: true, regionCode: true } },
+          collectionPoint: {
+            select: { id: true, code: true, name: true, type: true, regionCode: true },
+          },
         },
         orderBy: [{ collectionPointId: 'asc' }, { assignedAt: 'desc' }],
         skip: (page - 1) * pageSize,
@@ -256,7 +282,9 @@ export class CollectionPointAllocationService {
       where: { id },
       include: {
         user: { select: { id: true, name: true, username: true, avatar: true } },
-        collectionPoint: { select: { id: true, code: true, name: true, type: true, regionCode: true } },
+        collectionPoint: {
+          select: { id: true, code: true, name: true, type: true, regionCode: true },
+        },
       },
     });
 
@@ -278,7 +306,9 @@ export class CollectionPointAllocationService {
       data: dto,
       include: {
         user: { select: { id: true, name: true, username: true, avatar: true } },
-        collectionPoint: { select: { id: true, code: true, name: true, type: true, regionCode: true } },
+        collectionPoint: {
+          select: { id: true, code: true, name: true, type: true, regionCode: true },
+        },
       },
     });
   }
@@ -380,14 +410,15 @@ export class CollectionPointAllocationService {
       },
     });
 
-    console.log(`[debug] User ${userId} raw allocations:`, allocations.length);
-
     // Flatten allocations: If commodity is null (ALL), expand to point commodities
     const flattenedAllocations = [];
     for (const alloc of allocations) {
       if (alloc.commodity) {
         flattenedAllocations.push(alloc);
-      } else if (alloc.collectionPoint.commodities && alloc.collectionPoint.commodities.length > 0) {
+      } else if (
+        alloc.collectionPoint.commodities &&
+        alloc.collectionPoint.commodities.length > 0
+      ) {
         // Expand
         for (const comm of alloc.collectionPoint.commodities) {
           flattenedAllocations.push({ ...alloc, commodity: comm });
@@ -440,7 +471,9 @@ export class CollectionPointAllocationService {
         let isReported = false;
         if (todaySubmission) {
           if (allocation.commodity) {
-            isReported = todaySubmission.priceData.some(p => p.commodity === allocation.commodity);
+            isReported = todaySubmission.priceData.some(
+              (p) => p.commodity === allocation.commodity,
+            );
           } else {
             isReported = todaySubmission.priceData.length > 0;
           }
@@ -456,9 +489,6 @@ export class CollectionPointAllocationService {
           lastCommodity: lastPrice?.commodity,
           hasPendingTask: !!pendingTask,
           pendingTask: pendingTask,
-          // Debug field
-          _debug_commodities: allocation.collectionPoint.commodities,
-          _debug_expanded: !allocation.id, // ID is preserved usually, but let's see.
         };
       }),
     );

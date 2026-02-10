@@ -1828,3 +1828,194 @@ model IntelTaskHistory {
   @@index([taskId])
   @@index([operatorId])
 }
+
+// =============================================
+// 智能体工作流编排（Workflow Orchestration）
+// =============================================
+
+enum WorkflowMode {
+  LINEAR
+  DAG
+  DEBATE
+}
+
+enum WorkflowUsageMethod {
+  HEADLESS
+  COPILOT
+  ON_DEMAND
+}
+
+enum WorkflowDefinitionStatus {
+  DRAFT
+  ACTIVE
+  ARCHIVED
+}
+
+enum WorkflowVersionStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+}
+
+enum WorkflowTemplateSource {
+  PUBLIC
+  PRIVATE
+}
+
+enum WorkflowTriggerType {
+  MANUAL
+  API
+  SCHEDULE
+  EVENT
+  ON_DEMAND
+}
+
+enum WorkflowExecutionStatus {
+  PENDING
+  RUNNING
+  SUCCESS
+  FAILED
+  CANCELED
+}
+
+enum NodeExecutionStatus {
+  PENDING
+  RUNNING
+  SUCCESS
+  FAILED
+  SKIPPED
+}
+
+model WorkflowDefinition {
+  id                String                    @id @default(uuid())
+  workflowId        String                    @unique
+  name              String
+  description       String?
+  mode              WorkflowMode
+  usageMethod       WorkflowUsageMethod
+  status            WorkflowDefinitionStatus  @default(DRAFT)
+  ownerUserId       String
+  templateSource    WorkflowTemplateSource    @default(PRIVATE)
+  isActive          Boolean                   @default(true)
+  latestVersionCode String?
+
+  versions          WorkflowVersion[]
+
+  createdAt         DateTime                  @default(now())
+  updatedAt         DateTime                  @updatedAt
+
+  @@index([ownerUserId, status])
+  @@index([mode, usageMethod])
+  @@index([templateSource, isActive])
+}
+
+model WorkflowVersion {
+  id                   String                @id @default(uuid())
+  workflowDefinitionId String
+  workflowDefinition   WorkflowDefinition    @relation(fields: [workflowDefinitionId], references: [id], onDelete: Cascade)
+
+  versionCode          String
+  status               WorkflowVersionStatus @default(DRAFT)
+  dslSnapshot          Json
+  changelog            String?
+  createdByUserId      String
+  publishedAt          DateTime?
+
+  createdAt            DateTime              @default(now())
+
+  executions           WorkflowExecution[]
+
+  @@unique([workflowDefinitionId, versionCode])
+  @@index([workflowDefinitionId, status])
+  @@index([createdByUserId, createdAt])
+}
+
+model WorkflowExecution {
+  id                  String                 @id @default(uuid())
+  workflowVersionId   String
+  workflowVersion     WorkflowVersion        @relation(fields: [workflowVersionId], references: [id], onDelete: Cascade)
+  sourceExecutionId   String?
+  sourceExecution     WorkflowExecution?     @relation("WorkflowExecutionRerun", fields: [sourceExecutionId], references: [id], onDelete: SetNull)
+  reruns              WorkflowExecution[]    @relation("WorkflowExecutionRerun")
+
+  triggerType         WorkflowTriggerType
+  triggerUserId       String
+  status              WorkflowExecutionStatus @default(PENDING)
+  startedAt           DateTime?
+  completedAt         DateTime?
+  errorMessage        String?
+  paramSnapshot       Json?
+  outputSnapshot      Json?
+
+  nodeExecutions      NodeExecution[]
+
+  createdAt           DateTime               @default(now())
+  updatedAt           DateTime               @updatedAt
+
+  @@index([workflowVersionId, status])
+  @@index([triggerUserId, createdAt])
+  @@index([sourceExecutionId])
+}
+
+model NodeExecution {
+  id                  String              @id @default(uuid())
+  workflowExecutionId String
+  workflowExecution   WorkflowExecution   @relation(fields: [workflowExecutionId], references: [id], onDelete: Cascade)
+
+  nodeId              String
+  nodeType            String
+  status              NodeExecutionStatus @default(PENDING)
+  startedAt           DateTime?
+  completedAt         DateTime?
+  durationMs          Int?
+  errorMessage        String?
+  inputSnapshot       Json?
+  outputSnapshot      Json?
+
+  createdAt           DateTime            @default(now())
+
+  @@index([workflowExecutionId, status])
+  @@index([nodeId])
+}
+
+model DecisionRulePack {
+  id             String                 @id @default(uuid())
+  rulePackCode   String                 @unique
+  name           String
+  description    String?
+  ownerUserId    String?
+  templateSource WorkflowTemplateSource @default(PRIVATE)
+  isActive       Boolean                @default(true)
+  version        Int                    @default(1)
+  priority       Int                    @default(0)
+
+  rules          DecisionRule[]
+
+  createdAt      DateTime               @default(now())
+  updatedAt      DateTime               @updatedAt
+
+  @@index([isActive, priority])
+  @@index([ownerUserId, isActive])
+}
+
+model DecisionRule {
+  id           String           @id @default(uuid())
+  rulePackId   String
+  rulePack     DecisionRulePack @relation(fields: [rulePackId], references: [id], onDelete: Cascade)
+
+  ruleCode     String
+  name         String
+  description  String?
+  fieldPath    String
+  operator     String
+  expectedValue Json?
+  weight       Int              @default(1)
+  isActive     Boolean          @default(true)
+  priority     Int              @default(0)
+
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
+
+  @@unique([rulePackId, ruleCode])
+  @@index([rulePackId, isActive, priority])
+}

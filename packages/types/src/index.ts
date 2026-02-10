@@ -8,4 +8,5 @@ export * from './modules/collection-point.js';
 export * from './modules/price-submission.js';
 export * from './modules/dictionary.js';
 export * from './modules/ai.js';
-
+export * from './modules/workflow.js';
+export * from './modules/decision-rule.js';

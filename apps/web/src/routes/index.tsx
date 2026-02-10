@@ -45,6 +45,8 @@ import {
   PriceReviewPanel,
   BatchPriceEntryTable,
 } from '../features/price-reporting';
+import { WorkflowDefinitionPage } from '../features/workflow-studio';
+import { WorkflowExecutionPage } from '../features/workflow-runtime';
 
 export const router = createBrowserRouter([
   {
@@ -91,6 +93,14 @@ export const router = createBrowserRouter([
       {
         path: 'enterprise',
         element: <EnterpriseDashboard />,
+      },
+      {
+        path: 'workflow/definitions',
+        element: <WorkflowDefinitionPage />,
+      },
+      {
+        path: 'workflow/executions',
+        element: <WorkflowExecutionPage />,
       },
       {
         path: 'system',

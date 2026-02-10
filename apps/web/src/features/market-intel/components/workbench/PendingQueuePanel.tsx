@@ -1,4 +1,4 @@
-import { Button, Card, Empty, List, Space, Tag, Typography } from 'antd';
+import { Button, Card, Empty, List, Space, Tag, Typography, theme } from 'antd';
 
 const { Text } = Typography;
 
@@ -15,11 +15,12 @@ type Props = {
 };
 
 export const PendingQueuePanel: React.FC<Props> = ({ loading, items, onOpen }) => {
+  const { token } = theme.useToken();
   return (
     <Card
       title="待审核队列"
       extra={<Text type="secondary">优先处理最新提交</Text>}
-      style={{ borderRadius: 14, borderColor: '#e9edf5', height: '100%' }}
+      style={{ borderRadius: 14, borderColor: token.colorBorderSecondary, height: '100%' }}
       bodyStyle={{ minHeight: 220 }}
     >
       {loading ? (

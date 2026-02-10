@@ -1,5 +1,5 @@
 import React, { useMemo } from 'react';
-import { Tag, Typography } from 'antd';
+import { Tag, Typography, theme } from 'antd';
 import dayjs from 'dayjs';
 import { TaskCycleType } from '@packages/types';
 
@@ -70,6 +70,7 @@ const computeRunDates = (template: any, days = 28) => {
 };
 
 export const TemplateScheduleGrid: React.FC<TemplateScheduleGridProps> = ({ template, weeks = 4 }) => {
+    const { token } = theme.useToken();
     const weekday = dayjs().day();
     const mondayOffset = weekday === 0 ? -6 : 1 - weekday;
     const start = dayjs().add(mondayOffset, 'day').startOf('day'); // Monday
@@ -103,13 +104,13 @@ export const TemplateScheduleGrid: React.FC<TemplateScheduleGridProps> = ({ temp
                 <div
                     key={`week-${week.week}`}
                     style={{
-                        border: '1px solid #f0f0f0',
+                        border: `1px solid ${token.colorBorderSecondary}`,
                         borderRadius: 8,
                         padding: 10,
-                        background: '#fafafa',
+                        background: token.colorFillAlter,
                     }}
                 >
-                    <div style={{ fontWeight: 600, marginBottom: 6 }}>第 {week.week} 周</div>
+                    <div style={{ fontWeight: 600, marginBottom: 6, color: token.colorText }}>第 {week.week} 周</div>
                     <div style={{ display: 'grid', gap: 6 }}>
                         {week.days.map(day => (
                             <div
@@ -122,7 +123,7 @@ export const TemplateScheduleGrid: React.FC<TemplateScheduleGridProps> = ({ temp
                                 }}
                             >
                                 <div>
-                                    <div>{day.day}</div>
+                                    <div style={{ color: token.colorText }}>{day.day}</div>
                                     <Text type="secondary" style={{ fontSize: 12 }}>
                                         {day.label}
                                     </Text>
