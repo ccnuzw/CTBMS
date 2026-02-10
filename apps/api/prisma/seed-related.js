@@ -264,7 +264,7 @@ async function main() {
     {
       location: '国粮局官网',
       region: ['全国'],
-      contentType: 'POLICY_DOC',
+      contentType: 'RESEARCH_REPORT',
       sourceType: 'OFFICIAL',
       effectiveTime: daysAgo(1),
       summary: '发布加强粮食收购监管的通知。',

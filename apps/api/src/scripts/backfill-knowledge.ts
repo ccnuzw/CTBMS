@@ -12,7 +12,6 @@ const prisma = new PrismaClient();
 function mapContentTypeToKnowledgeType(contentType: ContentType | null): KnowledgeType {
   if (contentType === 'DAILY_REPORT') return 'DAILY';
   if (contentType === 'RESEARCH_REPORT') return 'RESEARCH';
-  if (contentType === 'POLICY_DOC') return 'POLICY';
   return 'THIRD_PARTY';
 }
 
@@ -61,42 +60,42 @@ async function syncIntel(intelId: string) {
 
   const item = existing
     ? await prisma.knowledgeItem.update({
-        where: { id: existing.id },
-        data: {
-          type,
-          title,
-          contentPlain: intel.rawContent,
-          contentRich: intel.summary || intel.rawContent,
-          sourceType: intel.sourceType,
-          publishAt: intel.effectiveTime,
-          effectiveAt: intel.effectiveTime,
-          periodType,
-          periodKey: toPeriodKey(intel.effectiveTime, periodType),
-          location: intel.location,
-          region: intel.region,
-          status: 'PUBLISHED',
-          authorId: intel.authorId,
-        },
-      })
+      where: { id: existing.id },
+      data: {
+        type,
+        title,
+        contentPlain: intel.rawContent,
+        contentRich: intel.summary || intel.rawContent,
+        sourceType: intel.sourceType,
+        publishAt: intel.effectiveTime,
+        effectiveAt: intel.effectiveTime,
+        periodType,
+        periodKey: toPeriodKey(intel.effectiveTime, periodType),
+        location: intel.location,
+        region: intel.region,
+        status: 'PUBLISHED',
+        authorId: intel.authorId,
+      },
+    })
     : await prisma.knowledgeItem.create({
-        data: {
-          type,
-          title,
-          contentPlain: intel.rawContent,
-          contentRich: intel.summary || intel.rawContent,
-          sourceType: intel.sourceType,
-          publishAt: intel.effectiveTime,
-          effectiveAt: intel.effectiveTime,
-          periodType,
-          periodKey: toPeriodKey(intel.effectiveTime, periodType),
-          location: intel.location,
-          region: intel.region,
-          status: 'PUBLISHED',
-          authorId: intel.authorId,
-          originLegacyType: 'MARKET_INTEL',
-          originLegacyId: intel.id,
-        },
-      });
+      data: {
+        type,
+        title,
+        contentPlain: intel.rawContent,
+        contentRich: intel.summary || intel.rawContent,
+        sourceType: intel.sourceType,
+        publishAt: intel.effectiveTime,
+        effectiveAt: intel.effectiveTime,
+        periodType,
+        periodKey: toPeriodKey(intel.effectiveTime, periodType),
+        location: intel.location,
+        region: intel.region,
+        status: 'PUBLISHED',
+        authorId: intel.authorId,
+        originLegacyType: 'MARKET_INTEL',
+        originLegacyId: intel.id,
+      },
+    });
 
   const ai = (intel.aiAnalysis ?? {}) as {
     summary?: string;

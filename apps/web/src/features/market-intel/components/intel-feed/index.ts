@@ -15,7 +15,6 @@ export { TableView } from './components/views/TableView';
 // Cards
 export { DailyReportCard } from './components/cards/DailyReportCard';
 export { ResearchReportCard } from './components/cards/ResearchReportCard';
-export { PolicyDocCard } from './components/cards/PolicyDocCard';
 export { MarketInsightCard } from './components/cards/MarketInsightCard';
 export { PriceAlertCard } from './components/cards/PriceAlertCard';
 

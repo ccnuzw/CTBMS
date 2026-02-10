@@ -26,6 +26,17 @@ interface PaginatedResponse<T> {
     totalPages: number;
 }
 
+const LEGACY_PRICE_SUBTYPE_TO_CANONICAL: Record<string, string> = {
+    STATION_ORIGIN: 'STATION',
+    STATION_DEST: 'STATION',
+};
+
+const normalizePriceSubTypeCode = (code: string) =>
+    LEGACY_PRICE_SUBTYPE_TO_CANONICAL[code] || code;
+
+const normalizePriceSubTypeList = (codes?: string[]) =>
+    Array.from(new Set((codes || []).map((code) => normalizePriceSubTypeCode(code))));
+
 // =============================================
 // 情报流查询 (B类聚合)
 // =============================================
@@ -667,9 +678,16 @@ export const usePriceData = (query?: PriceDataQueryWithQuality, options?: UsePri
         queryKey: ['price-data', query],
         queryFn: async () => {
             const params = new URLSearchParams();
+            const normalizedSubTypes = normalizePriceSubTypeList(
+                Array.isArray(query?.subTypes) ? query.subTypes.map((item) => String(item)) : [],
+            );
             if (query) {
                 Object.entries(query).forEach(([key, value]) => {
                     if (value !== undefined && value !== null) {
+                        if (key === 'subTypes' && normalizedSubTypes.length > 0) {
+                            params.append(key, normalizedSubTypes.join(','));
+                            return;
+                        }
                         // 日期对象转换为 ISO 字符串
                         if (value instanceof Date) {
                             params.append(key, value.toISOString());
@@ -1065,6 +1083,7 @@ export const usePriceByCollectionPoint = (
     daysOrParams: number | { startDate?: Date; endDate?: Date; days?: number; subTypes?: string[] } = 30,
 ) => {
     const paramsValue = typeof daysOrParams === 'number' ? { days: daysOrParams } : daysOrParams;
+    const normalizedSubTypes = normalizePriceSubTypeList(paramsValue?.subTypes);
     return useQuery<CollectionPointPriceData>({
         queryKey: [
             'price-by-collection-point',
@@ -1073,7 +1092,7 @@ export const usePriceByCollectionPoint = (
             paramsValue?.days,
             paramsValue?.startDate?.toISOString(),
             paramsValue?.endDate?.toISOString(),
-            paramsValue?.subTypes?.join(','),
+            normalizedSubTypes.join(','),
         ],
         queryFn: async () => {
             const params = new URLSearchParams();
@@ -1081,8 +1100,8 @@ export const usePriceByCollectionPoint = (
             if (paramsValue?.startDate) params.append('startDate', paramsValue.startDate.toISOString());
             if (paramsValue?.endDate) params.append('endDate', paramsValue.endDate.toISOString());
             if (paramsValue?.days) params.append('days', String(paramsValue.days));
-            if (paramsValue?.subTypes && paramsValue.subTypes.length > 0) {
-                params.append('subTypes', paramsValue.subTypes.join(','));
+            if (normalizedSubTypes.length > 0) {
+                params.append('subTypes', normalizedSubTypes.join(','));
             }
             const res = await apiClient.get<CollectionPointPriceData>(
                 `/market-intel/price-data/by-collection-point/${collectionPointId}?${params.toString()}`,
@@ -1133,6 +1152,7 @@ export const usePriceByRegion = (
     daysOrParams: number | { startDate?: Date; endDate?: Date; days?: number; subTypes?: string[] } = 30,
 ) => {
     const paramsValue = typeof daysOrParams === 'number' ? { days: daysOrParams } : daysOrParams;
+    const normalizedSubTypes = normalizePriceSubTypeList(paramsValue?.subTypes);
     return useQuery<RegionPriceData>({
         queryKey: [
             'price-by-region',
@@ -1141,7 +1161,7 @@ export const usePriceByRegion = (
             paramsValue?.days,
             paramsValue?.startDate?.toISOString(),
             paramsValue?.endDate?.toISOString(),
-            paramsValue?.subTypes?.join(','),
+            normalizedSubTypes.join(','),
         ],
         queryFn: async () => {
             const params = new URLSearchParams();
@@ -1149,8 +1169,8 @@ export const usePriceByRegion = (
             if (paramsValue?.startDate) params.append('startDate', paramsValue.startDate.toISOString());
             if (paramsValue?.endDate) params.append('endDate', paramsValue.endDate.toISOString());
             if (paramsValue?.days) params.append('days', String(paramsValue.days));
-            if (paramsValue?.subTypes && paramsValue.subTypes.length > 0) {
-                params.append('subTypes', paramsValue.subTypes.join(','));
+            if (normalizedSubTypes.length > 0) {
+                params.append('subTypes', normalizedSubTypes.join(','));
             }
             const res = await apiClient.get<RegionPriceData>(
                 `/market-intel/price-data/by-region/${regionCode}?${params.toString()}`,
@@ -1188,6 +1208,7 @@ export const useMultiPointCompare = (
     daysOrParams: number | { startDate?: Date; endDate?: Date; days?: number; subTypes?: string[] } = 30,
 ) => {
     const paramsValue = typeof daysOrParams === 'number' ? { days: daysOrParams } : daysOrParams;
+    const normalizedSubTypes = normalizePriceSubTypeList(paramsValue?.subTypes);
     return useQuery<MultiPointTrendItem[]>({
         queryKey: [
             'multi-point-compare',
@@ -1196,7 +1217,7 @@ export const useMultiPointCompare = (
             paramsValue?.days,
             paramsValue?.startDate?.toISOString(),
             paramsValue?.endDate?.toISOString(),
-            paramsValue?.subTypes?.join(','),
+            normalizedSubTypes.join(','),
         ],
         queryFn: async () => {
             const params = new URLSearchParams();
@@ -1205,8 +1226,8 @@ export const useMultiPointCompare = (
             if (paramsValue?.startDate) params.append('startDate', paramsValue.startDate.toISOString());
             if (paramsValue?.endDate) params.append('endDate', paramsValue.endDate.toISOString());
             if (paramsValue?.days) params.append('days', String(paramsValue.days));
-            if (paramsValue?.subTypes && paramsValue.subTypes.length > 0) {
-                params.append('subTypes', paramsValue.subTypes.join(','));
+            if (normalizedSubTypes.length > 0) {
+                params.append('subTypes', normalizedSubTypes.join(','));
             }
             const res = await apiClient.get<MultiPointTrendItem[]>(
                 `/market-intel/price-data/compare?${params.toString()}`,

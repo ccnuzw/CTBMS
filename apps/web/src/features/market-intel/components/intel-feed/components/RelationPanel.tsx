@@ -54,14 +54,12 @@ const RELATION_TYPE_META_FALLBACK: Record<string, { label: string; color: string
 const CONTENT_TYPE_ICONS: Record<string, React.ReactNode> = {
     [ContentType.DAILY_REPORT]: <FileTextOutlined style={{ color: '#1890ff' }} />,
     [ContentType.RESEARCH_REPORT]: <FileTextOutlined style={{ color: '#52c41a' }} />,
-    [ContentType.POLICY_DOC]: <FileTextOutlined style={{ color: '#722ed1' }} />,
     'PRICE_DATA': <RiseOutlined style={{ color: '#f5222d' }} />,
 };
 
 const CONTENT_TYPE_META_FALLBACK: Record<string, { label: string; color: string }> = {
     [ContentType.DAILY_REPORT]: { label: '市场信息', color: 'blue' },
     [ContentType.RESEARCH_REPORT]: { label: '研究报告', color: 'green' },
-    [ContentType.POLICY_DOC]: { label: '政策文件', color: 'purple' },
     PRICE_DATA: { label: '价格', color: 'volcano' },
 };
 

@@ -166,6 +166,13 @@ export const TaskCard: React.FC<TaskCardProps> = ({
     const overdueDuration = getOverdueDuration();
 
     const handleClick = () => {
+        // REPORT 类型任务不依赖采集点，直接走 onNavigate
+        if (task.type === IntelTaskType.REPORT) {
+            if (onNavigate) {
+                onNavigate(task.id);
+            }
+            return;
+        }
         if (pointId) {
             onExecute(pointId, task.id, task.commodity);
         } else if (onNavigate) {

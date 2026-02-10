@@ -39,7 +39,6 @@ interface TableViewProps {
 const CONTENT_TYPE_CONFIG: Record<ContentType, { label: string; color: string }> = {
     [ContentType.DAILY_REPORT]: { label: '日报', color: 'blue' },
     [ContentType.RESEARCH_REPORT]: { label: '研报', color: 'green' },
-    [ContentType.POLICY_DOC]: { label: '政策', color: 'purple' },
 };
 
 const STATUS_CONFIG: Record<string, { label: string; color: string }> = {

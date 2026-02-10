@@ -10,6 +10,7 @@ export class UsersService {
     private buildUserWhere(filters?: {
         organizationIds?: string[];
         departmentIds?: string[];
+        ids?: string[];
         status?: UserStatus;
         keyword?: string;
     }): Prisma.UserWhereInput {
@@ -19,6 +20,9 @@ export class UsersService {
         }
         if (filters?.departmentIds && filters.departmentIds.length > 0) {
             where.departmentId = { in: filters.departmentIds };
+        }
+        if (filters?.ids && filters.ids.length > 0) {
+            where.id = { in: filters.ids };
         }
         if (filters?.status) {
             where.status = filters.status;
@@ -173,6 +177,7 @@ export class UsersService {
     async findAll(filters?: {
         organizationIds?: string[];
         departmentIds?: string[];
+        ids?: string[];
         status?: UserStatus;
         keyword?: string;
     }): Promise<User[]> {

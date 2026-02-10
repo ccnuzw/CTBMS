@@ -22,7 +22,6 @@ export const StatsBar: React.FC<StatsBarProps> = ({ items }) => {
             total: items.length,
             dailyReport: 0,
             researchReport: 0,
-            policyDoc: 0,
             highValue: 0,
             pending: 0,
             confirmed: 0,
@@ -32,7 +31,6 @@ export const StatsBar: React.FC<StatsBarProps> = ({ items }) => {
             // 内容类型
             if (item.contentType === ContentType.DAILY_REPORT) result.dailyReport++;
             else if (item.contentType === ContentType.RESEARCH_REPORT) result.researchReport++;
-            else if (item.contentType === ContentType.POLICY_DOC) result.policyDoc++;
 
             // 高价值 (质量高或可信度高)
             if ((item.qualityScore || 0) >= 80 || (item.confidence || 0) >= 90) {
@@ -71,9 +69,6 @@ export const StatsBar: React.FC<StatsBarProps> = ({ items }) => {
                         </Tag>
                         <Tag icon={<FileTextOutlined />} color="green">
                             研报 {stats.researchReport}
-                        </Tag>
-                        <Tag icon={<FileTextOutlined />} color="purple">
-                            政策 {stats.policyDoc}
                         </Tag>
                     </Space>
                 </Flex>

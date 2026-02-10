@@ -16,6 +16,7 @@ export interface UserFilters {
     departmentId?: string;
     organizationIds?: string[];
     departmentIds?: string[];
+    ids?: string[];
     keyword?: string;
     status?: string;
     page?: number;
@@ -37,6 +38,9 @@ export const useUsers = (filters?: UserFilters, options?: { enabled?: boolean })
                 params.append('departmentIds', filters.departmentIds.join(','));
             } else if (filters?.departmentId) {
                 params.append('departmentId', filters.departmentId);
+            }
+            if (filters?.ids && filters.ids.length > 0) {
+                params.append('ids', filters.ids.join(','));
             }
             if (filters?.keyword) params.append('keyword', filters.keyword);
             if (filters?.status) params.append('status', filters.status);

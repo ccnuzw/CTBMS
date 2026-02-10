@@ -88,7 +88,7 @@ export const DataEntry: React.FC<DataEntryProps> = ({ onSuccess }) => {
         try {
             // Map legacy category
             let legacyCategory = IntelCategory.B_SEMI_STRUCTURED;
-            if (contentType === ContentType.RESEARCH_REPORT || contentType === ContentType.POLICY_DOC) {
+            if (contentType === ContentType.RESEARCH_REPORT) {
                 legacyCategory = IntelCategory.C_DOCUMENT;
             }
 
@@ -126,7 +126,7 @@ export const DataEntry: React.FC<DataEntryProps> = ({ onSuccess }) => {
 
         try {
             let legacyCategory = IntelCategory.B_SEMI_STRUCTURED;
-            if (contentType === ContentType.RESEARCH_REPORT || contentType === ContentType.POLICY_DOC) {
+            if (contentType === ContentType.RESEARCH_REPORT) {
                 legacyCategory = IntelCategory.C_DOCUMENT;
             }
 

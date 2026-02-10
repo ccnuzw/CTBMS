@@ -584,7 +584,6 @@ enum IntelSourceType {
 enum ContentType {
   DAILY_REPORT     // 市场日报
   RESEARCH_REPORT  // 研究报告
-  POLICY_DOC       // 政策文件
 }
 
 // 研报类型
@@ -623,9 +622,9 @@ enum KnowledgeType {
   WEEKLY
   MONTHLY
   RESEARCH
-  POLICY
   FLASH
   THIRD_PARTY
+  AI_REPORT
 }
 
 enum KnowledgePeriodType {
@@ -795,6 +794,7 @@ model KnowledgeItem {
   authorId           String
   reviewerId         String?
   reviewedAt         DateTime?
+  rejectReason       String?
   version            Int                    @default(1)
   parentVersionId    String?
   parentVersion      KnowledgeItem?         @relation("KnowledgeVersion", fields: [parentVersionId], references: [id])

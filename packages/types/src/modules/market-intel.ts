@@ -40,27 +40,23 @@ export const INTEL_SOURCE_TYPE_LABELS: Record<IntelSourceType, string> = {
 // 统一入口：内容类型
 export enum ContentType {
   DAILY_REPORT = 'DAILY_REPORT',     // 市场日报（提取价格/事件/洞察）
-  RESEARCH_REPORT = 'RESEARCH_REPORT', // 研究报告（存入知识库）- 仅从知识库入口创建
-  POLICY_DOC = 'POLICY_DOC',         // 政策文件 - 仅从知识库入口创建
+  RESEARCH_REPORT = 'RESEARCH_REPORT', // 研究报告（含政策类，存入知识库）
 }
 
 export const CONTENT_TYPE_LABELS: Record<ContentType, string> = {
   [ContentType.DAILY_REPORT]: '市场信息',
   [ContentType.RESEARCH_REPORT]: '研究报告',
-  [ContentType.POLICY_DOC]: '政策文件',
 };
 
 export const CONTENT_TYPE_DESCRIPTIONS: Record<ContentType, string> = {
   [ContentType.DAILY_REPORT]: '价格、事件等日常市场信息 → 提取结构化数据',
-  [ContentType.RESEARCH_REPORT]: '周报、月报、第三方研报 → 存入知识库档案',
-  [ContentType.POLICY_DOC]: '政策通知、官方文件 → 标记关键要点',
+  [ContentType.RESEARCH_REPORT]: '周报、月报、政策解读、第三方研报 → 存入知识库档案',
 };
 
 // 内容类型对应的可选信源
 export const CONTENT_TYPE_SOURCE_OPTIONS: Record<ContentType, IntelSourceType[]> = {
   [ContentType.DAILY_REPORT]: [IntelSourceType.FIRST_LINE, IntelSourceType.COMPETITOR, IntelSourceType.OFFICIAL],
   [ContentType.RESEARCH_REPORT]: [IntelSourceType.INTERNAL_REPORT, IntelSourceType.RESEARCH_INST, IntelSourceType.OFFICIAL],
-  [ContentType.POLICY_DOC]: [IntelSourceType.OFFICIAL],
 };
 
 // 智能采集入口可用的内容类型（简化后仅支持市场信息）
@@ -69,7 +65,6 @@ export const DATA_ENTRY_CONTENT_TYPES: ContentType[] = [ContentType.DAILY_REPORT
 // 知识库入口可用的内容类型（文档类）
 export const KNOWLEDGE_BASE_CONTENT_TYPES: ContentType[] = [
   ContentType.RESEARCH_REPORT,
-  ContentType.POLICY_DOC,
 ];
 
 // 研报类型
@@ -150,7 +145,7 @@ export const ExtractedPricePointSchema = z.object({
 
   // ===== 价格分类 =====
   sourceType: z.enum(['ENTERPRISE', 'REGIONAL', 'PORT']).optional(), // 价格主体类型
-  subType: z.enum(['LISTED', 'TRANSACTION', 'ARRIVAL', 'FOB', 'STATION_ORIGIN', 'STATION_DEST', 'PURCHASE', 'WHOLESALE', 'OTHER']).optional(), // 价格子类型
+  subType: z.enum(['LISTED', 'TRANSACTION', 'ARRIVAL', 'FOB', 'STATION', 'STATION_ORIGIN', 'STATION_DEST', 'PURCHASE', 'WHOLESALE', 'OTHER']).optional(), // 价格子类型
   geoLevel: z.enum(['COUNTRY', 'REGION', 'PROVINCE', 'CITY', 'DISTRICT', 'PORT', 'STATION', 'ENTERPRISE']).optional(), // 地理层级
 
   // ===== 采集点关联（新增）=====
@@ -523,6 +518,7 @@ export enum PriceSubType {
   TRANSACTION = 'TRANSACTION',        // 成交价
   ARRIVAL = 'ARRIVAL',                // 到港价
   FOB = 'FOB',                        // 平舱价
+  STATION = 'STATION',                // 站台价（标准）
   STATION_ORIGIN = 'STATION_ORIGIN',  // 站台价-产区
   STATION_DEST = 'STATION_DEST',      // 站台价-销区
   PURCHASE = 'PURCHASE',              // 收购价
@@ -562,6 +558,7 @@ export const PRICE_SUB_TYPE_LABELS: Record<PriceSubType, string> = {
   [PriceSubType.TRANSACTION]: '成交价',
   [PriceSubType.ARRIVAL]: '到港价',
   [PriceSubType.FOB]: '平舱价',
+  [PriceSubType.STATION]: '站台价',
   [PriceSubType.STATION_ORIGIN]: '站台价-产区',
   [PriceSubType.STATION_DEST]: '站台价-销区',
   [PriceSubType.PURCHASE]: '收购价',

@@ -13,9 +13,25 @@ import {
 } from './dto';
 import { SubmissionStatus, PriceReviewStatus, PriceInputMethod, IntelTaskStatus } from '@packages/types';
 
+const LEGACY_PRICE_SUBTYPE_TO_CANONICAL: Record<string, PriceSubType> = {
+  STATION_ORIGIN: PriceSubType.STATION,
+  STATION_DEST: PriceSubType.STATION,
+};
+
 @Injectable()
 export class PriceSubmissionService {
   constructor(private prisma: PrismaService) { }
+
+  private normalizePriceSubType(subType?: string) {
+    const normalized = (subType || '').trim().toUpperCase();
+    if (LEGACY_PRICE_SUBTYPE_TO_CANONICAL[normalized]) {
+      return LEGACY_PRICE_SUBTYPE_TO_CANONICAL[normalized];
+    }
+    if (Object.values(PriceSubType).includes(normalized as PriceSubType)) {
+      return normalized as PriceSubType;
+    }
+    return PriceSubType.LISTED;
+  }
 
   /**
    * 生成批次编号
@@ -188,7 +204,7 @@ export class PriceSubmissionService {
           location: submission.collectionPoint.name,
           commodity: dto.commodity,
           price: dto.price,
-          subType: dto.subType as PriceSubType,
+          subType: this.normalizePriceSubType(dto.subType),
           sourceType: dto.sourceType as PriceSourceType,
           geoLevel: dto.geoLevel as GeoLevel,
           grade: dto.grade,
@@ -247,7 +263,7 @@ export class PriceSubmissionService {
       data: {
         commodity: dto.commodity,
         price: dto.price,
-        subType: dto.subType as PriceSubType,
+        subType: this.normalizePriceSubType(dto.subType),
         sourceType: dto.sourceType as PriceSourceType,
         geoLevel: dto.geoLevel as GeoLevel,
         grade: dto.grade,

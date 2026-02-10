@@ -44,6 +44,10 @@ const COMMODITY_CODE_TO_LABEL: Record<string, string> = {
   SORGHUM: '高粱',
   BARLEY: '大麦',
 };
+const LEGACY_PRICE_SUBTYPE_TO_CANONICAL: Record<string, PriceSubType> = {
+  STATION_ORIGIN: PriceSubType.STATION,
+  STATION_DEST: PriceSubType.STATION,
+};
 
 const CORRECTED_NOTE_KEYWORDS = ['修正', '更正', '校正', '修订'];
 const IMPUTED_NOTE_KEYWORDS = ['补录', '估算', '插值', '补齐', '回填'];
@@ -100,6 +104,26 @@ export class PriceDataService {
       .split(',')
       .map((item) => item.trim())
       .filter(Boolean);
+  }
+
+  private normalizePriceSubType(value?: string | null) {
+    if (!value) return null;
+    const normalized = value.trim().toUpperCase();
+    if (!normalized) return null;
+    if (LEGACY_PRICE_SUBTYPE_TO_CANONICAL[normalized]) {
+      return LEGACY_PRICE_SUBTYPE_TO_CANONICAL[normalized];
+    }
+    if (Object.values(PriceSubType).includes(normalized as PriceSubType)) {
+      return normalized as PriceSubType;
+    }
+    return null;
+  }
+
+  private parsePriceSubTypes(value?: string | string[]) {
+    const parsed = this.parseCsv(value)
+      .map((item) => this.normalizePriceSubType(item))
+      .filter((item): item is PriceSubType => Boolean(item));
+    return [...new Set(parsed)];
   }
 
   private resolveDateRange(days = 30, startDate?: Date | string, endDate?: Date | string) {
@@ -415,12 +439,8 @@ export class PriceDataService {
       : undefined;
     if (resolvedSourceType) andFilters.push({ sourceType: resolvedSourceType });
 
-    const subTypeList = this.parseCsv(subTypes).filter((value): value is PriceSubType =>
-      Object.values(PriceSubType).includes(value as PriceSubType),
-    );
-    const resolvedSubType = Object.values(PriceSubType).includes(subType as PriceSubType)
-      ? (subType as PriceSubType)
-      : undefined;
+    const subTypeList = this.parsePriceSubTypes(subTypes);
+    const resolvedSubType = this.normalizePriceSubType(subType);
     if (subTypeList.length === 0 && resolvedSubType) {
       andFilters.push({ subType: resolvedSubType });
     }
@@ -558,9 +578,7 @@ export class PriceDataService {
       endDate,
     );
     const commodityFilter = this.buildCommodityFilter(commodity);
-    const subTypeList = this.parseCsv(subTypes).filter((value): value is PriceSubType =>
-      Object.values(PriceSubType).includes(value as PriceSubType),
-    );
+    const subTypeList = this.parsePriceSubTypes(subTypes);
     const pointTypeList = this.parseCsv(pointTypes).filter((value): value is CollectionPointType =>
       Object.values(CollectionPointType).includes(value as CollectionPointType),
     );
@@ -830,9 +848,7 @@ export class PriceDataService {
       (value): value is CollectionPointType =>
         Object.values(CollectionPointType).includes(value as CollectionPointType),
     );
-    const subTypeList = this.parseCsv(query.subTypes).filter((value): value is PriceSubType =>
-      Object.values(PriceSubType).includes(value as PriceSubType),
-    );
+    const subTypeList = this.parsePriceSubTypes(query.subTypes);
     const collectionPointIdList = this.parseCsv(query.collectionPointIds);
 
     const andFilters: Prisma.PriceDataWhereInput[] = [];
@@ -1157,9 +1173,7 @@ export class PriceDataService {
   ) {
     const refreshRaw = query.refresh;
     const shouldRefresh =
-      refreshRaw === undefined
-        ? true
-        : !['false', '0', 'no'].includes(String(refreshRaw).toLowerCase());
+      refreshRaw === true || ['true', '1', 'yes'].includes(String(refreshRaw).toLowerCase());
     if (shouldRefresh) {
       await this.evaluateAlerts(query);
     }
@@ -1346,9 +1360,7 @@ export class PriceDataService {
     };
     const commodityFilter = this.buildCommodityFilter(commodity);
     if (commodityFilter) where.commodity = commodityFilter;
-    const subTypeList = this.parseCsv(subTypes).filter((value): value is PriceSubType =>
-      Object.values(PriceSubType).includes(value as PriceSubType),
-    );
+    const subTypeList = this.parsePriceSubTypes(subTypes);
     if (subTypeList.length > 0) {
       where.subType = { in: subTypeList };
     }
@@ -1424,9 +1436,7 @@ export class PriceDataService {
     };
     const commodityFilter = this.buildCommodityFilter(commodity);
     if (commodityFilter) where.commodity = commodityFilter;
-    const subTypeList = this.parseCsv(subTypes).filter((value): value is PriceSubType =>
-      Object.values(PriceSubType).includes(value as PriceSubType),
-    );
+    const subTypeList = this.parsePriceSubTypes(subTypes);
     if (subTypeList.length > 0) {
       where.subType = { in: subTypeList };
     }
@@ -1518,9 +1528,7 @@ export class PriceDataService {
       endDate,
     );
 
-    const subTypeList = this.parseCsv(subTypes).filter((value): value is PriceSubType =>
-      Object.values(PriceSubType).includes(value as PriceSubType),
-    );
+    const subTypeList = this.parsePriceSubTypes(subTypes);
     const commodityFilter = this.buildCommodityFilter(commodity);
 
     const data = await this.prisma.priceData.findMany({

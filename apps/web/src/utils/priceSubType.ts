@@ -2,6 +2,17 @@ import { useMemo } from 'react';
 import { PRICE_SUB_TYPE_LABELS } from '@packages/types';
 import type { DictionaryItem } from '@packages/types';
 
+const LEGACY_PRICE_SUBTYPE_TO_CANONICAL: Record<string, string> = {
+  STATION_ORIGIN: 'STATION',
+  STATION_DEST: 'STATION',
+};
+
+export const normalizePriceSubTypeCode = (code: string): string =>
+  LEGACY_PRICE_SUBTYPE_TO_CANONICAL[code] || code;
+
+export const normalizePriceSubTypeCodes = (codes: string[]): string[] =>
+  Array.from(new Set(codes.map((code) => normalizePriceSubTypeCode(code))));
+
 /**
  * 统一的价格类型标签映射工具
  * 优先使用字典（动态配置），回退到静态中文标签兜底
@@ -20,6 +31,13 @@ export const usePriceSubTypeLabels = (dictionaryItems?: DictionaryItem[]): Recor
         }
       });
     }
+
+    // 兼容历史子类型：沿用标准站台价标签，避免 UI 出现不一致
+    Object.entries(LEGACY_PRICE_SUBTYPE_TO_CANONICAL).forEach(([legacyCode, canonicalCode]) => {
+      if (baseLabels[canonicalCode]) {
+        baseLabels[legacyCode] = baseLabels[canonicalCode];
+      }
+    });
     
     return baseLabels;
   }, [dictionaryItems]);
@@ -31,19 +49,31 @@ export const usePriceSubTypeLabels = (dictionaryItems?: DictionaryItem[]): Recor
  */
 export const usePriceSubTypeOptions = (dictionaryItems?: DictionaryItem[]) => {
   return useMemo(() => {
-    const optionsFromDict = dictionaryItems?.filter(item => item.isActive).map(item => ({
-      value: item.code,
-      label: item.label,
-    }));
+    const optionsFromDict = dictionaryItems
+      ?.filter((item) => item.isActive)
+      .map((item) => ({
+        value: normalizePriceSubTypeCode(item.code),
+        label: item.label,
+      }));
 
     if (optionsFromDict?.length) {
-      return optionsFromDict;
+      const deduped = new Map<string, string>();
+      optionsFromDict.forEach((item) => {
+        if (!deduped.has(item.value)) {
+          deduped.set(item.value, item.label);
+        }
+      });
+      return Array.from(deduped.entries()).map(([value, label]) => ({ value, label }));
     }
 
     // 静态兜底选项
-    return Object.entries(PRICE_SUB_TYPE_LABELS).map(([value, label]) => ({
-      value,
-      label,
-    }));
+    const deduped = new Map<string, string>();
+    Object.entries(PRICE_SUB_TYPE_LABELS).forEach(([value, label]) => {
+      const canonicalValue = normalizePriceSubTypeCode(value);
+      if (!deduped.has(canonicalValue)) {
+        deduped.set(canonicalValue, label);
+      }
+    });
+    return Array.from(deduped.entries()).map(([value, label]) => ({ value, label }));
   }, [dictionaryItems]);
 };

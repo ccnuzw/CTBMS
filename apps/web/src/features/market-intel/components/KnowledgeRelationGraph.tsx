@@ -43,7 +43,7 @@ const NODE_TYPE_COLORS: Record<string, string> = {
   WEEKLY: 'processing',
   MONTHLY: 'gold',
   RESEARCH: 'green',
-  POLICY: 'purple',
+  AI_REPORT: 'geekblue',
 };
 
 export const KnowledgeRelationGraph: React.FC<Props> = ({ center, outgoing, incoming, onJump }) => {

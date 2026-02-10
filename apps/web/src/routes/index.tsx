@@ -34,6 +34,8 @@ import {
   KnowledgeDetailPage,
   KnowledgeDashboardPage,
   LegacyKnowledgeRedirectPage,
+  ReportEntryForm,
+  ReviewWorkbench,
 } from '../features/market-intel';
 import { ExtractionConfigPage } from '../features/extraction-config';
 import { systemConfigRoutes } from '../features/system-config';
@@ -125,7 +127,9 @@ export const router = createBrowserRouter([
               { path: 'documents/:id', element: <LegacyKnowledgeRedirectPage source="intel" /> },
               { path: 'reports/create', element: <ResearchReportCreatePage /> },
               { path: 'reports/:id', element: <LegacyKnowledgeRedirectPage source="report" /> },
+
               { path: 'reports/:id/edit', element: <ResearchReportCreatePage /> },
+
             ],
           },
           { path: 'leaderboard', element: <Leaderboard /> },
@@ -133,6 +137,14 @@ export const router = createBrowserRouter([
           { path: 'tasks', element: <TaskDistributionPage /> },
           { path: 'monitor', element: <TaskMonitor /> },
           { path: 'extraction-config', element: <ExtractionConfigPage /> },
+        ],
+      },
+      // 审核管理路由
+      {
+        path: 'review',
+        children: [
+          { path: 'price', element: <PriceReviewPanel /> },
+          { path: 'reports', element: <ReviewWorkbench /> },
         ],
       },
       {
@@ -143,14 +155,25 @@ export const router = createBrowserRouter([
         path: 'intel/research-reports/:id',
         element: <LegacyKnowledgeRedirectPage source="report" />,
       },
-      // 价格填报模块路由
+      // 我的工作台路由
       {
-        path: 'price-reporting',
+        path: 'workstation',
         children: [
           { index: true, element: <PriceReportingDashboard /> },
           { path: 'bulk', element: <BatchPriceEntryTable /> },
           { path: 'submit/:pointId', element: <PriceEntryForm /> },
-          { path: 'review', element: <PriceReviewPanel /> },
+          { path: 'review', element: <Navigate to="/review/price" replace /> },
+          { path: 'report/:type', element: <ReportEntryForm /> },
+        ],
+      },
+      // 价格填报模块路由（兼容旧路径，重定向到 /workstation）
+      {
+        path: 'price-reporting',
+        children: [
+          { index: true, element: <Navigate to="/workstation" replace /> },
+          { path: 'bulk', element: <Navigate to="/workstation/bulk" replace /> },
+          { path: 'submit/:pointId', element: <PriceEntryForm /> },
+          { path: 'review', element: <Navigate to="/review/price" replace /> },
         ],
       },
       // 历史设置中心路由兼容（菜单/书签）

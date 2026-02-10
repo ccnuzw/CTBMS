@@ -36,7 +36,10 @@ import { useCollectionPoints, useProvinces } from '../../api/hooks';
 import { AdvancedPointSelector } from './AdvancedPointSelector';
 import { PRICE_QUALITY_TAG_OPTIONS, type PriceQualityTag } from './quality';
 import { useDictionary } from '@/hooks/useDictionaries';
-import { usePriceSubTypeLabels } from '@/utils/priceSubType';
+import {
+    normalizePriceSubTypeCodes,
+    usePriceSubTypeOptions,
+} from '@/utils/priceSubType';
 
 const { Title, Text } = Typography;
 
@@ -165,8 +168,7 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
             }));
     }, [commodityDict]);
 
-    // 统一的价格类型标签映射（字典优先，兜底中文）
-    const priceSubTypeLabels = usePriceSubTypeLabels(priceSubTypeDict);
+    const priceSubTypeOptions = usePriceSubTypeOptions(priceSubTypeDict);
 
     const pointTypeLabels = useMemo(() => {
         const items = (pointTypeDict || []).filter((item) => item.isActive);
@@ -370,11 +372,12 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
                         placeholder="选择价格类型"
                         style={{ width: '100%' }}
                         value={selectedSubTypes}
-                        onChange={(vals) => onSelectedSubTypesChange(vals as PriceSubType[])}
-                        options={Object.entries(priceSubTypeLabels).map(([value, label]) => ({
-                            label,
-                            value,
-                        }))}
+                        onChange={(vals) =>
+                            onSelectedSubTypesChange(
+                                normalizePriceSubTypeCodes(vals as string[]) as PriceSubType[],
+                            )
+                        }
+                        options={priceSubTypeOptions}
                         size="small"
                         maxTagCount="responsive"
                     />

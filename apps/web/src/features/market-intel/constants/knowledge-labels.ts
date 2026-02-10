@@ -3,9 +3,9 @@ export const KNOWLEDGE_TYPE_LABELS: Record<string, string> = {
   WEEKLY: '周报',
   MONTHLY: '月报',
   RESEARCH: '研报',
-  POLICY: '政策',
   FLASH: '快讯',
   THIRD_PARTY: '外部资讯',
+  AI_REPORT: 'AI报告',
 };
 
 export const KNOWLEDGE_STATUS_META: Record<string, { label: string; color: string }> = {

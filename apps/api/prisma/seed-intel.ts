@@ -389,7 +389,7 @@ const INTEL_TEMPLATES = [
 const COMMODITIES = ['CORN', 'SOYBEAN', 'WHEAT', 'SORGHUM', 'SOYBEAN_MEAL'];
 
 // 内容类型
-const CONTENT_TYPES = ['DAILY_REPORT', 'RESEARCH_REPORT', 'POLICY_DOC'];
+const CONTENT_TYPES = ['DAILY_REPORT', 'RESEARCH_REPORT'];
 
 // 信源类型
 const SOURCE_TYPES = ['FIRST_LINE', 'COMPETITOR', 'OFFICIAL', 'RESEARCH_INST', 'MEDIA'];
@@ -480,7 +480,7 @@ async function main() {
         const template = randomPick(INTEL_TEMPLATES);
         const daysAgo = Math.floor(Math.random() * 30); // 最近30天
         const effectiveTime = randomDate(daysAgo);
-        const contentType = randomPick(CONTENT_TYPES) as 'DAILY_REPORT' | 'RESEARCH_REPORT' | 'POLICY_DOC';
+        const contentType = randomPick(CONTENT_TYPES) as 'DAILY_REPORT' | 'RESEARCH_REPORT';
         const sourceType = randomPick(SOURCE_TYPES) as 'FIRST_LINE' | 'COMPETITOR' | 'OFFICIAL' | 'RESEARCH_INST' | 'MEDIA';
 
         // 创建 MarketIntel

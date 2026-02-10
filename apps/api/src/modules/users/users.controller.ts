@@ -34,6 +34,7 @@ export class UsersController {
         @Query('departmentId') departmentId?: string,
         @Query('organizationIds') organizationIds?: string,
         @Query('departmentIds') departmentIds?: string,
+        @Query('ids') ids?: string,
         @Query('keyword') keyword?: string,
         @Query('status') status?: string,
     ) {
@@ -43,10 +44,14 @@ export class UsersController {
         const normalizedDeptIds = departmentIds
             ? departmentIds.split(',').map((item) => item.trim()).filter(Boolean)
             : (departmentId ? [departmentId] : undefined);
+        const normalizedIds = ids
+            ? ids.split(',').map((item) => item.trim()).filter(Boolean)
+            : undefined;
 
         return this.usersService.findAll({
             organizationIds: normalizedOrgIds,
             departmentIds: normalizedDeptIds,
+            ids: normalizedIds,
             keyword,
             status: status ? (status as UserStatus) : undefined,
         });

@@ -14,7 +14,11 @@ import { usePriceData } from '../../api/hooks';
 import type { PriceDataResponse, PriceSubType } from '@packages/types';
 import { PRICE_QUALITY_TAG_LABELS, PriceQualityTag } from './quality';
 import { useDictionary } from '@/hooks/useDictionaries';
-import { usePriceSubTypeLabels } from '@/utils/priceSubType';
+import {
+    normalizePriceSubTypeCode,
+    usePriceSubTypeLabels,
+    usePriceSubTypeOptions,
+} from '@/utils/priceSubType';
 
 const { Text } = Typography;
 
@@ -83,6 +87,7 @@ export const DataGrid: React.FC<DataGridProps> = ({
 
     // 统一的价格类型标签映射（字典优先，兜底中文）
     const priceSubTypeLabels = usePriceSubTypeLabels(priceSubTypeDict);
+    const priceSubTypeOptions = usePriceSubTypeOptions(priceSubTypeDict);
 
     const pointTypeLabels = useMemo(() => {
         const items = (pointTypeDict || []).filter((item) => item.isActive);
@@ -200,7 +205,7 @@ export const DataGrid: React.FC<DataGridProps> = ({
                     item.location,
                     pointTypeLabels[pointType] || pointType || '-',
                     commodityLabels[item.commodity] || item.commodity,
-                    priceSubTypeLabels[item.subType] || item.subType,
+                    priceSubTypeLabels[normalizePriceSubTypeCode(item.subType)] || item.subType,
                     item.price,
                     item.dayChange ?? '',
                     item.moisture ?? '',
@@ -281,13 +286,16 @@ export const DataGrid: React.FC<DataGridProps> = ({
             key: 'subType',
             width: 100,
             render: (subType: string) => (
-                <Tag color="blue">{priceSubTypeLabels[subType] || subType}</Tag>
+                <Tag color="blue">
+                    {priceSubTypeLabels[normalizePriceSubTypeCode(subType)] || subType}
+                </Tag>
             ),
-            filters: Object.entries(priceSubTypeLabels).map(([key, label]) => ({
-                text: label,
-                value: key,
+            filters: priceSubTypeOptions.map((item) => ({
+                text: item.label,
+                value: item.value,
             })),
-            onFilter: (value, record) => record.subType === value,
+            onFilter: (value, record) =>
+                normalizePriceSubTypeCode(record.subType) === normalizePriceSubTypeCode(String(value)),
         },
         {
             title: '价格',

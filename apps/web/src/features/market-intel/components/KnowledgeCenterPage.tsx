@@ -208,7 +208,7 @@ export const KnowledgeCenterPage: React.FC = () => {
   };
 
   return (
-    <PageContainer title="知识中心 V2" subTitle="统一沉淀日报、周报、研报与政策内容">
+    <PageContainer title="知识中心 V2" subTitle="统一沉淀日报、周报、研报与AI报告">
       <Row gutter={[16, 16]}>
         <Col xs={24} md={8}>
           <Card>
@@ -243,7 +243,7 @@ export const KnowledgeCenterPage: React.FC = () => {
               { label: '周报', value: 'WEEKLY' },
               { label: '月报', value: 'MONTHLY' },
               { label: '研报', value: 'RESEARCH' },
-              { label: '政策', value: 'POLICY' },
+              { label: 'AI报告', value: 'AI_REPORT' },
             ]}
           />
           <Text type="secondary">当前视图：{activeTypeLabel}，默认仅展示已发布内容。</Text>

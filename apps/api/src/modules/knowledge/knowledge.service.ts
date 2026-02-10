@@ -26,6 +26,7 @@ type KnowledgeListQuery = {
   endDate?: Date;
   page?: number;
   pageSize?: number;
+  authorId?: string;
 };
 
 type CreateKnowledgeInput = {
@@ -67,7 +68,7 @@ export class KnowledgeService {
   constructor(
     private prisma: PrismaService,
     private aiService: AIService,
-  ) {}
+  ) { }
 
   async findAll(query: KnowledgeListQuery) {
     const page = Math.max(1, query.page || 1);
@@ -81,6 +82,7 @@ export class KnowledgeService {
     if (query.sourceType) where.sourceType = query.sourceType;
     if (query.commodity) where.commodities = { has: query.commodity };
     if (query.region) where.region = { has: query.region };
+    if (query.authorId) where.authorId = query.authorId;
 
     if (query.startDate || query.endDate) {
       where.publishAt = {
@@ -181,6 +183,89 @@ export class KnowledgeService {
     });
   }
 
+  /**
+   * 提交报告并创建 KnowledgeItem（路径 A：人工填报）
+   * 支持日报/周报/月报，可选关联 IntelTask 自动标记为 SUBMITTED
+   */
+  async submitReport(input: {
+    type: 'DAILY' | 'WEEKLY' | 'MONTHLY';
+    title: string;
+    contentPlain: string;
+    contentRich?: string;
+    commodities?: string[];
+    region?: string[];
+    authorId: string;
+    taskId?: string;
+    triggerAnalysis?: boolean;
+  }) {
+    const periodTypeMap = {
+      DAILY: KnowledgePeriodType.DAY,
+      WEEKLY: KnowledgePeriodType.WEEK,
+      MONTHLY: KnowledgePeriodType.MONTH,
+    };
+
+    const now = new Date();
+    const periodType = periodTypeMap[input.type];
+
+    // 自动生成 periodKey
+    let periodKey: string;
+    if (input.type === 'DAILY') {
+      periodKey = now.toISOString().split('T')[0]; // 2026-02-10
+    } else if (input.type === 'WEEKLY') {
+      const startOfWeek = new Date(now);
+      startOfWeek.setDate(now.getDate() - now.getDay() + 1); // Monday
+      periodKey = `${startOfWeek.toISOString().split('T')[0]}_W`;
+    } else {
+      periodKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+    }
+
+    return this.prisma.$transaction(async (tx) => {
+      // 1. 创建 KnowledgeItem
+      const item = await tx.knowledgeItem.create({
+        data: {
+          type: KnowledgeType[input.type],
+          title: input.title,
+          contentPlain: input.contentPlain,
+          contentRich: input.contentRich,
+          sourceType: 'MANUAL_REPORT',
+          publishAt: now,
+          effectiveAt: now,
+          periodType,
+          periodKey,
+          region: input.region || [],
+          commodities: input.commodities || [],
+          status: 'PENDING_REVIEW',
+          authorId: input.authorId,
+        },
+      });
+
+      // 2. 如果有关联任务，自动标记为 SUBMITTED
+      if (input.taskId) {
+        const task = await tx.intelTask.findUnique({
+          where: { id: input.taskId },
+        });
+        if (task && (task.status === 'PENDING' || task.status === 'RETURNED' || task.status === 'OVERDUE')) {
+          await tx.intelTask.update({
+            where: { id: input.taskId },
+            data: {
+              status: 'SUBMITTED',
+              completedAt: now,
+            },
+          });
+        }
+      }
+
+      // 3. 触发 AI 分析（异步，不阻塞返回）
+      if (input.triggerAnalysis !== false) {
+        this.reanalyze(item.id, true).catch((err) => {
+          console.warn(`[submitReport] AI analysis failed for ${item.id}:`, err.message);
+        });
+      }
+
+      return this.findOne(item.id);
+    });
+  }
+
   async update(id: string, input: UpdateKnowledgeInput) {
     await this.findOne(id);
 
@@ -224,6 +309,115 @@ export class KnowledgeService {
     return this.findOne(id);
   }
 
+  async updateReport(id: string, input: {
+    title?: string;
+    contentPlain?: string;
+    contentRich?: string;
+    commodities?: string[];
+    region?: string[];
+    authorId: string; // 用于校验权限
+  }) {
+    const item = await this.prisma.knowledgeItem.findUnique({
+      where: { id },
+    });
+
+    if (!item) {
+      throw new NotFoundException(`报告 ID ${id} 不存在`);
+    }
+
+    if (item.authorId !== input.authorId) {
+      throw new BadRequestException('无权修改他人报告');
+    }
+
+    if (item.status !== 'PENDING_REVIEW' && item.status !== 'REJECTED') {
+      throw new BadRequestException('只有待审核或被驳回的报告可以修改');
+    }
+
+    // 更新报告（同时重置状态为 PENDING_REVIEW 如果是被驳回的）
+    // 如果是 PENDING_REVIEW，保持不变。如果是 REJECTED，修改后变回 PENDING_REVIEW
+    const newStatus = item.status === 'REJECTED' ? 'PENDING_REVIEW' : item.status;
+
+    await this.prisma.knowledgeItem.update({
+      where: { id },
+      data: {
+        ...(input.title ? { title: input.title } : {}),
+        ...(input.contentPlain ? { contentPlain: input.contentPlain } : {}),
+        ...(input.contentRich ? { contentRich: input.contentRich } : {}),
+        ...(input.commodities ? { commodities: input.commodities } : {}),
+        ...(input.region ? { region: input.region } : {}),
+        status: newStatus,
+      },
+    });
+
+    // 触发重新分析（如果是被驳回修改的，可能需要重新分析）
+    this.reanalyze(id, true).catch((err) => {
+      console.warn(`[updateReport] AI re-analysis failed for ${id}:`, err.message);
+    });
+
+    return this.findOne(id);
+  }
+
+  async getPendingReviewList(page = 1, pageSize = 20) {
+    const [data, total] = await Promise.all([
+      this.prisma.knowledgeItem.findMany({
+        where: { status: 'PENDING_REVIEW' },
+        skip: (page - 1) * pageSize,
+        take: pageSize,
+        orderBy: { updatedAt: 'desc' },
+        include: {
+          analysis: true,
+        },
+      }),
+      this.prisma.knowledgeItem.count({ where: { status: 'PENDING_REVIEW' } }),
+    ]);
+
+    return { data, total, page, pageSize };
+  }
+
+  async reviewReport(
+    id: string,
+    input: {
+      action: 'APPROVE' | 'REJECT';
+      reviewerId: string;
+      rejectReason?: string;
+    },
+  ) {
+    const item = await this.prisma.knowledgeItem.findUnique({
+      where: { id },
+    });
+
+    if (!item) {
+      throw new NotFoundException(`报告 ID ${id} 不存在`);
+    }
+
+    if (item.status !== 'PENDING_REVIEW') {
+      throw new BadRequestException('该报告不在待审核状态');
+    }
+
+    const now = new Date();
+    const newStatus =
+      input.action === 'APPROVE' ? KnowledgeStatus.PUBLISHED : KnowledgeStatus.REJECTED;
+
+    await this.prisma.knowledgeItem.update({
+      where: { id },
+      data: {
+        status: newStatus,
+        reviewerId: input.reviewerId,
+        reviewedAt: now,
+        rejectReason: input.action === 'REJECT' ? input.rejectReason : null,
+      },
+    });
+
+    // 如果通过审核 & 之前未分析成功，触发重新分析
+    if (input.action === 'APPROVE') {
+      // 可以在这里触发后续逻辑，如积分计算、自动关联等
+      this.reanalyze(id, false).catch((err) => {
+        console.warn(`[reviewReport] Post-approval analysis failed for ${id}:`, err.message);
+      });
+    }
+
+    return this.findOne(id);
+  }
   async reanalyze(id: string, triggerDeepAnalysis = true) {
     const item = await this.findOne(id);
     const content = item.contentPlain || item.contentRich || '';
@@ -567,56 +761,56 @@ export class KnowledgeService {
 
     const item = existing
       ? await this.prisma.knowledgeItem.update({
-          where: { id: existing.id },
-          data: {
-            type,
-            title:
-              intel.researchReport?.title ||
-              intel.summary?.slice(0, 80) ||
-              intel.rawContent.slice(0, 80) ||
-              '未命名内容',
-            contentPlain: intel.rawContent || '',
-            contentRich: intel.summary || intel.rawContent,
-            sourceType: intel.sourceType,
-            publishAt: intel.effectiveTime,
-            effectiveAt: intel.effectiveTime,
-            periodType: this.mapLegacyContentTypeToPeriodType(intel.contentType),
-            periodKey: this.toPeriodKey(
-              intel.effectiveTime,
-              this.mapLegacyContentTypeToPeriodType(intel.contentType),
-            ),
-            location: intel.location,
-            region: intel.region || [],
-            status: 'PUBLISHED',
-            authorId: intel.authorId,
-          },
-        })
+        where: { id: existing.id },
+        data: {
+          type,
+          title:
+            intel.researchReport?.title ||
+            intel.summary?.slice(0, 80) ||
+            intel.rawContent.slice(0, 80) ||
+            '未命名内容',
+          contentPlain: intel.rawContent || '',
+          contentRich: intel.summary || intel.rawContent,
+          sourceType: intel.sourceType,
+          publishAt: intel.effectiveTime,
+          effectiveAt: intel.effectiveTime,
+          periodType: this.mapLegacyContentTypeToPeriodType(intel.contentType),
+          periodKey: this.toPeriodKey(
+            intel.effectiveTime,
+            this.mapLegacyContentTypeToPeriodType(intel.contentType),
+          ),
+          location: intel.location,
+          region: intel.region || [],
+          status: 'PUBLISHED',
+          authorId: intel.authorId,
+        },
+      })
       : await this.prisma.knowledgeItem.create({
-          data: {
-            type,
-            title:
-              intel.researchReport?.title ||
-              intel.summary?.slice(0, 80) ||
-              intel.rawContent.slice(0, 80) ||
-              '未命名内容',
-            contentPlain: intel.rawContent || '',
-            contentRich: intel.summary || intel.rawContent,
-            sourceType: intel.sourceType,
-            publishAt: intel.effectiveTime,
-            effectiveAt: intel.effectiveTime,
-            periodType: this.mapLegacyContentTypeToPeriodType(intel.contentType),
-            periodKey: this.toPeriodKey(
-              intel.effectiveTime,
-              this.mapLegacyContentTypeToPeriodType(intel.contentType),
-            ),
-            location: intel.location,
-            region: intel.region || [],
-            status: 'PUBLISHED',
-            authorId: intel.authorId,
-            originLegacyType: 'MARKET_INTEL',
-            originLegacyId: intel.id,
-          },
-        });
+        data: {
+          type,
+          title:
+            intel.researchReport?.title ||
+            intel.summary?.slice(0, 80) ||
+            intel.rawContent.slice(0, 80) ||
+            '未命名内容',
+          contentPlain: intel.rawContent || '',
+          contentRich: intel.summary || intel.rawContent,
+          sourceType: intel.sourceType,
+          publishAt: intel.effectiveTime,
+          effectiveAt: intel.effectiveTime,
+          periodType: this.mapLegacyContentTypeToPeriodType(intel.contentType),
+          periodKey: this.toPeriodKey(
+            intel.effectiveTime,
+            this.mapLegacyContentTypeToPeriodType(intel.contentType),
+          ),
+          location: intel.location,
+          region: intel.region || [],
+          status: 'PUBLISHED',
+          authorId: intel.authorId,
+          originLegacyType: 'MARKET_INTEL',
+          originLegacyId: intel.id,
+        },
+      });
 
     const aiAnalysis = (intel.aiAnalysis ?? {}) as {
       summary?: string;
@@ -1066,7 +1260,6 @@ export class KnowledgeService {
   }
 
   private toContentType(type: KnowledgeType): ContentType {
-    if (type === 'POLICY') return ContentType.POLICY_DOC;
     if (type === 'DAILY') return ContentType.DAILY_REPORT;
     return ContentType.RESEARCH_REPORT;
   }
@@ -1076,7 +1269,6 @@ export class KnowledgeService {
   ): KnowledgeType {
     if (contentType === 'DAILY_REPORT') return 'DAILY';
     if (contentType === 'RESEARCH_REPORT') return 'RESEARCH';
-    if (contentType === 'POLICY_DOC') return 'POLICY';
     return 'THIRD_PARTY';
   }
 

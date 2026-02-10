@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   DefaultValuePipe,
@@ -20,7 +21,7 @@ import { KnowledgeService } from './knowledge.service';
 
 @Controller('knowledge')
 export class KnowledgeController {
-  constructor(private readonly knowledgeService: KnowledgeService) {}
+  constructor(private readonly knowledgeService: KnowledgeService) { }
 
   @Get('items')
   findAll(
@@ -36,6 +37,7 @@ export class KnowledgeController {
     @Query('endDate') endDate?: string,
     @Query('page', new DefaultValuePipe(1), ParseIntPipe) page?: number,
     @Query('pageSize', new DefaultValuePipe(20), ParseIntPipe) pageSize?: number,
+    @Query('authorId') authorId?: string,
   ) {
     return this.knowledgeService.findAll({
       type,
@@ -50,12 +52,98 @@ export class KnowledgeController {
       endDate: endDate ? new Date(endDate) : undefined,
       page,
       pageSize,
+      authorId,
     });
+  }
+
+  @Get('items/pending-review')
+  getPendingReviewList(
+    @Query('page', new DefaultValuePipe(1), ParseIntPipe) page?: number,
+    @Query('pageSize', new DefaultValuePipe(20), ParseIntPipe) pageSize?: number,
+  ) {
+    return this.knowledgeService.getPendingReviewList(page, pageSize);
   }
 
   @Get('items/:id')
   findOne(@Param('id') id: string) {
     return this.knowledgeService.findOne(id);
+  }
+
+  @Post('items/submit-report')
+  submitReport(
+    @Body('type') type: 'DAILY' | 'WEEKLY' | 'MONTHLY',
+    @Body('title') title: string,
+    @Body('contentPlain') contentPlain: string,
+    @Body('contentRich') contentRich?: string,
+    @Body('commodities') commodities?: string[],
+    @Body('region') region?: string[],
+    @Body('authorId') authorId?: string,
+    @Body('taskId') taskId?: string,
+    @Body('triggerAnalysis', new DefaultValuePipe(true), ParseBoolPipe) triggerAnalysis?: boolean,
+  ) {
+    if (!type || !title || !contentPlain || !authorId) {
+      throw new BadRequestException(
+        'type, title, contentPlain, authorId are required',
+      );
+    }
+    return this.knowledgeService.submitReport({
+      type,
+      title,
+      contentPlain,
+      contentRich,
+      commodities,
+      region,
+      authorId,
+      taskId,
+      triggerAnalysis,
+    });
+  }
+
+  @Patch('items/:id/report')
+  updateReport(
+    @Param('id') id: string,
+    @Body('title') title?: string,
+    @Body('contentPlain') contentPlain?: string,
+    @Body('contentRich') contentRich?: string,
+    @Body('commodities') commodities?: string[],
+    @Body('region') region?: string[],
+    @Body('authorId') authorId?: string,
+  ) {
+    if (!authorId) {
+      throw new BadRequestException('authorId is required');
+    }
+    return this.knowledgeService.updateReport(id, {
+      title,
+      contentPlain,
+      contentRich,
+      commodities,
+      region,
+      authorId,
+    });
+  }
+
+
+
+
+
+  @Post('items/:id/review')
+  reviewReport(
+    @Param('id') id: string,
+    @Body('action') action: 'APPROVE' | 'REJECT',
+    @Body('reviewerId') reviewerId: string,
+    @Body('rejectReason') rejectReason?: string,
+  ) {
+    if (!action || !reviewerId) {
+      throw new BadRequestException('action and reviewerId are required');
+    }
+    if (action === 'REJECT' && !rejectReason) {
+      throw new BadRequestException('rejectReason is required when rejecting');
+    }
+    return this.knowledgeService.reviewReport(id, {
+      action,
+      reviewerId,
+      rejectReason,
+    });
   }
 
   @Post('items')
@@ -104,11 +192,11 @@ export class KnowledgeController {
   ) {
     const parsedTypes = types
       ? types
-          .split(',')
-          .map((item) => item.trim())
-          .filter((item): item is KnowledgeRelationType =>
-            Object.values(KnowledgeRelationType).includes(item as KnowledgeRelationType),
-          )
+        .split(',')
+        .map((item) => item.trim())
+        .filter((item): item is KnowledgeRelationType =>
+          Object.values(KnowledgeRelationType).includes(item as KnowledgeRelationType),
+        )
       : undefined;
 
     return this.knowledgeService.getRelations(id, {

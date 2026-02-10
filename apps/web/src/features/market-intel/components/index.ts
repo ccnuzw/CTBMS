@@ -35,3 +35,5 @@ export * from './DocumentStatsDashboard';
 export { AllocationMatrix } from './AllocationMatrix';
 export { CollectionPointAllocationCenter } from './CollectionPointAllocationCenter';
 export { DistributionPreview } from './DistributionPreview';
+export { ReportEntryForm } from './ReportEntryForm';
+export { ReviewWorkbench } from './ReviewWorkbench';

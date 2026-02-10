@@ -9,6 +9,13 @@ import {
   KNOWLEDGE_TYPE_LABELS,
 } from '../constants/knowledge-labels';
 
+export type PaginatedResponse<T> = {
+  data: T[];
+  total: number;
+  page: number;
+  pageSize: number;
+};
+
 export type KnowledgeItem = {
   id: string;
   type: string;
@@ -264,15 +271,15 @@ export const useWeeklyOverview = (periodKey?: string) => {
         ...res.data,
         metrics: res.data.metrics
           ? {
-              ...res.data.metrics,
-              riskLevelLabel: res.data.metrics.riskLevel
-                ? RISK_LABEL_MAP[res.data.metrics.riskLevel] || res.data.metrics.riskLevel
-                : undefined,
-              sentimentLabel: res.data.metrics.sentiment
-                ? KNOWLEDGE_SENTIMENT_LABELS[res.data.metrics.sentiment] ||
-                  res.data.metrics.sentiment
-                : undefined,
-            }
+            ...res.data.metrics,
+            riskLevelLabel: res.data.metrics.riskLevel
+              ? RISK_LABEL_MAP[res.data.metrics.riskLevel] || res.data.metrics.riskLevel
+              : undefined,
+            sentimentLabel: res.data.metrics.sentiment
+              ? KNOWLEDGE_SENTIMENT_LABELS[res.data.metrics.sentiment] ||
+              res.data.metrics.sentiment
+              : undefined,
+          }
           : null,
         topSources: (res.data.topSources || []).map((source) => ({
           ...source,
@@ -305,6 +312,122 @@ export const useTopicEvolution = (query?: { commodity?: string; weeks?: number }
             : undefined,
         })),
       };
+    },
+  });
+};
+
+// ======== 报告提交 ========
+
+export interface SubmitReportPayload {
+  type: 'DAILY' | 'WEEKLY' | 'MONTHLY';
+  title: string;
+  contentPlain: string;
+  contentRich?: string;
+  commodities?: string[];
+  region?: string[];
+  authorId: string;
+  taskId?: string;
+  triggerAnalysis?: boolean;
+}
+
+export const useSubmitReport = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (payload: SubmitReportPayload) => {
+      const res = await apiClient.post<KnowledgeItem>(
+        '/knowledge/items/submit-report',
+        payload,
+      );
+      return mapKnowledgeItem(res.data);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['knowledge', 'list'] });
+      queryClient.invalidateQueries({ queryKey: ['knowledge', 'analytics'] });
+      queryClient.invalidateQueries({ queryKey: ['myTasks'] });
+    },
+  });
+};
+
+export const useMyReports = (authorId?: string) => {
+  return useQuery<PaginatedResponse<KnowledgeItem>>({
+    queryKey: ['knowledge', 'my-reports', authorId],
+    queryFn: async () => {
+      if (!authorId) return { data: [], total: 0, page: 1, pageSize: 20 };
+      const res = await apiClient.get<PaginatedResponse<KnowledgeItem>>('/knowledge/items', {
+        params: {
+          authorId,
+          pageSize: 20,
+        },
+      });
+      return {
+        ...res.data,
+        data: res.data.data.map(mapKnowledgeItem),
+      };
+    },
+    enabled: !!authorId,
+  });
+};
+
+export const useUpdateReport = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({ id, ...payload }: SubmitReportPayload & { id: string }) => {
+      const res = await apiClient.patch<KnowledgeItem>(
+        `/knowledge/items/${id}/report`,
+        payload,
+      );
+      return mapKnowledgeItem(res.data);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['knowledge', 'list'] });
+      queryClient.invalidateQueries({ queryKey: ['knowledge', 'my-reports'] });
+      queryClient.invalidateQueries({ queryKey: ['myTasks'] });
+    },
+  });
+};
+
+export const usePendingReviews = (query?: KnowledgeListQuery) => {
+  return useQuery<PaginatedResponse<KnowledgeItem>>({
+    queryKey: ['knowledge', 'pending-reviews', query],
+    queryFn: async () => {
+      const params = toParams(query);
+      const res = await apiClient.get<PaginatedResponse<KnowledgeItem>>(
+        `/knowledge/items/pending-review?${params.toString()}`
+      );
+      return {
+        ...res.data,
+        data: res.data.data.map(mapKnowledgeItem),
+      };
+    },
+  });
+};
+
+export const useReviewReport = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (payload: {
+      id: string;
+      action: 'APPROVE' | 'REJECT';
+      reviewerId: string;
+      rejectReason?: string;
+    }) => {
+      const res = await apiClient.post<KnowledgeItem>(
+        `/knowledge/items/${payload.id}/review`,
+        {
+          action: payload.action,
+          reviewerId: payload.reviewerId,
+          rejectReason: payload.rejectReason,
+        },
+      );
+      return mapKnowledgeItem(res.data);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['knowledge', 'list'] });
+      queryClient.invalidateQueries({ queryKey: ['knowledge', 'pending-reviews'] });
+      queryClient.invalidateQueries({ queryKey: ['knowledge', 'my-reports'] });
     },
   });
 };

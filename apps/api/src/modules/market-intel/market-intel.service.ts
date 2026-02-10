@@ -37,6 +37,11 @@ type IntelligenceFeedQuery = {
   contentTypes?: string[];
 };
 
+const LEGACY_PRICE_SUBTYPE_TO_CANONICAL: Record<string, PriceSubType> = {
+  STATION_ORIGIN: PriceSubType.STATION,
+  STATION_DEST: PriceSubType.STATION,
+};
+
 @Injectable()
 export class MarketIntelService {
   private readonly hotTopicDomainPriority = [
@@ -78,6 +83,19 @@ export class MarketIntelService {
     return values.filter((value): value is PrismaContentType =>
       Object.values(PrismaContentType).includes(value as PrismaContentType),
     );
+  }
+
+  private normalizePriceSubType(value?: string | null) {
+    if (!value) return null;
+    const normalized = value.trim().toUpperCase();
+    if (!normalized) return null;
+    if (LEGACY_PRICE_SUBTYPE_TO_CANONICAL[normalized]) {
+      return LEGACY_PRICE_SUBTYPE_TO_CANONICAL[normalized];
+    }
+    if (Object.values(PriceSubType).includes(normalized as PriceSubType)) {
+      return normalized as PriceSubType;
+    }
+    return null;
   }
 
   private normalizeHotTopic(topic: string) {
@@ -440,9 +458,7 @@ export class MarketIntelService {
       )
         ? (point.sourceType as PriceSourceType)
         : PriceSourceType.REGIONAL;
-      const resolvedSubType = Object.values(PriceSubType).includes(point.subType as PriceSubType)
-        ? (point.subType as PriceSubType)
-        : PriceSubType.LISTED;
+      const resolvedSubType = this.normalizePriceSubType(point.subType) || PriceSubType.LISTED;
       const resolvedGeoLevel = Object.values(GeoLevel).includes(point.geoLevel as GeoLevel)
         ? (point.geoLevel as GeoLevel)
         : GeoLevel.CITY;

@@ -11,9 +11,12 @@ import {
   TableOutlined,
   ExclamationCircleOutlined,
   WarningOutlined,
+  EditOutlined,
+  FileTextOutlined,
 } from '@ant-design/icons';
 import { useMyAssignedPoints, useSubmissionStatistics } from '../../api/hooks';
 import { useMyTasks } from '../../../market-intel/api/tasks';
+import { useMyReports, KnowledgeItem } from '@/features/market-intel/api/knowledge-hooks';
 import { useVirtualUser } from '@/features/auth/virtual-user';
 import { useDictionary } from '@/hooks/useDictionaries';
 import { IntelTaskStatus, IntelTaskType } from '@packages/types';
@@ -40,6 +43,7 @@ export const PriceReportingDashboard: React.FC = () => {
   const { data: assignedPoints, isLoading: loadingPoints } = useMyAssignedPoints(today, currentUser?.id);
   const { data: myTasks, isLoading: loadingTasks } = useMyTasks(currentUser?.id || '');
   const { data: stats } = useSubmissionStatistics(currentUser?.id);
+  const { data: myReports, isLoading: loadingReports } = useMyReports(currentUser?.id);
 
   // 预加载关键字典数据
   useDictionary('PRICE_SUB_TYPE');
@@ -108,14 +112,26 @@ export const PriceReportingDashboard: React.FC = () => {
     const params = new URLSearchParams();
     if (taskId) params.set('taskId', taskId);
     if (commodity) params.set('commodity', commodity);
-    navigate(`/price-reporting/submit/${pointId}?${params.toString()}`);
+    navigate(`/workstation/submit/${pointId}?${params.toString()}`);
   };
 
   const handleViewSubmission = (submissionId: string) => {
-    navigate(`/price-reporting/submissions/${submissionId}`);
+    navigate(`/workstation/submissions/${submissionId}`);
   };
 
   const handleNavigateTask = (taskId: string) => {
+    // 查找任务，如果是 REPORT 类型则跳转到报告填写页面
+    const allTasks = allPendingTasks || [];
+    const task = allTasks.find((t: any) => t.id === taskId);
+    if (task && task.type === IntelTaskType.REPORT) {
+      // 根据 periodKey 格式推断报告类型，默认 daily
+      let reportType = 'daily';
+      const pk = task.periodKey || '';
+      if (pk.includes('_W')) reportType = 'weekly';
+      else if (/^\d{4}-\d{2}$/.test(pk)) reportType = 'monthly';
+      navigate(`/workstation/report/${reportType}?taskId=${taskId}`);
+      return;
+    }
     navigate(`/market-intel/tasks/${taskId}`);
   };
 
@@ -125,7 +141,7 @@ export const PriceReportingDashboard: React.FC = () => {
       <div className={styles.heroCompact}>
         <div className={styles.heroMain}>
           <div className={styles.heroTitleRow}>
-            <Title level={5} className={styles.heroTitle}>填报工作台</Title>
+            <Title level={5} className={styles.heroTitle}>我的工作台</Title>
             <span className={styles.heroSubtitle}>今日 {dayjs().format('YYYY-MM-DD')}</span>
           </div>
           <div className={styles.heroProgressRow}>
@@ -289,6 +305,111 @@ export const PriceReportingDashboard: React.FC = () => {
         />
       )}
 
+      {/* ✏️ 报告填写快捷入口 */}
+      <Card
+        title={
+          <div className={styles.sectionHeader}>
+            <div className={styles.sectionTitle}>
+              <EditOutlined />
+              <span>报告填写</span>
+            </div>
+          </div>
+        }
+        className={styles.sectionCard}
+      >
+        <Space size="middle" wrap>
+          <Button
+            type="primary"
+            ghost
+            onClick={() => navigate('/workstation/report/daily')}
+          >
+            📋 撰写日报
+          </Button>
+          <Button
+            type="primary"
+            ghost
+            onClick={() => navigate('/workstation/report/weekly')}
+          >
+            📊 撰写周报
+          </Button>
+          <Button
+            type="primary"
+            ghost
+            onClick={() => navigate('/workstation/report/monthly')}
+          >
+            📑 撰写月报
+          </Button>
+        </Space>
+      </Card>
+
+      <Card
+        title={
+          <div className={styles.sectionHeader}>
+            <div className={styles.sectionTitle}>
+              <FileTextOutlined />
+              <span>我的报告</span>
+            </div>
+          </div>
+        }
+        className={styles.sectionCard}
+        style={{ marginBottom: 16 }}
+      >
+        <List
+          loading={loadingReports}
+          dataSource={myReports?.data || []}
+          renderItem={(item) => (
+            <List.Item
+              key={item.id}
+              actions={[
+                item.status === 'PUBLISHED' || item.status === 'APPROVED' ? (
+                  <Button type="link" size="small" onClick={() => navigate(`/intel/knowledge/items/${item.id}`)}>
+                    查看
+                  </Button>
+                ) : (
+                  <Button type="link" size="small" onClick={() => navigate(`/workstation/report/${item.periodType}?reportId=${item.id}`)}>
+                    编辑
+                  </Button>
+                ),
+              ]}
+            >
+              <List.Item.Meta
+                title={
+                  <Space>
+                    <Tag color={
+                      item.type === 'DAILY' ? 'blue' :
+                        item.type === 'WEEKLY' ? 'cyan' :
+                          item.type === 'MONTHLY' ? 'purple' : 'default'
+                    }>
+                      {item.type === 'DAILY' ? '日报' :
+                        item.type === 'WEEKLY' ? '周报' :
+                          item.type === 'MONTHLY' ? '月报' : item.type}
+                    </Tag>
+                    <span>{item.title}</span>
+                  </Space>
+                }
+                description={
+                  <Space split={<Divider type="vertical" />}>
+                    <Text type="secondary" style={{ fontSize: 12 }}>
+                      {dayjs(item.publishAt).format('YYYY-MM-DD HH:mm')}
+                    </Text>
+                    <Tag bordered={false} color={
+                      item.status === 'PENDING_REVIEW' ? 'processing' :
+                        item.status === 'PUBLISHED' || item.status === 'APPROVED' ? 'success' :
+                          item.status === 'REJECTED' ? 'error' : 'default'
+                    }>
+                      {item.status === 'PENDING_REVIEW' ? '待审核' :
+                        item.status === 'PUBLISHED' || item.status === 'APPROVED' ? '已发布' :
+                          item.status === 'REJECTED' ? '已驳回' : item.status}
+                    </Tag>
+                  </Space>
+                }
+              />
+            </List.Item>
+          )}
+          locale={{ emptyText: '暂无历史报告' }}
+        />
+      </Card>
+
       {/* 📍 日常采集点维护 */}
       <Card
         title={
@@ -308,11 +429,11 @@ export const PriceReportingDashboard: React.FC = () => {
               type="primary"
               ghost
               icon={<TableOutlined />}
-              onClick={() => navigate('/price-reporting/bulk')}
+              onClick={() => navigate('/workstation/bulk')}
             >
               批量填报
             </Button>
-            <Button type="link" className={styles.manageLink} onClick={() => navigate('/price-reporting/my-points')}>
+            <Button type="link" className={styles.manageLink} onClick={() => navigate('/workstation/my-points')}>
               管理全部 <RightOutlined />
             </Button>
           </Space>

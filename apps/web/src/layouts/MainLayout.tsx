@@ -3,6 +3,7 @@ import { Layout, Menu, Input, theme as antTheme, Button, Typography, Badge, Grid
 import {
     UserOutlined,
     DashboardOutlined,
+    DesktopOutlined,
     MenuFoldOutlined,
     MenuUnfoldOutlined,
     SearchOutlined,
@@ -55,6 +56,28 @@ export const MainLayout: React.FC = () => {
             label: '仪表盘',
         },
         {
+            key: '/workstation',
+            icon: <DesktopOutlined />,
+            label: '我的工作台',
+        },
+        {
+            key: 'review-mgmt',
+            icon: <AuditOutlined />,
+            label: '审核管理',
+            children: [
+                {
+                    key: '/review/price',
+                    icon: <FormOutlined />,
+                    label: '价格审核',
+                },
+                {
+                    key: '/review/reports',
+                    icon: <FileTextOutlined />,
+                    label: '报告审核',
+                },
+            ],
+        },
+        {
             key: 'intel-center',
             icon: <GlobalOutlined />,
             label: '商情中心',
@@ -75,19 +98,9 @@ export const MainLayout: React.FC = () => {
                             label: '任务管理',
                         },
                         {
-                            key: '/price-reporting',
-                            icon: <FormOutlined />,
-                            label: '填报工作台',
-                        },
-                        {
                             key: '/intel/monitor',
                             icon: <AuditOutlined />,
                             label: '任务监控',
-                        },
-                        {
-                            key: '/price-reporting/review',
-                            icon: <AuditOutlined />,
-                            label: '价格审核',
                         },
                         {
                             key: '/intel/leaderboard',

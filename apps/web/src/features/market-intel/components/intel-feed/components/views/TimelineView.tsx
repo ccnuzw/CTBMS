@@ -3,7 +3,6 @@ import { Timeline, Card, Typography, Tag, Flex, Space, Empty, Spin, theme, Badge
 import {
     FileTextOutlined,
     FilePdfOutlined,
-    FileProtectOutlined,
     ClockCircleOutlined,
     EnvironmentOutlined,
 } from '@ant-design/icons';
@@ -24,18 +23,17 @@ interface TimelineViewProps {
 const CONTENT_TYPE_CONFIG: Record<ContentType, { icon: React.ReactNode; color: string; label: string }> = {
     [ContentType.DAILY_REPORT]: { icon: <FileTextOutlined />, color: '#1890ff', label: '日报' },
     [ContentType.RESEARCH_REPORT]: { icon: <FilePdfOutlined />, color: '#52c41a', label: '研报' },
-    [ContentType.POLICY_DOC]: { icon: <FileProtectOutlined />, color: '#722ed1', label: '政策' },
 };
 
 const DEFAULT_CONTENT_CONFIG = { icon: <FileTextOutlined />, color: '#1890ff', label: '情报' };
 
 const STATUS_CONFIG: Record<string, { label: string; badgeStatus: 'processing' | 'success' | 'error' | 'default' }> =
-    {
-        pending: { label: '待处理', badgeStatus: 'processing' },
-        confirmed: { label: '已确认', badgeStatus: 'success' },
-        flagged: { label: '已标记', badgeStatus: 'error' },
-        archived: { label: '已归档', badgeStatus: 'default' },
-    };
+{
+    pending: { label: '待处理', badgeStatus: 'processing' },
+    confirmed: { label: '已确认', badgeStatus: 'success' },
+    flagged: { label: '已标记', badgeStatus: 'error' },
+    archived: { label: '已归档', badgeStatus: 'default' },
+};
 
 const UNKNOWN_DATE_KEY = 'UNKNOWN';
 
