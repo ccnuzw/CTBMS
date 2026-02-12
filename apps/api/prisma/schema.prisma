@@ -1903,6 +1903,24 @@ enum NodeExecutionStatus {
   SKIPPED
 }
 
+enum WorkflowFailureCategory {
+  VALIDATION
+  EXECUTOR
+  TIMEOUT
+  CANCELED
+  INTERNAL
+}
+
+enum WorkflowRuntimeEventLevel {
+  INFO
+  WARN
+  ERROR
+}
+
+enum WorkflowPublishOperation {
+  PUBLISH
+}
+
 enum WorkflowBackfillTaskType {
   RISK_GATE_SUMMARY
 }
@@ -1925,7 +1943,8 @@ model WorkflowDefinition {
   isActive          Boolean                  @default(true)
   latestVersionCode String?
 
-  versions WorkflowVersion[]
+  versions      WorkflowVersion[]
+  publishAudits WorkflowPublishAudit[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -1949,7 +1968,8 @@ model WorkflowVersion {
 
   createdAt DateTime @default(now())
 
-  executions WorkflowExecution[]
+  executions    WorkflowExecution[]
+  publishAudits WorkflowPublishAudit[]
 
   @@unique([workflowDefinitionId, versionCode])
   @@index([workflowDefinitionId, status])
@@ -1966,14 +1986,18 @@ model WorkflowExecution {
 
   triggerType    WorkflowTriggerType
   triggerUserId  String
+  idempotencyKey String?
   status         WorkflowExecutionStatus @default(PENDING)
   startedAt      DateTime?
   completedAt    DateTime?
   errorMessage   String?
+  failureCategory WorkflowFailureCategory?
+  failureCode     String?
   paramSnapshot  Json?
   outputSnapshot Json?
 
   nodeExecutions NodeExecution[]
+  runtimeEvents  WorkflowRuntimeEvent[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -1981,6 +2005,7 @@ model WorkflowExecution {
   @@index([workflowVersionId, status])
   @@index([triggerUserId, createdAt])
   @@index([sourceExecutionId])
+  @@unique([workflowVersionId, triggerUserId, idempotencyKey])
 }
 
 model NodeExecution {
@@ -1995,13 +2020,57 @@ model NodeExecution {
   completedAt    DateTime?
   durationMs     Int?
   errorMessage   String?
+  failureCategory WorkflowFailureCategory?
+  failureCode     String?
   inputSnapshot  Json?
   outputSnapshot Json?
 
-  createdAt DateTime @default(now())
+  createdAt     DateTime               @default(now())
+  runtimeEvents WorkflowRuntimeEvent[]
 
   @@index([workflowExecutionId, status])
   @@index([nodeId])
+}
+
+model WorkflowRuntimeEvent {
+  id String @id @default(uuid())
+
+  workflowExecutionId String
+  workflowExecution   WorkflowExecution @relation(fields: [workflowExecutionId], references: [id], onDelete: Cascade)
+
+  nodeExecutionId String?
+  nodeExecution   NodeExecution? @relation(fields: [nodeExecutionId], references: [id], onDelete: SetNull)
+
+  eventType String
+  level     WorkflowRuntimeEventLevel @default(INFO)
+  message   String
+  detail    Json?
+  occurredAt DateTime @default(now())
+  createdAt  DateTime @default(now())
+
+  @@index([workflowExecutionId, occurredAt])
+  @@index([nodeExecutionId])
+}
+
+model WorkflowPublishAudit {
+  id String @id @default(uuid())
+
+  workflowDefinitionId String
+  workflowDefinition   WorkflowDefinition @relation(fields: [workflowDefinitionId], references: [id], onDelete: Cascade)
+
+  workflowVersionId String
+  workflowVersion   WorkflowVersion @relation(fields: [workflowVersionId], references: [id], onDelete: Cascade)
+
+  operation WorkflowPublishOperation @default(PUBLISH)
+  publishedByUserId String
+  comment           String?
+  snapshot          Json?
+  publishedAt       DateTime @default(now())
+  createdAt         DateTime @default(now())
+
+  @@index([workflowDefinitionId, publishedAt])
+  @@index([workflowVersionId])
+  @@index([publishedByUserId, publishedAt])
 }
 
 model WorkflowBackfillAudit {

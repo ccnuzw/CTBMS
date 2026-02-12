@@ -45,6 +45,15 @@ export const WorkflowExecutionStatusEnum = z.enum([
     'FAILED',
     'CANCELED',
 ]);
+export const WorkflowFailureCategoryEnum = z.enum([
+    'VALIDATION',
+    'EXECUTOR',
+    'TIMEOUT',
+    'CANCELED',
+    'INTERNAL',
+]);
+export const WorkflowRuntimeEventLevelEnum = z.enum(['INFO', 'WARN', 'ERROR']);
+export const WorkflowPublishOperationEnum = z.enum(['PUBLISH']);
 export const NodeExecutionStatusEnum = z.enum([
     'PENDING',
     'RUNNING',
@@ -118,16 +127,31 @@ export const WorkflowVersionSchema = z.object({
     createdAt: z.date().optional(),
 });
 
+export const WorkflowPublishAuditSchema = z.object({
+    id: z.string().uuid(),
+    workflowDefinitionId: z.string().uuid(),
+    workflowVersionId: z.string().uuid(),
+    operation: WorkflowPublishOperationEnum,
+    publishedByUserId: z.string(),
+    comment: z.string().nullable().optional(),
+    snapshot: z.record(z.unknown()).nullable().optional(),
+    publishedAt: z.date().optional(),
+    createdAt: z.date().optional(),
+});
+
 export const WorkflowExecutionSchema = z.object({
     id: z.string().uuid(),
     workflowVersionId: z.string().uuid(),
     sourceExecutionId: z.string().uuid().nullable().optional(),
     triggerType: WorkflowTriggerTypeEnum,
     triggerUserId: z.string(),
+    idempotencyKey: z.string().nullable().optional(),
     status: WorkflowExecutionStatusEnum,
     startedAt: z.date().nullable().optional(),
     completedAt: z.date().nullable().optional(),
     errorMessage: z.string().nullable().optional(),
+    failureCategory: WorkflowFailureCategoryEnum.nullable().optional(),
+    failureCode: z.string().nullable().optional(),
     paramSnapshot: z.record(z.unknown()).nullable().optional(),
     outputSnapshot: z.record(z.unknown()).nullable().optional(),
     createdAt: z.date().optional(),
@@ -143,8 +167,22 @@ export const NodeExecutionSchema = z.object({
     completedAt: z.date().nullable().optional(),
     durationMs: z.number().int().nullable().optional(),
     errorMessage: z.string().nullable().optional(),
+    failureCategory: WorkflowFailureCategoryEnum.nullable().optional(),
+    failureCode: z.string().nullable().optional(),
     inputSnapshot: z.record(z.unknown()).nullable().optional(),
     outputSnapshot: z.record(z.unknown()).nullable().optional(),
+    createdAt: z.date().optional(),
+});
+
+export const WorkflowRuntimeEventSchema = z.object({
+    id: z.string().uuid(),
+    workflowExecutionId: z.string().uuid(),
+    nodeExecutionId: z.string().uuid().nullable().optional(),
+    eventType: z.string(),
+    level: WorkflowRuntimeEventLevelEnum,
+    message: z.string(),
+    detail: z.record(z.unknown()).nullable().optional(),
+    occurredAt: z.date().optional(),
     createdAt: z.date().optional(),
 });
 
@@ -215,7 +253,12 @@ export const TriggerWorkflowExecutionSchema = z.object({
     workflowDefinitionId: z.string().uuid(),
     workflowVersionId: z.string().uuid().optional(),
     triggerType: WorkflowTriggerTypeEnum.default('MANUAL'),
+    idempotencyKey: z.string().trim().min(1).max(120).optional(),
     paramSnapshot: z.record(z.unknown()).optional(),
+});
+
+export const CancelWorkflowExecutionSchema = z.object({
+    reason: z.string().trim().min(1).max(500).optional(),
 });
 
 export const WorkflowExecutionQuerySchema = z.object({
@@ -224,6 +267,8 @@ export const WorkflowExecutionQuerySchema = z.object({
     versionCode: z.string().max(60).optional(),
     triggerType: WorkflowTriggerTypeEnum.optional(),
     status: WorkflowExecutionStatusEnum.optional(),
+    failureCategory: WorkflowFailureCategoryEnum.optional(),
+    failureCode: z.string().max(120).optional(),
     riskLevel: WorkflowRiskLevelEnum.optional(),
     degradeAction: WorkflowRiskDegradeActionEnum.optional(),
     riskProfileCode: z.string().max(80).optional(),
@@ -248,10 +293,26 @@ export const WorkflowExecutionQuerySchema = z.object({
 
 export const WorkflowExecutionDetailSchema = WorkflowExecutionSchema.extend({
     nodeExecutions: z.array(NodeExecutionSchema),
+    runtimeEvents: z.array(WorkflowRuntimeEventSchema).optional(),
 });
 
 export const WorkflowExecutionPageSchema = z.object({
     data: z.array(WorkflowExecutionSchema),
+    total: z.number().int(),
+    page: z.number().int(),
+    pageSize: z.number().int(),
+    totalPages: z.number().int(),
+});
+
+export const WorkflowRuntimeEventQuerySchema = z.object({
+    eventType: z.string().max(120).optional(),
+    level: WorkflowRuntimeEventLevelEnum.optional(),
+    page: z.coerce.number().int().min(1).default(1),
+    pageSize: z.coerce.number().int().min(1).max(200).default(50),
+});
+
+export const WorkflowRuntimeEventPageSchema = z.object({
+    data: z.array(WorkflowRuntimeEventSchema),
     total: z.number().int(),
     page: z.number().int(),
     pageSize: z.number().int(),
@@ -315,6 +376,19 @@ export const WorkflowDefinitionPageSchema = z.object({
     totalPages: z.number().int(),
 });
 
+export const WorkflowPublishAuditQuerySchema = z.object({
+    page: z.coerce.number().int().min(1).default(1),
+    pageSize: z.coerce.number().int().min(1).max(200).default(20),
+});
+
+export const WorkflowPublishAuditPageSchema = z.object({
+    data: z.array(WorkflowPublishAuditSchema),
+    total: z.number().int(),
+    page: z.number().int(),
+    pageSize: z.number().int(),
+    totalPages: z.number().int(),
+});
+
 export type WorkflowMode = z.infer<typeof WorkflowModeEnum>;
 export type WorkflowUsageMethod = z.infer<typeof WorkflowUsageMethodEnum>;
 export type WorkflowDefinitionStatus = z.infer<typeof WorkflowDefinitionStatusEnum>;
@@ -326,6 +400,9 @@ export type WorkflowTriggerType = z.infer<typeof WorkflowTriggerTypeEnum>;
 export type WorkflowRiskLevel = z.infer<typeof WorkflowRiskLevelEnum>;
 export type WorkflowRiskDegradeAction = z.infer<typeof WorkflowRiskDegradeActionEnum>;
 export type WorkflowExecutionStatus = z.infer<typeof WorkflowExecutionStatusEnum>;
+export type WorkflowFailureCategory = z.infer<typeof WorkflowFailureCategoryEnum>;
+export type WorkflowRuntimeEventLevel = z.infer<typeof WorkflowRuntimeEventLevelEnum>;
+export type WorkflowPublishOperation = z.infer<typeof WorkflowPublishOperationEnum>;
 export type NodeExecutionStatus = z.infer<typeof NodeExecutionStatusEnum>;
 
 export type WorkflowNode = z.infer<typeof WorkflowNodeSchema>;
@@ -340,8 +417,12 @@ export type WorkflowVersionDto = z.infer<typeof WorkflowVersionSchema>;
 export type WorkflowDefinitionPageDto = z.infer<typeof WorkflowDefinitionPageSchema>;
 export type WorkflowExecutionDto = z.infer<typeof WorkflowExecutionSchema>;
 export type NodeExecutionDto = z.infer<typeof NodeExecutionSchema>;
+export type WorkflowRuntimeEventDto = z.infer<typeof WorkflowRuntimeEventSchema>;
 export type WorkflowExecutionDetailDto = z.infer<typeof WorkflowExecutionDetailSchema>;
 export type WorkflowExecutionPageDto = z.infer<typeof WorkflowExecutionPageSchema>;
+export type WorkflowRuntimeEventPageDto = z.infer<typeof WorkflowRuntimeEventPageSchema>;
+export type WorkflowPublishAuditDto = z.infer<typeof WorkflowPublishAuditSchema>;
+export type WorkflowPublishAuditPageDto = z.infer<typeof WorkflowPublishAuditPageSchema>;
 
 export type CreateWorkflowDefinitionDto = z.infer<typeof CreateWorkflowDefinitionSchema>;
 export type UpdateWorkflowDefinitionDto = z.infer<typeof UpdateWorkflowDefinitionSchema>;
@@ -349,7 +430,10 @@ export type WorkflowDefinitionQueryDto = z.infer<typeof WorkflowDefinitionQueryS
 export type CreateWorkflowVersionDto = z.infer<typeof CreateWorkflowVersionSchema>;
 export type PublishWorkflowVersionDto = z.infer<typeof PublishWorkflowVersionSchema>;
 export type TriggerWorkflowExecutionDto = z.infer<typeof TriggerWorkflowExecutionSchema>;
+export type CancelWorkflowExecutionDto = z.infer<typeof CancelWorkflowExecutionSchema>;
 export type WorkflowExecutionQueryDto = z.infer<typeof WorkflowExecutionQuerySchema>;
+export type WorkflowRuntimeEventQueryDto = z.infer<typeof WorkflowRuntimeEventQuerySchema>;
+export type WorkflowPublishAuditQueryDto = z.infer<typeof WorkflowPublishAuditQuerySchema>;
 
 export type WorkflowValidationIssue = z.infer<typeof WorkflowValidationIssueSchema>;
 export type WorkflowValidationResult = z.infer<typeof WorkflowValidationResultSchema>;

@@ -6,6 +6,7 @@ import {
     PublishWorkflowVersionDto,
     UpdateWorkflowDefinitionDto,
     WorkflowDefinitionQueryDto,
+    WorkflowPublishAuditQueryDto,
     WorkflowDsl,
     WorkflowDslSchema,
     WorkflowValidationStage,
@@ -204,7 +205,7 @@ export class WorkflowDefinitionService {
     }
 
     async publishVersion(ownerUserId: string, id: string, dto: PublishWorkflowVersionDto) {
-        await this.ensureEditableDefinition(ownerUserId, id);
+        const definition = await this.ensureEditableDefinition(ownerUserId, id);
 
         const targetVersion = await this.prisma.workflowVersion.findFirst({
             where: {
@@ -237,6 +238,17 @@ export class WorkflowDefinitionService {
         await this.ensureRulePackBindingsValid(ownerUserId, parsedDsl.data);
 
         return this.prisma.$transaction(async (tx) => {
+            const archivedPublishedVersions = await tx.workflowVersion.findMany({
+                where: {
+                    workflowDefinitionId: id,
+                    status: 'PUBLISHED',
+                    id: { not: targetVersion.id },
+                },
+                select: {
+                    id: true,
+                    versionCode: true,
+                },
+            });
             await tx.workflowVersion.updateMany({
                 where: {
                     workflowDefinitionId: id,
@@ -254,17 +266,75 @@ export class WorkflowDefinitionService {
                 },
             });
 
+            const nextDraftVersionCode = this.nextVersionCode(
+                definition.latestVersionCode ?? published.versionCode,
+            );
+            const nextDraftDsl = this.bumpDslVersion(parsedDsl.data, nextDraftVersionCode);
+            await tx.workflowVersion.create({
+                data: {
+                    workflowDefinitionId: id,
+                    versionCode: nextDraftVersionCode,
+                    status: 'DRAFT',
+                    dslSnapshot: this.toJsonValue(nextDraftDsl),
+                    changelog: `发布 ${published.versionCode} 后自动创建草稿`,
+                    createdByUserId: ownerUserId,
+                },
+            });
+
+            await tx.workflowPublishAudit.create({
+                data: {
+                    workflowDefinitionId: id,
+                    workflowVersionId: published.id,
+                    operation: 'PUBLISH',
+                    publishedByUserId: ownerUserId,
+                    comment: '发布流程版本',
+                    snapshot: this.toJsonValue({
+                        publishedVersionCode: published.versionCode,
+                        archivedPublishedVersions,
+                        autoCreatedDraftVersionCode: nextDraftVersionCode,
+                    }),
+                    publishedAt: published.publishedAt ?? new Date(),
+                },
+            });
+
             await tx.workflowDefinition.update({
                 where: { id },
                 data: {
                     status: 'ACTIVE',
                     isActive: true,
-                    latestVersionCode: published.versionCode,
+                    latestVersionCode: nextDraftVersionCode,
                 },
             });
 
             return published;
         });
+    }
+
+    async listPublishAudits(ownerUserId: string, id: string, query: WorkflowPublishAuditQueryDto) {
+        await this.ensureReadableDefinition(ownerUserId, id);
+
+        const page = query.page ?? 1;
+        const pageSize = query.pageSize ?? 20;
+
+        const [data, total] = await Promise.all([
+            this.prisma.workflowPublishAudit.findMany({
+                where: { workflowDefinitionId: id },
+                orderBy: [{ publishedAt: 'desc' }, { createdAt: 'desc' }],
+                skip: (page - 1) * pageSize,
+                take: pageSize,
+            }),
+            this.prisma.workflowPublishAudit.count({
+                where: { workflowDefinitionId: id },
+            }),
+        ]);
+
+        return {
+            data,
+            total,
+            page,
+            pageSize,
+            totalPages: Math.ceil(total / pageSize),
+        };
     }
 
     validateDsl(
@@ -487,7 +557,15 @@ export class WorkflowDefinitionService {
         return `${major}.${minor}.${patch + 1}`;
     }
 
-    private toJsonValue(value: WorkflowDsl): Prisma.InputJsonValue {
+    private toJsonValue(value: unknown): Prisma.InputJsonValue {
         return JSON.parse(JSON.stringify(value)) as Prisma.InputJsonValue;
+    }
+
+    private bumpDslVersion(dslSnapshot: WorkflowDsl, versionCode: string): WorkflowDsl {
+        return {
+            ...dslSnapshot,
+            version: versionCode,
+            status: 'DRAFT',
+        };
     }
 }

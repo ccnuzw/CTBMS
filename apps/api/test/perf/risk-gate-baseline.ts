@@ -44,9 +44,18 @@ const DEFAULT_WARMUP_RUNS = 200;
 const PERF_REPORT_SCHEMA_VERSION = '1.0';
 
 const args = process.argv.slice(2);
+const findLastArg = (prefix: string): string | undefined => {
+    for (let index = args.length - 1; index >= 0; index -= 1) {
+        const candidate = args[index];
+        if (candidate?.startsWith(prefix)) {
+            return candidate;
+        }
+    }
+    return undefined;
+};
 
 const parseNumberArg = (key: string, fallback: number): number => {
-    const arg = args.find((item) => item.startsWith(`--${key}=`));
+    const arg = findLastArg(`--${key}=`);
     if (!arg) {
         return fallback;
     }
@@ -58,7 +67,7 @@ const parseNumberArg = (key: string, fallback: number): number => {
 };
 
 const parseStringArg = (key: string): string | undefined => {
-    const arg = args.find((item) => item.startsWith(`--${key}=`));
+    const arg = findLastArg(`--${key}=`);
     if (!arg) {
         return undefined;
     }
@@ -67,7 +76,7 @@ const parseStringArg = (key: string): string | undefined => {
 };
 
 const parseOptionalNumberArg = (key: string): number | undefined => {
-    const arg = args.find((item) => item.startsWith(`--${key}=`));
+    const arg = findLastArg(`--${key}=`);
     if (!arg) {
         return undefined;
     }

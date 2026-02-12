@@ -11,7 +11,12 @@ import {
 } from '@nestjs/common';
 import { Request as ExpressRequest } from 'express';
 import { WorkflowExecutionService } from './workflow-execution.service';
-import { TriggerWorkflowExecutionRequest, WorkflowExecutionQueryRequest } from './dto';
+import {
+    CancelWorkflowExecutionRequest,
+    TriggerWorkflowExecutionRequest,
+    WorkflowExecutionQueryRequest,
+    WorkflowRuntimeEventQueryRequest,
+} from './dto';
 
 type AuthRequest = ExpressRequest & { user?: { id?: string } };
 
@@ -37,6 +42,19 @@ export class WorkflowExecutionController {
         return this.workflowExecutionService.rerun(userId, id);
     }
 
+    @Post(':id/cancel')
+    cancel(
+        @Param('id', ParseUUIDPipe) id: string,
+        @Body() dto: CancelWorkflowExecutionRequest,
+        @Request() req: AuthRequest,
+    ) {
+        const userId = req.user?.id;
+        if (!userId) {
+            throw new UnauthorizedException('User not authenticated');
+        }
+        return this.workflowExecutionService.cancel(userId, id, dto);
+    }
+
     @Get()
     findAll(@Query() query: WorkflowExecutionQueryRequest, @Request() req: AuthRequest) {
         const userId = req.user?.id;
@@ -53,5 +71,18 @@ export class WorkflowExecutionController {
             throw new UnauthorizedException('User not authenticated');
         }
         return this.workflowExecutionService.findOne(userId, id);
+    }
+
+    @Get(':id/timeline')
+    timeline(
+        @Param('id', ParseUUIDPipe) id: string,
+        @Query() query: WorkflowRuntimeEventQueryRequest,
+        @Request() req: AuthRequest,
+    ) {
+        const userId = req.user?.id;
+        if (!userId) {
+            throw new UnauthorizedException('User not authenticated');
+        }
+        return this.workflowExecutionService.timeline(userId, id, query);
     }
 }

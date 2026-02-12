@@ -9,6 +9,24 @@ on:
       - 'apps/api/test/**'
       - 'scripts/workflow-smoke-runner.mjs'
       - 'scripts/workflow-report-validate.mjs'
+      - 'scripts/workflow-report-validate-self-check.mjs'
+      - 'scripts/workflow-report-summary.mjs'
+      - 'scripts/workflow-report-summary-self-check.mjs'
+      - 'scripts/workflow-summary-renderers.mjs'
+      - 'scripts/workflow-summary-renderers-self-check.mjs'
+      - 'scripts/workflow-summary-self-check-all.mjs'
+      - 'scripts/workflow-summary-self-check-all-self-check.mjs'
+      - 'scripts/workflow-summary-self-check-report-validate.mjs'
+      - 'scripts/workflow-summary-self-check-report-validate-self-check.mjs'
+      - 'scripts/workflow-ci-step-summary.mjs'
+      - 'scripts/workflow-ci-step-summary-self-check.mjs'
+      - 'scripts/workflow-quality-gate-runner.mjs'
+      - 'scripts/workflow-quality-gate-self-check.mjs'
+      - 'scripts/workflow-quality-gate-report-validate.mjs'
+      - 'scripts/workflow-quality-gate-report-validate-self-check.mjs'
+      - 'scripts/workflow-quality-gate-validation-guidance.mjs'
+      - 'scripts/workflow-quality-gate-validation-guidance-self-check.mjs'
+      - 'scripts/workflow-quality-gate-report-summary.mjs'
       - 'packages/types/src/modules/workflow.ts'
       - 'apps/api/package.json'
       - 'package.json'
@@ -55,31 +73,38 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Run workflow summary aggregate self-check
+        run: pnpm workflow:summary:self-check:all:self-check
+
+      - name: Run workflow summary report validate self-check
+        run: pnpm workflow:summary:self-check:report:validate:self-check
+
+      - name: Run workflow quality gate report validate self-check
+        run: pnpm workflow:quality:report:validate:self-check
+
+      - name: Run workflow summary self-check suite
+        run: pnpm workflow:summary:self-check:all -- --report-file=logs/workflow-summary-self-check-report.json
+
+      - name: Validate workflow summary self-check report
+        run: pnpm workflow:summary:self-check:report:validate -- --report-file=logs/workflow-summary-self-check-report.json --summary-json-file=logs/workflow-summary-self-check-validation.json --expected-report-schema-version=1.0
+
       - name: Apply migrations
         run: pnpm --filter api exec prisma migrate deploy
 
-      - name: Run workflow smoke gate
-        id: smoke_gate
+      - name: Run workflow quality gate
+        id: quality_gate
         continue-on-error: true
-        run: pnpm workflow:smoke:gate
+        run: pnpm workflow:quality:gate -- --summary-markdown-file=logs/workflow-reports-summary.md --summary-json-file=logs/workflow-reports-summary.json --report-file=logs/workflow-quality-gate-report.json --require-summary-json-success --validate-summary-json-schema-version=1.0
 
-      - name: Run workflow perf guardrail
-        id: perf_gate
-        continue-on-error: true
-        run: pnpm workflow:perf:risk-gate:gate
-
-      - name: Validate workflow reports
+      - name: Validate workflow quality gate report
         if: always()
-        run: pnpm workflow:reports:validate -- --summary-markdown-file=logs/workflow-reports-summary.md
+        id: quality_gate_report_validate
+        continue-on-error: true
+        run: pnpm workflow:quality:report:validate -- --report-file=logs/workflow-quality-gate-report.json --summary-json-file=logs/workflow-quality-gate-report-validation.json --expected-report-schema-version=1.0 --require-summary-json-assert
 
       - name: Publish workflow report summary
         if: always()
-        run: |
-          if [ -f "logs/workflow-reports-summary.md" ]; then
-            cat logs/workflow-reports-summary.md >> "$GITHUB_STEP_SUMMARY"
-          else
-            echo "workflow report summary file not found" >> "$GITHUB_STEP_SUMMARY"
-          fi
+        run: node scripts/workflow-ci-step-summary.mjs --quality-report-file=logs/workflow-quality-gate-report.json --quality-report-validation-file=logs/workflow-quality-gate-report-validation.json --summary-markdown-file=logs/workflow-reports-summary.md --summary-json-file=logs/workflow-reports-summary.json --self-check-report-file=logs/workflow-summary-self-check-report.json --self-check-validation-file=logs/workflow-summary-self-check-validation.json --failure-index-snapshot-max-chars=200 >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload workflow reports
         if: always()
@@ -89,20 +114,23 @@ jobs:
           if-no-files-found: warn
           retention-days: 14
           path: |
-            logs/workflow-smoke-*.json
-            logs/workflow-reports-summary.md
-            apps/api/logs/workflow-perf-risk-gate-baseline.json
+            logs/workflow-smoke-gate-report*.json
+            logs/workflow-quality-gate-report*.json
+            logs/workflow-quality-gate-report-validation*.json
+            logs/workflow-summary-self-check-report*.json
+            logs/workflow-summary-self-check-validation*.json
+            logs/workflow-reports-summary*.md
+            logs/workflow-reports-summary*.json
+            apps/api/logs/workflow-perf-risk-gate-baseline*.json
 
       - name: Enforce workflow gate result
         if: always()
         run: |
-          failed=0
-          if [ "${{ steps.smoke_gate.outcome }}" != "success" ]; then
-            echo "workflow smoke gate failed"
-            failed=1
+          if [ "${{ steps.quality_gate.outcome }}" != "success" ]; then
+            echo "workflow quality gate failed"
+            exit 1
           fi
-          if [ "${{ steps.perf_gate.outcome }}" != "success" ]; then
-            echo "workflow perf guardrail failed"
-            failed=1
+          if [ "${{ steps.quality_gate_report_validate.outcome }}" != "success" ]; then
+            echo "workflow quality gate report validation failed"
+            exit 1
           fi
-          exit $failed

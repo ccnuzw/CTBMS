@@ -20,6 +20,7 @@ import {
     UpdateWorkflowDefinitionRequest,
     ValidateWorkflowDslRequest,
     WorkflowDefinitionQueryRequest,
+    WorkflowPublishAuditQueryRequest,
 } from './dto';
 
 type AuthRequest = ExpressRequest & { user?: { id?: string } };
@@ -110,6 +111,19 @@ export class WorkflowDefinitionController {
             throw new UnauthorizedException('User not authenticated');
         }
         return this.workflowDefinitionService.publishVersion(userId, id, dto);
+    }
+
+    @Get(':id/publish-audits')
+    listPublishAudits(
+        @Param('id', ParseUUIDPipe) id: string,
+        @Query() query: WorkflowPublishAuditQueryRequest,
+        @Request() req: AuthRequest,
+    ) {
+        const userId = req.user?.id;
+        if (!userId) {
+            throw new UnauthorizedException('User not authenticated');
+        }
+        return this.workflowDefinitionService.listPublishAudits(userId, id, query);
     }
 
     @Post('validate-dsl')

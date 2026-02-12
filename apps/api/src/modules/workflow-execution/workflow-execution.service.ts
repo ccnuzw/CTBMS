@@ -1,6 +1,7 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import {
+    CancelWorkflowExecutionDto,
     TriggerWorkflowExecutionDto,
     WorkflowDsl,
     WorkflowRunPolicy,
@@ -11,9 +12,38 @@ import {
     WorkflowNodeRuntimePolicy,
     WorkflowNodeRuntimePolicySchema,
     WorkflowExecutionQueryDto,
+    WorkflowFailureCategory,
+    WorkflowRuntimeEventQueryDto,
 } from '@packages/types';
 import { PrismaService } from '../../prisma';
 import { NodeExecutorRegistry } from './engine/node-executor.registry';
+
+type WorkflowFailureCode =
+    | 'EXECUTION_TIMEOUT'
+    | 'EXECUTION_CANCELED'
+    | 'NODE_TIMEOUT'
+    | 'NODE_EXECUTOR_ERROR'
+    | 'NODE_RESULT_FAILED'
+    | 'EXECUTION_INTERNAL_ERROR';
+
+class WorkflowExecutionHandledError extends Error {
+    constructor(
+        message: string,
+        readonly failureCategory: WorkflowFailureCategory,
+        readonly failureCode: WorkflowFailureCode,
+        readonly targetStatus: 'FAILED' | 'CANCELED' = 'FAILED',
+    ) {
+        super(message);
+        this.name = 'WorkflowExecutionHandledError';
+    }
+}
+
+class WorkflowTimeoutError extends Error {
+    constructor(message: string) {
+        super(message);
+        this.name = 'WorkflowTimeoutError';
+    }
+}
 
 @Injectable()
 export class WorkflowExecutionService {
@@ -57,6 +87,37 @@ export class WorkflowExecutionService {
             throw new BadRequestException('未找到可执行版本，请先发布至少一个版本');
         }
 
+        const idempotencyKey = dto.idempotencyKey?.trim() || undefined;
+        if (idempotencyKey) {
+            const existingExecution = await this.prisma.workflowExecution.findFirst({
+                where: {
+                    workflowVersionId: version.id,
+                    triggerUserId: ownerUserId,
+                    idempotencyKey,
+                },
+                include: {
+                    nodeExecutions: {
+                        orderBy: { createdAt: 'asc' },
+                    },
+                    runtimeEvents: {
+                        orderBy: [{ occurredAt: 'asc' }, { createdAt: 'asc' }],
+                    },
+                },
+            });
+            if (existingExecution) {
+                await this.recordRuntimeEvent({
+                    workflowExecutionId: existingExecution.id,
+                    eventType: 'EXECUTION_IDEMPOTENT_HIT',
+                    level: 'INFO',
+                    message: '命中幂等键，复用已有执行实例',
+                    detail: {
+                        idempotencyKey,
+                    },
+                });
+                return existingExecution;
+            }
+        }
+
         const parsedDsl = WorkflowDslSchema.safeParse(version.dslSnapshot);
         if (!parsedDsl.success) {
             throw new BadRequestException({
@@ -65,15 +126,54 @@ export class WorkflowExecutionService {
             });
         }
 
-        const execution = await this.prisma.workflowExecution.create({
-            data: {
+        let execution: { id: string };
+        try {
+            execution = await this.prisma.workflowExecution.create({
+                data: {
+                    workflowVersionId: version.id,
+                    sourceExecutionId: options?.sourceExecutionId,
+                    triggerType: dto.triggerType,
+                    triggerUserId: ownerUserId,
+                    idempotencyKey,
+                    status: 'RUNNING',
+                    startedAt: new Date(),
+                    paramSnapshot: dto.paramSnapshot ? this.toJsonValue(dto.paramSnapshot) : undefined,
+                },
+            });
+        } catch (error) {
+            if (idempotencyKey && this.isUniqueConstraintError(error)) {
+                const existingExecution = await this.prisma.workflowExecution.findFirst({
+                    where: {
+                        workflowVersionId: version.id,
+                        triggerUserId: ownerUserId,
+                        idempotencyKey,
+                    },
+                    include: {
+                        nodeExecutions: {
+                            orderBy: { createdAt: 'asc' },
+                        },
+                        runtimeEvents: {
+                            orderBy: [{ occurredAt: 'asc' }, { createdAt: 'asc' }],
+                        },
+                    },
+                });
+                if (existingExecution) {
+                    return existingExecution;
+                }
+            }
+            throw error;
+        }
+        await this.recordRuntimeEvent({
+            workflowExecutionId: execution.id,
+            eventType: 'EXECUTION_STARTED',
+            level: 'INFO',
+            message: '执行开始',
+            detail: {
+                workflowDefinitionId: definition.id,
                 workflowVersionId: version.id,
-                sourceExecutionId: options?.sourceExecutionId,
                 triggerType: dto.triggerType,
-                triggerUserId: ownerUserId,
-                status: 'RUNNING',
-                startedAt: new Date(),
-                paramSnapshot: dto.paramSnapshot ? this.toJsonValue(dto.paramSnapshot) : undefined,
+                sourceExecutionId: options?.sourceExecutionId ?? null,
+                idempotencyKey: idempotencyKey ?? null,
             },
         });
 
@@ -107,6 +207,7 @@ export class WorkflowExecutionService {
 
         try {
             for (const node of sortedNodes) {
+                await this.throwIfExecutionCanceled(execution.id);
                 const existingSkipReason = skipReasonByNode.get(node.id);
                 if (existingSkipReason) {
                     const now = new Date();
@@ -120,7 +221,7 @@ export class WorkflowExecutionService {
                             skipType: 'ROUTE_TO_ERROR',
                         },
                     };
-                    await this.prisma.nodeExecution.create({
+                    const skippedNodeExecution = await this.prisma.nodeExecution.create({
                         data: {
                             workflowExecutionId: execution.id,
                             nodeId: node.id,
@@ -132,6 +233,18 @@ export class WorkflowExecutionService {
                             errorMessage: existingSkipReason,
                             inputSnapshot: this.toJsonValue({}),
                             outputSnapshot: this.toJsonValue(skippedOutput),
+                        },
+                    });
+                    await this.recordRuntimeEvent({
+                        workflowExecutionId: execution.id,
+                        nodeExecutionId: skippedNodeExecution.id,
+                        eventType: 'NODE_SKIPPED',
+                        level: 'WARN',
+                        message: `节点 ${node.name} 已跳过`,
+                        detail: {
+                            nodeId: node.id,
+                            nodeType: node.type,
+                            reason: existingSkipReason,
                         },
                     });
                     outputsByNode.set(node.id, skippedOutput);
@@ -147,6 +260,20 @@ export class WorkflowExecutionService {
                 let errorMessage: string | null = null;
                 let outputSnapshot: Record<string, unknown> = {};
                 let attempts = 0;
+                let failureCategory: WorkflowFailureCategory | null = null;
+                let failureCode: WorkflowFailureCode | null = null;
+                await this.recordRuntimeEvent({
+                    workflowExecutionId: execution.id,
+                    eventType: 'NODE_STARTED',
+                    level: 'INFO',
+                    message: `节点 ${node.name} 开始执行`,
+                    detail: {
+                        nodeId: node.id,
+                        nodeType: node.type,
+                        retryCount: runtimePolicy.retryCount,
+                        timeoutMs: runtimePolicy.timeoutMs,
+                    },
+                });
 
                 for (let attempt = 0; attempt <= runtimePolicy.retryCount; attempt += 1) {
                     attempts = attempt + 1;
@@ -167,7 +294,11 @@ export class WorkflowExecutionService {
                         outputSnapshot = result.output ?? {};
                         if (status === 'FAILED') {
                             errorMessage = result.message ?? `节点 ${node.name} 执行失败`;
-                            throw new Error(errorMessage);
+                            throw new WorkflowExecutionHandledError(
+                                errorMessage,
+                                'EXECUTOR',
+                                'NODE_RESULT_FAILED',
+                            );
                         }
 
                         outputSnapshot = {
@@ -182,7 +313,10 @@ export class WorkflowExecutionService {
                         break;
                     } catch (error) {
                         status = 'FAILED';
-                        errorMessage = error instanceof Error ? error.message : '节点执行失败';
+                        const classifiedFailure = this.classifyFailure(error);
+                        errorMessage = classifiedFailure.message;
+                        failureCategory = classifiedFailure.failureCategory;
+                        failureCode = classifiedFailure.failureCode;
                         outputSnapshot = {
                             ...outputSnapshot,
                             _meta: {
@@ -190,10 +324,26 @@ export class WorkflowExecutionService {
                                 attempts,
                                 runtimePolicy,
                                 lastError: errorMessage,
+                                failureCategory,
+                                failureCode,
                             },
                         };
 
                         if (attempt < runtimePolicy.retryCount) {
+                            await this.recordRuntimeEvent({
+                                workflowExecutionId: execution.id,
+                                eventType: 'NODE_RETRY',
+                                level: 'WARN',
+                                message: `节点 ${node.name} 将进行第 ${attempt + 2} 次重试`,
+                                detail: {
+                                    nodeId: node.id,
+                                    nodeType: node.type,
+                                    attempt: attempts,
+                                    retryCount: runtimePolicy.retryCount,
+                                    retryBackoffMs: runtimePolicy.retryBackoffMs,
+                                    errorMessage,
+                                },
+                            });
                             await this.sleep(runtimePolicy.retryBackoffMs);
                             continue;
                         }
@@ -213,7 +363,7 @@ export class WorkflowExecutionService {
                 const completedAt = new Date();
                 const durationMs = Math.max(0, completedAt.getTime() - startedAt.getTime());
 
-                await this.prisma.nodeExecution.create({
+                const createdNodeExecution = await this.prisma.nodeExecution.create({
                     data: {
                         workflowExecutionId: execution.id,
                         nodeId: node.id,
@@ -223,8 +373,28 @@ export class WorkflowExecutionService {
                         completedAt,
                         durationMs,
                         errorMessage,
+                        failureCategory: status === 'FAILED' ? failureCategory : null,
+                        failureCode: status === 'FAILED' ? failureCode : null,
                         inputSnapshot: this.toJsonValue(inputSnapshot),
                         outputSnapshot: this.toJsonValue(outputSnapshot),
+                    },
+                });
+                await this.recordRuntimeEvent({
+                    workflowExecutionId: execution.id,
+                    nodeExecutionId: createdNodeExecution.id,
+                    eventType: status === 'SUCCESS' ? 'NODE_SUCCEEDED' : 'NODE_FAILED',
+                    level: status === 'SUCCESS' ? 'INFO' : 'ERROR',
+                    message: status === 'SUCCESS'
+                        ? `节点 ${node.name} 执行成功`
+                        : `节点 ${node.name} 执行失败`,
+                    detail: {
+                        nodeId: node.id,
+                        nodeType: node.type,
+                        attempts,
+                        durationMs,
+                        errorMessage,
+                        failureCategory,
+                        failureCode,
                     },
                 });
 
@@ -232,7 +402,11 @@ export class WorkflowExecutionService {
 
                 if (status === 'FAILED') {
                     if (runtimePolicy.onError === 'FAIL_FAST') {
-                        throw new Error(errorMessage ?? `节点 ${node.id} 执行失败`);
+                        throw new WorkflowExecutionHandledError(
+                            errorMessage ?? `节点 ${node.id} 执行失败`,
+                            failureCategory ?? 'EXECUTOR',
+                            failureCode ?? 'NODE_EXECUTOR_ERROR',
+                        );
                     }
 
                     softFailureCount += 1;
@@ -247,11 +421,15 @@ export class WorkflowExecutionService {
                 }
             }
 
+            await this.throwIfExecutionCanceled(execution.id);
             const completed = await this.prisma.workflowExecution.update({
                 where: { id: execution.id },
                 data: {
                     status: 'SUCCESS',
                     completedAt: new Date(),
+                    errorMessage: null,
+                    failureCategory: null,
+                    failureCode: null,
                     outputSnapshot: this.toJsonValue(buildExecutionOutputSnapshot(sortedNodes.length)),
                 },
                 include: {
@@ -260,18 +438,67 @@ export class WorkflowExecutionService {
                     },
                 },
             });
+            await this.recordRuntimeEvent({
+                workflowExecutionId: execution.id,
+                eventType: 'EXECUTION_SUCCEEDED',
+                level: 'INFO',
+                message: '执行完成',
+                detail: {
+                    nodeCount: sortedNodes.length,
+                    softFailureCount,
+                },
+            });
 
             return completed;
         } catch (error) {
+            const classifiedFailure = this.classifyFailure(error);
+            const failureMessage = classifiedFailure.message;
+            const isCanceled = classifiedFailure.failureCategory === 'CANCELED';
+            const terminalStatus: 'FAILED' | 'CANCELED' = isCanceled ? 'CANCELED' : 'FAILED';
+            const executionFailureCode = isCanceled
+                ? 'EXECUTION_CANCELED'
+                : (classifiedFailure.failureCategory === 'TIMEOUT'
+                    ? 'EXECUTION_TIMEOUT'
+                    : classifiedFailure.failureCode);
+
             await this.prisma.workflowExecution.update({
                 where: { id: execution.id },
                 data: {
-                    status: 'FAILED',
+                    status: terminalStatus,
                     completedAt: new Date(),
-                    errorMessage: error instanceof Error ? error.message : '执行失败',
+                    errorMessage: failureMessage,
+                    failureCategory: classifiedFailure.failureCategory,
+                    failureCode: executionFailureCode,
                     outputSnapshot: this.toJsonValue(buildExecutionOutputSnapshot(outputsByNode.size)),
                 },
             });
+            await this.recordRuntimeEvent({
+                workflowExecutionId: execution.id,
+                eventType: isCanceled ? 'EXECUTION_CANCELED' : 'EXECUTION_FAILED',
+                level: isCanceled ? 'WARN' : 'ERROR',
+                message: isCanceled ? '执行已取消' : '执行失败',
+                detail: {
+                    errorMessage: failureMessage,
+                    failureCategory: classifiedFailure.failureCategory,
+                    failureCode: executionFailureCode,
+                    executedNodeCount: outputsByNode.size,
+                    softFailureCount,
+                },
+            });
+
+            if (isCanceled) {
+                return this.prisma.workflowExecution.findUnique({
+                    where: { id: execution.id },
+                    include: {
+                        nodeExecutions: {
+                            orderBy: { createdAt: 'asc' },
+                        },
+                        runtimeEvents: {
+                            orderBy: [{ occurredAt: 'asc' }, { createdAt: 'asc' }],
+                        },
+                    },
+                });
+            }
             throw error;
         }
     }
@@ -326,6 +553,9 @@ export class WorkflowExecutionService {
                 nodeExecutions: {
                     orderBy: [{ createdAt: 'asc' }],
                 },
+                runtimeEvents: {
+                    orderBy: [{ occurredAt: 'asc' }, { createdAt: 'asc' }],
+                },
             },
         });
 
@@ -334,6 +564,40 @@ export class WorkflowExecutionService {
         }
 
         return execution;
+    }
+
+    async timeline(
+        ownerUserId: string,
+        id: string,
+        query: WorkflowRuntimeEventQueryDto,
+    ) {
+        await this.ensureExecutionReadable(ownerUserId, id);
+
+        const page = query.page ?? 1;
+        const pageSize = query.pageSize ?? 50;
+        const where: Prisma.WorkflowRuntimeEventWhereInput = {
+            workflowExecutionId: id,
+            ...(query.eventType ? { eventType: query.eventType } : {}),
+            ...(query.level ? { level: query.level } : {}),
+        };
+
+        const [data, total] = await Promise.all([
+            this.prisma.workflowRuntimeEvent.findMany({
+                where,
+                skip: (page - 1) * pageSize,
+                take: pageSize,
+                orderBy: [{ occurredAt: 'asc' }, { createdAt: 'asc' }],
+            }),
+            this.prisma.workflowRuntimeEvent.count({ where }),
+        ]);
+
+        return {
+            data,
+            total,
+            page,
+            pageSize,
+            totalPages: Math.ceil(total / pageSize),
+        };
     }
 
     async rerun(ownerUserId: string, id: string) {
@@ -368,6 +632,82 @@ export class WorkflowExecutionService {
         });
     }
 
+    async cancel(ownerUserId: string, id: string, dto: CancelWorkflowExecutionDto) {
+        await this.ensureExecutionReadable(ownerUserId, id);
+        const execution = await this.prisma.workflowExecution.findUnique({
+            where: { id },
+            include: {
+                nodeExecutions: {
+                    orderBy: { createdAt: 'asc' },
+                },
+                runtimeEvents: {
+                    orderBy: [{ occurredAt: 'asc' }, { createdAt: 'asc' }],
+                },
+            },
+        });
+
+        if (!execution) {
+            throw new NotFoundException('运行实例不存在或无权限访问');
+        }
+        if (execution.status === 'SUCCESS' || execution.status === 'FAILED') {
+            throw new BadRequestException(`当前状态不允许取消: ${execution.status}`);
+        }
+        if (execution.status === 'CANCELED') {
+            return execution;
+        }
+
+        const reason = dto.reason?.trim() || '手动取消执行';
+        await this.recordRuntimeEvent({
+            workflowExecutionId: id,
+            eventType: 'EXECUTION_CANCEL_REQUESTED',
+            level: 'WARN',
+            message: '收到取消执行请求',
+            detail: {
+                reason,
+                requestedByUserId: ownerUserId,
+            },
+        });
+
+        return this.prisma.workflowExecution.update({
+            where: { id },
+            data: {
+                status: 'CANCELED',
+                completedAt: new Date(),
+                errorMessage: reason,
+                failureCategory: 'CANCELED',
+                failureCode: 'EXECUTION_CANCELED',
+            },
+            include: {
+                nodeExecutions: {
+                    orderBy: { createdAt: 'asc' },
+                },
+                runtimeEvents: {
+                    orderBy: [{ occurredAt: 'asc' }, { createdAt: 'asc' }],
+                },
+            },
+        });
+    }
+
+    private async ensureExecutionReadable(ownerUserId: string, id: string) {
+        const execution = await this.prisma.workflowExecution.findFirst({
+            where: {
+                id,
+                workflowVersion: {
+                    workflowDefinition: {
+                        OR: [{ ownerUserId }, { templateSource: 'PUBLIC' }],
+                    },
+                },
+            },
+            select: { id: true },
+        });
+
+        if (!execution) {
+            throw new NotFoundException('运行实例不存在或无权限访问');
+        }
+
+        return execution;
+    }
+
     private buildAccessibleWhere(
         ownerUserId: string,
         query: WorkflowExecutionQueryDto,
@@ -391,6 +731,18 @@ export class WorkflowExecutionService {
         }
         if (query.status) {
             conditions.push({ status: query.status });
+        }
+        if (query.failureCategory) {
+            conditions.push({ failureCategory: query.failureCategory });
+        }
+        const failureCode = query.failureCode?.trim();
+        if (failureCode) {
+            conditions.push({
+                failureCode: {
+                    contains: failureCode,
+                    mode: 'insensitive',
+                },
+            });
         }
         if (query.riskLevel) {
             conditions.push({
@@ -616,6 +968,96 @@ export class WorkflowExecutionService {
         return {
             AND: conditions,
         };
+    }
+
+    private async throwIfExecutionCanceled(executionId: string): Promise<void> {
+        const execution = await this.prisma.workflowExecution.findUnique({
+            where: { id: executionId },
+            select: { status: true, errorMessage: true },
+        });
+        if (!execution) {
+            throw new WorkflowExecutionHandledError(
+                '执行实例不存在',
+                'INTERNAL',
+                'EXECUTION_INTERNAL_ERROR',
+            );
+        }
+        if (execution.status === 'CANCELED') {
+            throw new WorkflowExecutionHandledError(
+                execution.errorMessage || '执行已被取消',
+                'CANCELED',
+                'EXECUTION_CANCELED',
+                'CANCELED',
+            );
+        }
+    }
+
+    private classifyFailure(error: unknown): {
+        message: string;
+        failureCategory: WorkflowFailureCategory;
+        failureCode: WorkflowFailureCode;
+    } {
+        if (error instanceof WorkflowExecutionHandledError) {
+            return {
+                message: error.message,
+                failureCategory: error.failureCategory,
+                failureCode: error.failureCode,
+            };
+        }
+
+        if (error instanceof WorkflowTimeoutError) {
+            return {
+                message: error.message,
+                failureCategory: 'TIMEOUT',
+                failureCode: 'NODE_TIMEOUT',
+            };
+        }
+
+        if (error instanceof Error) {
+            return {
+                message: error.message,
+                failureCategory: 'EXECUTOR',
+                failureCode: 'NODE_EXECUTOR_ERROR',
+            };
+        }
+
+        return {
+            message: '执行失败',
+            failureCategory: 'INTERNAL',
+            failureCode: 'EXECUTION_INTERNAL_ERROR',
+        };
+    }
+
+    private isUniqueConstraintError(error: unknown): boolean {
+        if (!error || typeof error !== 'object') {
+            return false;
+        }
+        const code = (error as { code?: unknown }).code;
+        return code === 'P2002';
+    }
+
+    private async recordRuntimeEvent(payload: {
+        workflowExecutionId: string;
+        nodeExecutionId?: string;
+        eventType: string;
+        level: 'INFO' | 'WARN' | 'ERROR';
+        message: string;
+        detail?: Record<string, unknown> | null;
+    }): Promise<void> {
+        try {
+            await this.prisma.workflowRuntimeEvent.create({
+                data: {
+                    workflowExecutionId: payload.workflowExecutionId,
+                    nodeExecutionId: payload.nodeExecutionId,
+                    eventType: payload.eventType,
+                    level: payload.level,
+                    message: payload.message,
+                    detail: payload.detail ? this.toJsonValue(payload.detail) : undefined,
+                },
+            });
+        } catch {
+            // Runtime event is diagnostic metadata and must not block execution.
+        }
     }
 
     private readMeta(outputSnapshot: Record<string, unknown>): Record<string, unknown> {
@@ -889,7 +1331,7 @@ export class WorkflowExecutionService {
     ): Promise<T> {
         return new Promise((resolve, reject) => {
             const timer = setTimeout(() => {
-                reject(new Error(timeoutMessage));
+                reject(new WorkflowTimeoutError(timeoutMessage));
             }, timeoutMs);
 
             task()

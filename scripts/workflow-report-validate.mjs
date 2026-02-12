@@ -11,6 +11,7 @@ const repoRoot = path.resolve(__dirname, '..');
 const DEFAULT_SMOKE_REPORT = 'logs/workflow-smoke-gate-report.json';
 const DEFAULT_PERF_REPORT = 'apps/api/logs/workflow-perf-risk-gate-baseline.json';
 const EXPECTED_SCENARIO_IDS = ['pass-low-risk', 'soft-block-high-risk', 'hard-block-by-rule'];
+const SUMMARY_JSON_SCHEMA_VERSION = '1.0';
 
 const args = process.argv.slice(2);
 
@@ -24,6 +25,17 @@ const readArgValue = (name, fallback) => {
 };
 
 const hasFlag = (name) => args.includes(name);
+const parseOptionalPositiveNumber = (name) => {
+    const raw = readArgValue(name, '').trim();
+    if (!raw) {
+        return null;
+    }
+    const parsed = Number(raw);
+    if (!Number.isFinite(parsed) || parsed < 0) {
+        throw new Error(`Invalid ${name} value: ${raw}`);
+    }
+    return parsed;
+};
 
 const toAbsolutePath = (targetPath) => path.resolve(repoRoot, targetPath);
 
@@ -55,6 +67,13 @@ const readJsonFile = async (targetPath, options = { allowMissing: false }) => {
         }
         throw new Error(`Failed to read ${absolutePath}: ${message}`);
     }
+};
+
+const normalizePathForCompare = (targetPath) => {
+    if (!targetPath || typeof targetPath !== 'string') {
+        return null;
+    }
+    return path.resolve(repoRoot, targetPath);
 };
 
 const validateSmokeReport = (report) => {
@@ -99,6 +118,8 @@ const validateSmokeReport = (report) => {
         totalSteps: report.summary.totalSteps,
         failedStepName: report.summary.failedStepName || null,
         totalRetries: report.summary.totalRetries,
+        startedAt: typeof report.startedAt === 'string' ? report.startedAt : null,
+        finishedAt: typeof report.finishedAt === 'string' ? report.finishedAt : null,
     };
 };
 
@@ -139,13 +160,18 @@ const validatePerfReport = (report) => {
 };
 
 const formatDuration = (durationMs) => `${Number(durationMs || 0).toFixed(2)}ms`;
+const parseIsoTimestamp = (value) => {
+    const time = Date.parse(value);
+    return Number.isFinite(time) ? time : null;
+};
 
-const toMarkdownSummary = ({ smoke, perf, warnings }) => {
+const toMarkdownSummary = ({ smoke, perf, qualityGate, warnings, validationErrors }) => {
     const lines = [
         '# Workflow Report Summary',
         '',
         `- Smoke report: ${smoke ? 'loaded' : 'missing'}`,
         `- Perf report: ${perf ? 'loaded' : 'missing'}`,
+        `- Quality gate report: ${qualityGate ? 'loaded' : 'missing'}`,
         '',
     ];
 
@@ -177,6 +203,21 @@ const toMarkdownSummary = ({ smoke, perf, warnings }) => {
         lines.push('');
     }
 
+    if (qualityGate) {
+        lines.push('## Quality Gate');
+        lines.push('');
+        lines.push('| Field | Value |');
+        lines.push('|---|---|');
+        lines.push(`| Status | \`${qualityGate.status}\` |`);
+        lines.push(`| Run ID | \`${qualityGate.runId ?? 'N/A'}\` |`);
+        lines.push(`| Failed Steps | \`${qualityGate.failedSteps.join(', ') || 'N/A'}\` |`);
+        lines.push(`| Smoke Report | \`${qualityGate.smokeReportFile ?? 'N/A'}\` |`);
+        lines.push(`| Perf Report | \`${qualityGate.perfReportFile ?? 'N/A'}\` |`);
+        lines.push(`| Summary Markdown | \`${qualityGate.summaryMarkdownFile ?? 'N/A'}\` |`);
+        lines.push(`| Summary JSON | \`${qualityGate.summaryJsonFile ?? 'N/A'}\` |`);
+        lines.push('');
+    }
+
     if (warnings.length > 0) {
         lines.push('## Warnings');
         lines.push('');
@@ -186,38 +227,304 @@ const toMarkdownSummary = ({ smoke, perf, warnings }) => {
         lines.push('');
     }
 
+    if (validationErrors.length > 0) {
+        lines.push('## Validation Errors');
+        lines.push('');
+        for (const error of validationErrors) {
+            lines.push(`- ${error}`);
+        }
+        lines.push('');
+    }
+
     return lines.join('\n');
 };
+
+const toJsonSummary = ({
+    smokeReportPath,
+    perfReportPath,
+    qualityGateReportPath,
+    summaryMarkdownFile,
+    summaryJsonFile,
+    expectedSummaryJsonSchemaVersion,
+    smoke,
+    perf,
+    qualityGate,
+    warnings,
+    validationErrors,
+}) => ({
+    schemaVersion: SUMMARY_JSON_SCHEMA_VERSION,
+    generatedAt: new Date().toISOString(),
+    status: validationErrors.length > 0 ? 'FAILED' : 'SUCCESS',
+    inputs: {
+        smokeReportPath,
+        perfReportPath,
+        qualityGateReportPath: qualityGateReportPath || null,
+        summaryMarkdownFile: summaryMarkdownFile || null,
+        summaryJsonFile: summaryJsonFile || null,
+        expectedSummaryJsonSchemaVersion: expectedSummaryJsonSchemaVersion || null,
+    },
+    smoke,
+    perf,
+    qualityGate,
+    warnings,
+    validationErrors,
+});
 
 async function main() {
     const smokeReportPath = readArgValue('--smoke-report', DEFAULT_SMOKE_REPORT);
     const perfReportPath = readArgValue('--perf-report', DEFAULT_PERF_REPORT);
+    const qualityGateReportPath = readArgValue('--quality-gate-report', '').trim();
     const summaryMarkdownFile = readArgValue('--summary-markdown-file', '');
+    const summaryJsonFile = readArgValue('--summary-json-file', '');
     const allowMissingPerfReport = hasFlag('--allow-missing-perf-report');
     const allowMissingSmokeReport = hasFlag('--allow-missing-smoke-report');
+    const requireSmokeSuccess = hasFlag('--require-smoke-success');
+    const requirePerfNoViolations = hasFlag('--require-perf-no-violations');
+    const requireQualityGateSuccess = hasFlag('--require-quality-gate-success');
+    const requireSmokeMode = readArgValue('--require-smoke-mode', '').trim();
+    const requireReportsGeneratedAfter = readArgValue('--require-reports-generated-after', '').trim();
+    const expectedSummaryJsonSchemaVersion = readArgValue('--summary-json-schema-version', '').trim();
+    const maxReportAgeMs = parseOptionalPositiveNumber('--max-report-age-ms');
 
     const warnings = [];
+    const validationErrors = [];
     const smokeFile = await readJsonFile(smokeReportPath, { allowMissing: allowMissingSmokeReport });
     const perfFile = await readJsonFile(perfReportPath, { allowMissing: allowMissingPerfReport });
+    const qualityGateFile = qualityGateReportPath
+        ? await readJsonFile(qualityGateReportPath)
+        : null;
 
     let smokeSummary = null;
     let perfSummary = null;
+    let qualityGateSummary = null;
 
     if (smokeFile.missing) {
         warnings.push(`Smoke report missing: ${smokeFile.absolutePath}`);
     } else {
-        smokeSummary = validateSmokeReport(smokeFile.data);
-        console.log(
-            `[workflow-report-validate] smoke mode=${smokeSummary.mode} status=${smokeSummary.status} steps=${smokeSummary.totalSteps} retries=${smokeSummary.totalRetries} duration=${formatDuration(smokeSummary.durationMs)}`,
-        );
+        try {
+            smokeSummary = validateSmokeReport(smokeFile.data);
+            console.log(
+                `[workflow-report-validate] smoke mode=${smokeSummary.mode} status=${smokeSummary.status} steps=${smokeSummary.totalSteps} retries=${smokeSummary.totalRetries} duration=${formatDuration(smokeSummary.durationMs)}`,
+            );
+        } catch (error) {
+            validationErrors.push(
+                `Smoke report structure invalid: ${error instanceof Error ? error.message : String(error)}`,
+            );
+        }
     }
 
     if (perfFile.missing) {
         warnings.push(`Perf report missing: ${perfFile.absolutePath}`);
     } else {
-        perfSummary = validatePerfReport(perfFile.data);
-        console.log(
-            `[workflow-report-validate] perf generatedAt=${perfSummary.generatedAt} thresholdViolations=${perfSummary.violations}`,
+        try {
+            perfSummary = validatePerfReport(perfFile.data);
+            console.log(
+                `[workflow-report-validate] perf generatedAt=${perfSummary.generatedAt} thresholdViolations=${perfSummary.violations}`,
+            );
+        } catch (error) {
+            validationErrors.push(
+                `Perf report structure invalid: ${error instanceof Error ? error.message : String(error)}`,
+            );
+        }
+    }
+
+    if (requireSmokeSuccess) {
+        if (!smokeSummary) {
+            validationErrors.push('Smoke report is required to enforce success status.');
+        } else if (smokeSummary.status !== 'SUCCESS') {
+            validationErrors.push(`Smoke report status must be SUCCESS, got ${smokeSummary.status}.`);
+        }
+    }
+
+    if (requireSmokeMode) {
+        if (!['base', 'extended', 'gate'].includes(requireSmokeMode)) {
+            validationErrors.push(`Invalid --require-smoke-mode value: ${requireSmokeMode}`);
+        } else if (!smokeSummary) {
+            validationErrors.push('Smoke report is required to enforce smoke mode.');
+        } else if (smokeSummary.mode !== requireSmokeMode) {
+            validationErrors.push(
+                `Smoke report mode must be ${requireSmokeMode}, got ${smokeSummary.mode}.`,
+            );
+        }
+    }
+
+    if (requirePerfNoViolations) {
+        if (!perfSummary) {
+            validationErrors.push('Perf report is required to enforce threshold violations check.');
+        } else if (perfSummary.violations > 0) {
+            validationErrors.push(`Perf report has threshold violations: ${perfSummary.violations}.`);
+        }
+    }
+
+    if (qualityGateFile) {
+        const qualityReport = qualityGateFile.data;
+        if (!isObjectRecord(qualityReport)) {
+            validationErrors.push('Quality gate report must be an object.');
+        } else {
+            const status = qualityReport.status;
+            if (!['SUCCESS', 'FAILED'].includes(status)) {
+                validationErrors.push(`Quality gate report status is invalid: ${status}`);
+            }
+            const artifacts = isObjectRecord(qualityReport.artifacts)
+                ? qualityReport.artifacts
+                : null;
+            if (!artifacts) {
+                validationErrors.push('Quality gate report artifacts is required.');
+            } else {
+                const expectedSmokePath = normalizePathForCompare(smokeReportPath);
+                const qualitySmokePath = normalizePathForCompare(artifacts.smokeReportFile);
+                if (expectedSmokePath && qualitySmokePath && expectedSmokePath !== qualitySmokePath) {
+                    validationErrors.push(
+                        `Quality gate smoke report path mismatch: ${artifacts.smokeReportFile} vs ${smokeReportPath}.`,
+                    );
+                }
+
+                const expectedPerfPath = normalizePathForCompare(perfReportPath);
+                const qualityPerfPath = normalizePathForCompare(artifacts.perfReportFile);
+                if (expectedPerfPath && qualityPerfPath && expectedPerfPath !== qualityPerfPath) {
+                    validationErrors.push(
+                        `Quality gate perf report path mismatch: ${artifacts.perfReportFile} vs ${perfReportPath}.`,
+                    );
+                }
+
+                if (summaryMarkdownFile) {
+                    const expectedSummaryPath = normalizePathForCompare(summaryMarkdownFile);
+                    const qualitySummaryPath = normalizePathForCompare(artifacts.summaryMarkdownFile);
+                    if (expectedSummaryPath && qualitySummaryPath && expectedSummaryPath !== qualitySummaryPath) {
+                        validationErrors.push(
+                            `Quality gate summary path mismatch: ${artifacts.summaryMarkdownFile} vs ${summaryMarkdownFile}.`,
+                        );
+                    }
+                }
+
+                if (summaryJsonFile) {
+                    const expectedSummaryJsonPath = normalizePathForCompare(summaryJsonFile);
+                    const qualitySummaryJsonPath = normalizePathForCompare(artifacts.summaryJsonFile);
+                    if (
+                        expectedSummaryJsonPath
+                        && qualitySummaryJsonPath
+                        && expectedSummaryJsonPath !== qualitySummaryJsonPath
+                    ) {
+                        validationErrors.push(
+                            `Quality gate summary json path mismatch: ${artifacts.summaryJsonFile} vs ${summaryJsonFile}.`,
+                        );
+                    }
+                }
+            }
+            qualityGateSummary = {
+                status,
+                runId: typeof qualityReport.runId === 'string' ? qualityReport.runId : null,
+                failedSteps:
+                    Array.isArray(qualityReport.summary?.failedStepIds)
+                        ? qualityReport.summary.failedStepIds
+                        : [],
+                smokeReportFile:
+                    typeof qualityReport.artifacts?.smokeReportFile === 'string'
+                        ? qualityReport.artifacts.smokeReportFile
+                        : null,
+                perfReportFile:
+                    typeof qualityReport.artifacts?.perfReportFile === 'string'
+                        ? qualityReport.artifacts.perfReportFile
+                        : null,
+                summaryMarkdownFile:
+                    typeof qualityReport.artifacts?.summaryMarkdownFile === 'string'
+                        ? qualityReport.artifacts.summaryMarkdownFile
+                        : null,
+                summaryJsonFile:
+                    typeof qualityReport.artifacts?.summaryJsonFile === 'string'
+                        ? qualityReport.artifacts.summaryJsonFile
+                        : null,
+            };
+        }
+    }
+
+    if (requireQualityGateSuccess) {
+        if (!qualityGateSummary) {
+            validationErrors.push('Quality gate report is required to enforce success status.');
+        } else if (qualityGateSummary.status !== 'SUCCESS') {
+            validationErrors.push(
+                `Quality gate report status must be SUCCESS, got ${qualityGateSummary.status}.`,
+            );
+        }
+    }
+
+    if (requireReportsGeneratedAfter) {
+        const baselineTimestamp = parseIsoTimestamp(requireReportsGeneratedAfter);
+        if (baselineTimestamp === null) {
+            validationErrors.push(
+                `Invalid --require-reports-generated-after value: ${requireReportsGeneratedAfter}`,
+            );
+        } else {
+            if (smokeSummary) {
+                const smokeTimeValue = smokeSummary.finishedAt || smokeSummary.startedAt;
+                if (!smokeTimeValue) {
+                    validationErrors.push('Smoke report missing startedAt/finishedAt for freshness check.');
+                } else {
+                    const smokeTimestamp = parseIsoTimestamp(smokeTimeValue);
+                    if (smokeTimestamp === null) {
+                        validationErrors.push(
+                            `Smoke report timestamp is invalid: ${smokeTimeValue}`,
+                        );
+                    } else if (smokeTimestamp < baselineTimestamp) {
+                        validationErrors.push(
+                            `Smoke report is stale: ${smokeTimeValue} < ${requireReportsGeneratedAfter}.`,
+                        );
+                    }
+                }
+            }
+
+            if (perfSummary) {
+                const perfTimestamp = parseIsoTimestamp(perfSummary.generatedAt);
+                if (perfTimestamp === null) {
+                    validationErrors.push(
+                        `Perf report generatedAt is invalid: ${perfSummary.generatedAt}`,
+                    );
+                } else if (perfTimestamp < baselineTimestamp) {
+                    validationErrors.push(
+                        `Perf report is stale: ${perfSummary.generatedAt} < ${requireReportsGeneratedAfter}.`,
+                    );
+                }
+            }
+        }
+    }
+
+    if (maxReportAgeMs !== null) {
+        const nowTimestamp = Date.now();
+
+        if (smokeSummary) {
+            const smokeTimeValue = smokeSummary.finishedAt || smokeSummary.startedAt;
+            if (!smokeTimeValue) {
+                validationErrors.push('Smoke report missing startedAt/finishedAt for age check.');
+            } else {
+                const smokeTimestamp = parseIsoTimestamp(smokeTimeValue);
+                if (smokeTimestamp === null) {
+                    validationErrors.push(`Smoke report timestamp is invalid: ${smokeTimeValue}`);
+                } else if (nowTimestamp - smokeTimestamp > maxReportAgeMs) {
+                    validationErrors.push(
+                        `Smoke report age exceeded ${maxReportAgeMs}ms.`,
+                    );
+                }
+            }
+        }
+
+        if (perfSummary) {
+            const perfTimestamp = parseIsoTimestamp(perfSummary.generatedAt);
+            if (perfTimestamp === null) {
+                validationErrors.push(`Perf report generatedAt is invalid: ${perfSummary.generatedAt}`);
+            } else if (nowTimestamp - perfTimestamp > maxReportAgeMs) {
+                validationErrors.push(
+                    `Perf report age exceeded ${maxReportAgeMs}ms.`,
+                );
+            }
+        }
+    }
+
+    if (
+        expectedSummaryJsonSchemaVersion
+        && expectedSummaryJsonSchemaVersion !== SUMMARY_JSON_SCHEMA_VERSION
+    ) {
+        validationErrors.push(
+            `Summary json schema version mismatch: expected ${expectedSummaryJsonSchemaVersion}, actual ${SUMMARY_JSON_SCHEMA_VERSION}.`,
         );
     }
 
@@ -225,12 +532,38 @@ async function main() {
         const markdown = toMarkdownSummary({
             smoke: smokeSummary,
             perf: perfSummary,
+            qualityGate: qualityGateSummary,
             warnings,
+            validationErrors,
         });
         const summaryAbsolutePath = toAbsolutePath(summaryMarkdownFile);
         await mkdir(path.dirname(summaryAbsolutePath), { recursive: true });
         await writeFile(summaryAbsolutePath, `${markdown}\n`, 'utf-8');
         console.log(`[workflow-report-validate] summary markdown written to ${summaryAbsolutePath}`);
+    }
+
+    if (summaryJsonFile) {
+        const summary = toJsonSummary({
+            smokeReportPath,
+            perfReportPath,
+            qualityGateReportPath,
+            summaryMarkdownFile,
+            summaryJsonFile,
+            expectedSummaryJsonSchemaVersion,
+            smoke: smokeSummary,
+            perf: perfSummary,
+            qualityGate: qualityGateSummary,
+            warnings,
+            validationErrors,
+        });
+        const summaryJsonAbsolutePath = toAbsolutePath(summaryJsonFile);
+        await mkdir(path.dirname(summaryJsonAbsolutePath), { recursive: true });
+        await writeFile(summaryJsonAbsolutePath, `${JSON.stringify(summary, null, 2)}\n`, 'utf-8');
+        console.log(`[workflow-report-validate] summary json written to ${summaryJsonAbsolutePath}`);
+    }
+
+    if (validationErrors.length > 0) {
+        throw new Error(`validation failed: ${validationErrors.join(' | ')}`);
     }
 }
 
