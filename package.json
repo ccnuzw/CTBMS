@@ -11,6 +11,7 @@
     "lint": "turbo run lint",
     "type-check": "turbo run type-check",
     "workflow:smoke": "node scripts/workflow-smoke-runner.mjs --mode=base",
+    "workflow:web:smoke": "node scripts/workflow-web-smoke.mjs",
     "workflow:smoke:extended": "node scripts/workflow-smoke-runner.mjs --mode=extended",
     "workflow:smoke:gate": "node scripts/workflow-smoke-runner.mjs --mode=gate",
     "workflow:type-check:split": "pnpm --filter @packages/types type-check && pnpm --filter api type-check && pnpm --filter web type-check",

@@ -41,6 +41,41 @@ import { useWorkflowDefinitions } from '../../workflow-studio/api';
 import { getErrorMessage } from '../../../api/client';
 import { useSearchParams } from 'react-router-dom';
 
+type WorkflowBindingEntity = {
+  id: string;
+  version: number;
+} & Record<string, unknown>;
+
+type WorkflowBindingSnapshot = {
+  workflowBindings?: {
+    agentBindings?: string[];
+    paramSetBindings?: string[];
+    dataConnectorBindings?: string[];
+  };
+  resolvedBindings?: {
+    agents?: WorkflowBindingEntity[];
+    parameterSets?: WorkflowBindingEntity[];
+    dataConnectors?: WorkflowBindingEntity[];
+  };
+  unresolvedBindings?: {
+    agents?: string[];
+    parameterSets?: string[];
+    dataConnectors?: string[];
+  };
+};
+
+const getBindingCode = (record: WorkflowBindingEntity): string =>
+  readString(record.agentCode) ||
+  readString(record.setCode) ||
+  readString(record.connectorCode) ||
+  '-';
+
+const getBindingType = (record: WorkflowBindingEntity): string =>
+  readString(record.roleType) || readString(record.connectorType) || '-';
+
+const getBindingSource = (record: WorkflowBindingEntity): string =>
+  readString(record.templateSource) || readString(record.ownerType) || '-';
+
 const { Title, Text, Paragraph } = Typography;
 const { RangePicker } = DatePicker;
 
@@ -108,6 +143,14 @@ const readStringArray = (value: unknown): string[] => {
     return [];
   }
   return value.map((item) => readString(item)).filter((item): item is string => Boolean(item));
+};
+
+const parseBindingSnapshot = (value: unknown): WorkflowBindingSnapshot | null => {
+  const record = toObjectRecord(value);
+  if (!record) {
+    return null;
+  }
+  return record as WorkflowBindingSnapshot;
 };
 
 const normalizeOptionalText = (value: string | null): string | undefined => {
@@ -775,12 +818,90 @@ export const WorkflowExecutionPage: React.FC = () => {
   );
   const workflowBindingSnapshotJson = useMemo(() => {
     const paramSnapshot = toObjectRecord(executionDetail?.paramSnapshot);
-    const bindingSnapshot = toObjectRecord(paramSnapshot?._workflowBindings);
+    const bindingSnapshot = parseBindingSnapshot(paramSnapshot?._workflowBindings);
     if (!bindingSnapshot) {
       return null;
     }
     return JSON.stringify(bindingSnapshot, null, 2);
   }, [executionDetail?.paramSnapshot]);
+  const workflowBindingSnapshot = useMemo(() => {
+    const paramSnapshot = toObjectRecord(executionDetail?.paramSnapshot);
+    return parseBindingSnapshot(paramSnapshot?._workflowBindings);
+  }, [executionDetail?.paramSnapshot]);
+  const resolvedAgents = useMemo(
+    () => (workflowBindingSnapshot?.resolvedBindings?.agents || []) as WorkflowBindingEntity[],
+    [workflowBindingSnapshot?.resolvedBindings?.agents],
+  );
+  const resolvedParameterSets = useMemo(
+    () =>
+      (workflowBindingSnapshot?.resolvedBindings?.parameterSets || []) as WorkflowBindingEntity[],
+    [workflowBindingSnapshot?.resolvedBindings?.parameterSets],
+  );
+  const resolvedDataConnectors = useMemo(
+    () =>
+      (workflowBindingSnapshot?.resolvedBindings?.dataConnectors || []) as WorkflowBindingEntity[],
+    [workflowBindingSnapshot?.resolvedBindings?.dataConnectors],
+  );
+  const bindingColumns = useMemo<ColumnsType<WorkflowBindingEntity>>(
+    () => [
+      {
+        title: 'ID',
+        dataIndex: 'id',
+        width: 280,
+      },
+      {
+        title: '版本',
+        dataIndex: 'version',
+        width: 90,
+      },
+      {
+        title: '主键编码',
+        key: 'code',
+        render: (_, record) => getBindingCode(record),
+      },
+      {
+        title: '类型信息',
+        key: 'bindingType',
+        width: 160,
+        render: (_, record) => getBindingType(record),
+      },
+      {
+        title: '来源',
+        key: 'bindingSource',
+        width: 120,
+        render: (_, record) => getBindingSource(record),
+      },
+      {
+        title: '操作',
+        key: 'actions',
+        width: 100,
+        render: (_, record) => {
+          const code = getBindingCode(record);
+          return (
+            <Button
+              type="link"
+              size="small"
+              disabled={code === '-'}
+              onClick={async () => {
+                if (code === '-') {
+                  return;
+                }
+                try {
+                  await navigator.clipboard.writeText(code);
+                  message.success('绑定编码已复制');
+                } catch {
+                  message.warning('复制失败，请手动复制');
+                }
+              }}
+            >
+              复制编码
+            </Button>
+          );
+        },
+      },
+    ],
+    [message],
+  );
 
   const handleRerun = async (executionId: string) => {
     try {
@@ -1582,6 +1703,112 @@ export const WorkflowExecutionPage: React.FC = () => {
 
           {workflowBindingSnapshotJson ? (
             <Card size="small" title="运行绑定快照 (_workflowBindings)">
+              {workflowBindingSnapshot ? (
+                <Space direction="vertical" style={{ width: '100%', marginBottom: 12 }} size={8}>
+                  <div>
+                    <Text type="secondary">声明绑定</Text>
+                    <div>
+                      <Text>
+                        Agents:{' '}
+                        {(workflowBindingSnapshot.workflowBindings?.agentBindings || []).join(
+                          ', ',
+                        ) || '-'}
+                      </Text>
+                    </div>
+                    <div>
+                      <Text>
+                        ParameterSets:{' '}
+                        {(workflowBindingSnapshot.workflowBindings?.paramSetBindings || []).join(
+                          ', ',
+                        ) || '-'}
+                      </Text>
+                    </div>
+                    <div>
+                      <Text>
+                        DataConnectors:{' '}
+                        {(
+                          workflowBindingSnapshot.workflowBindings?.dataConnectorBindings || []
+                        ).join(', ') || '-'}
+                      </Text>
+                    </div>
+                  </div>
+
+                  <div>
+                    <Text type="secondary">未解析绑定</Text>
+                    <div>
+                      {(workflowBindingSnapshot.unresolvedBindings?.agents || []).map((item) => (
+                        <Tag key={`ua-${item}`} color="red">
+                          AGENT:{item}
+                        </Tag>
+                      ))}
+                      {(workflowBindingSnapshot.unresolvedBindings?.parameterSets || []).map(
+                        (item) => (
+                          <Tag key={`up-${item}`} color="red">
+                            PARAM:{item}
+                          </Tag>
+                        ),
+                      )}
+                      {(workflowBindingSnapshot.unresolvedBindings?.dataConnectors || []).map(
+                        (item) => (
+                          <Tag key={`uc-${item}`} color="red">
+                            CONNECTOR:{item}
+                          </Tag>
+                        ),
+                      )}
+                      {!(
+                        workflowBindingSnapshot.unresolvedBindings?.agents?.length ||
+                        workflowBindingSnapshot.unresolvedBindings?.parameterSets?.length ||
+                        workflowBindingSnapshot.unresolvedBindings?.dataConnectors?.length
+                      ) ? (
+                        <Text>-</Text>
+                      ) : null}
+                    </div>
+                  </div>
+
+                  <Space size={12}>
+                    <a href="/workflow/agents" target="_blank" rel="noreferrer">
+                      打开 Agent 中心
+                    </a>
+                    <a href="/workflow/parameters" target="_blank" rel="noreferrer">
+                      打开参数中心
+                    </a>
+                    <a href="/workflow/connectors" target="_blank" rel="noreferrer">
+                      打开连接器中心
+                    </a>
+                  </Space>
+
+                  <div>
+                    <Text type="secondary">已解析绑定</Text>
+                    <Card size="small" title={`Agents (${resolvedAgents.length})`}>
+                      <Table
+                        rowKey={(record) => `${record.id}-${record.version}`}
+                        dataSource={resolvedAgents}
+                        columns={bindingColumns}
+                        pagination={false}
+                        size="small"
+                      />
+                    </Card>
+                    <Card size="small" title={`ParameterSets (${resolvedParameterSets.length})`}>
+                      <Table
+                        rowKey={(record) => `${record.id}-${record.version}`}
+                        dataSource={resolvedParameterSets}
+                        columns={bindingColumns}
+                        pagination={false}
+                        size="small"
+                      />
+                    </Card>
+                    <Card size="small" title={`DataConnectors (${resolvedDataConnectors.length})`}>
+                      <Table
+                        rowKey={(record) => `${record.id}-${record.version}`}
+                        dataSource={resolvedDataConnectors}
+                        columns={bindingColumns}
+                        pagination={false}
+                        size="small"
+                      />
+                    </Card>
+                  </div>
+                </Space>
+              ) : null}
               <Paragraph
                 copyable={{ text: workflowBindingSnapshotJson }}
                 style={{ marginBottom: 0 }}

@@ -5,6 +5,8 @@ import {
   App,
   Button,
   Card,
+  Drawer,
+  Descriptions,
   Form,
   Input,
   Modal,
@@ -21,12 +23,14 @@ import {
   DataConnectorType,
   DataConnectorOwnerType,
 } from '@packages/types';
+import { useSearchParams } from 'react-router-dom';
 import { getErrorMessage } from '../../../api/client';
 import {
   useCreateDataConnector,
   useDataConnectors,
   useDeleteDataConnector,
   useHealthCheckDataConnector,
+  useUpdateDataConnector,
 } from '../api';
 
 const { Title } = Typography;
@@ -41,16 +45,65 @@ const typeOptions: DataConnectorType[] = [
 
 const ownerTypeOptions: DataConnectorOwnerType[] = ['SYSTEM', 'ADMIN'];
 
+const parsePositiveInt = (value: string | null, fallback: number): number => {
+  if (!value) {
+    return fallback;
+  }
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return fallback;
+  }
+  return Math.floor(parsed);
+};
+
 export const DataConnectorPage: React.FC = () => {
   const { message } = App.useApp();
   const [form] = Form.useForm<CreateDataConnectorDto>();
-  const [keyword, setKeyword] = useState<string | undefined>();
+  const [editForm] = Form.useForm<{
+    connectorName: string;
+    endpointConfigText?: string;
+    isActive?: boolean;
+  }>();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [keyword, setKeyword] = useState<string | undefined>(
+    searchParams.get('keyword')?.trim() || undefined,
+  );
+  const [isActiveFilter, setIsActiveFilter] = useState<boolean | undefined>(
+    searchParams.get('isActive') === 'true'
+      ? true
+      : searchParams.get('isActive') === 'false'
+        ? false
+        : undefined,
+  );
   const [visible, setVisible] = useState(false);
+  const [page, setPage] = useState(parsePositiveInt(searchParams.get('page'), 1));
+  const [pageSize, setPageSize] = useState(parsePositiveInt(searchParams.get('pageSize'), 20));
+  const [selectedConnector, setSelectedConnector] = useState<DataConnectorDto | null>(null);
+  const [editVisible, setEditVisible] = useState(false);
 
-  const { data, isLoading } = useDataConnectors({ keyword, page: 1, pageSize: 100 });
+  const { data, isLoading } = useDataConnectors({
+    keyword,
+    isActive: isActiveFilter,
+    page,
+    pageSize,
+  });
   const createMutation = useCreateDataConnector();
   const deleteMutation = useDeleteDataConnector();
   const healthMutation = useHealthCheckDataConnector();
+  const updateMutation = useUpdateDataConnector();
+
+  React.useEffect(() => {
+    const next = new URLSearchParams();
+    if (keyword) {
+      next.set('keyword', keyword);
+    }
+    if (isActiveFilter !== undefined) {
+      next.set('isActive', String(isActiveFilter));
+    }
+    next.set('page', String(page));
+    next.set('pageSize', String(pageSize));
+    setSearchParams(next, { replace: true });
+  }, [isActiveFilter, keyword, page, pageSize, setSearchParams]);
 
   const columns = useMemo<ColumnsType<DataConnectorDto>>(
     () => [
@@ -79,6 +132,25 @@ export const DataConnectorPage: React.FC = () => {
         width: 220,
         render: (_, record) => (
           <Space size={4}>
+            <Button type="link" onClick={() => setSelectedConnector(record)}>
+              详情
+            </Button>
+            <Button
+              type="link"
+              onClick={() => {
+                setSelectedConnector(record);
+                editForm.setFieldsValue({
+                  connectorName: record.connectorName,
+                  endpointConfigText: record.endpointConfig
+                    ? JSON.stringify(record.endpointConfig, null, 2)
+                    : '{}',
+                  isActive: record.isActive,
+                });
+                setEditVisible(true);
+              }}
+            >
+              编辑
+            </Button>
             <Button
               type="link"
               onClick={async () => {
@@ -124,11 +196,21 @@ export const DataConnectorPage: React.FC = () => {
   const handleCreate = async () => {
     try {
       const values = await form.validateFields();
+      let endpointConfig: Record<string, unknown> | undefined;
+      if (values.endpointConfig) {
+        try {
+          endpointConfig = JSON.parse(values.endpointConfig as unknown as string) as Record<
+            string,
+            unknown
+          >;
+        } catch {
+          message.error('Endpoint配置必须是合法 JSON');
+          return;
+        }
+      }
       const payload: CreateDataConnectorDto = {
         ...values,
-        endpointConfig: values.endpointConfig
-          ? JSON.parse(values.endpointConfig as unknown as string)
-          : undefined,
+        endpointConfig,
       };
       await createMutation.mutateAsync(payload);
       message.success('连接器创建成功');
@@ -136,6 +218,37 @@ export const DataConnectorPage: React.FC = () => {
       form.resetFields();
     } catch (error) {
       message.error(getErrorMessage(error) || '连接器创建失败');
+    }
+  };
+
+  const handleEdit = async () => {
+    if (!selectedConnector) {
+      return;
+    }
+    try {
+      const values = await editForm.validateFields();
+      let endpointConfig: Record<string, unknown> | undefined;
+      if (values.endpointConfigText?.trim()) {
+        try {
+          endpointConfig = JSON.parse(values.endpointConfigText) as Record<string, unknown>;
+        } catch {
+          message.error('Endpoint配置必须是合法 JSON');
+          return;
+        }
+      }
+
+      await updateMutation.mutateAsync({
+        id: selectedConnector.id,
+        payload: {
+          connectorName: values.connectorName,
+          endpointConfig,
+          isActive: values.isActive,
+        },
+      });
+      message.success('连接器更新成功');
+      setEditVisible(false);
+    } catch (error) {
+      message.error(getErrorMessage(error) || '连接器更新失败');
     }
   };
 
@@ -150,8 +263,25 @@ export const DataConnectorPage: React.FC = () => {
             <Input.Search
               allowClear
               placeholder="按编码/名称搜索"
-              onSearch={(value) => setKeyword(value?.trim() || undefined)}
+              onSearch={(value) => {
+                setKeyword(value?.trim() || undefined);
+                setPage(1);
+              }}
               style={{ width: 260 }}
+            />
+            <Select
+              allowClear
+              style={{ width: 140 }}
+              placeholder="状态筛选"
+              options={[
+                { label: 'ACTIVE', value: true },
+                { label: 'INACTIVE', value: false },
+              ]}
+              value={isActiveFilter}
+              onChange={(value) => {
+                setIsActiveFilter(value);
+                setPage(1);
+              }}
             />
             <Button type="primary" onClick={() => setVisible(true)}>
               新建连接器
@@ -165,7 +295,16 @@ export const DataConnectorPage: React.FC = () => {
           dataSource={data?.data ?? []}
           columns={columns}
           scroll={{ x: 1300 }}
-          pagination={false}
+          pagination={{
+            current: data?.page ?? page,
+            pageSize: data?.pageSize ?? pageSize,
+            total: data?.total ?? 0,
+            showSizeChanger: true,
+            onChange: (nextPage, nextPageSize) => {
+              setPage(nextPage);
+              setPageSize(nextPageSize);
+            },
+          }}
         />
       </Space>
 
@@ -208,6 +347,76 @@ export const DataConnectorPage: React.FC = () => {
           </Form.Item>
         </Form>
       </Modal>
+
+      <Modal
+        title={`编辑连接器 - ${selectedConnector?.connectorCode || ''}`}
+        open={editVisible}
+        onCancel={() => setEditVisible(false)}
+        onOk={handleEdit}
+        confirmLoading={updateMutation.isPending}
+        width={760}
+      >
+        <Form layout="vertical" form={editForm}>
+          <Form.Item name="connectorName" label="名称" rules={[{ required: true }]}>
+            <Input />
+          </Form.Item>
+          <Form.Item name="isActive" label="是否启用">
+            <Select
+              options={[
+                { label: 'ACTIVE', value: true },
+                { label: 'INACTIVE', value: false },
+              ]}
+            />
+          </Form.Item>
+          <Form.Item name="endpointConfigText" label="Endpoint配置(JSON)">
+            <Input.TextArea rows={4} />
+          </Form.Item>
+        </Form>
+      </Modal>
+
+      <Drawer
+        title="连接器详情"
+        width={820}
+        open={Boolean(selectedConnector) && !editVisible}
+        onClose={() => setSelectedConnector(null)}
+      >
+        <Descriptions
+          bordered
+          size="small"
+          column={2}
+          items={[
+            { key: 'code', label: '编码', children: selectedConnector?.connectorCode || '-' },
+            { key: 'name', label: '名称', children: selectedConnector?.connectorName || '-' },
+            { key: 'type', label: '类型', children: selectedConnector?.connectorType || '-' },
+            { key: 'category', label: '分类', children: selectedConnector?.category || '-' },
+            { key: 'owner', label: 'OwnerType', children: selectedConnector?.ownerType || '-' },
+            { key: 'version', label: '版本', children: selectedConnector?.version ?? '-' },
+            {
+              key: 'status',
+              label: '状态',
+              children: selectedConnector ? (
+                <Tag color={selectedConnector.isActive ? 'green' : 'red'}>
+                  {selectedConnector.isActive ? 'ACTIVE' : 'INACTIVE'}
+                </Tag>
+              ) : (
+                '-'
+              ),
+            },
+            {
+              key: 'endpoint',
+              label: 'Endpoint配置',
+              span: 2,
+              children: (
+                <pre style={{ margin: 0, whiteSpace: 'pre-wrap' }}>
+                  {selectedConnector?.endpointConfig
+                    ? JSON.stringify(selectedConnector.endpointConfig, null, 2)
+                    : '-'}
+                </pre>
+              ),
+            },
+          ]}
+        />
+      </Drawer>
     </Card>
   );
 };

@@ -28,6 +28,7 @@ import { WorkflowDefinitionModule } from './modules/workflow-definition';
 import { WorkflowExecutionModule } from './modules/workflow-execution';
 import { DecisionRuleModule } from './modules/decision-rule';
 import { AgentProfileModule } from './modules/agent-profile';
+import { AgentPromptTemplateModule } from './modules/agent-prompt-template';
 import { ParameterCenterModule } from './modules/parameter-center';
 import { DataConnectorModule } from './modules/data-connector';
 
@@ -59,6 +60,7 @@ import { DataConnectorModule } from './modules/data-connector';
     WorkflowExecutionModule,
     DecisionRuleModule,
     AgentProfileModule,
+    AgentPromptTemplateModule,
     ParameterCenterModule,
     DataConnectorModule,
   ],

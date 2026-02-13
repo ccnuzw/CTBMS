@@ -23,6 +23,7 @@ import {
   ParameterScopeLevel,
   ParameterSetDto,
 } from '@packages/types';
+import { useSearchParams } from 'react-router-dom';
 import { getErrorMessage } from '../../../api/client';
 import {
   useCreateParameterItem,
@@ -47,20 +48,57 @@ const scopeOptions: ParameterScopeLevel[] = [
 
 const paramTypeOptions = ['number', 'string', 'boolean', 'enum', 'json', 'expression'];
 
+const parsePositiveInt = (value: string | null, fallback: number): number => {
+  if (!value) {
+    return fallback;
+  }
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return fallback;
+  }
+  return Math.floor(parsed);
+};
+
 export const ParameterSetPage: React.FC = () => {
   const { message } = App.useApp();
   const [setForm] = Form.useForm<CreateParameterSetDto>();
   const [itemForm] = Form.useForm<CreateParameterItemDto>();
-  const [keyword, setKeyword] = useState<string | undefined>();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [keyword, setKeyword] = useState<string | undefined>(
+    searchParams.get('keyword')?.trim() || undefined,
+  );
+  const [isActiveFilter, setIsActiveFilter] = useState<boolean | undefined>(
+    searchParams.get('isActive') === 'true'
+      ? true
+      : searchParams.get('isActive') === 'false'
+        ? false
+        : undefined,
+  );
   const [createVisible, setCreateVisible] = useState(false);
   const [selectedSetId, setSelectedSetId] = useState<string | null>(null);
   const [itemVisible, setItemVisible] = useState(false);
+  const [page, setPage] = useState(parsePositiveInt(searchParams.get('page'), 1));
+  const [pageSize, setPageSize] = useState(parsePositiveInt(searchParams.get('pageSize'), 20));
+
+  React.useEffect(() => {
+    const next = new URLSearchParams();
+    if (keyword) {
+      next.set('keyword', keyword);
+    }
+    if (isActiveFilter !== undefined) {
+      next.set('isActive', String(isActiveFilter));
+    }
+    next.set('page', String(page));
+    next.set('pageSize', String(pageSize));
+    setSearchParams(next, { replace: true });
+  }, [isActiveFilter, keyword, page, pageSize, setSearchParams]);
 
   const { data, isLoading } = useParameterSets({
     includePublic: true,
     keyword,
-    page: 1,
-    pageSize: 100,
+    isActive: isActiveFilter,
+    page,
+    pageSize,
   });
   const { data: setDetail, isLoading: isDetailLoading } = useParameterSetDetail(
     selectedSetId || undefined,
@@ -178,9 +216,18 @@ export const ParameterSetPage: React.FC = () => {
     }
     try {
       const values = await itemForm.validateFields();
+      let parsedValue: unknown = undefined;
+      const rawValue = (values.value as unknown as string | undefined)?.trim();
+      if (rawValue) {
+        try {
+          parsedValue = JSON.parse(rawValue);
+        } catch {
+          parsedValue = rawValue;
+        }
+      }
       const payload: CreateParameterItemDto = {
         ...values,
-        value: values.value ? JSON.parse(values.value as unknown as string) : undefined,
+        value: parsedValue,
       };
       await createItemMutation.mutateAsync({ setId: selectedSetId, payload });
       message.success('参数项创建成功');
@@ -202,8 +249,25 @@ export const ParameterSetPage: React.FC = () => {
             <Input.Search
               allowClear
               placeholder="按编码/名称搜索"
-              onSearch={(value) => setKeyword(value?.trim() || undefined)}
+              onSearch={(value) => {
+                setKeyword(value?.trim() || undefined);
+                setPage(1);
+              }}
               style={{ width: 260 }}
+            />
+            <Select
+              allowClear
+              style={{ width: 140 }}
+              placeholder="状态筛选"
+              options={[
+                { label: 'ACTIVE', value: true },
+                { label: 'INACTIVE', value: false },
+              ]}
+              value={isActiveFilter}
+              onChange={(value) => {
+                setIsActiveFilter(value);
+                setPage(1);
+              }}
             />
             <Button type="primary" onClick={() => setCreateVisible(true)}>
               新建参数包
@@ -217,7 +281,16 @@ export const ParameterSetPage: React.FC = () => {
           dataSource={data?.data ?? []}
           columns={setColumns}
           scroll={{ x: 1200 }}
-          pagination={false}
+          pagination={{
+            current: data?.page ?? page,
+            pageSize: data?.pageSize ?? pageSize,
+            total: data?.total ?? 0,
+            showSizeChanger: true,
+            onChange: (nextPage, nextPageSize) => {
+              setPage(nextPage);
+              setPageSize(nextPageSize);
+            },
+          }}
         />
       </Space>
 

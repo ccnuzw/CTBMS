@@ -87,6 +87,68 @@ export const PublishAgentProfileSchema = z.object({
   comment: z.string().max(500).optional(),
 });
 
+// ─── AgentPromptTemplate ────────────────────────────────────────────
+
+export const AgentPromptOutputFormatEnum = z.enum(['json', 'markdown', 'text', 'csv']);
+
+export const AgentPromptTemplateSchema = z.object({
+  id: z.string().uuid(),
+  promptCode: z.string(),
+  name: z.string(),
+  roleType: AgentRoleTypeEnum,
+  systemPrompt: z.string(),
+  userPromptTemplate: z.string(),
+  fewShotExamples: z.array(z.record(z.unknown())).nullable().optional(),
+  outputFormat: AgentPromptOutputFormatEnum,
+  variables: z.record(z.unknown()).nullable().optional(),
+  version: z.number().int(),
+  ownerUserId: z.string().nullable().optional(),
+  templateSource: WorkflowTemplateSourceEnum,
+  isActive: z.boolean(),
+  createdAt: z.date().optional(),
+  updatedAt: z.date().optional(),
+});
+
+export const CreateAgentPromptTemplateSchema = z.object({
+  promptCode: z.string().regex(/^[A-Z0-9_]{3,120}$/, 'promptCode 格式不正确'),
+  name: z.string().min(1).max(120),
+  roleType: AgentRoleTypeEnum,
+  systemPrompt: z.string().min(1).max(20000),
+  userPromptTemplate: z.string().min(1).max(20000),
+  fewShotExamples: z.array(z.record(z.unknown())).max(20).optional(),
+  outputFormat: AgentPromptOutputFormatEnum.default('json'),
+  variables: z.record(z.unknown()).optional(),
+  templateSource: WorkflowTemplateSourceEnum.default('PRIVATE'),
+});
+
+export const UpdateAgentPromptTemplateSchema = z.object({
+  name: z.string().min(1).max(120).optional(),
+  roleType: AgentRoleTypeEnum.optional(),
+  systemPrompt: z.string().min(1).max(20000).optional(),
+  userPromptTemplate: z.string().min(1).max(20000).optional(),
+  fewShotExamples: z.array(z.record(z.unknown())).max(20).optional(),
+  outputFormat: AgentPromptOutputFormatEnum.optional(),
+  variables: z.record(z.unknown()).optional(),
+  isActive: z.boolean().optional(),
+});
+
+export const AgentPromptTemplateQuerySchema = z.object({
+  keyword: z.string().max(120).optional(),
+  roleType: AgentRoleTypeEnum.optional(),
+  includePublic: z.coerce.boolean().default(true),
+  isActive: z.coerce.boolean().optional(),
+  page: z.coerce.number().int().min(1).default(1),
+  pageSize: z.coerce.number().int().min(1).max(200).default(20),
+});
+
+export const AgentPromptTemplatePageSchema = z.object({
+  data: z.array(AgentPromptTemplateSchema),
+  total: z.number().int(),
+  page: z.number().int(),
+  pageSize: z.number().int(),
+  totalPages: z.number().int(),
+});
+
 export type AgentMemoryPolicy = z.infer<typeof AgentMemoryPolicyEnum>;
 export type AgentRoleType = z.infer<typeof AgentRoleTypeEnum>;
 export type AgentProfileDto = z.infer<typeof AgentProfileSchema>;
@@ -95,3 +157,11 @@ export type UpdateAgentProfileDto = z.infer<typeof UpdateAgentProfileSchema>;
 export type AgentProfileQueryDto = z.infer<typeof AgentProfileQuerySchema>;
 export type AgentProfilePageDto = z.infer<typeof AgentProfilePageSchema>;
 export type PublishAgentProfileDto = z.infer<typeof PublishAgentProfileSchema>;
+
+export type AgentPromptOutputFormat = z.infer<typeof AgentPromptOutputFormatEnum>;
+export type AgentPromptTemplateDto = z.infer<typeof AgentPromptTemplateSchema>;
+export type CreateAgentPromptTemplateDto = z.infer<typeof CreateAgentPromptTemplateSchema>;
+export type UpdateAgentPromptTemplateDto = z.infer<typeof UpdateAgentPromptTemplateSchema>;
+export type AgentPromptTemplateQueryDto = z.infer<typeof AgentPromptTemplateQuerySchema>;
+export type AgentPromptTemplatePageDto = z.infer<typeof AgentPromptTemplatePageSchema>;
+

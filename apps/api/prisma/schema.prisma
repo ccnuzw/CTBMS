@@ -2148,6 +2148,32 @@ model DecisionRule {
   @@index([rulePackId, isActive, priority])
 }
 
+model AgentPromptTemplate {
+  id String @id @default(uuid())
+
+  promptCode String @unique
+  name       String
+  roleType   String
+
+  systemPrompt       String @db.Text
+  userPromptTemplate String @db.Text
+  fewShotExamples    Json?
+  outputFormat       String @default("json")
+  variables          Json?
+
+  version        Int                    @default(1)
+  ownerUserId    String?
+  templateSource WorkflowTemplateSource @default(PRIVATE)
+  isActive       Boolean                @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([ownerUserId, isActive])
+  @@index([templateSource, isActive])
+  @@index([roleType])
+}
+
 model AgentProfile {
   id String @id @default(uuid())
 

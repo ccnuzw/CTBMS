@@ -5,6 +5,8 @@ import {
   App,
   Button,
   Card,
+  Drawer,
+  Descriptions,
   Form,
   Input,
   InputNumber,
@@ -12,6 +14,7 @@ import {
   Popconfirm,
   Select,
   Space,
+  Switch,
   Table,
   Tag,
   Typography,
@@ -22,12 +25,14 @@ import {
   AgentRoleType,
   CreateAgentProfileDto,
 } from '@packages/types';
+import { useSearchParams } from 'react-router-dom';
 import { getErrorMessage } from '../../../api/client';
 import {
   useAgentProfiles,
   useCreateAgentProfile,
   useDeleteAgentProfile,
   usePublishAgentProfile,
+  useUpdateAgentProfile,
 } from '../api';
 
 const { Title } = Typography;
@@ -45,22 +50,71 @@ const roleOptions: AgentRoleType[] = [
 
 const memoryOptions: AgentMemoryPolicy[] = ['none', 'short-term', 'windowed'];
 
+const parsePositiveInt = (value: string | null, fallback: number): number => {
+  if (!value) {
+    return fallback;
+  }
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return fallback;
+  }
+  return Math.floor(parsed);
+};
+
 export const AgentProfilePage: React.FC = () => {
   const { message } = App.useApp();
   const [form] = Form.useForm<CreateAgentProfileDto>();
-  const [keyword, setKeyword] = useState<string | undefined>();
+  const [editForm] = Form.useForm<{
+    agentName: string;
+    timeoutMs: number;
+    isActive: boolean;
+    toolPolicyText?: string;
+    guardrailsText?: string;
+    retryPolicyText?: string;
+  }>();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [keyword, setKeyword] = useState<string | undefined>(
+    searchParams.get('keyword')?.trim() || undefined,
+  );
+  const [isActiveFilter, setIsActiveFilter] = useState<boolean | undefined>(
+    searchParams.get('isActive') === 'true'
+      ? true
+      : searchParams.get('isActive') === 'false'
+        ? false
+        : undefined,
+  );
   const [visible, setVisible] = useState(false);
+  const [editVisible, setEditVisible] = useState(false);
+  const [editingAgent, setEditingAgent] = useState<AgentProfileDto | null>(null);
+  const [selectedAgent, setSelectedAgent] = useState<AgentProfileDto | null>(null);
+  const [page, setPage] = useState(parsePositiveInt(searchParams.get('page'), 1));
+  const [pageSize, setPageSize] = useState(parsePositiveInt(searchParams.get('pageSize'), 20));
 
   const { data, isLoading } = useAgentProfiles({
     includePublic: true,
     keyword,
-    page: 1,
-    pageSize: 100,
+    isActive: isActiveFilter,
+    page,
+    pageSize,
   });
 
   const createMutation = useCreateAgentProfile();
   const publishMutation = usePublishAgentProfile();
   const deleteMutation = useDeleteAgentProfile();
+  const updateMutation = useUpdateAgentProfile();
+
+  React.useEffect(() => {
+    const next = new URLSearchParams();
+    if (keyword) {
+      next.set('keyword', keyword);
+    }
+    if (isActiveFilter !== undefined) {
+      next.set('isActive', String(isActiveFilter));
+    }
+    next.set('page', String(page));
+    next.set('pageSize', String(pageSize));
+    setSearchParams(next, { replace: true });
+  }, [isActiveFilter, keyword, page, pageSize, setSearchParams]);
 
   const columns = useMemo<ColumnsType<AgentProfileDto>>(
     () => [
@@ -90,6 +144,26 @@ export const AgentProfilePage: React.FC = () => {
         width: 160,
         render: (_, record) => (
           <Space size={4}>
+            <Button type="link" onClick={() => setSelectedAgent(record)}>
+              详情
+            </Button>
+            <Button
+              type="link"
+              onClick={() => {
+                setEditingAgent(record);
+                editForm.setFieldsValue({
+                  agentName: record.agentName,
+                  timeoutMs: record.timeoutMs,
+                  isActive: record.isActive,
+                  toolPolicyText: JSON.stringify(record.toolPolicy || {}, null, 2),
+                  guardrailsText: JSON.stringify(record.guardrails || {}, null, 2),
+                  retryPolicyText: JSON.stringify(record.retryPolicy || {}, null, 2),
+                });
+                setEditVisible(true);
+              }}
+            >
+              编辑
+            </Button>
             <Button
               type="link"
               onClick={async () => {
@@ -125,6 +199,43 @@ export const AgentProfilePage: React.FC = () => {
     [deleteMutation, message, publishMutation],
   );
 
+  const handleEdit = async () => {
+    if (!editingAgent) {
+      return;
+    }
+
+    try {
+      const values = await editForm.validateFields();
+      let toolPolicy: Record<string, unknown> | undefined;
+      let guardrails: Record<string, unknown> | undefined;
+      let retryPolicy: Record<string, unknown> | undefined;
+      try {
+        toolPolicy = values.toolPolicyText ? JSON.parse(values.toolPolicyText) : undefined;
+        guardrails = values.guardrailsText ? JSON.parse(values.guardrailsText) : undefined;
+        retryPolicy = values.retryPolicyText ? JSON.parse(values.retryPolicyText) : undefined;
+      } catch {
+        message.error('JSON 配置格式错误，请检查 toolPolicy/guardrails/retryPolicy');
+        return;
+      }
+      await updateMutation.mutateAsync({
+        id: editingAgent.id,
+        payload: {
+          agentName: values.agentName,
+          timeoutMs: values.timeoutMs,
+          isActive: values.isActive,
+          toolPolicy,
+          guardrails,
+          retryPolicy,
+        },
+      });
+      message.success('更新成功');
+      setEditVisible(false);
+      setEditingAgent(null);
+    } catch (error) {
+      message.error(getErrorMessage(error) || '更新失败');
+    }
+  };
+
   const handleCreate = async () => {
     try {
       const values = await form.validateFields();
@@ -148,8 +259,25 @@ export const AgentProfilePage: React.FC = () => {
             <Input.Search
               allowClear
               placeholder="按编码/名称搜索"
-              onSearch={(value) => setKeyword(value?.trim() || undefined)}
+              onSearch={(value) => {
+                setKeyword(value?.trim() || undefined);
+                setPage(1);
+              }}
               style={{ width: 260 }}
+            />
+            <Select
+              allowClear
+              placeholder="状态筛选"
+              style={{ width: 140 }}
+              options={[
+                { label: 'ACTIVE', value: true },
+                { label: 'INACTIVE', value: false },
+              ]}
+              value={isActiveFilter}
+              onChange={(value) => {
+                setIsActiveFilter(value);
+                setPage(1);
+              }}
             />
             <Button type="primary" onClick={() => setVisible(true)}>
               新建 Agent
@@ -163,7 +291,16 @@ export const AgentProfilePage: React.FC = () => {
           dataSource={data?.data ?? []}
           columns={columns}
           scroll={{ x: 1300 }}
-          pagination={false}
+          pagination={{
+            current: data?.page ?? page,
+            pageSize: data?.pageSize ?? pageSize,
+            total: data?.total ?? 0,
+            showSizeChanger: true,
+            onChange: (nextPage, nextPageSize) => {
+              setPage(nextPage);
+              setPageSize(nextPageSize);
+            },
+          }}
         />
       </Space>
 
@@ -225,6 +362,107 @@ export const AgentProfilePage: React.FC = () => {
           </Form.Item>
         </Form>
       </Modal>
+
+      <Modal
+        title={`编辑 Agent - ${editingAgent?.agentCode || ''}`}
+        open={editVisible}
+        onCancel={() => {
+          setEditVisible(false);
+          setEditingAgent(null);
+        }}
+        onOk={handleEdit}
+        confirmLoading={updateMutation.isPending}
+      >
+        <Form layout="vertical" form={editForm}>
+          <Form.Item name="agentName" label="名称" rules={[{ required: true }]}>
+            <Input />
+          </Form.Item>
+          <Form.Item name="timeoutMs" label="超时(ms)" rules={[{ required: true }]}>
+            <InputNumber min={1000} max={120000} style={{ width: '100%' }} />
+          </Form.Item>
+          <Form.Item name="isActive" label="是否启用" valuePropName="checked">
+            <Switch checkedChildren="ACTIVE" unCheckedChildren="INACTIVE" />
+          </Form.Item>
+          <Form.Item name="toolPolicyText" label="toolPolicy(JSON)">
+            <Input.TextArea rows={3} />
+          </Form.Item>
+          <Form.Item name="guardrailsText" label="guardrails(JSON)">
+            <Input.TextArea rows={3} />
+          </Form.Item>
+          <Form.Item name="retryPolicyText" label="retryPolicy(JSON)">
+            <Input.TextArea rows={3} />
+          </Form.Item>
+        </Form>
+      </Modal>
+
+      <Drawer
+        title="Agent 详情"
+        width={860}
+        open={Boolean(selectedAgent)}
+        onClose={() => setSelectedAgent(null)}
+      >
+        <Descriptions
+          bordered
+          size="small"
+          column={2}
+          items={[
+            { key: 'code', label: '编码', children: selectedAgent?.agentCode || '-' },
+            { key: 'name', label: '名称', children: selectedAgent?.agentName || '-' },
+            { key: 'role', label: '角色', children: selectedAgent?.roleType || '-' },
+            { key: 'model', label: '模型Key', children: selectedAgent?.modelConfigKey || '-' },
+            { key: 'prompt', label: 'Prompt编码', children: selectedAgent?.agentPromptCode || '-' },
+            {
+              key: 'schema',
+              label: '输出Schema',
+              children: selectedAgent?.outputSchemaCode || '-',
+            },
+            { key: 'memory', label: '记忆策略', children: selectedAgent?.memoryPolicy || '-' },
+            { key: 'timeout', label: '超时(ms)', children: selectedAgent?.timeoutMs ?? '-' },
+            { key: 'version', label: '版本', children: selectedAgent?.version ?? '-' },
+            {
+              key: 'status',
+              label: '状态',
+              children: selectedAgent ? (
+                <Tag color={selectedAgent.isActive ? 'green' : 'red'}>
+                  {selectedAgent.isActive ? 'ACTIVE' : 'INACTIVE'}
+                </Tag>
+              ) : (
+                '-'
+              ),
+            },
+            {
+              key: 'objective',
+              label: '目标',
+              span: 2,
+              children: selectedAgent?.objective || '-',
+            },
+            {
+              key: 'toolPolicy',
+              label: 'toolPolicy',
+              span: 2,
+              children: (
+                <pre style={{ margin: 0, whiteSpace: 'pre-wrap' }}>
+                  {selectedAgent?.toolPolicy
+                    ? JSON.stringify(selectedAgent.toolPolicy, null, 2)
+                    : '-'}
+                </pre>
+              ),
+            },
+            {
+              key: 'guardrails',
+              label: 'guardrails',
+              span: 2,
+              children: (
+                <pre style={{ margin: 0, whiteSpace: 'pre-wrap' }}>
+                  {selectedAgent?.guardrails
+                    ? JSON.stringify(selectedAgent.guardrails, null, 2)
+                    : '-'}
+                </pre>
+              ),
+            },
+          ]}
+        />
+      </Drawer>
     </Card>
   );
 };

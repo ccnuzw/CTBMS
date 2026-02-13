@@ -1195,6 +1195,7 @@ export class WorkflowExecutionService {
               agentCode: true,
               version: true,
               roleType: true,
+              templateSource: true,
             },
           })
         : Promise.resolve([]),
@@ -1209,6 +1210,7 @@ export class WorkflowExecutionService {
               id: true,
               setCode: true,
               version: true,
+              templateSource: true,
             },
           })
         : Promise.resolve([]),
