@@ -17,6 +17,8 @@ import {
 } from '@packages/types';
 import { PrismaService } from '../../prisma';
 import { NodeExecutorRegistry } from './engine/node-executor.registry';
+import { DebateTraceService } from '../debate-trace/debate-trace.service';
+import type { DebateReplayQueryDto } from '@packages/types';
 
 type WorkflowFailureCode =
   | 'EXECUTION_TIMEOUT'
@@ -50,6 +52,7 @@ export class WorkflowExecutionService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly nodeExecutorRegistry: NodeExecutorRegistry,
+    private readonly debateTraceService: DebateTraceService,
   ) {}
 
   async trigger(
@@ -593,6 +596,23 @@ export class WorkflowExecutionService {
       pageSize,
       totalPages: Math.ceil(total / pageSize),
     };
+  }
+
+  async debateTraces(ownerUserId: string, id: string, query: DebateReplayQueryDto) {
+    await this.ensureExecutionReadable(ownerUserId, id);
+    return this.debateTraceService.findByExecution({
+      workflowExecutionId: id,
+      roundNumber: query.roundNumber,
+      participantCode: query.participantCode,
+      participantRole: query.participantRole,
+      isJudgement: query.isJudgement,
+      keyword: query.keyword,
+    });
+  }
+
+  async debateTimeline(ownerUserId: string, id: string) {
+    await this.ensureExecutionReadable(ownerUserId, id);
+    return this.debateTraceService.getDebateTimeline(id);
   }
 
   async rerun(ownerUserId: string, id: string) {

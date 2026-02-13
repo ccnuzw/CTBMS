@@ -17,6 +17,7 @@ import {
   CreateParameterItemRequest,
   CreateParameterSetRequest,
   ParameterSetQueryRequest,
+  PublishParameterSetRequest,
   ResolveParameterSetRequest,
   UpdateParameterItemRequest,
   UpdateParameterSetRequest,
@@ -75,6 +76,19 @@ export class ParameterCenterController {
       throw new UnauthorizedException('User not authenticated');
     }
     return this.parameterCenterService.removeSet(userId, id);
+  }
+
+  @Post(':id/publish')
+  publishSet(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: PublishParameterSetRequest,
+    @Request() req: AuthRequest,
+  ) {
+    const userId = req.user?.id;
+    if (!userId) {
+      throw new UnauthorizedException('User not authenticated');
+    }
+    return this.parameterCenterService.publishSet(userId, id, dto);
   }
 
   @Post(':id/items')

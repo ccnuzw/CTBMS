@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import type { ColumnsType } from 'antd/es/table';
 import dayjs from 'dayjs';
 import {
@@ -27,6 +27,7 @@ import {
     UpdateDecisionRulePackDto,
     WorkflowTemplateSource,
 } from '@packages/types';
+import { useSearchParams } from 'react-router-dom';
 import { getErrorMessage } from '../../../api/client';
 import {
     useCreateDecisionRule,
@@ -35,6 +36,7 @@ import {
     useDecisionRulePacks,
     useDeleteDecisionRule,
     useDeleteDecisionRulePack,
+    usePublishDecisionRulePack,
     useUpdateDecisionRule,
     useUpdateDecisionRulePack,
 } from '../api';
@@ -115,22 +117,45 @@ const displayExpectedValue = (value: unknown): string => {
     }
 };
 
+const isPublished = (version?: number): boolean =>
+    Number.isInteger(version) && Number(version) >= 2;
+
+const parsePositiveInt = (value: string | null, fallback: number): number => {
+    if (!value) {
+        return fallback;
+    }
+    const parsed = Number(value);
+    if (!Number.isFinite(parsed) || parsed <= 0) {
+        return fallback;
+    }
+    return Math.floor(parsed);
+};
+
 export const DecisionRulePackPage: React.FC = () => {
     const { message } = App.useApp();
     const [createForm] = Form.useForm<CreateDecisionRulePackDto>();
     const [updatePackForm] = Form.useForm<UpdateDecisionRulePackDto>();
     const [ruleForm] = Form.useForm<RuleFormValues>();
 
-    const [keywordInput, setKeywordInput] = useState('');
-    const [keyword, setKeyword] = useState<string | undefined>();
-    const [isActiveFilter, setIsActiveFilter] = useState<boolean | undefined>(undefined);
-    const [page, setPage] = useState(1);
-    const [pageSize, setPageSize] = useState(20);
+    const [searchParams, setSearchParams] = useSearchParams();
+    const [keywordInput, setKeywordInput] = useState(searchParams.get('keyword')?.trim() || '');
+    const [keyword, setKeyword] = useState<string | undefined>(searchParams.get('keyword')?.trim() || undefined);
+    const [isActiveFilter, setIsActiveFilter] = useState<boolean | undefined>(
+        searchParams.get('isActive') === 'true'
+            ? true
+            : searchParams.get('isActive') === 'false'
+              ? false
+              : undefined,
+    );
+    const [page, setPage] = useState(parsePositiveInt(searchParams.get('page'), 1));
+    const [pageSize, setPageSize] = useState(parsePositiveInt(searchParams.get('pageSize'), 20));
 
     const [createVisible, setCreateVisible] = useState(false);
     const [selectedPackId, setSelectedPackId] = useState<string | null>(null);
+    const [publishingPackId, setPublishingPackId] = useState<string | null>(null);
     const [ruleVisible, setRuleVisible] = useState(false);
     const [editingRule, setEditingRule] = useState<DecisionRuleDto | null>(null);
+    const packTableContainerRef = useRef<HTMLDivElement | null>(null);
 
     const { data: packPage, isLoading: isPackLoading } = useDecisionRulePacks({
         keyword,
@@ -149,6 +174,7 @@ export const DecisionRulePackPage: React.FC = () => {
     const createRuleMutation = useCreateDecisionRule();
     const updateRuleMutation = useUpdateDecisionRule();
     const removeRuleMutation = useDeleteDecisionRule();
+    const publishPackMutation = usePublishDecisionRulePack();
 
     useEffect(() => {
         if (!selectedPack) {
@@ -161,6 +187,72 @@ export const DecisionRulePackPage: React.FC = () => {
             isActive: selectedPack.isActive,
         });
     }, [selectedPack, updatePackForm]);
+
+    useEffect(() => {
+        const next = new URLSearchParams();
+        if (keyword) {
+            next.set('keyword', keyword);
+        }
+        if (isActiveFilter !== undefined) {
+            next.set('isActive', String(isActiveFilter));
+        }
+        next.set('page', String(page));
+        next.set('pageSize', String(pageSize));
+        setSearchParams(next, { replace: true });
+    }, [isActiveFilter, keyword, page, pageSize, setSearchParams]);
+
+    const normalizedKeyword = keyword?.trim().toLowerCase() || '';
+    const highlightedPackId = useMemo(() => {
+        if (!normalizedKeyword) {
+            return null;
+        }
+        const rows = packPage?.data || [];
+        const exactMatch = rows.find(
+            (item) => item.rulePackCode.trim().toLowerCase() === normalizedKeyword,
+        );
+        if (exactMatch) {
+            return exactMatch.id;
+        }
+        const fuzzyMatch = rows.find((item) => {
+            const code = item.rulePackCode.trim().toLowerCase();
+            const name = item.name.trim().toLowerCase();
+            return code.includes(normalizedKeyword) || name.includes(normalizedKeyword);
+        });
+        return fuzzyMatch?.id || null;
+    }, [normalizedKeyword, packPage?.data]);
+
+    useEffect(() => {
+        if (!highlightedPackId || !packTableContainerRef.current) {
+            return;
+        }
+        const timer = window.setTimeout(() => {
+            const row = packTableContainerRef.current?.querySelector<HTMLElement>(
+                `tr[data-row-key="${highlightedPackId}"]`,
+            );
+            row?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+        }, 0);
+        return () => window.clearTimeout(timer);
+    }, [highlightedPackId]);
+
+    const handlePublishPack = async (pack: DecisionRulePackDto) => {
+        if (!pack.isActive) {
+            message.warning('规则包未启用，无法发布');
+            return;
+        }
+        if (isPublished(pack.version)) {
+            message.info('规则包已发布');
+            return;
+        }
+        try {
+            setPublishingPackId(pack.id);
+            await publishPackMutation.mutateAsync({ packId: pack.id });
+            message.success(`规则包 ${pack.rulePackCode} 发布成功`);
+        } catch (error) {
+            message.error(getErrorMessage(error));
+        } finally {
+            setPublishingPackId(null);
+        }
+    };
 
     const packColumns = useMemo<ColumnsType<DecisionRulePackDto>>(
         () => [
@@ -196,6 +288,14 @@ export const DecisionRulePackPage: React.FC = () => {
                 width: 90,
             },
             {
+                title: '版本',
+                dataIndex: 'version',
+                width: 90,
+                render: (value: number) => (
+                    <Tag color={isPublished(value) ? 'green' : 'orange'}>{value}</Tag>
+                ),
+            },
+            {
                 title: '更新时间',
                 dataIndex: 'updatedAt',
                 width: 180,
@@ -205,12 +305,27 @@ export const DecisionRulePackPage: React.FC = () => {
             {
                 title: '操作',
                 key: 'actions',
-                width: 160,
+                width: 240,
                 render: (_, record) => (
                     <Space size={4}>
                         <Button type="link" onClick={() => setSelectedPackId(record.id)}>
                             查看详情
                         </Button>
+                        <Popconfirm
+                            title="确认发布该规则包？"
+                            onConfirm={() => handlePublishPack(record)}
+                            disabled={!record.isActive || isPublished(record.version)}
+                        >
+                            <Button
+                                type="link"
+                                disabled={!record.isActive || isPublished(record.version)}
+                                loading={
+                                    publishPackMutation.isPending && publishingPackId === record.id
+                                }
+                            >
+                                {isPublished(record.version) ? '已发布' : '发布'}
+                            </Button>
+                        </Popconfirm>
                         <Popconfirm
                             title="确认停用该规则包？"
                             onConfirm={() => handleRemovePack(record.id)}
@@ -224,7 +339,7 @@ export const DecisionRulePackPage: React.FC = () => {
                 ),
             },
         ],
-        [],
+        [publishPackMutation.isPending, publishingPackId, selectedPackId],
     );
 
     const ruleColumns = useMemo<ColumnsType<DecisionRuleDto>>(
@@ -498,23 +613,34 @@ export const DecisionRulePackPage: React.FC = () => {
                     </Button>
                 </Space>
 
-                <Table
-                    rowKey="id"
-                    loading={isPackLoading}
-                    columns={packColumns}
-                    dataSource={packPage?.data || []}
-                    pagination={{
-                        current: packPage?.page || page,
-                        pageSize: packPage?.pageSize || pageSize,
-                        total: packPage?.total || 0,
-                        showSizeChanger: true,
-                        onChange: (nextPage, nextPageSize) => {
-                            setPage(nextPage);
-                            setPageSize(nextPageSize);
-                        },
-                    }}
-                    scroll={{ x: 1200 }}
-                />
+                <div ref={packTableContainerRef}>
+                    <Table
+                        rowKey="id"
+                        loading={isPackLoading}
+                        columns={packColumns}
+                        dataSource={packPage?.data || []}
+                        onRow={(record) =>
+                            record.id === highlightedPackId
+                                ? {
+                                      style: {
+                                          backgroundColor: '#fffbe6',
+                                      },
+                                  }
+                                : {}
+                        }
+                        pagination={{
+                            current: packPage?.page || page,
+                            pageSize: packPage?.pageSize || pageSize,
+                            total: packPage?.total || 0,
+                            showSizeChanger: true,
+                            onChange: (nextPage, nextPageSize) => {
+                                setPage(nextPage);
+                                setPageSize(nextPageSize);
+                            },
+                        }}
+                        scroll={{ x: 1400 }}
+                    />
+                </div>
             </Space>
 
             <Drawer
@@ -601,6 +727,15 @@ export const DecisionRulePackPage: React.FC = () => {
             >
                 <Space direction="vertical" style={{ width: '100%' }} size={16}>
                     <Form form={updatePackForm} layout="vertical">
+                        <Space style={{ marginBottom: 8 }} wrap>
+                            <Tag color={selectedPack?.isActive ? 'green' : 'red'}>
+                                {selectedPack?.isActive ? 'ACTIVE' : 'INACTIVE'}
+                            </Tag>
+                            <Tag color={isPublished(selectedPack?.version) ? 'green' : 'orange'}>
+                                {isPublished(selectedPack?.version) ? '已发布' : '未发布'}
+                            </Tag>
+                            <Text type="secondary">当前版本: {selectedPack?.version ?? '-'}</Text>
+                        </Space>
                         <Space align="start" style={{ width: '100%' }}>
                             <Form.Item
                                 label="规则包名称"

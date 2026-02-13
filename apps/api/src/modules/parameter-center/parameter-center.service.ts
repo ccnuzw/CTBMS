@@ -5,6 +5,7 @@ import {
   CreateParameterSetDto,
   ParameterScopeLevel,
   ParameterSetQueryDto,
+  PublishParameterSetDto,
   ResolveParameterSetDto,
   UpdateParameterItemDto,
   UpdateParameterSetDto,
@@ -105,6 +106,17 @@ export class ParameterCenterService {
     return this.prisma.parameterSet.update({
       where: { id },
       data: { isActive: false },
+    });
+  }
+
+  async publishSet(ownerUserId: string, id: string, _dto: PublishParameterSetDto) {
+    await this.ensureEditableSet(ownerUserId, id);
+    return this.prisma.parameterSet.update({
+      where: { id },
+      data: {
+        version: { increment: 1 },
+        isActive: true,
+      },
     });
   }
 

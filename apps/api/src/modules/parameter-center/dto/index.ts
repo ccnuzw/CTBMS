@@ -4,3 +4,4 @@ export * from './parameter-set-query.dto';
 export * from './create-parameter-item.dto';
 export * from './update-parameter-item.dto';
 export * from './resolve-parameter-set.dto';
+export * from './publish-parameter-set.dto';

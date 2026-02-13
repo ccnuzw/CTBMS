@@ -11,6 +11,7 @@ import {
   Form,
   Input,
   InputNumber,
+  Modal,
   Popconfirm,
   Select,
   Space,
@@ -25,6 +26,7 @@ import {
   WorkflowMode,
   WorkflowNodeOnErrorPolicy,
   WorkflowPublishAuditDto,
+  WorkflowDsl,
   WorkflowUsageMethod,
   WorkflowValidationResult,
   WorkflowVersionDto,
@@ -41,6 +43,8 @@ import {
   useWorkflowVersions,
 } from '../api';
 import { useDecisionRulePacks } from '../../workflow-rule-center/api';
+import { useParameterSets } from '../../workflow-parameter-center/api';
+import { useAgentProfiles } from '../../workflow-agent-center/api';
 
 const { Title, Text } = Typography;
 const { TextArea } = Input;
@@ -222,6 +226,94 @@ const buildInitialDslSnapshot = (
   };
 };
 
+const isPublished = (version?: number): boolean =>
+  Number.isInteger(version) && Number(version) >= 2;
+
+const readBindingCodes = (value: unknown): string[] => {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  const deduped = new Set<string>();
+  for (const item of value) {
+    if (typeof item !== 'string') {
+      continue;
+    }
+    const normalized = item.trim();
+    if (!normalized) {
+      continue;
+    }
+    deduped.add(normalized);
+  }
+  return [...deduped];
+};
+
+const asRecord = (value: unknown): Record<string, unknown> | null => {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return null;
+  }
+  return value as Record<string, unknown>;
+};
+
+const extractRulePackCodesFromDsl = (dslSnapshot: WorkflowDsl): string[] => {
+  const ruleNodeTypes = new Set(['rule-pack-eval', 'rule-eval', 'alert-check']);
+  const deduped = new Set<string>();
+  for (const node of dslSnapshot.nodes) {
+    if (!ruleNodeTypes.has(node.type)) {
+      continue;
+    }
+    const config = asRecord(node.config);
+    const rawCode = config?.rulePackCode;
+    if (typeof rawCode !== 'string') {
+      continue;
+    }
+    const normalized = rawCode.trim();
+    if (normalized) {
+      deduped.add(normalized);
+    }
+  }
+  return [...deduped];
+};
+
+const extractAgentCodesFromDsl = (dslSnapshot: WorkflowDsl): string[] => {
+  const deduped = new Set(readBindingCodes(dslSnapshot.agentBindings));
+  const agentNodeTypes = new Set(['single-agent', 'agent-call', 'agent-group', 'judge-agent']);
+  for (const node of dslSnapshot.nodes) {
+    if (!agentNodeTypes.has(node.type)) {
+      continue;
+    }
+    const config = asRecord(node.config);
+    const rawCode = config?.agentProfileCode;
+    if (typeof rawCode !== 'string') {
+      continue;
+    }
+    const normalized = rawCode.trim();
+    if (normalized) {
+      deduped.add(normalized);
+    }
+  }
+  return [...deduped];
+};
+
+const extractParameterSetCodesFromDsl = (dslSnapshot: WorkflowDsl): string[] =>
+  readBindingCodes(dslSnapshot.paramSetBindings);
+
+interface WorkflowDependencyGroup {
+  rulePacks: string[];
+  parameterSets: string[];
+  agentProfiles: string[];
+}
+
+interface WorkflowDependencyCheckResult {
+  unpublished: WorkflowDependencyGroup;
+  unavailable: WorkflowDependencyGroup;
+}
+
+const hasDependencyIssues = (group: WorkflowDependencyGroup): boolean =>
+  group.rulePacks.length > 0 || group.parameterSets.length > 0 || group.agentProfiles.length > 0;
+
+const countDependencyIssues = (group: WorkflowDependencyGroup): number =>
+  group.rulePacks.length + group.parameterSets.length + group.agentProfiles.length;
+
 export const WorkflowDefinitionPage: React.FC = () => {
   const { message } = App.useApp();
   const [form] = Form.useForm<CreateWorkflowDefinitionFormValues>();
@@ -282,25 +374,172 @@ export const WorkflowDefinitionPage: React.FC = () => {
       pageSize: auditPageSize,
     },
   );
-  const { data: activeRulePacks, isLoading: isRulePackLoading } = useDecisionRulePacks({
+  const { data: rulePackCatalog, isLoading: isRulePackLoading } = useDecisionRulePacks({
     includePublic: true,
-    isActive: true,
     page: 1,
-    pageSize: 100,
+    pageSize: 500,
+  });
+  const { data: parameterSetCatalog, isLoading: isParameterSetLoading } = useParameterSets({
+    includePublic: true,
+    page: 1,
+    pageSize: 500,
+  });
+  const { data: agentProfileCatalog, isLoading: isAgentProfileLoading } = useAgentProfiles({
+    includePublic: true,
+    page: 1,
+    pageSize: 500,
   });
   const createMutation = useCreateWorkflowDefinition();
   const createVersionMutation = useCreateWorkflowVersion();
   const publishMutation = usePublishWorkflowVersion();
   const triggerExecutionMutation = useTriggerWorkflowExecution();
   const validateDslMutation = useValidateWorkflowDsl();
+
   const rulePackOptions = useMemo(
     () =>
-      (activeRulePacks?.data || []).map((pack) => ({
+      (rulePackCatalog?.data || [])
+        .filter((pack) => pack.isActive)
+        .map((pack) => ({
         label: `${pack.name} (${pack.rulePackCode})`,
         value: pack.rulePackCode,
       })),
-    [activeRulePacks?.data],
+    [rulePackCatalog?.data],
   );
+
+  const dependencyCatalogLoading =
+    isRulePackLoading || isParameterSetLoading || isAgentProfileLoading;
+
+  const rulePackCodeMap = useMemo(
+    () => new Map((rulePackCatalog?.data || []).map((item) => [item.rulePackCode, item])),
+    [rulePackCatalog?.data],
+  );
+  const parameterSetCodeMap = useMemo(
+    () => new Map((parameterSetCatalog?.data || []).map((item) => [item.setCode, item])),
+    [parameterSetCatalog?.data],
+  );
+  const agentProfileCodeMap = useMemo(
+    () => new Map((agentProfileCatalog?.data || []).map((item) => [item.agentCode, item])),
+    [agentProfileCatalog?.data],
+  );
+
+  const checkPublishDependencies = (dslSnapshot: WorkflowDsl): WorkflowDependencyCheckResult => {
+    const rulePackCodes = extractRulePackCodesFromDsl(dslSnapshot);
+    const parameterSetCodes = extractParameterSetCodesFromDsl(dslSnapshot);
+    const agentCodes = extractAgentCodesFromDsl(dslSnapshot);
+
+    const unpublished: WorkflowDependencyGroup = {
+      rulePacks: [],
+      parameterSets: [],
+      agentProfiles: [],
+    };
+    const unavailable: WorkflowDependencyGroup = {
+      rulePacks: [],
+      parameterSets: [],
+      agentProfiles: [],
+    };
+
+    for (const code of rulePackCodes) {
+      const item = rulePackCodeMap.get(code);
+      if (!item || !item.isActive) {
+        unavailable.rulePacks.push(code);
+        continue;
+      }
+      if (!isPublished(item.version)) {
+        unpublished.rulePacks.push(code);
+      }
+    }
+
+    for (const code of parameterSetCodes) {
+      const item = parameterSetCodeMap.get(code);
+      if (!item || !item.isActive) {
+        unavailable.parameterSets.push(code);
+        continue;
+      }
+      if (!isPublished(item.version)) {
+        unpublished.parameterSets.push(code);
+      }
+    }
+
+    for (const code of agentCodes) {
+      const item = agentProfileCodeMap.get(code);
+      if (!item || !item.isActive) {
+        unavailable.agentProfiles.push(code);
+        continue;
+      }
+      if (!isPublished(item.version)) {
+        unpublished.agentProfiles.push(code);
+      }
+    }
+
+    return { unpublished, unavailable };
+  };
+
+  const renderDependencySection = (title: string, group: WorkflowDependencyGroup) => {
+    if (!hasDependencyIssues(group)) {
+      return null;
+    }
+    const buildKeywordLink = (path: string, code: string): string =>
+      `${path}?keyword=${encodeURIComponent(code)}&page=1&pageSize=20`;
+
+    const renderCodeTags = (codes: string[], path: string, label: string) => {
+      if (codes.length === 0) {
+        return null;
+      }
+      return (
+        <Space size={[4, 4]} wrap>
+          <Text type="secondary">{label}:</Text>
+          {codes.map((code) => (
+            <Tag key={`${path}-${code}`} color="processing">
+              <a href={buildKeywordLink(path, code)} target="_blank" rel="noreferrer">
+                {code}
+              </a>
+            </Tag>
+          ))}
+        </Space>
+      );
+    };
+
+    return (
+      <Space direction="vertical" size={6}>
+        <Text strong>{title}</Text>
+        {renderCodeTags(group.rulePacks, '/workflow/rules', '规则包')}
+        {renderCodeTags(group.parameterSets, '/workflow/parameters', '参数包')}
+        {renderCodeTags(group.agentProfiles, '/workflow/agents', 'Agent')}
+      </Space>
+    );
+  };
+
+  const renderDependencyQuickActions = (result: WorkflowDependencyCheckResult) => {
+    const needRuleCenter =
+      result.unpublished.rulePacks.length > 0 || result.unavailable.rulePacks.length > 0;
+    const needParameterCenter =
+      result.unpublished.parameterSets.length > 0 || result.unavailable.parameterSets.length > 0;
+    const needAgentCenter =
+      result.unpublished.agentProfiles.length > 0 || result.unavailable.agentProfiles.length > 0;
+    if (!needRuleCenter && !needParameterCenter && !needAgentCenter) {
+      return null;
+    }
+    return (
+      <Space wrap size={8}>
+        {needRuleCenter ? (
+          <Button size="small" href="/workflow/rules" target="_blank" rel="noreferrer">
+            前往规则中心
+          </Button>
+        ) : null}
+        {needParameterCenter ? (
+          <Button size="small" href="/workflow/parameters" target="_blank" rel="noreferrer">
+            前往参数中心
+          </Button>
+        ) : null}
+        {needAgentCenter ? (
+          <Button size="small" href="/workflow/agents" target="_blank" rel="noreferrer">
+            前往 Agent 中心
+          </Button>
+        ) : null}
+      </Space>
+    );
+  };
+
   useEffect(() => {
     setAuditPage(1);
     setAuditPageSize(10);
@@ -408,13 +647,47 @@ export const WorkflowDefinitionPage: React.FC = () => {
         render: (value?: Date | null) => (value ? dayjs(value).format('YYYY-MM-DD HH:mm:ss') : '-'),
       },
       {
+        title: '依赖状态',
+        key: 'dependencyStatus',
+        width: 180,
+        render: (_: unknown, record: WorkflowVersionDto) => {
+          if (record.status !== 'DRAFT') {
+            return <Tag>已冻结</Tag>;
+          }
+          if (dependencyCatalogLoading) {
+            return <Tag color="processing">检查中</Tag>;
+          }
+          const dependencyResult = checkPublishDependencies(record.dslSnapshot);
+          const unpublishedCount = countDependencyIssues(dependencyResult.unpublished);
+          const unavailableCount = countDependencyIssues(dependencyResult.unavailable);
+          if (unpublishedCount === 0 && unavailableCount === 0) {
+            return <Tag color="green">可发布</Tag>;
+          }
+          return (
+            <Space size={4} wrap>
+              {unpublishedCount > 0 ? <Tag color="orange">待发布 {unpublishedCount}</Tag> : null}
+              {unavailableCount > 0 ? <Tag color="red">不可用 {unavailableCount}</Tag> : null}
+            </Space>
+          );
+        },
+      },
+      {
         title: '操作',
         key: 'actions',
         width: 140,
         render: (_: unknown, record: WorkflowVersionDto) => {
           const isPublishing = publishMutation.isPending && publishingVersionId === record.id;
           const isRunning = triggerExecutionMutation.isPending && runningVersionId === record.id;
-          const canPublish = record.status === 'DRAFT' && Boolean(selectedDefinition?.id);
+          const canPublishBase = record.status === 'DRAFT' && Boolean(selectedDefinition?.id);
+          const dependencyResult = dependencyCatalogLoading
+            ? null
+            : checkPublishDependencies(record.dslSnapshot);
+          const hasBlockingDependencyIssues = Boolean(
+            dependencyResult &&
+              (hasDependencyIssues(dependencyResult.unpublished) ||
+                hasDependencyIssues(dependencyResult.unavailable)),
+          );
+          const canPublish = canPublishBase && !hasBlockingDependencyIssues;
           const canRun = record.status === 'PUBLISHED' && Boolean(selectedDefinition?.id);
           return (
             <Space size={4}>
@@ -442,8 +715,12 @@ export const WorkflowDefinitionPage: React.FC = () => {
       },
     ],
     [
+      dependencyCatalogLoading,
       publishMutation.isPending,
       publishingVersionId,
+      rulePackCodeMap,
+      parameterSetCodeMap,
+      agentProfileCodeMap,
       selectedDefinition?.id,
       triggerExecutionMutation.isPending,
       runningVersionId,
@@ -552,6 +829,38 @@ export const WorkflowDefinitionPage: React.FC = () => {
     if (!selectedDefinition?.id) {
       return;
     }
+    if (dependencyCatalogLoading) {
+      message.warning('依赖资源加载中，请稍后再试');
+      return;
+    }
+    const dependencyResult = checkPublishDependencies(version.dslSnapshot);
+    if (
+      hasDependencyIssues(dependencyResult.unpublished) ||
+      hasDependencyIssues(dependencyResult.unavailable)
+    ) {
+      Modal.warning({
+        title: '发布前检查未通过',
+        width: 720,
+        okText: '我知道了',
+        content: (
+          <Space direction="vertical" size={12}>
+            <Text type="secondary">
+              当前版本引用了未发布或不可用依赖，请先在对应中心完成发布/启用后再发布工作流。
+            </Text>
+            {renderDependencySection(
+              '未发布依赖（需要 version >= 2）',
+              dependencyResult.unpublished,
+            )}
+            {renderDependencySection(
+              '不可用依赖（不存在、未启用或无权限）',
+              dependencyResult.unavailable,
+            )}
+            {renderDependencyQuickActions(dependencyResult)}
+          </Space>
+        ),
+      });
+      return;
+    }
     try {
       setPublishingVersionId(version.id);
       await publishMutation.mutateAsync({
@@ -631,6 +940,23 @@ export const WorkflowDefinitionPage: React.FC = () => {
       setRunningVersionId(null);
     }
   };
+
+  const latestDraftVersion = useMemo(
+    () => (versions || []).find((item) => item.status === 'DRAFT'),
+    [versions],
+  );
+  const latestDraftDependencyResult =
+    latestDraftVersion && !dependencyCatalogLoading
+      ? checkPublishDependencies(latestDraftVersion.dslSnapshot)
+      : null;
+  const latestDraftUnpublishedCount = latestDraftDependencyResult
+    ? countDependencyIssues(latestDraftDependencyResult.unpublished)
+    : 0;
+  const latestDraftUnavailableCount = latestDraftDependencyResult
+    ? countDependencyIssues(latestDraftDependencyResult.unavailable)
+    : 0;
+  const latestDraftHasBlockingIssues =
+    latestDraftUnpublishedCount > 0 || latestDraftUnavailableCount > 0;
 
   return (
     <Card>
@@ -910,6 +1236,55 @@ export const WorkflowDefinitionPage: React.FC = () => {
                     .slice(0, 5)
                     .map((issue) => `${issue.code}: ${issue.message}`)
                     .join('；')
+            }
+          />
+        ) : null}
+        {latestDraftVersion ? (
+          <Alert
+            style={{ marginBottom: 12 }}
+            showIcon
+            type={
+              dependencyCatalogLoading
+                ? 'info'
+                : latestDraftHasBlockingIssues
+                  ? 'warning'
+                  : 'success'
+            }
+            message={
+              dependencyCatalogLoading
+                ? `草稿版本 ${latestDraftVersion.versionCode} 依赖检查中`
+                : latestDraftHasBlockingIssues
+                  ? `草稿版本 ${latestDraftVersion.versionCode} 存在依赖阻塞`
+                  : `草稿版本 ${latestDraftVersion.versionCode} 依赖已就绪`
+            }
+            description={
+              dependencyCatalogLoading ? (
+                '正在加载规则包、参数包与 Agent 目录。'
+              ) : latestDraftHasBlockingIssues ? (
+                <Space direction="vertical" size={8}>
+                  <Text type="secondary">
+                    待发布依赖 {latestDraftUnpublishedCount} 项，不可用依赖 {latestDraftUnavailableCount}{' '}
+                    项。
+                  </Text>
+                  {latestDraftDependencyResult
+                    ? renderDependencySection(
+                        '未发布依赖（需要 version >= 2）',
+                        latestDraftDependencyResult.unpublished,
+                      )
+                    : null}
+                  {latestDraftDependencyResult
+                    ? renderDependencySection(
+                        '不可用依赖（不存在、未启用或无权限）',
+                        latestDraftDependencyResult.unavailable,
+                      )
+                    : null}
+                  {latestDraftDependencyResult
+                    ? renderDependencyQuickActions(latestDraftDependencyResult)
+                    : null}
+                </Space>
+              ) : (
+                '该草稿版本可直接发起发布。'
+              )
             }
           />
         ) : null}

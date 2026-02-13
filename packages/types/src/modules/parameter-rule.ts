@@ -101,6 +101,10 @@ export const ParameterSetQuerySchema = z.object({
   pageSize: z.coerce.number().int().min(1).max(200).default(20),
 });
 
+export const PublishParameterSetSchema = z.object({
+  comment: z.string().max(500).optional(),
+});
+
 export const ParameterSetPageSchema = z.object({
   data: z.array(ParameterSetSchema),
   total: z.number().int(),
@@ -235,6 +239,7 @@ export type CreateParameterItemDto = z.infer<typeof CreateParameterItemSchema>;
 export type UpdateParameterItemDto = z.infer<typeof UpdateParameterItemSchema>;
 export type ParameterSetQueryDto = z.infer<typeof ParameterSetQuerySchema>;
 export type ParameterSetPageDto = z.infer<typeof ParameterSetPageSchema>;
+export type PublishParameterSetDto = z.infer<typeof PublishParameterSetSchema>;
 export type ResolveParameterSetDto = z.infer<typeof ResolveParameterSetSchema>;
 export type ResolveParameterSetResultDto = z.infer<typeof ResolveParameterSetResultSchema>;
 export type DataConnectorType = z.infer<typeof DataConnectorTypeEnum>;

@@ -203,7 +203,17 @@ export const DebateRoundTraceQuerySchema = z.object({
   workflowExecutionId: z.string().uuid(),
   roundNumber: z.coerce.number().int().min(1).optional(),
   participantCode: z.string().max(120).optional(),
+  participantRole: z.string().max(120).optional(),
   isJudgement: z.coerce.boolean().optional(),
+  keyword: z.string().max(120).optional(),
+});
+
+export const DebateReplayQuerySchema = z.object({
+  roundNumber: z.coerce.number().int().min(1).optional(),
+  participantCode: z.string().max(120).optional(),
+  participantRole: z.string().max(120).optional(),
+  isJudgement: z.coerce.boolean().optional(),
+  keyword: z.string().max(120).optional(),
 });
 
 export const DebateTimelineEntrySchema = z.object({
@@ -229,3 +239,4 @@ export type CreateDebateRoundTraceBatchDto = z.infer<typeof CreateDebateRoundTra
 export type DebateRoundTraceQueryDto = z.infer<typeof DebateRoundTraceQuerySchema>;
 export type DebateTimelineEntryDto = z.infer<typeof DebateTimelineEntrySchema>;
 export type DebateTimelineDto = z.infer<typeof DebateTimelineSchema>;
+export type DebateReplayQueryDto = z.infer<typeof DebateReplayQuerySchema>;

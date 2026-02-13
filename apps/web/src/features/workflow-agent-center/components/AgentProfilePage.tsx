@@ -73,6 +73,7 @@ export const AgentProfilePage: React.FC = () => {
     retryPolicyText?: string;
   }>();
   const [searchParams, setSearchParams] = useSearchParams();
+  const [keywordInput, setKeywordInput] = useState(searchParams.get('keyword')?.trim() || '');
   const [keyword, setKeyword] = useState<string | undefined>(
     searchParams.get('keyword')?.trim() || undefined,
   );
@@ -89,6 +90,7 @@ export const AgentProfilePage: React.FC = () => {
   const [selectedAgent, setSelectedAgent] = useState<AgentProfileDto | null>(null);
   const [page, setPage] = useState(parsePositiveInt(searchParams.get('page'), 1));
   const [pageSize, setPageSize] = useState(parsePositiveInt(searchParams.get('pageSize'), 20));
+  const agentTableContainerRef = React.useRef<HTMLDivElement | null>(null);
 
   const { data, isLoading } = useAgentProfiles({
     includePublic: true,
@@ -97,6 +99,26 @@ export const AgentProfilePage: React.FC = () => {
     page,
     pageSize,
   });
+
+  const normalizedKeyword = keyword?.trim().toLowerCase() || '';
+  const highlightedAgentId = useMemo(() => {
+    if (!normalizedKeyword) {
+      return null;
+    }
+    const rows = data?.data || [];
+    const exactMatch = rows.find(
+      (item) => item.agentCode.trim().toLowerCase() === normalizedKeyword,
+    );
+    if (exactMatch) {
+      return exactMatch.id;
+    }
+    const fuzzyMatch = rows.find((item) => {
+      const code = item.agentCode.trim().toLowerCase();
+      const name = item.agentName.trim().toLowerCase();
+      return code.includes(normalizedKeyword) || name.includes(normalizedKeyword);
+    });
+    return fuzzyMatch?.id || null;
+  }, [data?.data, normalizedKeyword]);
 
   const createMutation = useCreateAgentProfile();
   const publishMutation = usePublishAgentProfile();
@@ -115,6 +137,19 @@ export const AgentProfilePage: React.FC = () => {
     next.set('pageSize', String(pageSize));
     setSearchParams(next, { replace: true });
   }, [isActiveFilter, keyword, page, pageSize, setSearchParams]);
+
+  React.useEffect(() => {
+    if (!highlightedAgentId || !agentTableContainerRef.current) {
+      return;
+    }
+    const timer = window.setTimeout(() => {
+      const row = agentTableContainerRef.current?.querySelector<HTMLElement>(
+        `tr[data-row-key="${highlightedAgentId}"]`,
+      );
+      row?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [highlightedAgentId]);
 
   const columns = useMemo<ColumnsType<AgentProfileDto>>(
     () => [
@@ -259,8 +294,19 @@ export const AgentProfilePage: React.FC = () => {
             <Input.Search
               allowClear
               placeholder="按编码/名称搜索"
+              value={keywordInput}
+              onChange={(event) => {
+                const nextValue = event.target.value;
+                setKeywordInput(nextValue);
+                if (!nextValue.trim()) {
+                  setKeyword(undefined);
+                  setPage(1);
+                }
+              }}
               onSearch={(value) => {
-                setKeyword(value?.trim() || undefined);
+                const normalized = value?.trim() || '';
+                setKeywordInput(normalized);
+                setKeyword(normalized || undefined);
                 setPage(1);
               }}
               style={{ width: 260 }}
@@ -285,23 +331,34 @@ export const AgentProfilePage: React.FC = () => {
           </Space>
         </Space>
 
-        <Table<AgentProfileDto>
-          rowKey="id"
-          loading={isLoading}
-          dataSource={data?.data ?? []}
-          columns={columns}
-          scroll={{ x: 1300 }}
-          pagination={{
-            current: data?.page ?? page,
-            pageSize: data?.pageSize ?? pageSize,
-            total: data?.total ?? 0,
-            showSizeChanger: true,
-            onChange: (nextPage, nextPageSize) => {
-              setPage(nextPage);
-              setPageSize(nextPageSize);
-            },
-          }}
-        />
+        <div ref={agentTableContainerRef}>
+          <Table<AgentProfileDto>
+            rowKey="id"
+            loading={isLoading}
+            dataSource={data?.data ?? []}
+            columns={columns}
+            onRow={(record) =>
+              record.id === highlightedAgentId
+                ? {
+                    style: {
+                      backgroundColor: '#fffbe6',
+                    },
+                  }
+                : {}
+            }
+            scroll={{ x: 1300 }}
+            pagination={{
+              current: data?.page ?? page,
+              pageSize: data?.pageSize ?? pageSize,
+              total: data?.total ?? 0,
+              showSizeChanger: true,
+              onChange: (nextPage, nextPageSize) => {
+                setPage(nextPage);
+                setPageSize(nextPageSize);
+              },
+            }}
+          />
+        </div>
       </Space>
 
       <Modal

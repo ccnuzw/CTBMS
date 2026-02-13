@@ -652,13 +652,13 @@ export class WorkflowDefinitionService {
         });
       }
       const invalidVersionCodes = packs
-        .filter((item) => !Number.isInteger(item.version) || item.version < 1)
+        .filter((item) => !Number.isInteger(item.version) || item.version < 2)
         .map((item) => item.rulePackCode);
       if (invalidVersionCodes.length > 0) {
         issues.push({
           code: 'WF301',
           severity: 'ERROR',
-          message: `RulePack 缺少可追溯版本: ${invalidVersionCodes.join(', ')}`,
+          message: `RulePack 尚未发布（需要 version>=2）: ${invalidVersionCodes.join(', ')}`,
         });
       }
     }
@@ -683,13 +683,13 @@ export class WorkflowDefinitionService {
         });
       }
       const invalidVersionCodes = sets
-        .filter((item) => !Number.isInteger(item.version) || item.version < 1)
+        .filter((item) => !Number.isInteger(item.version) || item.version < 2)
         .map((item) => item.setCode);
       if (invalidVersionCodes.length > 0) {
         issues.push({
           code: 'WF302',
           severity: 'ERROR',
-          message: `ParameterSet 缺少可追溯版本: ${invalidVersionCodes.join(', ')}`,
+          message: `ParameterSet 尚未发布（需要 version>=2）: ${invalidVersionCodes.join(', ')}`,
         });
       }
     }
@@ -748,13 +748,13 @@ export class WorkflowDefinitionService {
         });
       }
       const invalidVersionCodes = profiles
-        .filter((item) => !Number.isInteger(item.version) || item.version < 1)
+        .filter((item) => !Number.isInteger(item.version) || item.version < 2)
         .map((item) => item.agentCode);
       if (invalidVersionCodes.length > 0) {
         issues.push({
           code: 'WF303',
           severity: 'ERROR',
-          message: `AgentProfile 缺少可追溯版本: ${invalidVersionCodes.join(', ')}`,
+          message: `AgentProfile 尚未发布（需要 version>=2）: ${invalidVersionCodes.join(', ')}`,
         });
       }
     }

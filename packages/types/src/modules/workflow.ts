@@ -356,9 +356,9 @@ export const WorkflowValidationIssueCodeEnum = z.enum([
   'WF204', // decision-merge 上游至少 2 条入边
   'WF205', // 条件边表达式语法合法
   // ── 发布治理校验 ──
-  'WF301', // RulePack 必须可发布且版本可追溯
-  'WF302', // ParameterSet 必须可发布且版本可追溯
-  'WF303', // AgentProfile 必须 active 且版本可追溯
+  'WF301', // RulePack 必须已发布（version>=2）且可访问
+  'WF302', // ParameterSet 必须已发布（version>=2）且可访问
+  'WF303', // AgentProfile 必须 active 且已发布（version>=2）
   'WF304', // ownerUserId 与隔离校验必须通过
   'WF305', // 生产发布必须具备三类证据链配置
   'WF306', // A/B 灰度分流规则必须有效

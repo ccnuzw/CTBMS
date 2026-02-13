@@ -5,6 +5,7 @@ import {
     DecisionRulePackDetailDto,
     DecisionRulePackPageDto,
     DecisionRulePackQueryDto,
+    PublishDecisionRulePackDto,
     UpdateDecisionRuleDto,
     UpdateDecisionRulePackDto,
 } from '@packages/types';
@@ -81,6 +82,29 @@ export const useDeleteDecisionRulePack = () => {
         onSuccess: (_, packId) => {
             queryClient.invalidateQueries({ queryKey: ['decision-rule-packs'] });
             queryClient.invalidateQueries({ queryKey: ['decision-rule-pack', packId] });
+        },
+    });
+};
+
+export const usePublishDecisionRulePack = () => {
+    const queryClient = useQueryClient();
+    return useMutation({
+        mutationFn: async ({
+            packId,
+            payload,
+        }: {
+            packId: string;
+            payload?: PublishDecisionRulePackDto;
+        }) => {
+            const res = await apiClient.post<DecisionRulePackDetailDto>(
+                `${API_BASE}/${packId}/publish`,
+                payload ?? {},
+            );
+            return res.data;
+        },
+        onSuccess: (_, variables) => {
+            queryClient.invalidateQueries({ queryKey: ['decision-rule-packs'] });
+            queryClient.invalidateQueries({ queryKey: ['decision-rule-pack', variables.packId] });
         },
     });
 };

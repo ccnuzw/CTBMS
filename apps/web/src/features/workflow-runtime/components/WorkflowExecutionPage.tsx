@@ -7,6 +7,7 @@ import {
   Button,
   Card,
   Checkbox,
+  Collapse,
   DatePicker,
   Descriptions,
   Drawer,
@@ -20,6 +21,7 @@ import {
   Typography,
 } from 'antd';
 import {
+  DebateRoundTraceDto,
   NodeExecutionDto,
   WorkflowFailureCategory,
   WorkflowRiskDegradeAction,
@@ -34,6 +36,8 @@ import {
   WorkflowExecutionWithRelations,
   useRerunWorkflowExecution,
   useWorkflowExecutionTimeline,
+  useWorkflowExecutionDebateTimeline,
+  useWorkflowExecutionDebateTraces,
   useWorkflowExecutionDetail,
   useWorkflowExecutions,
 } from '../api';
@@ -628,6 +632,11 @@ export const WorkflowExecutionPage: React.FC = () => {
   const [timelineLevel, setTimelineLevel] = useState<WorkflowRuntimeEventLevel | undefined>();
   const [timelinePage, setTimelinePage] = useState(1);
   const [timelinePageSize, setTimelinePageSize] = useState(20);
+  const [debateRoundNumber, setDebateRoundNumber] = useState<number | undefined>();
+  const [debateParticipantCode, setDebateParticipantCode] = useState<string | undefined>();
+  const [debateParticipantRole, setDebateParticipantRole] = useState<string | undefined>();
+  const [debateKeyword, setDebateKeyword] = useState<string | undefined>();
+  const [debateJudgementOnly, setDebateJudgementOnly] = useState(false);
 
   const { data: definitionPage } = useWorkflowDefinitions({
     includePublic: true,
@@ -770,12 +779,29 @@ export const WorkflowExecutionPage: React.FC = () => {
       pageSize: timelinePageSize,
     },
   );
+  const { data: debateTimeline, isLoading: isDebateTimelineLoading } =
+    useWorkflowExecutionDebateTimeline(selectedExecutionId || undefined);
+  const { data: debateTraces, isLoading: isDebateTracesLoading } = useWorkflowExecutionDebateTraces(
+    selectedExecutionId || undefined,
+    {
+      roundNumber: debateRoundNumber,
+      participantCode: debateParticipantCode,
+      participantRole: debateParticipantRole,
+      keyword: debateKeyword,
+      isJudgement: debateJudgementOnly ? true : undefined,
+    },
+  );
   useEffect(() => {
     setTimelineEventTypeInput('');
     setTimelineEventType(undefined);
     setTimelineLevel(undefined);
     setTimelinePage(1);
     setTimelinePageSize(20);
+    setDebateRoundNumber(undefined);
+    setDebateParticipantCode(undefined);
+    setDebateParticipantRole(undefined);
+    setDebateKeyword(undefined);
+    setDebateJudgementOnly(false);
   }, [selectedExecutionId]);
   const riskGateSummary = useMemo(() => getRiskGateSummary(executionDetail), [executionDetail]);
   const executionOutputRiskGateSummary = useMemo(
@@ -828,6 +854,8 @@ export const WorkflowExecutionPage: React.FC = () => {
     const paramSnapshot = toObjectRecord(executionDetail?.paramSnapshot);
     return parseBindingSnapshot(paramSnapshot?._workflowBindings);
   }, [executionDetail?.paramSnapshot]);
+  const debateRounds = useMemo(() => debateTimeline?.rounds || [], [debateTimeline?.rounds]);
+  const debateTraceData = useMemo(() => debateTraces || [], [debateTraces]);
   const resolvedAgents = useMemo(
     () => (workflowBindingSnapshot?.resolvedBindings?.agents || []) as WorkflowBindingEntity[],
     [workflowBindingSnapshot?.resolvedBindings?.agents],
@@ -975,6 +1003,66 @@ export const WorkflowExecutionPage: React.FC = () => {
       },
     ],
     [],
+  );
+  const debateTraceColumns = useMemo<ColumnsType<DebateRoundTraceDto>>(
+    () => [
+      {
+        title: '轮次',
+        dataIndex: 'roundNumber',
+        width: 80,
+      },
+      {
+        title: '参与者',
+        dataIndex: 'participantCode',
+        width: 160,
+      },
+      {
+        title: '角色',
+        dataIndex: 'participantRole',
+        width: 140,
+      },
+      {
+        title: '置信度',
+        dataIndex: 'confidence',
+        width: 100,
+        render: (value?: number | null) => (typeof value === 'number' ? value.toFixed(3) : '-'),
+      },
+      {
+        title: '裁决',
+        dataIndex: 'isJudgement',
+        width: 90,
+        render: (value: boolean) => (value ? <Tag color="purple">JUDGE</Tag> : '-'),
+      },
+      {
+        title: '发言摘要',
+        dataIndex: 'statementText',
+        render: (value: string) => <Text ellipsis={{ tooltip: value }}>{value}</Text>,
+      },
+    ],
+    [],
+  );
+  const debateRoundCollapseItems = useMemo(
+    () =>
+      debateRounds.map((round) => ({
+        key: String(round.roundNumber),
+        label: `第 ${round.roundNumber} 轮 · 参与者 ${round.roundSummary.participantCount} · 裁决 ${
+          round.roundSummary.hasJudgement ? '是' : '否'
+        } · 平均置信度 ${
+          typeof round.roundSummary.avgConfidence === 'number'
+            ? round.roundSummary.avgConfidence.toFixed(3)
+            : '-'
+        }`,
+        children: (
+          <Table
+            rowKey="id"
+            columns={debateTraceColumns}
+            dataSource={round.entries}
+            pagination={false}
+            size="small"
+          />
+        ),
+      })),
+    [debateRounds, debateTraceColumns],
   );
   const timelineData = useMemo(
     () => executionTimeline?.data || executionDetail?.runtimeEvents || [],
@@ -1827,6 +1915,96 @@ export const WorkflowExecutionPage: React.FC = () => {
             dataSource={executionDetail?.nodeExecutions || []}
             pagination={false}
           />
+
+          <Card size="small" title={`Debate 回放 (${debateRounds.length} 轮)`}>
+            <Space wrap style={{ marginBottom: 12 }}>
+              <Input
+                style={{ width: 140 }}
+                placeholder="轮次"
+                value={debateRoundNumber ?? ''}
+                onChange={(event) => {
+                  const value = event.target.value.trim();
+                  const parsed = value ? Number(value) : undefined;
+                  setDebateRoundNumber(parsed && Number.isFinite(parsed) ? parsed : undefined);
+                }}
+              />
+              <Input
+                style={{ width: 200 }}
+                placeholder="参与者编码"
+                value={debateParticipantCode}
+                onChange={(event) =>
+                  setDebateParticipantCode(event.target.value.trim() || undefined)
+                }
+              />
+              <Input
+                style={{ width: 180 }}
+                placeholder="参与者角色"
+                value={debateParticipantRole}
+                onChange={(event) =>
+                  setDebateParticipantRole(event.target.value.trim() || undefined)
+                }
+              />
+              <Input
+                style={{ width: 220 }}
+                placeholder="关键字（发言/裁决）"
+                value={debateKeyword}
+                onChange={(event) => setDebateKeyword(event.target.value.trim() || undefined)}
+              />
+              <Checkbox
+                checked={debateJudgementOnly}
+                onChange={(event) => setDebateJudgementOnly(event.target.checked)}
+              >
+                仅裁决
+              </Checkbox>
+              <Button
+                onClick={() => {
+                  setDebateRoundNumber(undefined);
+                  setDebateParticipantCode(undefined);
+                  setDebateParticipantRole(undefined);
+                  setDebateKeyword(undefined);
+                  setDebateJudgementOnly(false);
+                }}
+              >
+                重置 Debate 筛选
+              </Button>
+            </Space>
+
+            <Descriptions
+              size="small"
+              bordered
+              column={3}
+              style={{ marginBottom: 12 }}
+              items={[
+                { key: 'totalRounds', label: '总轮次', children: debateTimeline?.totalRounds ?? 0 },
+                { key: 'traceRows', label: '轨迹条数', children: debateTraceData.length },
+                {
+                  key: 'loading',
+                  label: '加载状态',
+                  children:
+                    isDebateTimelineLoading || isDebateTracesLoading ? (
+                      <Tag color="processing">LOADING</Tag>
+                    ) : (
+                      <Tag color="green">READY</Tag>
+                    ),
+                },
+              ]}
+            />
+
+            <Collapse
+              items={debateRoundCollapseItems}
+              defaultActiveKey={debateRoundCollapseItems.slice(0, 1).map((item) => item.key)}
+              style={{ marginBottom: 12 }}
+            />
+
+            <Table
+              rowKey="id"
+              loading={isDebateTracesLoading}
+              columns={debateTraceColumns}
+              dataSource={debateTraceData}
+              pagination={{ pageSize: 20, showSizeChanger: true }}
+            />
+          </Card>
+
           <Card size="small" title="运行事件时间线">
             <Space wrap style={{ marginBottom: 12 }}>
               <Input.Search

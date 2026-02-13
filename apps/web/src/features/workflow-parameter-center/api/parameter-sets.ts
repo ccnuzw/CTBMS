@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   CreateParameterItemDto,
   CreateParameterSetDto,
+  PublishParameterSetDto,
   ParameterSetDetailDto,
   ParameterSetDto,
   ParameterSetPageDto,
@@ -67,6 +68,20 @@ export const useCreateParameterItem = () => {
     },
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: ['parameter-set', variables.setId] });
+    },
+  });
+};
+
+export const usePublishParameterSet = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, payload }: { id: string; payload?: PublishParameterSetDto }) => {
+      const res = await apiClient.post<ParameterSetDto>(`${API_BASE}/${id}/publish`, payload ?? {});
+      return res.data;
+    },
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: ['parameter-sets'] });
+      queryClient.invalidateQueries({ queryKey: ['parameter-set', variables.id] });
     },
   });
 };
