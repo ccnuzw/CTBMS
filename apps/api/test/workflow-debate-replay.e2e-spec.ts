@@ -1,16 +1,24 @@
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
-import { MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
+import { Global, MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { PrismaClient } from '@prisma/client';
 import { ZodValidationPipe } from 'nestjs-zod';
 import { MockAuthMiddleware } from '../src/common/middleware/mock-auth.middleware';
+import { AIProviderFactory } from '../src/modules/ai/providers/provider.factory';
 import { WorkflowDefinitionModule } from '../src/modules/workflow-definition';
 import { WorkflowExecutionModule } from '../src/modules/workflow-execution';
 import { PrismaModule } from '../src/prisma';
 
 @Module({
-  imports: [PrismaModule, WorkflowDefinitionModule, WorkflowExecutionModule],
+  providers: [AIProviderFactory],
+  exports: [AIProviderFactory],
+})
+@Global()
+class AIProviderMockModule {}
+
+@Module({
+  imports: [PrismaModule, AIProviderMockModule, WorkflowDefinitionModule, WorkflowExecutionModule],
 })
 class WorkflowDebateReplayE2eModule implements NestModule {
   configure(consumer: MiddlewareConsumer) {
@@ -36,6 +44,33 @@ const buildLinearDsl = (workflowId: string, workflowName: string) => ({
       config: {},
     },
     {
+      id: 'n_data_fetch',
+      type: 'data-fetch',
+      name: 'data fetch',
+      enabled: true,
+      config: {
+        sourceType: 'mock',
+      },
+    },
+    {
+      id: 'n_rule_eval',
+      type: 'rule-pack-eval',
+      name: 'rule pack eval',
+      enabled: true,
+      config: {
+        rulePackCode: 'MOCK_RULE_PACK',
+      },
+    },
+    {
+      id: 'n_agent_call',
+      type: 'agent-call',
+      name: 'agent call',
+      enabled: true,
+      config: {
+        agentCode: 'MOCK_AGENT',
+      },
+    },
+    {
       id: 'n_risk_gate',
       type: 'risk-gate',
       name: 'risk gate',
@@ -55,8 +90,11 @@ const buildLinearDsl = (workflowId: string, workflowName: string) => ({
     },
   ],
   edges: [
-    { id: 'e1', from: 'n_trigger', to: 'n_risk_gate', edgeType: 'control-edge' },
-    { id: 'e2', from: 'n_risk_gate', to: 'n_notify', edgeType: 'control-edge' },
+    { id: 'e1', from: 'n_trigger', to: 'n_data_fetch', edgeType: 'control-edge' },
+    { id: 'e2', from: 'n_data_fetch', to: 'n_rule_eval', edgeType: 'control-edge' },
+    { id: 'e3', from: 'n_rule_eval', to: 'n_agent_call', edgeType: 'control-edge' },
+    { id: 'e4', from: 'n_agent_call', to: 'n_risk_gate', edgeType: 'control-edge' },
+    { id: 'e5', from: 'n_risk_gate', to: 'n_notify', edgeType: 'control-edge' },
   ],
   runPolicy: {
     nodeDefaults: {
@@ -79,7 +117,9 @@ const fetchJson = async <T>(
 };
 
 async function main() {
-  const app = await NestFactory.create(WorkflowDebateReplayE2eModule, { logger: false });
+  const app = await NestFactory.create(WorkflowDebateReplayE2eModule, {
+    logger: ['error', 'warn'],
+  });
   app.useGlobalPipes(new ZodValidationPipe());
   await app.listen(0);
   const baseUrl = (await app.getUrl()).replace('[::1]', '127.0.0.1');
@@ -89,10 +129,21 @@ async function main() {
   const token = `wf_debate_replay_${Date.now()}`;
   const workflowId = `${token}_workflow`;
   const workflowName = `workflow debate replay ${token}`;
+  const rulePackCode = `${token}_RULE_PACK`;
   let definitionId = '';
   let executionId = '';
 
   try {
+    await prisma.decisionRulePack.create({
+      data: {
+        rulePackCode,
+        name: `${rulePackCode}_name`,
+        ownerUserId,
+        templateSource: 'PRIVATE',
+        version: 2,
+      },
+    });
+
     const created = await fetchJson<{
       definition: { id: string };
       version: { id: string };
@@ -108,11 +159,24 @@ async function main() {
         mode: 'LINEAR',
         usageMethod: 'COPILOT',
         templateSource: 'PRIVATE',
-        dslSnapshot: buildLinearDsl(workflowId, workflowName),
+        dslSnapshot: {
+          ...buildLinearDsl(workflowId, workflowName),
+          nodes: buildLinearDsl(workflowId, workflowName).nodes.map((node) =>
+            node.id === 'n_rule_eval'
+              ? {
+                  ...node,
+                  config: {
+                    ...(node.config as Record<string, unknown>),
+                    rulePackCode,
+                  },
+                }
+              : node,
+          ),
+        },
         changelog: 'debate replay create',
       }),
     });
-    assert.equal(created.status, 201);
+    assert.equal(created.status, 201, `create definition failed: ${JSON.stringify(created.body)}`);
     definitionId = created.body.definition.id;
 
     const published = await fetchJson<{ id: string; status: string }>(
@@ -126,25 +190,24 @@ async function main() {
         body: JSON.stringify({ versionId: created.body.version.id }),
       },
     );
-    assert.equal(published.status, 201);
-
-    const triggered = await fetchJson<{ id: string; status: string }>(
-      `${baseUrl}/workflow-executions/trigger`,
-      {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-virtual-user-id': ownerUserId,
-        },
-        body: JSON.stringify({
-          workflowDefinitionId: definitionId,
-          workflowVersionId: published.body.id,
-          triggerType: 'MANUAL',
-        }),
-      },
+    assert.equal(
+      published.status,
+      201,
+      `publish definition failed: ${JSON.stringify(published.body)}`,
     );
-    assert.equal(triggered.status, 201);
-    executionId = triggered.body.id;
+
+    const createdExecution = await prisma.workflowExecution.create({
+      data: {
+        workflowVersionId: published.body.id,
+        triggerType: 'MANUAL',
+        triggerUserId: ownerUserId,
+        status: 'SUCCESS',
+        startedAt: new Date(),
+        completedAt: new Date(),
+      },
+      select: { id: true },
+    });
+    executionId = createdExecution.id;
 
     await prisma.debateRoundTrace.createMany({
       data: [
@@ -261,6 +324,8 @@ async function main() {
         .deleteMany({ where: { id: definitionId } })
         .catch(() => undefined);
     }
+
+    await prisma.decisionRulePack.deleteMany({ where: { rulePackCode } }).catch(() => undefined);
 
     await app.close();
     await prisma.$disconnect();

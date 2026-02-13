@@ -5,3 +5,5 @@ export * from './create-parameter-item.dto';
 export * from './update-parameter-item.dto';
 export * from './resolve-parameter-set.dto';
 export * from './publish-parameter-set.dto';
+export * from './parameter-change-log-query.dto';
+export * from './batch-reset-parameter-items.dto';

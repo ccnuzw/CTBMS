@@ -34,6 +34,8 @@ import { DataConnectorModule } from './modules/data-connector';
 import { DecisionRecordModule } from './modules/decision-record';
 import { WorkflowExperimentModule } from './modules/workflow-experiment';
 import { DebateTraceModule } from './modules/debate-trace';
+import { TriggerGatewayModule } from './modules/trigger-gateway';
+import { ReportExportModule } from './modules/report-export';
 
 @Module({
   imports: [
@@ -69,6 +71,8 @@ import { DebateTraceModule } from './modules/debate-trace';
     DecisionRecordModule,
     WorkflowExperimentModule,
     DebateTraceModule,
+    TriggerGatewayModule,
+    ReportExportModule,
   ],
   controllers: [AppController],
   providers: [],

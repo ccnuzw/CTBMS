@@ -1,8 +1,10 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import {
+  BatchResetParameterItemsDto,
   CreateParameterItemDto,
   CreateParameterSetDto,
+  ParameterChangeLogQueryDto,
   ParameterScopeLevel,
   ParameterSetQueryDto,
   PublishParameterSetDto,
@@ -347,5 +349,193 @@ export class ParameterCenterService {
       return Prisma.JsonNull;
     }
     return JSON.parse(JSON.stringify(value)) as Prisma.InputJsonValue;
+  }
+
+  // ── 参数变更审计 ──
+
+  async getChangeLogs(ownerUserId: string, setId: string, query: ParameterChangeLogQueryDto) {
+    await this.findOne(ownerUserId, setId);
+
+    const where: Prisma.ParameterChangeLogWhereInput = {
+      parameterSetId: setId,
+    };
+
+    if (query.parameterItemId) {
+      where.parameterItemId = query.parameterItemId;
+    }
+    if (query.operation) {
+      where.operation = query.operation;
+    }
+    if (query.changedByUserId) {
+      where.changedByUserId = query.changedByUserId;
+    }
+    if (query.createdAtFrom || query.createdAtTo) {
+      where.createdAt = {};
+      if (query.createdAtFrom) {
+        (where.createdAt as Prisma.DateTimeFilter).gte = query.createdAtFrom;
+      }
+      if (query.createdAtTo) {
+        (where.createdAt as Prisma.DateTimeFilter).lte = query.createdAtTo;
+      }
+    }
+
+    const page = query.page ?? 1;
+    const pageSize = query.pageSize ?? 50;
+
+    const [data, total] = await Promise.all([
+      this.prisma.parameterChangeLog.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        skip: (page - 1) * pageSize,
+        take: pageSize,
+      }),
+      this.prisma.parameterChangeLog.count({ where }),
+    ]);
+
+    return {
+      data,
+      total,
+      page,
+      pageSize,
+      totalPages: Math.ceil(total / pageSize),
+    };
+  }
+
+  private async recordChangeLog(
+    parameterSetId: string,
+    changedByUserId: string,
+    operation: string,
+    extra?: {
+      parameterItemId?: string;
+      fieldPath?: string;
+      oldValue?: unknown;
+      newValue?: unknown;
+      changeReason?: string;
+    },
+  ) {
+    await this.prisma.parameterChangeLog.create({
+      data: {
+        parameterSetId,
+        parameterItemId: extra?.parameterItemId ?? null,
+        operation,
+        fieldPath: extra?.fieldPath ?? null,
+        oldValue: extra?.oldValue !== undefined
+          ? (JSON.parse(JSON.stringify(extra.oldValue)) as Prisma.InputJsonValue)
+          : undefined,
+        newValue: extra?.newValue !== undefined
+          ? (JSON.parse(JSON.stringify(extra.newValue)) as Prisma.InputJsonValue)
+          : undefined,
+        changeReason: extra?.changeReason ?? null,
+        changedByUserId,
+      },
+    });
+  }
+
+  // ── 覆盖 Diff ──
+
+  async getOverrideDiff(ownerUserId: string, setId: string) {
+    const set = await this.findOne(ownerUserId, setId);
+    const items = set.items;
+
+    const diffItems = items.map((item) => {
+      const hasDefault = item.defaultValue !== null && item.defaultValue !== undefined;
+      const hasValue = item.value !== null && item.value !== undefined;
+      const isOverridden = hasDefault && hasValue &&
+        JSON.stringify(item.value) !== JSON.stringify(item.defaultValue);
+
+      return {
+        paramCode: item.paramCode,
+        paramName: item.paramName,
+        scopeLevel: item.scopeLevel,
+        templateDefault: item.defaultValue,
+        currentValue: item.value,
+        isOverridden,
+        overrideSource: item.source ?? null,
+      };
+    });
+
+    return {
+      parameterSetId: setId,
+      items: diffItems,
+      overriddenCount: diffItems.filter((d) => d.isOverridden).length,
+      totalCount: diffItems.length,
+    };
+  }
+
+  // ── 单项重置到默认值 ──
+
+  async resetItemToDefault(ownerUserId: string, setId: string, itemId: string) {
+    await this.ensureEditableSet(ownerUserId, setId);
+    const item = await this.prisma.parameterItem.findFirst({
+      where: { id: itemId, parameterSetId: setId },
+    });
+    if (!item) {
+      throw new NotFoundException('参数项不存在');
+    }
+    if (item.defaultValue === null) {
+      throw new BadRequestException('该参数项没有默认值，无法重置');
+    }
+
+    const oldValue = item.value;
+    const updated = await this.prisma.parameterItem.update({
+      where: { id: itemId },
+      data: {
+        value: item.defaultValue,
+        changeReason: '重置到模板默认值',
+      },
+    });
+
+    await this.recordChangeLog(setId, ownerUserId, 'RESET_TO_DEFAULT', {
+      parameterItemId: itemId,
+      fieldPath: 'value',
+      oldValue,
+      newValue: item.defaultValue,
+      changeReason: '重置到模板默认值',
+    });
+
+    return updated;
+  }
+
+  // ── 批量重置 ──
+
+  async batchResetToDefault(ownerUserId: string, setId: string, dto: BatchResetParameterItemsDto) {
+    await this.ensureEditableSet(ownerUserId, setId);
+
+    const items = await this.prisma.parameterItem.findMany({
+      where: {
+        id: { in: dto.itemIds },
+        parameterSetId: setId,
+        defaultValue: { not: Prisma.JsonNull },
+      },
+    });
+
+    if (items.length === 0) {
+      throw new BadRequestException('没有可重置的参数项');
+    }
+
+    const results = await Promise.all(
+      items.map(async (item) => {
+        const oldValue = item.value;
+        const updated = await this.prisma.parameterItem.update({
+          where: { id: item.id },
+          data: {
+            value: item.defaultValue,
+            changeReason: dto.reason || '批量重置到模板默认值',
+          },
+        });
+
+        await this.recordChangeLog(setId, ownerUserId, 'BATCH_RESET', {
+          parameterItemId: item.id,
+          fieldPath: 'value',
+          oldValue,
+          newValue: item.defaultValue,
+          changeReason: dto.reason || '批量重置到模板默认值',
+        });
+
+        return updated;
+      }),
+    );
+
+    return { resetCount: results.length };
   }
 }

@@ -2365,6 +2365,8 @@ model WorkflowExperiment {
   createdAt               DateTime         @default(now())
   updatedAt               DateTime         @updatedAt
 
+  runs                    WorkflowExperimentRun[]
+
   @@index([workflowDefinitionId, status])
   @@index([status, createdAt])
   @@index([createdByUserId, createdAt])
@@ -2397,4 +2399,117 @@ model DebateRoundTrace {
   @@index([workflowExecutionId, roundNumber])
   @@index([workflowExecutionId, participantCode])
   @@index([nodeExecutionId])
+}
+
+// ─────────────── TriggerConfig (触发器配置) ───────────────
+
+model TriggerConfig {
+  id                    String    @id @default(uuid())
+  workflowDefinitionId  String
+  triggerType           String    // MANUAL | API | SCHEDULE | EVENT | ON_DEMAND
+  name                  String
+  description           String?   @db.Text
+  status                String    @default("ACTIVE") // ACTIVE | INACTIVE | ERROR
+  cronConfig            Json?
+  apiConfig             Json?
+  eventConfig           Json?
+  paramOverrides        Json?
+  lastTriggeredAt       DateTime?
+  nextFireAt            DateTime?
+  cronState             String?   // IDLE | SCHEDULED | RUNNING | PAUSED
+  createdByUserId       String
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  triggerLogs           TriggerLog[]
+
+  @@index([workflowDefinitionId, triggerType])
+  @@index([status])
+  @@index([createdByUserId])
+}
+
+// ─────────────── TriggerLog (触发日志) ───────────────
+
+model TriggerLog {
+  id                    String    @id @default(uuid())
+  triggerConfigId       String
+  workflowExecutionId   String?
+  triggerType           String
+  status                String    // SUCCESS | FAILED | SKIPPED | TIMEOUT
+  payload               Json?
+  errorMessage          String?   @db.Text
+  durationMs            Int?
+  triggeredAt           DateTime
+  createdAt             DateTime  @default(now())
+
+  triggerConfig         TriggerConfig @relation(fields: [triggerConfigId], references: [id])
+
+  @@index([triggerConfigId, triggeredAt])
+  @@index([workflowExecutionId])
+  @@index([status])
+}
+
+// ─────────────── ParameterChangeLog (参数变更审计) ───────────────
+
+model ParameterChangeLog {
+  id                String    @id @default(uuid())
+  parameterSetId    String
+  parameterItemId   String?
+  operation         String    // CREATE | UPDATE | DELETE | RESET_TO_DEFAULT | BATCH_RESET | PUBLISH
+  fieldPath         String?
+  oldValue          Json?
+  newValue          Json?
+  changeReason      String?   @db.Text
+  changedByUserId   String
+  createdAt         DateTime  @default(now())
+
+  @@index([parameterSetId, createdAt])
+  @@index([parameterItemId])
+  @@index([changedByUserId])
+}
+
+// ─────────────── ExportTask (报告导出任务) ───────────────
+
+model ExportTask {
+  id                    String    @id @default(uuid())
+  workflowExecutionId   String
+  format                String    // PDF | WORD | JSON
+  status                String    @default("PENDING") // PENDING | PROCESSING | COMPLETED | FAILED
+  sections              Json      // string[]
+  reportData            Json?
+  downloadUrl           String?
+  errorMessage          String?   @db.Text
+  title                 String?   @db.VarChar(200)
+  includeRawData        Boolean   @default(false)
+  createdByUserId       String
+  createdAt             DateTime  @default(now())
+  completedAt           DateTime?
+
+  @@index([workflowExecutionId, createdAt])
+  @@index([status])
+  @@index([createdByUserId, createdAt])
+}
+
+// ─────────────── WorkflowExperimentRun (实验运行明细) ───────────────
+
+model WorkflowExperimentRun {
+  id                    String    @id @default(uuid())
+  experimentId          String
+  workflowExecutionId   String
+  variant               String    // A | B
+  success               Boolean
+  durationMs            Int
+  nodeCount             Int?
+  failureCategory       String?   @db.VarChar(100)
+  action                String?   @db.VarChar(60)
+  confidence            Float?
+  riskLevel             String?   @db.VarChar(60)
+  metricsPayload        Json?
+  createdAt             DateTime  @default(now())
+
+  experiment            WorkflowExperiment @relation(fields: [experimentId], references: [id])
+
+  @@index([experimentId, variant, createdAt])
+  @@index([workflowExecutionId])
+  @@index([variant, success])
 }

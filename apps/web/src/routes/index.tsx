@@ -51,6 +51,8 @@ import { DecisionRulePackPage } from '../features/workflow-rule-center';
 import { AgentProfilePage } from '../features/workflow-agent-center';
 import { ParameterSetPage } from '../features/workflow-parameter-center';
 import { DataConnectorPage } from '../features/workflow-data-connector';
+import { TriggerGatewayPage } from '../features/trigger-gateway';
+import { DecisionRecordPage } from '../features/decision-record';
 
 export const router = createBrowserRouter([
   {
@@ -121,6 +123,14 @@ export const router = createBrowserRouter([
       {
         path: 'workflow/connectors',
         element: <DataConnectorPage />,
+      },
+      {
+        path: 'workflow/triggers',
+        element: <TriggerGatewayPage />,
+      },
+      {
+        path: 'workflow/decisions',
+        element: <DecisionRecordPage />,
       },
       {
         path: 'system',

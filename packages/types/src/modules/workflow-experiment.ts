@@ -129,3 +129,55 @@ export const ExperimentMetricsSnapshotSchema = z.object({
 
 export type RecordExperimentMetricsDto = z.infer<typeof RecordExperimentMetricsSchema>;
 export type ExperimentMetricsSnapshot = z.infer<typeof ExperimentMetricsSnapshotSchema>;
+
+// ── ExperimentRun (实验运行明细) ──
+
+export const ExperimentRunSchema = z.object({
+    id: z.string().uuid(),
+    experimentId: z.string().uuid(),
+    workflowExecutionId: z.string().uuid(),
+    variant: z.enum(['A', 'B']),
+    success: z.boolean(),
+    durationMs: z.number().int(),
+    nodeCount: z.number().int().nullable().optional(),
+    failureCategory: z.string().nullable().optional(),
+    action: z.string().nullable().optional(),
+    confidence: z.number().nullable().optional(),
+    riskLevel: z.string().nullable().optional(),
+    metricsPayload: z.record(z.unknown()).nullable().optional(),
+    createdAt: z.date().optional(),
+});
+
+export const ExperimentRunQuerySchema = z.object({
+    experimentId: z.string().uuid(),
+    variant: z.enum(['A', 'B']).optional(),
+    success: z.coerce.boolean().optional(),
+    page: z.coerce.number().int().min(1).default(1),
+    pageSize: z.coerce.number().int().min(1).max(100).default(20),
+});
+
+export const ExperimentRunPageSchema = z.object({
+    data: z.array(ExperimentRunSchema),
+    total: z.number().int(),
+    page: z.number().int(),
+    pageSize: z.number().int(),
+    totalPages: z.number().int(),
+});
+
+export const ExperimentEvaluationSchema = z.object({
+    experiment: WorkflowExperimentSchema,
+    metrics: ExperimentMetricsSnapshotSchema.nullable().optional(),
+    recentRuns: z.array(ExperimentRunSchema),
+    variantComparison: z.object({
+        successRateDelta: z.number(),
+        avgDurationDelta: z.number(),
+        confidenceDeltaA: z.number().nullable().optional(),
+        confidenceDeltaB: z.number().nullable().optional(),
+        recommendation: z.string(),
+    }).nullable().optional(),
+});
+
+export type ExperimentRunDto = z.infer<typeof ExperimentRunSchema>;
+export type ExperimentRunQueryDto = z.infer<typeof ExperimentRunQuerySchema>;
+export type ExperimentRunPageDto = z.infer<typeof ExperimentRunPageSchema>;
+export type ExperimentEvaluationDto = z.infer<typeof ExperimentEvaluationSchema>;

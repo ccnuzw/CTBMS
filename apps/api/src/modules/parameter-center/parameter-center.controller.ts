@@ -21,6 +21,8 @@ import {
   ResolveParameterSetRequest,
   UpdateParameterItemRequest,
   UpdateParameterSetRequest,
+  ParameterChangeLogQueryRequest,
+  BatchResetParameterItemsRequest,
 } from './dto';
 
 type AuthRequest = ExpressRequest & { user?: { id?: string } };
@@ -142,5 +144,56 @@ export class ParameterCenterController {
       throw new UnauthorizedException('User not authenticated');
     }
     return this.parameterCenterService.resolve(userId, id, dto);
+  }
+
+  @Get(':id/change-logs')
+  getChangeLogs(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Query() query: ParameterChangeLogQueryRequest,
+    @Request() req: AuthRequest,
+  ) {
+    const userId = req.user?.id;
+    if (!userId) {
+      throw new UnauthorizedException('User not authenticated');
+    }
+    return this.parameterCenterService.getChangeLogs(userId, id, query);
+  }
+
+  @Get(':id/override-diff')
+  getOverrideDiff(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Request() req: AuthRequest,
+  ) {
+    const userId = req.user?.id;
+    if (!userId) {
+      throw new UnauthorizedException('User not authenticated');
+    }
+    return this.parameterCenterService.getOverrideDiff(userId, id);
+  }
+
+  @Post(':id/items/:itemId/reset')
+  resetItemToDefault(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('itemId', ParseUUIDPipe) itemId: string,
+    @Request() req: AuthRequest,
+  ) {
+    const userId = req.user?.id;
+    if (!userId) {
+      throw new UnauthorizedException('User not authenticated');
+    }
+    return this.parameterCenterService.resetItemToDefault(userId, id, itemId);
+  }
+
+  @Post(':id/batch-reset')
+  batchResetToDefault(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: BatchResetParameterItemsRequest,
+    @Request() req: AuthRequest,
+  ) {
+    const userId = req.user?.id;
+    if (!userId) {
+      throw new UnauthorizedException('User not authenticated');
+    }
+    return this.parameterCenterService.batchResetToDefault(userId, id, dto);
   }
 }

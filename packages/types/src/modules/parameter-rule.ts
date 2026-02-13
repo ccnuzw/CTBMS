@@ -228,6 +228,83 @@ export const DataConnectorHealthCheckResultSchema = z.object({
   message: z.string().optional(),
 });
 
+// ── 参数变更审计 ──
+
+export const ParameterChangeOperationEnum = z.enum([
+  'CREATE',
+  'UPDATE',
+  'DELETE',
+  'RESET_TO_DEFAULT',
+  'BATCH_RESET',
+  'PUBLISH',
+]);
+
+export const ParameterChangeLogSchema = z.object({
+  id: z.string().uuid(),
+  parameterSetId: z.string().uuid(),
+  parameterItemId: z.string().uuid().nullable().optional(),
+  operation: ParameterChangeOperationEnum,
+  fieldPath: z.string().nullable().optional(),
+  oldValue: z.unknown().nullable().optional(),
+  newValue: z.unknown().nullable().optional(),
+  changeReason: z.string().nullable().optional(),
+  changedByUserId: z.string(),
+  createdAt: z.date().optional(),
+});
+
+export const ParameterChangeLogQuerySchema = z.object({
+  parameterSetId: z.string().uuid().optional(),
+  parameterItemId: z.string().uuid().optional(),
+  operation: ParameterChangeOperationEnum.optional(),
+  changedByUserId: z.string().optional(),
+  createdAtFrom: z.coerce.date().optional(),
+  createdAtTo: z.coerce.date().optional(),
+  page: z.coerce.number().int().min(1).default(1),
+  pageSize: z.coerce.number().int().min(1).max(200).default(50),
+});
+
+export const ParameterChangeLogPageSchema = z.object({
+  data: z.array(ParameterChangeLogSchema),
+  total: z.number().int(),
+  page: z.number().int(),
+  pageSize: z.number().int(),
+  totalPages: z.number().int(),
+});
+
+// ── 参数覆盖 Diff ──
+
+export const ParameterOverrideDiffItemSchema = z.object({
+  paramCode: z.string(),
+  paramName: z.string(),
+  scopeLevel: ParameterScopeLevelEnum,
+  templateDefault: z.unknown().nullable().optional(),
+  currentValue: z.unknown().nullable().optional(),
+  isOverridden: z.boolean(),
+  overrideSource: z.string().nullable().optional(),
+});
+
+export const ParameterOverrideDiffSchema = z.object({
+  parameterSetId: z.string().uuid(),
+  items: z.array(ParameterOverrideDiffItemSchema),
+  overriddenCount: z.number().int(),
+  totalCount: z.number().int(),
+});
+
+// ── 批量重置请求 ──
+
+export const BatchResetParameterItemsSchema = z.object({
+  itemIds: z.array(z.string().uuid()).min(1).max(200),
+  reason: z.string().max(500).optional(),
+});
+
+export type ParameterChangeOperation = z.infer<typeof ParameterChangeOperationEnum>;
+export type ParameterChangeLogDto = z.infer<typeof ParameterChangeLogSchema>;
+export type ParameterChangeLogQueryDto = z.infer<typeof ParameterChangeLogQuerySchema>;
+export type ParameterChangeLogPageDto = z.infer<typeof ParameterChangeLogPageSchema>;
+export type ParameterOverrideDiffItemDto = z.infer<typeof ParameterOverrideDiffItemSchema>;
+export type ParameterOverrideDiffDto = z.infer<typeof ParameterOverrideDiffSchema>;
+export type BatchResetParameterItemsDto = z.infer<typeof BatchResetParameterItemsSchema>;
+
 export type ParameterType = z.infer<typeof ParameterTypeEnum>;
 export type ParameterScopeLevel = z.infer<typeof ParameterScopeLevelEnum>;
 export type ParameterSetDto = z.infer<typeof ParameterSetSchema>;
