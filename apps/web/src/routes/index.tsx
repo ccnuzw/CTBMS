@@ -59,6 +59,7 @@ import { ExecutionAnalyticsDashboard } from '../features/execution-analytics';
 import { AgentWorkbenchPage } from '../features/agent-workbench';
 import { TemplateMarketPage } from '../features/template-market';
 import { FuturesSimPage } from '../features/futures-sim';
+import { ReplayEvaluationPage } from '../features/replay-evaluation';
 
 export const router = createBrowserRouter([
   {
@@ -161,6 +162,10 @@ export const router = createBrowserRouter([
       {
         path: 'workflow/futures',
         element: <FuturesSimPage />,
+      },
+      {
+        path: 'workflow/replay',
+        element: <ReplayEvaluationPage />,
       },
       {
         path: 'system',

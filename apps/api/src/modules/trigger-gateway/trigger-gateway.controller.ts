@@ -15,6 +15,7 @@ import { TriggerGatewayService } from './trigger-gateway.service';
 import {
   CreateTriggerConfigDto,
   UpdateTriggerConfigDto,
+  FireTriggerConfigDto,
   TriggerConfigQueryDto,
   TriggerLogQueryDto,
 } from './dto';
@@ -69,6 +70,11 @@ export class TriggerGatewayController {
   @Post(':id/deactivate')
   deactivate(@Param('id') id: string) {
     return this.service.deactivate(id);
+  }
+
+  @Post(':id/fire')
+  fire(@Request() req: AuthRequest, @Param('id') id: string, @Body() dto: FireTriggerConfigDto) {
+    return this.service.fire(this.getUserId(req), id, dto);
   }
 
   @Get(':id/logs')

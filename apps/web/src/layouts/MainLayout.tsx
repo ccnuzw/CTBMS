@@ -37,6 +37,13 @@ import {
   ThunderboltOutlined,
   DatabaseOutlined,
   BarChartOutlined,
+  PlayCircleOutlined,
+  ExportOutlined,
+  ExperimentOutlined,
+  FundOutlined,
+  RocketOutlined,
+  AlertOutlined,
+  StockOutlined,
 } from '@ant-design/icons';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { ThemeSwitcher } from '../components/ThemeSwitcher';
@@ -70,6 +77,11 @@ export const MainLayout: React.FC = () => {
         label: '仪表盘',
       },
       {
+        key: '/workflow/workbench',
+        icon: <RocketOutlined />,
+        label: '智能体工作台',
+      },
+      {
         key: 'workflow-center',
         icon: <NodeIndexOutlined />,
         label: '策略与编排',
@@ -83,6 +95,16 @@ export const MainLayout: React.FC = () => {
             key: '/workflow/executions',
             icon: <ScheduleOutlined />,
             label: '运行中心',
+          },
+          {
+            key: '/workflow/analytics',
+            icon: <BarChartOutlined />,
+            label: '执行分析',
+          },
+          {
+            key: '/workflow/replay',
+            icon: <PlayCircleOutlined />,
+            label: '回放评估',
           },
           {
             key: '/workflow/rules',
@@ -103,6 +125,36 @@ export const MainLayout: React.FC = () => {
             key: '/workflow/connectors',
             icon: <CloudOutlined />,
             label: '连接器中心',
+          },
+          {
+            key: '/workflow/triggers',
+            icon: <ThunderboltOutlined />,
+            label: '触发管理',
+          },
+          {
+            key: '/workflow/decisions',
+            icon: <AlertOutlined />,
+            label: '决策记录',
+          },
+          {
+            key: '/workflow/exports',
+            icon: <ExportOutlined />,
+            label: '报告导出',
+          },
+          {
+            key: '/workflow/experiments',
+            icon: <ExperimentOutlined />,
+            label: '灰度实验',
+          },
+          {
+            key: '/workflow/templates',
+            icon: <AppstoreOutlined />,
+            label: '模板市场',
+          },
+          {
+            key: '/workflow/futures',
+            icon: <StockOutlined />,
+            label: '期货模拟',
           },
         ],
       },

@@ -108,4 +108,13 @@ export class WorkflowExecutionController {
     }
     return this.workflowExecutionService.debateTimeline(userId, id);
   }
+
+  @Get(':id/replay')
+  replay(@Param('id', ParseUUIDPipe) id: string, @Request() req: AuthRequest) {
+    const userId = req.user?.id;
+    if (!userId) {
+      throw new UnauthorizedException('User not authenticated');
+    }
+    return this.workflowExecutionService.replay(userId, id);
+  }
 }

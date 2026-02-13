@@ -1,4 +1,7 @@
 import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
+import { access, mkdir, rm, writeFile } from 'node:fs/promises';
+import { constants as fsConstants, createWriteStream } from 'node:fs';
+import path from 'node:path';
 import { PrismaService } from '../../prisma';
 import type {
   ExportDebateReportDto,
@@ -10,6 +13,20 @@ import type {
   ReportRiskItemDto,
 } from '@packages/types';
 import type { Prisma } from '@prisma/client';
+import PDFDocument from 'pdfkit';
+import {
+  Document,
+  Packer,
+  Paragraph,
+  TextRun,
+  HeadingLevel,
+  Table,
+  TableRow,
+  TableCell,
+  WidthType,
+  BorderStyle,
+  AlignmentType,
+} from 'docx';
 
 @Injectable()
 export class ReportExportService {
@@ -50,12 +67,14 @@ export class ReportExportService {
       });
 
       const reportData = await this.assembleReportData(dto, execution);
+      const artifact = await this.persistArtifact(task.id, dto.format, reportData);
 
       const completed = await this.prisma.exportTask.update({
         where: { id: task.id },
         data: {
           status: 'COMPLETED',
           reportData: reportData as unknown as Prisma.InputJsonValue,
+          downloadUrl: artifact.downloadUrl,
           completedAt: new Date(),
         },
       });
@@ -116,6 +135,30 @@ export class ReportExportService {
     return task;
   }
 
+  async resolveDownload(userId: string, id: string) {
+    const task = await this.prisma.exportTask.findFirst({
+      where: { id, createdByUserId: userId },
+    });
+    if (!task) {
+      throw new NotFoundException('导出任务不存在');
+    }
+    if (task.status !== 'COMPLETED') {
+      throw new BadRequestException('导出任务尚未完成');
+    }
+
+    const { filePath, fileName, contentType } = this.getArtifactMeta(task.id, task.format);
+    const fileExists = await this.fileExists(filePath);
+    if (!fileExists) {
+      throw new NotFoundException('导出文件不存在，请重新生成');
+    }
+
+    return {
+      filePath,
+      fileName,
+      contentType,
+    };
+  }
+
   /**
    * 删除导出任务
    */
@@ -126,6 +169,8 @@ export class ReportExportService {
     if (!task) throw new NotFoundException('导出任务不存在');
 
     await this.prisma.exportTask.delete({ where: { id } });
+    const { filePath } = this.getArtifactMeta(task.id, task.format);
+    await rm(filePath, { force: true });
     return { deleted: true };
   }
 
@@ -226,10 +271,38 @@ export class ReportExportService {
    * 组装证据数据 — 从节点执行的输出中提取
    */
   private async assembleEvidence(executionId: string): Promise<ReportEvidenceItemDto[]> {
+    const execution = await this.prisma.workflowExecution.findUnique({
+      where: { id: executionId },
+      select: { outputSnapshot: true },
+    });
+    const executionOutput = execution?.outputSnapshot as Record<string, unknown> | null;
+    const embeddedEvidence = executionOutput?.evidenceBundle as
+      | { evidence?: Array<Record<string, unknown>> }
+      | undefined;
+    if (Array.isArray(embeddedEvidence?.evidence) && embeddedEvidence.evidence.length > 0) {
+      return embeddedEvidence.evidence.map((item) => ({
+        source: (item.sourceNodeId as string) ?? 'workflow-execution',
+        category: (item.type as string) ?? 'EVIDENCE',
+        content: (item.summary as string) ?? JSON.stringify(item).slice(0, 2000),
+        weight: typeof item.confidence === 'number' ? item.confidence : null,
+      }));
+    }
+
     const nodeExecutions = await this.prisma.nodeExecution.findMany({
       where: {
         workflowExecutionId: executionId,
-        nodeType: { in: ['DATA_FETCH', 'CONTEXT_BUILDER', 'EVIDENCE_COLLECTOR'] },
+        nodeType: {
+          in: [
+            'data-fetch',
+            'context-builder',
+            'knowledge-fetch',
+            'report-fetch',
+            'external-api-fetch',
+            'DATA_FETCH',
+            'CONTEXT_BUILDER',
+            'EVIDENCE_COLLECTOR',
+          ],
+        },
         status: 'SUCCESS',
       },
       select: { nodeId: true, nodeType: true, outputSnapshot: true },
@@ -298,7 +371,7 @@ export class ReportExportService {
     const riskNodes = await this.prisma.nodeExecution.findMany({
       where: {
         workflowExecutionId: executionId,
-        nodeType: 'RISK_GATE',
+        nodeType: { in: ['risk-gate', 'RISK_GATE'] },
         status: 'SUCCESS',
       },
       select: { outputSnapshot: true },
@@ -344,5 +417,381 @@ export class ReportExportService {
     });
 
     return (execution?.paramSnapshot as Record<string, unknown>) ?? null;
+  }
+
+  private async persistArtifact(taskId: string, format: string, reportData: ExportReportDataDto) {
+    const { filePath, fileName, downloadUrl } = this.getArtifactMeta(taskId, format);
+    await mkdir(path.dirname(filePath), { recursive: true });
+
+    if (format === 'JSON') {
+      await writeFile(filePath, JSON.stringify(reportData, null, 2), 'utf-8');
+    } else if (format === 'PDF') {
+      await this.renderPdfReport(filePath, reportData);
+    } else if (format === 'WORD') {
+      await this.renderWordReport(filePath, reportData);
+    } else {
+      await writeFile(filePath, this.renderPlainTextReport(reportData), 'utf-8');
+    }
+
+    return {
+      filePath,
+      fileName,
+      downloadUrl,
+    };
+  }
+
+  private renderPlainTextReport(reportData: ExportReportDataDto): string {
+    const lines: string[] = [];
+    lines.push(`# ${reportData.title}`);
+    lines.push(`生成时间: ${reportData.generatedAt}`);
+    lines.push(`执行实例: ${reportData.workflowExecutionId}`);
+    lines.push(`流程名称: ${reportData.workflowName ?? '-'}`);
+    lines.push(`版本号: ${reportData.versionCode ?? '-'}`);
+    lines.push('');
+
+    if (reportData.conclusion) {
+      lines.push('## 结论');
+      lines.push(`动作: ${reportData.conclusion.action}`);
+      lines.push(`置信度: ${reportData.conclusion.confidence ?? '-'}`);
+      lines.push(`风险等级: ${reportData.conclusion.riskLevel ?? '-'}`);
+      lines.push(`目标窗口: ${reportData.conclusion.targetWindow ?? '-'}`);
+      lines.push(`推理摘要: ${reportData.conclusion.reasoningSummary ?? '-'}`);
+      lines.push('');
+    }
+
+    if (reportData.evidenceItems?.length) {
+      lines.push('## 证据');
+      reportData.evidenceItems.forEach((item, index) => {
+        lines.push(
+          `${index + 1}. [${item.category ?? 'UNKNOWN'}] ${item.source}: ${item.content}`,
+        );
+      });
+      lines.push('');
+    }
+
+    if (reportData.debateRounds?.length) {
+      lines.push('## 辩论过程');
+      reportData.debateRounds.forEach((round) => {
+        lines.push(
+          `Round ${round.roundNumber} ${round.participantRole}/${round.participantCode}: ${round.statementSummary}`,
+        );
+      });
+      lines.push('');
+    }
+
+    if (reportData.riskItems?.length) {
+      lines.push('## 风险评估');
+      reportData.riskItems.forEach((risk) => {
+        lines.push(
+          `- ${risk.riskType} [${risk.level}] ${risk.description} (缓解: ${risk.mitigationAction ?? '-'})`,
+        );
+      });
+      lines.push('');
+    }
+
+    if (reportData.paramSnapshot) {
+      lines.push('## 参数快照');
+      lines.push(JSON.stringify(reportData.paramSnapshot, null, 2));
+      lines.push('');
+    }
+
+    return lines.join('\n');
+  }
+
+  private getArtifactMeta(taskId: string, format: string) {
+    const extMap: Record<string, string> = {
+      JSON: 'json',
+      PDF: 'pdf',
+      WORD: 'docx',
+    };
+    const contentTypeMap: Record<string, string> = {
+      JSON: 'application/json; charset=utf-8',
+      PDF: 'application/pdf',
+      WORD: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    };
+    const ext = extMap[format] ?? 'txt';
+    const fileName = `report-export-${taskId}.${ext}`;
+    const directory = path.resolve(process.cwd(), 'tmp', 'report-exports');
+    const filePath = path.join(directory, fileName);
+    return {
+      fileName,
+      filePath,
+      downloadUrl: `/report-exports/${taskId}/download`,
+      contentType: contentTypeMap[format] ?? 'text/plain; charset=utf-8',
+    };
+  }
+
+  private async fileExists(filePath: string): Promise<boolean> {
+    try {
+      await access(filePath, fsConstants.F_OK);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * PDF 报告渲染 — 使用 pdfkit
+   */
+  private async renderPdfReport(filePath: string, data: ExportReportDataDto): Promise<void> {
+    return new Promise((resolve, reject) => {
+      const doc = new PDFDocument({ size: 'A4', margin: 50 });
+      const stream = createWriteStream(filePath);
+      doc.pipe(stream);
+
+      // 标题
+      doc.fontSize(20).text(data.title, { align: 'center' });
+      doc.moveDown(0.5);
+      doc.fontSize(10).fillColor('#666')
+        .text(`生成时间: ${data.generatedAt}  |  执行实例: ${data.workflowExecutionId}`, { align: 'center' });
+      if (data.workflowName) {
+        doc.text(`流程: ${data.workflowName}  |  版本: ${data.versionCode ?? '-'}`, { align: 'center' });
+      }
+      doc.moveDown(1);
+      doc.fillColor('#000');
+
+      // 结论
+      if (data.conclusion) {
+        doc.fontSize(16).text('一、结论', { underline: true });
+        doc.moveDown(0.3);
+        doc.fontSize(11);
+        doc.text(`推荐操作: ${data.conclusion.action}`);
+        if (data.conclusion.confidence !== null && data.conclusion.confidence !== undefined) {
+          doc.text(`置信度: ${(data.conclusion.confidence * 100).toFixed(1)}%`);
+        }
+        if (data.conclusion.riskLevel) doc.text(`风险等级: ${data.conclusion.riskLevel}`);
+        if (data.conclusion.targetWindow) doc.text(`目标窗口: ${data.conclusion.targetWindow}`);
+        if (data.conclusion.reasoningSummary) {
+          doc.moveDown(0.2);
+          doc.text(`推理摘要: ${data.conclusion.reasoningSummary}`, { width: 500 });
+        }
+        if (data.conclusion.judgementVerdict) {
+          doc.text(`裁决: ${data.conclusion.judgementVerdict}`);
+        }
+        if (data.conclusion.judgementReasoning) {
+          doc.text(`裁决依据: ${data.conclusion.judgementReasoning}`, { width: 500 });
+        }
+        doc.moveDown(1);
+      }
+
+      // 证据
+      if (data.evidenceItems?.length) {
+        doc.fontSize(16).text('二、证据链', { underline: true });
+        doc.moveDown(0.3);
+        doc.fontSize(10);
+        data.evidenceItems.forEach((item, idx) => {
+          doc.text(`${idx + 1}. [${item.category ?? 'N/A'}] ${item.source}`, { continued: false });
+          doc.text(`   ${item.content.slice(0, 300)}${item.content.length > 300 ? '...' : ''}`, { width: 480 });
+          if (item.weight !== null && item.weight !== undefined) {
+            doc.text(`   权重: ${item.weight}`, { width: 480 });
+          }
+          doc.moveDown(0.2);
+        });
+        doc.moveDown(0.5);
+      }
+
+      // 辩论过程
+      if (data.debateRounds?.length) {
+        doc.fontSize(16).text('三、辩论过程', { underline: true });
+        doc.moveDown(0.3);
+        doc.fontSize(10);
+        let currentRoundNum = 0;
+        data.debateRounds.forEach((round) => {
+          if (round.roundNumber !== currentRoundNum) {
+            currentRoundNum = round.roundNumber;
+            doc.moveDown(0.3);
+            doc.fontSize(12).text(`第 ${round.roundNumber} 轮`, { underline: false });
+            doc.fontSize(10);
+          }
+          const stanceTag = round.stance ? ` [${round.stance}]` : '';
+          const confidenceTag = round.confidence !== null && round.confidence !== undefined
+            ? ` (${(round.confidence * 100).toFixed(0)}%)`
+            : '';
+          doc.text(`  ${round.participantCode} (${round.participantRole})${stanceTag}${confidenceTag}:`);
+          doc.text(`    ${round.statementSummary.slice(0, 400)}`, { width: 460 });
+          if (round.isJudgement) {
+            doc.fillColor('#722ed1').text('    [裁决]', { continued: false }).fillColor('#000');
+          }
+          doc.moveDown(0.15);
+        });
+        doc.moveDown(0.5);
+      }
+
+      // 风险评估
+      if (data.riskItems?.length) {
+        doc.fontSize(16).text('四、风险评估', { underline: true });
+        doc.moveDown(0.3);
+        doc.fontSize(10);
+        data.riskItems.forEach((risk) => {
+          const levelColor = risk.level === 'HIGH' || risk.level === 'CRITICAL' ? '#ff4d4f' : '#000';
+          doc.fillColor(levelColor).text(`[${risk.level}] ${risk.riskType}: ${risk.description}`, { width: 480 });
+          doc.fillColor('#000');
+          if (risk.mitigationAction) {
+            doc.text(`  缓解措施: ${risk.mitigationAction}`, { width: 460 });
+          }
+          doc.moveDown(0.2);
+        });
+        doc.moveDown(0.5);
+      }
+
+      // 参数快照
+      if (data.paramSnapshot) {
+        doc.fontSize(16).text('五、参数快照', { underline: true });
+        doc.moveDown(0.3);
+        doc.fontSize(8).text(JSON.stringify(data.paramSnapshot, null, 2), { width: 500 });
+      }
+
+      doc.end();
+      stream.on('finish', resolve);
+      stream.on('error', reject);
+    });
+  }
+
+  /**
+   * Word 报告渲染 — 使用 docx
+   */
+  private async renderWordReport(filePath: string, data: ExportReportDataDto): Promise<void> {
+    const children: Paragraph[] = [];
+
+    // 标题
+    children.push(
+      new Paragraph({
+        text: data.title,
+        heading: HeadingLevel.TITLE,
+        alignment: AlignmentType.CENTER,
+      }),
+    );
+    children.push(
+      new Paragraph({
+        children: [
+          new TextRun({ text: `生成时间: ${data.generatedAt}  |  执行实例: ${data.workflowExecutionId}`, size: 18, color: '666666' }),
+        ],
+        alignment: AlignmentType.CENTER,
+      }),
+    );
+    if (data.workflowName) {
+      children.push(
+        new Paragraph({
+          children: [
+            new TextRun({ text: `流程: ${data.workflowName}  |  版本: ${data.versionCode ?? '-'}`, size: 18, color: '666666' }),
+          ],
+          alignment: AlignmentType.CENTER,
+        }),
+      );
+    }
+    children.push(new Paragraph({ text: '' }));
+
+    // 结论
+    if (data.conclusion) {
+      children.push(new Paragraph({ text: '一、结论', heading: HeadingLevel.HEADING_1 }));
+      children.push(new Paragraph({
+        children: [new TextRun({ text: `推荐操作: `, bold: true }), new TextRun(data.conclusion.action)],
+      }));
+      if (data.conclusion.confidence !== null && data.conclusion.confidence !== undefined) {
+        children.push(new Paragraph({
+          children: [new TextRun({ text: `置信度: `, bold: true }), new TextRun(`${(data.conclusion.confidence * 100).toFixed(1)}%`)],
+        }));
+      }
+      if (data.conclusion.riskLevel) {
+        children.push(new Paragraph({
+          children: [new TextRun({ text: `风险等级: `, bold: true }), new TextRun(data.conclusion.riskLevel)],
+        }));
+      }
+      if (data.conclusion.targetWindow) {
+        children.push(new Paragraph({
+          children: [new TextRun({ text: `目标窗口: `, bold: true }), new TextRun(data.conclusion.targetWindow)],
+        }));
+      }
+      if (data.conclusion.reasoningSummary) {
+        children.push(new Paragraph({
+          children: [new TextRun({ text: `推理摘要: `, bold: true }), new TextRun(data.conclusion.reasoningSummary)],
+        }));
+      }
+      if (data.conclusion.judgementVerdict) {
+        children.push(new Paragraph({
+          children: [new TextRun({ text: `裁决: `, bold: true }), new TextRun(data.conclusion.judgementVerdict)],
+        }));
+      }
+      if (data.conclusion.judgementReasoning) {
+        children.push(new Paragraph({
+          children: [new TextRun({ text: `裁决依据: `, bold: true }), new TextRun(data.conclusion.judgementReasoning)],
+        }));
+      }
+      children.push(new Paragraph({ text: '' }));
+    }
+
+    // 证据
+    if (data.evidenceItems?.length) {
+      children.push(new Paragraph({ text: '二、证据链', heading: HeadingLevel.HEADING_1 }));
+      data.evidenceItems.forEach((item, idx) => {
+        children.push(new Paragraph({
+          children: [
+            new TextRun({ text: `${idx + 1}. [${item.category ?? 'N/A'}] `, bold: true }),
+            new TextRun({ text: `${item.source}: `, italics: true }),
+            new TextRun(item.content.slice(0, 500)),
+          ],
+        }));
+      });
+      children.push(new Paragraph({ text: '' }));
+    }
+
+    // 辩论过程
+    if (data.debateRounds?.length) {
+      children.push(new Paragraph({ text: '三、辩论过程', heading: HeadingLevel.HEADING_1 }));
+      let currentRoundNum = 0;
+      data.debateRounds.forEach((round) => {
+        if (round.roundNumber !== currentRoundNum) {
+          currentRoundNum = round.roundNumber;
+          children.push(new Paragraph({ text: `第 ${round.roundNumber} 轮`, heading: HeadingLevel.HEADING_2 }));
+        }
+        const stanceTag = round.stance ? ` [${round.stance}]` : '';
+        const confidenceTag = round.confidence !== null && round.confidence !== undefined
+          ? ` (${(round.confidence * 100).toFixed(0)}%)`
+          : '';
+        children.push(new Paragraph({
+          children: [
+            new TextRun({ text: `${round.participantCode} (${round.participantRole})${stanceTag}${confidenceTag}: `, bold: true }),
+            new TextRun(round.statementSummary),
+            ...(round.isJudgement ? [new TextRun({ text: ' [裁决]', color: '722ed1', bold: true })] : []),
+          ],
+        }));
+      });
+      children.push(new Paragraph({ text: '' }));
+    }
+
+    // 风险评估
+    if (data.riskItems?.length) {
+      children.push(new Paragraph({ text: '四、风险评估', heading: HeadingLevel.HEADING_1 }));
+      data.riskItems.forEach((risk) => {
+        const isHighRisk = risk.level === 'HIGH' || risk.level === 'CRITICAL';
+        children.push(new Paragraph({
+          children: [
+            new TextRun({ text: `[${risk.level}] ${risk.riskType}: `, bold: true, color: isHighRisk ? 'FF4D4F' : '000000' }),
+            new TextRun(risk.description),
+          ],
+        }));
+        if (risk.mitigationAction) {
+          children.push(new Paragraph({
+            children: [new TextRun({ text: `  缓解措施: `, italics: true }), new TextRun(risk.mitigationAction)],
+          }));
+        }
+      });
+      children.push(new Paragraph({ text: '' }));
+    }
+
+    // 参数快照
+    if (data.paramSnapshot) {
+      children.push(new Paragraph({ text: '五、参数快照', heading: HeadingLevel.HEADING_1 }));
+      children.push(new Paragraph({
+        children: [new TextRun({ text: JSON.stringify(data.paramSnapshot, null, 2), size: 16, font: 'Courier New' })],
+      }));
+    }
+
+    const doc = new Document({
+      sections: [{ children }],
+    });
+
+    const buffer = await Packer.toBuffer(doc);
+    await writeFile(filePath, buffer);
   }
 }

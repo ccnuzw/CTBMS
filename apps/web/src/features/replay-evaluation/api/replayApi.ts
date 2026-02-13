@@ -1,4 +1,5 @@
 import { useQuery, useMutation } from '@tanstack/react-query';
+import type { DebateTimelineDto } from '@packages/types';
 
 import { apiClient } from '@/api/client';
 
@@ -73,6 +74,8 @@ interface ExecutionComparisonResult {
 const REPLAY_KEYS = {
     all: ['replay'] as const,
     detail: (executionId: string) => [...REPLAY_KEYS.all, executionId] as const,
+    debateTimeline: (executionId: string) =>
+        [...REPLAY_KEYS.all, 'debate-timeline', executionId] as const,
     comparison: (execA: string, execB: string) =>
         [...REPLAY_KEYS.all, 'compare', execA, execB] as const,
 };
@@ -88,6 +91,20 @@ export const useExecutionReplay = (executionId: string, enabled = true) => {
         queryFn: () =>
             apiClient
                 .get<ExecutionReplayBundle>(`/workflow-executions/${executionId}/replay`)
+                .then((res) => res.data),
+        enabled: !!executionId && enabled,
+    });
+};
+
+/**
+ * 获取辩论时间线
+ */
+export const useDebateTimeline = (executionId: string, enabled = true) => {
+    return useQuery<DebateTimelineDto>({
+        queryKey: REPLAY_KEYS.debateTimeline(executionId),
+        queryFn: () =>
+            apiClient
+                .get<DebateTimelineDto>(`/workflow-executions/${executionId}/debate-timeline`)
                 .then((res) => res.data),
         enabled: !!executionId && enabled,
     });

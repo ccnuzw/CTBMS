@@ -8,6 +8,7 @@ import type {
   VirtualAccountSummaryDto,
   OpenPositionDto,
   ClosePositionDto,
+  VirtualTradeLedgerDto,
 } from '@packages/types';
 import { apiClient } from '../../../api/client';
 
@@ -66,7 +67,7 @@ export const usePositions = (query?: PositionQuery) => {
 };
 
 export const usePositionDetail = (id?: string) => {
-  return useQuery<VirtualFuturesPositionDto & { trades: unknown[] }>({
+  return useQuery<VirtualFuturesPositionDto & { trades: VirtualTradeLedgerDto[] }>({
     queryKey: ['futures-position-detail', id],
     queryFn: async () => {
       const res = await apiClient.get(`/futures-sim/positions/${id}`);

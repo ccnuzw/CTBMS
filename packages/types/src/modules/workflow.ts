@@ -4,7 +4,7 @@ export const WorkflowModeEnum = z.enum(['LINEAR', 'DAG', 'DEBATE']);
 export const WorkflowUsageMethodEnum = z.enum(['HEADLESS', 'COPILOT', 'ON_DEMAND']);
 export const WorkflowDefinitionStatusEnum = z.enum(['DRAFT', 'ACTIVE', 'ARCHIVED']);
 export const WorkflowVersionStatusEnum = z.enum(['DRAFT', 'PUBLISHED', 'ARCHIVED']);
-export const WorkflowTemplateSourceEnum = z.enum(['PUBLIC', 'PRIVATE']);
+export const WorkflowTemplateSourceEnum = z.enum(['PUBLIC', 'PRIVATE', 'COPIED']);
 
 export const WorkflowEdgeTypeEnum = z.enum([
   'data-edge',
@@ -251,6 +251,7 @@ export const WorkflowDefinitionQuerySchema = z.object({
 export const TriggerWorkflowExecutionSchema = z.object({
   workflowDefinitionId: z.string().uuid(),
   workflowVersionId: z.string().uuid().optional(),
+  experimentId: z.string().uuid().optional(),
   triggerType: WorkflowTriggerTypeEnum.default('MANUAL'),
   idempotencyKey: z.string().trim().min(1).max(120).optional(),
   paramSnapshot: z.record(z.unknown()).optional(),
@@ -463,6 +464,7 @@ export type PublishWorkflowVersionDto = z.infer<typeof PublishWorkflowVersionSch
 export type TriggerWorkflowExecutionDto = z.infer<typeof TriggerWorkflowExecutionSchema>;
 export type CancelWorkflowExecutionDto = z.infer<typeof CancelWorkflowExecutionSchema>;
 export type WorkflowExecutionQueryDto = z.infer<typeof WorkflowExecutionQuerySchema>;
+export type WorkflowExecutionQuery = WorkflowExecutionQueryDto;
 export type WorkflowRuntimeEventQueryDto = z.infer<typeof WorkflowRuntimeEventQuerySchema>;
 export type WorkflowPublishAuditQueryDto = z.infer<typeof WorkflowPublishAuditQuerySchema>;
 

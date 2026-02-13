@@ -45,6 +45,8 @@ import {
 import { useDecisionRulePacks } from '../../workflow-rule-center/api';
 import { useParameterSets } from '../../workflow-parameter-center/api';
 import { useAgentProfiles } from '../../workflow-agent-center/api';
+import { WorkflowCanvas } from '../canvas/WorkflowCanvas';
+import { VersionDiffViewer } from './VersionDiffViewer';
 
 const { Title, Text } = Typography;
 const { TextArea } = Input;
@@ -319,6 +321,9 @@ export const WorkflowDefinitionPage: React.FC = () => {
   const [form] = Form.useForm<CreateWorkflowDefinitionFormValues>();
   const [createVisible, setCreateVisible] = useState(false);
   const [versionVisible, setVersionVisible] = useState(false);
+  const [studioVisible, setStudioVisible] = useState(false);
+  const [diffVisible, setDiffVisible] = useState(false);
+  const [studioVersion, setStudioVersion] = useState<WorkflowVersionDto | null>(null);
   const [selectedDefinition, setSelectedDefinition] = useState<WorkflowDefinitionDto | null>(null);
   const [publishingVersionId, setPublishingVersionId] = useState<string | null>(null);
   const [runningVersionId, setRunningVersionId] = useState<string | null>(null);
@@ -674,7 +679,7 @@ export const WorkflowDefinitionPage: React.FC = () => {
       {
         title: '操作',
         key: 'actions',
-        width: 140,
+        width: 280,
         render: (_: unknown, record: WorkflowVersionDto) => {
           const isPublishing = publishMutation.isPending && publishingVersionId === record.id;
           const isRunning = triggerExecutionMutation.isPending && runningVersionId === record.id;
@@ -691,6 +696,22 @@ export const WorkflowDefinitionPage: React.FC = () => {
           const canRun = record.status === 'PUBLISHED' && Boolean(selectedDefinition?.id);
           return (
             <Space size={4}>
+              <Button
+                type="link"
+                onClick={() => {
+                  setStudioVersion(record);
+                  setStudioVisible(true);
+                }}
+              >
+                Studio
+              </Button>
+              <Button
+                type="link"
+                disabled={(versions?.length ?? 0) < 2}
+                onClick={() => setDiffVisible(true)}
+              >
+                版本对比
+              </Button>
               <Popconfirm
                 title="确认发布该版本？"
                 onConfirm={() => handlePublish(record)}
@@ -724,6 +745,7 @@ export const WorkflowDefinitionPage: React.FC = () => {
       selectedDefinition?.id,
       triggerExecutionMutation.isPending,
       runningVersionId,
+      versions?.length,
     ],
   );
   const versionCodeMap = useMemo(
@@ -895,6 +917,31 @@ export const WorkflowDefinitionPage: React.FC = () => {
         },
       });
       message.success('草稿版本创建成功');
+    } catch (error) {
+      message.error(getErrorMessage(error));
+    }
+  };
+
+  const handleSaveStudioDsl = async (dsl: { nodes: WorkflowDsl['nodes']; edges: WorkflowDsl['edges'] }) => {
+    if (!selectedDefinition?.id || !studioVersion) {
+      return;
+    }
+
+    try {
+      await createVersionMutation.mutateAsync({
+        workflowDefinitionId: selectedDefinition.id,
+        payload: {
+          dslSnapshot: {
+            ...studioVersion.dslSnapshot,
+            nodes: dsl.nodes,
+            edges: dsl.edges,
+          },
+          changelog: `Studio 编辑保存（基于 ${studioVersion.versionCode}）`,
+        },
+      });
+      message.success('Studio 保存成功，已生成新的草稿版本');
+      setStudioVisible(false);
+      setStudioVersion(null);
     } catch (error) {
       message.error(getErrorMessage(error));
     }
@@ -1215,6 +1262,9 @@ export const WorkflowDefinitionPage: React.FC = () => {
           setVersionVisible(false);
           setSelectedDefinition(null);
           setValidationResult(null);
+          setStudioVisible(false);
+          setDiffVisible(false);
+          setStudioVersion(null);
           setAuditPage(1);
           setAuditPageSize(10);
         }}
@@ -1366,6 +1416,37 @@ export const WorkflowDefinitionPage: React.FC = () => {
           }}
           scroll={{ x: 900 }}
         />
+      </Drawer>
+
+      <Drawer
+        title={`Workflow Studio - ${studioVersion?.versionCode || ''}`}
+        open={studioVisible}
+        width="92vw"
+        destroyOnClose
+        onClose={() => {
+          setStudioVisible(false);
+          setStudioVersion(null);
+        }}
+      >
+        {studioVersion ? (
+          <div style={{ height: '78vh' }}>
+            <WorkflowCanvas initialDsl={studioVersion.dslSnapshot} onSave={handleSaveStudioDsl} />
+          </div>
+        ) : null}
+      </Drawer>
+
+      <Drawer
+        title="版本差异对比"
+        open={diffVisible}
+        width={1200}
+        destroyOnClose
+        onClose={() => setDiffVisible(false)}
+      >
+        {(versions?.length ?? 0) >= 2 ? (
+          <VersionDiffViewer versions={versions || []} />
+        ) : (
+          <Alert type="info" showIcon message="至少需要两个版本才能进行差异对比" />
+        )}
       </Drawer>
     </Card>
   );

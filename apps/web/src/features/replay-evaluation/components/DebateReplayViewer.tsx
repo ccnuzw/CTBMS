@@ -8,11 +8,13 @@ import {
   Progress,
   Row,
   Select,
+  Slider,
   Space,
   Statistic,
   Steps,
   Tag,
   Timeline,
+  Tooltip,
   Typography,
   theme,
 } from 'antd';
@@ -25,7 +27,19 @@ import {
   UserOutlined,
   TrophyOutlined,
   SwapOutlined,
+  DashboardOutlined,
 } from '@ant-design/icons';
+import {
+  LineChart,
+  Line,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip as RechartsTooltip,
+  Legend,
+  ResponsiveContainer,
+  ReferenceLine,
+} from 'recharts';
 import type { DebateTimelineDto, DebateTimelineEntryDto, DebateRoundTraceDto } from '@packages/types';
 
 const { Text, Title, Paragraph } = Typography;
@@ -38,6 +52,18 @@ interface DebateReplayViewerProps {
 }
 
 // ── Helpers ──
+
+const PARTICIPANT_LINE_COLORS = [
+  '#1890ff', '#52c41a', '#fa541c', '#722ed1', '#13c2c2',
+  '#eb2f96', '#faad14', '#2f54eb', '#a0d911', '#f5222d',
+];
+
+const SPEED_OPTIONS = [
+  { label: '0.5x', value: 6000 },
+  { label: '1x', value: 3000 },
+  { label: '2x', value: 1500 },
+  { label: '3x', value: 1000 },
+];
 
 const roleColorMap: Record<string, string> = {
   ANALYST: 'blue',
@@ -81,6 +107,7 @@ export const DebateReplayViewer: React.FC<DebateReplayViewerProps> = ({
   const [isPlaying, setIsPlaying] = useState(false);
   const [playInterval, setPlayInterval] = useState<ReturnType<typeof setInterval> | null>(null);
   const [selectedParticipant, setSelectedParticipant] = useState<string | undefined>(undefined);
+  const [playbackSpeed, setPlaybackSpeed] = useState(3000);
 
   const rounds = timeline.rounds;
   const totalRounds = timeline.totalRounds;
@@ -161,9 +188,9 @@ export const DebateReplayViewer: React.FC<DebateReplayViewerProps> = ({
         }
         return prev + 1;
       });
-    }, 3000);
+    }, playbackSpeed);
     setPlayInterval(interval);
-  }, [stopPlayback, totalRounds]);
+  }, [stopPlayback, totalRounds, playbackSpeed]);
 
   const stepForward = () => {
     stopPlayback();
@@ -186,6 +213,21 @@ export const DebateReplayViewer: React.FC<DebateReplayViewerProps> = ({
       if (playInterval) clearInterval(playInterval);
     };
   }, [playInterval]);
+
+  // ── Confidence trend chart data (recharts format) ──
+  const chartData = useMemo(() => {
+    const dataByRound: Record<string, number>[] = [];
+    for (const round of rounds) {
+      const point: Record<string, number> = { round: round.roundNumber };
+      for (const entry of round.entries) {
+        if (entry.confidence !== null && entry.confidence !== undefined) {
+          point[entry.participantCode] = Math.round(entry.confidence * 1000) / 10;
+        }
+      }
+      dataByRound.push(point);
+    }
+    return dataByRound;
+  }, [rounds]);
 
   // ── Judgement entries ──
   const judgementEntries = useMemo(() => {
@@ -225,6 +267,19 @@ export const DebateReplayViewer: React.FC<DebateReplayViewerProps> = ({
                 disabled={currentRound >= totalRounds - 1}
               />
               <Button icon={<ReloadOutlined />} onClick={resetPlayback} />
+              <Tooltip title="播放速度">
+                <Select
+                  style={{ width: 80 }}
+                  value={playbackSpeed}
+                  onChange={(v) => {
+                    setPlaybackSpeed(v);
+                    if (isPlaying) {
+                      stopPlayback();
+                    }
+                  }}
+                  options={SPEED_OPTIONS}
+                />
+              </Tooltip>
               <Text type="secondary">
                 轮次 {currentRound + 1} / {totalRounds}
               </Text>
@@ -291,8 +346,57 @@ export const DebateReplayViewer: React.FC<DebateReplayViewerProps> = ({
               )}
             </Card>
 
-            {/* ── Confidence Trend ── */}
-            <Card title="置信度变化趋势" size="small" style={{ marginTop: 16 }}>
+            {/* ── Confidence Trend Line Chart ── */}
+            <Card title="观点置信度趋势" size="small" style={{ marginTop: 16 }}>
+              {chartData.length > 0 ? (
+                <ResponsiveContainer width="100%" height={220}>
+                  <LineChart data={chartData}>
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis
+                      dataKey="round"
+                      tickFormatter={(v: number) => `R${v}`}
+                      fontSize={11}
+                    />
+                    <YAxis
+                      domain={[0, 100]}
+                      tickFormatter={(v: number) => `${v}%`}
+                      fontSize={11}
+                      width={40}
+                    />
+                    <RechartsTooltip
+                      formatter={(value: number | undefined, name: string | undefined) => [value !== undefined ? `${value}%` : '-', name]}
+                      labelFormatter={(label: number) => `第 ${label} 轮`}
+                    />
+                    <Legend wrapperStyle={{ fontSize: 11 }} />
+                    {currentRound < totalRounds && (
+                      <ReferenceLine
+                        x={currentRound + 1}
+                        stroke={token.colorPrimary}
+                        strokeDasharray="4 4"
+                        label={{ value: '当前', fill: token.colorPrimary, fontSize: 10 }}
+                      />
+                    )}
+                    {allParticipants.map((code, idx) => (
+                      <Line
+                        key={code}
+                        type="monotone"
+                        dataKey={code}
+                        stroke={PARTICIPANT_LINE_COLORS[idx % PARTICIPANT_LINE_COLORS.length]}
+                        strokeWidth={2}
+                        dot={{ r: 3 }}
+                        activeDot={{ r: 5 }}
+                        connectNulls
+                      />
+                    ))}
+                  </LineChart>
+                </ResponsiveContainer>
+              ) : (
+                <Text type="secondary">暂无置信度数据</Text>
+              )}
+            </Card>
+
+            {/* ── Per-Participant Current Round Status ── */}
+            <Card title="当前轮次置信度" size="small" style={{ marginTop: 16 }}>
               <Space direction="vertical" style={{ width: '100%' }} size={4}>
                 {allParticipants.map((code) => {
                   const points = confidenceTrend.get(code) ?? [];
@@ -359,8 +463,8 @@ export const DebateReplayViewer: React.FC<DebateReplayViewerProps> = ({
                       style={{
                         marginBottom: 8,
                         borderLeft: `3px solid ${entry.isJudgement
-                            ? (token as any).colorPurple || '#722ed1'
-                            : token.colorPrimary
+                          ? (token as any).colorPurple || '#722ed1'
+                          : token.colorPrimary
                           }`,
                       }}
                     >

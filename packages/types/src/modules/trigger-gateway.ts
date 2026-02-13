@@ -109,6 +109,13 @@ export const UpdateTriggerConfigSchema = z.object({
   paramOverrides: z.record(z.unknown()).optional(),
 });
 
+export const FireTriggerConfigSchema = z.object({
+  workflowVersionId: z.string().uuid().optional(),
+  experimentId: z.string().uuid().optional(),
+  idempotencyKey: z.string().trim().min(1).max(120).optional(),
+  paramSnapshot: z.record(z.unknown()).optional(),
+});
+
 export const TriggerConfigQuerySchema = z.object({
   workflowDefinitionId: z.string().uuid().optional(),
   triggerType: WorkflowTriggerTypeEnum.optional(),
@@ -163,6 +170,7 @@ export type TriggerConfigDto = z.infer<typeof TriggerConfigSchema>;
 export type TriggerLogDto = z.infer<typeof TriggerLogSchema>;
 export type CreateTriggerConfigDto = z.infer<typeof CreateTriggerConfigSchema>;
 export type UpdateTriggerConfigDto = z.infer<typeof UpdateTriggerConfigSchema>;
+export type FireTriggerConfigDto = z.infer<typeof FireTriggerConfigSchema>;
 export type TriggerConfigQueryDto = z.infer<typeof TriggerConfigQuerySchema>;
 export type TriggerLogQueryDto = z.infer<typeof TriggerLogQuerySchema>;
 export type TriggerConfigPageDto = z.infer<typeof TriggerConfigPageSchema>;

@@ -19,6 +19,11 @@ import { PrismaService } from '../../prisma';
 import { NodeExecutorRegistry } from './engine/node-executor.registry';
 import { DebateTraceService } from '../debate-trace/debate-trace.service';
 import type { DebateReplayQueryDto } from '@packages/types';
+import { VariableResolver } from './engine/variable-resolver';
+import { EvidenceCollector } from './engine/evidence-collector';
+import { DagScheduler } from './engine/dag-scheduler';
+import { ReplayAssembler, type ExecutionReplayBundle } from './engine/replay-assembler';
+import { WorkflowExperimentService } from '../workflow-experiment/workflow-experiment.service';
 
 type WorkflowFailureCode =
   | 'EXECUTION_TIMEOUT'
@@ -47,12 +52,22 @@ class WorkflowTimeoutError extends Error {
   }
 }
 
+type ExperimentRoutingContext = {
+  experimentId: string;
+  variant: 'A' | 'B';
+} | null;
+
 @Injectable()
 export class WorkflowExecutionService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly nodeExecutorRegistry: NodeExecutorRegistry,
     private readonly debateTraceService: DebateTraceService,
+    private readonly variableResolver: VariableResolver,
+    private readonly evidenceCollector: EvidenceCollector,
+    private readonly replayAssembler: ReplayAssembler,
+    private readonly dagScheduler: DagScheduler,
+    private readonly workflowExperimentService: WorkflowExperimentService,
   ) {}
 
   async trigger(
@@ -71,10 +86,55 @@ export class WorkflowExecutionService {
       throw new NotFoundException('流程不存在或无权限执行');
     }
 
-    const version = dto.workflowVersionId
+    const idempotencyKey = dto.idempotencyKey?.trim() || undefined;
+    if (idempotencyKey && dto.experimentId) {
+      const existingExecution = await this.prisma.workflowExecution.findFirst({
+        where: {
+          triggerUserId: ownerUserId,
+          idempotencyKey,
+          workflowVersion: {
+            workflowDefinitionId: definition.id,
+          },
+        },
+        include: {
+          nodeExecutions: {
+            orderBy: { createdAt: 'asc' },
+          },
+          runtimeEvents: {
+            orderBy: [{ occurredAt: 'asc' }, { createdAt: 'asc' }],
+          },
+        },
+      });
+      if (existingExecution) {
+        await this.recordRuntimeEvent({
+          workflowExecutionId: existingExecution.id,
+          eventType: 'EXECUTION_IDEMPOTENT_HIT',
+          level: 'INFO',
+          message: '命中幂等键，复用已有执行实例',
+          detail: {
+            idempotencyKey,
+            experimentId: dto.experimentId,
+          },
+        });
+        return existingExecution;
+      }
+    }
+
+    let experimentRouting: ExperimentRoutingContext = null;
+    let targetWorkflowVersionId = dto.workflowVersionId;
+    if (dto.experimentId) {
+      const routed = await this.workflowExperimentService.routeTraffic(dto.experimentId);
+      targetWorkflowVersionId = routed.versionId;
+      experimentRouting = {
+        experimentId: dto.experimentId,
+        variant: routed.variant,
+      };
+    }
+
+    const version = targetWorkflowVersionId
       ? await this.prisma.workflowVersion.findFirst({
           where: {
-            id: dto.workflowVersionId,
+            id: targetWorkflowVersionId,
             workflowDefinitionId: definition.id,
           },
         })
@@ -90,7 +150,6 @@ export class WorkflowExecutionService {
       throw new BadRequestException('未找到可执行版本，请先发布至少一个版本');
     }
 
-    const idempotencyKey = dto.idempotencyKey?.trim() || undefined;
     if (idempotencyKey) {
       const existingExecution = await this.prisma.workflowExecution.findFirst({
         where: {
@@ -180,8 +239,20 @@ export class WorkflowExecutionService {
         triggerType: dto.triggerType,
         sourceExecutionId: options?.sourceExecutionId ?? null,
         idempotencyKey: idempotencyKey ?? null,
+        experimentId: experimentRouting?.experimentId ?? null,
+        experimentVariant: experimentRouting?.variant ?? null,
       },
     });
+
+    if (parsedDsl.data.mode === 'DAG') {
+      return this.executeDagWorkflow({
+        executionId: execution.id,
+        ownerUserId,
+        dsl: parsedDsl.data,
+        paramSnapshot: mergedParamSnapshot,
+        experimentRouting,
+      });
+    }
 
     const sortedNodes = this.sortNodesByEdges(parsedDsl.data);
     const incomingNodeMap = this.buildIncomingNodeMap(parsedDsl.data.edges);
@@ -454,7 +525,8 @@ export class WorkflowExecutionService {
           softFailureCount,
         },
       });
-
+      const replayBundle = await this.persistReplayBundle(execution.id, parsedDsl.data);
+      await this.recordExperimentOutcome(experimentRouting, completed, replayBundle);
       return completed;
     } catch (error) {
       const classifiedFailure = this.classifyFailure(error);
@@ -492,18 +564,22 @@ export class WorkflowExecutionService {
         },
       });
 
-      if (isCanceled) {
-        return this.prisma.workflowExecution.findUnique({
-          where: { id: execution.id },
-          include: {
-            nodeExecutions: {
-              orderBy: { createdAt: 'asc' },
-            },
-            runtimeEvents: {
-              orderBy: [{ occurredAt: 'asc' }, { createdAt: 'asc' }],
-            },
+      const terminalExecution = await this.prisma.workflowExecution.findUnique({
+        where: { id: execution.id },
+        include: {
+          nodeExecutions: {
+            orderBy: { createdAt: 'asc' },
           },
-        });
+          runtimeEvents: {
+            orderBy: [{ occurredAt: 'asc' }, { createdAt: 'asc' }],
+          },
+        },
+      });
+      const replayBundle = await this.persistReplayBundle(execution.id, parsedDsl.data);
+      await this.recordExperimentOutcome(experimentRouting, terminalExecution, replayBundle);
+
+      if (isCanceled) {
+        return terminalExecution;
       }
       throw error;
     }
@@ -615,6 +691,11 @@ export class WorkflowExecutionService {
     return this.debateTraceService.getDebateTimeline(id);
   }
 
+  async replay(ownerUserId: string, id: string) {
+    await this.ensureExecutionReadable(ownerUserId, id);
+    return this.assembleReplayBundle(id);
+  }
+
   async rerun(ownerUserId: string, id: string) {
     const sourceExecution = await this.prisma.workflowExecution.findUnique({
       where: { id },
@@ -722,6 +803,348 @@ export class WorkflowExecutionService {
         },
       },
     });
+  }
+
+  private async executeDagWorkflow(params: {
+    executionId: string;
+    ownerUserId: string;
+    dsl: WorkflowDsl;
+    paramSnapshot?: Record<string, unknown>;
+    experimentRouting: ExperimentRoutingContext;
+  }) {
+    const outputsByNode = new Map<string, Record<string, unknown>>();
+    const buildExecutionOutputSnapshot = (nodeCount: number, softFailureCount: number) => {
+      const latestExecutedNodeId = Array.from(outputsByNode.keys()).at(-1);
+      const latestExecutedNode = latestExecutedNodeId
+        ? params.dsl.nodes.find((node) => node.id === latestExecutedNodeId)
+        : undefined;
+      const latestRiskGateNode = [...params.dsl.nodes]
+        .reverse()
+        .find((node) => node.type === 'risk-gate' && outputsByNode.has(node.id));
+      const latestRiskGateOutput = latestRiskGateNode
+        ? outputsByNode.get(latestRiskGateNode.id)
+        : undefined;
+      const riskGateSummary = this.extractRiskGateSummary(latestRiskGateOutput);
+
+      return {
+        nodeCount,
+        latestNodeId: latestExecutedNode?.id ?? null,
+        latestNodeType: latestExecutedNode?.type ?? null,
+        softFailureCount,
+        riskGate: riskGateSummary,
+      };
+    };
+
+    try {
+      const dagResult = await this.dagScheduler.execute({
+        executionId: params.executionId,
+        triggerUserId: params.ownerUserId,
+        dsl: params.dsl,
+        paramSnapshot: params.paramSnapshot,
+        callbacks: {
+          throwIfCanceled: () => this.throwIfExecutionCanceled(params.executionId),
+          recordEvent: (payload) =>
+            this.recordRuntimeEvent({
+              workflowExecutionId: params.executionId,
+              nodeExecutionId: payload.nodeExecutionId,
+              eventType: payload.eventType,
+              level: payload.level,
+              message: payload.message,
+              detail: payload.detail,
+            }),
+          persistNodeExecution: async (payload) =>
+            this.prisma.nodeExecution.create({
+              data: {
+                workflowExecutionId: params.executionId,
+                nodeId: payload.nodeId,
+                nodeType: payload.nodeType,
+                status: payload.status,
+                startedAt: payload.startedAt,
+                completedAt: payload.completedAt,
+                durationMs: payload.durationMs,
+                errorMessage: payload.errorMessage,
+                failureCategory:
+                  payload.status === 'FAILED'
+                    ? (payload.failureCategory as WorkflowFailureCategory | null)
+                    : null,
+                failureCode: payload.status === 'FAILED' ? payload.failureCode : null,
+                inputSnapshot: this.toJsonValue(payload.inputSnapshot),
+                outputSnapshot: this.toJsonValue(payload.outputSnapshot),
+              },
+            }),
+          resolveRuntimePolicy: (node, runPolicy) => this.resolveRuntimePolicy(node, runPolicy),
+          executeWithTimeout: (task, timeoutMs, timeoutMessage) =>
+            this.executeWithTimeout(task, timeoutMs, timeoutMessage),
+          sleep: (ms) => this.sleep(ms),
+          classifyFailure: (error) => this.classifyFailure(error),
+        },
+      });
+
+      dagResult.outputsByNode.forEach((output, nodeId) => {
+        outputsByNode.set(nodeId, output);
+      });
+
+      await this.throwIfExecutionCanceled(params.executionId);
+      const completed = await this.prisma.workflowExecution.update({
+        where: { id: params.executionId },
+        data: {
+          status: 'SUCCESS',
+          completedAt: new Date(),
+          errorMessage: null,
+          failureCategory: null,
+          failureCode: null,
+          outputSnapshot: this.toJsonValue(
+            buildExecutionOutputSnapshot(params.dsl.nodes.length, dagResult.softFailureCount),
+          ),
+        },
+        include: {
+          nodeExecutions: {
+            orderBy: { createdAt: 'asc' },
+          },
+        },
+      });
+      await this.recordRuntimeEvent({
+        workflowExecutionId: params.executionId,
+        eventType: 'EXECUTION_SUCCEEDED',
+        level: 'INFO',
+        message: 'DAG 执行完成',
+        detail: {
+          nodeCount: params.dsl.nodes.length,
+          softFailureCount: dagResult.softFailureCount,
+          executedNodeCount: dagResult.executedNodeCount,
+        },
+      });
+
+      const replayBundle = await this.persistReplayBundle(params.executionId, params.dsl);
+      await this.recordExperimentOutcome(params.experimentRouting, completed, replayBundle);
+      return completed;
+    } catch (error) {
+      const classifiedFailure = this.classifyFailure(error);
+      const failureMessage = classifiedFailure.message;
+      const isCanceled = classifiedFailure.failureCategory === 'CANCELED';
+      const terminalStatus: 'FAILED' | 'CANCELED' = isCanceled ? 'CANCELED' : 'FAILED';
+      const executionFailureCode = isCanceled
+        ? 'EXECUTION_CANCELED'
+        : classifiedFailure.failureCategory === 'TIMEOUT'
+          ? 'EXECUTION_TIMEOUT'
+          : classifiedFailure.failureCode;
+
+      await this.prisma.workflowExecution.update({
+        where: { id: params.executionId },
+        data: {
+          status: terminalStatus,
+          completedAt: new Date(),
+          errorMessage: failureMessage,
+          failureCategory: classifiedFailure.failureCategory,
+          failureCode: executionFailureCode,
+          outputSnapshot: this.toJsonValue(buildExecutionOutputSnapshot(outputsByNode.size, 0)),
+        },
+      });
+      await this.recordRuntimeEvent({
+        workflowExecutionId: params.executionId,
+        eventType: isCanceled ? 'EXECUTION_CANCELED' : 'EXECUTION_FAILED',
+        level: isCanceled ? 'WARN' : 'ERROR',
+        message: isCanceled ? '执行已取消' : '执行失败',
+        detail: {
+          errorMessage: failureMessage,
+          failureCategory: classifiedFailure.failureCategory,
+          failureCode: executionFailureCode,
+          executedNodeCount: outputsByNode.size,
+        },
+      });
+
+      const terminalExecution = await this.prisma.workflowExecution.findUnique({
+        where: { id: params.executionId },
+        include: {
+          nodeExecutions: {
+            orderBy: { createdAt: 'asc' },
+          },
+          runtimeEvents: {
+            orderBy: [{ occurredAt: 'asc' }, { createdAt: 'asc' }],
+          },
+        },
+      });
+      const replayBundle = await this.persistReplayBundle(params.executionId, params.dsl);
+      await this.recordExperimentOutcome(params.experimentRouting, terminalExecution, replayBundle);
+      if (isCanceled) {
+        return terminalExecution;
+      }
+      throw error;
+    }
+  }
+
+  private async assembleReplayBundle(
+    executionId: string,
+    dslOverride?: WorkflowDsl,
+  ): Promise<ExecutionReplayBundle> {
+    const execution = await this.prisma.workflowExecution.findUnique({
+      where: { id: executionId },
+      include: {
+        workflowVersion: {
+          select: {
+            id: true,
+            workflowDefinitionId: true,
+            dslSnapshot: true,
+          },
+        },
+        nodeExecutions: {
+          orderBy: [{ startedAt: 'asc' }, { createdAt: 'asc' }],
+        },
+      },
+    });
+
+    if (!execution) {
+      throw new NotFoundException('运行实例不存在');
+    }
+
+    const parsedDsl = dslOverride
+      ? { success: true as const, data: dslOverride }
+      : WorkflowDslSchema.safeParse(execution.workflowVersion.dslSnapshot);
+    if (!parsedDsl.success) {
+      throw new BadRequestException({
+        message: '流程 DSL 快照解析失败',
+        issues: parsedDsl.error.issues,
+      });
+    }
+    const dsl = parsedDsl.data;
+
+    const outputsByNode = new Map<string, Record<string, unknown>>();
+    for (const nodeExecution of execution.nodeExecutions) {
+      outputsByNode.set(nodeExecution.nodeId, this.toRecord(nodeExecution.outputSnapshot) ?? {});
+    }
+
+    const evidenceBundle = this.evidenceCollector.collect(dsl.nodes, outputsByNode);
+    const dataLineage = this.variableResolver.buildLineageGraph(dsl.nodes, dsl.edges, outputsByNode);
+    const nodeSnapshots = this.replayAssembler.buildNodeSnapshots(execution.nodeExecutions, dsl.nodes);
+
+    return this.replayAssembler.assemble({
+      executionId: execution.id,
+      workflowDefinitionId: execution.workflowVersion.workflowDefinitionId,
+      workflowVersionId: execution.workflowVersion.id,
+      triggerType: execution.triggerType,
+      triggerUserId: execution.triggerUserId,
+      status: execution.status,
+      startedAt: execution.startedAt ?? execution.createdAt,
+      completedAt: execution.completedAt ?? execution.startedAt ?? execution.createdAt,
+      paramSnapshot: this.toRecord(execution.paramSnapshot),
+      dsl,
+      nodeSnapshots,
+      evidenceBundle,
+      dataLineage,
+    });
+  }
+
+  private async persistReplayBundle(
+    executionId: string,
+    dslOverride?: WorkflowDsl,
+  ): Promise<ExecutionReplayBundle | null> {
+    try {
+      const replayBundle = await this.assembleReplayBundle(executionId, dslOverride);
+      const execution = await this.prisma.workflowExecution.findUnique({
+        where: { id: executionId },
+        select: { outputSnapshot: true },
+      });
+      const existingOutput = this.toRecord(execution?.outputSnapshot);
+      await this.prisma.workflowExecution.update({
+        where: { id: executionId },
+        data: {
+          outputSnapshot: this.toJsonValue({
+            ...(existingOutput ?? {}),
+            evidenceBundle: replayBundle.evidenceBundle,
+            dataLineage: replayBundle.dataLineage,
+            replayBundle,
+          }),
+        },
+      });
+      return replayBundle;
+    } catch {
+      return null;
+    }
+  }
+
+  private async recordExperimentOutcome(
+    experimentRouting: ExperimentRoutingContext,
+    execution:
+      | {
+          id: string;
+          status: string;
+          startedAt: Date | null;
+          completedAt: Date | null;
+          failureCategory: WorkflowFailureCategory | null;
+          createdAt?: Date;
+          nodeExecutions?: Array<{ id: string }>;
+        }
+      | null,
+    replayBundle: ExecutionReplayBundle | null,
+  ) {
+    if (!experimentRouting || !execution) {
+      return;
+    }
+
+    const startedAt = execution.startedAt ?? execution.createdAt ?? new Date();
+    const completedAt = execution.completedAt ?? new Date();
+    const durationMs = Math.max(0, completedAt.getTime() - startedAt.getTime());
+    const success = execution.status === 'SUCCESS';
+    const nodeCount = execution.nodeExecutions?.length ?? replayBundle?.stats.executedNodes ?? 0;
+    const decision = replayBundle?.decisionOutput;
+
+    try {
+      await this.prisma.workflowExperimentRun.create({
+        data: {
+          experimentId: experimentRouting.experimentId,
+          workflowExecutionId: execution.id,
+          variant: experimentRouting.variant,
+          success,
+          durationMs,
+          nodeCount,
+          failureCategory: execution.failureCategory,
+          action: typeof decision?.action === 'string' ? decision.action : null,
+          confidence: typeof decision?.confidence === 'number' ? decision.confidence : null,
+          riskLevel: typeof decision?.riskLevel === 'string' ? decision.riskLevel : null,
+          metricsPayload: this.toJsonValue({
+            executionStatus: execution.status,
+            failureCategory: execution.failureCategory,
+            decisionOutput: decision ?? null,
+            replayStats: replayBundle?.stats ?? null,
+          }),
+        },
+      });
+
+      await this.workflowExperimentService.recordMetrics(experimentRouting.experimentId, {
+        variant: experimentRouting.variant,
+        executionId: execution.id,
+        success,
+        durationMs,
+        nodeCount,
+        failureCategory: execution.failureCategory ?? undefined,
+      });
+
+      await this.recordRuntimeEvent({
+        workflowExecutionId: execution.id,
+        eventType: 'EXPERIMENT_RUN_RECORDED',
+        level: 'INFO',
+        message: `实验指标记录完成 (${experimentRouting.variant})`,
+        detail: {
+          experimentId: experimentRouting.experimentId,
+          variant: experimentRouting.variant,
+          success,
+          durationMs,
+        },
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      await this.recordRuntimeEvent({
+        workflowExecutionId: execution.id,
+        eventType: 'EXPERIMENT_METRICS_RECORD_FAILED',
+        level: 'WARN',
+        message: '实验指标记录失败',
+        detail: {
+          experimentId: experimentRouting.experimentId,
+          variant: experimentRouting.variant,
+          reason: message,
+        },
+      });
+    }
   }
 
   private async ensureExecutionReadable(ownerUserId: string, id: string) {

@@ -3,20 +3,36 @@ import dayjs from 'dayjs';
 import type { ColumnsType } from 'antd/es/table';
 import {
   App,
+  Badge,
   Button,
   Card,
+  Col,
+  Descriptions,
   Drawer,
+  Flex,
   Form,
   Input,
   Modal,
   Popconfirm,
+  Progress,
+  Row,
   Select,
   Space,
+  Statistic,
   Table,
   Tabs,
   Tag,
+  Timeline,
+  Tooltip,
   Typography,
 } from 'antd';
+import {
+  CheckCircleOutlined,
+  EditOutlined,
+  HistoryOutlined,
+  RollbackOutlined,
+  WarningOutlined,
+} from '@ant-design/icons';
 import type {
   CreateParameterItemDto,
   CreateParameterSetDto,
@@ -453,6 +469,31 @@ export const ParameterSetPage: React.FC = () => {
     [],
   );
 
+  const overrideSummary = useMemo(() => {
+    const items = setDetail?.items ?? [];
+    const total = items.length;
+    let inherited = 0;
+    let overridden = 0;
+    let noTemplate = 0;
+    for (const item of items) {
+      const hasDefault = item.defaultValue !== null && item.defaultValue !== undefined;
+      if (!hasDefault) {
+        noTemplate++;
+        continue;
+      }
+      const hasValue = item.value !== null && item.value !== undefined;
+      if (!hasValue || JSON.stringify(item.value) === JSON.stringify(item.defaultValue)) {
+        inherited++;
+      } else {
+        overridden++;
+      }
+    }
+    const overrideRate = total > 0 ? Math.round((overridden / total) * 100) : 0;
+    return { total, inherited, overridden, noTemplate, overrideRate };
+  }, [setDetail?.items]);
+
+  const [auditViewMode, setAuditViewMode] = useState<'table' | 'timeline'>('table');
+
   const handleCreateSet = async () => {
     try {
       const values = await setForm.validateFields();
@@ -602,6 +643,11 @@ export const ParameterSetPage: React.FC = () => {
                 {isPublished(setDetail?.version) ? '已发布' : '未发布'}
               </Tag>
               <Tag>版本 {setDetail?.version ?? '-'}</Tag>
+              {setDetail?.templateSource === 'PUBLIC' && (
+                <Tooltip title="继承自公共模板">
+                  <Tag color="blue" icon={<CheckCircleOutlined />}>公共模板</Tag>
+                </Tooltip>
+              )}
             </Space>
             <Space>
               {selectedItemIds.length > 0 && (
@@ -619,6 +665,49 @@ export const ParameterSetPage: React.FC = () => {
               </Button>
             </Space>
           </Space>
+
+          {/* Override Impact Summary */}
+          {setDetail && (
+            <Row gutter={[16, 16]}>
+              <Col xs={12} sm={6}>
+                <Card size="small">
+                  <Statistic title="参数总数" value={overrideSummary.total} />
+                </Card>
+              </Col>
+              <Col xs={12} sm={6}>
+                <Card size="small">
+                  <Statistic
+                    title="继承模板"
+                    value={overrideSummary.inherited}
+                    valueStyle={{ color: '#52c41a' }}
+                    prefix={<CheckCircleOutlined />}
+                  />
+                </Card>
+              </Col>
+              <Col xs={12} sm={6}>
+                <Card size="small">
+                  <Statistic
+                    title="已覆盖"
+                    value={overrideSummary.overridden}
+                    valueStyle={{ color: '#fa8c16' }}
+                    prefix={<WarningOutlined />}
+                  />
+                </Card>
+              </Col>
+              <Col xs={12} sm={6}>
+                <Card size="small">
+                  <Tooltip title="已覆盖参数项占比">
+                    <Statistic
+                      title="覆盖率"
+                      value={overrideSummary.overrideRate}
+                      suffix="%"
+                      valueStyle={{ color: overrideSummary.overrideRate > 50 ? '#fa8c16' : '#52c41a' }}
+                    />
+                  </Tooltip>
+                </Card>
+              </Col>
+            </Row>
+          )}
 
           <Tabs
             activeKey={detailTab}
@@ -669,19 +758,112 @@ export const ParameterSetPage: React.FC = () => {
                 key: 'audit',
                 label: '变更审计',
                 children: (
-                  <Table<ParameterChangeLogDto>
-                    rowKey="id"
-                    loading={isLogsLoading}
-                    dataSource={changeLogs?.data ?? []}
-                    columns={auditColumns}
-                    scroll={{ x: 1100 }}
-                    pagination={{
-                      current: changeLogs?.page ?? logPage,
-                      pageSize: 20,
-                      total: changeLogs?.total ?? 0,
-                      onChange: (nextPage) => setLogPage(nextPage),
-                    }}
-                  />
+                  <Space direction="vertical" style={{ width: '100%' }} size={12}>
+                    <Flex justify="flex-end">
+                      <Select
+                        style={{ width: 120 }}
+                        value={auditViewMode}
+                        onChange={setAuditViewMode}
+                        options={[
+                          { label: '表格视图', value: 'table' },
+                          { label: '时间线', value: 'timeline' },
+                        ]}
+                      />
+                    </Flex>
+                    {auditViewMode === 'table' ? (
+                      <Table<ParameterChangeLogDto>
+                        rowKey="id"
+                        loading={isLogsLoading}
+                        dataSource={changeLogs?.data ?? []}
+                        columns={auditColumns}
+                        scroll={{ x: 1100 }}
+                        pagination={{
+                          current: changeLogs?.page ?? logPage,
+                          pageSize: 20,
+                          total: changeLogs?.total ?? 0,
+                          onChange: (nextPage) => setLogPage(nextPage),
+                        }}
+                      />
+                    ) : (
+                      <>
+                        <Timeline
+                          items={(changeLogs?.data ?? []).map((log) => ({
+                            key: log.id,
+                            color: operationColorMap[log.operation] === 'green'
+                              ? 'green'
+                              : operationColorMap[log.operation] === 'red'
+                                ? 'red'
+                                : operationColorMap[log.operation] === 'purple'
+                                  ? 'purple' as unknown as undefined
+                                  : 'blue',
+                            dot: log.operation === 'PUBLISH'
+                              ? <CheckCircleOutlined />
+                              : log.operation === 'DELETE'
+                                ? <WarningOutlined />
+                                : log.operation === 'RESET_TO_DEFAULT' || log.operation === 'BATCH_RESET'
+                                  ? <RollbackOutlined />
+                                  : <EditOutlined />,
+                            children: (
+                              <Card size="small" style={{ marginBottom: 4 }}>
+                                <Flex justify="space-between" align="center" style={{ marginBottom: 4 }}>
+                                  <Space size={4}>
+                                    <Tag color={operationColorMap[log.operation] || 'default'}>
+                                      {log.operation}
+                                    </Tag>
+                                    {log.fieldPath && (
+                                      <Tag>{log.fieldPath}</Tag>
+                                    )}
+                                  </Space>
+                                  <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                                    {log.createdAt
+                                      ? dayjs(log.createdAt).format('YYYY-MM-DD HH:mm:ss')
+                                      : '-'}
+                                  </Typography.Text>
+                                </Flex>
+                                {(log.oldValue !== null && log.oldValue !== undefined) && (
+                                  <Flex gap={8} style={{ fontSize: 12 }}>
+                                    <Typography.Text type="secondary">旧值:</Typography.Text>
+                                    <Typography.Text delete>{formatValue(log.oldValue)}</Typography.Text>
+                                    <Typography.Text type="secondary">→</Typography.Text>
+                                    <Typography.Text strong>{formatValue(log.newValue)}</Typography.Text>
+                                  </Flex>
+                                )}
+                                {log.changeReason && (
+                                  <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                                    原因: {log.changeReason}
+                                  </Typography.Text>
+                                )}
+                                {log.changedByUserId && (
+                                  <Typography.Text type="secondary" style={{ fontSize: 11, display: 'block' }}>
+                                    操作人: {log.changedByUserId}
+                                  </Typography.Text>
+                                )}
+                              </Card>
+                            ),
+                          }))}
+                        />
+                        <Flex justify="center">
+                          <Button
+                            type="link"
+                            disabled={logPage <= 1}
+                            onClick={() => setLogPage((prev) => Math.max(prev - 1, 1))}
+                          >
+                            上一页
+                          </Button>
+                          <Typography.Text type="secondary" style={{ lineHeight: '32px' }}>
+                            {changeLogs?.page ?? logPage} / {Math.ceil((changeLogs?.total ?? 0) / 20) || 1}
+                          </Typography.Text>
+                          <Button
+                            type="link"
+                            disabled={(changeLogs?.page ?? logPage) >= Math.ceil((changeLogs?.total ?? 0) / 20)}
+                            onClick={() => setLogPage((prev) => prev + 1)}
+                          >
+                            下一页
+                          </Button>
+                        </Flex>
+                      </>
+                    )}
+                  </Space>
                 ),
               },
             ]}

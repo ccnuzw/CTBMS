@@ -25,9 +25,11 @@ import { ContextBuilderNodeExecutor } from './engine/node-executors/context-buil
 import { JudgeAgentNodeExecutor } from './engine/node-executors/judge-agent.executor';
 import { ApprovalNodeExecutor } from './engine/node-executors/approval.executor';
 import { DebateTraceModule } from '../debate-trace/debate-trace.module';
+import { WorkflowExperimentModule } from '../workflow-experiment/workflow-experiment.module';
+import { AIProviderFactory } from '../ai/providers/provider.factory';
 
 @Module({
-    imports: [DebateTraceModule],
+    imports: [DebateTraceModule, WorkflowExperimentModule],
     controllers: [WorkflowExecutionController],
     providers: [
         WorkflowExecutionService,
@@ -54,9 +56,8 @@ import { DebateTraceModule } from '../debate-trace/debate-trace.module';
         EvidenceCollector,
         ReplayAssembler,
         DagScheduler,
+        AIProviderFactory,
     ],
     exports: [WorkflowExecutionService, VariableResolver, EvidenceCollector, ReplayAssembler, DagScheduler],
 })
 export class WorkflowExecutionModule { }
-
-

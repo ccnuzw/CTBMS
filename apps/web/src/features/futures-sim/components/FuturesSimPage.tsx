@@ -338,7 +338,7 @@ export const FuturesSimPage: React.FC = () => {
                   strokeColor={
                     accountSummary.marginUsageRate >= 0.7 ? token.colorError
                       : accountSummary.marginUsageRate >= 0.5 ? token.colorWarning
-                      : token.colorSuccess
+                        : token.colorSuccess
                   }
                 />
               )}
@@ -572,7 +572,7 @@ export const FuturesSimPage: React.FC = () => {
 
             {Array.isArray(positionDetail.trades) && positionDetail.trades.length > 0 && (
               <Card title="关联成交" size="small">
-                <Table
+                <Table<VirtualTradeLedgerDto>
                   rowKey="id"
                   dataSource={positionDetail.trades}
                   columns={tradeColumns}

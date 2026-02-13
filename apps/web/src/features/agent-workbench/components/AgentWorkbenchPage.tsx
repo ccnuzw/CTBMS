@@ -26,8 +26,11 @@ import {
 import type { ColumnsType } from 'antd/es/table';
 import { useNavigate } from 'react-router-dom';
 import type { WorkflowExecutionDto } from '@packages/types';
-import { useWorkflowExecutions } from '../../workflow-runtime/api/workflow-executions';
-import { useExecutionAnalytics } from '../../execution-analytics/api/analytics';
+import {
+  useWorkbenchSummary,
+  useWorkbenchAlerts,
+  useWorkbenchRecentExecutions,
+} from '../api';
 import { useExperiments } from '../../workflow-experiment/api/experiments';
 
 const { Title, Text, Paragraph } = Typography;
@@ -44,19 +47,10 @@ export const AgentWorkbenchPage: React.FC = () => {
   const { token } = theme.useToken();
   const navigate = useNavigate();
 
-  // 获取最近的执行列表
-  const { data: recentExecutions, isLoading: isExecLoading } = useWorkflowExecutions({
-    page: 1,
-    pageSize: 10,
-  });
-
-  // 获取今日分析数据
-  const today = new Date().toISOString().slice(0, 10);
-  const { data: todayAnalytics, isLoading: isAnalyticsLoading } = useExecutionAnalytics({
-    startDate: today,
-    endDate: today,
-    granularity: 'DAY',
-  });
+  // 专属 API hooks
+  const { data: summary, isLoading: isSummaryLoading } = useWorkbenchSummary();
+  const { data: alerts } = useWorkbenchAlerts(5);
+  const { data: recentExecData, isLoading: isExecLoading } = useWorkbenchRecentExecutions(10);
 
   // 获取运行中的实验
   const { data: runningExperiments } = useExperiments({
@@ -65,15 +59,7 @@ export const AgentWorkbenchPage: React.FC = () => {
     pageSize: 5,
   });
 
-  const todayOverall = todayAnalytics?.trend?.overall;
-
-  // 运行中和失败的执行
-  const runningExecutions = (recentExecutions?.data ?? []).filter(
-    (e) => e.status === 'RUNNING',
-  );
-  const failedExecutions = (recentExecutions?.data ?? []).filter(
-    (e) => e.status === 'FAILED',
-  );
+  const recentExecutions = (recentExecData as Record<string, unknown>)?.data as WorkflowExecutionDto[] | undefined;
 
   const recentColumns: ColumnsType<WorkflowExecutionDto> = [
     {
@@ -149,23 +135,23 @@ export const AgentWorkbenchPage: React.FC = () => {
       {/* ── Today's Stats ── */}
       <Row gutter={[16, 16]}>
         <Col xs={12} sm={6}>
-          <Card loading={isAnalyticsLoading}>
+          <Card loading={isSummaryLoading}>
             <Statistic
               title="今日执行"
-              value={todayOverall?.total ?? 0}
+              value={summary?.todayTotal ?? 0}
               prefix={<ThunderboltOutlined />}
               valueStyle={{ color: token.colorPrimary }}
             />
           </Card>
         </Col>
         <Col xs={12} sm={6}>
-          <Card loading={isAnalyticsLoading}>
+          <Card loading={isSummaryLoading}>
             <Statistic
               title="今日成功率"
-              value={todayOverall ? `${(todayOverall.successRate * 100).toFixed(1)}%` : '-'}
+              value={summary ? `${(summary.todaySuccessRate * 100).toFixed(1)}%` : '-'}
               prefix={<CheckCircleOutlined />}
               valueStyle={{
-                color: (todayOverall?.successRate ?? 0) >= 0.8
+                color: (summary?.todaySuccessRate ?? 0) >= 0.8
                   ? token.colorSuccess
                   : token.colorWarning,
               }}
@@ -173,23 +159,23 @@ export const AgentWorkbenchPage: React.FC = () => {
           </Card>
         </Col>
         <Col xs={12} sm={6}>
-          <Card>
+          <Card loading={isSummaryLoading}>
             <Statistic
               title="运行中"
-              value={runningExecutions.length}
-              prefix={<SyncOutlined spin={runningExecutions.length > 0} />}
+              value={summary?.runningCount ?? 0}
+              prefix={<SyncOutlined spin={(summary?.runningCount ?? 0) > 0} />}
               valueStyle={{ color: token.colorPrimary }}
             />
           </Card>
         </Col>
         <Col xs={12} sm={6}>
-          <Card>
+          <Card loading={isSummaryLoading}>
             <Statistic
               title="今日失败"
-              value={todayOverall?.failed ?? 0}
+              value={summary?.todayFailed ?? 0}
               prefix={<AlertOutlined />}
               valueStyle={{
-                color: (todayOverall?.failed ?? 0) > 0 ? token.colorError : token.colorSuccess,
+                color: (summary?.todayFailed ?? 0) > 0 ? token.colorError : token.colorSuccess,
               }}
             />
           </Card>
@@ -213,19 +199,19 @@ export const AgentWorkbenchPage: React.FC = () => {
               </Button>
             }
           >
-            {failedExecutions.length > 0 ? (
+            {(alerts ?? []).length > 0 ? (
               <Space direction="vertical" style={{ width: '100%' }} size={8}>
-                {failedExecutions.slice(0, 5).map((exec) => (
-                  <Card key={exec.id} size="small" style={{ borderLeft: `3px solid ${token.colorError}` }}>
+                {(alerts ?? []).map((alert) => (
+                  <Card key={alert.id} size="small" style={{ borderLeft: `3px solid ${token.colorError}` }}>
                     <Flex justify="space-between" align="center">
                       <Space direction="vertical" size={0}>
-                        <Text style={{ fontSize: 12 }}>{exec.id.slice(0, 16)}...</Text>
+                        <Text style={{ fontSize: 12 }}>{alert.executionId.slice(0, 16)}...</Text>
                         <Text type="secondary" style={{ fontSize: 11 }}>
-                          {exec.errorMessage?.slice(0, 50) ?? '执行失败'}
+                          {alert.errorMessage?.slice(0, 50) ?? '执行失败'}
                         </Text>
                       </Space>
-                      {exec.failureCategory && (
-                        <Tag color="error" style={{ fontSize: 11 }}>{exec.failureCategory}</Tag>
+                      {alert.failureCategory && (
+                        <Tag color="error" style={{ fontSize: 11 }}>{alert.failureCategory}</Tag>
                       )}
                     </Flex>
                   </Card>
@@ -290,7 +276,7 @@ export const AgentWorkbenchPage: React.FC = () => {
             <Table<WorkflowExecutionDto>
               rowKey="id"
               loading={isExecLoading}
-              dataSource={recentExecutions?.data ?? []}
+              dataSource={recentExecutions ?? []}
               columns={recentColumns}
               pagination={false}
               size="small"

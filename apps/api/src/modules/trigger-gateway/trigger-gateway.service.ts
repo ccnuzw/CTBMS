@@ -1,16 +1,23 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma';
 import type {
   CreateTriggerConfigDto,
   UpdateTriggerConfigDto,
+  FireTriggerConfigDto,
   TriggerConfigQueryDto,
   TriggerLogQueryDto,
+  WorkflowTriggerType,
 } from '@packages/types';
+import { WorkflowTriggerTypeEnum } from '@packages/types';
 import type { Prisma } from '@prisma/client';
+import { WorkflowExecutionService } from '../workflow-execution/workflow-execution.service';
 
 @Injectable()
 export class TriggerGatewayService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly workflowExecutionService: WorkflowExecutionService,
+  ) {}
 
   async create(userId: string, dto: CreateTriggerConfigDto) {
     return this.prisma.triggerConfig.create({
@@ -131,6 +138,115 @@ export class TriggerGatewayService {
     });
   }
 
+  async fire(userId: string, id: string, dto: FireTriggerConfigDto) {
+    const config = await this.findOne(id);
+    const triggerType = this.normalizeTriggerType(config.triggerType);
+    const startedAt = Date.now();
+    const payload = this.mergeParamSnapshot(
+      this.toRecord(config.paramOverrides),
+      dto.paramSnapshot,
+    );
+
+    if (config.status !== 'ACTIVE') {
+      const message = `触发器状态为 ${config.status}，已跳过触发`;
+      await this.prisma.triggerLog.create({
+        data: {
+          triggerConfigId: config.id,
+          triggerType: config.triggerType,
+          status: 'SKIPPED',
+          payload: this.toJsonValue({
+            workflowDefinitionId: config.workflowDefinitionId,
+            triggerType,
+            workflowVersionId: dto.workflowVersionId ?? null,
+            experimentId: dto.experimentId ?? null,
+            idempotencyKey: dto.idempotencyKey ?? null,
+            paramSnapshot: payload,
+          }),
+          errorMessage: message,
+          durationMs: 0,
+          triggeredAt: new Date(),
+        },
+      });
+      throw new BadRequestException(message);
+    }
+
+    try {
+      const execution = await this.workflowExecutionService.trigger(userId, {
+        workflowDefinitionId: config.workflowDefinitionId,
+        workflowVersionId: dto.workflowVersionId,
+        experimentId: dto.experimentId,
+        triggerType,
+        idempotencyKey: dto.idempotencyKey,
+        paramSnapshot: payload,
+      });
+      if (!execution) {
+        throw new BadRequestException('触发执行未返回实例');
+      }
+
+      const durationMs = Date.now() - startedAt;
+      const triggeredAt = new Date();
+      const [log] = await Promise.all([
+        this.prisma.triggerLog.create({
+          data: {
+            triggerConfigId: config.id,
+            workflowExecutionId: execution.id,
+            triggerType: config.triggerType,
+            status: 'SUCCESS',
+            payload: this.toJsonValue({
+              workflowDefinitionId: config.workflowDefinitionId,
+              workflowExecutionId: execution.id,
+              triggerType,
+              workflowVersionId: dto.workflowVersionId ?? null,
+              experimentId: dto.experimentId ?? null,
+              idempotencyKey: dto.idempotencyKey ?? null,
+              paramSnapshot: payload,
+            }),
+            durationMs,
+            triggeredAt,
+          },
+        }),
+        this.prisma.triggerConfig.update({
+          where: { id: config.id },
+          data: { lastTriggeredAt: triggeredAt },
+        }),
+      ]);
+
+      return {
+        triggerConfigId: config.id,
+        triggerLogId: log.id,
+        workflowExecutionId: execution.id,
+        executionStatus: execution.status,
+        triggeredAt: log.triggeredAt,
+        durationMs,
+      };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      const durationMs = Date.now() - startedAt;
+      const lowered = message.toLowerCase();
+      const status =
+        lowered.includes('timeout') || lowered.includes('超时') ? 'TIMEOUT' : 'FAILED';
+      await this.prisma.triggerLog.create({
+        data: {
+          triggerConfigId: config.id,
+          triggerType: config.triggerType,
+          status,
+          payload: this.toJsonValue({
+            workflowDefinitionId: config.workflowDefinitionId,
+            triggerType,
+            workflowVersionId: dto.workflowVersionId ?? null,
+            experimentId: dto.experimentId ?? null,
+            idempotencyKey: dto.idempotencyKey ?? null,
+            paramSnapshot: payload,
+          }),
+          errorMessage: message,
+          durationMs,
+          triggeredAt: new Date(),
+        },
+      });
+      throw error;
+    }
+  }
+
   async findLogs(query: TriggerLogQueryDto) {
     const where: Prisma.TriggerLogWhereInput = {};
 
@@ -183,5 +299,37 @@ export class TriggerGatewayService {
 
   async findLogsByConfigId(configId: string, query: TriggerLogQueryDto) {
     return this.findLogs({ ...query, triggerConfigId: configId });
+  }
+
+  private normalizeTriggerType(rawType: string): WorkflowTriggerType {
+    const parsed = WorkflowTriggerTypeEnum.safeParse(rawType);
+    if (parsed.success) {
+      return parsed.data;
+    }
+    return 'ON_DEMAND';
+  }
+
+  private toRecord(value: unknown): Record<string, unknown> | undefined {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+      return undefined;
+    }
+    return value as Record<string, unknown>;
+  }
+
+  private mergeParamSnapshot(
+    configOverrides: Record<string, unknown> | undefined,
+    runtimeParamSnapshot: Record<string, unknown> | undefined,
+  ): Record<string, unknown> | undefined {
+    if (!configOverrides && !runtimeParamSnapshot) {
+      return undefined;
+    }
+    return {
+      ...(configOverrides ?? {}),
+      ...(runtimeParamSnapshot ?? {}),
+    };
+  }
+
+  private toJsonValue(value: unknown): Prisma.InputJsonValue {
+    return JSON.parse(JSON.stringify(value)) as Prisma.InputJsonValue;
   }
 }

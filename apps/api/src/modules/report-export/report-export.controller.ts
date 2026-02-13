@@ -7,9 +7,10 @@ import {
   Param,
   Query,
   Request,
+  Res,
   UnauthorizedException,
 } from '@nestjs/common';
-import { Request as ExpressRequest } from 'express';
+import { Request as ExpressRequest, Response as ExpressResponse } from 'express';
 import { ReportExportService } from './report-export.service';
 import { ExportDebateReportRequest, ExportTaskQueryRequest } from './dto';
 
@@ -38,6 +39,17 @@ export class ReportExportController {
   @Get(':id')
   findOne(@Request() req: AuthRequest, @Param('id') id: string) {
     return this.service.findOne(this.getUserId(req), id);
+  }
+
+  @Get(':id/download')
+  async download(
+    @Request() req: AuthRequest,
+    @Param('id') id: string,
+    @Res() res: ExpressResponse,
+  ) {
+    const payload = await this.service.resolveDownload(this.getUserId(req), id);
+    res.setHeader('Content-Type', payload.contentType);
+    res.download(payload.filePath, payload.fileName);
   }
 
   @Delete(':id')
