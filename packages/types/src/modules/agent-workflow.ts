@@ -165,3 +165,67 @@ export type UpdateAgentPromptTemplateDto = z.infer<typeof UpdateAgentPromptTempl
 export type AgentPromptTemplateQueryDto = z.infer<typeof AgentPromptTemplateQuerySchema>;
 export type AgentPromptTemplatePageDto = z.infer<typeof AgentPromptTemplatePageSchema>;
 
+// ────────────────── DebateRoundTrace ──────────────────
+
+export const DebateRoundTraceSchema = z.object({
+  id: z.string().uuid(),
+  workflowExecutionId: z.string().uuid(),
+  nodeExecutionId: z.string().uuid().nullable().optional(),
+  roundNumber: z.number().int().min(1),
+  participantCode: z.string().min(1),
+  participantRole: z.string().min(1),
+  stance: z.string().nullable().optional(),
+  confidence: z.number().min(0).max(1).nullable().optional(),
+  previousConfidence: z.number().min(0).max(1).nullable().optional(),
+  statementText: z.string().min(1),
+  evidenceRefs: z.record(z.unknown()).nullable().optional(),
+  challengeTargetCode: z.string().nullable().optional(),
+  challengeText: z.string().nullable().optional(),
+  responseText: z.string().nullable().optional(),
+  keyPoints: z.array(z.string()).nullable().optional(),
+  isJudgement: z.boolean().default(false),
+  judgementVerdict: z.string().nullable().optional(),
+  judgementReasoning: z.string().nullable().optional(),
+  durationMs: z.number().int().nullable().optional(),
+  createdAt: z.date().optional(),
+});
+
+export const CreateDebateRoundTraceSchema = DebateRoundTraceSchema.omit({
+  id: true,
+  createdAt: true,
+});
+
+export const CreateDebateRoundTraceBatchSchema = z.object({
+  traces: z.array(CreateDebateRoundTraceSchema).min(1).max(200),
+});
+
+export const DebateRoundTraceQuerySchema = z.object({
+  workflowExecutionId: z.string().uuid(),
+  roundNumber: z.coerce.number().int().min(1).optional(),
+  participantCode: z.string().max(120).optional(),
+  isJudgement: z.coerce.boolean().optional(),
+});
+
+export const DebateTimelineEntrySchema = z.object({
+  roundNumber: z.number().int(),
+  entries: z.array(DebateRoundTraceSchema),
+  roundSummary: z.object({
+    participantCount: z.number().int(),
+    hasJudgement: z.boolean(),
+    avgConfidence: z.number().nullable(),
+    confidenceDelta: z.number().nullable(),
+  }),
+});
+
+export const DebateTimelineSchema = z.object({
+  executionId: z.string().uuid(),
+  totalRounds: z.number().int(),
+  rounds: z.array(DebateTimelineEntrySchema),
+});
+
+export type DebateRoundTraceDto = z.infer<typeof DebateRoundTraceSchema>;
+export type CreateDebateRoundTraceDto = z.infer<typeof CreateDebateRoundTraceSchema>;
+export type CreateDebateRoundTraceBatchDto = z.infer<typeof CreateDebateRoundTraceBatchSchema>;
+export type DebateRoundTraceQueryDto = z.infer<typeof DebateRoundTraceQuerySchema>;
+export type DebateTimelineEntryDto = z.infer<typeof DebateTimelineEntrySchema>;
+export type DebateTimelineDto = z.infer<typeof DebateTimelineSchema>;

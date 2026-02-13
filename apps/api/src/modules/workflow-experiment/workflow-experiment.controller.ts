@@ -17,6 +17,7 @@ import {
     UpdateWorkflowExperimentDto,
     WorkflowExperimentQueryDto,
     ConcludeExperimentDto,
+    RecordExperimentMetricsDto,
 } from './dto';
 
 type AuthRequest = ExpressRequest & { user?: { id?: string } };
@@ -82,6 +83,11 @@ export class WorkflowExperimentController {
         @Body() dto: ConcludeExperimentDto,
     ) {
         return this.service.conclude(this.getUserId(req), id, dto);
+    }
+
+    @Post(':id/metrics')
+    recordMetrics(@Param('id') id: string, @Body() dto: RecordExperimentMetricsDto) {
+        return this.service.recordMetrics(id, dto);
     }
 
     @Get(':id/route')

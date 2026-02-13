@@ -3,6 +3,7 @@ import { WorkflowNode } from '@packages/types';
 import { PrismaService } from '../../../../prisma';
 import { AIProviderFactory } from '../../../ai/providers/provider.factory';
 import { AIRequestOptions } from '../../../ai/providers/base.provider';
+import { DebateTraceService } from '../../../debate-trace/debate-trace.service';
 import {
     WorkflowNodeExecutor,
     NodeExecutionContext,
@@ -53,6 +54,7 @@ export class DebateRoundNodeExecutor implements WorkflowNodeExecutor {
     constructor(
         private readonly prisma: PrismaService,
         private readonly aiProviderFactory: AIProviderFactory,
+        private readonly debateTraceService: DebateTraceService,
     ) { }
 
     supports(node: WorkflowNode): boolean {
@@ -136,8 +138,17 @@ export class DebateRoundNodeExecutor implements WorkflowNodeExecutor {
                 this.logger.log(
                     `[${executionId}] 辩论在第 ${round} 轮达成共识 (score: ${consensusScore})`,
                 );
+
+                // 写入轨迹 (fire-and-forget)
+                this.writeRoundTraces(executionId, round, roundArguments, consensusScore)
+                    .catch((err) => this.logger.warn(`轨迹写入失败: ${String(err)}`));
+
                 break;
             }
+
+            // 普通轮次写入轨迹 (fire-and-forget)
+            this.writeRoundTraces(executionId, round, roundArguments, consensusScore)
+                .catch((err) => this.logger.warn(`轨迹写入失败: ${String(err)}`));
         }
 
         // ── 裁判合成 ──
@@ -177,6 +188,34 @@ export class DebateRoundNodeExecutor implements WorkflowNodeExecutor {
                 verdict,
             },
         };
+    }
+
+    // ────────────────── 轨迹写入 ──────────────────
+
+    /**
+     * 将一轮辩论的所有论点写入 DebateRoundTrace 表
+     */
+    private async writeRoundTraces(
+        executionId: string,
+        roundNumber: number,
+        roundArguments: DebateRoundRecord['arguments'],
+        consensusScore: number,
+    ): Promise<void> {
+        const traces = roundArguments.map((arg) => ({
+            workflowExecutionId: executionId,
+            roundNumber,
+            participantCode: arg.agentCode,
+            participantRole: arg.role,
+            statementText: arg.response,
+            confidence: arg.confidence ?? null,
+            previousConfidence: null,
+            isJudgement: false,
+            keyPoints: arg.keyPoints,
+            evidenceRefs: {} as Record<string, unknown>,
+            consensusScore,
+        }));
+
+        await this.debateTraceService.createBatch(traces);
     }
 
     // ────────────────── 核心方法 ──────────────────

@@ -33,6 +33,7 @@ import { ParameterCenterModule } from './modules/parameter-center';
 import { DataConnectorModule } from './modules/data-connector';
 import { DecisionRecordModule } from './modules/decision-record';
 import { WorkflowExperimentModule } from './modules/workflow-experiment';
+import { DebateTraceModule } from './modules/debate-trace';
 
 @Module({
   imports: [
@@ -67,6 +68,7 @@ import { WorkflowExperimentModule } from './modules/workflow-experiment';
     DataConnectorModule,
     DecisionRecordModule,
     WorkflowExperimentModule,
+    DebateTraceModule,
   ],
   controllers: [AppController],
   providers: [],

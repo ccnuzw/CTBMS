@@ -107,7 +107,7 @@ export const useDslSync = (initialDsl?: WorkflowDsl) => {
             config: (n.data.config as Record<string, unknown>) ?? {},
             runtimePolicy: n.data.runtimePolicy as Record<string, unknown> | undefined,
             inputBindings: n.data.inputBindings as Record<string, unknown> | undefined,
-            outputSchema: n.data.outputSchema as string | undefined,
+            outputSchema: n.data.outputSchema as string | Record<string, unknown> | undefined,
         }));
 
         const dslEdges: WorkflowEdge[] = edges.map((e) => ({

@@ -16,8 +16,18 @@ import { ReplayAssembler } from './engine/replay-assembler';
 import { DagScheduler } from './engine/dag-scheduler';
 import { DebateRoundNodeExecutor } from './engine/node-executors/debate-round.executor';
 import { ApiTriggerNodeExecutor } from './engine/node-executors/api-trigger.executor';
+import { ConditionBranchNodeExecutor } from './engine/node-executors/condition-branch.executor';
+import { ParallelControlNodeExecutor } from './engine/node-executors/parallel-control.executor';
+import { DecisionMergeNodeExecutor } from './engine/node-executors/decision-merge.executor';
+import { CronTriggerNodeExecutor } from './engine/node-executors/cron-trigger.executor';
+import { EventTriggerNodeExecutor } from './engine/node-executors/event-trigger.executor';
+import { ContextBuilderNodeExecutor } from './engine/node-executors/context-builder.executor';
+import { JudgeAgentNodeExecutor } from './engine/node-executors/judge-agent.executor';
+import { ApprovalNodeExecutor } from './engine/node-executors/approval.executor';
+import { DebateTraceModule } from '../debate-trace/debate-trace.module';
 
 @Module({
+    imports: [DebateTraceModule],
     controllers: [WorkflowExecutionController],
     providers: [
         WorkflowExecutionService,
@@ -32,6 +42,14 @@ import { ApiTriggerNodeExecutor } from './engine/node-executors/api-trigger.exec
         ComputeNodeExecutor,
         DebateRoundNodeExecutor,
         ApiTriggerNodeExecutor,
+        ConditionBranchNodeExecutor,
+        ParallelControlNodeExecutor,
+        DecisionMergeNodeExecutor,
+        CronTriggerNodeExecutor,
+        EventTriggerNodeExecutor,
+        ContextBuilderNodeExecutor,
+        JudgeAgentNodeExecutor,
+        ApprovalNodeExecutor,
         VariableResolver,
         EvidenceCollector,
         ReplayAssembler,

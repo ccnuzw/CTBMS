@@ -2358,6 +2358,9 @@ model WorkflowExperiment {
   conclusionSummary       String?          @db.Text
   metricsSnapshot         Json?
 
+  autoStopEnabled         Boolean          @default(true)
+  badCaseThreshold        Float            @default(0.2)
+
   createdByUserId         String
   createdAt               DateTime         @default(now())
   updatedAt               DateTime         @updatedAt
@@ -2365,4 +2368,33 @@ model WorkflowExperiment {
   @@index([workflowDefinitionId, status])
   @@index([status, createdAt])
   @@index([createdByUserId, createdAt])
+}
+
+// ─────────────── DebateRoundTrace (辩论轮次轨迹) ───────────────
+
+model DebateRoundTrace {
+  id                    String   @id @default(uuid())
+  workflowExecutionId   String
+  nodeExecutionId       String?
+  roundNumber           Int
+  participantCode       String
+  participantRole       String
+  stance                String?
+  confidence            Float?
+  previousConfidence    Float?
+  statementText         String   @db.Text
+  evidenceRefs          Json?
+  challengeTargetCode   String?
+  challengeText         String?  @db.Text
+  responseText          String?  @db.Text
+  keyPoints             Json?
+  isJudgement           Boolean  @default(false)
+  judgementVerdict       String?
+  judgementReasoning     String?  @db.Text
+  durationMs            Int?
+  createdAt             DateTime @default(now())
+
+  @@index([workflowExecutionId, roundNumber])
+  @@index([workflowExecutionId, participantCode])
+  @@index([nodeExecutionId])
 }

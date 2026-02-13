@@ -6,6 +6,7 @@ import type {
     WorkflowExperimentQueryDto,
     WorkflowExperimentPageDto,
     ConcludeExperimentDto,
+    RecordExperimentMetricsDto,
 } from '@packages/types';
 import { apiClient } from '../../../api/client';
 
@@ -138,5 +139,27 @@ export const useRouteTraffic = () => {
             );
             return res.data;
         },
+    });
+};
+
+/** 上报执行指标（含自动止损检查） */
+export const useRecordExperimentMetrics = () => {
+    const qc = useQueryClient();
+    return useMutation({
+        mutationFn: async ({
+            experimentId,
+            dto,
+        }: {
+            experimentId: string;
+            dto: RecordExperimentMetricsDto;
+        }) => {
+            const res = await apiClient.post<{
+                recorded: boolean;
+                autoStopped: boolean;
+                reason?: string;
+            }>(`${BASE}/${experimentId}/metrics`, dto);
+            return res.data;
+        },
+        onSuccess: () => qc.invalidateQueries({ queryKey: experimentKeys.all }),
     });
 };

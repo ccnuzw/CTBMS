@@ -9,6 +9,7 @@ import {
   WorkflowPublishAuditQueryDto,
   WorkflowDsl,
   WorkflowDslSchema,
+  WorkflowValidationIssue,
   WorkflowValidationStage,
   WorkflowValidationResult,
 } from '@packages/types';
@@ -241,9 +242,13 @@ export class WorkflowDefinitionService {
       });
     }
     this.ensureRiskGateBindingsValid(parsedDsl.data);
-    await this.ensureRulePackBindingsValid(ownerUserId, parsedDsl.data);
-    await this.ensureAgentBindingsValid(ownerUserId, parsedDsl.data);
-    await this.ensureParameterSetBindingsValid(ownerUserId, parsedDsl.data);
+    const governanceIssues = await this.validateGovernanceForPublish(ownerUserId, parsedDsl.data);
+    if (governanceIssues.length > 0) {
+      throw new BadRequestException({
+        message: '发布校验失败',
+        issues: governanceIssues,
+      });
+    }
     await this.ensureDataConnectorBindingsValid(parsedDsl.data);
 
     return this.prisma.$transaction(async (tx) => {
@@ -518,7 +523,23 @@ export class WorkflowDefinitionService {
     ownerUserId: string,
     dslSnapshot: WorkflowDsl,
   ): Promise<void> {
-    const agentCodes = this.readBindingCodes(dslSnapshot.agentBindings);
+    const dedupedCodes = new Set(this.readBindingCodes(dslSnapshot.agentBindings));
+    const agentNodeTypes = new Set(['single-agent', 'agent-call', 'agent-group', 'judge-agent']);
+    for (const node of dslSnapshot.nodes) {
+      if (!agentNodeTypes.has(node.type)) {
+        continue;
+      }
+      const config = this.asRecord(node.config);
+      const agentProfileCode = config?.agentProfileCode;
+      if (typeof agentProfileCode !== 'string') {
+        continue;
+      }
+      const normalized = agentProfileCode.trim();
+      if (normalized) {
+        dedupedCodes.add(normalized);
+      }
+    }
+    const agentCodes = [...dedupedCodes];
     if (agentCodes.length === 0) {
       return;
     }
@@ -587,6 +608,280 @@ export class WorkflowDefinitionService {
     if (missingCodes.length > 0) {
       throw new BadRequestException(`数据连接器绑定不存在或已停用: ${missingCodes.join(', ')}`);
     }
+  }
+
+  private async validateGovernanceForPublish(
+    ownerUserId: string,
+    dslSnapshot: WorkflowDsl,
+  ): Promise<WorkflowValidationIssue[]> {
+    const issues: WorkflowValidationIssue[] = [];
+
+    const dslOwnerUserId =
+      typeof dslSnapshot.ownerUserId === 'string' ? dslSnapshot.ownerUserId.trim() : '';
+    if (!dslOwnerUserId) {
+      issues.push({
+        code: 'WF304',
+        severity: 'ERROR',
+        message: '发布前 DSL 必须声明 ownerUserId',
+      });
+    } else if (dslOwnerUserId !== ownerUserId) {
+      issues.push({
+        code: 'WF304',
+        severity: 'ERROR',
+        message: 'DSL ownerUserId 与发布操作者不一致，隔离校验未通过',
+      });
+    }
+
+    const rulePackCodes = this.extractRulePackCodesFromDsl(dslSnapshot);
+    if (rulePackCodes.length > 0) {
+      const packs = await this.prisma.decisionRulePack.findMany({
+        where: {
+          rulePackCode: { in: rulePackCodes },
+          isActive: true,
+          OR: [{ ownerUserId }, { templateSource: 'PUBLIC' }],
+        },
+        select: { rulePackCode: true, version: true },
+      });
+      const existingCodes = new Set(packs.map((item) => item.rulePackCode));
+      const missingCodes = rulePackCodes.filter((code) => !existingCodes.has(code));
+      if (missingCodes.length > 0) {
+        issues.push({
+          code: 'WF301',
+          severity: 'ERROR',
+          message: `RulePack 未发布/不可用/无权限访问: ${missingCodes.join(', ')}`,
+        });
+      }
+      const invalidVersionCodes = packs
+        .filter((item) => !Number.isInteger(item.version) || item.version < 1)
+        .map((item) => item.rulePackCode);
+      if (invalidVersionCodes.length > 0) {
+        issues.push({
+          code: 'WF301',
+          severity: 'ERROR',
+          message: `RulePack 缺少可追溯版本: ${invalidVersionCodes.join(', ')}`,
+        });
+      }
+    }
+
+    const setCodes = this.readBindingCodes(dslSnapshot.paramSetBindings);
+    if (setCodes.length > 0) {
+      const sets = await this.prisma.parameterSet.findMany({
+        where: {
+          setCode: { in: setCodes },
+          isActive: true,
+          OR: [{ ownerUserId }, { templateSource: 'PUBLIC' }],
+        },
+        select: { setCode: true, version: true },
+      });
+      const existingCodes = new Set(sets.map((item) => item.setCode));
+      const missingCodes = setCodes.filter((code) => !existingCodes.has(code));
+      if (missingCodes.length > 0) {
+        issues.push({
+          code: 'WF302',
+          severity: 'ERROR',
+          message: `ParameterSet 不存在/不可用/无权限访问: ${missingCodes.join(', ')}`,
+        });
+      }
+      const invalidVersionCodes = sets
+        .filter((item) => !Number.isInteger(item.version) || item.version < 1)
+        .map((item) => item.setCode);
+      if (invalidVersionCodes.length > 0) {
+        issues.push({
+          code: 'WF302',
+          severity: 'ERROR',
+          message: `ParameterSet 缺少可追溯版本: ${invalidVersionCodes.join(', ')}`,
+        });
+      }
+    }
+
+    const paramRefs = this.extractParameterRefsFromDsl(dslSnapshot);
+    if (paramRefs.size > 0) {
+      if (setCodes.length === 0) {
+        issues.push({
+          code: 'WF203',
+          severity: 'ERROR',
+          message: `流程引用了参数表达式 (${[...paramRefs].join(', ')})，但未声明 paramSetBindings`,
+        });
+      } else {
+        const refList = [...paramRefs];
+        const parameterItems = await this.prisma.parameterItem.findMany({
+          where: {
+            paramCode: { in: refList },
+            isActive: true,
+            parameterSet: {
+              setCode: { in: setCodes },
+              isActive: true,
+              OR: [{ ownerUserId }, { templateSource: 'PUBLIC' }],
+            },
+          },
+          select: { paramCode: true },
+        });
+        const resolvedCodes = new Set(parameterItems.map((item) => item.paramCode));
+        const unresolvedCodes = refList.filter((code) => !resolvedCodes.has(code));
+        if (unresolvedCodes.length > 0) {
+          issues.push({
+            code: 'WF203',
+            severity: 'ERROR',
+            message: `参数表达式无法在绑定 ParameterSet 中解析: ${unresolvedCodes.join(', ')}`,
+          });
+        }
+      }
+    }
+
+    const agentCodes = this.extractAgentCodesFromDsl(dslSnapshot);
+    if (agentCodes.length > 0) {
+      const profiles = await this.prisma.agentProfile.findMany({
+        where: {
+          agentCode: { in: agentCodes },
+          isActive: true,
+          OR: [{ ownerUserId }, { templateSource: 'PUBLIC' }],
+        },
+        select: { agentCode: true, version: true },
+      });
+      const existingCodes = new Set(profiles.map((item) => item.agentCode));
+      const missingCodes = agentCodes.filter((code) => !existingCodes.has(code));
+      if (missingCodes.length > 0) {
+        issues.push({
+          code: 'WF303',
+          severity: 'ERROR',
+          message: `AgentProfile 不存在/不可用/无权限访问: ${missingCodes.join(', ')}`,
+        });
+      }
+      const invalidVersionCodes = profiles
+        .filter((item) => !Number.isInteger(item.version) || item.version < 1)
+        .map((item) => item.agentCode);
+      if (invalidVersionCodes.length > 0) {
+        issues.push({
+          code: 'WF303',
+          severity: 'ERROR',
+          message: `AgentProfile 缺少可追溯版本: ${invalidVersionCodes.join(', ')}`,
+        });
+      }
+    }
+
+    return issues;
+  }
+
+  private extractRulePackCodesFromDsl(dslSnapshot: WorkflowDsl): string[] {
+    const ruleNodeTypes = new Set(['rule-pack-eval', 'rule-eval', 'alert-check']);
+    const deduped = new Set<string>();
+    for (const node of dslSnapshot.nodes) {
+      if (!ruleNodeTypes.has(node.type)) {
+        continue;
+      }
+      const config = this.asRecord(node.config);
+      const rulePackCode = config?.rulePackCode;
+      if (typeof rulePackCode !== 'string') {
+        continue;
+      }
+      const normalized = rulePackCode.trim();
+      if (normalized) {
+        deduped.add(normalized);
+      }
+    }
+    return [...deduped];
+  }
+
+  private extractAgentCodesFromDsl(dslSnapshot: WorkflowDsl): string[] {
+    const deduped = new Set(this.readBindingCodes(dslSnapshot.agentBindings));
+    const agentNodeTypes = new Set(['single-agent', 'agent-call', 'agent-group', 'judge-agent']);
+    for (const node of dslSnapshot.nodes) {
+      if (!agentNodeTypes.has(node.type)) {
+        continue;
+      }
+      const config = this.asRecord(node.config);
+      const agentProfileCode = config?.agentProfileCode;
+      if (typeof agentProfileCode !== 'string') {
+        continue;
+      }
+      const normalized = agentProfileCode.trim();
+      if (normalized) {
+        deduped.add(normalized);
+      }
+    }
+    return [...deduped];
+  }
+
+  private extractParameterRefsFromDsl(dslSnapshot: WorkflowDsl): Set<string> {
+    const refs = new Set<string>();
+    for (const node of dslSnapshot.nodes) {
+      this.collectStringLeaves(node.config).forEach((value) => {
+        for (const ref of this.extractExpressionRefs(value)) {
+          if (ref.scope !== 'params') {
+            continue;
+          }
+          const code = ref.path.split('.')[0]?.trim();
+          if (code) {
+            refs.add(code);
+          }
+        }
+      });
+      this.collectStringLeaves(node.inputBindings).forEach((value) => {
+        for (const ref of this.extractExpressionRefs(value)) {
+          if (ref.scope !== 'params') {
+            continue;
+          }
+          const code = ref.path.split('.')[0]?.trim();
+          if (code) {
+            refs.add(code);
+          }
+        }
+      });
+    }
+    for (const edge of dslSnapshot.edges) {
+      this.collectStringLeaves(edge.condition).forEach((value) => {
+        for (const ref of this.extractExpressionRefs(value)) {
+          if (ref.scope !== 'params') {
+            continue;
+          }
+          const code = ref.path.split('.')[0]?.trim();
+          if (code) {
+            refs.add(code);
+          }
+        }
+      });
+    }
+    return refs;
+  }
+
+  private collectStringLeaves(value: unknown): string[] {
+    if (typeof value === 'string') {
+      return [value];
+    }
+    if (!value || typeof value !== 'object') {
+      return [];
+    }
+    if (Array.isArray(value)) {
+      return value.flatMap((item) => this.collectStringLeaves(item));
+    }
+    return Object.values(value).flatMap((item) => this.collectStringLeaves(item));
+  }
+
+  private extractExpressionRefs(value: string): Array<{ scope: string; path: string }> {
+    const refs: Array<{ scope: string; path: string }> = [];
+    const expressionPattern = /\{\{\s*([^}]+?)\s*\}\}/g;
+    let match = expressionPattern.exec(value);
+    while (match) {
+      const rawExpr = match[1];
+      const withNoDefault = rawExpr.split('|')[0]?.trim() ?? '';
+      const dotIndex = withNoDefault.indexOf('.');
+      if (dotIndex > 0 && dotIndex < withNoDefault.length - 1) {
+        const scope = withNoDefault.slice(0, dotIndex).trim();
+        const path = withNoDefault.slice(dotIndex + 1).trim();
+        if (scope && path) {
+          refs.push({ scope, path });
+        }
+      }
+      match = expressionPattern.exec(value);
+    }
+    return refs;
+  }
+
+  private asRecord(value: unknown): Record<string, unknown> | null {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+      return null;
+    }
+    return value as Record<string, unknown>;
   }
 
   private readBindingCodes(value: unknown): string[] {

@@ -24,6 +24,8 @@ export const WorkflowExperimentSchema = z.object({
     winnerVariant: z.string().nullable().optional(),
     conclusionSummary: z.string().nullable().optional(),
     metricsSnapshot: z.record(z.unknown()).nullable().optional(),
+    autoStopEnabled: z.boolean().optional(),
+    badCaseThreshold: z.number().min(0).max(1).optional(),
     createdByUserId: z.string(),
     createdAt: z.date().optional(),
     updatedAt: z.date().optional(),
@@ -38,6 +40,8 @@ export const CreateWorkflowExperimentSchema = z.object({
     variantBVersionId: z.string().uuid(),
     trafficSplitPercent: z.number().int().min(1).max(99).default(50),
     maxExecutions: z.number().int().min(1).optional(),
+    autoStopEnabled: z.boolean().default(true).optional(),
+    badCaseThreshold: z.number().min(0).max(1).default(0.2).optional(),
 });
 
 export const UpdateWorkflowExperimentSchema = z.object({
@@ -89,3 +93,39 @@ export type WorkflowExperimentQueryDto = z.infer<typeof WorkflowExperimentQueryS
 export type ConcludeExperimentDto = z.infer<typeof ConcludeExperimentSchema>;
 export type WorkflowExperimentPageDto = z.infer<typeof WorkflowExperimentPageSchema>;
 export type OnDemandTriggerDto = z.infer<typeof OnDemandTriggerSchema>;
+
+// ── 指标采集 ──
+
+export const RecordExperimentMetricsSchema = z.object({
+    variant: z.enum(['A', 'B']),
+    executionId: z.string().uuid(),
+    success: z.boolean(),
+    durationMs: z.number().int().min(0),
+    nodeCount: z.number().int().min(0).optional(),
+    failureCategory: z.string().max(100).optional(),
+});
+
+export const ExperimentMetricsSnapshotSchema = z.object({
+    variantA: z.object({
+        totalExecutions: z.number().int(),
+        successCount: z.number().int(),
+        failureCount: z.number().int(),
+        successRate: z.number(),
+        avgDurationMs: z.number(),
+        p95DurationMs: z.number(),
+        badCaseRate: z.number(),
+    }),
+    variantB: z.object({
+        totalExecutions: z.number().int(),
+        successCount: z.number().int(),
+        failureCount: z.number().int(),
+        successRate: z.number(),
+        avgDurationMs: z.number(),
+        p95DurationMs: z.number(),
+        badCaseRate: z.number(),
+    }),
+    lastUpdatedAt: z.string(),
+});
+
+export type RecordExperimentMetricsDto = z.infer<typeof RecordExperimentMetricsSchema>;
+export type ExperimentMetricsSnapshot = z.infer<typeof ExperimentMetricsSnapshotSchema>;

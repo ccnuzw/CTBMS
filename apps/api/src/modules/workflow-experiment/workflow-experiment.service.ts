@@ -5,6 +5,7 @@ import type {
     UpdateWorkflowExperimentDto,
     WorkflowExperimentQueryDto,
     ConcludeExperimentDto,
+    RecordExperimentMetricsDto,
 } from '@packages/types';
 import type { Prisma } from '@prisma/client';
 
@@ -231,6 +232,145 @@ export class WorkflowExperimentService {
     }
 
     /**
+     * 记录执行指标并检查自动止损
+     */
+    async recordMetrics(experimentId: string, dto: RecordExperimentMetricsDto): Promise<{
+        recorded: boolean;
+        autoStopped: boolean;
+        reason?: string;
+    }> {
+        const experiment = await this.prisma.workflowExperiment.findUnique({
+            where: { id: experimentId },
+        });
+
+        if (!experiment || experiment.status !== 'RUNNING') {
+            throw new BadRequestException('实验不存在或未运行');
+        }
+
+        // 读取或初始化指标快照
+        const snapshot = this.readMetricsSnapshot(experiment.metricsSnapshot);
+        const variantKey = dto.variant === 'A' ? 'variantA' : 'variantB';
+        const metrics = snapshot[variantKey];
+
+        // 增量更新
+        metrics.totalExecutions++;
+        if (dto.success) {
+            metrics.successCount++;
+        } else {
+            metrics.failureCount++;
+        }
+        metrics.successRate = metrics.totalExecutions > 0
+            ? metrics.successCount / metrics.totalExecutions
+            : 0;
+        metrics.badCaseRate = metrics.totalExecutions > 0
+            ? metrics.failureCount / metrics.totalExecutions
+            : 0;
+
+        // 增量更新平均耗时
+        const prevTotal = metrics.avgDurationMs * (metrics.totalExecutions - 1);
+        metrics.avgDurationMs = Math.round((prevTotal + dto.durationMs) / metrics.totalExecutions);
+
+        // P95 近似：保留最大值（简化版，精确 P95 需要存储完整分布）
+        if (dto.durationMs > metrics.p95DurationMs) {
+            metrics.p95DurationMs = dto.durationMs;
+        }
+
+        snapshot.lastUpdatedAt = new Date().toISOString();
+
+        // 持久化快照
+        await this.prisma.workflowExperiment.update({
+            where: { id: experimentId },
+            data: {
+                metricsSnapshot: snapshot as unknown as Prisma.InputJsonObject,
+            },
+        });
+
+        this.logger.log(
+            `实验 ${experiment.experimentCode}: 记录变体 ${dto.variant} 指标 ` +
+            `(成功率=${(metrics.successRate * 100).toFixed(1)}%, badCase=${(metrics.badCaseRate * 100).toFixed(1)}%)`,
+        );
+
+        // 检查自动止损
+        const autoStopResult = await this.checkAutoStopLoss(experimentId, experiment, snapshot);
+
+        return {
+            recorded: true,
+            autoStopped: autoStopResult.stopped,
+            reason: autoStopResult.reason,
+        };
+    }
+
+    /**
+     * 检查自动止损条件
+     * 当任一变体的 badCaseRate 超过阈值且样本量 ≥ 10 时自动中止
+     */
+    private async checkAutoStopLoss(
+        experimentId: string,
+        experiment: { autoStopEnabled: boolean; badCaseThreshold: number; experimentCode: string },
+        snapshot: MetricsSnapshotInternal,
+    ): Promise<{ stopped: boolean; reason?: string }> {
+        if (!experiment.autoStopEnabled) {
+            return { stopped: false };
+        }
+
+        const MIN_SAMPLE_SIZE = 10;
+        const threshold = experiment.badCaseThreshold;
+
+        for (const variantKey of ['variantA', 'variantB'] as const) {
+            const metrics = snapshot[variantKey];
+            if (metrics.totalExecutions >= MIN_SAMPLE_SIZE && metrics.badCaseRate > threshold) {
+                const variantLabel = variantKey === 'variantA' ? 'A' : 'B';
+                const reason = `变体 ${variantLabel} badCaseRate=${(metrics.badCaseRate * 100).toFixed(1)}% 超过阈值 ${(threshold * 100).toFixed(0)}%（样本=${metrics.totalExecutions}），自动止损`;
+
+                this.logger.warn(`实验 ${experiment.experimentCode}: ${reason}`);
+
+                await this.prisma.workflowExperiment.update({
+                    where: { id: experimentId },
+                    data: {
+                        status: 'ABORTED',
+                        endedAt: new Date(),
+                        conclusionSummary: `[自动止损] ${reason}`,
+                    },
+                });
+
+                return { stopped: true, reason };
+            }
+        }
+
+        return { stopped: false };
+    }
+
+    /**
+     * 读取或初始化指标快照
+     */
+    private readMetricsSnapshot(raw: unknown): MetricsSnapshotInternal {
+        const defaultVariant = (): VariantMetrics => ({
+            totalExecutions: 0,
+            successCount: 0,
+            failureCount: 0,
+            successRate: 0,
+            avgDurationMs: 0,
+            p95DurationMs: 0,
+            badCaseRate: 0,
+        });
+
+        if (!raw || typeof raw !== 'object') {
+            return {
+                variantA: defaultVariant(),
+                variantB: defaultVariant(),
+                lastUpdatedAt: new Date().toISOString(),
+            };
+        }
+
+        const obj = raw as Record<string, unknown>;
+        return {
+            variantA: (obj.variantA as VariantMetrics) ?? defaultVariant(),
+            variantB: (obj.variantB as VariantMetrics) ?? defaultVariant(),
+            lastUpdatedAt: (obj.lastUpdatedAt as string) ?? new Date().toISOString(),
+        };
+    }
+
+    /**
      * 删除
      */
     async remove(userId: string, id: string) {
@@ -246,3 +386,22 @@ export class WorkflowExperimentService {
         return { deleted: true };
     }
 }
+
+// ── 内部类型 ──
+
+interface VariantMetrics {
+    totalExecutions: number;
+    successCount: number;
+    failureCount: number;
+    successRate: number;
+    avgDurationMs: number;
+    p95DurationMs: number;
+    badCaseRate: number;
+}
+
+interface MetricsSnapshotInternal {
+    variantA: VariantMetrics;
+    variantB: VariantMetrics;
+    lastUpdatedAt: string;
+}
+
