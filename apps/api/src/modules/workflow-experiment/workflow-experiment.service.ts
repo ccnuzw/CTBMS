@@ -6,6 +6,7 @@ import type {
     WorkflowExperimentQueryDto,
     ConcludeExperimentDto,
     RecordExperimentMetricsDto,
+    ExperimentRunQueryDto,
 } from '@packages/types';
 import type { Prisma } from '@prisma/client';
 
@@ -384,6 +385,101 @@ export class WorkflowExperimentService {
 
         await this.prisma.workflowExperiment.delete({ where: { id } });
         return { deleted: true };
+    }
+
+    // ── ExperimentRun 方法 ──
+
+    /**
+     * 查询实验运行明细
+     */
+    async findRuns(query: ExperimentRunQueryDto) {
+        const where: Prisma.WorkflowExperimentRunWhereInput = {
+            experimentId: query.experimentId,
+        };
+
+        if (query.variant) where.variant = query.variant;
+        if (query.success !== undefined) where.success = query.success;
+
+        const page = query.page ?? 1;
+        const pageSize = query.pageSize ?? 20;
+
+        const [data, total] = await Promise.all([
+            this.prisma.workflowExperimentRun.findMany({
+                where,
+                orderBy: { createdAt: 'desc' },
+                skip: (page - 1) * pageSize,
+                take: pageSize,
+            }),
+            this.prisma.workflowExperimentRun.count({ where }),
+        ]);
+
+        return { data, total, page, pageSize, totalPages: Math.ceil(total / pageSize) };
+    }
+
+    /**
+     * 获取实验评估数据（综合看板用）
+     */
+    async getEvaluation(userId: string, experimentId: string) {
+        const experiment = await this.prisma.workflowExperiment.findFirst({
+            where: { id: experimentId, createdByUserId: userId },
+        });
+        if (!experiment) throw new NotFoundException('实验不存在');
+
+        const metrics = this.readMetricsSnapshot(experiment.metricsSnapshot);
+
+        const recentRuns = await this.prisma.workflowExperimentRun.findMany({
+            where: { experimentId },
+            orderBy: { createdAt: 'desc' },
+            take: 50,
+        });
+
+        // 计算变体对比
+        let variantComparison = null;
+        if (metrics.variantA.totalExecutions > 0 && metrics.variantB.totalExecutions > 0) {
+            const successRateDelta = metrics.variantA.successRate - metrics.variantB.successRate;
+            const avgDurationDelta = metrics.variantA.avgDurationMs - metrics.variantB.avgDurationMs;
+
+            // 计算变体平均置信度
+            const runsA = recentRuns.filter((r) => r.variant === 'A' && r.confidence !== null);
+            const runsB = recentRuns.filter((r) => r.variant === 'B' && r.confidence !== null);
+            const avgConfA = runsA.length > 0
+                ? runsA.reduce((sum, r) => sum + (r.confidence ?? 0), 0) / runsA.length
+                : null;
+            const avgConfB = runsB.length > 0
+                ? runsB.reduce((sum, r) => sum + (r.confidence ?? 0), 0) / runsB.length
+                : null;
+
+            let recommendation = '样本量不足，建议继续实验';
+            const totalRuns = metrics.variantA.totalExecutions + metrics.variantB.totalExecutions;
+            if (totalRuns >= 20) {
+                if (Math.abs(successRateDelta) > 0.1) {
+                    recommendation = successRateDelta > 0
+                        ? '变体 A 成功率显著优于 B，建议选择 A'
+                        : '变体 B 成功率显著优于 A，建议选择 B';
+                } else if (Math.abs(avgDurationDelta) > 1000) {
+                    recommendation = avgDurationDelta < 0
+                        ? '变体 A 平均耗时更短，建议选择 A'
+                        : '变体 B 平均耗时更短，建议选择 B';
+                } else {
+                    recommendation = '两个变体表现相近，建议增加样本量或观察更多指标';
+                }
+            }
+
+            variantComparison = {
+                successRateDelta,
+                avgDurationDelta,
+                confidenceDeltaA: avgConfA,
+                confidenceDeltaB: avgConfB,
+                recommendation,
+            };
+        }
+
+        return {
+            experiment,
+            metrics,
+            recentRuns,
+            variantComparison,
+        };
     }
 }
 

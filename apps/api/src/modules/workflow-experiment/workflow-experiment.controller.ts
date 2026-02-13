@@ -18,6 +18,7 @@ import {
     WorkflowExperimentQueryDto,
     ConcludeExperimentDto,
     RecordExperimentMetricsDto,
+    ExperimentRunQueryDto,
 } from './dto';
 
 type AuthRequest = ExpressRequest & { user?: { id?: string } };
@@ -93,5 +94,15 @@ export class WorkflowExperimentController {
     @Get(':id/route')
     routeTraffic(@Param('id') id: string) {
         return this.service.routeTraffic(id);
+    }
+
+    @Get(':id/runs')
+    findRuns(@Param('id') id: string, @Query() query: ExperimentRunQueryDto) {
+        return this.service.findRuns({ ...query, experimentId: id });
+    }
+
+    @Get(':id/evaluation')
+    getEvaluation(@Request() req: AuthRequest, @Param('id') id: string) {
+        return this.service.getEvaluation(this.getUserId(req), id);
     }
 }

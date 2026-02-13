@@ -6,6 +6,7 @@ import {
     ConcludeExperimentSchema,
     OnDemandTriggerSchema,
     RecordExperimentMetricsSchema,
+    ExperimentRunQuerySchema,
 } from '@packages/types';
 
 export class CreateWorkflowExperimentDto extends createZodDto(CreateWorkflowExperimentSchema) { }
@@ -14,3 +15,4 @@ export class WorkflowExperimentQueryDto extends createZodDto(WorkflowExperimentQ
 export class ConcludeExperimentDto extends createZodDto(ConcludeExperimentSchema) { }
 export class OnDemandTriggerDto extends createZodDto(OnDemandTriggerSchema) { }
 export class RecordExperimentMetricsDto extends createZodDto(RecordExperimentMetricsSchema) { }
+export class ExperimentRunQueryDto extends createZodDto(ExperimentRunQuerySchema) { }

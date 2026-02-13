@@ -386,12 +386,12 @@ export const TriggerGatewayPage: React.FC = () => {
       <Descriptions.Item label="时区">{String(config.timezone ?? '-')}</Descriptions.Item>
       <Descriptions.Item label="最大并发">{String(config.maxConcurrent ?? '-')}</Descriptions.Item>
       <Descriptions.Item label="补偿遗漏">{config.catchUpMissed ? '是' : '否'}</Descriptions.Item>
-      {config.startDate && (
+      {Boolean(config.startDate) && (
         <Descriptions.Item label="开始时间">
           {dayjs(String(config.startDate)).format('YYYY-MM-DD HH:mm:ss')}
         </Descriptions.Item>
       )}
-      {config.endDate && (
+      {Boolean(config.endDate) && (
         <Descriptions.Item label="结束时间">
           {dayjs(String(config.endDate)).format('YYYY-MM-DD HH:mm:ss')}
         </Descriptions.Item>
@@ -403,7 +403,7 @@ export const TriggerGatewayPage: React.FC = () => {
     <Descriptions column={2} bordered size="small">
       <Descriptions.Item label="认证方式">{String(config.authMethod ?? '-')}</Descriptions.Item>
       <Descriptions.Item label="速率限制">{String(config.rateLimitPerMinute ?? '-')}/分钟</Descriptions.Item>
-      {config.allowedIps && (
+      {Boolean(config.allowedIps) && (
         <Descriptions.Item label="IP 白名单" span={2}>
           {Array.isArray(config.allowedIps) ? config.allowedIps.join(', ') : '-'}
         </Descriptions.Item>

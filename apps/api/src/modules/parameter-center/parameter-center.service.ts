@@ -27,7 +27,7 @@ const PARAM_SCOPE_PRIORITY: ParameterScopeLevel[] = [
 
 @Injectable()
 export class ParameterCenterService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private readonly prisma: PrismaService) { }
 
   async createSet(ownerUserId: string, dto: CreateParameterSetDto) {
     const existing = await this.prisma.parameterSet.findUnique({
@@ -519,7 +519,7 @@ export class ParameterCenterService {
         const updated = await this.prisma.parameterItem.update({
           where: { id: item.id },
           data: {
-            value: item.defaultValue,
+            value: this.toNullableJsonValue(item.defaultValue),
             changeReason: dto.reason || '批量重置到模板默认值',
           },
         });

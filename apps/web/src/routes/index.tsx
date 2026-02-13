@@ -53,6 +53,8 @@ import { ParameterSetPage } from '../features/workflow-parameter-center';
 import { DataConnectorPage } from '../features/workflow-data-connector';
 import { TriggerGatewayPage } from '../features/trigger-gateway';
 import { DecisionRecordPage } from '../features/decision-record';
+import { ReportExportPage } from '../features/report-export';
+import { ExperimentEvaluationPage } from '../features/workflow-experiment';
 
 export const router = createBrowserRouter([
   {
@@ -131,6 +133,14 @@ export const router = createBrowserRouter([
       {
         path: 'workflow/decisions',
         element: <DecisionRecordPage />,
+      },
+      {
+        path: 'workflow/exports',
+        element: <ReportExportPage />,
+      },
+      {
+        path: 'workflow/experiments',
+        element: <ExperimentEvaluationPage />,
       },
       {
         path: 'system',

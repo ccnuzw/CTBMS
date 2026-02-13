@@ -8,4 +8,5 @@ export {
   useDeactivateTriggerConfig,
   useTriggerLogs,
   useTriggerLogsByConfig,
+  type TriggerLogWithConfig,
 } from './trigger-configs';

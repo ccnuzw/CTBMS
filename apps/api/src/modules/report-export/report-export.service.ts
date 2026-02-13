@@ -15,7 +15,7 @@ import type { Prisma } from '@prisma/client';
 export class ReportExportService {
   private readonly logger = new Logger(ReportExportService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private readonly prisma: PrismaService) { }
 
   /**
    * 创建导出任务并组装报告数据
@@ -134,23 +134,16 @@ export class ReportExportService {
    */
   private async assembleReportData(
     dto: ExportDebateReportDto,
-    execution: { id: string; workflowDefinitionId: string; versionId: string | null },
+    execution: { id: string; workflowVersionId: string },
   ): Promise<ExportReportDataDto> {
-    // 获取工作流定义名称
-    const definition = await this.prisma.workflowDefinition.findUnique({
-      where: { id: execution.workflowDefinitionId },
-      select: { name: true },
+    // 获取版本和定义信息
+    const version = await this.prisma.workflowVersion.findUnique({
+      where: { id: execution.workflowVersionId },
+      include: { workflowDefinition: true },
     });
 
-    // 获取版本号
-    let versionCode: string | null = null;
-    if (execution.versionId) {
-      const version = await this.prisma.workflowVersion.findUnique({
-        where: { id: execution.versionId },
-        select: { versionCode: true },
-      });
-      versionCode = version?.versionCode ?? null;
-    }
+    const definition = version?.workflowDefinition;
+    const versionCode = version?.versionCode ?? null;
 
     const reportData: ExportReportDataDto = {
       title: dto.title ?? `${definition?.name ?? '工作流'} 辩论报告`,
@@ -237,16 +230,16 @@ export class ReportExportService {
       where: {
         workflowExecutionId: executionId,
         nodeType: { in: ['DATA_FETCH', 'CONTEXT_BUILDER', 'EVIDENCE_COLLECTOR'] },
-        status: 'COMPLETED',
+        status: 'SUCCESS',
       },
-      select: { nodeName: true, nodeType: true, outputData: true },
+      select: { nodeId: true, nodeType: true, outputSnapshot: true },
       orderBy: { startedAt: 'asc' },
     });
 
     const items: ReportEvidenceItemDto[] = [];
 
     for (const node of nodeExecutions) {
-      const output = node.outputData as Record<string, unknown> | null;
+      const output = node.outputSnapshot as Record<string, unknown> | null;
       if (!output) continue;
 
       // 尝试从输出中提取证据条目
@@ -254,7 +247,7 @@ export class ReportExportService {
         for (const item of output.evidenceItems) {
           const evidence = item as Record<string, unknown>;
           items.push({
-            source: (evidence.source as string) ?? node.nodeName,
+            source: (evidence.source as string) ?? node.nodeId,
             category: (evidence.category as string) ?? node.nodeType,
             content: (evidence.content as string) ?? JSON.stringify(evidence),
             weight: (evidence.weight as number) ?? null,
@@ -263,7 +256,7 @@ export class ReportExportService {
       } else {
         // 整个输出作为一条证据
         items.push({
-          source: node.nodeName,
+          source: node.nodeId,
           category: node.nodeType,
           content: JSON.stringify(output).slice(0, 2000),
           weight: null,
@@ -306,16 +299,16 @@ export class ReportExportService {
       where: {
         workflowExecutionId: executionId,
         nodeType: 'RISK_GATE',
-        status: 'COMPLETED',
+        status: 'SUCCESS',
       },
-      select: { outputData: true },
+      select: { outputSnapshot: true },
       orderBy: { startedAt: 'asc' },
     });
 
     const items: ReportRiskItemDto[] = [];
 
     for (const node of riskNodes) {
-      const output = node.outputData as Record<string, unknown> | null;
+      const output = node.outputSnapshot as Record<string, unknown> | null;
       if (!output) continue;
 
       if (Array.isArray(output.riskItems)) {
@@ -347,9 +340,9 @@ export class ReportExportService {
   private async assembleParamSnapshot(executionId: string): Promise<Record<string, unknown> | null> {
     const execution = await this.prisma.workflowExecution.findUnique({
       where: { id: executionId },
-      select: { inputParams: true },
+      select: { paramSnapshot: true },
     });
 
-    return (execution?.inputParams as Record<string, unknown>) ?? null;
+    return (execution?.paramSnapshot as Record<string, unknown>) ?? null;
   }
 }

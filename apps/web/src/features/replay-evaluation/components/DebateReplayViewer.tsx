@@ -358,11 +358,10 @@ export const DebateReplayViewer: React.FC<DebateReplayViewerProps> = ({
                       size="small"
                       style={{
                         marginBottom: 8,
-                        borderLeft: `3px solid ${
-                          entry.isJudgement
-                            ? token.colorPurple || '#722ed1'
+                        borderLeft: `3px solid ${entry.isJudgement
+                            ? (token as any).colorPurple || '#722ed1'
                             : token.colorPrimary
-                        }`,
+                          }`,
                       }}
                     >
                       <Flex justify="space-between" align="center" style={{ marginBottom: 8 }}>
