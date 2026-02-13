@@ -149,7 +149,7 @@ export const ExperimentRunSchema = z.object({
 });
 
 export const ExperimentRunQuerySchema = z.object({
-    experimentId: z.string().uuid(),
+    experimentId: z.string().uuid().optional(),
     variant: z.enum(['A', 'B']).optional(),
     success: z.coerce.boolean().optional(),
     page: z.coerce.number().int().min(1).default(1),

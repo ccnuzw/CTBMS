@@ -393,6 +393,9 @@ export class WorkflowExperimentService {
      * 查询实验运行明细
      */
     async findRuns(query: ExperimentRunQueryDto) {
+        if (!query.experimentId) {
+            throw new BadRequestException('experimentId is required');
+        }
         const where: Prisma.WorkflowExperimentRunWhereInput = {
             experimentId: query.experimentId,
         };
@@ -500,4 +503,3 @@ interface MetricsSnapshotInternal {
     variantB: VariantMetrics;
     lastUpdatedAt: string;
 }
-

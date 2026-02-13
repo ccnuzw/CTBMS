@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
-import { PrismaClient } from '@prisma/client';
+import { Prisma, PrismaClient } from '@prisma/client';
 import { ZodValidationPipe } from 'nestjs-zod';
 import { MockAuthMiddleware } from '../src/common/middleware/mock-auth.middleware';
 import { WorkflowDefinitionModule } from '../src/modules/workflow-definition';
@@ -26,7 +26,7 @@ class WorkflowExperimentE2eModule implements NestModule {
 
 const prisma = new PrismaClient();
 
-const buildDsl = (workflowId: string, workflowName: string) => ({
+const buildDsl = (workflowId: string, workflowName: string, rulePackCode: string) => ({
   workflowId,
   name: workflowName,
   mode: 'LINEAR',
@@ -40,6 +40,15 @@ const buildDsl = (workflowId: string, workflowName: string) => ({
       name: 'manual trigger',
       enabled: true,
       config: {},
+    },
+    {
+      id: 'n_rule_eval',
+      type: 'rule-eval',
+      name: 'rule eval',
+      enabled: true,
+      config: {
+        rulePackCode,
+      },
     },
     {
       id: 'n_risk_gate',
@@ -59,10 +68,26 @@ const buildDsl = (workflowId: string, workflowName: string) => ({
         channels: ['DASHBOARD'],
       },
     },
+    {
+      id: 'n_data_evidence',
+      type: 'mock-fetch',
+      name: 'mock fetch',
+      enabled: true,
+      config: {},
+    },
+    {
+      id: 'n_model_evidence',
+      type: 'single-agent',
+      name: 'single agent',
+      enabled: true,
+      config: {},
+    },
   ],
   edges: [
-    { id: 'e1', from: 'n_trigger', to: 'n_risk_gate', edgeType: 'control-edge' },
-    { id: 'e2', from: 'n_risk_gate', to: 'n_notify', edgeType: 'control-edge' },
+    { id: 'e1', from: 'n_trigger', to: 'n_rule_eval', edgeType: 'control-edge' },
+    { id: 'e2', from: 'n_rule_eval', to: 'n_risk_gate', edgeType: 'control-edge' },
+    { id: 'e3', from: 'n_risk_gate', to: 'n_notify', edgeType: 'control-edge' },
+    { id: 'e4', from: 'n_data_evidence', to: 'n_model_evidence', edgeType: 'control-edge' },
   ],
   runPolicy: {
     nodeDefaults: {
@@ -94,12 +119,33 @@ async function main() {
   const token = `workflow_experiment_${Date.now()}`;
   const workflowId = `${token}_workflow`;
   const workflowName = `Workflow Experiment ${token}`;
+  const rulePackCode = `${token}_RULE_PACK`;
   let definitionId = '';
   let experimentId = '';
   let variantAVersionId = '';
   let variantBVersionId = '';
 
   try {
+    const rulePack = await prisma.decisionRulePack.create({
+      data: {
+        rulePackCode,
+        name: `Rule Pack ${token}`,
+        ownerUserId,
+        version: 2,
+      },
+    });
+    await prisma.decisionRule.create({
+      data: {
+        rulePackId: rulePack.id,
+        ruleCode: `${token}_RULE_1`,
+        name: 'exists check',
+        fieldPath: 'triggeredAt',
+        operator: 'EXISTS',
+        expectedValue: Prisma.JsonNull,
+        weight: 1,
+      },
+    });
+
     const createDefinition = await fetchJson<{
       definition: { id: string };
       version: { id: string };
@@ -115,7 +161,7 @@ async function main() {
         mode: 'LINEAR',
         usageMethod: 'COPILOT',
         templateSource: 'PRIVATE',
-        dslSnapshot: buildDsl(workflowId, workflowName),
+        dslSnapshot: buildDsl(workflowId, workflowName, rulePackCode),
         changelog: 'workflow experiment e2e create',
       }),
     });
@@ -273,6 +319,11 @@ async function main() {
       await prisma.workflowVersion.deleteMany({ where: { workflowDefinitionId: definitionId } });
       await prisma.workflowDefinition.deleteMany({ where: { id: definitionId } });
     }
+    await prisma.decisionRulePack.deleteMany({
+      where: {
+        rulePackCode,
+      },
+    });
     await app.close();
     await prisma.$disconnect();
   }
