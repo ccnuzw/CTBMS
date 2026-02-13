@@ -27,6 +27,9 @@ import { KnowledgeModule } from './modules/knowledge/knowledge.module';
 import { WorkflowDefinitionModule } from './modules/workflow-definition';
 import { WorkflowExecutionModule } from './modules/workflow-execution';
 import { DecisionRuleModule } from './modules/decision-rule';
+import { AgentProfileModule } from './modules/agent-profile';
+import { ParameterCenterModule } from './modules/parameter-center';
+import { DataConnectorModule } from './modules/data-connector';
 
 @Module({
   imports: [
@@ -55,6 +58,9 @@ import { DecisionRuleModule } from './modules/decision-rule';
     WorkflowDefinitionModule,
     WorkflowExecutionModule,
     DecisionRuleModule,
+    AgentProfileModule,
+    ParameterCenterModule,
+    DataConnectorModule,
   ],
   controllers: [AppController],
   providers: [],
