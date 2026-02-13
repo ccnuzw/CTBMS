@@ -2513,3 +2513,137 @@ model WorkflowExperimentRun {
   @@index([workflowExecutionId])
   @@index([variant, success])
 }
+
+// ─────────────── TemplateCatalog (流程模板市场) ───────────────
+
+model TemplateCatalog {
+  id                    String    @id @default(uuid())
+  templateCode          String    @unique
+  name                  String
+  description           String?   @db.Text
+  category              String    // TRADING | RISK_MANAGEMENT | ANALYSIS | MONITORING | REPORTING | CUSTOM
+  status                String    @default("DRAFT") // DRAFT | PUBLISHED | ARCHIVED
+  tags                  Json?     // string[]
+  coverImageUrl         String?
+  dslSnapshot           Json
+  nodeCount             Int       @default(0)
+  edgeCount             Int       @default(0)
+  usageCount            Int       @default(0)
+  rating                Float?
+  authorUserId          String
+  authorName            String?
+  isOfficial            Boolean   @default(false)
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  @@index([category, status])
+  @@index([status, createdAt])
+  @@index([authorUserId])
+  @@index([isOfficial, status])
+}
+
+// ─────────────── FuturesQuoteSnapshot (期货行情快照) ───────────────
+
+model FuturesQuoteSnapshot {
+  id                String    @id @default(uuid())
+  contractCode      String    @db.VarChar(30)
+  exchange          String    @db.VarChar(10)
+  lastPrice         Float
+  openPrice         Float?
+  highPrice         Float?
+  lowPrice          Float?
+  closePrice        Float?
+  settlementPrice   Float?
+  volume            Int?
+  openInterest      Int?
+  bidPrice1         Float?
+  askPrice1         Float?
+  bidVolume1        Int?
+  askVolume1        Int?
+  tradingDay        String    @db.VarChar(10)
+  snapshotAt        DateTime
+  createdAt         DateTime  @default(now())
+
+  @@index([contractCode, tradingDay])
+  @@index([exchange, tradingDay])
+  @@index([snapshotAt])
+}
+
+// ─────────────── FuturesDerivedFeature (期货衍生特征) ───────────────
+
+model FuturesDerivedFeature {
+  id                String    @id @default(uuid())
+  contractCode      String    @db.VarChar(30)
+  featureType       String    @db.VarChar(60)
+  featureValue      Float
+  parameters        Json?
+  calculatedAt      DateTime
+  tradingDay        String    @db.VarChar(10)
+  createdAt         DateTime  @default(now())
+
+  @@index([contractCode, featureType, tradingDay])
+  @@index([tradingDay])
+}
+
+// ─────────────── VirtualFuturesPosition (虚拟期货持仓) ───────────────
+
+model VirtualFuturesPosition {
+  id                      String    @id @default(uuid())
+  accountId               String    @db.VarChar(60)
+  contractCode            String    @db.VarChar(30)
+  exchange                String    @db.VarChar(10)
+  direction               String    // LONG | SHORT
+  status                  String    @default("OPEN") // OPEN | CLOSED | PARTIALLY_CLOSED | LIQUIDATED
+  openPrice               Float
+  currentPrice            Float?
+  quantity                Int
+  remainingQty            Int
+  marginRate              Float     @default(0.1)
+  marginAmount            Float
+  floatingPnl             Float?
+  realizedPnl             Float?
+  stopLossPrice           Float?
+  takeProfitPrice         Float?
+  openedAt                DateTime
+  closedAt                DateTime?
+  ownerUserId             String
+  workflowExecutionId     String?
+  createdAt               DateTime  @default(now())
+  updatedAt               DateTime  @updatedAt
+
+  trades                  VirtualTradeLedger[]
+
+  @@index([accountId, status])
+  @@index([ownerUserId, accountId])
+  @@index([contractCode, status])
+  @@index([workflowExecutionId])
+}
+
+// ─────────────── VirtualTradeLedger (虚拟成交流水) ───────────────
+
+model VirtualTradeLedger {
+  id                      String    @id @default(uuid())
+  accountId               String    @db.VarChar(60)
+  positionId              String?
+  contractCode            String    @db.VarChar(30)
+  exchange                String    @db.VarChar(10)
+  action                  String    // OPEN_LONG | OPEN_SHORT | CLOSE_LONG | CLOSE_SHORT | FORCED_LIQUIDATION
+  status                  String    @default("FILLED") // PENDING | FILLED | REJECTED | CANCELED
+  price                   Float
+  quantity                Int
+  amount                  Float
+  commission              Float     @default(0)
+  realizedPnl             Float?
+  reason                  String?   @db.Text
+  workflowExecutionId     String?
+  ownerUserId             String
+  tradedAt                DateTime
+  createdAt               DateTime  @default(now())
+
+  position                VirtualFuturesPosition? @relation(fields: [positionId], references: [id])
+
+  @@index([accountId, tradedAt])
+  @@index([positionId])
+  @@index([ownerUserId, tradedAt])
+  @@index([contractCode, tradedAt])
+}

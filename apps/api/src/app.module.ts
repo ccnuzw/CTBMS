@@ -36,6 +36,9 @@ import { WorkflowExperimentModule } from './modules/workflow-experiment';
 import { DebateTraceModule } from './modules/debate-trace';
 import { TriggerGatewayModule } from './modules/trigger-gateway';
 import { ReportExportModule } from './modules/report-export';
+import { ExecutionAnalyticsModule } from './modules/execution-analytics';
+import { TemplateCatalogModule } from './modules/template-catalog';
+import { FuturesSimModule } from './modules/futures-sim';
 
 @Module({
   imports: [
@@ -73,6 +76,9 @@ import { ReportExportModule } from './modules/report-export';
     DebateTraceModule,
     TriggerGatewayModule,
     ReportExportModule,
+    ExecutionAnalyticsModule,
+    TemplateCatalogModule,
+    FuturesSimModule,
   ],
   controllers: [AppController],
   providers: [],

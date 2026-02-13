@@ -16,3 +16,6 @@ export * from './modules/decision-record.js';
 export * from './modules/workflow-experiment.js';
 export * from './modules/trigger-gateway.js';
 export * from './modules/report-export.js';
+export * from './modules/execution-analytics.js';
+export * from './modules/template-catalog.js';
+export * from './modules/futures-sim.js';

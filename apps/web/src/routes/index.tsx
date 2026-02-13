@@ -55,6 +55,10 @@ import { TriggerGatewayPage } from '../features/trigger-gateway';
 import { DecisionRecordPage } from '../features/decision-record';
 import { ReportExportPage } from '../features/report-export';
 import { ExperimentEvaluationPage } from '../features/workflow-experiment';
+import { ExecutionAnalyticsDashboard } from '../features/execution-analytics';
+import { AgentWorkbenchPage } from '../features/agent-workbench';
+import { TemplateMarketPage } from '../features/template-market';
+import { FuturesSimPage } from '../features/futures-sim';
 
 export const router = createBrowserRouter([
   {
@@ -141,6 +145,18 @@ export const router = createBrowserRouter([
       {
         path: 'workflow/experiments',
         element: <ExperimentEvaluationPage />,
+      },
+      {
+        path: 'workflow/analytics',
+        element: <ExecutionAnalyticsDashboard />,
+      },
+      {
+        path: 'workflow/workbench',
+        element: <AgentWorkbenchPage />,
+      },
+      {
+        path: 'workflow/templates',
+        element: <TemplateMarketPage />,
       },
       {
         path: 'system',
