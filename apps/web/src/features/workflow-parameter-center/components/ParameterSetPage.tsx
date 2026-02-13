@@ -1,0 +1,317 @@
+import React, { useMemo, useState } from 'react';
+import dayjs from 'dayjs';
+import type { ColumnsType } from 'antd/es/table';
+import {
+  App,
+  Button,
+  Card,
+  Drawer,
+  Form,
+  Input,
+  Modal,
+  Popconfirm,
+  Select,
+  Space,
+  Table,
+  Tag,
+  Typography,
+} from 'antd';
+import {
+  CreateParameterItemDto,
+  CreateParameterSetDto,
+  ParameterItemDto,
+  ParameterScopeLevel,
+  ParameterSetDto,
+} from '@packages/types';
+import { getErrorMessage } from '../../../api/client';
+import {
+  useCreateParameterItem,
+  useCreateParameterSet,
+  useDeleteParameterSet,
+  useParameterSetDetail,
+  useParameterSets,
+} from '../api';
+
+const { Title } = Typography;
+
+const scopeOptions: ParameterScopeLevel[] = [
+  'PUBLIC_TEMPLATE',
+  'USER_TEMPLATE',
+  'GLOBAL',
+  'COMMODITY',
+  'REGION',
+  'ROUTE',
+  'STRATEGY',
+  'SESSION',
+];
+
+const paramTypeOptions = ['number', 'string', 'boolean', 'enum', 'json', 'expression'];
+
+export const ParameterSetPage: React.FC = () => {
+  const { message } = App.useApp();
+  const [setForm] = Form.useForm<CreateParameterSetDto>();
+  const [itemForm] = Form.useForm<CreateParameterItemDto>();
+  const [keyword, setKeyword] = useState<string | undefined>();
+  const [createVisible, setCreateVisible] = useState(false);
+  const [selectedSetId, setSelectedSetId] = useState<string | null>(null);
+  const [itemVisible, setItemVisible] = useState(false);
+
+  const { data, isLoading } = useParameterSets({
+    includePublic: true,
+    keyword,
+    page: 1,
+    pageSize: 100,
+  });
+  const { data: setDetail, isLoading: isDetailLoading } = useParameterSetDetail(
+    selectedSetId || undefined,
+  );
+
+  const createSetMutation = useCreateParameterSet();
+  const deleteSetMutation = useDeleteParameterSet();
+  const createItemMutation = useCreateParameterItem();
+
+  const setColumns = useMemo<ColumnsType<ParameterSetDto>>(
+    () => [
+      { title: '参数包编码', dataIndex: 'setCode', width: 220 },
+      { title: '名称', dataIndex: 'name', width: 180 },
+      {
+        title: '来源',
+        dataIndex: 'templateSource',
+        width: 100,
+        render: (value: string) => (
+          <Tag color={value === 'PUBLIC' ? 'blue' : 'default'}>{value}</Tag>
+        ),
+      },
+      {
+        title: '状态',
+        dataIndex: 'isActive',
+        width: 100,
+        render: (value: boolean) => (
+          <Tag color={value ? 'green' : 'red'}>{value ? 'ACTIVE' : 'INACTIVE'}</Tag>
+        ),
+      },
+      { title: '版本', dataIndex: 'version', width: 80 },
+      {
+        title: '更新时间',
+        dataIndex: 'updatedAt',
+        width: 180,
+        render: (value?: Date) => (value ? dayjs(value).format('YYYY-MM-DD HH:mm:ss') : '-'),
+      },
+      {
+        title: '操作',
+        key: 'actions',
+        width: 180,
+        render: (_, record) => (
+          <Space size={4}>
+            <Button type="link" onClick={() => setSelectedSetId(record.id)}>
+              查看详情
+            </Button>
+            <Popconfirm
+              title="确认停用该参数包?"
+              onConfirm={async () => {
+                try {
+                  await deleteSetMutation.mutateAsync(record.id);
+                  message.success('停用成功');
+                } catch (error) {
+                  message.error(getErrorMessage(error) || '停用失败');
+                }
+              }}
+            >
+              <Button type="link" danger>
+                停用
+              </Button>
+            </Popconfirm>
+          </Space>
+        ),
+      },
+    ],
+    [deleteSetMutation, message],
+  );
+
+  const itemColumns = useMemo<ColumnsType<ParameterItemDto>>(
+    () => [
+      { title: '参数编码', dataIndex: 'paramCode', width: 220 },
+      { title: '名称', dataIndex: 'paramName', width: 180 },
+      { title: '类型', dataIndex: 'paramType', width: 100 },
+      { title: '作用域', dataIndex: 'scopeLevel', width: 140 },
+      { title: '作用域值', dataIndex: 'scopeValue', width: 120, render: (v?: string) => v || '-' },
+      {
+        title: '值',
+        dataIndex: 'value',
+        render: (value: unknown) => {
+          if (value === null || value === undefined) {
+            return '-';
+          }
+          if (typeof value === 'string') {
+            return value;
+          }
+          return JSON.stringify(value);
+        },
+      },
+      {
+        title: '状态',
+        dataIndex: 'isActive',
+        width: 100,
+        render: (value: boolean) => (
+          <Tag color={value ? 'green' : 'red'}>{value ? 'ACTIVE' : 'INACTIVE'}</Tag>
+        ),
+      },
+    ],
+    [],
+  );
+
+  const handleCreateSet = async () => {
+    try {
+      const values = await setForm.validateFields();
+      await createSetMutation.mutateAsync(values);
+      message.success('参数包创建成功');
+      setCreateVisible(false);
+      setForm.resetFields();
+    } catch (error) {
+      message.error(getErrorMessage(error) || '参数包创建失败');
+    }
+  };
+
+  const handleCreateItem = async () => {
+    if (!selectedSetId) {
+      return;
+    }
+    try {
+      const values = await itemForm.validateFields();
+      const payload: CreateParameterItemDto = {
+        ...values,
+        value: values.value ? JSON.parse(values.value as unknown as string) : undefined,
+      };
+      await createItemMutation.mutateAsync({ setId: selectedSetId, payload });
+      message.success('参数项创建成功');
+      setItemVisible(false);
+      itemForm.resetFields();
+    } catch (error) {
+      message.error(getErrorMessage(error) || '参数项创建失败');
+    }
+  };
+
+  return (
+    <Card>
+      <Space direction="vertical" style={{ width: '100%' }} size={16}>
+        <Space style={{ justifyContent: 'space-between', width: '100%' }}>
+          <Title level={4} style={{ margin: 0 }}>
+            参数中心
+          </Title>
+          <Space>
+            <Input.Search
+              allowClear
+              placeholder="按编码/名称搜索"
+              onSearch={(value) => setKeyword(value?.trim() || undefined)}
+              style={{ width: 260 }}
+            />
+            <Button type="primary" onClick={() => setCreateVisible(true)}>
+              新建参数包
+            </Button>
+          </Space>
+        </Space>
+
+        <Table<ParameterSetDto>
+          rowKey="id"
+          loading={isLoading}
+          dataSource={data?.data ?? []}
+          columns={setColumns}
+          scroll={{ x: 1200 }}
+          pagination={false}
+        />
+      </Space>
+
+      <Modal
+        title="新建参数包"
+        open={createVisible}
+        onCancel={() => setCreateVisible(false)}
+        onOk={handleCreateSet}
+        confirmLoading={createSetMutation.isPending}
+      >
+        <Form<CreateParameterSetDto>
+          layout="vertical"
+          form={setForm}
+          initialValues={{ templateSource: 'PRIVATE' }}
+        >
+          <Form.Item name="setCode" label="参数包编码" rules={[{ required: true }]}>
+            <Input placeholder="如 BASELINE_SET" />
+          </Form.Item>
+          <Form.Item name="name" label="名称" rules={[{ required: true }]}>
+            <Input />
+          </Form.Item>
+          <Form.Item name="description" label="说明">
+            <Input.TextArea rows={2} />
+          </Form.Item>
+          <Form.Item name="templateSource" label="模板来源" rules={[{ required: true }]}>
+            <Select
+              options={[
+                { label: 'PRIVATE', value: 'PRIVATE' },
+                { label: 'PUBLIC', value: 'PUBLIC' },
+              ]}
+            />
+          </Form.Item>
+        </Form>
+      </Modal>
+
+      <Drawer
+        title="参数包详情"
+        width={980}
+        open={Boolean(selectedSetId)}
+        onClose={() => setSelectedSetId(null)}
+      >
+        <Space direction="vertical" style={{ width: '100%' }} size={16}>
+          <Space style={{ justifyContent: 'space-between', width: '100%' }}>
+            <span>{setDetail?.name || '-'}</span>
+            <Button type="primary" onClick={() => setItemVisible(true)}>
+              新建参数项
+            </Button>
+          </Space>
+          <Table<ParameterItemDto>
+            rowKey="id"
+            loading={isDetailLoading}
+            dataSource={setDetail?.items ?? []}
+            columns={itemColumns}
+            pagination={false}
+            scroll={{ x: 1200 }}
+          />
+        </Space>
+      </Drawer>
+
+      <Modal
+        title="新建参数项"
+        open={itemVisible}
+        onCancel={() => setItemVisible(false)}
+        onOk={handleCreateItem}
+        confirmLoading={createItemMutation.isPending}
+      >
+        <Form<CreateParameterItemDto>
+          layout="vertical"
+          form={itemForm}
+          initialValues={{
+            scopeLevel: 'GLOBAL',
+            paramType: 'number',
+          }}
+        >
+          <Form.Item name="paramCode" label="参数编码" rules={[{ required: true }]}>
+            <Input />
+          </Form.Item>
+          <Form.Item name="paramName" label="参数名称" rules={[{ required: true }]}>
+            <Input />
+          </Form.Item>
+          <Form.Item name="paramType" label="参数类型" rules={[{ required: true }]}>
+            <Select options={paramTypeOptions.map((item) => ({ label: item, value: item }))} />
+          </Form.Item>
+          <Form.Item name="scopeLevel" label="作用域" rules={[{ required: true }]}>
+            <Select options={scopeOptions.map((item) => ({ label: item, value: item }))} />
+          </Form.Item>
+          <Form.Item name="scopeValue" label="作用域值">
+            <Input />
+          </Form.Item>
+          <Form.Item name="value" label="值(JSON或文本)">
+            <Input.TextArea rows={2} placeholder={'例如 80 或 {"x":1}'} />
+          </Form.Item>
+        </Form>
+      </Modal>
+    </Card>
+  );
+};

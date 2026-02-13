@@ -89,6 +89,21 @@ export const MainLayout: React.FC = () => {
             icon: <DatabaseOutlined />,
             label: '规则中心',
           },
+          {
+            key: '/workflow/agents',
+            icon: <TeamOutlined />,
+            label: 'Agent中心',
+          },
+          {
+            key: '/workflow/parameters',
+            icon: <SettingOutlined />,
+            label: '参数中心',
+          },
+          {
+            key: '/workflow/connectors',
+            icon: <CloudOutlined />,
+            label: '连接器中心',
+          },
         ],
       },
       {
