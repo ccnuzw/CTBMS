@@ -20,11 +20,6 @@ import {
   Paragraph,
   TextRun,
   HeadingLevel,
-  Table,
-  TableRow,
-  TableCell,
-  WidthType,
-  BorderStyle,
   AlignmentType,
 } from 'docx';
 
@@ -38,12 +33,23 @@ export class ReportExportService {
    * 创建导出任务并组装报告数据
    */
   async createExportTask(userId: string, dto: ExportDebateReportDto) {
-    // 验证执行实例存在
+    // 验证执行实例存在且用户有权限访问
     const execution = await this.prisma.workflowExecution.findUnique({
       where: { id: dto.workflowExecutionId },
+      include: {
+        workflowVersion: {
+          select: { workflowDefinition: { select: { ownerUserId: true } } },
+        },
+      },
     });
     if (!execution) {
       throw new NotFoundException(`工作流执行实例不存在: ${dto.workflowExecutionId}`);
+    }
+    // 校验用户是触发者或工作流拥有者
+    const isOwner = execution.workflowVersion?.workflowDefinition?.ownerUserId === userId;
+    const isTrigger = execution.triggerUserId === userId;
+    if (!isOwner && !isTrigger) {
+      throw new BadRequestException('无权导出该执行实例的报告');
     }
 
     // 创建 PENDING 任务

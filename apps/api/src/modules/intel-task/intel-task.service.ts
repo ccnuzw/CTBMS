@@ -1,7 +1,7 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../../prisma';
 import { ConfigService } from '../config/config.service';
-import { Prisma } from '@prisma/client';
+import { Prisma, IntelTask } from '@prisma/client';
 import {
     CreateIntelTaskDto,
     UpdateIntelTaskDto,
@@ -153,7 +153,7 @@ export class IntelTaskService {
             if (endDate) where.deadline.lte = endDate;
         }
 
-        let data: any[] = [];
+        let data: Record<string, unknown>[] = [];
         let total = 0;
 
         try {
@@ -1047,7 +1047,7 @@ export class IntelTaskService {
             }
         }
 
-        let updated: any;
+        let updated: IntelTask;
         try {
             updated = await this.prisma.intelTask.update({
                 where: { id },

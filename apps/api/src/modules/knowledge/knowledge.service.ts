@@ -29,7 +29,7 @@ type KnowledgeListQuery = {
   authorId?: string;
 };
 
-type CreateKnowledgeInput = {
+export type CreateKnowledgeInput = {
   type: KnowledgeType;
   title: string;
   contentPlain: string;
@@ -48,7 +48,7 @@ type CreateKnowledgeInput = {
   tags?: string[];
 };
 
-type UpdateKnowledgeInput = Partial<CreateKnowledgeInput>;
+export type UpdateKnowledgeInput = Partial<CreateKnowledgeInput>;
 
 type BackfillResult = {
   intelProcessed: number;
@@ -1371,19 +1371,20 @@ export class KnowledgeService {
       }
 
       const rawEvents = Array.isArray(item.analysis?.events) ? item.analysis?.events : [];
-      rawEvents.slice(0, 2).forEach((event: any) => {
+      rawEvents.slice(0, 2).forEach((event: any) => { // eslint-disable-line @typescript-eslint/no-explicit-any
         const text = event?.content || event?.impact || event?.action;
         if (text) events.push(`[${date}] ${text}`);
       });
 
       const rawInsights = Array.isArray(item.analysis?.insights) ? item.analysis?.insights : [];
-      rawInsights.slice(0, 2).forEach((insight: any) => {
+      rawInsights.slice(0, 2).forEach((insight: any) => { // eslint-disable-line @typescript-eslint/no-explicit-any
         const text = insight?.content || insight?.title;
         if (text && /风险|波动|不确定|下行|紧张|承压/.test(text)) {
           risks.push(`[${date}] ${text}`);
         }
       });
 
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const prediction = (item.analysis?.prediction || {}) as any;
       const outlookText = prediction?.reasoning || prediction?.logic;
       if (outlookText) {

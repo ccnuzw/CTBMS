@@ -373,7 +373,7 @@ export class DebateRoundNodeExecutor implements WorkflowNodeExecutor {
         participants: DebateParticipant[],
         agentProfiles: Map<string, Record<string, unknown>>,
         input: Record<string, unknown>,
-        paramSnapshot: Record<string, unknown> | undefined,
+        _paramSnapshot: Record<string, unknown> | undefined,
     ): Promise<Record<string, unknown>> {
         const judgeSystemPrompt = [
             '你是一位公正的辩论裁判。请基于以下多轮辩论记录，综合各方论点，给出最终结论。',

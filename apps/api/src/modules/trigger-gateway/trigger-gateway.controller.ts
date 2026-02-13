@@ -38,38 +38,38 @@ export class TriggerGatewayController {
   }
 
   @Get()
-  findAll(@Query() query: TriggerConfigQueryDto) {
-    return this.service.findAll(query);
+  findAll(@Request() req: AuthRequest, @Query() query: TriggerConfigQueryDto) {
+    return this.service.findAll(this.getUserId(req), query);
   }
 
   @Get('logs')
-  findLogs(@Query() query: TriggerLogQueryDto) {
-    return this.service.findLogs(query);
+  findLogs(@Request() req: AuthRequest, @Query() query: TriggerLogQueryDto) {
+    return this.service.findLogs(this.getUserId(req), query);
   }
 
   @Get(':id')
-  findOne(@Param('id') id: string) {
-    return this.service.findOne(id);
+  findOne(@Request() req: AuthRequest, @Param('id') id: string) {
+    return this.service.findOne(this.getUserId(req), id);
   }
 
   @Patch(':id')
-  update(@Param('id') id: string, @Body() dto: UpdateTriggerConfigDto) {
-    return this.service.update(id, dto);
+  update(@Request() req: AuthRequest, @Param('id') id: string, @Body() dto: UpdateTriggerConfigDto) {
+    return this.service.update(this.getUserId(req), id, dto);
   }
 
   @Delete(':id')
-  remove(@Param('id') id: string) {
-    return this.service.remove(id);
+  remove(@Request() req: AuthRequest, @Param('id') id: string) {
+    return this.service.remove(this.getUserId(req), id);
   }
 
   @Post(':id/activate')
-  activate(@Param('id') id: string) {
-    return this.service.activate(id);
+  activate(@Request() req: AuthRequest, @Param('id') id: string) {
+    return this.service.activate(this.getUserId(req), id);
   }
 
   @Post(':id/deactivate')
-  deactivate(@Param('id') id: string) {
-    return this.service.deactivate(id);
+  deactivate(@Request() req: AuthRequest, @Param('id') id: string) {
+    return this.service.deactivate(this.getUserId(req), id);
   }
 
   @Post(':id/fire')
@@ -79,9 +79,10 @@ export class TriggerGatewayController {
 
   @Get(':id/logs')
   findLogsByConfigId(
+    @Request() req: AuthRequest,
     @Param('id') configId: string,
     @Query() query: TriggerLogQueryDto,
   ) {
-    return this.service.findLogsByConfigId(configId, query);
+    return this.service.findLogsByConfigId(this.getUserId(req), configId, query);
   }
 }

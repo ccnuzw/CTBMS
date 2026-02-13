@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { WorkflowNode, WorkflowEdge, WorkflowDsl } from '@packages/types';
-import { EvidenceItem, EvidenceBundleResult } from './evidence-collector';
+import { WorkflowNode, WorkflowDsl } from '@packages/types';
+import { EvidenceBundleResult } from './evidence-collector';
 import { DataLineageEntry } from './variable-resolver';
 
 /**

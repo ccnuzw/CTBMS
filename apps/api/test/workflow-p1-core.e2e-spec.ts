@@ -24,13 +24,19 @@ class WorkflowP1CoreE2eModule implements NestModule {
 
 const prisma = new PrismaClient();
 
-const buildDslSnapshot = (workflowId: string, workflowName: string) => ({
+const buildDslSnapshot = (
+    workflowId: string,
+    workflowName: string,
+    ownerUserId: string,
+    rulePackCode: string,
+) => ({
     workflowId,
     name: workflowName,
     mode: 'LINEAR',
     usageMethod: 'COPILOT',
     version: '1.0.0',
     status: 'DRAFT',
+    ownerUserId,
     nodes: [
         {
             id: 'n_trigger',
@@ -38,6 +44,15 @@ const buildDslSnapshot = (workflowId: string, workflowName: string) => ({
             name: 'manual trigger',
             enabled: true,
             config: {},
+        },
+        {
+            id: 'n_rule_eval',
+            type: 'rule-eval',
+            name: 'rule eval',
+            enabled: true,
+            config: {
+                rulePackCode,
+            },
         },
         {
             id: 'n_risk_gate',
@@ -57,18 +72,44 @@ const buildDslSnapshot = (workflowId: string, workflowName: string) => ({
                 channels: ['DASHBOARD'],
             },
         },
+        {
+            id: 'n_data_evidence',
+            type: 'mock-fetch',
+            name: 'mock fetch',
+            enabled: true,
+            config: {},
+        },
+        {
+            id: 'n_model_evidence',
+            type: 'single-agent',
+            name: 'single agent',
+            enabled: true,
+            config: {},
+        },
     ],
     edges: [
         {
             id: 'e1',
             from: 'n_trigger',
-            to: 'n_risk_gate',
+            to: 'n_rule_eval',
             edgeType: 'control-edge',
         },
         {
             id: 'e2',
+            from: 'n_rule_eval',
+            to: 'n_risk_gate',
+            edgeType: 'control-edge',
+        },
+        {
+            id: 'e3',
             from: 'n_risk_gate',
             to: 'n_notify',
+            edgeType: 'control-edge',
+        },
+        {
+            id: 'e4',
+            from: 'n_data_evidence',
+            to: 'n_model_evidence',
             edgeType: 'control-edge',
         },
     ],
@@ -99,8 +140,29 @@ async function main() {
     const token = `wf_p1_core_${Date.now()}`;
     const workflowId = `${token}_workflow`;
     const workflowName = `workflow p1 core ${token}`;
+    const rulePackCode = `${token}_RULE_PACK`;
 
     try {
+        const rulePack = await prisma.decisionRulePack.create({
+            data: {
+                rulePackCode,
+                name: `Rule Pack ${token}`,
+                ownerUserId,
+                version: 2,
+            },
+        });
+        await prisma.decisionRule.create({
+            data: {
+                rulePackId: rulePack.id,
+                ruleCode: `${token}_RULE_1`,
+                name: 'score guard',
+                fieldPath: 'score',
+                operator: 'GT',
+                expectedValue: 0,
+                weight: 1,
+            },
+        });
+
         const createDefinition = await fetchJson<{
             definition: { id: string };
             version: { id: string; versionCode: string; status: string };
@@ -116,7 +178,7 @@ async function main() {
                 mode: 'LINEAR',
                 usageMethod: 'COPILOT',
                 templateSource: 'PRIVATE',
-                dslSnapshot: buildDslSnapshot(workflowId, workflowName),
+                dslSnapshot: buildDslSnapshot(workflowId, workflowName, ownerUserId, rulePackCode),
                 changelog: 'create definition',
             }),
         });
@@ -141,7 +203,7 @@ async function main() {
                 'x-virtual-user-id': ownerUserId,
             },
             body: JSON.stringify({
-                dslSnapshot: buildDslSnapshot(workflowId, workflowName),
+                dslSnapshot: buildDslSnapshot(workflowId, workflowName, ownerUserId, rulePackCode),
                 changelog: 'draft update',
             }),
         });
@@ -160,7 +222,7 @@ async function main() {
             },
             body: JSON.stringify({
                 dslSnapshot: {
-                    ...buildDslSnapshot(workflowId, workflowName),
+                    ...buildDslSnapshot(workflowId, workflowName, ownerUserId, rulePackCode),
                     runPolicy: undefined,
                 },
                 stage: 'PUBLISH',
@@ -319,6 +381,13 @@ async function main() {
         await prisma.workflowDefinition.deleteMany({
             where: {
                 workflowId: {
+                    startsWith: token,
+                },
+            },
+        });
+        await prisma.decisionRulePack.deleteMany({
+            where: {
+                rulePackCode: {
                     startsWith: token,
                 },
             },

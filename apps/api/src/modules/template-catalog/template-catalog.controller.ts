@@ -47,8 +47,9 @@ export class TemplateCatalogController {
   }
 
   @Get(':id')
-  findOne(@Param('id') id: string) {
-    return this.service.findOne(id);
+  findOne(@Request() req: AuthRequest, @Param('id') id: string) {
+    const userId = req.user?.id;
+    return this.service.findOne(id, userId);
   }
 
   @Put(':id')

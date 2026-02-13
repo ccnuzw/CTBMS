@@ -54,7 +54,6 @@ async function main() {
         id: ownerUserId,
         username: `tpl-e2e-${Date.now()}`,
         email: `tpl-e2e-${Date.now()}@test.com`,
-        passwordHash: 'not-a-real-hash',
         name: 'Template E2E User',
       },
     });
@@ -64,7 +63,9 @@ async function main() {
         workflowId,
         name: 'Template Source Workflow',
         ownerUserId,
-        status: 'PUBLISHED',
+        mode: 'LINEAR',
+        usageMethod: 'COPILOT',
+        status: 'ACTIVE',
       },
     });
     definitionId = definition.id;
@@ -102,6 +103,7 @@ async function main() {
       },
       body: JSON.stringify({
         sourceVersionId: versionId,
+        sourceWorkflowDefinitionId: definitionId,
         templateCode,
         name: 'E2E Test Template',
         description: 'Created by E2E test',
@@ -120,7 +122,10 @@ async function main() {
     // ── Test 2: Get template detail ──
     const detail = await fetchJson<{ id: string; templateCode: string }>(
       `${baseUrl}/template-catalog/${templateId}`,
-      { method: 'GET' },
+      {
+        method: 'GET',
+        headers: { 'x-virtual-user-id': ownerUserId },
+      },
     );
     assert.equal(detail.status, 200);
     assert.equal(detail.body.templateCode, templateCode);
@@ -218,7 +223,10 @@ async function main() {
     // Verify usage count incremented
     const afterCopy = await fetchJson<{ id: string; usageCount: number }>(
       `${baseUrl}/template-catalog/${templateId}`,
-      { method: 'GET' },
+      {
+        method: 'GET',
+        headers: { 'x-virtual-user-id': ownerUserId },
+      },
     );
     assert.equal(afterCopy.status, 200);
     assert.ok(afterCopy.body.usageCount >= 1, 'usage count should be incremented');
@@ -273,6 +281,7 @@ async function main() {
         },
         body: JSON.stringify({
           sourceVersionId: versionId,
+          sourceWorkflowDefinitionId: definitionId,
           templateCode: `${templateCode}_CROSS`,
           name: 'Cross User Test',
           category: 'TRADING',

@@ -106,7 +106,7 @@ export class VariableResolver {
     ): { text: string; lineage: DataLineageEntry[] } {
         const lineage: DataLineageEntry[] = [];
 
-        const text = template.replace(/\{\{([^}]+)\}\}/g, (match, expr: string) => {
+        const text = template.replace(/\{\{([^}]+)\}\}/g, (match, _expr: string) => {
             const result = this.resolveExpression(match, context);
             if (result.lineageEntry) {
                 lineage.push(result.lineageEntry);

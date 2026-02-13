@@ -72,8 +72,6 @@ jobs:
 
     env:
       DATABASE_URL: postgresql://postgres:postgres@localhost:5433/ctbms_test?schema=public
-      WORKFLOW_EXECUTION_BASELINE_REFERENCE_CACHE_KEY: workflow-execution-baseline-reference-${{ runner.os }}-${{ github.repository }}-${{ github.ref_name }}-${{ github.run_id }}-${{ github.run_attempt }}
-      WORKFLOW_EXECUTION_BASELINE_REFERENCE_CACHE_RESTORE_KEY: workflow-execution-baseline-reference-${{ runner.os }}-${{ github.repository }}-${{ github.ref_name }}-
 
     steps:
       - name: Checkout
@@ -98,9 +96,9 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: logs/workflow-execution-baseline-reference.json
-          key: ${{ env.WORKFLOW_EXECUTION_BASELINE_REFERENCE_CACHE_KEY }}
+          key: workflow-execution-baseline-reference-${{ runner.os }}-${{ github.repository }}-${{ github.ref_name }}-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: |
-            ${{ env.WORKFLOW_EXECUTION_BASELINE_REFERENCE_CACHE_RESTORE_KEY }}
+            workflow-execution-baseline-reference-${{ runner.os }}-${{ github.repository }}-${{ github.ref_name }}-
 
       - name: Run workflow summary aggregate self-check
         run: pnpm workflow:summary:self-check:all:self-check
@@ -167,7 +165,7 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: logs/workflow-execution-baseline-reference.json
-          key: ${{ env.WORKFLOW_EXECUTION_BASELINE_REFERENCE_CACHE_KEY }}
+          key: workflow-execution-baseline-reference-${{ runner.os }}-${{ github.repository }}-${{ github.ref_name }}-${{ github.run_id }}-${{ github.run_attempt }}
 
       - name: Build workflow execution baseline reference CI state
         if: always()

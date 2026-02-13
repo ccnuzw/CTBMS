@@ -49,7 +49,9 @@ async function main() {
         workflowId,
         name: 'Analytics E2E Test Workflow',
         ownerUserId,
-        status: 'PUBLISHED',
+        mode: 'LINEAR',
+        usageMethod: 'COPILOT',
+        status: 'ACTIVE',
       },
     });
     definitionId = definition.id;
@@ -97,7 +99,7 @@ async function main() {
         triggerType: 'MANUAL',
         triggerUserId: ownerUserId,
         status: 'FAILED',
-        failureCategory: 'AGENT_ERROR',
+        failureCategory: 'EXECUTOR',
         startedAt: now,
         completedAt: new Date(now.getTime() + 1000),
       },
@@ -188,9 +190,9 @@ async function main() {
 
     // Verify failure categories
     assert.ok(Array.isArray(analytics.body.failureCategories), 'failure categories should be array');
-    const agentError = analytics.body.failureCategories.find((c) => c.category === 'AGENT_ERROR');
-    assert.ok(agentError, 'should have AGENT_ERROR category');
-    assert.equal(agentError.count, 1);
+    const executorFailure = analytics.body.failureCategories.find((c) => c.category === 'EXECUTOR');
+    assert.ok(executorFailure, 'should have EXECUTOR category');
+    assert.equal(executorFailure.count, 1);
 
     // Verify node performance
     assert.ok(Array.isArray(analytics.body.nodePerformance), 'node performance should be array');

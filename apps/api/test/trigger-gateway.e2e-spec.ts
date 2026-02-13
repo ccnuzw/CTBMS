@@ -111,6 +111,7 @@ async function main() {
   const baseUrl = (await app.getUrl()).replace('[::1]', '127.0.0.1');
 
   const ownerUserId = randomUUID();
+  const outsiderUserId = randomUUID();
   const token = `trigger_gateway_${Date.now()}`;
   const workflowId = `${token}_workflow`;
   const workflowName = `Trigger Gateway ${token}`;
@@ -201,6 +202,38 @@ async function main() {
     assert.equal(createTrigger.body.status, 'ACTIVE');
     triggerConfigId = createTrigger.body.id;
 
+    const outsiderList = await fetchJson<{ total: number; data: Array<{ id: string }> }>(
+      `${baseUrl}/trigger-configs`,
+      {
+        headers: {
+          'x-virtual-user-id': outsiderUserId,
+        },
+      },
+    );
+    assert.equal(outsiderList.status, 200);
+    assert.equal(outsiderList.body.total, 0);
+    assert.equal(outsiderList.body.data.length, 0);
+
+    const outsiderFindOne = await fetchJson<{ message?: string }>(`${baseUrl}/trigger-configs/${triggerConfigId}`, {
+      headers: {
+        'x-virtual-user-id': outsiderUserId,
+      },
+    });
+    assert.equal(outsiderFindOne.status, 404);
+
+    const outsiderFire = await fetchJson<{ message?: string }>(
+      `${baseUrl}/trigger-configs/${triggerConfigId}/fire`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-virtual-user-id': outsiderUserId,
+        },
+        body: JSON.stringify({ workflowVersionId: publishedVersionId }),
+      },
+    );
+    assert.equal(outsiderFire.status, 404);
+
     const fireTrigger = await fetchJson<{
       workflowExecutionId: string;
       executionStatus: string;
@@ -235,6 +268,29 @@ async function main() {
     assert.equal(logPage.status, 200);
     assert.ok(logPage.body.total >= 1);
     assert.ok(logPage.body.data.some((item) => item.status === 'SUCCESS'));
+
+    const outsiderLogPage = await fetchJson<{ total: number; data: Array<{ status: string }> }>(
+      `${baseUrl}/trigger-configs/${triggerConfigId}/logs`,
+      {
+        headers: {
+          'x-virtual-user-id': outsiderUserId,
+        },
+      },
+    );
+    assert.equal(outsiderLogPage.status, 200);
+    assert.equal(outsiderLogPage.body.total, 0);
+    assert.equal(outsiderLogPage.body.data.length, 0);
+
+    const outsiderDeactivate = await fetchJson<{ message?: string }>(
+      `${baseUrl}/trigger-configs/${triggerConfigId}/deactivate`,
+      {
+        method: 'POST',
+        headers: {
+          'x-virtual-user-id': outsiderUserId,
+        },
+      },
+    );
+    assert.equal(outsiderDeactivate.status, 404);
 
     const deactivate = await fetchJson<{ status: string }>(
       `${baseUrl}/trigger-configs/${triggerConfigId}/deactivate`,

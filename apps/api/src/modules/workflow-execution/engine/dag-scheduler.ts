@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import type { WorkflowDsl, WorkflowNode, WorkflowEdge, WorkflowRunPolicy } from '@packages/types';
 import { NodeExecutorRegistry } from './node-executor.registry';
-import type { NodeExecutionContext, NodeExecutionResult } from './node-executor.interface';
+// NodeExecutionContext, NodeExecutionResult removed as they are unused imports
 
 /**
  * DAG 节点执行回调

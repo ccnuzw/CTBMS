@@ -29,6 +29,8 @@ const sleep = async (ms: number) => new Promise((resolve) => setTimeout(resolve,
 const createDslSnapshot = (params: {
     workflowId: string;
     name: string;
+    ownerUserId: string;
+    rulePackCode: string;
     passthroughDelayMs?: number;
     passthroughTimeoutMs?: number;
     passthroughRetryCount?: number;
@@ -39,6 +41,7 @@ const createDslSnapshot = (params: {
     usageMethod: 'COPILOT',
     version: '1.0.0',
     status: 'DRAFT',
+    ownerUserId: params.ownerUserId,
     nodes: [
         {
             id: 'n_trigger',
@@ -46,6 +49,15 @@ const createDslSnapshot = (params: {
             name: 'manual trigger',
             enabled: true,
             config: {},
+        },
+        {
+            id: 'n_rule_eval',
+            type: 'rule-eval',
+            name: 'rule eval',
+            enabled: true,
+            config: {
+                rulePackCode: params.rulePackCode,
+            },
         },
         {
             id: 'n_risk_gate',
@@ -80,24 +92,50 @@ const createDslSnapshot = (params: {
                 channels: ['DASHBOARD'],
             },
         },
+        {
+            id: 'n_data_evidence',
+            type: 'mock-fetch',
+            name: 'mock fetch',
+            enabled: true,
+            config: {},
+        },
+        {
+            id: 'n_model_evidence',
+            type: 'single-agent',
+            name: 'single agent',
+            enabled: true,
+            config: {},
+        },
     ],
     edges: [
         {
             id: 'e1',
             from: 'n_trigger',
-            to: 'n_risk_gate',
+            to: 'n_rule_eval',
             edgeType: 'control-edge',
         },
         {
             id: 'e2',
+            from: 'n_rule_eval',
+            to: 'n_risk_gate',
+            edgeType: 'control-edge',
+        },
+        {
+            id: 'e3',
             from: 'n_risk_gate',
             to: 'n_passthrough',
             edgeType: 'control-edge',
         },
         {
-            id: 'e3',
+            id: 'e4',
             from: 'n_passthrough',
             to: 'n_notify',
+            edgeType: 'control-edge',
+        },
+        {
+            id: 'e5',
+            from: 'n_data_evidence',
+            to: 'n_model_evidence',
             edgeType: 'control-edge',
         },
     ],
@@ -121,6 +159,7 @@ const fetchJson = async <T>(input: string, init: RequestInit): Promise<{ status:
 async function createAndPublishDefinition(params: {
     baseUrl: string;
     ownerUserId: string;
+    rulePackCode: string;
     workflowId: string;
     name: string;
     templateSource?: 'PRIVATE' | 'PUBLIC';
@@ -138,14 +177,16 @@ async function createAndPublishDefinition(params: {
             'x-virtual-user-id': params.ownerUserId,
         },
         body: JSON.stringify({
+            workflowId: params.workflowId,
+            name: params.name,
+            mode: 'LINEAR',
+            usageMethod: 'COPILOT',
+            templateSource: params.templateSource ?? 'PRIVATE',
+            dslSnapshot: createDslSnapshot({
                 workflowId: params.workflowId,
                 name: params.name,
-                mode: 'LINEAR',
-                usageMethod: 'COPILOT',
-                templateSource: params.templateSource ?? 'PRIVATE',
-                dslSnapshot: createDslSnapshot({
-                    workflowId: params.workflowId,
-                    name: params.name,
+                ownerUserId: params.ownerUserId,
+                rulePackCode: params.rulePackCode,
                 passthroughDelayMs: params.passthroughDelayMs,
                 passthroughTimeoutMs: params.passthroughTimeoutMs,
                 passthroughRetryCount: params.passthroughRetryCount,
@@ -186,11 +227,34 @@ async function main() {
     const ownerUserId = randomUUID();
     const outsiderUserId = randomUUID();
     const token = `wf_p2_reliability_${Date.now()}`;
+    const rulePackCode = `${token}_RULE_PACK`;
 
     try {
+        const rulePack = await prisma.decisionRulePack.create({
+            data: {
+                rulePackCode,
+                name: `Rule Pack ${token}`,
+                ownerUserId,
+                templateSource: 'PUBLIC',
+                version: 2,
+            },
+        });
+        await prisma.decisionRule.create({
+            data: {
+                rulePackId: rulePack.id,
+                ruleCode: `${token}_RULE_1`,
+                name: 'score guard',
+                fieldPath: 'score',
+                operator: 'GT',
+                expectedValue: 0,
+                weight: 1,
+            },
+        });
+
         const idempotentDef = await createAndPublishDefinition({
             baseUrl,
             ownerUserId,
+            rulePackCode,
             workflowId: `${token}_idempotent`,
             name: `workflow idempotent ${token}`,
         });
@@ -240,6 +304,7 @@ async function main() {
         const cancelDef = await createAndPublishDefinition({
             baseUrl,
             ownerUserId,
+            rulePackCode,
             workflowId: `${token}_cancel`,
             name: `workflow cancel ${token}`,
             passthroughDelayMs: 4000,
@@ -301,6 +366,7 @@ async function main() {
         const publicCancelDef = await createAndPublishDefinition({
             baseUrl,
             ownerUserId,
+            rulePackCode,
             workflowId: `${token}_public_cancel`,
             name: `workflow public cancel ${token}`,
             templateSource: 'PUBLIC',
@@ -370,6 +436,7 @@ async function main() {
         const visibilityDef = await createAndPublishDefinition({
             baseUrl,
             ownerUserId,
+            rulePackCode,
             workflowId: `${token}_public_visibility`,
             name: `workflow public visibility ${token}`,
             templateSource: 'PUBLIC',
@@ -453,6 +520,7 @@ async function main() {
         const timeoutDef = await createAndPublishDefinition({
             baseUrl,
             ownerUserId,
+            rulePackCode,
             workflowId: `${token}_timeout`,
             name: `workflow timeout ${token}`,
             passthroughDelayMs: 1500,
@@ -508,6 +576,7 @@ async function main() {
         const publicTimeoutDef = await createAndPublishDefinition({
             baseUrl,
             ownerUserId,
+            rulePackCode,
             workflowId: `${token}_public_timeout`,
             name: `workflow public timeout ${token}`,
             templateSource: 'PUBLIC',
@@ -557,6 +626,13 @@ async function main() {
         await prisma.workflowDefinition.deleteMany({
             where: {
                 workflowId: {
+                    startsWith: token,
+                },
+            },
+        });
+        await prisma.decisionRulePack.deleteMany({
+            where: {
+                rulePackCode: {
                     startsWith: token,
                 },
             },

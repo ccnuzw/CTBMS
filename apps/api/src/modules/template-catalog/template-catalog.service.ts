@@ -6,7 +6,7 @@ import type {
   TemplateCatalogQueryDto,
   CopyTemplateDto,
 } from '@packages/types';
-import type { Prisma } from '@prisma/client';
+import { Prisma, WorkflowMode, WorkflowUsageMethod } from '@prisma/client';
 
 @Injectable()
 export class TemplateCatalogService {
@@ -124,9 +124,13 @@ export class TemplateCatalogService {
     return { data, total, page, pageSize, totalPages: Math.ceil(total / pageSize) };
   }
 
-  async findOne(id: string) {
+  async findOne(id: string, userId?: string) {
     const template = await this.prisma.templateCatalog.findUnique({ where: { id } });
     if (!template) throw new NotFoundException('模板不存在');
+    // 非发布状态的模板只允许作者查看
+    if (template.status !== 'PUBLISHED' && template.authorUserId !== userId) {
+      throw new NotFoundException('模板不存在');
+    }
     return template;
   }
 
@@ -205,8 +209,8 @@ export class TemplateCatalogService {
         description: template.description,
         ownerUserId: userId,
         templateSource: 'COPIED',
-        mode: (dslSnapshot.mode as any) || 'LINEAR',
-        usageMethod: (dslSnapshot.usageMethod as any) || 'HEADLESS',
+        mode: (dslSnapshot.mode as WorkflowMode) || 'LINEAR',
+        usageMethod: (dslSnapshot.usageMethod as WorkflowUsageMethod) || 'HEADLESS',
       },
     });
 

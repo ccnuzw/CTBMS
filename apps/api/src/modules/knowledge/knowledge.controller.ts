@@ -17,7 +17,7 @@ import {
   KnowledgeStatus,
   KnowledgeType,
 } from '@prisma/client';
-import { KnowledgeService } from './knowledge.service';
+import { KnowledgeService, CreateKnowledgeInput, UpdateKnowledgeInput } from './knowledge.service';
 
 @Controller('knowledge')
 export class KnowledgeController {
@@ -147,12 +147,12 @@ export class KnowledgeController {
   }
 
   @Post('items')
-  create(@Body() body: any) {
+  create(@Body() body: CreateKnowledgeInput) {
     return this.knowledgeService.create(body);
   }
 
   @Patch('items/:id')
-  update(@Param('id') id: string, @Body() body: any) {
+  update(@Param('id') id: string, @Body() body: UpdateKnowledgeInput) {
     return this.knowledgeService.update(id, body);
   }
 

@@ -43,8 +43,10 @@ export class TriggerGatewayService {
     });
   }
 
-  async findAll(query: TriggerConfigQueryDto) {
-    const where: Prisma.TriggerConfigWhereInput = {};
+  async findAll(userId: string, query: TriggerConfigQueryDto) {
+    const where: Prisma.TriggerConfigWhereInput = {
+      createdByUserId: userId,
+    };
 
     if (query.workflowDefinitionId) {
       where.workflowDefinitionId = query.workflowDefinitionId;
@@ -82,9 +84,9 @@ export class TriggerGatewayService {
     };
   }
 
-  async findOne(id: string) {
-    const config = await this.prisma.triggerConfig.findUnique({
-      where: { id },
+  async findOne(userId: string, id: string) {
+    const config = await this.prisma.triggerConfig.findFirst({
+      where: { id, createdByUserId: userId },
     });
     if (!config) {
       throw new NotFoundException(`触发器配置不存在: ${id}`);
@@ -92,8 +94,8 @@ export class TriggerGatewayService {
     return config;
   }
 
-  async update(id: string, dto: UpdateTriggerConfigDto) {
-    await this.findOne(id);
+  async update(userId: string, id: string, dto: UpdateTriggerConfigDto) {
+    await this.findOne(userId, id);
     return this.prisma.triggerConfig.update({
       where: { id },
       data: {
@@ -116,22 +118,22 @@ export class TriggerGatewayService {
     });
   }
 
-  async remove(id: string) {
-    await this.findOne(id);
+  async remove(userId: string, id: string) {
+    await this.findOne(userId, id);
     await this.prisma.triggerConfig.delete({ where: { id } });
     return { deleted: true };
   }
 
-  async activate(id: string) {
-    await this.findOne(id);
+  async activate(userId: string, id: string) {
+    await this.findOne(userId, id);
     return this.prisma.triggerConfig.update({
       where: { id },
       data: { status: 'ACTIVE' },
     });
   }
 
-  async deactivate(id: string) {
-    await this.findOne(id);
+  async deactivate(userId: string, id: string) {
+    await this.findOne(userId, id);
     return this.prisma.triggerConfig.update({
       where: { id },
       data: { status: 'INACTIVE' },
@@ -139,7 +141,7 @@ export class TriggerGatewayService {
   }
 
   async fire(userId: string, id: string, dto: FireTriggerConfigDto) {
-    const config = await this.findOne(id);
+    const config = await this.findOne(userId, id);
     const triggerType = this.normalizeTriggerType(config.triggerType);
     const startedAt = Date.now();
     const payload = this.mergeParamSnapshot(
@@ -247,12 +249,16 @@ export class TriggerGatewayService {
     }
   }
 
-  async findLogs(query: TriggerLogQueryDto) {
+  async findLogs(userId: string, query: TriggerLogQueryDto) {
     const where: Prisma.TriggerLogWhereInput = {};
+    const configWhere: Prisma.TriggerConfigWhereInput = {
+      createdByUserId: userId,
+    };
 
     if (query.triggerConfigId) {
-      where.triggerConfigId = query.triggerConfigId;
+      configWhere.id = query.triggerConfigId;
     }
+    where.triggerConfig = configWhere;
     if (query.triggerType) {
       where.triggerType = query.triggerType;
     }
@@ -297,8 +303,8 @@ export class TriggerGatewayService {
     };
   }
 
-  async findLogsByConfigId(configId: string, query: TriggerLogQueryDto) {
-    return this.findLogs({ ...query, triggerConfigId: configId });
+  async findLogsByConfigId(userId: string, configId: string, query: TriggerLogQueryDto) {
+    return this.findLogs(userId, { ...query, triggerConfigId: configId });
   }
 
   private normalizeTriggerType(rawType: string): WorkflowTriggerType {
