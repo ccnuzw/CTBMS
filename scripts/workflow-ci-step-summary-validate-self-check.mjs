@@ -22,6 +22,7 @@ const DEFAULT_REQUIRED_SECTIONS = [
     '## Workflow Execution Baseline Trend',
     '## Workflow Summary Self-Check Suite',
     '## Workflow Summary Self-Check Report Validation',
+    '## Workflow Staging Drill Closeout',
 ];
 
 const runNodeScript = (scriptFile, scriptArgs) => new Promise((resolve) => {

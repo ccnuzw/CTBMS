@@ -490,7 +490,13 @@ const renderWorkflowSummarySelfCheckMarkdown = (report, options = {}) => {
         'report-summary-self-check': 'pnpm workflow:reports:summary:self-check',
         'ci-step-summary-self-check': 'pnpm workflow:ci:step-summary:self-check',
         'ci-step-summary-validate-self-check': 'pnpm workflow:ci:step-summary:validate:self-check',
+        'execution-baseline-report-validate-self-check': 'pnpm workflow:execution:baseline:report:validate:self-check',
+        'execution-baseline-reference-self-check': 'pnpm workflow:execution:baseline:reference:self-check',
+        'execution-baseline-reference-ci-state-self-check': 'pnpm workflow:execution:baseline:reference:ci-state:self-check',
+        'execution-baseline-trend-self-check': 'pnpm workflow:execution:baseline:trend:self-check',
+        'staging-precheck-summary-self-check': 'pnpm workflow:drill:staging:precheck:summary:self-check',
         'staging-full-summary-self-check': 'pnpm workflow:drill:staging:full:summary:self-check',
+        'staging-drill-closeout-self-check': 'pnpm workflow:drill:staging:closeout:self-check',
         'quality-gate-self-check': 'pnpm workflow:quality:gate:self-check',
         'quality-gate-report-validate-self-check': 'pnpm workflow:quality:report:validate:self-check',
     };
@@ -1142,6 +1148,55 @@ const renderWorkflowExecutionBaselineTrendMarkdown = (summary, options = {}) => 
     return lines.join('\n');
 };
 
+const renderWorkflowStagingDrillCloseoutMarkdown = (summary, options = {}) => {
+    const maxItems = Number.isFinite(options.maxItems) && options.maxItems > 0
+        ? Math.floor(options.maxItems)
+        : 3;
+    const warnings = Array.isArray(summary?.warnings) ? summary.warnings : [];
+    const validationErrors = Array.isArray(summary?.validationErrors)
+        ? summary.validationErrors
+        : [];
+    const components = isRecord(summary?.components) ? summary.components : {};
+    const ciValidationMissingSections = Array.isArray(
+        components?.ciStepSummaryValidation?.missingSections,
+    )
+        ? components.ciStepSummaryValidation.missingSections
+        : [];
+    const ciEvidence = isRecord(summary?.ciEvidence) ? summary.ciEvidence : {};
+    const checklist = isRecord(summary?.checklist) ? summary.checklist : {};
+
+    const lines = [
+        '## Workflow Staging Drill Closeout',
+        '',
+        `- Status: \`${fallback(summary?.status, 'UNKNOWN')}\``,
+        `- Release Decision: \`${fallback(summary?.releaseDecision)}\``,
+        `- Generated At: \`${fallback(summary?.generatedAt)}\``,
+        `- Staging Full Summary: \`${fallback(components?.stagingFullSummary?.status)}\``,
+        `- Precheck Summary: \`${fallback(components?.precheckSummary?.status)}\``,
+        `- Rollback Smoke: \`${fallback(components?.rollbackSmoke?.status)}\``,
+        `- Rollback Baseline Report: \`${fallback(components?.rollbackBaselineReport?.status)}\``,
+        `- Rollback Baseline Validation: \`${fallback(components?.rollbackBaselineValidation?.status)}\``,
+        `- Rollback Baseline Trend: \`${fallback(components?.rollbackBaselineTrend?.status)}\``,
+        `- CI Step Summary Validation: \`${fallback(components?.ciStepSummaryValidation?.status)}\``,
+        `- CI Validation Missing Sections: \`${ciValidationMissingSections.length}\``,
+        `- CI Run URL: \`${fallback(ciEvidence?.runUrl)}\``,
+        `- CI Run ID: \`${fallback(ciEvidence?.runId)}\``,
+        `- CI Run Attempt: \`${fallback(ciEvidence?.runAttempt)}\``,
+        `- CI Run Conclusion: \`${fallback(ciEvidence?.runConclusion)}\``,
+        `- Checklist Staging Full Passed: \`${typeof checklist?.stagingFullSummaryPassed === 'boolean' ? String(checklist.stagingFullSummaryPassed) : 'N/A'}\``,
+        `- Checklist CI Summary Validation Passed: \`${typeof checklist?.ciStepSummaryValidationPassed === 'boolean' ? String(checklist.ciStepSummaryValidationPassed) : 'N/A'}\``,
+        `- Checklist CI Run URL Attached: \`${typeof checklist?.ciRunUrlAttached === 'boolean' ? String(checklist.ciRunUrlAttached) : 'N/A'}\``,
+        `- Checklist CI Run Passed: \`${typeof checklist?.ciRunPassed === 'boolean' ? String(checklist.ciRunPassed) : 'N/A'}\``,
+        `- Validation Error Count: \`${typeof summary?.validationErrorCount === 'number' ? summary.validationErrorCount : validationErrors.length}\``,
+        `- Warning Count: \`${typeof summary?.warningCount === 'number' ? summary.warningCount : warnings.length}\``,
+    ];
+
+    appendTopItems(lines, 'Top Validation Errors', validationErrors, maxItems);
+    appendTopItems(lines, 'Top Warnings', warnings, maxItems);
+
+    return lines.join('\n');
+};
+
 export {
     QUALITY_GATE_FIRST_FIX_ROUTE,
     QUALITY_GATE_SUGGESTED_COMMAND_SOURCE,
@@ -1157,6 +1212,7 @@ export {
     renderWorkflowExecutionBaselineReferenceOperationMarkdown,
     renderWorkflowExecutionBaselineValidationMarkdown,
     renderWorkflowExecutionBaselineTrendMarkdown,
+    renderWorkflowStagingDrillCloseoutMarkdown,
     renderWorkflowQualityGateReportValidationMarkdown,
     renderWorkflowReportValidationSummaryMarkdown,
     renderWorkflowSummarySelfCheckMarkdown,

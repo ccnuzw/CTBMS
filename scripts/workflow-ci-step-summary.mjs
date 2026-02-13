@@ -9,6 +9,7 @@ import {
     renderWorkflowExecutionBaselineReferenceOperationMarkdown,
     renderWorkflowExecutionBaselineTrendMarkdown,
     renderWorkflowExecutionBaselineValidationMarkdown,
+    renderWorkflowStagingDrillCloseoutMarkdown,
     renderQualityGateSummaryMarkdown,
     renderWorkflowQuickLocateIndexMarkdown,
     renderWorkflowQualityGateReportValidationMarkdown,
@@ -32,6 +33,7 @@ const DEFAULT_EXECUTION_BASELINE_REFERENCE_CI_STATE_FILE = 'logs/workflow-execut
 const DEFAULT_EXECUTION_BASELINE_TREND_FILE = 'logs/workflow-execution-baseline-trend.json';
 const DEFAULT_SELF_CHECK_REPORT_FILE = 'logs/workflow-summary-self-check-report.json';
 const DEFAULT_SELF_CHECK_VALIDATION_FILE = 'logs/workflow-summary-self-check-validation.json';
+const DEFAULT_STAGING_DRILL_CLOSEOUT_FILE = 'logs/workflow-drill-staging-closeout.json';
 const args = process.argv.slice(2);
 
 const readArgValue = (name, fallback) => {
@@ -42,6 +44,7 @@ const readArgValue = (name, fallback) => {
     const value = matched.split('=').slice(1).join('=').trim();
     return value || fallback;
 };
+const hasFlag = (name) => args.includes(name);
 
 const fileExists = async (filePath) => {
     try {
@@ -87,6 +90,11 @@ async function main() {
         '--self-check-validation-file',
         DEFAULT_SELF_CHECK_VALIDATION_FILE,
     );
+    const stagingDrillCloseoutFile = readArgValue(
+        '--staging-drill-closeout-file',
+        DEFAULT_STAGING_DRILL_CLOSEOUT_FILE,
+    );
+    const ignoreStagingDrillCloseout = hasFlag('--ignore-staging-drill-closeout');
     const failureIndexSnapshotMaxCharsRaw = readArgValue('--failure-index-snapshot-max-chars', '');
     const failureIndexSnapshotMaxChars = Number.parseInt(failureIndexSnapshotMaxCharsRaw, 10);
     const qualityReportValidationRenderOptions = Number.isFinite(failureIndexSnapshotMaxChars)
@@ -111,6 +119,7 @@ async function main() {
     const executionBaselineTrendAbsolutePath = path.resolve(repoRoot, executionBaselineTrendFile);
     const selfCheckReportAbsolutePath = path.resolve(repoRoot, selfCheckReportFile);
     const selfCheckValidationAbsolutePath = path.resolve(repoRoot, selfCheckValidationFile);
+    const stagingDrillCloseoutAbsolutePath = path.resolve(repoRoot, stagingDrillCloseoutFile);
 
     let qualityReport = null;
     let qualityReportValidation = null;
@@ -118,6 +127,7 @@ async function main() {
     let summaryJson = null;
     let selfCheckReport = null;
     let selfCheckValidation = null;
+    let stagingDrillCloseout = null;
     let executionBaselineReport = null;
     let executionBaselineValidation = null;
     let executionBaselineReferenceOperation = null;
@@ -141,6 +151,9 @@ async function main() {
     }
     if (await fileExists(selfCheckValidationAbsolutePath)) {
         selfCheckValidation = JSON.parse(await readTextFile(selfCheckValidationAbsolutePath));
+    }
+    if (!ignoreStagingDrillCloseout && await fileExists(stagingDrillCloseoutAbsolutePath)) {
+        stagingDrillCloseout = JSON.parse(await readTextFile(stagingDrillCloseoutAbsolutePath));
     }
     if (await fileExists(executionBaselineReportAbsolutePath)) {
         executionBaselineReport = JSON.parse(await readTextFile(executionBaselineReportAbsolutePath));
@@ -250,6 +263,8 @@ async function main() {
     } else {
         blocks.push('workflow summary self-check validation file not found');
     }
+
+    blocks.push(renderWorkflowStagingDrillCloseoutMarkdown(stagingDrillCloseout));
 
     process.stdout.write(`${blocks.filter(Boolean).join('\n\n')}\n`);
 }

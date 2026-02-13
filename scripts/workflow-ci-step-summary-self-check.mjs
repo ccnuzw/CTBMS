@@ -86,6 +86,7 @@ async function main() {
             const summaryJsonPath = path.join(caseDir, 'summary.json');
             const selfCheckReportPath = path.join(caseDir, 'self-check-report.json');
             const selfCheckValidationPath = path.join(caseDir, 'self-check-validation.json');
+            const stagingDrillCloseoutPath = path.join(caseDir, 'staging-drill-closeout.json');
 
             await writeJson(qualityReportPath, {
                 status: 'SUCCESS',
@@ -362,6 +363,40 @@ async function main() {
                 warnings: [],
                 validationErrors: [],
             });
+            await writeJson(stagingDrillCloseoutPath, {
+                schemaVersion: '1.0',
+                generatedAt: '2026-02-13T00:10:00.000Z',
+                status: 'SUCCESS',
+                releaseDecision: 'READY_TO_PROMOTE',
+                checklist: {
+                    stagingFullSummaryPassed: true,
+                    ciStepSummaryValidationPassed: true,
+                    ciRunUrlAttached: true,
+                    ciRunPassed: true,
+                },
+                components: {
+                    stagingFullSummary: { status: 'SUCCESS' },
+                    precheckSummary: { status: 'SUCCESS' },
+                    rollbackSmoke: { status: 'SUCCESS' },
+                    rollbackBaselineReport: { status: 'SUCCESS' },
+                    rollbackBaselineValidation: { status: 'SUCCESS' },
+                    rollbackBaselineTrend: { status: 'SUCCESS' },
+                    ciStepSummaryValidation: {
+                        status: 'SUCCESS',
+                        missingSections: [],
+                    },
+                },
+                ciEvidence: {
+                    runUrl: 'https://github.com/example/repo/actions/runs/123456789',
+                    runId: '123456789',
+                    runAttempt: '2',
+                    runConclusion: 'SUCCESS',
+                },
+                warningCount: 0,
+                validationErrorCount: 0,
+                warnings: [],
+                validationErrors: [],
+            });
 
             const result = await runNodeScript(summaryScript, [
                 `--quality-report-file=${qualityReportPath}`,
@@ -375,6 +410,7 @@ async function main() {
                 `--summary-json-file=${summaryJsonPath}`,
                 `--self-check-report-file=${selfCheckReportPath}`,
                 `--self-check-validation-file=${selfCheckValidationPath}`,
+                `--staging-drill-closeout-file=${stagingDrillCloseoutPath}`,
             ]);
             assert.equal(result.exitCode, 0, result.output);
             assert.ok(result.output.includes('## Workflow Quick Locate Index'));
@@ -470,6 +506,49 @@ async function main() {
             assert.ok(result.output.includes('Report Quick Locate First Failed Output: `N/A`'));
             assert.ok(result.output.includes('Report Failure Fingerprint: `N/A`'));
             assert.ok(result.output.includes('Report Failure Fingerprint Step: `N/A`'));
+            assert.ok(result.output.includes('## Workflow Staging Drill Closeout'));
+            assert.ok(result.output.includes('Release Decision: `READY_TO_PROMOTE`'));
+            assert.ok(result.output.includes('CI Run URL: `https://github.com/example/repo/actions/runs/123456789`'));
+            assert.ok(result.output.includes('Checklist CI Run Passed: `true`'));
+        });
+
+        await runCase('ignore staging closeout file when flag is enabled', async () => {
+            const caseDir = path.join(tempRoot, 'case-ignore-staging-closeout');
+            const stagingDrillCloseoutPath = path.join(caseDir, 'staging-drill-closeout.json');
+
+            await writeJson(stagingDrillCloseoutPath, {
+                schemaVersion: '1.0',
+                generatedAt: '2026-02-13T00:20:00.000Z',
+                status: 'SUCCESS',
+                releaseDecision: 'READY_TO_PROMOTE',
+                ciEvidence: {
+                    runUrl: 'https://github.com/example/repo/actions/runs/999999',
+                },
+                checklist: {
+                    ciRunPassed: true,
+                },
+            });
+
+            const result = await runNodeScript(summaryScript, [
+                `--quality-report-file=${path.join(caseDir, 'quality-report.json')}`,
+                `--quality-report-validation-file=${path.join(caseDir, 'quality-report-validation.json')}`,
+                `--execution-baseline-report-file=${path.join(caseDir, 'execution-baseline-report.json')}`,
+                `--execution-baseline-validation-file=${path.join(caseDir, 'execution-baseline-validation.json')}`,
+                `--execution-baseline-reference-operation-file=${path.join(caseDir, 'execution-baseline-reference-operation.json')}`,
+                `--execution-baseline-reference-ci-state-file=${path.join(caseDir, 'execution-baseline-reference-ci-state.json')}`,
+                `--execution-baseline-trend-file=${path.join(caseDir, 'execution-baseline-trend.json')}`,
+                `--summary-markdown-file=${path.join(caseDir, 'summary.md')}`,
+                `--summary-json-file=${path.join(caseDir, 'summary.json')}`,
+                `--self-check-report-file=${path.join(caseDir, 'self-check-report.json')}`,
+                `--self-check-validation-file=${path.join(caseDir, 'self-check-validation.json')}`,
+                `--staging-drill-closeout-file=${stagingDrillCloseoutPath}`,
+                '--ignore-staging-drill-closeout',
+            ]);
+            assert.equal(result.exitCode, 0, result.output);
+            assert.ok(result.output.includes('## Workflow Staging Drill Closeout'));
+            assert.ok(result.output.includes('Release Decision: `N/A`'));
+            assert.ok(result.output.includes('CI Run URL: `N/A`'));
+            assert.ok(!result.output.includes('https://github.com/example/repo/actions/runs/999999'));
         });
 
         await runCase('render legacy failureIndex compatibility in quality validation block', async () => {
@@ -592,6 +671,7 @@ async function main() {
                 `--summary-json-file=${summaryJsonPath}`,
                 `--self-check-report-file=${selfCheckReportPath}`,
                 `--self-check-validation-file=${selfCheckValidationPath}`,
+                `--staging-drill-closeout-file=${path.join(caseDir, 'staging-drill-closeout.json')}`,
             ]);
             assert.equal(result.exitCode, 0, result.output);
             assert.ok(result.output.includes('First Failure Reason Code: `REPORT_PATH_MISMATCH`'));
@@ -769,6 +849,7 @@ async function main() {
                 `--summary-json-file=${summaryJsonPath}`,
                 `--self-check-report-file=${selfCheckReportPath}`,
                 `--self-check-validation-file=${selfCheckValidationPath}`,
+                `--staging-drill-closeout-file=${path.join(caseDir, 'staging-drill-closeout.json')}`,
             ]);
             assert.equal(result.exitCode, 0, result.output);
             assert.ok(result.output.includes('Quality Failure Fingerprint Source: `COMPUTED`'));
@@ -902,6 +983,7 @@ async function main() {
                 `--summary-json-file=${summaryJsonPath}`,
                 `--self-check-report-file=${selfCheckReportPath}`,
                 `--self-check-validation-file=${selfCheckValidationPath}`,
+                `--staging-drill-closeout-file=${path.join(caseDir, 'staging-drill-closeout.json')}`,
                 '--failure-index-snapshot-max-chars=120',
             ]);
             assert.equal(result.exitCode, 0, result.output);
@@ -1075,6 +1157,7 @@ async function main() {
                 `--summary-json-file=${summaryJsonPath}`,
                 `--self-check-report-file=${selfCheckReportPath}`,
                 `--self-check-validation-file=${selfCheckValidationPath}`,
+                `--staging-drill-closeout-file=${path.join(caseDir, 'staging-drill-closeout.json')}`,
             ]);
             assert.equal(result.exitCode, 0, result.output);
             assert.ok(result.output.includes('## Workflow Quick Locate Index'));
@@ -1250,6 +1333,7 @@ async function main() {
                 `--summary-json-file=${summaryJsonPath}`,
                 `--self-check-report-file=${selfCheckReportPath}`,
                 `--self-check-validation-file=${selfCheckValidationPath}`,
+                `--staging-drill-closeout-file=${path.join(caseDir, 'staging-drill-closeout.json')}`,
             ]);
             assert.equal(result.exitCode, 0, result.output);
             assert.ok(result.output.includes('## Workflow Quick Locate Index'));
@@ -1289,6 +1373,7 @@ async function main() {
                 `--summary-json-file=${path.join(caseDir, 'summary.json')}`,
                 `--self-check-report-file=${path.join(caseDir, 'self-check-report.json')}`,
                 `--self-check-validation-file=${path.join(caseDir, 'self-check-validation.json')}`,
+                `--staging-drill-closeout-file=${path.join(caseDir, 'staging-drill-closeout.json')}`,
             ]);
             assert.equal(result.exitCode, 0, result.output);
             assert.ok(result.output.includes('## Workflow Quick Locate Index'));
@@ -1318,6 +1403,9 @@ async function main() {
             assert.ok(result.output.includes('workflow report summary json file not found'));
             assert.ok(result.output.includes('workflow summary self-check report file not found'));
             assert.ok(result.output.includes('workflow summary self-check validation file not found'));
+            assert.ok(result.output.includes('## Workflow Staging Drill Closeout'));
+            assert.ok(result.output.includes('Release Decision: `N/A`'));
+            assert.ok(result.output.includes('CI Run URL: `N/A`'));
         });
 
         process.stdout.write('\n[self-check] all workflow-ci-step-summary cases passed.\n');

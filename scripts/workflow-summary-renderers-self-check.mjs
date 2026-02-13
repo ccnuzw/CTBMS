@@ -14,6 +14,7 @@ import {
     renderWorkflowExecutionBaselineReferenceOperationMarkdown,
     renderWorkflowExecutionBaselineValidationMarkdown,
     renderWorkflowExecutionBaselineTrendMarkdown,
+    renderWorkflowStagingDrillCloseoutMarkdown,
     renderWorkflowQuickLocateIndexMarkdown,
     renderWorkflowQualityGateReportValidationMarkdown,
     renderWorkflowReportValidationSummaryMarkdown,
@@ -391,6 +392,51 @@ async function main() {
             assert.ok(markdown.includes('- warn-1'));
             assert.ok(markdown.includes('- warn-2'));
             assert.ok(!markdown.includes('- warn-3'));
+        });
+
+        await runCase('render workflow staging drill closeout summary', async () => {
+            const summary = {
+                schemaVersion: '1.0',
+                generatedAt: '2026-02-13T00:10:00.000Z',
+                status: 'SUCCESS',
+                releaseDecision: 'READY_TO_PROMOTE',
+                checklist: {
+                    stagingFullSummaryPassed: true,
+                    ciStepSummaryValidationPassed: true,
+                    ciRunUrlAttached: true,
+                    ciRunPassed: true,
+                },
+                components: {
+                    stagingFullSummary: { status: 'SUCCESS' },
+                    precheckSummary: { status: 'SUCCESS' },
+                    rollbackSmoke: { status: 'SUCCESS' },
+                    rollbackBaselineReport: { status: 'SUCCESS' },
+                    rollbackBaselineValidation: { status: 'SUCCESS' },
+                    rollbackBaselineTrend: { status: 'SUCCESS' },
+                    ciStepSummaryValidation: {
+                        status: 'SUCCESS',
+                        missingSections: [],
+                    },
+                },
+                ciEvidence: {
+                    runUrl: 'https://github.com/example/repo/actions/runs/123456789',
+                    runId: '123456789',
+                    runAttempt: '2',
+                    runConclusion: 'SUCCESS',
+                },
+                warningCount: 0,
+                validationErrorCount: 0,
+                warnings: [],
+                validationErrors: [],
+            };
+
+            const markdown = renderWorkflowStagingDrillCloseoutMarkdown(summary);
+            assert.ok(markdown.includes('## Workflow Staging Drill Closeout'));
+            assert.ok(markdown.includes('Status: `SUCCESS`'));
+            assert.ok(markdown.includes('Release Decision: `READY_TO_PROMOTE`'));
+            assert.ok(markdown.includes('CI Run URL: `https://github.com/example/repo/actions/runs/123456789`'));
+            assert.ok(markdown.includes('Checklist CI Run Passed: `true`'));
+            assert.ok(markdown.includes('Validation Error Count: `0`'));
         });
 
         await runCase('quick locate suggested command source enum contract', async () => {

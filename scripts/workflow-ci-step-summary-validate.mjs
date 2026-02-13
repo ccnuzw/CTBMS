@@ -20,6 +20,7 @@ const DEFAULT_REQUIRED_SECTIONS = Object.freeze([
     '## Workflow Execution Baseline Trend',
     '## Workflow Summary Self-Check Suite',
     '## Workflow Summary Self-Check Report Validation',
+    '## Workflow Staging Drill Closeout',
 ]);
 
 const args = process.argv.slice(2);
