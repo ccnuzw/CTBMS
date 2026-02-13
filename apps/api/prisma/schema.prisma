@@ -1996,8 +1996,9 @@ model WorkflowExecution {
   paramSnapshot   Json?
   outputSnapshot  Json?
 
-  nodeExecutions NodeExecution[]
-  runtimeEvents  WorkflowRuntimeEvent[]
+  nodeExecutions  NodeExecution[]
+  runtimeEvents   WorkflowRuntimeEvent[]
+  decisionRecords DecisionRecord[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -2280,4 +2281,88 @@ model DataConnector {
 
   @@index([category, isActive])
   @@index([connectorType, isActive])
+}
+
+// ─────────────── DecisionRecord ───────────────
+
+enum DecisionAction {
+  BUY
+  SELL
+  HOLD
+  REDUCE
+  REVIEW_ONLY
+}
+
+model DecisionRecord {
+  id                    String              @id @default(uuid())
+  workflowExecutionId   String
+  workflowExecution     WorkflowExecution   @relation(fields: [workflowExecutionId], references: [id], onDelete: Cascade)
+  workflowDefinitionId  String?
+
+  action              DecisionAction
+  confidence          Float?
+  riskLevel           String?
+  targetWindow        String?
+  reasoningSummary    String?             @db.Text
+  evidenceSummary     Json?
+  paramSnapshot       Json?
+  outputSnapshot      Json?
+  traceId             String?             @unique
+
+  isPublished         Boolean             @default(false)
+  publishedAt         DateTime?
+  reviewedByUserId    String?
+  reviewComment       String?             @db.Text
+
+  createdByUserId     String
+  createdAt           DateTime            @default(now())
+  updatedAt           DateTime            @updatedAt
+
+  @@index([workflowExecutionId])
+  @@index([workflowDefinitionId, createdAt])
+  @@index([createdByUserId, createdAt])
+  @@index([action, riskLevel])
+  @@index([isPublished, createdAt])
+}
+
+// ─────────────── WorkflowExperiment (A/B 灰度实验) ───────────────
+
+enum ExperimentStatus {
+  DRAFT
+  RUNNING
+  PAUSED
+  COMPLETED
+  ABORTED
+}
+
+model WorkflowExperiment {
+  id                      String           @id @default(uuid())
+  experimentCode          String           @unique
+  name                    String
+  description             String?          @db.Text
+
+  workflowDefinitionId    String
+  variantAVersionId       String
+  variantBVersionId       String
+
+  trafficSplitPercent     Int              @default(50)
+  status                  ExperimentStatus @default(DRAFT)
+
+  startedAt               DateTime?
+  endedAt                 DateTime?
+  maxExecutions           Int?
+  currentExecutionsA      Int              @default(0)
+  currentExecutionsB      Int              @default(0)
+
+  winnerVariant           String?
+  conclusionSummary       String?          @db.Text
+  metricsSnapshot         Json?
+
+  createdByUserId         String
+  createdAt               DateTime         @default(now())
+  updatedAt               DateTime         @updatedAt
+
+  @@index([workflowDefinitionId, status])
+  @@index([status, createdAt])
+  @@index([createdByUserId, createdAt])
 }

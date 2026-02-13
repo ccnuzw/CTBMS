@@ -14,6 +14,7 @@ import { VariableResolver } from './engine/variable-resolver';
 import { EvidenceCollector } from './engine/evidence-collector';
 import { ReplayAssembler } from './engine/replay-assembler';
 import { DagScheduler } from './engine/dag-scheduler';
+import { DebateRoundNodeExecutor } from './engine/node-executors/debate-round.executor';
 
 @Module({
     controllers: [WorkflowExecutionController],
@@ -28,6 +29,7 @@ import { DagScheduler } from './engine/dag-scheduler';
         AgentCallNodeExecutor,
         DataFetchNodeExecutor,
         ComputeNodeExecutor,
+        DebateRoundNodeExecutor,
         VariableResolver,
         EvidenceCollector,
         ReplayAssembler,

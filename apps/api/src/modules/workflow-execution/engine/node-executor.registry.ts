@@ -9,6 +9,7 @@ import { RiskGateNodeExecutor } from './node-executors/risk-gate.executor';
 import { AgentCallNodeExecutor } from './node-executors/agent-call.executor';
 import { DataFetchNodeExecutor } from './node-executors/data-fetch.executor';
 import { ComputeNodeExecutor } from './node-executors/compute.executor';
+import { DebateRoundNodeExecutor } from './node-executors/debate-round.executor';
 
 @Injectable()
 export class NodeExecutorRegistry {
@@ -23,6 +24,7 @@ export class NodeExecutorRegistry {
         private readonly agentCallNodeExecutor: AgentCallNodeExecutor,
         private readonly dataFetchNodeExecutor: DataFetchNodeExecutor,
         private readonly computeNodeExecutor: ComputeNodeExecutor,
+        private readonly debateRoundNodeExecutor: DebateRoundNodeExecutor,
     ) {
         this.executors = [
             this.manualTriggerNodeExecutor,
@@ -32,6 +34,7 @@ export class NodeExecutorRegistry {
             this.agentCallNodeExecutor,
             this.dataFetchNodeExecutor,
             this.computeNodeExecutor,
+            this.debateRoundNodeExecutor,
             this.passthroughNodeExecutor, // 放最后作为 fallback
         ];
     }

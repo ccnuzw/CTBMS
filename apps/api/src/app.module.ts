@@ -31,6 +31,7 @@ import { AgentProfileModule } from './modules/agent-profile';
 import { AgentPromptTemplateModule } from './modules/agent-prompt-template';
 import { ParameterCenterModule } from './modules/parameter-center';
 import { DataConnectorModule } from './modules/data-connector';
+import { DecisionRecordModule } from './modules/decision-record';
 
 @Module({
   imports: [
@@ -63,6 +64,7 @@ import { DataConnectorModule } from './modules/data-connector';
     AgentPromptTemplateModule,
     ParameterCenterModule,
     DataConnectorModule,
+    DecisionRecordModule,
   ],
   controllers: [AppController],
   providers: [],
