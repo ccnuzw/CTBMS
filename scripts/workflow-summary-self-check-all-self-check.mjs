@@ -77,7 +77,7 @@ async function main() {
 
             const report = await readJsonFile(reportFile);
             assert.equal(report.status, 'SUCCESS');
-            assert.equal(report.summary?.totalSteps, 7);
+            assert.equal(report.summary?.totalSteps, 15);
             assert.equal(report.summary?.failedSteps, 0);
             assert.deepEqual(report.summary?.failedStepIds, []);
             assert.equal(report.summary?.failureFingerprint, null);
@@ -92,9 +92,33 @@ async function main() {
             assert.equal(report.summary?.quickLocateFirstFailedOutput, null);
             assert.equal(report.reportFile, reportFile);
             assert.equal(Array.isArray(report.steps), true);
-            assert.equal(report.steps.length, 7);
+            assert.equal(report.steps.length, 15);
             assert.ok(
                 report.steps.some((step) => step?.id === 'quality-gate-validation-guidance-self-check'),
+            );
+            assert.ok(
+                report.steps.some((step) => step?.id === 'execution-baseline-report-validate-self-check'),
+            );
+            assert.ok(
+                report.steps.some((step) => step?.id === 'execution-baseline-reference-self-check'),
+            );
+            assert.ok(
+                report.steps.some((step) => step?.id === 'execution-baseline-reference-ci-state-self-check'),
+            );
+            assert.ok(
+                report.steps.some((step) => step?.id === 'staging-precheck-summary-self-check'),
+            );
+            assert.ok(
+                report.steps.some((step) => step?.id === 'staging-full-summary-self-check'),
+            );
+            assert.ok(
+                report.steps.some((step) => step?.id === 'staging-drill-closeout-self-check'),
+            );
+            assert.ok(
+                report.steps.some((step) => step?.id === 'execution-baseline-trend-self-check'),
+            );
+            assert.ok(
+                report.steps.some((step) => step?.id === 'ci-step-summary-validate-self-check'),
             );
         });
 

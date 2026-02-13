@@ -179,6 +179,12 @@ const steps = [
         args: ['workflow:ci:step-summary:self-check'],
     },
     {
+        id: 'ci-step-summary-validate-self-check',
+        name: 'workflow CI summary validation self-check',
+        command: 'pnpm',
+        args: ['workflow:ci:step-summary:validate:self-check'],
+    },
+    {
         id: 'quality-gate-self-check',
         name: 'workflow quality gate self-check',
         command: 'pnpm',
@@ -190,6 +196,48 @@ const steps = [
         command: 'pnpm',
         args: ['workflow:quality:report:validate:self-check'],
     },
+    {
+        id: 'execution-baseline-report-validate-self-check',
+        name: 'workflow execution baseline report validate self-check',
+        command: 'pnpm',
+        args: ['workflow:execution:baseline:report:validate:self-check'],
+    },
+    {
+        id: 'execution-baseline-reference-self-check',
+        name: 'workflow execution baseline reference self-check',
+        command: 'pnpm',
+        args: ['workflow:execution:baseline:reference:self-check'],
+    },
+    {
+        id: 'execution-baseline-reference-ci-state-self-check',
+        name: 'workflow execution baseline reference CI state self-check',
+        command: 'pnpm',
+        args: ['workflow:execution:baseline:reference:ci-state:self-check'],
+    },
+    {
+        id: 'staging-precheck-summary-self-check',
+        name: 'workflow staging precheck summary self-check',
+        command: 'pnpm',
+        args: ['workflow:drill:staging:precheck:summary:self-check'],
+    },
+    {
+        id: 'staging-full-summary-self-check',
+        name: 'workflow staging full summary self-check',
+        command: 'pnpm',
+        args: ['workflow:drill:staging:full:summary:self-check'],
+    },
+    {
+        id: 'staging-drill-closeout-self-check',
+        name: 'workflow staging drill closeout self-check',
+        command: 'pnpm',
+        args: ['workflow:drill:staging:closeout:self-check'],
+    },
+    {
+        id: 'execution-baseline-trend-self-check',
+        name: 'workflow execution baseline trend self-check',
+        command: 'pnpm',
+        args: ['workflow:execution:baseline:trend:self-check'],
+    },
 ];
 
 const QUICK_LOCATE_COMMANDS = {
@@ -198,8 +246,16 @@ const QUICK_LOCATE_COMMANDS = {
     'quality-gate-validation-guidance-self-check': 'pnpm workflow:quality:validation:guidance:self-check',
     'report-summary-self-check': 'pnpm workflow:reports:summary:self-check',
     'ci-step-summary-self-check': 'pnpm workflow:ci:step-summary:self-check',
+    'ci-step-summary-validate-self-check': 'pnpm workflow:ci:step-summary:validate:self-check',
     'quality-gate-self-check': 'pnpm workflow:quality:gate:self-check',
     'quality-gate-report-validate-self-check': 'pnpm workflow:quality:report:validate:self-check',
+    'execution-baseline-report-validate-self-check': 'pnpm workflow:execution:baseline:report:validate:self-check',
+    'execution-baseline-reference-self-check': 'pnpm workflow:execution:baseline:reference:self-check',
+    'execution-baseline-reference-ci-state-self-check': 'pnpm workflow:execution:baseline:reference:ci-state:self-check',
+    'staging-precheck-summary-self-check': 'pnpm workflow:drill:staging:precheck:summary:self-check',
+    'staging-full-summary-self-check': 'pnpm workflow:drill:staging:full:summary:self-check',
+    'staging-drill-closeout-self-check': 'pnpm workflow:drill:staging:closeout:self-check',
+    'execution-baseline-trend-self-check': 'pnpm workflow:execution:baseline:trend:self-check',
 };
 const QUICK_LOCATE_COMMAND_SOURCE = Object.freeze({
     STEP_OVERRIDE: 'STEP_OVERRIDE',

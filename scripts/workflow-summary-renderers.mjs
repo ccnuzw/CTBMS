@@ -489,6 +489,8 @@ const renderWorkflowSummarySelfCheckMarkdown = (report, options = {}) => {
         'quality-gate-validation-guidance-self-check': 'pnpm workflow:quality:validation:guidance:self-check',
         'report-summary-self-check': 'pnpm workflow:reports:summary:self-check',
         'ci-step-summary-self-check': 'pnpm workflow:ci:step-summary:self-check',
+        'ci-step-summary-validate-self-check': 'pnpm workflow:ci:step-summary:validate:self-check',
+        'staging-full-summary-self-check': 'pnpm workflow:drill:staging:full:summary:self-check',
         'quality-gate-self-check': 'pnpm workflow:quality:gate:self-check',
         'quality-gate-report-validate-self-check': 'pnpm workflow:quality:report:validate:self-check',
     };
@@ -904,6 +906,242 @@ const renderWorkflowQualityGateReportValidationMarkdown = (summary, options = {}
     return lines.join('\n');
 };
 
+const renderWorkflowExecutionBaselineMarkdown = (report) => {
+    const totals = isRecord(report?.totals) ? report.totals : {};
+    const rates = isRecord(report?.rates) ? report.rates : {};
+    const latencyMs = isRecord(report?.latencyMs) ? report.latencyMs : {};
+    const gate = isRecord(report?.gate) ? report.gate : {};
+    const violations = Array.isArray(gate?.violations) ? gate.violations : [];
+    const warnings = Array.isArray(gate?.warnings) ? gate.warnings : [];
+
+    const lines = [
+        '## Workflow Execution Baseline',
+        '',
+        `- Status: \`${gate?.passed === false ? 'FAILED' : 'SUCCESS'}\``,
+        `- Run ID: \`${fallback(report?.runId)}\``,
+        `- Generated At: \`${fallback(report?.finishedAt || report?.startedAt)}\``,
+        `- Query Since: \`${fallback(report?.query?.since)}\``,
+        `- Executions: \`${typeof totals?.executions === 'number' ? totals.executions : 'N/A'}\``,
+        `- Completed: \`${typeof totals?.completed === 'number' ? totals.completed : 'N/A'}\``,
+        `- Success: \`${typeof totals?.success === 'number' ? totals.success : 'N/A'}\``,
+        `- Failed: \`${typeof totals?.failed === 'number' ? totals.failed : 'N/A'}\``,
+        `- Canceled: \`${typeof totals?.canceled === 'number' ? totals.canceled : 'N/A'}\``,
+        `- Timeout Failures: \`${typeof totals?.timeoutFailures === 'number' ? totals.timeoutFailures : 'N/A'}\``,
+        `- Success Rate: \`${typeof rates?.successRate === 'number' ? rates.successRate : 'N/A'}\``,
+        `- Failed Rate: \`${typeof rates?.failedRate === 'number' ? rates.failedRate : 'N/A'}\``,
+        `- Canceled Rate: \`${typeof rates?.canceledRate === 'number' ? rates.canceledRate : 'N/A'}\``,
+        `- Timeout Rate: \`${typeof rates?.timeoutRate === 'number' ? rates.timeoutRate : 'N/A'}\``,
+        `- Completed Success Rate: \`${typeof rates?.completedSuccessRate === 'number' ? rates.completedSuccessRate : 'N/A'}\``,
+        `- Latency P50(ms): \`${typeof latencyMs?.p50 === 'number' ? latencyMs.p50 : 'N/A'}\``,
+        `- Latency P90(ms): \`${typeof latencyMs?.p90 === 'number' ? latencyMs.p90 : 'N/A'}\``,
+        `- Latency P95(ms): \`${typeof latencyMs?.p95 === 'number' ? latencyMs.p95 : 'N/A'}\``,
+        `- Latency P99(ms): \`${typeof latencyMs?.p99 === 'number' ? latencyMs.p99 : 'N/A'}\``,
+        `- Gate Evaluated: \`${typeof gate?.evaluated === 'boolean' ? String(gate.evaluated) : 'N/A'}\``,
+        `- Gate Passed: \`${typeof gate?.passed === 'boolean' ? String(gate.passed) : 'N/A'}\``,
+        `- Gate Violations: \`${violations.length > 0 ? toSingleLine(violations.join(' | ')) : 'N/A'}\``,
+        `- Gate Warnings: \`${warnings.length > 0 ? toSingleLine(warnings.join(' | ')) : 'N/A'}\``,
+    ];
+
+    return lines.join('\n');
+};
+
+const renderWorkflowExecutionBaselineValidationMarkdown = (summary, options = {}) => {
+    const maxItems = Number.isFinite(options.maxItems) && options.maxItems > 0
+        ? Math.floor(options.maxItems)
+        : 3;
+    const warnings = Array.isArray(summary?.warnings) ? summary.warnings : [];
+    const validationErrors = Array.isArray(summary?.validationErrors)
+        ? summary.validationErrors
+        : [];
+    const inputs = isRecord(summary?.inputs) ? summary.inputs : {};
+    const report = isRecord(summary?.report) ? summary.report : {};
+
+    const lines = [
+        '## Workflow Execution Baseline Validation',
+        '',
+        `- Status: \`${fallback(summary?.status, 'UNKNOWN')}\``,
+        `- Schema Version: \`${fallback(summary?.schemaVersion)}\``,
+        `- Generated At: \`${fallback(summary?.generatedAt)}\``,
+        `- Validation Error Count: \`${typeof summary?.validationErrorCount === 'number' ? summary.validationErrorCount : safeCount(validationErrors)}\``,
+        `- Warning Count: \`${typeof summary?.warningCount === 'number' ? summary.warningCount : safeCount(warnings)}\``,
+        `- Expected Report Schema Version: \`${fallback(inputs?.expectedReportSchemaVersion)}\``,
+        `- Require Gate Pass: \`${typeof inputs?.requireGatePass === 'boolean' ? String(inputs.requireGatePass) : 'N/A'}\``,
+        `- Require Gate Evaluated: \`${typeof inputs?.requireGateEvaluated === 'boolean' ? String(inputs.requireGateEvaluated) : 'N/A'}\``,
+        `- Require No Warnings: \`${typeof inputs?.requireNoWarnings === 'boolean' ? String(inputs.requireNoWarnings) : 'N/A'}\``,
+        `- Report File: \`${fallback(inputs?.reportFile)}\``,
+        `- Report Schema Version: \`${fallback(report?.schemaVersion)}\``,
+        `- Report Run ID: \`${fallback(report?.runId)}\``,
+        `- Report Gate Passed: \`${typeof report?.gatePassed === 'boolean' ? String(report.gatePassed) : 'N/A'}\``,
+        `- Report Gate Evaluated: \`${typeof report?.gateEvaluated === 'boolean' ? String(report.gateEvaluated) : 'N/A'}\``,
+        `- Report Violations Count: \`${typeof report?.violationsCount === 'number' ? report.violationsCount : 'N/A'}\``,
+        `- Report Warnings Count: \`${typeof report?.warningsCount === 'number' ? report.warningsCount : 'N/A'}\``,
+        `- Report Executions: \`${typeof report?.totalExecutions === 'number' ? report.totalExecutions : 'N/A'}\``,
+        `- Report Completed: \`${typeof report?.completedExecutions === 'number' ? report.completedExecutions : 'N/A'}\``,
+        `- Report Success Rate: \`${typeof report?.successRate === 'number' ? report.successRate : 'N/A'}\``,
+        `- Report Failed Rate: \`${typeof report?.failedRate === 'number' ? report.failedRate : 'N/A'}\``,
+        `- Report Canceled Rate: \`${typeof report?.canceledRate === 'number' ? report.canceledRate : 'N/A'}\``,
+        `- Report Timeout Rate: \`${typeof report?.timeoutRate === 'number' ? report.timeoutRate : 'N/A'}\``,
+        `- Report P95 Duration(ms): \`${typeof report?.p95DurationMs === 'number' ? report.p95DurationMs : 'N/A'}\``,
+        `- Report Query Since: \`${fallback(report?.querySince)}\``,
+        `- Report Query Days: \`${typeof report?.queryDays === 'number' ? report.queryDays : 'N/A'}\``,
+    ];
+
+    appendTopItems(lines, 'Top Validation Errors', validationErrors, maxItems);
+    appendTopItems(lines, 'Top Warnings', warnings, maxItems);
+
+    return lines.join('\n');
+};
+
+const renderWorkflowExecutionBaselineReferenceOperationMarkdown = (summary, options = {}) => {
+    const maxItems = Number.isFinite(options.maxItems) && options.maxItems > 0
+        ? Math.floor(options.maxItems)
+        : 3;
+    const warnings = Array.isArray(summary?.warnings) ? summary.warnings : [];
+    const validationErrors = Array.isArray(summary?.validationErrors)
+        ? summary.validationErrors
+        : [];
+    const inputs = isRecord(summary?.inputs) ? summary.inputs : {};
+    const current = isRecord(summary?.current) ? summary.current : {};
+    const referenceBefore = isRecord(summary?.referenceBefore) ? summary.referenceBefore : {};
+    const referenceAfter = isRecord(summary?.referenceAfter) ? summary.referenceAfter : {};
+
+    const lines = [
+        '## Workflow Execution Baseline Reference Operation',
+        '',
+        `- Status: \`${fallback(summary?.status, 'UNKNOWN')}\``,
+        `- Schema Version: \`${fallback(summary?.schemaVersion)}\``,
+        `- Generated At: \`${fallback(summary?.generatedAt)}\``,
+        `- Mode: \`${fallback(summary?.mode)}\``,
+        `- Action: \`${fallback(summary?.action)}\``,
+        `- Current Report: \`${fallback(inputs?.currentReportFile)}\``,
+        `- Reference Report: \`${fallback(inputs?.referenceReportFile)}\``,
+        `- Summary JSON File: \`${fallback(inputs?.summaryJsonFile)}\``,
+        `- Current Exists: \`${typeof current?.exists === 'boolean' ? String(current.exists) : 'N/A'}\``,
+        `- Current Run ID: \`${fallback(current?.runId)}\``,
+        `- Current Finished At: \`${fallback(current?.finishedAt)}\``,
+        `- Current Success Rate: \`${typeof current?.successRate === 'number' ? current.successRate : 'N/A'}\``,
+        `- Current Failed Rate: \`${typeof current?.failedRate === 'number' ? current.failedRate : 'N/A'}\``,
+        `- Current Timeout Rate: \`${typeof current?.timeoutRate === 'number' ? current.timeoutRate : 'N/A'}\``,
+        `- Current P95 Duration(ms): \`${typeof current?.p95DurationMs === 'number' ? current.p95DurationMs : 'N/A'}\``,
+        `- Reference Before Exists: \`${typeof referenceBefore?.exists === 'boolean' ? String(referenceBefore.exists) : 'N/A'}\``,
+        `- Reference Before Run ID: \`${fallback(referenceBefore?.runId)}\``,
+        `- Reference Before Success Rate: \`${typeof referenceBefore?.successRate === 'number' ? referenceBefore.successRate : 'N/A'}\``,
+        `- Reference Before Failed Rate: \`${typeof referenceBefore?.failedRate === 'number' ? referenceBefore.failedRate : 'N/A'}\``,
+        `- Reference Before Timeout Rate: \`${typeof referenceBefore?.timeoutRate === 'number' ? referenceBefore.timeoutRate : 'N/A'}\``,
+        `- Reference Before P95 Duration(ms): \`${typeof referenceBefore?.p95DurationMs === 'number' ? referenceBefore.p95DurationMs : 'N/A'}\``,
+        `- Reference After Exists: \`${typeof referenceAfter?.exists === 'boolean' ? String(referenceAfter.exists) : 'N/A'}\``,
+        `- Reference After Run ID: \`${fallback(referenceAfter?.runId)}\``,
+        `- Reference After Success Rate: \`${typeof referenceAfter?.successRate === 'number' ? referenceAfter.successRate : 'N/A'}\``,
+        `- Reference After Failed Rate: \`${typeof referenceAfter?.failedRate === 'number' ? referenceAfter.failedRate : 'N/A'}\``,
+        `- Reference After Timeout Rate: \`${typeof referenceAfter?.timeoutRate === 'number' ? referenceAfter.timeoutRate : 'N/A'}\``,
+        `- Reference After P95 Duration(ms): \`${typeof referenceAfter?.p95DurationMs === 'number' ? referenceAfter.p95DurationMs : 'N/A'}\``,
+        `- Validation Error Count: \`${typeof summary?.validationErrorCount === 'number' ? summary.validationErrorCount : validationErrors.length}\``,
+        `- Warning Count: \`${typeof summary?.warningCount === 'number' ? summary.warningCount : warnings.length}\``,
+    ];
+
+    appendTopItems(lines, 'Top Validation Errors', validationErrors, maxItems);
+    appendTopItems(lines, 'Top Warnings', warnings, maxItems);
+
+    return lines.join('\n');
+};
+
+const renderWorkflowExecutionBaselineReferenceCiStateMarkdown = (summary, options = {}) => {
+    const maxItems = Number.isFinite(options.maxItems) && options.maxItems > 0
+        ? Math.floor(options.maxItems)
+        : 3;
+    const warnings = Array.isArray(summary?.warnings) ? summary.warnings : [];
+    const validationErrors = Array.isArray(summary?.validationErrors)
+        ? summary.validationErrors
+        : [];
+    const ci = isRecord(summary?.ci) ? summary.ci : {};
+    const referenceLifecycle = isRecord(summary?.referenceLifecycle) ? summary.referenceLifecycle : {};
+    const upstream = isRecord(summary?.upstream) ? summary.upstream : {};
+
+    const lines = [
+        '## Workflow Execution Baseline Reference CI State',
+        '',
+        `- Status: \`${fallback(summary?.status, 'UNKNOWN')}\``,
+        `- Schema Version: \`${fallback(summary?.schemaVersion)}\``,
+        `- Generated At: \`${fallback(summary?.generatedAt)}\``,
+        `- Repository: \`${fallback(ci?.repository)}\``,
+        `- Ref Name: \`${fallback(ci?.refName)}\``,
+        `- SHA: \`${fallback(ci?.sha)}\``,
+        `- Workflow Run ID: \`${fallback(ci?.workflowRunId)}\``,
+        `- Workflow Run Attempt: \`${fallback(ci?.workflowRunAttempt)}\``,
+        `- Cache Restore Outcome: \`${fallback(referenceLifecycle?.cacheRestoreOutcome)}\``,
+        `- Cache Save Outcome: \`${fallback(referenceLifecycle?.cacheSaveOutcome)}\``,
+        `- Cache Hit: \`${typeof referenceLifecycle?.cacheHit === 'boolean' ? String(referenceLifecycle.cacheHit) : 'N/A'}\``,
+        `- Baseline Gate Outcome: \`${fallback(upstream?.executionBaselineGateOutcome)}\``,
+        `- Baseline Report Validate Outcome: \`${fallback(upstream?.executionBaselineReportValidateOutcome)}\``,
+        `- Reference Ensure Outcome: \`${fallback(referenceLifecycle?.referenceEnsureOutcome)}\``,
+        `- Trend Outcome: \`${fallback(referenceLifecycle?.trendOutcome)}\``,
+        `- Reference Promote Outcome: \`${fallback(referenceLifecycle?.referencePromoteOutcome)}\``,
+        `- Validation Error Count: \`${typeof summary?.validationErrorCount === 'number' ? summary.validationErrorCount : validationErrors.length}\``,
+        `- Warning Count: \`${typeof summary?.warningCount === 'number' ? summary.warningCount : warnings.length}\``,
+    ];
+
+    appendTopItems(lines, 'Top Validation Errors', validationErrors, maxItems);
+    appendTopItems(lines, 'Top Warnings', warnings, maxItems);
+
+    return lines.join('\n');
+};
+
+const renderWorkflowExecutionBaselineTrendMarkdown = (summary, options = {}) => {
+    const maxItems = Number.isFinite(options.maxItems) && options.maxItems > 0
+        ? Math.floor(options.maxItems)
+        : 3;
+    const warnings = Array.isArray(summary?.warnings) ? summary.warnings : [];
+    const validationErrors = Array.isArray(summary?.validationErrors)
+        ? summary.validationErrors
+        : [];
+    const regressions = Array.isArray(summary?.regressions) ? summary.regressions : [];
+    const inputs = isRecord(summary?.inputs) ? summary.inputs : {};
+    const current = isRecord(summary?.current) ? summary.current : {};
+    const reference = isRecord(summary?.reference) ? summary.reference : {};
+    const delta = isRecord(summary?.delta) ? summary.delta : {};
+
+    const lines = [
+        '## Workflow Execution Baseline Trend',
+        '',
+        `- Status: \`${fallback(summary?.status, 'UNKNOWN')}\``,
+        `- Schema Version: \`${fallback(summary?.schemaVersion)}\``,
+        `- Generated At: \`${fallback(summary?.generatedAt)}\``,
+        `- Current Report: \`${fallback(inputs?.currentReportFile)}\``,
+        `- Reference Report: \`${fallback(inputs?.referenceReportFile)}\``,
+        `- Allow Missing Reference: \`${typeof inputs?.allowMissingReference === 'boolean' ? String(inputs.allowMissingReference) : 'N/A'}\``,
+        `- Require Reference: \`${typeof inputs?.requireReference === 'boolean' ? String(inputs.requireReference) : 'N/A'}\``,
+        `- Max Success Rate Drop: \`${typeof inputs?.maxSuccessRateDrop === 'number' ? inputs.maxSuccessRateDrop : 'N/A'}\``,
+        `- Max Failed Rate Increase: \`${typeof inputs?.maxFailedRateIncrease === 'number' ? inputs.maxFailedRateIncrease : 'N/A'}\``,
+        `- Max Timeout Rate Increase: \`${typeof inputs?.maxTimeoutRateIncrease === 'number' ? inputs.maxTimeoutRateIncrease : 'N/A'}\``,
+        `- Max P95 Duration Increase(ms): \`${typeof inputs?.maxP95DurationIncreaseMs === 'number' ? inputs.maxP95DurationIncreaseMs : 'N/A'}\``,
+        `- Current Exists: \`${typeof current?.exists === 'boolean' ? String(current.exists) : 'N/A'}\``,
+        `- Current Run ID: \`${fallback(current?.runId)}\``,
+        `- Current Success Rate: \`${typeof current?.successRate === 'number' ? current.successRate : 'N/A'}\``,
+        `- Current Failed Rate: \`${typeof current?.failedRate === 'number' ? current.failedRate : 'N/A'}\``,
+        `- Current Timeout Rate: \`${typeof current?.timeoutRate === 'number' ? current.timeoutRate : 'N/A'}\``,
+        `- Current P95 Duration(ms): \`${typeof current?.p95DurationMs === 'number' ? current.p95DurationMs : 'N/A'}\``,
+        `- Reference Exists: \`${typeof reference?.exists === 'boolean' ? String(reference.exists) : 'N/A'}\``,
+        `- Reference Run ID: \`${fallback(reference?.runId)}\``,
+        `- Reference Success Rate: \`${typeof reference?.successRate === 'number' ? reference.successRate : 'N/A'}\``,
+        `- Reference Failed Rate: \`${typeof reference?.failedRate === 'number' ? reference.failedRate : 'N/A'}\``,
+        `- Reference Timeout Rate: \`${typeof reference?.timeoutRate === 'number' ? reference.timeoutRate : 'N/A'}\``,
+        `- Reference P95 Duration(ms): \`${typeof reference?.p95DurationMs === 'number' ? reference.p95DurationMs : 'N/A'}\``,
+        `- Delta Success Rate: \`${typeof delta?.successRate === 'number' ? delta.successRate : 'N/A'}\``,
+        `- Delta Failed Rate: \`${typeof delta?.failedRate === 'number' ? delta.failedRate : 'N/A'}\``,
+        `- Delta Timeout Rate: \`${typeof delta?.timeoutRate === 'number' ? delta.timeoutRate : 'N/A'}\``,
+        `- Delta P95 Duration(ms): \`${typeof delta?.p95DurationMs === 'number' ? delta.p95DurationMs : 'N/A'}\``,
+        `- Regression Count: \`${typeof summary?.regressionCount === 'number' ? summary.regressionCount : regressions.length}\``,
+        `- Validation Error Count: \`${typeof summary?.validationErrorCount === 'number' ? summary.validationErrorCount : validationErrors.length}\``,
+        `- Warning Count: \`${typeof summary?.warningCount === 'number' ? summary.warningCount : warnings.length}\``,
+    ];
+
+    appendTopItems(lines, 'Top Regressions', regressions, maxItems);
+    appendTopItems(lines, 'Top Validation Errors', validationErrors, maxItems);
+    appendTopItems(lines, 'Top Warnings', warnings, maxItems);
+
+    return lines.join('\n');
+};
+
 export {
     QUALITY_GATE_FIRST_FIX_ROUTE,
     QUALITY_GATE_SUGGESTED_COMMAND_SOURCE,
@@ -914,6 +1152,11 @@ export {
     extractSummaryJsonAssert,
     renderQualityGateSummaryMarkdown,
     renderWorkflowQuickLocateIndexMarkdown,
+    renderWorkflowExecutionBaselineMarkdown,
+    renderWorkflowExecutionBaselineReferenceCiStateMarkdown,
+    renderWorkflowExecutionBaselineReferenceOperationMarkdown,
+    renderWorkflowExecutionBaselineValidationMarkdown,
+    renderWorkflowExecutionBaselineTrendMarkdown,
     renderWorkflowQualityGateReportValidationMarkdown,
     renderWorkflowReportValidationSummaryMarkdown,
     renderWorkflowSummarySelfCheckMarkdown,

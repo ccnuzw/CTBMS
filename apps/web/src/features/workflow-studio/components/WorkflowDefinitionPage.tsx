@@ -1,11 +1,12 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import type { ColumnsType } from 'antd/es/table';
-import dayjs from 'dayjs';
+import dayjs, { Dayjs } from 'dayjs';
 import {
     Alert,
     App,
     Button,
     Card,
+    DatePicker,
     Drawer,
     Form,
     Input,
@@ -20,8 +21,10 @@ import {
 import {
     CreateWorkflowDefinitionDto,
     WorkflowDefinitionDto,
+    WorkflowDefinitionStatus,
     WorkflowMode,
     WorkflowNodeOnErrorPolicy,
+    WorkflowPublishAuditDto,
     WorkflowUsageMethod,
     WorkflowValidationResult,
     WorkflowVersionDto,
@@ -34,12 +37,14 @@ import {
     useTriggerWorkflowExecution,
     useValidateWorkflowDsl,
     useWorkflowDefinitions,
+    useWorkflowPublishAudits,
     useWorkflowVersions,
 } from '../api';
 import { useDecisionRulePacks } from '../../workflow-rule-center/api';
 
 const { Title, Text } = Typography;
 const { TextArea } = Input;
+const { RangePicker } = DatePicker;
 
 interface CreateWorkflowDefinitionFormValues extends CreateWorkflowDefinitionDto {
     defaultTimeoutMs?: number;
@@ -78,6 +83,12 @@ const versionStatusColorMap: Record<string, string> = {
     PUBLISHED: 'green',
     ARCHIVED: 'orange',
 };
+
+const definitionStatusOptions: { label: string; value: WorkflowDefinitionStatus }[] = [
+    { label: 'DRAFT', value: 'DRAFT' },
+    { label: 'ACTIVE', value: 'ACTIVE' },
+    { label: 'ARCHIVED', value: 'ARCHIVED' },
+];
 
 const buildInitialDslSnapshot = (
     values: CreateWorkflowDefinitionFormValues,
@@ -197,13 +208,54 @@ export const WorkflowDefinitionPage: React.FC = () => {
     const [publishingVersionId, setPublishingVersionId] = useState<string | null>(null);
     const [runningVersionId, setRunningVersionId] = useState<string | null>(null);
     const [validationResult, setValidationResult] = useState<WorkflowValidationResult | null>(null);
+    const [auditPage, setAuditPage] = useState(1);
+    const [auditPageSize, setAuditPageSize] = useState(10);
+    const [auditWorkflowVersionId, setAuditWorkflowVersionId] = useState<string | undefined>();
+    const [auditPublisherInput, setAuditPublisherInput] = useState('');
+    const [auditPublisher, setAuditPublisher] = useState<string | undefined>();
+    const [auditPublishedAtRange, setAuditPublishedAtRange] = useState<[Dayjs, Dayjs] | null>(null);
+    const [keywordInput, setKeywordInput] = useState('');
+    const [keyword, setKeyword] = useState<string | undefined>();
+    const [selectedMode, setSelectedMode] = useState<WorkflowMode | undefined>();
+    const [selectedUsageMethod, setSelectedUsageMethod] = useState<WorkflowUsageMethod | undefined>();
+    const [selectedStatus, setSelectedStatus] = useState<WorkflowDefinitionStatus | undefined>();
+    const [includePublic, setIncludePublic] = useState(true);
+    const [definitionPageNumber, setDefinitionPageNumber] = useState(1);
+    const [definitionPageSize, setDefinitionPageSize] = useState(20);
 
-    const { data: definitionPage, isLoading: isDefinitionLoading } = useWorkflowDefinitions({
-        includePublic: true,
-        page: 1,
-        pageSize: 100,
-    });
+    const definitionQuery = useMemo(
+        () => ({
+            keyword,
+            mode: selectedMode,
+            usageMethod: selectedUsageMethod,
+            status: selectedStatus,
+            includePublic,
+            page: definitionPageNumber,
+            pageSize: definitionPageSize,
+        }),
+        [
+            keyword,
+            selectedMode,
+            selectedUsageMethod,
+            selectedStatus,
+            includePublic,
+            definitionPageNumber,
+            definitionPageSize,
+        ],
+    );
+    const { data: definitionPage, isLoading: isDefinitionLoading } = useWorkflowDefinitions(definitionQuery);
     const { data: versions, isLoading: isVersionLoading } = useWorkflowVersions(selectedDefinition?.id);
+    const { data: publishAuditPage, isLoading: isPublishAuditLoading } = useWorkflowPublishAudits(
+        selectedDefinition?.id,
+        {
+            workflowVersionId: auditWorkflowVersionId,
+            publishedByUserId: auditPublisher,
+            publishedAtFrom: auditPublishedAtRange?.[0]?.startOf('day').toDate(),
+            publishedAtTo: auditPublishedAtRange?.[1]?.endOf('day').toDate(),
+            page: auditPage,
+            pageSize: auditPageSize,
+        },
+    );
     const { data: activeRulePacks, isLoading: isRulePackLoading } = useDecisionRulePacks({
         includePublic: true,
         isActive: true,
@@ -223,6 +275,14 @@ export const WorkflowDefinitionPage: React.FC = () => {
             })),
         [activeRulePacks?.data],
     );
+    useEffect(() => {
+        setAuditPage(1);
+        setAuditPageSize(10);
+        setAuditWorkflowVersionId(undefined);
+        setAuditPublisherInput('');
+        setAuditPublisher(undefined);
+        setAuditPublishedAtRange(null);
+    }, [selectedDefinition?.id]);
 
     const definitionColumns = useMemo<ColumnsType<WorkflowDefinitionDto>>(
         () => [
@@ -366,6 +426,60 @@ export const WorkflowDefinitionPage: React.FC = () => {
             runningVersionId,
         ],
     );
+    const versionCodeMap = useMemo(
+        () =>
+            new Map((versions || []).map((item) => [item.id, item.versionCode])),
+        [versions],
+    );
+    const auditVersionOptions = useMemo(
+        () =>
+            (versions || []).map((item) => ({
+                label: item.versionCode,
+                value: item.id,
+            })),
+        [versions],
+    );
+    const publishAuditColumns = useMemo<ColumnsType<WorkflowPublishAuditDto>>(
+        () => [
+            {
+                title: '发布时间',
+                dataIndex: 'publishedAt',
+                width: 180,
+                render: (value?: Date) =>
+                    value ? dayjs(value).format('YYYY-MM-DD HH:mm:ss') : '-',
+            },
+            {
+                title: '发布版本',
+                dataIndex: 'workflowVersionId',
+                width: 120,
+                render: (value: string) => versionCodeMap.get(value) || value.slice(0, 8),
+            },
+            {
+                title: '操作',
+                dataIndex: 'operation',
+                width: 120,
+                render: (value: string) => <Tag color="blue">{value}</Tag>,
+            },
+            {
+                title: '发布人',
+                dataIndex: 'publishedByUserId',
+                width: 150,
+            },
+            {
+                title: '备注',
+                dataIndex: 'comment',
+                render: (value?: string | null) => value || '-',
+            },
+            {
+                title: '记录时间',
+                dataIndex: 'createdAt',
+                width: 180,
+                render: (value?: Date) =>
+                    value ? dayjs(value).format('YYYY-MM-DD HH:mm:ss') : '-',
+            },
+        ],
+        [versionCodeMap],
+    );
 
     const handleCreate = async () => {
         try {
@@ -505,13 +619,102 @@ export const WorkflowDefinitionPage: React.FC = () => {
                         新建流程
                     </Button>
                 </Space>
+                <Space wrap>
+                    <Input.Search
+                        allowClear
+                        style={{ width: 280 }}
+                        placeholder="关键词（流程名称/编码）"
+                        value={keywordInput}
+                        onChange={(event) => {
+                            const nextValue = event.target.value;
+                            setKeywordInput(nextValue);
+                            if (!nextValue.trim()) {
+                                setKeyword(undefined);
+                                setDefinitionPageNumber(1);
+                            }
+                        }}
+                        onSearch={(value) => {
+                            const normalized = value.trim();
+                            setKeyword(normalized ? normalized : undefined);
+                            setDefinitionPageNumber(1);
+                        }}
+                    />
+                    <Select
+                        allowClear
+                        style={{ width: 180 }}
+                        placeholder="按模式筛选"
+                        options={modeOptions}
+                        value={selectedMode}
+                        onChange={(value) => {
+                            setSelectedMode(value);
+                            setDefinitionPageNumber(1);
+                        }}
+                    />
+                    <Select
+                        allowClear
+                        style={{ width: 200 }}
+                        placeholder="按使用方式筛选"
+                        options={usageMethodOptions}
+                        value={selectedUsageMethod}
+                        onChange={(value) => {
+                            setSelectedUsageMethod(value);
+                            setDefinitionPageNumber(1);
+                        }}
+                    />
+                    <Select
+                        allowClear
+                        style={{ width: 180 }}
+                        placeholder="按状态筛选"
+                        options={definitionStatusOptions}
+                        value={selectedStatus}
+                        onChange={(value) => {
+                            setSelectedStatus(value);
+                            setDefinitionPageNumber(1);
+                        }}
+                    />
+                    <Select
+                        style={{ width: 180 }}
+                        options={[
+                            { label: '包含公共模板', value: true },
+                            { label: '仅私有流程', value: false },
+                        ]}
+                        value={includePublic}
+                        onChange={(value: boolean) => {
+                            setIncludePublic(value);
+                            setDefinitionPageNumber(1);
+                        }}
+                    />
+                    <Button
+                        onClick={() => {
+                            setKeywordInput('');
+                            setKeyword(undefined);
+                            setSelectedMode(undefined);
+                            setSelectedUsageMethod(undefined);
+                            setSelectedStatus(undefined);
+                            setIncludePublic(true);
+                            setDefinitionPageNumber(1);
+                            setDefinitionPageSize(20);
+                        }}
+                    >
+                        重置筛选
+                    </Button>
+                </Space>
 
                 <Table
                     rowKey="id"
                     loading={isDefinitionLoading}
                     columns={definitionColumns}
                     dataSource={definitionPage?.data || []}
-                    pagination={false}
+                    pagination={{
+                        current: definitionPage?.page || definitionPageNumber,
+                        pageSize: definitionPage?.pageSize || definitionPageSize,
+                        total: definitionPage?.total || 0,
+                        showSizeChanger: true,
+                        onChange: (nextPage, nextPageSize) => {
+                            setDefinitionPageNumber(nextPage);
+                            setDefinitionPageSize(nextPageSize);
+                        },
+                    }}
                     scroll={{ x: 1200 }}
                 />
             </Space>
@@ -634,6 +837,8 @@ export const WorkflowDefinitionPage: React.FC = () => {
                     setVersionVisible(false);
                     setSelectedDefinition(null);
                     setValidationResult(null);
+                    setAuditPage(1);
+                    setAuditPageSize(10);
                 }}
             >
                 {validationResult ? (
@@ -660,6 +865,77 @@ export const WorkflowDefinitionPage: React.FC = () => {
                     columns={versionColumns}
                     dataSource={versions || []}
                     pagination={false}
+                />
+                <Title level={5} style={{ marginTop: 20 }}>
+                    发布审计
+                </Title>
+                <Space wrap style={{ marginBottom: 12 }}>
+                    <Select
+                        allowClear
+                        style={{ width: 220 }}
+                        placeholder="按发布版本筛选"
+                        options={auditVersionOptions}
+                        value={auditWorkflowVersionId}
+                        onChange={(value) => {
+                            setAuditWorkflowVersionId(value);
+                            setAuditPage(1);
+                        }}
+                    />
+                    <Input.Search
+                        allowClear
+                        style={{ width: 220 }}
+                        placeholder="按发布人筛选"
+                        value={auditPublisherInput}
+                        onChange={(event) => {
+                            const nextValue = event.target.value;
+                            setAuditPublisherInput(nextValue);
+                            if (!nextValue.trim()) {
+                                setAuditPublisher(undefined);
+                                setAuditPage(1);
+                            }
+                        }}
+                        onSearch={(value) => {
+                            const normalized = value.trim();
+                            setAuditPublisher(normalized ? normalized : undefined);
+                            setAuditPage(1);
+                        }}
+                    />
+                    <RangePicker
+                        value={auditPublishedAtRange}
+                        onChange={(value) => {
+                            setAuditPublishedAtRange(value as [Dayjs, Dayjs] | null);
+                            setAuditPage(1);
+                        }}
+                    />
+                    <Button
+                        onClick={() => {
+                            setAuditWorkflowVersionId(undefined);
+                            setAuditPublisherInput('');
+                            setAuditPublisher(undefined);
+                            setAuditPublishedAtRange(null);
+                            setAuditPage(1);
+                            setAuditPageSize(10);
+                        }}
+                    >
+                        重置审计筛选
+                    </Button>
+                </Space>
+                <Table
+                    rowKey="id"
+                    loading={isPublishAuditLoading}
+                    columns={publishAuditColumns}
+                    dataSource={publishAuditPage?.data || []}
+                    pagination={{
+                        current: publishAuditPage?.page || auditPage,
+                        pageSize: publishAuditPage?.pageSize || auditPageSize,
+                        total: publishAuditPage?.total || 0,
+                        showSizeChanger: true,
+                        onChange: (nextPage, nextPageSize) => {
+                            setAuditPage(nextPage);
+                            setAuditPageSize(nextPageSize);
+                        },
+                    }}
+                    scroll={{ x: 900 }}
                 />
             </Drawer>
         </Card>

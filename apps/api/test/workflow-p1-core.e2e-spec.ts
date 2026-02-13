@@ -72,6 +72,14 @@ const buildDslSnapshot = (workflowId: string, workflowName: string) => ({
             edgeType: 'control-edge',
         },
     ],
+    runPolicy: {
+        nodeDefaults: {
+            timeoutMs: 30000,
+            retryCount: 1,
+            retryBackoffMs: 2000,
+            onError: 'FAIL_FAST',
+        },
+    },
 });
 
 const fetchJson = async <T>(input: string, init: RequestInit): Promise<{ status: number; body: T }> => {
@@ -141,6 +149,30 @@ async function main() {
         assert.equal(createVersion.body.versionCode, '1.0.1');
         assert.equal(createVersion.body.status, 'DRAFT');
 
+        const publishValidation = await fetchJson<{
+            valid: boolean;
+            issues: Array<{ code: string; message: string }>;
+        }>(`${baseUrl}/workflow-definitions/validate-dsl`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'x-virtual-user-id': ownerUserId,
+            },
+            body: JSON.stringify({
+                dslSnapshot: {
+                    ...buildDslSnapshot(workflowId, workflowName),
+                    runPolicy: undefined,
+                },
+                stage: 'PUBLISH',
+            }),
+        });
+        assert.equal(publishValidation.status, 201);
+        assert.equal(publishValidation.body.valid, false);
+        assert.ok(
+            publishValidation.body.issues.some((issue) => issue.code === 'WF106'),
+            `expect WF106 in issues, actual: ${JSON.stringify(publishValidation.body.issues)}`,
+        );
+
         const publishVersion = await fetchJson<{
             id: string;
             versionCode: string;
@@ -178,6 +210,8 @@ async function main() {
             data: Array<{
                 workflowVersionId: string;
                 operation: string;
+                publishedByUserId: string;
+                publishedAt: string;
                 snapshot: { autoCreatedDraftVersionCode?: string } | null;
             }>;
             total: number;
@@ -192,6 +226,37 @@ async function main() {
         assert.equal(latestAudit.workflowVersionId, createVersion.body.id);
         assert.equal(latestAudit.operation, 'PUBLISH');
         assert.equal(latestAudit.snapshot?.autoCreatedDraftVersionCode, '1.0.2');
+        assert.equal(latestAudit.publishedByUserId, ownerUserId);
+
+        const publishedAt = new Date(latestAudit.publishedAt);
+        const filterFrom = new Date(publishedAt.getTime() - 60 * 1000).toISOString();
+        const filterTo = new Date(publishedAt.getTime() + 60 * 1000).toISOString();
+        const publishAuditFilterParams = new URLSearchParams({
+            workflowVersionId: createVersion.body.id,
+            publishedByUserId: ownerUserId,
+            publishedAtFrom: filterFrom,
+            publishedAtTo: filterTo,
+            page: '1',
+            pageSize: '20',
+        });
+        const filteredPublishAudits = await fetchJson<{
+            data: Array<{
+                workflowVersionId: string;
+                publishedByUserId: string;
+            }>;
+            total: number;
+        }>(
+            `${baseUrl}/workflow-definitions/${definitionId}/publish-audits?${publishAuditFilterParams.toString()}`,
+            {
+                headers: {
+                    'x-virtual-user-id': ownerUserId,
+                },
+            },
+        );
+        assert.equal(filteredPublishAudits.status, 200);
+        assert.equal(filteredPublishAudits.body.total, 1);
+        assert.equal(filteredPublishAudits.body.data[0]?.workflowVersionId, createVersion.body.id);
+        assert.equal(filteredPublishAudits.body.data[0]?.publishedByUserId, ownerUserId);
 
         const triggerExecution = await fetchJson<{
             id: string;

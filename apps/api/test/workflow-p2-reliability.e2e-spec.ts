@@ -101,6 +101,14 @@ const createDslSnapshot = (params: {
             edgeType: 'control-edge',
         },
     ],
+    runPolicy: {
+        nodeDefaults: {
+            timeoutMs: 30000,
+            retryCount: 1,
+            retryBackoffMs: 2000,
+            onError: 'FAIL_FAST',
+        },
+    },
 });
 
 const fetchJson = async <T>(input: string, init: RequestInit): Promise<{ status: number; body: T }> => {
@@ -115,6 +123,7 @@ async function createAndPublishDefinition(params: {
     ownerUserId: string;
     workflowId: string;
     name: string;
+    templateSource?: 'PRIVATE' | 'PUBLIC';
     passthroughDelayMs?: number;
     passthroughTimeoutMs?: number;
     passthroughRetryCount?: number;
@@ -129,14 +138,14 @@ async function createAndPublishDefinition(params: {
             'x-virtual-user-id': params.ownerUserId,
         },
         body: JSON.stringify({
-            workflowId: params.workflowId,
-            name: params.name,
-            mode: 'LINEAR',
-            usageMethod: 'COPILOT',
-            templateSource: 'PRIVATE',
-            dslSnapshot: createDslSnapshot({
                 workflowId: params.workflowId,
                 name: params.name,
+                mode: 'LINEAR',
+                usageMethod: 'COPILOT',
+                templateSource: params.templateSource ?? 'PRIVATE',
+                dslSnapshot: createDslSnapshot({
+                    workflowId: params.workflowId,
+                    name: params.name,
                 passthroughDelayMs: params.passthroughDelayMs,
                 passthroughTimeoutMs: params.passthroughTimeoutMs,
                 passthroughRetryCount: params.passthroughRetryCount,
@@ -175,6 +184,7 @@ async function main() {
     const baseUrl = (await app.getUrl()).replace('[::1]', '127.0.0.1');
 
     const ownerUserId = randomUUID();
+    const outsiderUserId = randomUUID();
     const token = `wf_p2_reliability_${Date.now()}`;
 
     try {
@@ -288,6 +298,158 @@ async function main() {
         assert.equal(canceledExecution?.failureCategory, 'CANCELED');
         assert.equal(canceledExecution?.failureCode, 'EXECUTION_CANCELED');
 
+        const publicCancelDef = await createAndPublishDefinition({
+            baseUrl,
+            ownerUserId,
+            workflowId: `${token}_public_cancel`,
+            name: `workflow public cancel ${token}`,
+            templateSource: 'PUBLIC',
+            passthroughDelayMs: 4000,
+            passthroughTimeoutMs: 20_000,
+        });
+
+        const publicTriggerPromise = fetchJson<{ id: string; status: string }>(`${baseUrl}/workflow-executions/trigger`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'x-virtual-user-id': ownerUserId,
+            },
+            body: JSON.stringify({
+                workflowDefinitionId: publicCancelDef.definitionId,
+                workflowVersionId: publicCancelDef.publishedVersionId,
+                triggerType: 'MANUAL',
+                idempotencyKey: `public_cancel_${token}`,
+            }),
+        });
+
+        await sleep(300);
+        const runningPublicExecution = await prisma.workflowExecution.findFirst({
+            where: {
+                workflowVersionId: publicCancelDef.publishedVersionId,
+                status: 'RUNNING',
+            },
+            orderBy: { createdAt: 'desc' },
+        });
+        assert.ok(runningPublicExecution, 'expected running execution for public cancel case');
+
+        const outsiderCancelResponse = await fetchJson<{ message?: string }>(
+            `${baseUrl}/workflow-executions/${runningPublicExecution!.id}/cancel`,
+            {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'x-virtual-user-id': outsiderUserId,
+                },
+                body: JSON.stringify({
+                    reason: 'outsider cancel should fail',
+                }),
+            },
+        );
+        assert.equal(outsiderCancelResponse.status, 404);
+
+        const ownerCancelPublicResponse = await fetchJson<{ status: string }>(
+            `${baseUrl}/workflow-executions/${runningPublicExecution!.id}/cancel`,
+            {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'x-virtual-user-id': ownerUserId,
+                },
+                body: JSON.stringify({
+                    reason: 'owner cleanup cancel',
+                }),
+            },
+        );
+        assert.equal(ownerCancelPublicResponse.status, 201);
+        assert.equal(ownerCancelPublicResponse.body.status, 'CANCELED');
+
+        const publicTriggerResult = await publicTriggerPromise;
+        assert.equal(publicTriggerResult.status, 201);
+        assert.equal(publicTriggerResult.body.status, 'CANCELED');
+
+        const visibilityDef = await createAndPublishDefinition({
+            baseUrl,
+            ownerUserId,
+            workflowId: `${token}_public_visibility`,
+            name: `workflow public visibility ${token}`,
+            templateSource: 'PUBLIC',
+        });
+
+        const ownerVisibilityTrigger = await fetchJson<{ id: string; status: string }>(`${baseUrl}/workflow-executions/trigger`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'x-virtual-user-id': ownerUserId,
+            },
+            body: JSON.stringify({
+                workflowDefinitionId: visibilityDef.definitionId,
+                workflowVersionId: visibilityDef.publishedVersionId,
+                triggerType: 'MANUAL',
+                idempotencyKey: `visibility_owner_${token}`,
+            }),
+        });
+        assert.equal(ownerVisibilityTrigger.status, 201);
+        assert.equal(ownerVisibilityTrigger.body.status, 'SUCCESS');
+
+        const outsiderVisibilityTrigger = await fetchJson<{ id: string; status: string }>(`${baseUrl}/workflow-executions/trigger`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'x-virtual-user-id': outsiderUserId,
+            },
+            body: JSON.stringify({
+                workflowDefinitionId: visibilityDef.definitionId,
+                workflowVersionId: visibilityDef.publishedVersionId,
+                triggerType: 'MANUAL',
+                idempotencyKey: `visibility_outsider_${token}`,
+            }),
+        });
+        assert.equal(outsiderVisibilityTrigger.status, 201);
+        assert.equal(outsiderVisibilityTrigger.body.status, 'SUCCESS');
+
+        const outsiderVisibilityList = await fetchJson<{
+            data: Array<{ id: string }>;
+            total: number;
+        }>(`${baseUrl}/workflow-executions?workflowDefinitionId=${visibilityDef.definitionId}`, {
+            headers: {
+                'x-virtual-user-id': outsiderUserId,
+            },
+        });
+        assert.equal(outsiderVisibilityList.status, 200);
+        assert.ok(outsiderVisibilityList.body.data.some((item) => item.id === outsiderVisibilityTrigger.body.id));
+        assert.ok(!outsiderVisibilityList.body.data.some((item) => item.id === ownerVisibilityTrigger.body.id));
+
+        const outsiderReadOwnerExecution = await fetchJson<{ message?: string }>(
+            `${baseUrl}/workflow-executions/${ownerVisibilityTrigger.body.id}`,
+            {
+                headers: {
+                    'x-virtual-user-id': outsiderUserId,
+                },
+            },
+        );
+        assert.equal(outsiderReadOwnerExecution.status, 404);
+
+        const outsiderReadOwnerTimeline = await fetchJson<{ message?: string }>(
+            `${baseUrl}/workflow-executions/${ownerVisibilityTrigger.body.id}/timeline`,
+            {
+                headers: {
+                    'x-virtual-user-id': outsiderUserId,
+                },
+            },
+        );
+        assert.equal(outsiderReadOwnerTimeline.status, 404);
+
+        const ownerVisibilityList = await fetchJson<{
+            data: Array<{ id: string }>;
+        }>(`${baseUrl}/workflow-executions?workflowDefinitionId=${visibilityDef.definitionId}`, {
+            headers: {
+                'x-virtual-user-id': ownerUserId,
+            },
+        });
+        assert.equal(ownerVisibilityList.status, 200);
+        assert.ok(ownerVisibilityList.body.data.some((item) => item.id === ownerVisibilityTrigger.body.id));
+        assert.ok(ownerVisibilityList.body.data.some((item) => item.id === outsiderVisibilityTrigger.body.id));
+
         const timeoutDef = await createAndPublishDefinition({
             baseUrl,
             ownerUserId,
@@ -342,6 +504,53 @@ async function main() {
         });
         assert.equal(timeoutFiltered.status, 200);
         assert.ok(timeoutFiltered.body.data.some((item) => item.id === timeoutExecution?.id));
+
+        const publicTimeoutDef = await createAndPublishDefinition({
+            baseUrl,
+            ownerUserId,
+            workflowId: `${token}_public_timeout`,
+            name: `workflow public timeout ${token}`,
+            templateSource: 'PUBLIC',
+            passthroughDelayMs: 1500,
+            passthroughTimeoutMs: 1000,
+            passthroughRetryCount: 0,
+        });
+
+        const publicTimeoutTrigger = await fetchJson<{ message?: string }>(`${baseUrl}/workflow-executions/trigger`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'x-virtual-user-id': ownerUserId,
+            },
+            body: JSON.stringify({
+                workflowDefinitionId: publicTimeoutDef.definitionId,
+                workflowVersionId: publicTimeoutDef.publishedVersionId,
+                triggerType: 'MANUAL',
+                idempotencyKey: `public_timeout_${token}`,
+            }),
+        });
+        assert.equal(publicTimeoutTrigger.status, 500);
+
+        const publicTimeoutExecution = await prisma.workflowExecution.findFirst({
+            where: {
+                workflowVersionId: publicTimeoutDef.publishedVersionId,
+            },
+            orderBy: { createdAt: 'desc' },
+        });
+        assert.ok(publicTimeoutExecution);
+        assert.equal(publicTimeoutExecution?.status, 'FAILED');
+
+        const outsiderRerunResponse = await fetchJson<{ message?: string }>(
+            `${baseUrl}/workflow-executions/${publicTimeoutExecution!.id}/rerun`,
+            {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'x-virtual-user-id': outsiderUserId,
+                },
+            },
+        );
+        assert.equal(outsiderRerunResponse.status, 404);
 
         process.stdout.write('[workflow-p2-reliability.e2e] passed\n');
     } finally {

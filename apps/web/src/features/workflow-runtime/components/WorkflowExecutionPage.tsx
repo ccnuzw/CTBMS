@@ -11,6 +11,7 @@ import {
     Descriptions,
     Drawer,
     Input,
+    Popconfirm,
     Select,
     Space,
     Table,
@@ -20,15 +21,19 @@ import {
 } from 'antd';
 import {
     NodeExecutionDto,
+    WorkflowFailureCategory,
     WorkflowRiskDegradeAction,
     WorkflowRiskLevel,
     WorkflowExecutionStatus,
+    WorkflowRuntimeEventLevel,
     WorkflowTriggerType,
 } from '@packages/types';
 import {
+    useCancelWorkflowExecution,
     WorkflowExecutionDetail,
     WorkflowExecutionWithRelations,
     useRerunWorkflowExecution,
+    useWorkflowExecutionTimeline,
     useWorkflowExecutionDetail,
     useWorkflowExecutions,
 } from '../api';
@@ -181,6 +186,19 @@ const parseWorkflowRiskDegradeActionParam = (value: string | null): WorkflowRisk
     return undefined;
 };
 
+const parseWorkflowFailureCategoryParam = (value: string | null): WorkflowFailureCategory | undefined => {
+    if (
+        value === 'VALIDATION'
+        || value === 'EXECUTOR'
+        || value === 'TIMEOUT'
+        || value === 'CANCELED'
+        || value === 'INTERNAL'
+    ) {
+        return value;
+    }
+    return undefined;
+};
+
 type RiskGateSummary = {
     summarySchemaVersion: string | null;
     riskLevel: string | null;
@@ -201,6 +219,15 @@ type RiskGateSummaryConsistency = {
     hasRiskGateNode: boolean;
     hasExecutionSummary: boolean;
     mismatchFields: string[];
+};
+
+type WorkflowRuntimeTimelineRow = {
+    id: string;
+    eventType: string;
+    level: WorkflowRuntimeEventLevel;
+    message: string;
+    occurredAt?: Date | string;
+    nodeExecutionId?: string | null;
 };
 
 const parseRiskGateSummaryRecord = (raw: Record<string, unknown> | null): RiskGateSummary | null => {
@@ -409,6 +436,20 @@ const triggerTypeOptions: { label: string; value: WorkflowTriggerType }[] = [
     { label: 'ON_DEMAND', value: 'ON_DEMAND' },
 ];
 
+const failureCategoryOptions: { label: string; value: WorkflowFailureCategory }[] = [
+    { label: 'VALIDATION', value: 'VALIDATION' },
+    { label: 'EXECUTOR', value: 'EXECUTOR' },
+    { label: 'TIMEOUT', value: 'TIMEOUT' },
+    { label: 'CANCELED', value: 'CANCELED' },
+    { label: 'INTERNAL', value: 'INTERNAL' },
+];
+
+const runtimeEventLevelColorMap: Record<WorkflowRuntimeEventLevel, string> = {
+    INFO: 'default',
+    WARN: 'warning',
+    ERROR: 'error',
+};
+
 const riskLevelOptions: { label: string; value: WorkflowRiskLevel }[] = [
     { label: 'LOW', value: 'LOW' },
     { label: 'MEDIUM', value: 'MEDIUM' },
@@ -451,6 +492,15 @@ export const WorkflowExecutionPage: React.FC = () => {
     );
     const [selectedStatus, setSelectedStatus] = useState<WorkflowExecutionStatus | undefined>(() =>
         parseWorkflowExecutionStatusParam(searchParams.get('status')),
+    );
+    const [selectedFailureCategory, setSelectedFailureCategory] = useState<WorkflowFailureCategory | undefined>(() =>
+        parseWorkflowFailureCategoryParam(searchParams.get('failureCategory')),
+    );
+    const [failureCodeInput, setFailureCodeInput] = useState(() =>
+        normalizeOptionalText(searchParams.get('failureCode')) || '',
+    );
+    const [failureCode, setFailureCode] = useState<string | undefined>(() =>
+        normalizeOptionalText(searchParams.get('failureCode')),
     );
     const [selectedTriggerType, setSelectedTriggerType] = useState<WorkflowTriggerType | undefined>(() =>
         parseWorkflowTriggerTypeParam(searchParams.get('triggerType')),
@@ -504,12 +554,18 @@ export const WorkflowExecutionPage: React.FC = () => {
         parseBooleanParam(searchParams.get('hasRiskBlocked')) === true,
     );
     const [rerunningExecutionId, setRerunningExecutionId] = useState<string | null>(null);
+    const [cancelingExecutionId, setCancelingExecutionId] = useState<string | null>(null);
     const [page, setPage] = useState(() =>
         parsePositiveIntParam(searchParams.get('page'), 1),
     );
     const [pageSize, setPageSize] = useState(() =>
         parsePositiveIntParam(searchParams.get('pageSize'), 20),
     );
+    const [timelineEventTypeInput, setTimelineEventTypeInput] = useState('');
+    const [timelineEventType, setTimelineEventType] = useState<string | undefined>();
+    const [timelineLevel, setTimelineLevel] = useState<WorkflowRuntimeEventLevel | undefined>();
+    const [timelinePage, setTimelinePage] = useState(1);
+    const [timelinePageSize, setTimelinePageSize] = useState(20);
 
     const { data: definitionPage } = useWorkflowDefinitions({
         includePublic: true,
@@ -522,6 +578,8 @@ export const WorkflowExecutionPage: React.FC = () => {
             versionCode,
             triggerType: selectedTriggerType,
             status: selectedStatus,
+            failureCategory: selectedFailureCategory,
+            failureCode,
             riskLevel: selectedRiskLevel,
             degradeAction: selectedDegradeAction,
             riskProfileCode,
@@ -542,6 +600,8 @@ export const WorkflowExecutionPage: React.FC = () => {
             versionCode,
             selectedTriggerType,
             selectedStatus,
+            selectedFailureCategory,
+            failureCode,
             selectedRiskLevel,
             selectedDegradeAction,
             riskProfileCode,
@@ -572,6 +632,8 @@ export const WorkflowExecutionPage: React.FC = () => {
         setQuery('versionCode', versionCode);
         setQuery('triggerType', selectedTriggerType);
         setQuery('status', selectedStatus);
+        setQuery('failureCategory', selectedFailureCategory);
+        setQuery('failureCode', failureCode);
         setQuery('riskLevel', selectedRiskLevel);
         setQuery('degradeAction', selectedDegradeAction);
         setQuery('riskProfileCode', riskProfileCode);
@@ -612,6 +674,8 @@ export const WorkflowExecutionPage: React.FC = () => {
         versionCode,
         selectedTriggerType,
         selectedStatus,
+        selectedFailureCategory,
+        failureCode,
         selectedRiskLevel,
         selectedDegradeAction,
         riskProfileCode,
@@ -631,9 +695,26 @@ export const WorkflowExecutionPage: React.FC = () => {
 
     const { data: executionPage, isLoading } = useWorkflowExecutions(executionQuery);
     const rerunMutation = useRerunWorkflowExecution();
+    const cancelMutation = useCancelWorkflowExecution();
     const { data: executionDetail, isLoading: isDetailLoading } = useWorkflowExecutionDetail(
         selectedExecutionId || undefined,
     );
+    const { data: executionTimeline, isLoading: isTimelineLoading } = useWorkflowExecutionTimeline(
+        selectedExecutionId || undefined,
+        {
+            eventType: timelineEventType,
+            level: timelineLevel,
+            page: timelinePage,
+            pageSize: timelinePageSize,
+        },
+    );
+    useEffect(() => {
+        setTimelineEventTypeInput('');
+        setTimelineEventType(undefined);
+        setTimelineLevel(undefined);
+        setTimelinePage(1);
+        setTimelinePageSize(20);
+    }, [selectedExecutionId]);
     const riskGateSummary = useMemo(
         () => getRiskGateSummary(executionDetail),
         [executionDetail],
@@ -689,6 +770,22 @@ export const WorkflowExecutionPage: React.FC = () => {
         }
     };
 
+    const handleCancel = async (executionId: string) => {
+        try {
+            setCancelingExecutionId(executionId);
+            const canceledExecution = await cancelMutation.mutateAsync({
+                executionId,
+                reason: '页面手动取消',
+            });
+            message.success(`已取消实例 ${canceledExecution.id.slice(0, 8)}`);
+            setSelectedExecutionId(canceledExecution.id);
+        } catch (error) {
+            message.error(getErrorMessage(error));
+        } finally {
+            setCancelingExecutionId(null);
+        }
+    };
+
     const workflowDefinitionOptions = useMemo(
         () =>
             (definitionPage?.data || []).map((item) => ({
@@ -696,6 +793,46 @@ export const WorkflowExecutionPage: React.FC = () => {
                 value: item.id,
             })),
         [definitionPage?.data],
+    );
+
+    const timelineColumns = useMemo<ColumnsType<WorkflowRuntimeTimelineRow>>(
+        () => [
+            {
+                title: '时间',
+                dataIndex: 'occurredAt',
+                width: 190,
+                render: (value?: Date | string) =>
+                    value ? dayjs(value).format('YYYY-MM-DD HH:mm:ss') : '-',
+            },
+            {
+                title: '级别',
+                dataIndex: 'level',
+                width: 100,
+                render: (value: WorkflowRuntimeEventLevel) => (
+                    <Tag color={runtimeEventLevelColorMap[value] ?? 'default'}>{value}</Tag>
+                ),
+            },
+            {
+                title: '事件类型',
+                dataIndex: 'eventType',
+                width: 220,
+            },
+            {
+                title: '消息',
+                dataIndex: 'message',
+            },
+            {
+                title: '节点执行',
+                dataIndex: 'nodeExecutionId',
+                width: 120,
+                render: (value?: string | null) => (value ? value.slice(0, 8) : '-'),
+            },
+        ],
+        [],
+    );
+    const timelineData = useMemo(
+        () => executionTimeline?.data || executionDetail?.runtimeEvents || [],
+        [executionTimeline?.data, executionDetail?.runtimeEvents],
     );
 
     const executionColumns = useMemo<ColumnsType<WorkflowExecutionWithRelations>>(
@@ -734,6 +871,18 @@ export const WorkflowExecutionPage: React.FC = () => {
                 render: (value: WorkflowExecutionStatus) => (
                     <Tag color={executionStatusColorMap[value] ?? 'default'}>{value}</Tag>
                 ),
+            },
+            {
+                title: '失败分类',
+                dataIndex: 'failureCategory',
+                width: 130,
+                render: (value?: WorkflowFailureCategory | null) => value || '-',
+            },
+            {
+                title: '失败代码',
+                dataIndex: 'failureCode',
+                width: 180,
+                render: (value?: string | null) => value || '-',
             },
             {
                 title: '风控',
@@ -852,7 +1001,7 @@ export const WorkflowExecutionPage: React.FC = () => {
             {
                 title: '操作',
                 key: 'actions',
-                width: 200,
+                width: 280,
                 render: (_, record) => (
                     <Space size={4}>
                         <Button type="link" onClick={() => setSelectedExecutionId(record.id)}>
@@ -866,11 +1015,30 @@ export const WorkflowExecutionPage: React.FC = () => {
                         >
                             失败重跑
                         </Button>
+                        <Popconfirm
+                            title="确认取消该执行实例？"
+                            onConfirm={() => handleCancel(record.id)}
+                            disabled={record.status !== 'RUNNING' && record.status !== 'PENDING'}
+                        >
+                            <Button
+                                type="link"
+                                danger
+                                disabled={record.status !== 'RUNNING' && record.status !== 'PENDING'}
+                                loading={cancelMutation.isPending && cancelingExecutionId === record.id}
+                            >
+                                取消执行
+                            </Button>
+                        </Popconfirm>
                     </Space>
                 ),
             },
         ],
-        [rerunMutation.isPending, rerunningExecutionId],
+        [
+            rerunMutation.isPending,
+            rerunningExecutionId,
+            cancelMutation.isPending,
+            cancelingExecutionId,
+        ],
     );
 
     const nodeColumns = useMemo<ColumnsType<NodeExecutionDto>>(
@@ -1036,6 +1204,36 @@ export const WorkflowExecutionPage: React.FC = () => {
                     />
                     <Select
                         allowClear
+                        style={{ width: 180 }}
+                        placeholder="按失败分类筛选"
+                        options={failureCategoryOptions}
+                        value={selectedFailureCategory}
+                        onChange={(value) => {
+                            setSelectedFailureCategory(value);
+                            setPage(1);
+                        }}
+                    />
+                    <Input.Search
+                        allowClear
+                        style={{ width: 220 }}
+                        placeholder="按失败代码筛选"
+                        value={failureCodeInput}
+                        onChange={(event) => {
+                            const nextValue = event.target.value;
+                            setFailureCodeInput(nextValue);
+                            if (!nextValue.trim()) {
+                                setFailureCode(undefined);
+                                setPage(1);
+                            }
+                        }}
+                        onSearch={(value) => {
+                            const normalized = value.trim();
+                            setFailureCode(normalized ? normalized : undefined);
+                            setPage(1);
+                        }}
+                    />
+                    <Select
+                        allowClear
                         style={{ width: 190 }}
                         placeholder="按触发类型筛选"
                         options={triggerTypeOptions}
@@ -1132,6 +1330,9 @@ export const WorkflowExecutionPage: React.FC = () => {
                             setKeyword(undefined);
                             setSelectedWorkflowDefinitionId(undefined);
                             setSelectedStatus(undefined);
+                            setSelectedFailureCategory(undefined);
+                            setFailureCodeInput('');
+                            setFailureCode(undefined);
                             setSelectedTriggerType(undefined);
                             setSelectedRiskLevel(undefined);
                             setSelectedDegradeAction(undefined);
@@ -1264,6 +1465,16 @@ export const WorkflowExecutionPage: React.FC = () => {
                                 ) : '-',
                             },
                             {
+                                key: 'failureCategory',
+                                label: '失败分类',
+                                children: executionDetail?.failureCategory || '-',
+                            },
+                            {
+                                key: 'failureCode',
+                                label: '失败代码',
+                                children: executionDetail?.failureCode || '-',
+                            },
+                            {
                                 key: 'startedAt',
                                 label: '开始时间',
                                 children: executionDetail?.startedAt
@@ -1366,6 +1577,75 @@ export const WorkflowExecutionPage: React.FC = () => {
                         dataSource={executionDetail?.nodeExecutions || []}
                         pagination={false}
                     />
+                    <Card size="small" title="运行事件时间线">
+                        <Space wrap style={{ marginBottom: 12 }}>
+                            <Input.Search
+                                allowClear
+                                style={{ width: 260 }}
+                                placeholder="按事件类型筛选"
+                                value={timelineEventTypeInput}
+                                onChange={(event) => {
+                                    const nextValue = event.target.value;
+                                    setTimelineEventTypeInput(nextValue);
+                                    if (!nextValue.trim()) {
+                                        setTimelineEventType(undefined);
+                                        setTimelinePage(1);
+                                    }
+                                }}
+                                onSearch={(value) => {
+                                    const normalized = value.trim();
+                                    setTimelineEventType(normalized ? normalized : undefined);
+                                    setTimelinePage(1);
+                                }}
+                            />
+                            <Select
+                                allowClear
+                                style={{ width: 180 }}
+                                placeholder="按级别筛选"
+                                options={[
+                                    { label: 'INFO', value: 'INFO' },
+                                    { label: 'WARN', value: 'WARN' },
+                                    { label: 'ERROR', value: 'ERROR' },
+                                ]}
+                                value={timelineLevel}
+                                onChange={(value) => {
+                                    setTimelineLevel(value);
+                                    setTimelinePage(1);
+                                }}
+                            />
+                            <Button
+                                onClick={() => {
+                                    setTimelineEventTypeInput('');
+                                    setTimelineEventType(undefined);
+                                    setTimelineLevel(undefined);
+                                    setTimelinePage(1);
+                                    setTimelinePageSize(20);
+                                }}
+                            >
+                                重置时间线筛选
+                            </Button>
+                        </Space>
+                        <Table
+                            rowKey="id"
+                            loading={isTimelineLoading}
+                            columns={timelineColumns}
+                            dataSource={timelineData}
+                            pagination={{
+                                current: executionTimeline?.page || timelinePage,
+                                pageSize: executionTimeline?.pageSize || timelinePageSize,
+                                total:
+                                    executionTimeline?.total ??
+                                    executionDetail?.runtimeEvents?.length ??
+                                    0,
+                                showSizeChanger: true,
+                                onChange: (nextPage, nextPageSize) => {
+                                    setTimelinePage(nextPage);
+                                    setTimelinePageSize(nextPageSize);
+                                },
+                            }}
+                            scroll={{ x: 860 }}
+                        />
+                    </Card>
                 </Space>
             </Drawer>
         </Card>

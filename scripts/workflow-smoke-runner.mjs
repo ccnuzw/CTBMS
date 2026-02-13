@@ -3,6 +3,7 @@
 import { spawn } from 'node:child_process';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
+import net from 'node:net';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 
@@ -13,6 +14,9 @@ const defaultReportDir = 'logs';
 const REPORT_SCHEMA_VERSION = '1.1';
 
 const TRANSIENT_DB_ERROR_PATTERN = /(P1001|Can't reach database server)/i;
+const DATABASE_PRECHECK_MAX_ATTEMPTS = 3;
+const DATABASE_PRECHECK_RETRY_DELAY_MS = 1_000;
+const DATABASE_PRECHECK_CONNECT_TIMEOUT_MS = 1_500;
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const nowIso = () => new Date().toISOString();
@@ -67,6 +71,73 @@ const extractOutputTail = (output, maxLines = 40, maxChars = 4_000) => {
     return normalized.slice(normalized.length - maxChars);
 };
 
+const getDatabaseEndpoint = () => {
+    const databaseUrl = process.env.DATABASE_URL;
+    if (!databaseUrl) {
+        return {
+            host: '127.0.0.1',
+            port: 5433,
+            source: 'DEFAULT',
+        };
+    }
+
+    try {
+        const parsed = new URL(databaseUrl);
+        const host = parsed.hostname || '127.0.0.1';
+        const port = Number(parsed.port) || 5432;
+        return {
+            host,
+            port,
+            source: 'DATABASE_URL',
+        };
+    } catch {
+        return {
+            host: '127.0.0.1',
+            port: 5433,
+            source: 'FALLBACK_AFTER_PARSE_ERROR',
+        };
+    }
+};
+
+const canConnectTcp = (host, port) => new Promise((resolve) => {
+    const socket = new net.Socket();
+    let settled = false;
+    const finalize = (connected) => {
+        if (settled) {
+            return;
+        }
+        settled = true;
+        socket.destroy();
+        resolve(connected);
+    };
+
+    socket.setTimeout(DATABASE_PRECHECK_CONNECT_TIMEOUT_MS);
+    socket.once('connect', () => finalize(true));
+    socket.once('timeout', () => finalize(false));
+    socket.once('error', () => finalize(false));
+    socket.connect(port, host);
+});
+
+const ensureDatabaseReachable = async (stepName) => {
+    const endpoint = getDatabaseEndpoint();
+    for (let attempt = 1; attempt <= DATABASE_PRECHECK_MAX_ATTEMPTS; attempt += 1) {
+        const reachable = await canConnectTcp(endpoint.host, endpoint.port);
+        if (reachable) {
+            return;
+        }
+        if (attempt < DATABASE_PRECHECK_MAX_ATTEMPTS) {
+            console.warn(
+                `[workflow-smoke] db precheck failed (${endpoint.host}:${endpoint.port}, attempt ${attempt}/${DATABASE_PRECHECK_MAX_ATTEMPTS}), retrying...`,
+            );
+            await sleep(DATABASE_PRECHECK_RETRY_DELAY_MS * attempt);
+        }
+    }
+
+    throw new Error(
+        `[workflow-smoke] ${stepName} blocked: database unreachable at ${endpoint.host}:${endpoint.port} (source=${endpoint.source})`,
+    );
+};
+
 const runCommand = (command, args) => new Promise((resolve) => {
     const child = spawn(command, args, {
         cwd: repoRoot,
@@ -100,6 +171,10 @@ const runCommand = (command, args) => new Promise((resolve) => {
 });
 
 const executeStep = async (step, stepReport) => {
+    if (step.requiresDatabase) {
+        await ensureDatabaseReachable(step.name);
+    }
+
     const maxRetries = step.maxRetries ?? 0;
 
     for (let attempt = 1; attempt <= maxRetries + 1; attempt += 1) {
@@ -156,6 +231,9 @@ const buildSteps = (mode) => {
         name: 'risk gate smoke',
         command: 'pnpm',
         args: ['--filter', 'api', 'run', 'workflow:risk-gate:smoke'],
+        requiresDatabase: true,
+        maxRetries: 1,
+        retryOnTransientDbError: true,
     };
 
     const riskGateContractSmokeStep = {
@@ -163,6 +241,7 @@ const buildSteps = (mode) => {
         name: 'risk gate contract smoke',
         command: 'pnpm',
         args: ['--filter', 'api', 'run', 'workflow:risk-gate:contract:smoke'],
+        requiresDatabase: true,
     };
 
     const hasRiskSummarySmokeStep = {
@@ -170,6 +249,9 @@ const buildSteps = (mode) => {
         name: 'has-risk-summary smoke',
         command: 'pnpm',
         args: ['--filter', 'api', 'run', 'workflow:has-risk-summary:smoke'],
+        requiresDatabase: true,
+        maxRetries: 1,
+        retryOnTransientDbError: true,
     };
 
     const executionFiltersSmokeStep = {
@@ -177,6 +259,9 @@ const buildSteps = (mode) => {
         name: 'execution-filters smoke',
         command: 'pnpm',
         args: ['--filter', 'api', 'run', 'workflow:execution-filters:smoke'],
+        requiresDatabase: true,
+        maxRetries: 1,
+        retryOnTransientDbError: true,
     };
 
     const executionFiltersE2eStep = {
@@ -184,6 +269,7 @@ const buildSteps = (mode) => {
         name: 'execution-filters e2e',
         command: 'pnpm',
         args: ['--filter', 'api', 'run', 'test:e2e:workflow-execution-filters'],
+        requiresDatabase: true,
         maxRetries: 2,
         retryOnTransientDbError: true,
     };
@@ -224,6 +310,7 @@ const buildStepReport = (step) => ({
     args: step.args,
     maxRetries: step.maxRetries ?? 0,
     retryOnTransientDbError: Boolean(step.retryOnTransientDbError),
+    requiresDatabase: Boolean(step.requiresDatabase),
     startedAt: nowIso(),
     finishedAt: null,
     durationMs: 0,

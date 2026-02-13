@@ -16,6 +16,8 @@
     "workflow:risk-gate:smoke": "ts-node src/scripts/risk-gate-smoke.ts",
     "workflow:risk-gate:contract:smoke": "ts-node src/scripts/risk-gate-contract-smoke.ts",
     "workflow:execution-filters:smoke": "ts-node src/scripts/workflow-execution-filters-smoke.ts",
+    "workflow:execution:baseline": "ts-node src/scripts/workflow-execution-baseline.ts",
+    "workflow:execution:baseline:gate": "ts-node src/scripts/workflow-execution-baseline.ts --thresholds-file=../../config/workflow-execution-baseline-thresholds.json --use-default-gate-thresholds",
     "workflow:perf:risk-gate": "ts-node test/perf/risk-gate-baseline.ts --iterations=2000 --warmup=200 --report-file=logs/workflow-perf-risk-gate-baseline.json",
     "workflow:perf:risk-gate:gate": "pnpm run workflow:perf:risk-gate -- --max-p95-pass-low-risk=0.03 --max-p95-soft-block-high-risk=0.03 --max-p95-hard-block-by-rule=0.04",
     "workflow:risk-summary:backfill": "ts-node src/scripts/backfill-workflow-risk-summary.ts",

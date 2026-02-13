@@ -6,6 +6,8 @@ import {
     ValidateWorkflowDslDto,
     WorkflowDefinitionDto,
     WorkflowDefinitionPageDto,
+    WorkflowPublishAuditPageDto,
+    WorkflowPublishAuditQueryDto,
     WorkflowDefinitionQueryDto,
     WorkflowExecutionDetailDto,
     WorkflowValidationResult,
@@ -44,6 +46,25 @@ export const useWorkflowVersions = (workflowDefinitionId?: string) => {
         queryFn: async () => {
             const res = await apiClient.get<WorkflowVersionDto[]>(
                 `${API_BASE}/${workflowDefinitionId}/versions`,
+            );
+            return res.data;
+        },
+        enabled: Boolean(workflowDefinitionId),
+    });
+};
+
+export const useWorkflowPublishAudits = (
+    workflowDefinitionId?: string,
+    query?: Partial<WorkflowPublishAuditQueryDto>,
+) => {
+    return useQuery<WorkflowPublishAuditPageDto>({
+        queryKey: ['workflow-publish-audits', workflowDefinitionId, query],
+        queryFn: async () => {
+            const res = await apiClient.get<WorkflowPublishAuditPageDto>(
+                `${API_BASE}/${workflowDefinitionId}/publish-audits`,
+                {
+                    params: query,
+                },
             );
             return res.data;
         },
@@ -112,6 +133,9 @@ export const usePublishWorkflowVersion = () => {
             queryClient.invalidateQueries({ queryKey: ['workflow-definitions'] });
             queryClient.invalidateQueries({
                 queryKey: ['workflow-definition', variables.workflowDefinitionId],
+            });
+            queryClient.invalidateQueries({
+                queryKey: ['workflow-publish-audits', variables.workflowDefinitionId],
             });
         },
     });

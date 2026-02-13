@@ -32,8 +32,10 @@ type WorkflowExecutionPageResponse = {
 type QueryValue = string | number | boolean | undefined;
 type WorkflowExecutionQuery = Record<string, QueryValue>;
 
-const APP_BOOTSTRAP_MAX_ATTEMPTS = 12;
+const APP_BOOTSTRAP_MAX_ATTEMPTS = 6;
 const APP_BOOTSTRAP_RETRY_DELAY_MS = 2000;
+const SMOKE_APP_HOST = '127.0.0.1';
+const FETCH_TIMEOUT_MS = 10_000;
 
 const normalizeDatabaseUrl = () => {
     const databaseUrl = process.env.DATABASE_URL;
@@ -65,7 +67,7 @@ const bootstrapAppWithRetry = async () => {
                 logger: false,
             });
             candidate.useGlobalPipes(new ZodValidationPipe());
-            await candidate.listen(0);
+            await candidate.listen(0, SMOKE_APP_HOST);
             return candidate;
         } catch (error) {
             if (candidate) {
@@ -74,7 +76,11 @@ const bootstrapAppWithRetry = async () => {
             if (attempt >= APP_BOOTSTRAP_MAX_ATTEMPTS || !isDatabaseUnavailableError(error)) {
                 throw error;
             }
-            await sleep(APP_BOOTSTRAP_RETRY_DELAY_MS * attempt);
+            const waitMs = APP_BOOTSTRAP_RETRY_DELAY_MS * attempt;
+            console.warn(
+                `[workflow:execution-filters:smoke] database unavailable (attempt ${attempt}/${APP_BOOTSTRAP_MAX_ATTEMPTS}), retrying in ${waitMs}ms...`,
+            );
+            await sleep(waitMs);
         }
     }
     throw new Error('Failed to bootstrap workflow filter smoke app');
@@ -168,6 +174,7 @@ const fetchExecutionPage = async (
         headers: {
             'x-virtual-user-id': ownerUserId,
         },
+        signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
     });
     const responseText = await response.text();
     assert.equal(response.status, 200, `Expected 200, got ${response.status}, body=${responseText}`);
@@ -202,7 +209,7 @@ async function main() {
 
     try {
         app = await bootstrapAppWithRetry();
-        const baseUrl = (await app.getUrl()).replace('[::1]', '127.0.0.1');
+        const baseUrl = await app.getUrl();
 
         const ownerUserId = randomUUID();
         const otherUserId = randomUUID();

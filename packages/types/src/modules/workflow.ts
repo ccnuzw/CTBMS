@@ -346,6 +346,7 @@ export const WorkflowValidationIssueCodeEnum = z.enum([
     'WF103',
     'WF104',
     'WF105',
+    'WF106',
 ]);
 
 export const WorkflowValidationStageEnum = z.enum(['SAVE', 'PUBLISH']);
@@ -377,9 +378,19 @@ export const WorkflowDefinitionPageSchema = z.object({
 });
 
 export const WorkflowPublishAuditQuerySchema = z.object({
+    workflowVersionId: z.string().uuid().optional(),
+    publishedByUserId: z.string().max(120).optional(),
+    publishedAtFrom: z.coerce.date().optional(),
+    publishedAtTo: z.coerce.date().optional(),
     page: z.coerce.number().int().min(1).default(1),
     pageSize: z.coerce.number().int().min(1).max(200).default(20),
-});
+}).refine(
+    (value) => !value.publishedAtFrom || !value.publishedAtTo || value.publishedAtFrom <= value.publishedAtTo,
+    {
+        message: 'publishedAtFrom 不能晚于 publishedAtTo',
+        path: ['publishedAtFrom'],
+    },
+);
 
 export const WorkflowPublishAuditPageSchema = z.object({
     data: z.array(WorkflowPublishAuditSchema),

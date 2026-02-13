@@ -74,8 +74,15 @@ const QUICK_LOCATE_STEP_OVERRIDE_COMMANDS = Object.freeze({
     'quality-gate-validation-guidance-self-check': 'pnpm workflow:quality:validation:guidance:self-check',
     'report-summary-self-check': 'pnpm workflow:reports:summary:self-check',
     'ci-step-summary-self-check': 'pnpm workflow:ci:step-summary:self-check',
+    'ci-step-summary-validate-self-check': 'pnpm workflow:ci:step-summary:validate:self-check',
     'quality-gate-self-check': 'pnpm workflow:quality:gate:self-check',
     'quality-gate-report-validate-self-check': 'pnpm workflow:quality:report:validate:self-check',
+    'execution-baseline-report-validate-self-check': 'pnpm workflow:execution:baseline:report:validate:self-check',
+    'execution-baseline-reference-self-check': 'pnpm workflow:execution:baseline:reference:self-check',
+    'execution-baseline-reference-ci-state-self-check': 'pnpm workflow:execution:baseline:reference:ci-state:self-check',
+    'staging-precheck-summary-self-check': 'pnpm workflow:drill:staging:precheck:summary:self-check',
+    'staging-full-summary-self-check': 'pnpm workflow:drill:staging:full:summary:self-check',
+    'execution-baseline-trend-self-check': 'pnpm workflow:execution:baseline:trend:self-check',
 });
 const QUICK_LOCATE_SOURCES = new Set(Object.values(QUICK_LOCATE_COMMAND_SOURCE));
 const QUICK_LOCATE_ROUTES = new Set(Object.values(QUICK_LOCATE_FIRST_FIX_ROUTE));

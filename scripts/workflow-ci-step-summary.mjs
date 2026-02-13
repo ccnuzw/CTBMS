@@ -4,6 +4,11 @@ import { access, readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
+    renderWorkflowExecutionBaselineMarkdown,
+    renderWorkflowExecutionBaselineReferenceCiStateMarkdown,
+    renderWorkflowExecutionBaselineReferenceOperationMarkdown,
+    renderWorkflowExecutionBaselineTrendMarkdown,
+    renderWorkflowExecutionBaselineValidationMarkdown,
     renderQualityGateSummaryMarkdown,
     renderWorkflowQuickLocateIndexMarkdown,
     renderWorkflowQualityGateReportValidationMarkdown,
@@ -20,6 +25,11 @@ const DEFAULT_QUALITY_REPORT_FILE = 'logs/workflow-quality-gate-report.json';
 const DEFAULT_SUMMARY_MARKDOWN_FILE = 'logs/workflow-reports-summary.md';
 const DEFAULT_SUMMARY_JSON_FILE = 'logs/workflow-reports-summary.json';
 const DEFAULT_QUALITY_REPORT_VALIDATION_FILE = 'logs/workflow-quality-gate-report-validation.json';
+const DEFAULT_EXECUTION_BASELINE_REPORT_FILE = 'logs/workflow-execution-baseline-report.json';
+const DEFAULT_EXECUTION_BASELINE_VALIDATION_FILE = 'logs/workflow-execution-baseline-validation.json';
+const DEFAULT_EXECUTION_BASELINE_REFERENCE_OPERATION_FILE = 'logs/workflow-execution-baseline-reference-operation.json';
+const DEFAULT_EXECUTION_BASELINE_REFERENCE_CI_STATE_FILE = 'logs/workflow-execution-baseline-reference-ci-state.json';
+const DEFAULT_EXECUTION_BASELINE_TREND_FILE = 'logs/workflow-execution-baseline-trend.json';
 const DEFAULT_SELF_CHECK_REPORT_FILE = 'logs/workflow-summary-self-check-report.json';
 const DEFAULT_SELF_CHECK_VALIDATION_FILE = 'logs/workflow-summary-self-check-validation.json';
 const args = process.argv.slice(2);
@@ -52,6 +62,26 @@ async function main() {
         '--quality-report-validation-file',
         DEFAULT_QUALITY_REPORT_VALIDATION_FILE,
     );
+    const executionBaselineReportFile = readArgValue(
+        '--execution-baseline-report-file',
+        DEFAULT_EXECUTION_BASELINE_REPORT_FILE,
+    );
+    const executionBaselineValidationFile = readArgValue(
+        '--execution-baseline-validation-file',
+        DEFAULT_EXECUTION_BASELINE_VALIDATION_FILE,
+    );
+    const executionBaselineReferenceOperationFile = readArgValue(
+        '--execution-baseline-reference-operation-file',
+        DEFAULT_EXECUTION_BASELINE_REFERENCE_OPERATION_FILE,
+    );
+    const executionBaselineReferenceCiStateFile = readArgValue(
+        '--execution-baseline-reference-ci-state-file',
+        DEFAULT_EXECUTION_BASELINE_REFERENCE_CI_STATE_FILE,
+    );
+    const executionBaselineTrendFile = readArgValue(
+        '--execution-baseline-trend-file',
+        DEFAULT_EXECUTION_BASELINE_TREND_FILE,
+    );
     const selfCheckReportFile = readArgValue('--self-check-report-file', DEFAULT_SELF_CHECK_REPORT_FILE);
     const selfCheckValidationFile = readArgValue(
         '--self-check-validation-file',
@@ -68,6 +98,17 @@ async function main() {
     const summaryMarkdownAbsolutePath = path.resolve(repoRoot, summaryMarkdownFile);
     const summaryJsonAbsolutePath = path.resolve(repoRoot, summaryJsonFile);
     const qualityReportValidationAbsolutePath = path.resolve(repoRoot, qualityReportValidationFile);
+    const executionBaselineReportAbsolutePath = path.resolve(repoRoot, executionBaselineReportFile);
+    const executionBaselineValidationAbsolutePath = path.resolve(repoRoot, executionBaselineValidationFile);
+    const executionBaselineReferenceOperationAbsolutePath = path.resolve(
+        repoRoot,
+        executionBaselineReferenceOperationFile,
+    );
+    const executionBaselineReferenceCiStateAbsolutePath = path.resolve(
+        repoRoot,
+        executionBaselineReferenceCiStateFile,
+    );
+    const executionBaselineTrendAbsolutePath = path.resolve(repoRoot, executionBaselineTrendFile);
     const selfCheckReportAbsolutePath = path.resolve(repoRoot, selfCheckReportFile);
     const selfCheckValidationAbsolutePath = path.resolve(repoRoot, selfCheckValidationFile);
 
@@ -77,6 +118,11 @@ async function main() {
     let summaryJson = null;
     let selfCheckReport = null;
     let selfCheckValidation = null;
+    let executionBaselineReport = null;
+    let executionBaselineValidation = null;
+    let executionBaselineReferenceOperation = null;
+    let executionBaselineReferenceCiState = null;
+    let executionBaselineTrend = null;
 
     if (await fileExists(qualityReportAbsolutePath)) {
         qualityReport = JSON.parse(await readTextFile(qualityReportAbsolutePath));
@@ -95,6 +141,25 @@ async function main() {
     }
     if (await fileExists(selfCheckValidationAbsolutePath)) {
         selfCheckValidation = JSON.parse(await readTextFile(selfCheckValidationAbsolutePath));
+    }
+    if (await fileExists(executionBaselineReportAbsolutePath)) {
+        executionBaselineReport = JSON.parse(await readTextFile(executionBaselineReportAbsolutePath));
+    }
+    if (await fileExists(executionBaselineValidationAbsolutePath)) {
+        executionBaselineValidation = JSON.parse(await readTextFile(executionBaselineValidationAbsolutePath));
+    }
+    if (await fileExists(executionBaselineReferenceOperationAbsolutePath)) {
+        executionBaselineReferenceOperation = JSON.parse(
+            await readTextFile(executionBaselineReferenceOperationAbsolutePath),
+        );
+    }
+    if (await fileExists(executionBaselineReferenceCiStateAbsolutePath)) {
+        executionBaselineReferenceCiState = JSON.parse(
+            await readTextFile(executionBaselineReferenceCiStateAbsolutePath),
+        );
+    }
+    if (await fileExists(executionBaselineTrendAbsolutePath)) {
+        executionBaselineTrend = JSON.parse(await readTextFile(executionBaselineTrendAbsolutePath));
     }
 
     const blocks = [];
@@ -122,6 +187,44 @@ async function main() {
         );
     } else {
         blocks.push('workflow quality gate report validation file not found');
+    }
+
+    if (executionBaselineReport) {
+        blocks.push(renderWorkflowExecutionBaselineMarkdown(executionBaselineReport));
+    } else {
+        blocks.push('workflow execution baseline report file not found');
+    }
+
+    if (executionBaselineValidation) {
+        blocks.push(renderWorkflowExecutionBaselineValidationMarkdown(executionBaselineValidation));
+    } else {
+        blocks.push('workflow execution baseline validation file not found');
+    }
+
+    if (executionBaselineReferenceOperation) {
+        blocks.push(
+            renderWorkflowExecutionBaselineReferenceOperationMarkdown(
+                executionBaselineReferenceOperation,
+            ),
+        );
+    } else {
+        blocks.push('workflow execution baseline reference operation file not found');
+    }
+
+    if (executionBaselineReferenceCiState) {
+        blocks.push(
+            renderWorkflowExecutionBaselineReferenceCiStateMarkdown(
+                executionBaselineReferenceCiState,
+            ),
+        );
+    } else {
+        blocks.push('workflow execution baseline reference CI state file not found');
+    }
+
+    if (executionBaselineTrend) {
+        blocks.push(renderWorkflowExecutionBaselineTrendMarkdown(executionBaselineTrend));
+    } else {
+        blocks.push('workflow execution baseline trend file not found');
     }
 
     if (summaryMarkdownText !== null) {

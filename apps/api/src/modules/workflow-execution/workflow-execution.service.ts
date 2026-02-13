@@ -538,11 +538,7 @@ export class WorkflowExecutionService {
         const execution = await this.prisma.workflowExecution.findFirst({
             where: {
                 id,
-                workflowVersion: {
-                    workflowDefinition: {
-                        OR: [{ ownerUserId }, { templateSource: 'PUBLIC' }],
-                    },
-                },
+                ...this.buildExecutionReadableWhere(ownerUserId),
             },
             include: {
                 workflowVersion: {
@@ -601,21 +597,29 @@ export class WorkflowExecutionService {
     }
 
     async rerun(ownerUserId: string, id: string) {
-        const sourceExecution = await this.prisma.workflowExecution.findFirst({
-            where: {
-                id,
+        const sourceExecution = await this.prisma.workflowExecution.findUnique({
+            where: { id },
+            include: {
                 workflowVersion: {
-                    workflowDefinition: {
-                        OR: [{ ownerUserId }, { templateSource: 'PUBLIC' }],
+                    include: {
+                        workflowDefinition: {
+                            select: {
+                                ownerUserId: true,
+                            },
+                        },
                     },
                 },
-            },
-            include: {
-                workflowVersion: true,
             },
         });
 
         if (!sourceExecution) {
+            throw new NotFoundException('运行实例不存在或无权限访问');
+        }
+        const definitionOwnerUserId = sourceExecution.workflowVersion.workflowDefinition.ownerUserId;
+        if (
+            sourceExecution.triggerUserId !== ownerUserId
+            && definitionOwnerUserId !== ownerUserId
+        ) {
             throw new NotFoundException('运行实例不存在或无权限访问');
         }
         if (sourceExecution.status !== 'FAILED') {
@@ -633,10 +637,18 @@ export class WorkflowExecutionService {
     }
 
     async cancel(ownerUserId: string, id: string, dto: CancelWorkflowExecutionDto) {
-        await this.ensureExecutionReadable(ownerUserId, id);
         const execution = await this.prisma.workflowExecution.findUnique({
             where: { id },
             include: {
+                workflowVersion: {
+                    include: {
+                        workflowDefinition: {
+                            select: {
+                                ownerUserId: true,
+                            },
+                        },
+                    },
+                },
                 nodeExecutions: {
                     orderBy: { createdAt: 'asc' },
                 },
@@ -647,6 +659,13 @@ export class WorkflowExecutionService {
         });
 
         if (!execution) {
+            throw new NotFoundException('运行实例不存在或无权限访问');
+        }
+        const definitionOwnerUserId = execution.workflowVersion.workflowDefinition.ownerUserId;
+        if (
+            execution.triggerUserId !== ownerUserId
+            && definitionOwnerUserId !== ownerUserId
+        ) {
             throw new NotFoundException('运行实例不存在或无权限访问');
         }
         if (execution.status === 'SUCCESS' || execution.status === 'FAILED') {
@@ -692,11 +711,7 @@ export class WorkflowExecutionService {
         const execution = await this.prisma.workflowExecution.findFirst({
             where: {
                 id,
-                workflowVersion: {
-                    workflowDefinition: {
-                        OR: [{ ownerUserId }, { templateSource: 'PUBLIC' }],
-                    },
-                },
+                ...this.buildExecutionReadableWhere(ownerUserId),
             },
             select: { id: true },
         });
@@ -713,15 +728,18 @@ export class WorkflowExecutionService {
         query: WorkflowExecutionQueryDto,
     ): Prisma.WorkflowExecutionWhereInput {
         const conditions: Prisma.WorkflowExecutionWhereInput[] = [
-            {
+            this.buildExecutionReadableWhere(ownerUserId),
+        ];
+
+        if (query.workflowDefinitionId) {
+            conditions.push({
                 workflowVersion: {
                     workflowDefinition: {
-                        OR: [{ ownerUserId }, { templateSource: 'PUBLIC' }],
-                        ...(query.workflowDefinitionId ? { id: query.workflowDefinitionId } : {}),
+                        id: query.workflowDefinitionId,
                     },
                 },
-            },
-        ];
+            });
+        }
 
         if (query.workflowVersionId) {
             conditions.push({ workflowVersionId: query.workflowVersionId });
@@ -967,6 +985,23 @@ export class WorkflowExecutionService {
 
         return {
             AND: conditions,
+        };
+    }
+
+    private buildExecutionReadableWhere(ownerUserId: string): Prisma.WorkflowExecutionWhereInput {
+        return {
+            OR: [
+                {
+                    triggerUserId: ownerUserId,
+                },
+                {
+                    workflowVersion: {
+                        workflowDefinition: {
+                            ownerUserId,
+                        },
+                    },
+                },
+            ],
         };
     }
 

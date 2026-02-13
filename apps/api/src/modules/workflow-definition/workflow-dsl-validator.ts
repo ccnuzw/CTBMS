@@ -22,6 +22,7 @@ export class WorkflowDslValidator {
         this.validateJoinQuorum(dsl, issues);
         if (stage === 'PUBLISH') {
             this.validateRiskGateExists(dsl, issues);
+            this.validateRuntimePolicyCoverageForPublish(dsl, issues);
         }
 
         return {
@@ -243,6 +244,65 @@ export class WorkflowDslValidator {
                         nodeId: node.id,
                     });
                 }
+            }
+        }
+    }
+
+    private validateRuntimePolicyCoverageForPublish(
+        dsl: WorkflowDsl,
+        issues: WorkflowValidationIssue[],
+    ): void {
+        const nodeDefaults = dsl.runPolicy?.nodeDefaults ?? {};
+
+        for (const node of dsl.nodes) {
+            if (node.enabled === false) {
+                continue;
+            }
+            const isTriggerNode = node.type === 'trigger' || node.type.endsWith('-trigger');
+            if (isTriggerNode) {
+                continue;
+            }
+
+            const nodeRuntimePolicy = node.runtimePolicy ?? {};
+            const nodeConfig = (node.config ?? {}) as Record<string, unknown>;
+            const missingFields: string[] = [];
+
+            if (
+                nodeRuntimePolicy.timeoutMs === undefined
+                && nodeConfig.timeoutMs === undefined
+                && nodeDefaults.timeoutMs === undefined
+            ) {
+                missingFields.push('timeoutMs');
+            }
+            if (
+                nodeRuntimePolicy.retryCount === undefined
+                && nodeConfig.retryCount === undefined
+                && nodeDefaults.retryCount === undefined
+            ) {
+                missingFields.push('retryCount');
+            }
+            if (
+                nodeRuntimePolicy.retryBackoffMs === undefined
+                && nodeConfig.retryBackoffMs === undefined
+                && nodeDefaults.retryBackoffMs === undefined
+            ) {
+                missingFields.push('retryBackoffMs');
+            }
+            if (
+                nodeRuntimePolicy.onError === undefined
+                && nodeConfig.onError === undefined
+                && nodeDefaults.onError === undefined
+            ) {
+                missingFields.push('onError');
+            }
+
+            if (missingFields.length > 0) {
+                issues.push({
+                    code: 'WF106',
+                    severity: 'ERROR',
+                    message: `发布前节点运行策略不完整: ${node.name} 缺少 ${missingFields.join(', ')}`,
+                    nodeId: node.id,
+                });
             }
         }
     }

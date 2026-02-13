@@ -71,6 +71,17 @@ async function main() {
             const caseDir = path.join(tempRoot, 'case-all-blocks');
             const qualityReportPath = path.join(caseDir, 'quality-report.json');
             const qualityReportValidationPath = path.join(caseDir, 'quality-report-validation.json');
+            const executionBaselineReportPath = path.join(caseDir, 'execution-baseline-report.json');
+            const executionBaselineValidationPath = path.join(caseDir, 'execution-baseline-validation.json');
+            const executionBaselineReferenceOperationPath = path.join(
+                caseDir,
+                'execution-baseline-reference-operation.json',
+            );
+            const executionBaselineReferenceCiStatePath = path.join(
+                caseDir,
+                'execution-baseline-reference-ci-state.json',
+            );
+            const executionBaselineTrendPath = path.join(caseDir, 'execution-baseline-trend.json');
             const summaryMarkdownPath = path.join(caseDir, 'summary.md');
             const summaryJsonPath = path.join(caseDir, 'summary.json');
             const selfCheckReportPath = path.join(caseDir, 'self-check-report.json');
@@ -123,6 +134,201 @@ async function main() {
                 warnings: [],
                 validationErrors: [],
             });
+            await writeJson(executionBaselineReportPath, {
+                schemaVersion: '1.0',
+                runId: 'wf-exec-baseline',
+                startedAt: '2026-02-12T00:00:00.000Z',
+                finishedAt: '2026-02-12T00:05:00.000Z',
+                durationMs: 300000,
+                query: {
+                    since: '2026-02-05T00:00:00.000Z',
+                    days: 7,
+                    batchSize: 1000,
+                },
+                totals: {
+                    executions: 20,
+                    completed: 20,
+                    running: 0,
+                    pending: 0,
+                    success: 18,
+                    failed: 2,
+                    canceled: 0,
+                    timeoutFailures: 1,
+                },
+                rates: {
+                    successRate: 0.9,
+                    failedRate: 0.1,
+                    canceledRate: 0,
+                    timeoutRate: 0.05,
+                    completedSuccessRate: 0.9,
+                },
+                latencyMs: {
+                    sampleCount: 20,
+                    p50: 3000,
+                    p90: 12000,
+                    p95: 15000,
+                    p99: 22000,
+                },
+                gate: {
+                    evaluated: true,
+                    passed: true,
+                    thresholds: {
+                        minSuccessRate: 0.9,
+                        maxFailureRate: 0.1,
+                        maxCanceledRate: 0.1,
+                        maxTimeoutRate: 0.05,
+                        maxP95DurationMs: 60000,
+                    },
+                    violations: [],
+                    warnings: [],
+                },
+            });
+            await writeJson(executionBaselineValidationPath, {
+                schemaVersion: '1.0',
+                generatedAt: '2026-02-12T00:06:00.000Z',
+                status: 'SUCCESS',
+                inputs: {
+                    reportFile: 'logs/workflow-execution-baseline-report.json',
+                    expectedReportSchemaVersion: '1.0',
+                    requireGatePass: true,
+                    requireGateEvaluated: true,
+                    requireNoWarnings: false,
+                },
+                report: {
+                    schemaVersion: '1.0',
+                    runId: 'wf-exec-baseline',
+                    gatePassed: true,
+                    gateEvaluated: true,
+                    violationsCount: 0,
+                    warningsCount: 0,
+                    totalExecutions: 20,
+                    completedExecutions: 20,
+                    successRate: 0.9,
+                    failedRate: 0.1,
+                    canceledRate: 0,
+                    timeoutRate: 0.05,
+                    p95DurationMs: 15000,
+                    querySince: '2026-02-05T00:00:00.000Z',
+                    queryDays: 7,
+                },
+                warningCount: 0,
+                validationErrorCount: 0,
+                warnings: [],
+                validationErrors: [],
+            });
+            await writeJson(executionBaselineReferenceOperationPath, {
+                schemaVersion: '1.0',
+                generatedAt: '2026-02-12T00:06:15.000Z',
+                status: 'SUCCESS',
+                mode: 'ensure',
+                action: 'PRESERVED',
+                inputs: {
+                    mode: 'ensure',
+                    currentReportFile: 'logs/workflow-execution-baseline-report.json',
+                    referenceReportFile: 'logs/workflow-execution-baseline-reference.json',
+                    summaryJsonFile: 'logs/workflow-execution-baseline-reference-operation.json',
+                },
+                current: {
+                    exists: true,
+                    runId: 'wf-exec-baseline-current',
+                    finishedAt: '2026-02-12T00:05:00.000Z',
+                    successRate: 0.9,
+                    failedRate: 0.1,
+                    timeoutRate: 0.05,
+                    p95DurationMs: 15000,
+                },
+                referenceBefore: {
+                    exists: true,
+                    runId: 'wf-exec-baseline-reference',
+                    successRate: 0.92,
+                    failedRate: 0.08,
+                    timeoutRate: 0.04,
+                    p95DurationMs: 13000,
+                },
+                referenceAfter: {
+                    exists: true,
+                    runId: 'wf-exec-baseline-reference',
+                    successRate: 0.92,
+                    failedRate: 0.08,
+                    timeoutRate: 0.04,
+                    p95DurationMs: 13000,
+                },
+                warningCount: 0,
+                validationErrorCount: 0,
+                warnings: [],
+                validationErrors: [],
+            });
+            await writeJson(executionBaselineReferenceCiStatePath, {
+                schemaVersion: '1.0',
+                generatedAt: '2026-02-12T00:06:20.000Z',
+                status: 'SUCCESS',
+                ci: {
+                    repository: 'foo/bar',
+                    refName: 'main',
+                    sha: 'abc123',
+                    workflowRunId: '123',
+                    workflowRunAttempt: '2',
+                },
+                referenceLifecycle: {
+                    cacheRestoreOutcome: 'success',
+                    cacheSaveOutcome: 'success',
+                    cacheHit: true,
+                    referenceEnsureOutcome: 'success',
+                    trendOutcome: 'success',
+                    referencePromoteOutcome: 'success',
+                },
+                upstream: {
+                    executionBaselineGateOutcome: 'success',
+                    executionBaselineReportValidateOutcome: 'success',
+                },
+                warningCount: 0,
+                validationErrorCount: 0,
+                warnings: [],
+                validationErrors: [],
+            });
+            await writeJson(executionBaselineTrendPath, {
+                schemaVersion: '1.0',
+                generatedAt: '2026-02-12T00:06:30.000Z',
+                status: 'SUCCESS',
+                inputs: {
+                    currentReportFile: 'logs/workflow-execution-baseline-report.json',
+                    referenceReportFile: 'logs/workflow-execution-baseline-reference.json',
+                    allowMissingReference: true,
+                    requireReference: false,
+                    maxSuccessRateDrop: 0.05,
+                    maxFailedRateIncrease: 0.05,
+                    maxTimeoutRateIncrease: 0.02,
+                    maxP95DurationIncreaseMs: 10000,
+                },
+                current: {
+                    exists: true,
+                    runId: 'wf-exec-baseline-current',
+                    successRate: 0.9,
+                    failedRate: 0.1,
+                    timeoutRate: 0.05,
+                    p95DurationMs: 15000,
+                },
+                reference: {
+                    exists: true,
+                    runId: 'wf-exec-baseline-reference',
+                    successRate: 0.92,
+                    failedRate: 0.08,
+                    timeoutRate: 0.04,
+                    p95DurationMs: 13000,
+                },
+                delta: {
+                    successRate: -0.02,
+                    failedRate: 0.02,
+                    timeoutRate: 0.01,
+                    p95DurationMs: 2000,
+                },
+                regressionCount: 0,
+                warningCount: 0,
+                validationErrorCount: 0,
+                regressions: [],
+                warnings: [],
+                validationErrors: [],
+            });
             await writeJson(summaryJsonPath, {
                 status: 'SUCCESS',
                 warnings: [],
@@ -160,6 +366,11 @@ async function main() {
             const result = await runNodeScript(summaryScript, [
                 `--quality-report-file=${qualityReportPath}`,
                 `--quality-report-validation-file=${qualityReportValidationPath}`,
+                `--execution-baseline-report-file=${executionBaselineReportPath}`,
+                `--execution-baseline-validation-file=${executionBaselineValidationPath}`,
+                `--execution-baseline-reference-operation-file=${executionBaselineReferenceOperationPath}`,
+                `--execution-baseline-reference-ci-state-file=${executionBaselineReferenceCiStatePath}`,
+                `--execution-baseline-trend-file=${executionBaselineTrendPath}`,
                 `--summary-markdown-file=${summaryMarkdownPath}`,
                 `--summary-json-file=${summaryJsonPath}`,
                 `--self-check-report-file=${selfCheckReportPath}`,
@@ -213,6 +424,30 @@ async function main() {
             assert.ok(result.output.includes('Diagnostics Snapshot Contract Max Chars: `320`'));
             assert.ok(result.output.includes('Diagnostics Snapshot Contract Raw Length: `0`'));
             assert.ok(result.output.includes('Diagnostics Snapshot Contract Truncated: `false`'));
+            assert.ok(result.output.includes('## Workflow Execution Baseline'));
+            assert.ok(result.output.includes('Executions: `20`'));
+            assert.ok(result.output.includes('Success Rate: `0.9`'));
+            assert.ok(result.output.includes('Latency P95(ms): `15000`'));
+            assert.ok(result.output.includes('Gate Passed: `true`'));
+            assert.ok(result.output.includes('## Workflow Execution Baseline Validation'));
+            assert.ok(result.output.includes('Require Gate Pass: `true`'));
+            assert.ok(result.output.includes('Require Gate Evaluated: `true`'));
+            assert.ok(result.output.includes('Report Gate Passed: `true`'));
+            assert.ok(result.output.includes('Report P95 Duration(ms): `15000`'));
+            assert.ok(result.output.includes('## Workflow Execution Baseline Reference Operation'));
+            assert.ok(result.output.includes('Mode: `ensure`'));
+            assert.ok(result.output.includes('Action: `PRESERVED`'));
+            assert.ok(result.output.includes('Reference Before Exists: `true`'));
+            assert.ok(result.output.includes('Reference After Run ID: `wf-exec-baseline-reference`'));
+            assert.ok(result.output.includes('## Workflow Execution Baseline Reference CI State'));
+            assert.ok(result.output.includes('Repository: `foo/bar`'));
+            assert.ok(result.output.includes('Cache Hit: `true`'));
+            assert.ok(result.output.includes('Reference Promote Outcome: `success`'));
+            assert.ok(result.output.includes('## Workflow Execution Baseline Trend'));
+            assert.ok(result.output.includes('Current Run ID: `wf-exec-baseline-current`'));
+            assert.ok(result.output.includes('Reference Run ID: `wf-exec-baseline-reference`'));
+            assert.ok(result.output.includes('Delta Success Rate: `-0.02`'));
+            assert.ok(result.output.includes('Regression Count: `0`'));
             assert.ok(result.output.includes('# Markdown Summary'));
             assert.ok(result.output.includes('## Workflow Report Validation (JSON)'));
             assert.ok(result.output.includes('## Workflow Summary Self-Check Suite'));
@@ -1045,6 +1280,11 @@ async function main() {
             const result = await runNodeScript(summaryScript, [
                 `--quality-report-file=${path.join(caseDir, 'quality-report.json')}`,
                 `--quality-report-validation-file=${path.join(caseDir, 'quality-report-validation.json')}`,
+                `--execution-baseline-report-file=${path.join(caseDir, 'execution-baseline-report.json')}`,
+                `--execution-baseline-validation-file=${path.join(caseDir, 'execution-baseline-validation.json')}`,
+                `--execution-baseline-reference-operation-file=${path.join(caseDir, 'execution-baseline-reference-operation.json')}`,
+                `--execution-baseline-reference-ci-state-file=${path.join(caseDir, 'execution-baseline-reference-ci-state.json')}`,
+                `--execution-baseline-trend-file=${path.join(caseDir, 'execution-baseline-trend.json')}`,
                 `--summary-markdown-file=${path.join(caseDir, 'summary.md')}`,
                 `--summary-json-file=${path.join(caseDir, 'summary.json')}`,
                 `--self-check-report-file=${path.join(caseDir, 'self-check-report.json')}`,
@@ -1069,6 +1309,11 @@ async function main() {
             assert.ok(result.output.includes('Self-Check First Failed Output: `N/A`'));
             assert.ok(result.output.includes('workflow quality gate report file not found'));
             assert.ok(result.output.includes('workflow quality gate report validation file not found'));
+            assert.ok(result.output.includes('workflow execution baseline report file not found'));
+            assert.ok(result.output.includes('workflow execution baseline validation file not found'));
+            assert.ok(result.output.includes('workflow execution baseline reference operation file not found'));
+            assert.ok(result.output.includes('workflow execution baseline reference CI state file not found'));
+            assert.ok(result.output.includes('workflow execution baseline trend file not found'));
             assert.ok(result.output.includes('workflow report summary file not found'));
             assert.ok(result.output.includes('workflow report summary json file not found'));
             assert.ok(result.output.includes('workflow summary self-check report file not found'));

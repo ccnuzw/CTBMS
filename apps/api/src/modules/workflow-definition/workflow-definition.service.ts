@@ -315,16 +315,17 @@ export class WorkflowDefinitionService {
 
         const page = query.page ?? 1;
         const pageSize = query.pageSize ?? 20;
+        const where = this.buildPublishAuditWhere(id, query);
 
         const [data, total] = await Promise.all([
             this.prisma.workflowPublishAudit.findMany({
-                where: { workflowDefinitionId: id },
+                where,
                 orderBy: [{ publishedAt: 'desc' }, { createdAt: 'desc' }],
                 skip: (page - 1) * pageSize,
                 take: pageSize,
             }),
             this.prisma.workflowPublishAudit.count({
-                where: { workflowDefinitionId: id },
+                where,
             }),
         ]);
 
@@ -375,6 +376,36 @@ export class WorkflowDefinitionService {
                     ],
                 },
             ];
+        }
+
+        return where;
+    }
+
+    private buildPublishAuditWhere(
+        workflowDefinitionId: string,
+        query: WorkflowPublishAuditQueryDto,
+    ): Prisma.WorkflowPublishAuditWhereInput {
+        const where: Prisma.WorkflowPublishAuditWhereInput = {
+            workflowDefinitionId,
+        };
+
+        if (query.workflowVersionId) {
+            where.workflowVersionId = query.workflowVersionId;
+        }
+
+        const publishedByUserId = query.publishedByUserId?.trim();
+        if (publishedByUserId) {
+            where.publishedByUserId = {
+                contains: publishedByUserId,
+                mode: 'insensitive',
+            };
+        }
+
+        if (query.publishedAtFrom || query.publishedAtTo) {
+            where.publishedAt = {
+                ...(query.publishedAtFrom ? { gte: query.publishedAtFrom } : {}),
+                ...(query.publishedAtTo ? { lte: query.publishedAtTo } : {}),
+            };
         }
 
         return where;
@@ -534,6 +565,14 @@ export class WorkflowDefinitionService {
                         edgeType: 'control-edge',
                     },
                 ],
+                runPolicy: {
+                    nodeDefaults: {
+                        timeoutMs: 30000,
+                        retryCount: 1,
+                        retryBackoffMs: 2000,
+                        onError: 'FAIL_FAST',
+                    },
+                },
             };
         }
 

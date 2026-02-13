@@ -10,6 +10,10 @@ import {
     SELF_CHECK_SUGGESTED_COMMAND_SOURCE_PRIORITY,
     extractSummaryJsonAssert,
     renderQualityGateSummaryMarkdown,
+    renderWorkflowExecutionBaselineReferenceCiStateMarkdown,
+    renderWorkflowExecutionBaselineReferenceOperationMarkdown,
+    renderWorkflowExecutionBaselineValidationMarkdown,
+    renderWorkflowExecutionBaselineTrendMarkdown,
     renderWorkflowQuickLocateIndexMarkdown,
     renderWorkflowQualityGateReportValidationMarkdown,
     renderWorkflowReportValidationSummaryMarkdown,
@@ -142,6 +146,251 @@ async function main() {
             assert.ok(markdown.includes('- err-1'));
             assert.ok(markdown.includes('- err-2'));
             assert.ok(!markdown.includes('- err-3'));
+        });
+
+        await runCase('render workflow execution baseline validation summary', async () => {
+            const summary = {
+                schemaVersion: '1.0',
+                generatedAt: '2026-02-12T00:10:00.000Z',
+                status: 'FAILED',
+                validationErrorCount: 3,
+                warningCount: 2,
+                inputs: {
+                    reportFile: 'logs/workflow-execution-baseline-report.json',
+                    expectedReportSchemaVersion: '1.0',
+                    requireGatePass: true,
+                    requireGateEvaluated: true,
+                    requireNoWarnings: false,
+                },
+                report: {
+                    schemaVersion: '1.0',
+                    runId: 'wf-exec-baseline',
+                    gatePassed: false,
+                    gateEvaluated: true,
+                    violationsCount: 2,
+                    warningsCount: 1,
+                    totalExecutions: 30,
+                    completedExecutions: 30,
+                    successRate: 0.8,
+                    failedRate: 0.2,
+                    canceledRate: 0,
+                    timeoutRate: 0.1,
+                    p95DurationMs: 12000,
+                    querySince: '2026-02-05T00:00:00.000Z',
+                    queryDays: 7,
+                },
+                validationErrors: ['error-1', 'error-2', 'error-3'],
+                warnings: ['warn-1', 'warn-2', 'warn-3'],
+            };
+
+            const markdown = renderWorkflowExecutionBaselineValidationMarkdown(summary, {
+                maxItems: 2,
+            });
+            assert.ok(markdown.includes('## Workflow Execution Baseline Validation'));
+            assert.ok(markdown.includes('Status: `FAILED`'));
+            assert.ok(markdown.includes('Validation Error Count: `3`'));
+            assert.ok(markdown.includes('Warning Count: `2`'));
+            assert.ok(markdown.includes('Require Gate Pass: `true`'));
+            assert.ok(markdown.includes('Require Gate Evaluated: `true`'));
+            assert.ok(markdown.includes('Require No Warnings: `false`'));
+            assert.ok(markdown.includes('Report Gate Passed: `false`'));
+            assert.ok(markdown.includes('Report Gate Evaluated: `true`'));
+            assert.ok(markdown.includes('Report Success Rate: `0.8`'));
+            assert.ok(markdown.includes('Report P95 Duration(ms): `12000`'));
+            assert.ok(markdown.includes('### Top Validation Errors'));
+            assert.ok(markdown.includes('- error-1'));
+            assert.ok(markdown.includes('- error-2'));
+            assert.ok(!markdown.includes('- error-3'));
+            assert.ok(markdown.includes('### Top Warnings'));
+            assert.ok(markdown.includes('- warn-1'));
+            assert.ok(markdown.includes('- warn-2'));
+            assert.ok(!markdown.includes('- warn-3'));
+        });
+
+        await runCase('render workflow execution baseline reference operation summary', async () => {
+            const summary = {
+                schemaVersion: '1.0',
+                generatedAt: '2026-02-12T00:11:00.000Z',
+                status: 'SUCCESS',
+                mode: 'ensure',
+                action: 'SEEDED_FROM_CURRENT',
+                inputs: {
+                    currentReportFile: 'logs/workflow-execution-baseline-report.json',
+                    referenceReportFile: 'logs/workflow-execution-baseline-reference.json',
+                    summaryJsonFile: 'logs/workflow-execution-baseline-reference-operation.json',
+                },
+                current: {
+                    exists: true,
+                    runId: 'current-run',
+                    finishedAt: '2026-02-12T00:10:30.000Z',
+                    successRate: 0.91,
+                    failedRate: 0.09,
+                    timeoutRate: 0.01,
+                    p95DurationMs: 9000,
+                },
+                referenceBefore: {
+                    exists: false,
+                    runId: null,
+                    successRate: null,
+                    failedRate: null,
+                    timeoutRate: null,
+                    p95DurationMs: null,
+                },
+                referenceAfter: {
+                    exists: true,
+                    runId: 'current-run',
+                    successRate: 0.91,
+                    failedRate: 0.09,
+                    timeoutRate: 0.01,
+                    p95DurationMs: 9000,
+                },
+                warningCount: 2,
+                validationErrorCount: 3,
+                warnings: ['warn-1', 'warn-2', 'warn-3'],
+                validationErrors: ['error-1', 'error-2', 'error-3'],
+            };
+
+            const markdown = renderWorkflowExecutionBaselineReferenceOperationMarkdown(summary, {
+                maxItems: 2,
+            });
+            assert.ok(markdown.includes('## Workflow Execution Baseline Reference Operation'));
+            assert.ok(markdown.includes('Status: `SUCCESS`'));
+            assert.ok(markdown.includes('Mode: `ensure`'));
+            assert.ok(markdown.includes('Action: `SEEDED_FROM_CURRENT`'));
+            assert.ok(markdown.includes('Current Run ID: `current-run`'));
+            assert.ok(markdown.includes('Reference Before Exists: `false`'));
+            assert.ok(markdown.includes('Reference After Exists: `true`'));
+            assert.ok(markdown.includes('Reference After Run ID: `current-run`'));
+            assert.ok(markdown.includes('Validation Error Count: `3`'));
+            assert.ok(markdown.includes('Warning Count: `2`'));
+            assert.ok(markdown.includes('### Top Validation Errors'));
+            assert.ok(markdown.includes('- error-1'));
+            assert.ok(markdown.includes('- error-2'));
+            assert.ok(!markdown.includes('- error-3'));
+            assert.ok(markdown.includes('### Top Warnings'));
+            assert.ok(markdown.includes('- warn-1'));
+            assert.ok(markdown.includes('- warn-2'));
+            assert.ok(!markdown.includes('- warn-3'));
+        });
+
+        await runCase('render workflow execution baseline reference CI state summary', async () => {
+            const summary = {
+                schemaVersion: '1.0',
+                generatedAt: '2026-02-12T00:11:30.000Z',
+                status: 'PARTIAL',
+                ci: {
+                    repository: 'foo/bar',
+                    refName: 'main',
+                    sha: 'abc123',
+                    workflowRunId: '123',
+                    workflowRunAttempt: '2',
+                },
+                referenceLifecycle: {
+                    cacheRestoreOutcome: 'success',
+                    cacheSaveOutcome: 'skipped',
+                    cacheHit: false,
+                    referenceEnsureOutcome: 'success',
+                    trendOutcome: 'success',
+                    referencePromoteOutcome: 'skipped',
+                },
+                upstream: {
+                    executionBaselineGateOutcome: 'success',
+                    executionBaselineReportValidateOutcome: 'success',
+                },
+                warningCount: 2,
+                validationErrorCount: 3,
+                warnings: ['warn-1', 'warn-2', 'warn-3'],
+                validationErrors: ['error-1', 'error-2', 'error-3'],
+            };
+
+            const markdown = renderWorkflowExecutionBaselineReferenceCiStateMarkdown(summary, {
+                maxItems: 2,
+            });
+            assert.ok(markdown.includes('## Workflow Execution Baseline Reference CI State'));
+            assert.ok(markdown.includes('Status: `PARTIAL`'));
+            assert.ok(markdown.includes('Repository: `foo/bar`'));
+            assert.ok(markdown.includes('Cache Hit: `false`'));
+            assert.ok(markdown.includes('Reference Promote Outcome: `skipped`'));
+            assert.ok(markdown.includes('Validation Error Count: `3`'));
+            assert.ok(markdown.includes('Warning Count: `2`'));
+            assert.ok(markdown.includes('### Top Validation Errors'));
+            assert.ok(markdown.includes('- error-1'));
+            assert.ok(markdown.includes('- error-2'));
+            assert.ok(!markdown.includes('- error-3'));
+            assert.ok(markdown.includes('### Top Warnings'));
+            assert.ok(markdown.includes('- warn-1'));
+            assert.ok(markdown.includes('- warn-2'));
+            assert.ok(!markdown.includes('- warn-3'));
+        });
+
+        await runCase('render workflow execution baseline trend summary', async () => {
+            const summary = {
+                schemaVersion: '1.0',
+                generatedAt: '2026-02-12T00:12:00.000Z',
+                status: 'FAILED',
+                inputs: {
+                    currentReportFile: 'logs/workflow-execution-baseline-report.json',
+                    referenceReportFile: 'logs/workflow-execution-baseline-reference.json',
+                    allowMissingReference: true,
+                    requireReference: false,
+                    maxSuccessRateDrop: 0.05,
+                    maxFailedRateIncrease: 0.05,
+                    maxTimeoutRateIncrease: 0.02,
+                    maxP95DurationIncreaseMs: 10000,
+                },
+                current: {
+                    exists: true,
+                    runId: 'current-run',
+                    successRate: 0.9,
+                    failedRate: 0.1,
+                    timeoutRate: 0.05,
+                    p95DurationMs: 15000,
+                },
+                reference: {
+                    exists: true,
+                    runId: 'reference-run',
+                    successRate: 0.95,
+                    failedRate: 0.05,
+                    timeoutRate: 0.02,
+                    p95DurationMs: 10000,
+                },
+                delta: {
+                    successRate: -0.05,
+                    failedRate: 0.05,
+                    timeoutRate: 0.03,
+                    p95DurationMs: 5000,
+                },
+                regressionCount: 2,
+                warningCount: 2,
+                validationErrorCount: 3,
+                regressions: ['regression-1', 'regression-2', 'regression-3'],
+                validationErrors: ['error-1', 'error-2', 'error-3'],
+                warnings: ['warn-1', 'warn-2', 'warn-3'],
+            };
+
+            const markdown = renderWorkflowExecutionBaselineTrendMarkdown(summary, {
+                maxItems: 2,
+            });
+            assert.ok(markdown.includes('## Workflow Execution Baseline Trend'));
+            assert.ok(markdown.includes('Status: `FAILED`'));
+            assert.ok(markdown.includes('Current Run ID: `current-run`'));
+            assert.ok(markdown.includes('Reference Run ID: `reference-run`'));
+            assert.ok(markdown.includes('Delta Success Rate: `-0.05`'));
+            assert.ok(markdown.includes('Regression Count: `2`'));
+            assert.ok(markdown.includes('Validation Error Count: `3`'));
+            assert.ok(markdown.includes('Warning Count: `2`'));
+            assert.ok(markdown.includes('### Top Regressions'));
+            assert.ok(markdown.includes('- regression-1'));
+            assert.ok(markdown.includes('- regression-2'));
+            assert.ok(!markdown.includes('- regression-3'));
+            assert.ok(markdown.includes('### Top Validation Errors'));
+            assert.ok(markdown.includes('- error-1'));
+            assert.ok(markdown.includes('- error-2'));
+            assert.ok(!markdown.includes('- error-3'));
+            assert.ok(markdown.includes('### Top Warnings'));
+            assert.ok(markdown.includes('- warn-1'));
+            assert.ok(markdown.includes('- warn-2'));
+            assert.ok(!markdown.includes('- warn-3'));
         });
 
         await runCase('quick locate suggested command source enum contract', async () => {
