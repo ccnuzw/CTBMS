@@ -13,3 +13,4 @@ export * from './modules/decision-rule.js';
 export * from './modules/agent-workflow.js';
 export * from './modules/parameter-rule.js';
 export * from './modules/decision-record.js';
+export * from './modules/workflow-experiment.js';

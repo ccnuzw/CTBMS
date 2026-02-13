@@ -15,6 +15,7 @@ import { EvidenceCollector } from './engine/evidence-collector';
 import { ReplayAssembler } from './engine/replay-assembler';
 import { DagScheduler } from './engine/dag-scheduler';
 import { DebateRoundNodeExecutor } from './engine/node-executors/debate-round.executor';
+import { ApiTriggerNodeExecutor } from './engine/node-executors/api-trigger.executor';
 
 @Module({
     controllers: [WorkflowExecutionController],
@@ -30,6 +31,7 @@ import { DebateRoundNodeExecutor } from './engine/node-executors/debate-round.ex
         DataFetchNodeExecutor,
         ComputeNodeExecutor,
         DebateRoundNodeExecutor,
+        ApiTriggerNodeExecutor,
         VariableResolver,
         EvidenceCollector,
         ReplayAssembler,

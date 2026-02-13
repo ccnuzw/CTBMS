@@ -1,5 +1,4 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { request } from '@/utils/request';
 import type {
     DecisionRecordDto,
     CreateDecisionRecordDto,
@@ -7,6 +6,7 @@ import type {
     DecisionRecordQueryDto,
     DecisionRecordPageDto,
 } from '@packages/types';
+import { apiClient } from '../../../api/client';
 
 const BASE = '/decision-records';
 
@@ -24,9 +24,12 @@ const decisionRecordKeys = {
  * 分页查询决策记录
  */
 export const useDecisionRecordList = (params: DecisionRecordQueryDto) => {
-    return useQuery({
+    return useQuery<DecisionRecordPageDto>({
         queryKey: decisionRecordKeys.list(params),
-        queryFn: () => request.get<DecisionRecordPageDto>(BASE, { params }),
+        queryFn: async () => {
+            const res = await apiClient.get<DecisionRecordPageDto>(BASE, { params });
+            return res.data;
+        },
     });
 };
 
@@ -34,9 +37,12 @@ export const useDecisionRecordList = (params: DecisionRecordQueryDto) => {
  * 查询单条决策记录
  */
 export const useDecisionRecordDetail = (id: string, enabled = true) => {
-    return useQuery({
+    return useQuery<DecisionRecordDto>({
         queryKey: decisionRecordKeys.detail(id),
-        queryFn: () => request.get<DecisionRecordDto>(`${BASE}/${id}`),
+        queryFn: async () => {
+            const res = await apiClient.get<DecisionRecordDto>(`${BASE}/${id}`);
+            return res.data;
+        },
         enabled: !!id && enabled,
     });
 };
@@ -45,9 +51,14 @@ export const useDecisionRecordDetail = (id: string, enabled = true) => {
  * 按执行 ID 查询关联决策记录
  */
 export const useDecisionRecordsByExecution = (executionId: string, enabled = true) => {
-    return useQuery({
+    return useQuery<DecisionRecordDto[]>({
         queryKey: decisionRecordKeys.byExecution(executionId),
-        queryFn: () => request.get<DecisionRecordDto[]>(`${BASE}/execution/${executionId}`),
+        queryFn: async () => {
+            const res = await apiClient.get<DecisionRecordDto[]>(
+                `${BASE}/execution/${executionId}`,
+            );
+            return res.data;
+        },
         enabled: !!executionId && enabled,
     });
 };
@@ -58,7 +69,10 @@ export const useDecisionRecordsByExecution = (executionId: string, enabled = tru
 export const useCreateDecisionRecord = () => {
     const qc = useQueryClient();
     return useMutation({
-        mutationFn: (dto: CreateDecisionRecordDto) => request.post<DecisionRecordDto>(BASE, dto),
+        mutationFn: async (dto: CreateDecisionRecordDto) => {
+            const res = await apiClient.post<DecisionRecordDto>(BASE, dto);
+            return res.data;
+        },
         onSuccess: () => {
             qc.invalidateQueries({ queryKey: decisionRecordKeys.all });
         },
@@ -71,8 +85,10 @@ export const useCreateDecisionRecord = () => {
 export const useUpdateDecisionRecord = () => {
     const qc = useQueryClient();
     return useMutation({
-        mutationFn: ({ id, dto }: { id: string; dto: UpdateDecisionRecordDto }) =>
-            request.put<DecisionRecordDto>(`${BASE}/${id}`, dto),
+        mutationFn: async ({ id, dto }: { id: string; dto: UpdateDecisionRecordDto }) => {
+            const res = await apiClient.put<DecisionRecordDto>(`${BASE}/${id}`, dto);
+            return res.data;
+        },
         onSuccess: () => {
             qc.invalidateQueries({ queryKey: decisionRecordKeys.all });
         },
@@ -85,7 +101,10 @@ export const useUpdateDecisionRecord = () => {
 export const useDeleteDecisionRecord = () => {
     const qc = useQueryClient();
     return useMutation({
-        mutationFn: (id: string) => request.delete(`${BASE}/${id}`),
+        mutationFn: async (id: string) => {
+            const res = await apiClient.delete(`${BASE}/${id}`);
+            return res.data;
+        },
         onSuccess: () => {
             qc.invalidateQueries({ queryKey: decisionRecordKeys.all });
         },
@@ -98,7 +117,10 @@ export const useDeleteDecisionRecord = () => {
 export const usePublishDecisionRecord = () => {
     const qc = useQueryClient();
     return useMutation({
-        mutationFn: (id: string) => request.post<DecisionRecordDto>(`${BASE}/${id}/publish`),
+        mutationFn: async (id: string) => {
+            const res = await apiClient.post<DecisionRecordDto>(`${BASE}/${id}/publish`);
+            return res.data;
+        },
         onSuccess: () => {
             qc.invalidateQueries({ queryKey: decisionRecordKeys.all });
         },
@@ -111,8 +133,12 @@ export const usePublishDecisionRecord = () => {
 export const useReviewDecisionRecord = () => {
     const qc = useQueryClient();
     return useMutation({
-        mutationFn: ({ id, comment }: { id: string; comment: string }) =>
-            request.post<DecisionRecordDto>(`${BASE}/${id}/review`, { comment }),
+        mutationFn: async ({ id, comment }: { id: string; comment: string }) => {
+            const res = await apiClient.post<DecisionRecordDto>(`${BASE}/${id}/review`, {
+                comment,
+            });
+            return res.data;
+        },
         onSuccess: () => {
             qc.invalidateQueries({ queryKey: decisionRecordKeys.all });
         },

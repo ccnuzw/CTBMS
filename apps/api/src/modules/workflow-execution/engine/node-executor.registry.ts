@@ -10,6 +10,7 @@ import { AgentCallNodeExecutor } from './node-executors/agent-call.executor';
 import { DataFetchNodeExecutor } from './node-executors/data-fetch.executor';
 import { ComputeNodeExecutor } from './node-executors/compute.executor';
 import { DebateRoundNodeExecutor } from './node-executors/debate-round.executor';
+import { ApiTriggerNodeExecutor } from './node-executors/api-trigger.executor';
 
 @Injectable()
 export class NodeExecutorRegistry {
@@ -25,9 +26,11 @@ export class NodeExecutorRegistry {
         private readonly dataFetchNodeExecutor: DataFetchNodeExecutor,
         private readonly computeNodeExecutor: ComputeNodeExecutor,
         private readonly debateRoundNodeExecutor: DebateRoundNodeExecutor,
+        private readonly apiTriggerNodeExecutor: ApiTriggerNodeExecutor,
     ) {
         this.executors = [
             this.manualTriggerNodeExecutor,
+            this.apiTriggerNodeExecutor,
             this.rulePackEvalNodeExecutor,
             this.riskGateNodeExecutor,
             this.notifyNodeExecutor,
