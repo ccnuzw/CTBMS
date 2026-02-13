@@ -1877,6 +1877,7 @@ enum WorkflowVersionStatus {
 enum WorkflowTemplateSource {
   PUBLIC
   PRIVATE
+  COPIED
 }
 
 enum WorkflowTriggerType {

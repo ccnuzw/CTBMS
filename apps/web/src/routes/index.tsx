@@ -159,6 +159,10 @@ export const router = createBrowserRouter([
         element: <TemplateMarketPage />,
       },
       {
+        path: 'workflow/futures',
+        element: <FuturesSimPage />,
+      },
+      {
         path: 'system',
         children: [
           { path: 'tags', element: <GlobalTagList /> },

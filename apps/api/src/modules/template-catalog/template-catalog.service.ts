@@ -12,7 +12,7 @@ import type { Prisma } from '@prisma/client';
 export class TemplateCatalogService {
   private readonly logger = new Logger(TemplateCatalogService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private readonly prisma: PrismaService) { }
 
   /**
    * 从现有工作流版本创建模板
@@ -205,6 +205,8 @@ export class TemplateCatalogService {
         description: template.description,
         ownerUserId: userId,
         templateSource: 'COPIED',
+        mode: (dslSnapshot.mode as any) || 'LINEAR',
+        usageMethod: (dslSnapshot.usageMethod as any) || 'HEADLESS',
       },
     });
 

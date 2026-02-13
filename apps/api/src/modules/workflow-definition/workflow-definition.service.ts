@@ -21,7 +21,7 @@ export class WorkflowDefinitionService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly dslValidator: WorkflowDslValidator,
-  ) {}
+  ) { }
 
   async create(ownerUserId: string, dto: CreateWorkflowDefinitionDto) {
     const existing = await this.prisma.workflowDefinition.findUnique({
@@ -909,7 +909,7 @@ export class WorkflowDefinitionService {
     mode: 'LINEAR' | 'DAG' | 'DEBATE',
     usageMethod: 'HEADLESS' | 'COPILOT' | 'ON_DEMAND',
     ownerUserId: string,
-    templateSource: 'PUBLIC' | 'PRIVATE',
+    templateSource: 'PUBLIC' | 'PRIVATE' | 'COPIED',
   ): WorkflowDsl {
     if (!sourceDsl) {
       return {
