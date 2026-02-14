@@ -1,6 +1,8 @@
 import { Injectable } from '@nestjs/common';
 import {
   canonicalizeWorkflowDsl,
+  isSupportedWorkflowNodeType,
+  validateWorkflowNodeConfig,
   WorkflowDsl,
   WorkflowNode,
   WorkflowValidationIssue,
@@ -18,6 +20,8 @@ export class WorkflowDslValidator {
     const issues: WorkflowValidationIssue[] = [];
 
     this.validateTopLevelFields(normalizedDsl, issues);
+    this.validateSupportedNodeTypes(normalizedDsl, issues);
+    this.validateNodeConfigs(normalizedDsl, issues);
     this.validateUniqueness(normalizedDsl, issues);
     this.validateEdgeReferences(normalizedDsl, issues);
     this.validateOrphanNodes(normalizedDsl, issues);
@@ -52,6 +56,38 @@ export class WorkflowDslValidator {
         code: 'WF001',
         severity: 'ERROR',
         message: 'workflowId、name、mode、nodes、edges 为必填字段',
+      });
+    }
+  }
+
+  private validateSupportedNodeTypes(dsl: WorkflowDsl, issues: WorkflowValidationIssue[]): void {
+    for (const node of dsl.nodes) {
+      if (isSupportedWorkflowNodeType(node.type)) {
+        continue;
+      }
+      issues.push({
+        code: 'WF001',
+        severity: 'ERROR',
+        message: `节点类型不受支持: ${node.type}`,
+        nodeId: node.id,
+      });
+    }
+  }
+
+  private validateNodeConfigs(dsl: WorkflowDsl, issues: WorkflowValidationIssue[]): void {
+    for (const node of dsl.nodes) {
+      if (!isSupportedWorkflowNodeType(node.type)) {
+        continue;
+      }
+      const result = validateWorkflowNodeConfig(node.type, node.config ?? {});
+      if (result.valid) {
+        continue;
+      }
+      issues.push({
+        code: 'WF001',
+        severity: 'ERROR',
+        message: `节点 ${node.name} 配置非法: ${result.issues.join('; ')}`,
+        nodeId: node.id,
       });
     }
   }

@@ -17,22 +17,24 @@ export const useCanvasAlignment = () => {
                 case 'right':
                     targetValue = Math.max(...selectedNodes.map((n) => n.position.x + (n.measured?.width ?? 0)));
                     break;
-                case 'center': // Horizontal center
+                case 'center': { // Horizontal center
                     const minX = Math.min(...selectedNodes.map((n) => n.position.x));
                     const maxX = Math.max(...selectedNodes.map((n) => n.position.x + (n.measured?.width ?? 0)));
                     targetValue = (minX + maxX) / 2;
                     break;
+                }
                 case 'top':
                     targetValue = Math.min(...selectedNodes.map((n) => n.position.y));
                     break;
                 case 'bottom':
                     targetValue = Math.max(...selectedNodes.map((n) => n.position.y + (n.measured?.height ?? 0)));
                     break;
-                case 'middle': // Vertical middle
+                case 'middle': { // Vertical middle
                     const minY = Math.min(...selectedNodes.map((n) => n.position.y));
                     const maxY = Math.max(...selectedNodes.map((n) => n.position.y + (n.measured?.height ?? 0)));
                     targetValue = (minY + maxY) / 2;
                     break;
+                }
             }
 
             return nodes.map((n) => {

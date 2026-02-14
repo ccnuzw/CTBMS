@@ -11,7 +11,7 @@ import {
     SelectionMode,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
-import { message, theme, Alert } from 'antd';
+import { Alert, message, theme } from 'antd';
 import {
     canonicalizeWorkflowDsl,
     normalizeWorkflowModeValue,
@@ -19,7 +19,6 @@ import {
     type WorkflowDsl,
     type WorkflowValidationResult,
 } from '@packages/types';
-
 import { WorkflowNodeComponent } from './WorkflowNodeComponent';
 import { GroupNode } from './GroupNode';
 import { NodePalette } from './NodePalette';
@@ -33,36 +32,36 @@ import { useUndoRedo } from './useUndoRedo';
 import { useCopyPaste } from './useCopyPaste';
 import { useAutoLayout } from './useAutoLayout';
 import { useCanvasAlignment } from './useCanvasAlignment';
+import { NodeContextMenu } from './NodeContextMenu';
+import { SaveTemplateModal } from './SaveTemplateModal';
+import { listNodeTemplates, saveNodeTemplate } from './nodeTemplateStore';
 
 interface WorkflowCanvasProps {
-    /** 初始 DSL */
     initialDsl?: WorkflowDsl;
-    /** 保存回调 */
     onSave?: (dsl: WorkflowDsl) => void | Promise<void>;
-    /** 保存前校验回调（优先使用服务端校验） */
     onValidate?: (
         dsl: WorkflowDsl,
         stage?: 'SAVE' | 'PUBLISH',
     ) => Promise<WorkflowValidationResult | undefined>;
-    /** 是否只读 */
     isReadOnly?: boolean;
-    /** 触发运行回调 (返回 executionId) */
     onRun?: (dsl: WorkflowDsl) => Promise<string | undefined>;
+    currentVersionId?: string;
+    currentDefinitionId?: string;
 }
 
-/**
- * 工作流画布内部组件
- */
 const WorkflowCanvasInner: React.FC<WorkflowCanvasProps> = ({
     initialDsl,
     onSave,
     onValidate,
     isReadOnly = false,
     onRun,
+    currentVersionId,
+    currentDefinitionId,
 }) => {
     const { token } = theme.useToken();
     const reactFlow = useReactFlow();
     const canvasRef = useRef<HTMLDivElement>(null);
+
     const [isSaving, setIsSaving] = useState(false);
     const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
     const [selectedEdgeId, setSelectedEdgeId] = useState<string | null>(null);
@@ -73,27 +72,28 @@ const WorkflowCanvasInner: React.FC<WorkflowCanvasProps> = ({
     const [executionId, setExecutionId] = useState<string | undefined>();
     const [selectionMode, setSelectionMode] = useState<'hand' | 'pointer'>('hand');
     const [snapToGrid, setSnapToGrid] = useState(true);
+    const [validationErrors, setValidationErrors] = useState<string[]>([]);
     const [workflowMode, setWorkflowMode] = useState<'linear' | 'dag' | 'debate'>(
         toWorkflowModeUi(initialDsl?.mode ?? 'DAG'),
     );
-    const [validationErrors, setValidationErrors] = useState<string[]>([]);
+    const [menuState, setMenuState] = useState<{ id: string; top: number; left: number } | null>(null);
+    const [isTemplateModalOpen, setIsTemplateModalOpen] = useState(false);
 
-    // Undo/Redo
     const { takeSnapshot, undo, redo, canUndo, canRedo } = useUndoRedo();
 
-
-
-    // Default DSL if none provided
-    const defaultDsl: WorkflowDsl = useMemo(() => ({
-        workflowId: 'new',
-        name: 'New Workflow',
-        version: '1.0.0',
-        mode: 'DAG',
-        status: 'DRAFT',
-        usageMethod: 'ON_DEMAND',
-        nodes: [],
-        edges: [],
-    }), []);
+    const defaultDsl: WorkflowDsl = useMemo(
+        () => ({
+            workflowId: 'new',
+            name: 'New Workflow',
+            version: '1.0.0',
+            mode: 'DAG',
+            status: 'DRAFT',
+            usageMethod: 'ON_DEMAND',
+            nodes: [],
+            edges: [],
+        }),
+        [],
+    );
 
     React.useEffect(() => {
         if (initialDsl?.mode) {
@@ -115,36 +115,32 @@ const WorkflowCanvasInner: React.FC<WorkflowCanvasProps> = ({
         setEdges,
     } = useDslSync(initialDsl || defaultDsl, undefined, takeSnapshot);
 
-    // Copy/Paste
     useCopyPaste(nodes, edges, setNodes, setEdges, () => takeSnapshot(nodes, edges));
 
-    // Auto Layout & Alignment
     const { onLayout } = useAutoLayout();
     const { alignNodes } = useCanvasAlignment();
 
     const nodeTypes: NodeTypes = useMemo(
         () => ({
             workflowNode: WorkflowNodeComponent,
-            group: GroupNode
+            group: GroupNode,
         }),
         [],
     );
 
     const selectedNode = useMemo(
-        () => nodes.find((n) => n.id === selectedNodeId) ?? null,
+        () => nodes.find((node) => node.id === selectedNodeId) ?? null,
         [nodes, selectedNodeId],
     );
 
     const selectedEdge = useMemo(
-        () => edges.find((e) => e.id === selectedEdgeId) ?? null,
+        () => edges.find((edge) => edge.id === selectedEdgeId) ?? null,
         [edges, selectedEdgeId],
     );
 
     const buildCurrentDsl = useCallback((): WorkflowDsl => {
         const dsl = exportDsl();
-        const positionMap = new Map(
-            reactFlow.getNodes().map((node) => [node.id, node.position] as const),
-        );
+        const positionMap = new Map(reactFlow.getNodes().map((node) => [node.id, node.position] as const));
 
         return canonicalizeWorkflowDsl({
             ...dsl,
@@ -153,7 +149,9 @@ const WorkflowCanvasInner: React.FC<WorkflowCanvasProps> = ({
                 ...node,
                 config: {
                     ...(node.config ?? {}),
-                    _position: positionMap.get(node.id) ?? (node.config as Record<string, unknown>)?._position,
+                    _position:
+                        positionMap.get(node.id)
+                        ?? (node.config as Record<string, unknown> | undefined)?._position,
                 },
             })),
         });
@@ -177,10 +175,9 @@ const WorkflowCanvasInner: React.FC<WorkflowCanvasProps> = ({
             const fallback = validateGraph(nodes, edges, workflowMode);
             return fallback.errors;
         },
-        [onValidate, workflowMode, nodes, edges],
+        [onValidate, nodes, edges, workflowMode],
     );
 
-    // ── 验证逻辑（优先服务端） ──
     React.useEffect(() => {
         let active = true;
         const timer = setTimeout(async () => {
@@ -203,8 +200,6 @@ const WorkflowCanvasInner: React.FC<WorkflowCanvasProps> = ({
         };
     }, [nodes, edges, workflowMode, buildCurrentDsl, runValidation]);
 
-    // ── 拖拽放置 ──
-
     const handleDragOver = useCallback((event: DragEvent<HTMLDivElement>) => {
         event.preventDefault();
         event.dataTransfer.dropEffect = 'move';
@@ -213,13 +208,36 @@ const WorkflowCanvasInner: React.FC<WorkflowCanvasProps> = ({
     const handleDrop = useCallback(
         (event: DragEvent<HTMLDivElement>) => {
             event.preventDefault();
-            const nodeType = event.dataTransfer.getData('application/workflow-node-type');
-            if (!nodeType) return;
 
             const position = reactFlow.screenToFlowPosition({
                 x: event.clientX,
                 y: event.clientY,
             });
+
+            const templateId = event.dataTransfer.getData('application/workflow-node-template-id');
+            if (templateId) {
+                const template = listNodeTemplates().find((item) => item.id === templateId);
+                if (!template) {
+                    message.error('模板不存在或已删除');
+                    return;
+                }
+                const newNodeId = addNode(template.nodeType, position, {
+                    name: template.data.name,
+                    enabled: template.data.enabled,
+                    config: template.data.config,
+                    runtimePolicy: template.data.runtimePolicy,
+                    inputBindings: template.data.inputBindings,
+                    outputSchema: template.data.outputSchema,
+                });
+                setSelectedNodeId(newNodeId);
+                setSelectedEdgeId(null);
+                return;
+            }
+
+            const nodeType = event.dataTransfer.getData('application/workflow-node-type');
+            if (!nodeType) {
+                return;
+            }
 
             const newNodeId = addNode(nodeType, position);
             setSelectedNodeId(newNodeId);
@@ -228,33 +246,37 @@ const WorkflowCanvasInner: React.FC<WorkflowCanvasProps> = ({
         [reactFlow, addNode],
     );
 
-    // ── 节点选中 ──
+    const handleNodeClick = useCallback((_: React.MouseEvent, node: { id: string }) => {
+        setSelectedNodeId(node.id);
+        setSelectedEdgeId(null);
+    }, []);
 
-    const handleNodeClick = useCallback(
-        (_: React.MouseEvent, node: { id: string }) => {
-            setSelectedNodeId(node.id);
-            setSelectedEdgeId(null);
-        },
-        [],
-    );
+    const handleEdgeClick = useCallback((_: React.MouseEvent, edge: { id: string }) => {
+        setSelectedEdgeId(edge.id);
+        setSelectedNodeId(null);
+    }, []);
 
     const handlePaneClick = useCallback(() => {
         setSelectedNodeId(null);
         setSelectedEdgeId(null);
+        setMenuState(null);
     }, []);
 
-    const handleEdgeClick = useCallback(
-        (_: React.MouseEvent, edge: { id: string }) => {
-            setSelectedEdgeId(edge.id);
-            setSelectedNodeId(null);
-        },
-        [],
-    );
-
-    // ── 保存 ──
+    const onNodeContextMenu = useCallback((event: React.MouseEvent, node: Node) => {
+        event.preventDefault();
+        const pane = canvasRef.current?.getBoundingClientRect();
+        setMenuState({
+            id: node.id,
+            top: event.clientY - (pane?.top || 0),
+            left: event.clientX - (pane?.left || 0),
+        });
+    }, []);
 
     const handleSave = useCallback(async () => {
-        if (!onSave) return;
+        if (!onSave) {
+            return;
+        }
+
         setIsSaving(true);
         try {
             const dsl = buildCurrentDsl();
@@ -273,168 +295,179 @@ const WorkflowCanvasInner: React.FC<WorkflowCanvasProps> = ({
         }
     }, [onSave, buildCurrentDsl, runValidation]);
 
-    // ── 导出 DSL ──
-
     const handleExportDsl = useCallback(() => {
         const dsl = buildCurrentDsl();
         const blob = new Blob([JSON.stringify(dsl, null, 2)], { type: 'application/json' });
         const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `workflow-dsl-${Date.now()}.json`;
-        a.click();
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = `workflow-dsl-${Date.now()}.json`;
+        link.click();
         URL.revokeObjectURL(url);
         message.success('DSL 已导出');
     }, [buildCurrentDsl]);
 
-    // ── 清空画布 ──
-
     const handleClearCanvas = useCallback(() => {
+        takeSnapshot(nodes, edges);
         setNodes([]);
         setEdges([]);
         setSelectedNodeId(null);
-    }, [setNodes, setEdges]);
+        setSelectedEdgeId(null);
+    }, [takeSnapshot, nodes, edges, setNodes, setEdges]);
 
     const handleRun = useCallback(async () => {
-        if (onRun) {
-            try {
-                const dsl = buildCurrentDsl();
-                const errors = await runValidation(dsl);
-                if (errors.length > 0) {
-                    setValidationErrors(errors);
-                    message.error('运行失败：请先修复校验问题');
-                    return;
-                }
-                const id = await onRun(dsl);
-                if (id) {
-                    setExecutionId(id);
-                    setShowLogPanel(true);
-                    if (workflowMode === 'debate') {
-                        setShowDebatePanel(true);
-                    }
-                }
-            } catch (error) {
-                console.error('Run failed:', error);
-            }
-        } else {
-            message.info('开始调试运行...');
+        if (!onRun) {
             setShowLogPanel(true);
+            return;
         }
-    }, [onRun, buildCurrentDsl, workflowMode, runValidation]);
 
-    const handleToggleLogs = useCallback(() => {
-        setShowLogPanel((v) => !v);
-    }, []);
+        try {
+            const dsl = buildCurrentDsl();
+            const errors = await runValidation(dsl);
+            if (errors.length > 0) {
+                setValidationErrors(errors);
+                message.error('运行失败：请先修复校验问题');
+                return;
+            }
+            const id = await onRun(dsl);
+            if (id) {
+                setExecutionId(id);
+            }
+            setShowLogPanel(true);
+            if (workflowMode === 'debate') {
+                setShowDebatePanel(true);
+            }
+        } catch {
+            message.error('运行失败');
+        }
+    }, [onRun, buildCurrentDsl, runValidation, workflowMode]);
 
-    // ── 拖拽结束处理 (分组嵌套逻辑) ──
-    const onNodeDragStop = useCallback(
+    const handleNodeDragStop = useCallback(
         (_: React.MouseEvent, node: Node) => {
-            // Find intersecting group nodes
-            const intersections = reactFlow.getIntersectingNodes(node).filter((n) => n.type === 'group');
-            const groupNode = intersections[intersections.length - 1]; // Use the last one (topmost?)
+            const intersections = reactFlow.getIntersectingNodes(node).filter((item) => item.type === 'group');
+            const groupNode = intersections.at(-1);
 
-            // Case 1: Node Dropped INTO a Group
             if (groupNode && node.parentId !== groupNode.id) {
-                // Calculate relative position
-                // Note: reactFlow.getNode(groupNode.id) might be safer to ensure fresh position
                 const parentPos = groupNode.position;
-                // Using pure math for now, implicitly assuming single level nesting or flattened absolute positions?
-                // Actually React Flow nodes have absolute position in 'position' ONLY if no parent.
-                // If it has parent, it is relative.
-                // We need the *absolute* position of the node and the group to calculate new relative.
-                // node.position is current local position.
-
-                // Helper to get absolute position
-                const getAbsolutePosition = (n: Node): { x: number; y: number } => {
-                    if (!n.parentId) return n.position;
-                    const parent = nodes.find(p => p.id === n.parentId);
-                    if (!parent) return n.position;
-                    const parentAbs = getAbsolutePosition(parent);
-                    return { x: n.position.x + parentAbs.x, y: n.position.y + parentAbs.y };
+                const newPosition = {
+                    x: node.position.x - parentPos.x,
+                    y: node.position.y - parentPos.y,
                 };
-
-                const nodeAbs = getAbsolutePosition(node);
-                const groupAbs = getAbsolutePosition(groupNode);
-
-                const newRelativePos = {
-                    x: nodeAbs.x - groupAbs.x,
-                    y: nodeAbs.y - groupAbs.y,
-                };
-
-                updateNodeData(node.id, {
-                    // Update internal data if needed (dsl sync handles parentId prop change via onNodesChange? No, explicit update needed)
-                });
-
-                // We need to update the node object itself (parentId, extent, position)
-                setNodes((nds) =>
-                    nds.map((n) => {
-                        if (n.id === node.id) {
-                            return {
-                                ...n,
-                                position: newRelativePos,
+                setNodes((items) =>
+                    items.map((item) =>
+                        item.id === node.id
+                            ? {
+                                ...item,
+                                position: newPosition,
                                 parentId: groupNode.id,
                                 extent: 'parent',
-                            };
-                        }
-                        return n;
-                    })
+                            }
+                            : item,
+                    ),
                 );
-                message.success(`已加入分组: ${groupNode.data.name || 'Group'}`);
+                return;
             }
 
-            // Case 2: Node Dragged OUT of a Group (and not into another)
-            else if (!groupNode && node.parentId) {
-                // Convert relative to absolute
-                const getAbsolutePosition = (n: Node): { x: number; y: number } => {
-                    // Current node is relative to its CURRENT parent
-                    const parent = nodes.find(p => p.id === n.parentId);
-                    // Recursive or just single lookup? ReactFlow doesn't fully expose recursive getAbsolute currently without helper
-                    // Assuming single level for MVP or recursive look up
-                    if (!parent) return n.position;
-                    // We need parent's absolute position.
-                    // A cleaner way is using node.computed?.position if available? not in simple Node interface
-                    // Let's rely on stored node state lookup
-                    let x = n.position.x;
-                    let y = n.position.y;
-                    let currentParentId = n.parentId;
-
-                    while (currentParentId) {
-                        const parent = nodes.find(p => p.id === currentParentId);
-                        if (!parent) break;
-                        x += parent.position.x;
-                        y += parent.position.y;
-                        currentParentId = parent.parentId;
-                    }
-                    return { x, y };
+            if (!groupNode && node.parentId) {
+                const parent = nodes.find((item) => item.id === node.parentId);
+                if (!parent) {
+                    return;
+                }
+                const absolutePosition = {
+                    x: node.position.x + parent.position.x,
+                    y: node.position.y + parent.position.y,
                 };
-
-                const newAbs = getAbsolutePosition(node);
-
-                setNodes((nds) =>
-                    nds.map((n) => {
-                        if (n.id === node.id) {
-                            const { parentId, extent, ...rest } = n;
-                            return {
-                                ...rest,
-                                position: newAbs,
+                setNodes((items) =>
+                    items.map((item) =>
+                        item.id === node.id
+                            ? {
+                                ...item,
+                                position: absolutePosition,
                                 parentId: undefined,
                                 extent: undefined,
-                            };
-                        }
-                        return n;
-                    })
+                            }
+                            : item,
+                    ),
                 );
             }
         },
-        [reactFlow, nodes, setNodes]
+        [reactFlow, setNodes, nodes],
     );
+
+    const handleContextCopy = useCallback(() => {
+        if (!menuState) {
+            return;
+        }
+        const source = nodes.find((node) => node.id === menuState.id);
+        if (!source) {
+            return;
+        }
+
+        takeSnapshot(nodes, edges);
+        const duplicatedNodeId = `${source.data.type}_${Date.now()}`;
+        const duplicatedData = JSON.parse(JSON.stringify(source.data)) as Node['data'];
+
+        setNodes((items) => [
+            ...items.map((item) => ({ ...item, selected: false })),
+            {
+                ...source,
+                id: duplicatedNodeId,
+                position: {
+                    x: source.position.x + 48,
+                    y: source.position.y + 48,
+                },
+                data: duplicatedData,
+                selected: true,
+            },
+        ]);
+
+        setSelectedNodeId(duplicatedNodeId);
+        setSelectedEdgeId(null);
+        message.success('节点已复制');
+    }, [menuState, nodes, edges, setNodes, takeSnapshot]);
+
+    const handleContextDelete = useCallback(() => {
+        if (!menuState) {
+            return;
+        }
+        takeSnapshot(nodes, edges);
+        setNodes((items) => items.filter((item) => item.id !== menuState.id));
+        setEdges((items) =>
+            items.filter((item) => item.source !== menuState.id && item.target !== menuState.id),
+        );
+        setSelectedNodeId(null);
+        setSelectedEdgeId(null);
+    }, [menuState, nodes, edges, takeSnapshot, setNodes, setEdges]);
+
+    const handleContextSaveTemplate = useCallback(() => {
+        if (!menuState) {
+            return;
+        }
+        const node = nodes.find((item) => item.id === menuState.id);
+        if (!node) {
+            return;
+        }
+        saveNodeTemplate({
+            name: String(node.data.name ?? node.data.type ?? '未命名模板'),
+            nodeType: String(node.data.type ?? ''),
+            description: `来自节点 ${node.id}`,
+            data: {
+                type: String(node.data.type ?? ''),
+                name: String(node.data.name ?? node.data.type ?? ''),
+                config: (node.data.config as Record<string, unknown>) ?? {},
+                runtimePolicy: node.data.runtimePolicy as Record<string, unknown> | undefined,
+                inputBindings: node.data.inputBindings as Record<string, unknown> | undefined,
+                outputSchema: node.data.outputSchema as string | Record<string, unknown> | undefined,
+                enabled: (node.data.enabled as boolean) ?? true,
+            },
+        });
+        message.success('节点模板已保存到本地模板库');
+    }, [menuState, nodes]);
 
     return (
         <div style={{ display: 'flex', width: '100%', height: '100%' }}>
-            {/* 左侧节点面板 */}
             {!isReadOnly && <NodePalette />}
 
-            {/* 中心画布 */}
             <div
                 ref={canvasRef}
                 style={{
@@ -442,6 +475,7 @@ const WorkflowCanvasInner: React.FC<WorkflowCanvasProps> = ({
                     display: 'flex',
                     flexDirection: 'column',
                     background: token.colorBgLayout,
+                    position: 'relative',
                 }}
             >
                 {!isReadOnly && (
@@ -451,23 +485,21 @@ const WorkflowCanvasInner: React.FC<WorkflowCanvasProps> = ({
                         onClearCanvas={handleClearCanvas}
                         isSaving={isSaving}
                         onRun={handleRun}
-                        onToggleLogs={handleToggleLogs}
+                        onToggleLogs={() => setShowLogPanel((value) => !value)}
                         selectionMode={selectionMode}
                         onSelectionModeChange={setSelectionMode}
                         workflowMode={workflowMode}
-                        onWorkflowModeChange={(mode) => {
-                            setWorkflowMode(mode);
-                            // TODO: Trigger validation when mode changes
-                        }}
+                        onWorkflowModeChange={setWorkflowMode}
                         onUndo={() => undo(nodes, edges, setNodes, setEdges)}
                         onRedo={() => redo(nodes, edges, setNodes, setEdges)}
                         canUndo={canUndo}
                         canRedo={canRedo}
                         onAutoLayout={() => onLayout('LR')}
-                        onToggleDebatePanel={() => setShowDebatePanel((v) => !v)}
+                        onToggleDebatePanel={() => setShowDebatePanel((value) => !value)}
                         snapToGrid={snapToGrid}
-                        onToggleSnapToGrid={() => setSnapToGrid((v) => !v)}
+                        onToggleSnapToGrid={() => setSnapToGrid((value) => !value)}
                         onAlign={alignNodes}
+                        onPublish={currentVersionId ? () => setIsTemplateModalOpen(true) : undefined}
                     />
                 )}
 
@@ -476,14 +508,14 @@ const WorkflowCanvasInner: React.FC<WorkflowCanvasProps> = ({
                     onDragOver={handleDragOver}
                     onDrop={handleDrop}
                 >
-                    {validationErrors.length > 0 && (
-                        <div style={{ position: 'absolute', top: 16, right: 16, zIndex: 10, maxWidth: 300 }}>
+                    {validationErrors.length > 0 ? (
+                        <div style={{ position: 'absolute', top: 16, right: 16, zIndex: 10, maxWidth: 320 }}>
                             <Alert
                                 message="工作流校验未通过"
                                 description={
                                     <ul style={{ paddingLeft: 20, margin: 0 }}>
-                                        {validationErrors.map((err, idx) => (
-                                            <li key={idx}>{err}</li>
+                                        {validationErrors.map((error, index) => (
+                                            <li key={index}>{error}</li>
                                         ))}
                                     </ul>
                                 }
@@ -492,7 +524,8 @@ const WorkflowCanvasInner: React.FC<WorkflowCanvasProps> = ({
                                 closable
                             />
                         </div>
-                    )}
+                    ) : null}
+
                     <ReactFlow
                         nodes={nodes}
                         edges={edges}
@@ -502,10 +535,11 @@ const WorkflowCanvasInner: React.FC<WorkflowCanvasProps> = ({
                         onNodeClick={handleNodeClick}
                         onEdgeClick={handleEdgeClick}
                         onPaneClick={handlePaneClick}
-                        onNodeDragStop={isReadOnly ? undefined : onNodeDragStop}
+                        onNodeContextMenu={isReadOnly ? undefined : onNodeContextMenu}
+                        onNodeDragStop={isReadOnly ? undefined : handleNodeDragStop}
                         nodeTypes={nodeTypes}
                         fitView
-                        snapToGrid
+                        snapToGrid={snapToGrid}
                         snapGrid={[16, 16]}
                         deleteKeyCode={isReadOnly ? null : 'Delete'}
                         defaultEdgeOptions={{
@@ -514,7 +548,6 @@ const WorkflowCanvasInner: React.FC<WorkflowCanvasProps> = ({
                             style: { strokeWidth: 2 },
                         }}
                         proOptions={{ hideAttribution: true }}
-                        // Selection Mode Support
                         panOnDrag={selectionMode === 'hand'}
                         selectionOnDrag={selectionMode === 'pointer'}
                         selectionMode={selectionMode === 'pointer' ? SelectionMode.Partial : undefined}
@@ -532,23 +565,21 @@ const WorkflowCanvasInner: React.FC<WorkflowCanvasProps> = ({
                     </ReactFlow>
                 </div>
 
-                {/* 底部运行日志面板 */}
-                {showLogPanel && (
+                {showLogPanel ? (
                     <RunLogPanel
                         executionId={executionId}
                         height={logPanelHeight}
                         onHeightChange={setLogPanelHeight}
                         onClose={() => setShowLogPanel(false)}
                     />
-                )}
+                ) : null}
 
-                {/* 辩论时间线面板 */}
-                {showDebatePanel && (
+                {showDebatePanel ? (
                     <div
                         style={{
                             position: 'absolute',
-                            top: 60, // below toolbar
-                            right: 320, // left of property panel
+                            top: 60,
+                            right: 320,
                             bottom: showLogPanel ? logPanelHeight : 0,
                             width: 350,
                             zIndex: 90,
@@ -557,16 +588,15 @@ const WorkflowCanvasInner: React.FC<WorkflowCanvasProps> = ({
                     >
                         <DebateTimelinePanel
                             executionId={executionId}
-                            height={debatePanelHeight} // Actually height here might be '100%' if it's a side panel
-                            onHeightChange={setDebatePanelHeight} // Use this as width maybe? For now just keep vertical 
+                            height={debatePanelHeight}
+                            onHeightChange={setDebatePanelHeight}
                             onClose={() => setShowDebatePanel(false)}
                         />
                     </div>
-                )}
+                ) : null}
             </div>
 
-            {/* 右侧属性面板 */}
-            {!isReadOnly && (selectedNode || selectedEdge) && (
+            {!isReadOnly && (selectedNode || selectedEdge) ? (
                 <PropertyPanel
                     selectedNode={selectedNode}
                     selectedEdge={selectedEdge}
@@ -577,14 +607,34 @@ const WorkflowCanvasInner: React.FC<WorkflowCanvasProps> = ({
                         setSelectedEdgeId(null);
                     }}
                 />
-            )}
+            ) : null}
+
+            {menuState ? (
+                <NodeContextMenu
+                    id={menuState.id}
+                    top={menuState.top}
+                    left={menuState.left}
+                    onCopy={handleContextCopy}
+                    onDelete={handleContextDelete}
+                    onSaveTemplate={handleContextSaveTemplate}
+                    onClose={() => setMenuState(null)}
+                />
+            ) : null}
+
+            {currentVersionId ? (
+                <SaveTemplateModal
+                    open={isTemplateModalOpen}
+                    onClose={() => setIsTemplateModalOpen(false)}
+                    sourceVersionId={currentVersionId}
+                    sourceWorkflowDefinitionId={currentDefinitionId}
+                    initialName={initialDsl?.name}
+                    initialCode={initialDsl?.workflowId !== 'new' ? initialDsl?.workflowId : undefined}
+                />
+            ) : null}
         </div>
     );
 };
 
-/**
- * 工作流可视化画布
- */
 export const WorkflowCanvas: React.FC<WorkflowCanvasProps> = (props) => {
     return (
         <ReactFlowProvider>

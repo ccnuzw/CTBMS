@@ -1476,6 +1476,8 @@ export const WorkflowDefinitionPage: React.FC = () => {
               onSave={handleSaveStudioDsl}
               onRun={handleStudioRun}
               onValidate={handleStudioValidate}
+              currentVersionId={studioVersion.id}
+              currentDefinitionId={selectedDefinition?.id}
             />
           </div>
         ) : null}

@@ -77,7 +77,7 @@ export class WorkflowExecutionService {
   async trigger(
     ownerUserId: string,
     dto: TriggerWorkflowExecutionDto,
-    options?: { sourceExecutionId?: string; subflowDepth?: number },
+    options?: { sourceExecutionId?: string; subflowDepth?: number; subflowPath?: string[] },
   ) {
     const subflowDepth = options?.subflowDepth ?? 0;
     if (subflowDepth > MAX_SUBFLOW_DEPTH) {
@@ -94,6 +94,11 @@ export class WorkflowExecutionService {
     if (!definition) {
       throw new NotFoundException('流程不存在或无权限执行');
     }
+    const subflowPath = options?.subflowPath ?? [];
+    if (subflowPath.includes(definition.id)) {
+      throw new BadRequestException(`检测到子流程循环调用: ${[...subflowPath, definition.id].join(' -> ')}`);
+    }
+    const nextSubflowPath = [...subflowPath, definition.id];
 
     const idempotencyKey = dto.idempotencyKey?.trim() || undefined;
     if (idempotencyKey && dto.experimentId) {
@@ -249,6 +254,7 @@ export class WorkflowExecutionService {
           triggerType: dto.triggerType,
           sourceExecutionId: options?.sourceExecutionId ?? null,
           subflowDepth,
+          subflowPath: nextSubflowPath,
           idempotencyKey: idempotencyKey ?? null,
           experimentId: experimentRouting?.experimentId ?? null,
           experimentVariant: experimentRouting?.variant ?? null,
@@ -263,12 +269,13 @@ export class WorkflowExecutionService {
         paramSnapshot: mergedParamSnapshot,
         experimentRouting,
         subflowDepth,
+        subflowPath: nextSubflowPath,
         workflowDefinitionId: definition.id,
       });
     }
 
     const sortedNodes = this.sortNodesByEdges(dsl);
-    const incomingNodeMap = this.buildIncomingNodeMap(dsl.edges);
+    const incomingEdgeMap = this.buildIncomingEdgeMap(dsl.edges);
     const outgoingEdgeMap = this.buildOutgoingEdgeMap(dsl.edges);
     const outputsByNode = new Map<string, Record<string, unknown>>();
     const skipReasonByNode = new Map<string, string>();
@@ -341,8 +348,69 @@ export class WorkflowExecutionService {
           continue;
         }
 
+        const incomingSelection = this.selectLinearIncomingEdges(
+          node.id,
+          incomingEdgeMap,
+          outputsByNode,
+          mergedParamSnapshot,
+        );
+        if (incomingSelection.hasIncoming && incomingSelection.activeEdges.length === 0) {
+          const skipReason = `节点 ${node.name} 无满足条件的入边`;
+          const now = new Date();
+          const skippedOutput = {
+            skipped: true,
+            skipType: 'CONDITION_NOT_MATCHED',
+            skipReason,
+            nodeId: node.id,
+            nodeType: node.type,
+            _meta: {
+              skipType: 'CONDITION_NOT_MATCHED',
+            },
+          };
+          const skippedNodeExecution = await this.prisma.nodeExecution.create({
+            data: {
+              workflowExecutionId: execution.id,
+              nodeId: node.id,
+              nodeType: node.type,
+              status: 'SKIPPED',
+              startedAt: now,
+              completedAt: now,
+              durationMs: 0,
+              errorMessage: skipReason,
+              inputSnapshot: this.toJsonValue({}),
+              outputSnapshot: this.toJsonValue(skippedOutput),
+            },
+          });
+          await this.recordRuntimeEvent({
+            workflowExecutionId: execution.id,
+            nodeExecutionId: skippedNodeExecution.id,
+            eventType: 'NODE_SKIPPED',
+            level: 'WARN',
+            message: `节点 ${node.name} 已跳过`,
+            detail: {
+              nodeId: node.id,
+              nodeType: node.type,
+              reason: skipReason,
+            },
+          });
+          outputsByNode.set(node.id, skippedOutput);
+          continue;
+        }
+
         const startedAt = new Date();
-        const inputSnapshot = this.buildNodeInput(node.id, incomingNodeMap, outputsByNode);
+        const rawInputSnapshot = this.buildNodeInputFromEdges(
+          incomingSelection.activeEdges,
+          outputsByNode,
+        );
+        const nodeParamSnapshot = this.resolveNodeParamSnapshot(node, mergedParamSnapshot);
+        const inputSnapshot = this.resolveNodeInputBindings({
+          node,
+          rawInputSnapshot,
+          outputsByNode,
+          paramSnapshot: nodeParamSnapshot,
+          executionId: execution.id,
+          triggerUserId: ownerUserId,
+        });
         const nodeExecutor = this.nodeExecutorRegistry.resolve(node);
         const runtimePolicy = this.resolveRuntimePolicy(node, dsl.runPolicy);
 
@@ -374,10 +442,11 @@ export class WorkflowExecutionService {
                   ownerUserId,
                   node,
                   input: inputSnapshot,
-                  paramSnapshot: mergedParamSnapshot,
+                  paramSnapshot: nodeParamSnapshot,
                   sourceExecutionId: execution.id,
                   currentWorkflowDefinitionId: definition.id,
                   subflowDepth,
+                  subflowPath: nextSubflowPath,
                 });
                 if (customResult) {
                   return customResult;
@@ -387,7 +456,7 @@ export class WorkflowExecutionService {
                   triggerUserId: ownerUserId,
                   node,
                   input: inputSnapshot,
-                  paramSnapshot: mergedParamSnapshot,
+                  paramSnapshot: nodeParamSnapshot,
                 });
               },
               runtimePolicy.timeoutMs,
@@ -836,6 +905,7 @@ export class WorkflowExecutionService {
     ownerUserId: string;
     workflowDefinitionId: string;
     subflowDepth: number;
+    subflowPath: string[];
     dsl: WorkflowDsl;
     paramSnapshot?: Record<string, unknown>;
     experimentRouting: ExperimentRoutingContext;
@@ -905,6 +975,17 @@ export class WorkflowExecutionService {
             this.executeWithTimeout(task, timeoutMs, timeoutMessage),
           sleep: (ms) => this.sleep(ms),
           classifyFailure: (error) => this.classifyFailure(error),
+          resolveNodeParamSnapshot: ({ node, baseParamSnapshot }) =>
+            this.resolveNodeParamSnapshot(node, baseParamSnapshot),
+          resolveNodeInput: ({ node, rawInput, outputsByNode, paramSnapshot }) =>
+            this.resolveNodeInputBindings({
+              node,
+              rawInputSnapshot: rawInput,
+              outputsByNode,
+              paramSnapshot,
+              executionId: params.executionId,
+              triggerUserId: params.ownerUserId,
+            }),
           executeCustomNode: ({ node, input, paramSnapshot }) =>
             this.executeCustomNode({
               ownerUserId: params.ownerUserId,
@@ -914,6 +995,7 @@ export class WorkflowExecutionService {
               sourceExecutionId: params.executionId,
               currentWorkflowDefinitionId: params.workflowDefinitionId,
               subflowDepth: params.subflowDepth,
+              subflowPath: params.subflowPath,
             }),
         },
       });
@@ -1808,6 +1890,28 @@ export class WorkflowExecutionService {
     return base;
   }
 
+  private resolveNodeParamSnapshot(
+    node: WorkflowNode,
+    baseParamSnapshot: Record<string, unknown> | undefined,
+  ): Record<string, unknown> | undefined {
+    const config = (node.config ?? {}) as Record<string, unknown>;
+    const overrideMode =
+      config.paramOverrideMode === 'PRIVATE_OVERRIDE' ? 'PRIVATE_OVERRIDE' : 'INHERIT';
+    if (overrideMode !== 'PRIVATE_OVERRIDE') {
+      return baseParamSnapshot;
+    }
+
+    const rawOverrides = config.paramOverrides;
+    if (!rawOverrides || typeof rawOverrides !== 'object' || Array.isArray(rawOverrides)) {
+      return baseParamSnapshot;
+    }
+
+    return {
+      ...(baseParamSnapshot ?? {}),
+      ...(rawOverrides as Record<string, unknown>),
+    };
+  }
+
   private uniqueStringList(value: unknown): string[] {
     const source = Array.isArray(value) ? value : [];
     const set = new Set<string>();
@@ -1919,14 +2023,52 @@ export class WorkflowExecutionService {
       .filter((node): node is WorkflowNode => Boolean(node));
   }
 
-  private buildIncomingNodeMap(edges: WorkflowEdge[]): Map<string, string[]> {
-    const incomingNodeMap = new Map<string, string[]>();
+  private buildIncomingEdgeMap(edges: WorkflowEdge[]): Map<string, WorkflowEdge[]> {
+    const incomingEdgeMap = new Map<string, WorkflowEdge[]>();
     for (const edge of edges) {
-      const incomingNodeIds = incomingNodeMap.get(edge.to) || [];
-      incomingNodeIds.push(edge.from);
-      incomingNodeMap.set(edge.to, incomingNodeIds);
+      const incomingEdges = incomingEdgeMap.get(edge.to) || [];
+      incomingEdges.push(edge);
+      incomingEdgeMap.set(edge.to, incomingEdges);
     }
-    return incomingNodeMap;
+    return incomingEdgeMap;
+  }
+
+  private selectLinearIncomingEdges(
+    nodeId: string,
+    incomingEdgeMap: Map<string, WorkflowEdge[]>,
+    outputsByNode: Map<string, Record<string, unknown>>,
+    paramSnapshot?: Record<string, unknown>,
+  ): { hasIncoming: boolean; activeEdges: WorkflowEdge[] } {
+    const incomingEdges = incomingEdgeMap.get(nodeId) || [];
+    if (incomingEdges.length === 0) {
+      return { hasIncoming: false, activeEdges: [] };
+    }
+
+    const activeEdges: WorkflowEdge[] = [];
+    for (const edge of incomingEdges) {
+      const sourceOutput = outputsByNode.get(edge.from);
+      if (!sourceOutput) {
+        continue;
+      }
+      if (edge.edgeType === 'error-edge') {
+        const meta = this.readMeta(sourceOutput);
+        if (meta.onErrorRouting === 'ROUTE_TO_ERROR') {
+          activeEdges.push(edge);
+        }
+        continue;
+      }
+      if (edge.edgeType === 'condition-edge') {
+        if (!this.evaluateEdgeCondition(edge.condition, sourceOutput, paramSnapshot, edge.from)) {
+          continue;
+        }
+      }
+      activeEdges.push(edge);
+    }
+
+    return {
+      hasIncoming: true,
+      activeEdges,
+    };
   }
 
   private async executeCustomNode(params: {
@@ -1937,6 +2079,7 @@ export class WorkflowExecutionService {
     sourceExecutionId: string;
     currentWorkflowDefinitionId: string;
     subflowDepth: number;
+    subflowPath: string[];
   }): Promise<NodeExecutionResult | null> {
     if (params.node.type !== 'subflow-call') {
       return null;
@@ -1953,6 +2096,7 @@ export class WorkflowExecutionService {
     sourceExecutionId: string;
     currentWorkflowDefinitionId: string;
     subflowDepth: number;
+    subflowPath: string[];
   }): Promise<NodeExecutionResult> {
     const config = (params.node.config ?? {}) as Record<string, unknown>;
     const workflowDefinitionId =
@@ -1988,6 +2132,7 @@ export class WorkflowExecutionService {
       {
         sourceExecutionId: params.sourceExecutionId,
         subflowDepth: params.subflowDepth + 1,
+        subflowPath: params.subflowPath,
       },
     );
     if (!childExecution) {
@@ -2022,25 +2167,243 @@ export class WorkflowExecutionService {
     return outgoingEdgeMap;
   }
 
-  private buildNodeInput(
-    nodeId: string,
-    incomingNodeMap: Map<string, string[]>,
+  private buildNodeInputFromEdges(
+    incomingEdges: WorkflowEdge[],
     outputsByNode: Map<string, Record<string, unknown>>,
   ): Record<string, unknown> {
-    const incomingNodeIds = incomingNodeMap.get(nodeId) || [];
-    if (incomingNodeIds.length === 0) {
+    if (incomingEdges.length === 0) {
       return {};
     }
 
-    if (incomingNodeIds.length === 1) {
-      return outputsByNode.get(incomingNodeIds[0]) || {};
+    if (incomingEdges.length === 1) {
+      return outputsByNode.get(incomingEdges[0].from) || {};
     }
 
     const branchOutputs: Record<string, unknown> = {};
-    for (const incomingNodeId of incomingNodeIds) {
-      branchOutputs[incomingNodeId] = outputsByNode.get(incomingNodeId) || {};
+    for (const edge of incomingEdges) {
+      branchOutputs[edge.from] = outputsByNode.get(edge.from) || {};
     }
     return { branches: branchOutputs };
+  }
+
+  private resolveNodeInputBindings(params: {
+    node: WorkflowNode;
+    rawInputSnapshot: Record<string, unknown>;
+    outputsByNode: Map<string, Record<string, unknown>>;
+    paramSnapshot?: Record<string, unknown>;
+    executionId: string;
+    triggerUserId: string;
+  }): Record<string, unknown> {
+    const inputBindings = params.node.inputBindings;
+    if (!inputBindings || typeof inputBindings !== 'object' || Array.isArray(inputBindings)) {
+      return params.rawInputSnapshot;
+    }
+
+    const bindingResult = this.variableResolver.resolveMapping(inputBindings, {
+      currentNodeId: params.node.id,
+      outputsByNode: params.outputsByNode,
+      paramSnapshot: params.paramSnapshot,
+      meta: {
+        executionId: params.executionId,
+        triggerUserId: params.triggerUserId,
+        timestamp: new Date().toISOString(),
+      },
+    });
+    if (bindingResult.unresolvedVars.length > 0) {
+      throw new BadRequestException(
+        `节点 ${params.node.name} 的 inputBindings 无法解析: ${bindingResult.unresolvedVars.join(', ')}`,
+      );
+    }
+
+    return {
+      ...params.rawInputSnapshot,
+      ...bindingResult.resolved,
+    };
+  }
+
+  private evaluateEdgeCondition(
+    condition: unknown,
+    sourceOutput: Record<string, unknown>,
+    paramSnapshot?: Record<string, unknown>,
+    sourceNodeId?: string,
+  ): boolean {
+    if (condition === null || condition === undefined) {
+      return false;
+    }
+    if (typeof condition === 'boolean') {
+      return condition;
+    }
+    if (typeof condition === 'object') {
+      const cond = condition as Record<string, unknown>;
+      const field = typeof cond.field === 'string' ? cond.field : '';
+      const operator = typeof cond.operator === 'string' ? cond.operator.toLowerCase() : '';
+      const expected = cond.value;
+      if (!field || !operator) {
+        return false;
+      }
+      const actual = this.readValueByPath(sourceOutput, field);
+      return this.compareConditionValues(actual, expected, operator);
+    }
+    if (typeof condition !== 'string') {
+      return false;
+    }
+
+    const expression = condition.trim();
+    if (!expression) {
+      return false;
+    }
+    if (expression === 'true') {
+      return true;
+    }
+    if (expression === 'false') {
+      return false;
+    }
+
+      const resolvedExpression = expression.replace(/\{\{\s*([^}]+?)\s*\}\}/g, (_, rawRef: string) => {
+        const ref = rawRef.trim();
+        let value: unknown;
+        if (ref.startsWith('params.')) {
+          value = this.readValueByPath(paramSnapshot ?? {}, ref.slice('params.'.length));
+        } else {
+          const normalizedPath =
+            sourceNodeId && ref.startsWith(`${sourceNodeId}.`)
+              ? ref.slice(sourceNodeId.length + 1)
+              : ref;
+          value = this.readValueByPath(sourceOutput, normalizedPath);
+        }
+        return JSON.stringify(value);
+      });
+
+    const comparisonMatch = resolvedExpression.match(/^\s*(.+?)\s*(==|!=|>=|<=|>|<)\s*(.+)\s*$/);
+    if (!comparisonMatch) {
+      const single = this.parseConditionLiteral(resolvedExpression);
+      return Boolean(single);
+    }
+
+    const left = this.parseConditionLiteral(comparisonMatch[1]);
+    const operator = comparisonMatch[2];
+    const right = this.parseConditionLiteral(comparisonMatch[3]);
+    return this.compareConditionValues(left, right, operator);
+  }
+
+  private parseConditionLiteral(raw: string): unknown {
+    const value = raw.trim();
+    if (!value) {
+      return '';
+    }
+    if (value === 'true') {
+      return true;
+    }
+    if (value === 'false') {
+      return false;
+    }
+    if (value === 'null') {
+      return null;
+    }
+    if (
+      (value.startsWith('"') && value.endsWith('"')) ||
+      (value.startsWith("'") && value.endsWith("'"))
+    ) {
+      return value.slice(1, -1);
+    }
+    const parsedNumber = Number(value);
+    if (Number.isFinite(parsedNumber)) {
+      return parsedNumber;
+    }
+    try {
+      return JSON.parse(value);
+    } catch {
+      return value;
+    }
+  }
+
+  private compareConditionValues(actual: unknown, expected: unknown, operator: string): boolean {
+    const normalizeOperator = operator.toLowerCase();
+    if (normalizeOperator === '==') {
+      return actual === expected;
+    }
+    if (normalizeOperator === '!=') {
+      return actual !== expected;
+    }
+    if (normalizeOperator === 'eq') {
+      return actual === expected;
+    }
+    if (normalizeOperator === 'neq') {
+      return actual !== expected;
+    }
+    if (normalizeOperator === 'in') {
+      return Array.isArray(expected) && expected.includes(actual);
+    }
+    if (normalizeOperator === 'not_in') {
+      return Array.isArray(expected) && !expected.includes(actual);
+    }
+    if (normalizeOperator === 'exists') {
+      return actual !== undefined && actual !== null;
+    }
+    if (normalizeOperator === 'not_exists') {
+      return actual === undefined || actual === null;
+    }
+
+    const actualNumber = this.toFiniteNumber(actual);
+    const expectedNumber = this.toFiniteNumber(expected);
+    if (actualNumber === null || expectedNumber === null) {
+      return false;
+    }
+
+    if (normalizeOperator === '>' || normalizeOperator === 'gt') {
+      return actualNumber > expectedNumber;
+    }
+    if (normalizeOperator === '>=' || normalizeOperator === 'gte') {
+      return actualNumber >= expectedNumber;
+    }
+    if (normalizeOperator === '<' || normalizeOperator === 'lt') {
+      return actualNumber < expectedNumber;
+    }
+    if (normalizeOperator === '<=' || normalizeOperator === 'lte') {
+      return actualNumber <= expectedNumber;
+    }
+    return false;
+  }
+
+  private toFiniteNumber(value: unknown): number | null {
+    if (typeof value === 'number' && Number.isFinite(value)) {
+      return value;
+    }
+    if (typeof value === 'string' && value.trim()) {
+      const parsed = Number(value);
+      return Number.isFinite(parsed) ? parsed : null;
+    }
+    return null;
+  }
+
+  private readValueByPath(source: Record<string, unknown>, path: string): unknown {
+    if (!path.trim()) {
+      return undefined;
+    }
+    const parts = path
+      .replace(/\[(\d+)\]/g, '.$1')
+      .split('.')
+      .map((item) => item.trim())
+      .filter(Boolean);
+    let current: unknown = source;
+    for (const part of parts) {
+      if (current === null || current === undefined) {
+        return undefined;
+      }
+      if (Array.isArray(current)) {
+        const index = Number(part);
+        if (!Number.isInteger(index) || index < 0 || index >= current.length) {
+          return undefined;
+        }
+        current = current[index];
+        continue;
+      }
+      if (typeof current !== 'object') {
+        return undefined;
+      }
+      current = (current as Record<string, unknown>)[part];
+    }
+    return current;
   }
 
   private resolveRuntimePolicy(

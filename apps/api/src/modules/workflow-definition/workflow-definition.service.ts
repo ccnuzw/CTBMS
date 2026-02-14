@@ -247,7 +247,11 @@ export class WorkflowDefinitionService {
       });
     }
     this.ensureRiskGateBindingsValid(parsedDsl.data);
-    const governanceIssues = await this.validateGovernanceForPublish(ownerUserId, parsedDsl.data);
+    const governanceIssues = await this.validateGovernanceForPublish(
+      ownerUserId,
+      parsedDsl.data,
+      definition.id,
+    );
     if (governanceIssues.length > 0) {
       throw new BadRequestException({
         message: '发布校验失败',
@@ -618,6 +622,7 @@ export class WorkflowDefinitionService {
   private async validateGovernanceForPublish(
     ownerUserId: string,
     dslSnapshot: WorkflowDsl,
+    currentWorkflowDefinitionId: string,
   ): Promise<WorkflowValidationIssue[]> {
     const issues: WorkflowValidationIssue[] = [];
 
@@ -764,7 +769,11 @@ export class WorkflowDefinitionService {
       }
     }
 
-    const subflowIssues = await this.validateSubflowReferencesForPublish(ownerUserId, dslSnapshot);
+    const subflowIssues = await this.validateSubflowReferencesForPublish(
+      ownerUserId,
+      dslSnapshot,
+      currentWorkflowDefinitionId,
+    );
     issues.push(...subflowIssues);
 
     return issues;
@@ -773,6 +782,7 @@ export class WorkflowDefinitionService {
   private async validateSubflowReferencesForPublish(
     ownerUserId: string,
     dslSnapshot: WorkflowDsl,
+    currentWorkflowDefinitionId: string,
   ): Promise<WorkflowValidationIssue[]> {
     const issues: WorkflowValidationIssue[] = [];
     const subflowNodes = dslSnapshot.nodes.filter((node) => node.type === 'subflow-call');
@@ -792,6 +802,15 @@ export class WorkflowDefinitionService {
           code: 'WF107',
           severity: 'ERROR',
           message: `subflow-call 节点 ${node.name} 缺少 workflowDefinitionId`,
+          nodeId: node.id,
+        });
+        continue;
+      }
+      if (workflowDefinitionId === currentWorkflowDefinitionId) {
+        issues.push({
+          code: 'WF107',
+          severity: 'ERROR',
+          message: `subflow-call 节点 ${node.name} 不允许引用当前流程自身`,
           nodeId: node.id,
         });
         continue;

@@ -66,6 +66,20 @@ export interface DagNodeCallbacks {
         input: Record<string, unknown>;
         paramSnapshot?: Record<string, unknown>;
     }) => Promise<NodeExecutionResult | null>;
+    /** 解析节点级参数快照（用于节点私有参数覆盖） */
+    resolveNodeParamSnapshot?: (params: {
+        node: WorkflowNode;
+        baseParamSnapshot?: Record<string, unknown>;
+    }) => Record<string, unknown> | undefined;
+    /** 基于 inputBindings / 变量表达式对节点输入做最终解析 */
+    resolveNodeInput?: (params: {
+        executionId: string;
+        triggerUserId: string;
+        node: WorkflowNode;
+        rawInput: Record<string, unknown>;
+        outputsByNode: Map<string, Record<string, unknown>>;
+        paramSnapshot?: Record<string, unknown>;
+    }) => Promise<Record<string, unknown>> | Record<string, unknown>;
 }
 
 /**
@@ -154,7 +168,7 @@ export class DagScheduler {
                 if (skipReason) return false;
 
                 // 检查条件边
-                if (!this.evaluateIncomingConditions(node.id, incomingEdgeMap, outputsByNode)) {
+                if (!this.evaluateIncomingConditions(node.id, incomingEdgeMap, outputsByNode, paramSnapshot)) {
                     skipReasonByNode.set(node.id, `条件边未满足`);
                     return false;
                 }
@@ -398,7 +412,20 @@ export class DagScheduler {
         onError: string;
     }> {
         const startedAt = new Date();
-        const inputSnapshot = this.buildNodeInput(node.id, incomingEdgeMap, outputsByNode);
+        const nodeParamSnapshot = callbacks.resolveNodeParamSnapshot
+            ? callbacks.resolveNodeParamSnapshot({ node, baseParamSnapshot: paramSnapshot })
+            : paramSnapshot;
+        const rawInputSnapshot = this.buildNodeInput(node.id, incomingEdgeMap, outputsByNode);
+        const inputSnapshot = callbacks.resolveNodeInput
+            ? await callbacks.resolveNodeInput({
+                executionId,
+                triggerUserId,
+                node,
+                rawInput: rawInputSnapshot,
+                outputsByNode,
+                paramSnapshot: nodeParamSnapshot,
+            })
+            : rawInputSnapshot;
         const nodeExecutor = this.nodeExecutorRegistry.resolve(node);
         const runtimePolicy = callbacks.resolveRuntimePolicy(node, runPolicy);
 
@@ -433,7 +460,7 @@ export class DagScheduler {
                                 triggerUserId,
                                 node,
                                 input: inputSnapshot,
-                                paramSnapshot,
+                                paramSnapshot: nodeParamSnapshot,
                             })
                             : null;
 
@@ -446,7 +473,7 @@ export class DagScheduler {
                             triggerUserId,
                             node,
                             input: inputSnapshot,
-                            paramSnapshot,
+                            paramSnapshot: nodeParamSnapshot,
                         });
                     },
                     runtimePolicy.timeoutMs,
@@ -600,6 +627,7 @@ export class DagScheduler {
         nodeId: string,
         incomingEdgeMap: Map<string, WorkflowEdge[]>,
         outputsByNode: Map<string, Record<string, unknown>>,
+        paramSnapshot?: Record<string, unknown>,
     ): boolean {
         const incomingEdges = incomingEdgeMap.get(nodeId) ?? [];
         if (incomingEdges.length === 0) return true;
@@ -611,7 +639,7 @@ export class DagScheduler {
             // condition-edge: 评估条件表达式
             if (edge.edgeType === 'condition-edge' && edge.condition) {
                 const sourceOutput = outputsByNode.get(edge.from) ?? {};
-                if (!this.evaluateCondition(edge.condition, sourceOutput)) {
+                if (!this.evaluateCondition(edge.condition, sourceOutput, paramSnapshot, edge.from)) {
                     return false;
                 }
             }
@@ -631,18 +659,49 @@ export class DagScheduler {
     private evaluateCondition(
         condition: unknown,
         sourceOutput: Record<string, unknown>,
+        paramSnapshot?: Record<string, unknown>,
+        sourceNodeId?: string,
     ): boolean {
         if (typeof condition === 'boolean') return condition;
+        if (typeof condition === 'string') {
+            const expression = condition.trim();
+            if (!expression) return false;
+            if (expression === 'true') return true;
+            if (expression === 'false') return false;
+
+            const resolvedExpression = expression.replace(/\{\{\s*([^}]+?)\s*\}\}/g, (_, rawRef: string) => {
+                const ref = rawRef.trim();
+                let value: unknown;
+                if (ref.startsWith('params.')) {
+                    value = this.readValueByPath(paramSnapshot ?? {}, ref.slice('params.'.length));
+                } else {
+                    const normalizedPath =
+                        sourceNodeId && ref.startsWith(`${sourceNodeId}.`)
+                            ? ref.slice(sourceNodeId.length + 1)
+                            : ref;
+                    value = this.readValueByPath(sourceOutput, normalizedPath);
+                }
+                return JSON.stringify(value);
+            });
+            const comparison = resolvedExpression.match(/^\s*(.+?)\s*(==|!=|>=|<=|>|<)\s*(.+)\s*$/);
+            if (!comparison) {
+                return Boolean(this.parseLiteral(resolvedExpression));
+            }
+            const left = this.parseLiteral(comparison[1]);
+            const operator = comparison[2];
+            const right = this.parseLiteral(comparison[3]);
+            return this.compareValues(left, right, operator);
+        }
         if (!condition || typeof condition !== 'object') return true;
 
         const cond = condition as Record<string, unknown>;
         const field = cond.field as string;
-        const operator = cond.operator as string;
+        const operator = (cond.operator as string)?.toLowerCase();
         const expected = cond.value;
 
         if (!field || !operator) return true;
 
-        const actual = sourceOutput[field];
+        const actual = this.readValueByPath(sourceOutput, field);
 
         switch (operator) {
             case 'eq':
@@ -668,6 +727,73 @@ export class DagScheduler {
             default:
                 return true;
         }
+    }
+
+    private parseLiteral(raw: string): unknown {
+        const value = raw.trim();
+        if (!value) return '';
+        if (value === 'true') return true;
+        if (value === 'false') return false;
+        if (value === 'null') return null;
+        if (
+            (value.startsWith('"') && value.endsWith('"')) ||
+            (value.startsWith("'") && value.endsWith("'"))
+        ) {
+            return value.slice(1, -1);
+        }
+        const parsed = Number(value);
+        if (Number.isFinite(parsed)) return parsed;
+        try {
+            return JSON.parse(value);
+        } catch {
+            return value;
+        }
+    }
+
+    private compareValues(left: unknown, right: unknown, operator: string): boolean {
+        if (operator === '==') return left === right;
+        if (operator === '!=') return left !== right;
+        const leftNum = this.toFiniteNumber(left);
+        const rightNum = this.toFiniteNumber(right);
+        if (leftNum === null || rightNum === null) return false;
+        if (operator === '>') return leftNum > rightNum;
+        if (operator === '>=') return leftNum >= rightNum;
+        if (operator === '<') return leftNum < rightNum;
+        if (operator === '<=') return leftNum <= rightNum;
+        return false;
+    }
+
+    private toFiniteNumber(value: unknown): number | null {
+        if (typeof value === 'number' && Number.isFinite(value)) return value;
+        if (typeof value === 'string' && value.trim()) {
+            const parsed = Number(value);
+            if (Number.isFinite(parsed)) return parsed;
+        }
+        return null;
+    }
+
+    private readValueByPath(source: Record<string, unknown>, path: string): unknown {
+        if (!path.trim()) return undefined;
+        const parts = path
+            .replace(/\[(\d+)\]/g, '.$1')
+            .split('.')
+            .map((item) => item.trim())
+            .filter(Boolean);
+        let current: unknown = source;
+        for (const part of parts) {
+            if (current === null || current === undefined) return undefined;
+            if (Array.isArray(current)) {
+                const index = Number(part);
+                if (!Number.isInteger(index) || index < 0 || index >= current.length) {
+                    return undefined;
+                }
+                current = current[index];
+                continue;
+            }
+            if (typeof current !== 'object') return undefined;
+            current = (current as Record<string, unknown>)[part];
+        }
+        return current;
     }
 
     /**

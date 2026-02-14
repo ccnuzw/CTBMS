@@ -9,6 +9,7 @@ export * from './modules/price-submission.js';
 export * from './modules/dictionary.js';
 export * from './modules/ai.js';
 export * from './modules/workflow.js';
+export * from './modules/workflow-node-contract.js';
 export * from './modules/decision-rule.js';
 export * from './modules/agent-workflow.js';
 export * from './modules/parameter-rule.js';

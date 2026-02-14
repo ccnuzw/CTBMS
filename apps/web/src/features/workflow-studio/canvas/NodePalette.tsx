@@ -1,12 +1,13 @@
 import React, { type DragEvent, useState, useMemo } from 'react';
-import { Input, Collapse, Tooltip, theme, Typography, Tag } from 'antd';
-import { SearchOutlined } from '@ant-design/icons';
+import { Input, Collapse, Tooltip, theme, Typography, Tag, Button, Empty } from 'antd';
+import { SearchOutlined, DeleteOutlined } from '@ant-design/icons';
 import {
     getNodesByCategory,
     CATEGORY_LABELS,
     type NodeCategory,
     type NodeTypeConfig,
 } from './nodeTypeRegistry';
+import { removeNodeTemplate, useNodeTemplates } from './nodeTemplateStore';
 
 const { Text } = Typography;
 
@@ -24,6 +25,7 @@ export const NodePalette: React.FC<NodePaletteProps> = ({ style }) => {
     const { token } = theme.useToken();
     const [search, setSearch] = useState('');
     const categories = useMemo(() => getNodesByCategory(), []);
+    const templates = useNodeTemplates();
 
     const filteredGroups: [NodeCategory, NodeTypeConfig[]][] = Object.entries(categories)
         .map(([category, configs]) => {
@@ -37,8 +39,25 @@ export const NodePalette: React.FC<NodePaletteProps> = ({ style }) => {
         })
         .filter(([, configs]) => configs.length > 0);
 
+    const filteredTemplates = templates.filter((template) => {
+        if (!search) {
+            return true;
+        }
+        const keyword = search.toLowerCase();
+        return (
+            template.name.toLowerCase().includes(keyword)
+            || template.nodeType.toLowerCase().includes(keyword)
+            || (template.description ?? '').toLowerCase().includes(keyword)
+        );
+    });
+
     const handleDragStart = (event: DragEvent<HTMLDivElement>, nodeType: string) => {
         event.dataTransfer.setData('application/workflow-node-type', nodeType);
+        event.dataTransfer.effectAllowed = 'move';
+    };
+
+    const handleTemplateDragStart = (event: DragEvent<HTMLDivElement>, templateId: string) => {
+        event.dataTransfer.setData('application/workflow-node-template-id', templateId);
         event.dataTransfer.effectAllowed = 'move';
     };
 
@@ -142,6 +161,55 @@ export const NodePalette: React.FC<NodePaletteProps> = ({ style }) => {
             </div>
 
             <div style={{ flex: 1, overflow: 'auto', padding: '0 8px 12px' }}>
+                <div style={{ marginBottom: 8 }}>
+                    <Text strong style={{ fontSize: 12, color: token.colorTextSecondary }}>
+                        节点模板
+                    </Text>
+                    {filteredTemplates.length === 0 ? (
+                        <Empty
+                            image={Empty.PRESENTED_IMAGE_SIMPLE}
+                            description="暂无模板"
+                            style={{ margin: '8px 0 0', padding: '8px 0' }}
+                        />
+                    ) : (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginTop: 8 }}>
+                            {filteredTemplates.map((template) => (
+                                <div
+                                    key={template.id}
+                                    draggable
+                                    onDragStart={(event) => handleTemplateDragStart(event, template.id)}
+                                    style={{
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: 8,
+                                        padding: '8px 10px',
+                                        borderRadius: token.borderRadius,
+                                        border: `1px solid ${token.colorBorderSecondary}`,
+                                        background: token.colorBgContainer,
+                                        cursor: 'grab',
+                                    }}
+                                >
+                                    <Tag bordered={false} color="blue" style={{ margin: 0 }}>
+                                        模板
+                                    </Tag>
+                                    <Text style={{ fontSize: 12, flex: 1 }} ellipsis>
+                                        {template.name}
+                                    </Text>
+                                    <Button
+                                        type="text"
+                                        size="small"
+                                        icon={<DeleteOutlined />}
+                                        onClick={(event) => {
+                                            event.stopPropagation();
+                                            removeNodeTemplate(template.id);
+                                        }}
+                                    />
+                                </div>
+                            ))}
+                        </div>
+                    )}
+                </div>
+
                 <Collapse
                     bordered={false}
                     defaultActiveKey={['TRIGGER', 'DATA']}

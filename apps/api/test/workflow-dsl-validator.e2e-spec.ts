@@ -176,6 +176,60 @@ async function main() {
     assertHasIssue(dsl, 'WF205');
   }
 
+  // WF107: subflow-call 配置缺失/非法
+  {
+    const dsl = createBaseDsl();
+    dsl.nodes = [
+      { id: 'n1', type: 'manual-trigger', name: 'trigger', enabled: true, config: {} },
+      {
+        id: 'n2',
+        type: 'subflow-call',
+        name: 'subflow',
+        enabled: true,
+        config: {
+          workflowDefinitionId: '',
+          workflowVersionId: 123 as unknown as string,
+        },
+      },
+      { id: 'n3', type: 'notify', name: 'notify', enabled: true, config: { channels: ['DASHBOARD'] } },
+    ];
+    dsl.edges = [
+      { id: 'e1', from: 'n1', to: 'n2', edgeType: 'control-edge' },
+      { id: 'e2', from: 'n2', to: 'n3', edgeType: 'control-edge' },
+    ];
+    assertHasIssue(dsl, 'WF107');
+  }
+
+  // WF001: 不支持的节点类型
+  {
+    const dsl = createBaseDsl();
+    dsl.nodes = [
+      { id: 'n1', type: 'manual-trigger', name: 'trigger', enabled: true, config: {} },
+      { id: 'n2', type: 'unknown-custom-node', name: 'unknown', enabled: true, config: {} },
+    ];
+    dsl.edges = [{ id: 'e1', from: 'n1', to: 'n2', edgeType: 'control-edge' }];
+    assertHasIssue(dsl, 'WF001');
+  }
+
+  // WF001: 节点配置 schema 非法
+  {
+    const dsl = createBaseDsl();
+    dsl.nodes = [
+      {
+        id: 'n1',
+        type: 'cron-trigger',
+        name: 'trigger',
+        enabled: true,
+        config: {
+          cronExpression: 123 as unknown as string,
+        },
+      },
+      { id: 'n2', type: 'notify', name: 'notify', enabled: true, config: { channels: ['DASHBOARD'] } },
+    ];
+    dsl.edges = [{ id: 'e1', from: 'n1', to: 'n2', edgeType: 'control-edge' }];
+    assertHasIssue(dsl, 'WF001');
+  }
+
   // WF304: 发布前 ownerUserId 必填
   {
     const dsl = createBaseDsl();

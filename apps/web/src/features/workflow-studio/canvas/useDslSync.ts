@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import {
     useNodesState,
     useEdgesState,
@@ -16,6 +16,15 @@ import {
 } from '@packages/types';
 import { getNodeTypeConfig } from './nodeTypeRegistry';
 
+interface AddNodePreset {
+    name?: string;
+    enabled?: boolean;
+    config?: Record<string, unknown>;
+    runtimePolicy?: Record<string, unknown>;
+    inputBindings?: Record<string, unknown>;
+    outputSchema?: string | Record<string, unknown>;
+}
+
 export const useDslSync = (
     initialDsl: WorkflowDsl,
     onChange?: (dsl: WorkflowDsl) => void,
@@ -26,7 +35,7 @@ export const useDslSync = (
 
     const dslRef = useRef<WorkflowDsl>(initialDsl);
 
-    useMemo(() => {
+    useEffect(() => {
         if (!initialDsl) {
             setNodes([]);
             setEdges([]);
@@ -34,7 +43,7 @@ export const useDslSync = (
         }
         setNodes(dslNodesToFlow(initialDsl.nodes));
         setEdges(dslEdgesToFlow(initialDsl.edges));
-    }, []);
+    }, [initialDsl, setNodes, setEdges]);
 
     const syncToDsl = useCallback(() => {
         const newDsl = flowToDsl(nodes, edges, dslRef.current);
@@ -100,13 +109,14 @@ export const useDslSync = (
     );
 
     const addNode = useCallback(
-        (nodeType: string, position: { x: number; y: number }) => {
+        (nodeType: string, position: { x: number; y: number }, preset?: AddNodePreset) => {
             // Snapshot before adding
             onSnapshot?.(nodes, edges);
 
             const normalizedType = normalizeWorkflowNodeType(nodeType);
             const typeConfig = getNodeTypeConfig(normalizedType);
             const nodeId = `${normalizedType}_${Date.now()}`;
+            const defaultConfig = { ...(typeConfig?.defaultConfig ?? {}) };
 
             const newNode: Node = {
                 id: nodeId,
@@ -114,9 +124,15 @@ export const useDslSync = (
                 position,
                 data: {
                     type: normalizedType,
-                    name: typeConfig?.label ?? normalizedType,
-                    enabled: true,
-                    config: { ...(typeConfig?.defaultConfig ?? {}) },
+                    name: preset?.name ?? typeConfig?.label ?? normalizedType,
+                    enabled: preset?.enabled ?? true,
+                    config: {
+                        ...defaultConfig,
+                        ...(preset?.config ?? {}),
+                    },
+                    runtimePolicy: preset?.runtimePolicy,
+                    inputBindings: preset?.inputBindings,
+                    outputSchema: preset?.outputSchema,
                     nodeTypeConfig: typeConfig,
                 },
             };

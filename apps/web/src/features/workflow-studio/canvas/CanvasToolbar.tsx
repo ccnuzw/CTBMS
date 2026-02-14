@@ -42,8 +42,7 @@ interface CanvasToolbarProps {
     workflowMode?: 'linear' | 'dag' | 'debate';
     onWorkflowModeChange?: (mode: 'linear' | 'dag' | 'debate') => void;
     onToggleDebatePanel?: () => void;
-    onPublish?: () => void; // New prop from instruction snippet
-    isReadOnly?: boolean; // New prop from instruction snippet
+    onPublish?: () => void;
     onUndo?: () => void;
     onRedo?: () => void;
     canUndo?: boolean;
@@ -80,6 +79,7 @@ export const CanvasToolbar: React.FC<CanvasToolbarProps> = ({
     workflowMode = 'dag',
     onWorkflowModeChange,
     onToggleDebatePanel,
+    onPublish,
     onUndo,
     onRedo,
     canUndo = false,
@@ -338,6 +338,18 @@ export const CanvasToolbar: React.FC<CanvasToolbarProps> = ({
                 >
                     保存{hasUnsavedChanges ? ' *' : ''}
                 </Button>
+                {onPublish && (
+                    <Tooltip title="另存为模板">
+                        <Button
+                            type="default"
+                            size="small"
+                            icon={<ApartmentOutlined />}
+                            onClick={onPublish}
+                        >
+                            存为模板
+                        </Button>
+                    </Tooltip>
+                )}
             </Space>
         </div>
     );

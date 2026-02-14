@@ -78,6 +78,19 @@ export interface WorkflowRuntimeTimelineResponse {
   totalPages: number;
 }
 
+export interface ReplayLineageEntry {
+  expression: string;
+  resolvedValue: unknown;
+  sourceNodeId: string | null;
+  sourceFieldPath: string;
+  resolvedAt: string;
+}
+
+export interface WorkflowExecutionReplayBundle {
+  version: string;
+  dataLineage: Record<string, ReplayLineageEntry[]>;
+}
+
 export interface WorkflowDebateTraceQuery {
   roundNumber?: number;
   participantCode?: string;
@@ -153,6 +166,19 @@ export const useWorkflowExecutionDebateTimeline = (executionId?: string) => {
     queryFn: async () => {
       const res = await apiClient.get<DebateTimelineDto>(
         `/workflow-executions/${executionId}/debate-timeline`,
+      );
+      return res.data;
+    },
+    enabled: Boolean(executionId),
+  });
+};
+
+export const useWorkflowExecutionReplay = (executionId?: string) => {
+  return useQuery<WorkflowExecutionReplayBundle>({
+    queryKey: ['workflow-execution-replay', executionId],
+    queryFn: async () => {
+      const res = await apiClient.get<WorkflowExecutionReplayBundle>(
+        `/workflow-executions/${executionId}/replay`,
       );
       return res.data;
     },

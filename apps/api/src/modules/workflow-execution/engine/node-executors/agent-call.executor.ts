@@ -30,18 +30,24 @@ export class AgentCallNodeExecutor implements WorkflowNodeExecutor {
     ) { }
 
     supports(node: WorkflowNode): boolean {
-        return node.type === 'agent-call';
+        return node.type === 'agent-call' || node.type === 'single-agent';
     }
 
     async execute(context: NodeExecutionContext): Promise<NodeExecutionResult> {
         const config = context.node.config as Record<string, unknown>;
-        const agentCode = config.agentCode as string | undefined;
+        const agentCode = this.resolveAgentCode(config);
 
+        // 兼容旧 DSL：历史 single-agent 在部分流程中未配置 agentCode，
+        // 旧行为等价于 passthrough，不应因类型规范化导致执行失败。
         if (!agentCode) {
             return {
-                status: 'FAILED',
-                output: {},
-                message: '节点配置缺少 agentCode',
+                status: 'SUCCESS',
+                output: {
+                    ...context.input,
+                    skipped: true,
+                    skipReason: 'agentCode-missing',
+                },
+                message: '节点未配置 agentCode，按兼容模式跳过',
             };
         }
 
@@ -226,6 +232,20 @@ export class AgentCallNodeExecutor implements WorkflowNodeExecutor {
             if (envValue) return envValue;
         }
         return process.env.GEMINI_API_KEY ?? '';
+    }
+
+    private resolveAgentCode(config: Record<string, unknown>): string | undefined {
+        const candidates = [config.agentCode, config.agentProfileCode];
+        for (const candidate of candidates) {
+            if (typeof candidate !== 'string') {
+                continue;
+            }
+            const normalized = candidate.trim();
+            if (normalized) {
+                return normalized;
+            }
+        }
+        return undefined;
     }
 
     /**
