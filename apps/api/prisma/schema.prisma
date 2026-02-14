@@ -73,6 +73,9 @@ model User {
   // [NEW] 任务操作历史
   taskHistory IntelTaskHistory[]
 
+  // [NEW] 工作流发布审计
+  workflowPublishAudits WorkflowPublishAudit[]
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -2066,6 +2069,7 @@ model WorkflowPublishAudit {
 
   operation         WorkflowPublishOperation @default(PUBLISH)
   publishedByUserId String
+  publishedByUser   User                     @relation(fields: [publishedByUserId], references: [id])
   comment           String?
   snapshot          Json?
   publishedAt       DateTime                 @default(now())

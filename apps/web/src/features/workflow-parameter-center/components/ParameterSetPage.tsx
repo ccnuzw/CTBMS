@@ -25,6 +25,9 @@ import {
   Timeline,
   Tooltip,
   Typography,
+  InputNumber,
+  Switch,
+  Divider,
 } from 'antd';
 import {
   CheckCircleOutlined,
@@ -109,6 +112,22 @@ const getTemplateSourceLabel = (value?: WorkflowTemplateSource | null): string =
   return templateSourceLabelMap[value] ?? value;
 };
 
+const scopeLabelMap: Record<ParameterScopeLevel, string> = {
+  PUBLIC_TEMPLATE: '公共模板',
+  USER_TEMPLATE: '用户模板',
+  GLOBAL: '全局',
+  COMMODITY: '品种',
+  REGION: '区域',
+  ROUTE: '航线',
+  STRATEGY: '策略',
+  SESSION: '会话',
+};
+
+const getScopeLabel = (value?: ParameterScopeLevel | string): string => {
+  if (!value) return '-';
+  return scopeLabelMap[value as ParameterScopeLevel] ?? value;
+};
+
 const getActiveStatusLabel = (value?: boolean): string => (value ? '启用' : '停用');
 
 const parsePositiveInt = (value: string | null, fallback: number): number => {
@@ -172,8 +191,8 @@ export const ParameterSetPage: React.FC = () => {
     paramType?: string;
     scopeLevel?: ParameterScopeLevel;
     scopeValue?: string;
-    valueText?: string;
-    defaultValueText?: string;
+    value?: any;
+    defaultValue?: any;
     minValueText?: string;
     maxValueText?: string;
     unit?: string;
@@ -404,7 +423,7 @@ export const ParameterSetPage: React.FC = () => {
         dataIndex: 'scopeLevel',
         width: 140,
         render: (value: string) => (
-          <Tag color={scopeColorMap[value] || 'default'}>{value}</Tag>
+          <Tag color={scopeColorMap[value] || 'default'}>{getScopeLabel(value)}</Tag>
         ),
       },
       { title: '作用域值', dataIndex: 'scopeValue', width: 100, render: (v?: string) => v || '-' },
@@ -481,7 +500,7 @@ export const ParameterSetPage: React.FC = () => {
         title: '作用域',
         dataIndex: 'scopeLevel',
         width: 130,
-        render: (value: string) => <Tag color={scopeColorMap[value] || 'default'}>{value}</Tag>,
+        render: (value: string) => <Tag color={scopeColorMap[value] || 'default'}>{getScopeLabel(value)}</Tag>,
       },
       {
         title: '模板默认值',
@@ -609,16 +628,19 @@ export const ParameterSetPage: React.FC = () => {
 
   const openEditItem = (record: ParameterItemDto) => {
     setEditingItem(record);
+    const isJsonOrText = record.paramType === 'json' || record.paramType === 'expression';
+
     editItemForm.setFieldsValue({
       paramName: record.paramName,
       paramType: record.paramType,
       scopeLevel: record.scopeLevel,
       scopeValue: record.scopeValue || undefined,
-      valueText: record.value === null || record.value === undefined ? '' : JSON.stringify(record.value, null, 2),
-      defaultValueText:
-        record.defaultValue === null || record.defaultValue === undefined
-          ? ''
-          : JSON.stringify(record.defaultValue, null, 2),
+      value: isJsonOrText
+        ? (record.value === null || record.value === undefined ? '' : JSON.stringify(record.value, null, 2))
+        : record.value,
+      defaultValue: isJsonOrText
+        ? (record.defaultValue === null || record.defaultValue === undefined ? '' : JSON.stringify(record.defaultValue, null, 2))
+        : record.defaultValue,
       minValueText:
         record.minValue === null || record.minValue === undefined
           ? ''
@@ -638,13 +660,15 @@ export const ParameterSetPage: React.FC = () => {
     if (!selectedSetId || !editingItem) return;
     try {
       const values = await editItemForm.validateFields();
+      const isJsonOrText = values.paramType === 'json' || values.paramType === 'expression';
+
       const payload: UpdateParameterItemDto = {
         paramName: values.paramName,
         paramType: values.paramType as UpdateParameterItemDto['paramType'],
         scopeLevel: values.scopeLevel,
         scopeValue: values.scopeValue,
-        value: parseMaybeJsonText(values.valueText),
-        defaultValue: parseMaybeJsonText(values.defaultValueText),
+        value: isJsonOrText ? parseMaybeJsonText(values.value) : values.value,
+        defaultValue: isJsonOrText ? parseMaybeJsonText(values.defaultValue) : values.defaultValue,
         minValue: parseMaybeJsonText(values.minValueText),
         maxValue: parseMaybeJsonText(values.maxValueText),
         unit: values.unit,
@@ -664,6 +688,19 @@ export const ParameterSetPage: React.FC = () => {
     } catch (error) {
       message.error(getErrorMessage(error) || '参数项更新失败');
     }
+  };
+
+  const renderDynamicInput = (type?: string, placeholder?: string) => {
+    if (type === 'boolean') {
+      return <Switch checkedChildren="True" unCheckedChildren="False" />;
+    }
+    if (type === 'number') {
+      return <InputNumber style={{ width: '100%' }} placeholder={placeholder} />;
+    }
+    if (type === 'json' || type === 'expression') {
+      return <Input.TextArea rows={3} placeholder={placeholder} />;
+    }
+    return <Input placeholder={placeholder} />;
   };
 
   return (
@@ -768,14 +805,14 @@ export const ParameterSetPage: React.FC = () => {
 
       <Drawer
         title="参数包详情"
-        width={1100}
+        width="85%"
         open={Boolean(selectedSetId)}
         onClose={() => { setSelectedSetId(null); setSelectedItemIds([]); }}
       >
         <Space direction="vertical" style={{ width: '100%' }} size={16}>
           <Space style={{ justifyContent: 'space-between', width: '100%' }}>
             <Space>
-              <span>{setDetail?.name || '-'}</span>
+              <Typography.Title level={4} style={{ margin: 0 }}>{setDetail?.name || '-'}</Typography.Title>
               <Tag color={setDetail?.isActive ? 'green' : 'red'}>
                 {getActiveStatusLabel(setDetail?.isActive)}
               </Tag>
@@ -812,7 +849,7 @@ export const ParameterSetPage: React.FC = () => {
               style={{ width: 220 }}
               placeholder="按作用域批量重置"
               value={scopeResetLevel}
-              options={scopeOptions.map((item) => ({ label: item, value: item }))}
+              options={scopeOptions.map((item) => ({ label: getScopeLabel(item), value: item }))}
               onChange={(value) => setScopeResetLevel(value)}
             />
             <Input
@@ -1126,65 +1163,101 @@ export const ParameterSetPage: React.FC = () => {
         width={720}
       >
         <Form layout="vertical" form={editItemForm}>
-          <Form.Item name="paramName" label="参数名称" rules={[{ required: true }]}>
-            <Input />
-          </Form.Item>
-          <Form.Item name="paramType" label="参数类型" rules={[{ required: true }]}>
-            <Select options={paramTypeOptions.map((item) => ({ label: item, value: item }))} />
-          </Form.Item>
-          <Row gutter={12}>
+          <Typography.Title level={5}>基本信息</Typography.Title>
+          <Row gutter={16}>
             <Col span={12}>
-              <Form.Item name="scopeLevel" label="作用域" rules={[{ required: true }]}>
-                <Select options={scopeOptions.map((item) => ({ label: item, value: item }))} />
-              </Form.Item>
-            </Col>
-            <Col span={12}>
-              <Form.Item name="scopeValue" label="作用域值">
+              <Form.Item name="paramName" label="参数名称" rules={[{ required: true }]}>
                 <Input />
               </Form.Item>
             </Col>
-          </Row>
-          <Form.Item name="valueText" label="当前值(JSON或文本)">
-            <Input.TextArea rows={3} />
-          </Form.Item>
-          <Form.Item name="defaultValueText" label="默认值(JSON或文本)">
-            <Input.TextArea rows={3} />
-          </Form.Item>
-          <Row gutter={12}>
             <Col span={12}>
-              <Form.Item name="minValueText" label="最小值(JSON或文本)">
-                <Input.TextArea rows={2} />
+              <Form.Item name="paramType" label="参数类型" rules={[{ required: true }]}>
+                <Select options={paramTypeOptions.map((item) => ({ label: item, value: item }))} />
               </Form.Item>
             </Col>
-            <Col span={12}>
-              <Form.Item name="maxValueText" label="最大值(JSON或文本)">
-                <Input.TextArea rows={2} />
-              </Form.Item>
-            </Col>
-          </Row>
-          <Row gutter={12}>
             <Col span={12}>
               <Form.Item name="unit" label="单位">
-                <Input />
+                <Input allowClear />
               </Form.Item>
             </Col>
             <Col span={12}>
               <Form.Item name="source" label="来源">
-                <Input />
+                <Input allowClear placeholder="例如: 业务规则V1, 外部API" />
               </Form.Item>
             </Col>
           </Row>
-          <Form.Item name="changeReason" label="变更原因">
-            <Input.TextArea rows={2} />
+
+          <Divider style={{ margin: '16px 0' }} />
+          <Typography.Title level={5}>作用域</Typography.Title>
+          <Row gutter={16}>
+            <Col span={12}>
+              <Form.Item name="scopeLevel" label="作用域层级" rules={[{ required: true }]}>
+                <Select options={scopeOptions.map((item) => ({ label: getScopeLabel(item), value: item }))} />
+              </Form.Item>
+            </Col>
+            <Col span={12}>
+              <Form.Item name="scopeValue" label="作用域值">
+                <Input placeholder="例如: USER_XYZ, REGION_CN" />
+              </Form.Item>
+            </Col>
+          </Row>
+
+          <Divider style={{ margin: '16px 0' }} />
+          <Typography.Title level={5}>数值设定</Typography.Title>
+          <Form.Item noStyle shouldUpdate={(prev, curr) => prev.paramType !== curr.paramType}>
+            {({ getFieldValue }) => {
+              const type = getFieldValue('paramType');
+              return (
+                <Row gutter={16}>
+                  <Col span={24}>
+                    <Form.Item name="value" label="当前值" valuePropName={type === 'boolean' ? 'checked' : 'value'}>
+                      {renderDynamicInput(type, '覆盖后的实际生效值')}
+                    </Form.Item>
+                  </Col>
+                  <Col span={24}>
+                    <Form.Item name="defaultValue" label="默认值" valuePropName={type === 'boolean' ? 'checked' : 'value'}>
+                      {renderDynamicInput(type, '若未被覆盖，将继承此默认值')}
+                    </Form.Item>
+                  </Col>
+                </Row>
+              );
+            }}
           </Form.Item>
-          <Form.Item name="isActive" label="启用状态">
-            <Select
-              options={[
-                { label: getActiveStatusLabel(true), value: true },
-                { label: getActiveStatusLabel(false), value: false },
-              ]}
-            />
-          </Form.Item>
+
+          <Divider style={{ margin: '16px 0' }} />
+          <Typography.Title level={5}>约束条件</Typography.Title>
+          <Row gutter={16}>
+            <Col span={12}>
+              <Form.Item name="minValueText" label="最小值 (JSON/Text)">
+                <Input placeholder="例如: 0, 1.5" />
+              </Form.Item>
+            </Col>
+            <Col span={12}>
+              <Form.Item name="maxValueText" label="最大值 (JSON/Text)">
+                <Input placeholder="例如: 100, 99.9" />
+              </Form.Item>
+            </Col>
+          </Row>
+
+          <Divider style={{ margin: '16px 0' }} />
+          <Typography.Title level={5}>变更审计</Typography.Title>
+          <Row gutter={16}>
+            <Col span={16}>
+              <Form.Item name="changeReason" label="变更原因">
+                <Input.TextArea rows={1} placeholder="请简述本次修改的原因" />
+              </Form.Item>
+            </Col>
+            <Col span={8}>
+              <Form.Item name="isActive" label="启用状态">
+                <Select
+                  options={[
+                    { label: getActiveStatusLabel(true), value: true },
+                    { label: getActiveStatusLabel(false), value: false },
+                  ]}
+                />
+              </Form.Item>
+            </Col>
+          </Row>
         </Form>
       </Modal>
 
@@ -1210,7 +1283,7 @@ export const ParameterSetPage: React.FC = () => {
             <Select options={paramTypeOptions.map((item) => ({ label: item, value: item }))} />
           </Form.Item>
           <Form.Item name="scopeLevel" label="作用域" rules={[{ required: true }]}>
-            <Select options={scopeOptions.map((item) => ({ label: item, value: item }))} />
+            <Select options={scopeOptions.map((item) => ({ label: getScopeLabel(item), value: item }))} />
           </Form.Item>
           <Form.Item name="scopeValue" label="作用域值">
             <Input />

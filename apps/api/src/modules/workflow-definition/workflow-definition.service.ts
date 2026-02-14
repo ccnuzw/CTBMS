@@ -343,6 +343,13 @@ export class WorkflowDefinitionService {
     const [data, total] = await Promise.all([
       this.prisma.workflowPublishAudit.findMany({
         where,
+        include: {
+          publishedByUser: {
+            select: {
+              name: true,
+            },
+          },
+        },
         orderBy: [{ publishedAt: 'desc' }, { createdAt: 'desc' }],
         skip: (page - 1) * pageSize,
         take: pageSize,
@@ -353,7 +360,10 @@ export class WorkflowDefinitionService {
     ]);
 
     return {
-      data,
+      data: data.map(({ publishedByUser, ...item }) => ({
+        ...item,
+        publishedByUserName: publishedByUser?.name,
+      })),
       total,
       page,
       pageSize,
@@ -921,9 +931,9 @@ export class WorkflowDefinitionService {
     const direct = typeof config.rulePackCode === 'string' ? config.rulePackCode.trim() : '';
     const list = Array.isArray(config.rulePackCodes)
       ? config.rulePackCodes
-          .filter((value): value is string => typeof value === 'string')
-          .map((value) => value.trim())
-          .filter(Boolean)
+        .filter((value): value is string => typeof value === 'string')
+        .map((value) => value.trim())
+        .filter(Boolean)
       : [];
     return [...new Set([direct, ...list].filter(Boolean))];
   }

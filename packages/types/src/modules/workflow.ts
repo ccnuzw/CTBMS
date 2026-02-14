@@ -200,6 +200,7 @@ export const WorkflowPublishAuditSchema = z.object({
   workflowVersionId: z.string().uuid(),
   operation: WorkflowPublishOperationEnum,
   publishedByUserId: z.string(),
+  publishedByUserName: z.string().optional(),
   comment: z.string().nullable().optional(),
   snapshot: z.record(z.unknown()).nullable().optional(),
   publishedAt: z.date().optional(),

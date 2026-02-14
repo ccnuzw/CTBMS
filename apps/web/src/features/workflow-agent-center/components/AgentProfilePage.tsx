@@ -34,6 +34,7 @@ import {
   usePublishAgentProfile,
   useUpdateAgentProfile,
 } from '../api';
+import { useAIConfigs } from '../../system-config/api';
 import {
   AGENT_ROLE_OPTIONS,
   getAgentDisplayName,
@@ -73,6 +74,7 @@ export const AgentProfilePage: React.FC = () => {
   const [form] = Form.useForm<CreateAgentProfileFormValues>();
   const [editForm] = Form.useForm<{
     agentName: string;
+    modelConfigKey: string;
     timeoutMs: number;
     isActive: boolean;
     toolPolicy: Record<string, unknown>;
@@ -98,6 +100,8 @@ export const AgentProfilePage: React.FC = () => {
   const [page, setPage] = useState(parsePositiveInt(searchParams.get('page'), 1));
   const [pageSize, setPageSize] = useState(parsePositiveInt(searchParams.get('pageSize'), 20));
   const agentTableContainerRef = React.useRef<HTMLDivElement | null>(null);
+
+  const { data: aiConfigs } = useAIConfigs();
 
   const { data, isLoading } = useAgentProfiles({
     includePublic: true,
@@ -210,6 +214,7 @@ export const AgentProfilePage: React.FC = () => {
                 setEditingAgent(record);
                 editForm.setFieldsValue({
                   agentName: record.agentName,
+                  modelConfigKey: record.modelConfigKey,
                   timeoutMs: record.timeoutMs,
                   isActive: record.isActive,
                   toolPolicy: (record.toolPolicy || {}) as any,
@@ -253,7 +258,7 @@ export const AgentProfilePage: React.FC = () => {
         ),
       },
     ],
-    [deleteMutation, message, publishMutation],
+    [deleteMutation, editForm, message, publishMutation],
   );
 
   const handleEdit = async () => {
@@ -264,13 +269,11 @@ export const AgentProfilePage: React.FC = () => {
     try {
       const values = await editForm.validateFields();
 
-      // Removed manual JSON parsing logic since forms now return objects
-
-      // Removed manual JSON parsing logic since forms now return objects
       await updateMutation.mutateAsync({
         id: editingAgent.id,
         payload: {
           agentName: values.agentName,
+          modelConfigKey: values.modelConfigKey,
           timeoutMs: values.timeoutMs,
           isActive: values.isActive,
           toolPolicy: values.toolPolicy,
@@ -289,10 +292,6 @@ export const AgentProfilePage: React.FC = () => {
   const handleCreate = async () => {
     try {
       const values = await form.validateFields();
-
-      // Removed manual JSON parsing logic since forms now return objects
-
-      // Removed manual JSON parsing logic since forms now return objects
 
       const payload: CreateAgentProfileDto = {
         agentCode: values.agentCode,
@@ -317,6 +316,13 @@ export const AgentProfilePage: React.FC = () => {
       message.error(getErrorMessage(error) || '创建失败');
     }
   };
+
+  const modelConfigOptions = React.useMemo(() => {
+    return aiConfigs?.map((config) => ({
+      label: config.isDefault ? `${config.configKey} (默认)` : config.configKey,
+      value: config.configKey,
+    })) || [];
+  }, [aiConfigs]);
 
   return (
     <Card>
@@ -432,7 +438,11 @@ export const AgentProfilePage: React.FC = () => {
             <Input.TextArea rows={2} />
           </Form.Item>
           <Form.Item name="modelConfigKey" label="模型配置Key" rules={[{ required: true }]}>
-            <Input />
+            <Select
+              options={modelConfigOptions}
+              placeholder="选择 AI 模型配置"
+              showSearch
+            />
           </Form.Item>
           <Form.Item name="agentPromptCode" label="提示词编码" rules={[{ required: true }]}>
             <Input />
@@ -474,6 +484,13 @@ export const AgentProfilePage: React.FC = () => {
           <Form.Item name="agentName" label="名称" rules={[{ required: true }]}>
             <Input />
           </Form.Item>
+          <Form.Item name="modelConfigKey" label="模型配置Key" rules={[{ required: true }]}>
+            <Select
+              options={modelConfigOptions}
+              placeholder="选择 AI 模型配置"
+              showSearch
+            />
+          </Form.Item>
           <Form.Item name="timeoutMs" label="超时(ms)" rules={[{ required: true }]}>
             <InputNumber min={1000} max={120000} style={{ width: '100%' }} />
           </Form.Item>
@@ -485,7 +502,6 @@ export const AgentProfilePage: React.FC = () => {
           <RetryPolicyForm name="retryPolicy" />
         </Form>
       </Modal>
-
       <Drawer
         title="智能体详情"
         width={860}

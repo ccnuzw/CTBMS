@@ -16,9 +16,12 @@ import {
   Select,
   Space,
   Table,
+  Tabs,
   Tag,
   Tooltip,
   Typography,
+  Empty,
+  Divider,
 } from 'antd';
 import {
   DebateRoundTraceDto,
@@ -45,6 +48,8 @@ import { useWorkflowDefinitions } from '../../workflow-studio/api';
 import { getAgentRoleLabel, getTemplateSourceLabel } from '../../workflow-agent-center/constants';
 import { getErrorMessage } from '../../../api/client';
 import { useSearchParams } from 'react-router-dom';
+import { ExecutionFilterBar } from './ExecutionFilterBar';
+import { ExecutionSummaryCards } from './ExecutionSummaryCards';
 
 type WorkflowBindingEntity = {
   id: string;
@@ -1225,195 +1230,141 @@ export const WorkflowExecutionPage: React.FC = () => {
   const executionColumns = useMemo<ColumnsType<WorkflowExecutionWithRelations>>(
     () => [
       {
-        title: '实例 ID',
+        title: '实例',
         dataIndex: 'id',
-        width: 220,
-        render: (value: string) => value.slice(0, 8),
+        width: 180,
+        fixed: 'left',
+        render: (value: string, record) => (
+          <Space direction="vertical" size={2}>
+            <Space>
+              <Text strong copyable>{value.slice(0, 8)}</Text>
+              <Tag style={{ margin: 0 }}>{getTriggerTypeLabel(record.triggerType)}</Tag>
+            </Space>
+            {record.sourceExecutionId && (
+              <Text type="secondary" style={{ fontSize: 12 }}>
+                来自: {record.sourceExecutionId.slice(0, 8)}
+              </Text>
+            )}
+          </Space>
+        ),
       },
       {
         title: '流程',
         key: 'workflow',
-        width: 260,
-        render: (_, record) =>
-          record.workflowVersion?.workflowDefinition?.name ||
-          record.workflowVersion?.workflowDefinition?.workflowId ||
-          '-',
-      },
-      {
-        title: '版本',
-        key: 'version',
-        width: 120,
-        render: (_, record) => record.workflowVersion?.versionCode || '-',
-      },
-      {
-        title: '触发类型',
-        dataIndex: 'triggerType',
-        width: 120,
-        render: (value: string) => <Tag>{getTriggerTypeLabel(value)}</Tag>,
-      },
-      {
-        title: '状态',
-        dataIndex: 'status',
-        width: 120,
-        render: (value: WorkflowExecutionStatus) => (
-          <Tag color={executionStatusColorMap[value] ?? 'default'}>
-            {getExecutionStatusLabel(value)}
-          </Tag>
+        width: 200,
+        render: (_, record) => (
+          <Space direction="vertical" size={2}>
+            <Text ellipsis style={{ maxWidth: 180 }}>
+              {record.workflowVersion?.workflowDefinition?.name || record.workflowVersion?.workflowDefinition?.workflowId || '-'}
+            </Text>
+            <Tag style={{ margin: 0 }}>{record.workflowVersion?.versionCode}</Tag>
+          </Space>
         ),
       },
       {
-        title: '失败分类',
-        dataIndex: 'failureCategory',
-        width: 130,
-        render: (value?: WorkflowFailureCategory | null) => getFailureCategoryLabel(value),
+        title: '状态',
+        key: 'status',
+        width: 120,
+        render: (_, record) => (
+          <Space direction="vertical" size={2}>
+            <Tag color={executionStatusColorMap[record.status] ?? 'default'} style={{ margin: 0 }}>
+              {getExecutionStatusLabel(record.status)}
+            </Tag>
+            {record.status === 'FAILED' && (
+              <Tooltip title={`${getFailureCategoryLabel(record.failureCategory)}: ${record.failureCode || '未知错误'}`}>
+                <Text type="danger" style={{ fontSize: 12, maxWidth: 110 }} ellipsis>
+                  {record.failureCode || getFailureCategoryLabel(record.failureCategory) || '执行失败'}
+                </Text>
+              </Tooltip>
+            )}
+          </Space>
+        ),
       },
       {
-        title: '失败代码',
-        dataIndex: 'failureCode',
-        width: 180,
-        render: (value?: string | null) => value || '-',
-      },
-      {
-        title: '风控',
-        key: 'riskGate',
-        width: 180,
-        sorter: (recordA, recordB) =>
-          getRiskGateSortScore(getExecutionRiskGateSummary(recordA)) -
-          getRiskGateSortScore(getExecutionRiskGateSummary(recordB)),
-        sortDirections: ['descend', 'ascend'],
+        title: '执行时间',
+        key: 'time',
+        width: 150,
         render: (_, record) => {
-          const summary = getExecutionRiskGateSummary(record);
-          if (!summary) {
-            return '-';
+          let durationTx = '-';
+          if (record.completedAt && record.startedAt) {
+            const diff = dayjs(record.completedAt).diff(dayjs(record.startedAt), 'second');
+            durationTx = `${diff}s`;
+          } else if (record.startedAt) {
+            const diff = dayjs().diff(dayjs(record.startedAt), 'minute');
+            durationTx = `运行 ${diff}m`;
           }
 
           return (
-            <Space size={4}>
-              {summary.riskLevel ? (
-                <Tag color={riskLevelColorMap[summary.riskLevel] || 'default'}>
-                  {getRiskLevelLabel(summary.riskLevel)}
-                </Tag>
-              ) : null}
-              {summary.blocked ? (
-                <Tooltip
-                  title={
-                    [
-                      summary.blockReason ? `原因: ${summary.blockReason}` : null,
-                      summary.blockers.length ? `阻断项: ${summary.blockers.join(', ')}` : null,
-                      summary.degradeAction
-                        ? `降级动作: ${getDegradeActionLabel(summary.degradeAction)}`
-                        : null,
-                      summary.threshold ? `阈值: ${summary.threshold}` : null,
-                      summary.riskProfileCode ? `风控模板: ${summary.riskProfileCode}` : null,
-                      summary.blockedByRiskLevel !== null
-                        ? `等级触发: ${summary.blockedByRiskLevel ? '是' : '否'}`
-                        : null,
-                      summary.hardBlock !== null
-                        ? `硬阻断: ${summary.hardBlock ? '是' : '否'}`
-                        : null,
-                    ]
-                      .filter(Boolean)
-                      .join(' | ') || '风控阻断'
-                  }
-                >
-                  <Tag color="error">阻断</Tag>
-                </Tooltip>
-              ) : (
-                <Tag color="success">通过</Tag>
-              )}
+            <Space direction="vertical" size={0}>
+              <Text style={{ fontSize: 13 }}>
+                {record.startedAt ? dayjs(record.startedAt).format('MM-DD HH:mm') : '-'}
+              </Text>
+              <Text type="secondary" style={{ fontSize: 12 }}>
+                {durationTx}
+              </Text>
             </Space>
           );
         },
       },
       {
-        title: '阻断原因',
-        key: 'blockReason',
-        width: 260,
+        title: '风控结果',
+        key: 'risk',
+        width: 240,
         render: (_, record) => {
           const summary = getExecutionRiskGateSummary(record);
-          if (!summary?.blocked || !summary.blockReason) {
-            return '-';
-          }
-
-          const tooltipTitle = [
-            `原因: ${summary.blockReason}`,
-            summary.blockers.length ? `阻断项: ${summary.blockers.join(', ')}` : null,
-            summary.degradeAction
-              ? `降级动作: ${getDegradeActionLabel(summary.degradeAction)}`
-              : null,
-            summary.threshold ? `阈值: ${summary.threshold}` : null,
-            summary.riskProfileCode ? `风控模板: ${summary.riskProfileCode}` : null,
-          ]
-            .filter(Boolean)
-            .join(' | ');
+          if (!summary) return '-';
 
           return (
-            <Tooltip title={tooltipTitle}>
-              <Text style={{ maxWidth: 230 }} ellipsis>
-                {summary.blockReason}
-              </Text>
-            </Tooltip>
+            <Space direction="vertical" size={2} style={{ width: '100%' }}>
+              <Space>
+                {summary.blocked ? <Tag color="error">阻断</Tag> : <Tag color="success">通过</Tag>}
+                {summary.riskLevel && (
+                  <Tag color={riskLevelColorMap[summary.riskLevel] || 'default'}>
+                    {getRiskLevelLabel(summary.riskLevel)}
+                  </Tag>
+                )}
+              </Space>
+              {summary.blocked && summary.blockReason ? (
+                <Tooltip title={summary.blockReason}>
+                  <Text type="secondary" style={{ fontSize: 12, maxWidth: 220 }} ellipsis>
+                    原因: {summary.blockReason}
+                  </Text>
+                </Tooltip>
+              ) : summary.degradeAction && summary.degradeAction !== 'REVIEW_ONLY' ? (
+                <Text type="warning" style={{ fontSize: 12 }}>
+                  降级: {getDegradeActionLabel(summary.degradeAction)}
+                </Text>
+              ) : null}
+            </Space>
           );
         },
       },
       {
-        title: '降级动作',
-        key: 'degradeAction',
-        width: 140,
-        render: (_, record) => {
-          const summary = getExecutionRiskGateSummary(record);
-          return getDegradeActionLabel(summary?.degradeAction);
-        },
-      },
-      {
-        title: '开始时间',
-        dataIndex: 'startedAt',
-        width: 180,
-        render: (value?: Date | null) => (value ? dayjs(value).format('YYYY-MM-DD HH:mm:ss') : '-'),
-      },
-      {
-        title: '结束时间',
-        dataIndex: 'completedAt',
-        width: 180,
-        render: (value?: Date | null) => (value ? dayjs(value).format('YYYY-MM-DD HH:mm:ss') : '-'),
-      },
-      {
-        title: '来源实例',
-        dataIndex: 'sourceExecutionId',
-        width: 120,
-        render: (value?: string | null) => (value ? value.slice(0, 8) : '-'),
-      },
-      {
         title: '操作',
         key: 'actions',
-        width: 280,
+        width: 180,
+        fixed: 'right',
         render: (_, record) => (
-          <Space size={4}>
-            <Button type="link" onClick={() => setSelectedExecutionId(record.id)}>
-              查看详情
-            </Button>
-            <Button
-              type="link"
-              disabled={record.status !== 'FAILED'}
-              loading={rerunMutation.isPending && rerunningExecutionId === record.id}
-              onClick={() => handleRerun(record.id)}
-            >
-              失败重跑
-            </Button>
-            <Popconfirm
-              title="确认取消该执行实例？"
-              onConfirm={() => handleCancel(record.id)}
-              disabled={record.status !== 'RUNNING' && record.status !== 'PENDING'}
-            >
-              <Button
-                type="link"
-                danger
-                disabled={record.status !== 'RUNNING' && record.status !== 'PENDING'}
-                loading={cancelMutation.isPending && cancelingExecutionId === record.id}
+          <Space size={0} split={<Divider type="vertical" />}>
+            <Typography.Link onClick={() => setSelectedExecutionId(record.id)}>
+              详情
+            </Typography.Link>
+            {record.status === 'FAILED' && (
+              <Typography.Link
+                onClick={() => handleRerun(record.id)}
+                disabled={rerunMutation.isPending && rerunningExecutionId === record.id}
               >
-                取消执行
-              </Button>
-            </Popconfirm>
+                重跑
+              </Typography.Link>
+            )}
+            {(record.status === 'RUNNING' || record.status === 'PENDING') && (
+              <Popconfirm
+                title="确认取消？"
+                onConfirm={() => handleCancel(record.id)}
+              >
+                <Typography.Link type="danger">取消</Typography.Link>
+              </Popconfirm>
+            )}
           </Space>
         ),
       },
@@ -1482,256 +1433,84 @@ export const WorkflowExecutionPage: React.FC = () => {
           <Text type="secondary">查看流程运行实例、节点执行日志和失败原因。</Text>
         </div>
 
-        <Space wrap>
-          <Input.Search
-            allowClear
-            style={{ width: 220 }}
-            placeholder="按版本号筛选"
-            value={versionCodeInput}
-            onChange={(event) => {
-              const nextValue = event.target.value;
-              setVersionCodeInput(nextValue);
-              if (!nextValue.trim()) {
-                setVersionCode(undefined);
-                setPage(1);
-              }
-            }}
-            onSearch={(value) => {
-              const normalized = value.trim();
-              setVersionCode(normalized ? normalized : undefined);
-              setPage(1);
-            }}
-          />
-          <Input.Search
-            allowClear
-            style={{ width: 220 }}
-            placeholder="按风控模板编码筛选"
-            value={riskProfileCodeInput}
-            onChange={(event) => {
-              const nextValue = event.target.value;
-              setRiskProfileCodeInput(nextValue);
-              if (!nextValue.trim()) {
-                setRiskProfileCode(undefined);
-                setPage(1);
-              }
-            }}
-            onSearch={(value) => {
-              const normalized = value.trim();
-              setRiskProfileCode(normalized ? normalized : undefined);
-              setPage(1);
-            }}
-          />
-          <Input.Search
-            allowClear
-            style={{ width: 240 }}
-            placeholder="按风控原因关键词筛选"
-            value={riskReasonKeywordInput}
-            onChange={(event) => {
-              const nextValue = event.target.value;
-              setRiskReasonKeywordInput(nextValue);
-              if (!nextValue.trim()) {
-                setRiskReasonKeyword(undefined);
-                setPage(1);
-              }
-            }}
-            onSearch={(value) => {
-              const normalized = value.trim();
-              setRiskReasonKeyword(normalized ? normalized : undefined);
-              setPage(1);
-            }}
-          />
-          <Input.Search
-            allowClear
-            style={{ width: 280 }}
-            placeholder="关键词（流程/版本/实例）"
-            value={keywordInput}
-            onChange={(event) => {
-              const nextValue = event.target.value;
-              setKeywordInput(nextValue);
-              if (!nextValue.trim()) {
-                setKeyword(undefined);
-                setPage(1);
-              }
-            }}
-            onSearch={(value) => {
-              const normalized = value.trim();
-              setKeyword(normalized ? normalized : undefined);
-              setPage(1);
-            }}
-          />
-          <Select
-            allowClear
-            style={{ minWidth: 320 }}
-            placeholder="按流程筛选"
-            options={workflowDefinitionOptions}
-            value={selectedWorkflowDefinitionId}
-            onChange={(value) => {
-              setSelectedWorkflowDefinitionId(value);
-              setPage(1);
-            }}
-          />
-          <Select
-            allowClear
-            style={{ width: 180 }}
-            placeholder="按状态筛选"
-            options={executionStatusOptions}
-            value={selectedStatus}
-            onChange={(value) => {
-              setSelectedStatus(value);
-              setPage(1);
-            }}
-          />
-          <Select
-            allowClear
-            style={{ width: 180 }}
-            placeholder="按失败分类筛选"
-            options={failureCategoryOptions}
-            value={selectedFailureCategory}
-            onChange={(value) => {
-              setSelectedFailureCategory(value);
-              setPage(1);
-            }}
-          />
-          <Input.Search
-            allowClear
-            style={{ width: 220 }}
-            placeholder="按失败代码筛选"
-            value={failureCodeInput}
-            onChange={(event) => {
-              const nextValue = event.target.value;
-              setFailureCodeInput(nextValue);
-              if (!nextValue.trim()) {
-                setFailureCode(undefined);
-                setPage(1);
-              }
-            }}
-            onSearch={(value) => {
-              const normalized = value.trim();
-              setFailureCode(normalized ? normalized : undefined);
-              setPage(1);
-            }}
-          />
-          <Select
-            allowClear
-            style={{ width: 190 }}
-            placeholder="按触发类型筛选"
-            options={triggerTypeOptions}
-            value={selectedTriggerType}
-            onChange={(value) => {
-              setSelectedTriggerType(value);
-              setPage(1);
-            }}
-          />
-          <Select
-            allowClear
-            style={{ width: 180 }}
-            placeholder="按风险等级筛选"
-            options={riskLevelOptions}
-            value={selectedRiskLevel}
-            onChange={(value) => {
-              setSelectedRiskLevel(value);
-              setPage(1);
-            }}
-          />
-          <Select
-            allowClear
-            style={{ width: 180 }}
-            placeholder="按降级动作筛选"
-            options={degradeActionOptions}
-            value={selectedDegradeAction}
-            onChange={(value) => {
-              setSelectedDegradeAction(value);
-              setPage(1);
-            }}
-          />
-          <Select
-            allowClear
-            style={{ width: 180 }}
-            placeholder="按风控链路筛选"
-            options={riskGatePresenceOptions}
-            value={selectedRiskGatePresence}
-            onChange={(value) => {
-              setSelectedRiskGatePresence(value);
-              setPage(1);
-            }}
-          />
-          <Select
-            allowClear
-            style={{ width: 180 }}
-            placeholder="按风控摘要筛选"
-            options={riskSummaryPresenceOptions}
-            value={selectedRiskSummaryPresence}
-            onChange={(value) => {
-              setSelectedRiskSummaryPresence(value);
-              setPage(1);
-            }}
-          />
-          <RangePicker
-            showTime
-            value={startedAtRange}
-            onChange={(value) => {
-              setStartedAtRange(value as [Dayjs, Dayjs] | null);
-              setPage(1);
-            }}
-          />
-          <Checkbox
-            checked={onlySoftFailure}
-            onChange={(event) => {
-              setOnlySoftFailure(event.target.checked);
-              setPage(1);
-            }}
-          >
-            仅软失败
-          </Checkbox>
-          <Checkbox
-            checked={onlyErrorRoute}
-            onChange={(event) => {
-              setOnlyErrorRoute(event.target.checked);
-              setPage(1);
-            }}
-          >
-            仅错误分支
-          </Checkbox>
-          <Checkbox
-            checked={onlyRiskBlocked}
-            onChange={(event) => {
-              setOnlyRiskBlocked(event.target.checked);
-              setPage(1);
-            }}
-          >
-            仅风控阻断
-          </Checkbox>
-          <Button
-            onClick={() => {
-              setVersionCodeInput('');
-              setVersionCode(undefined);
-              setKeywordInput('');
-              setKeyword(undefined);
-              setSelectedWorkflowDefinitionId(undefined);
-              setSelectedStatus(undefined);
-              setSelectedFailureCategory(undefined);
-              setFailureCodeInput('');
-              setFailureCode(undefined);
-              setSelectedTriggerType(undefined);
-              setSelectedRiskLevel(undefined);
-              setSelectedDegradeAction(undefined);
-              setSelectedRiskGatePresence(undefined);
-              setSelectedRiskSummaryPresence(undefined);
-              setStartedAtRange(null);
-              setOnlySoftFailure(false);
-              setOnlyErrorRoute(false);
-              setOnlyRiskBlocked(false);
-              setRiskProfileCodeInput('');
-              setRiskProfileCode(undefined);
-              setRiskReasonKeywordInput('');
-              setRiskReasonKeyword(undefined);
-              setPage(1);
-              setPageSize(20);
-            }}
-          >
-            重置筛选
-          </Button>
-        </Space>
+        <ExecutionSummaryCards total={executionPage?.total || 0} />
+
+        <ExecutionFilterBar
+          versionCodeInput={versionCodeInput}
+          setVersionCodeInput={setVersionCodeInput}
+          setVersionCode={setVersionCode}
+          keywordInput={keywordInput}
+          setKeywordInput={setKeywordInput}
+          setKeyword={setKeyword}
+          selectedWorkflowDefinitionId={selectedWorkflowDefinitionId}
+          setSelectedWorkflowDefinitionId={setSelectedWorkflowDefinitionId}
+          selectedStatus={selectedStatus}
+          setSelectedStatus={setSelectedStatus}
+          selectedFailureCategory={selectedFailureCategory}
+          setSelectedFailureCategory={setSelectedFailureCategory}
+          failureCodeInput={failureCodeInput}
+          setFailureCodeInput={setFailureCodeInput}
+          setFailureCode={setFailureCode}
+          selectedTriggerType={selectedTriggerType}
+          setSelectedTriggerType={setSelectedTriggerType}
+          selectedRiskLevel={selectedRiskLevel}
+          setSelectedRiskLevel={setSelectedRiskLevel}
+          selectedDegradeAction={selectedDegradeAction}
+          setSelectedDegradeAction={setSelectedDegradeAction}
+          selectedRiskGatePresence={selectedRiskGatePresence}
+          setSelectedRiskGatePresence={setSelectedRiskGatePresence}
+          selectedRiskSummaryPresence={selectedRiskSummaryPresence}
+          setSelectedRiskSummaryPresence={setSelectedRiskSummaryPresence}
+          startedAtRange={startedAtRange}
+          setStartedAtRange={setStartedAtRange}
+          onlySoftFailure={onlySoftFailure}
+          setOnlySoftFailure={setOnlySoftFailure}
+          onlyErrorRoute={onlyErrorRoute}
+          setOnlyErrorRoute={setOnlyErrorRoute}
+          onlyRiskBlocked={onlyRiskBlocked}
+          setOnlyRiskBlocked={setOnlyRiskBlocked}
+          riskProfileCodeInput={riskProfileCodeInput}
+          setRiskProfileCodeInput={setRiskProfileCodeInput}
+          setRiskProfileCode={setRiskProfileCode}
+          riskReasonKeywordInput={riskReasonKeywordInput}
+          setRiskReasonKeywordInput={setRiskReasonKeywordInput}
+          setRiskReasonKeyword={setRiskReasonKeyword}
+          workflowDefinitionOptions={workflowDefinitionOptions}
+          executionStatusOptions={executionStatusOptions}
+          triggerTypeOptions={triggerTypeOptions}
+          failureCategoryOptions={failureCategoryOptions}
+          riskLevelOptions={riskLevelOptions}
+          degradeActionOptions={degradeActionOptions}
+          riskGatePresenceOptions={riskGatePresenceOptions}
+          riskSummaryPresenceOptions={riskSummaryPresenceOptions}
+          onReset={() => {
+            setVersionCodeInput('');
+            setVersionCode(undefined);
+            setKeywordInput('');
+            setKeyword(undefined);
+            setSelectedWorkflowDefinitionId(undefined);
+            setSelectedStatus(undefined);
+            setSelectedFailureCategory(undefined);
+            setFailureCodeInput('');
+            setFailureCode(undefined);
+            setSelectedTriggerType(undefined);
+            setSelectedRiskLevel(undefined);
+            setSelectedDegradeAction(undefined);
+            setSelectedRiskGatePresence(undefined);
+            setSelectedRiskSummaryPresence(undefined);
+            setStartedAtRange(null);
+            setOnlySoftFailure(false);
+            setOnlyErrorRoute(false);
+            setOnlyRiskBlocked(false);
+            setRiskProfileCodeInput('');
+            setRiskProfileCode(undefined);
+            setRiskReasonKeywordInput('');
+            setRiskReasonKeyword(undefined);
+            setPage(1);
+            setPageSize(20);
+          }}
+          onPageReset={() => setPage(1)}
+        />
 
         <Table
           rowKey="id"
@@ -1748,7 +1527,7 @@ export const WorkflowExecutionPage: React.FC = () => {
               setPageSize(nextPageSize);
             },
           }}
-          scroll={{ x: 1300 }}
+          scroll={{ x: 1000 }}
         />
       </Space>
 
@@ -1758,482 +1537,266 @@ export const WorkflowExecutionPage: React.FC = () => {
         open={Boolean(selectedExecutionId)}
         onClose={() => setSelectedExecutionId(null)}
       >
-        <Space direction="vertical" style={{ width: '100%' }} size={16}>
-          {riskGateSummaryConsistency.hasRiskGateNode &&
-            (!riskGateSummaryConsistency.hasExecutionSummary ||
-              riskGateSummaryConsistency.mismatchFields.length) ? (
-            <Alert
-              type="warning"
-              showIcon
-              message="风控摘要一致性告警"
-              description={
-                !riskGateSummaryConsistency.hasExecutionSummary
-                  ? '检测到 risk-gate 节点执行记录，但实例 outputSnapshot.riskGate 缺失。'
-                  : `实例 outputSnapshot.riskGate 与最新 risk-gate 节点摘要不一致（字段：${riskGateMismatchFieldLabels.join(
-                    ', ',
-                  )}）。`
-              }
-            />
-          ) : null}
-          {riskGateSummaryConsistency.hasRiskGateNode &&
-            (!riskGateSummaryConsistency.hasExecutionSummary ||
-              riskGateSummaryConsistency.mismatchFields.length) ? (
-            <Card size="small" title="风控摘要比对">
-              <Space direction="vertical" style={{ width: '100%' }} size={12}>
-                <div>
-                  <Text type="secondary">实例摘要（outputSnapshot.riskGate）</Text>
-                  <Paragraph
-                    copyable={{ text: executionOutputRiskGateSummaryJson || 'null' }}
-                    style={{ marginBottom: 0 }}
-                  >
-                    <pre style={{ margin: 0, whiteSpace: 'pre-wrap' }}>
-                      {executionOutputRiskGateSummaryJson || 'null'}
-                    </pre>
-                  </Paragraph>
-                </div>
-                <div>
-                  <Text type="secondary">节点摘要（最新 risk-gate 输出）</Text>
-                  <Paragraph
-                    copyable={{ text: latestRiskGateNodeSummaryJson || 'null' }}
-                    style={{ marginBottom: 0 }}
-                  >
-                    <pre style={{ margin: 0, whiteSpace: 'pre-wrap' }}>
-                      {latestRiskGateNodeSummaryJson || 'null'}
-                    </pre>
-                  </Paragraph>
-                </div>
-              </Space>
-            </Card>
-          ) : null}
-          <Descriptions
-            column={2}
-            bordered
-            size="small"
-            items={[
-              {
-                key: 'workflow',
-                label: '流程',
-                children: executionDetail?.workflowVersion?.workflowDefinition?.name || '-',
-              },
-              {
-                key: 'version',
-                label: '版本',
-                children: executionDetail?.workflowVersion?.versionCode || '-',
-              },
-              {
-                key: 'triggerType',
-                label: '触发类型',
-                children: getTriggerTypeLabel(executionDetail?.triggerType),
-              },
-              {
-                key: 'sourceExecutionId',
-                label: '来源实例',
-                children: executionDetail?.sourceExecutionId
-                  ? executionDetail.sourceExecutionId.slice(0, 8)
-                  : '-',
-              },
-              {
-                key: 'status',
-                label: '执行状态',
-                children: executionDetail?.status ? (
-                  <Tag color={executionStatusColorMap[executionDetail.status] ?? 'default'}>
-                    {getExecutionStatusLabel(executionDetail.status)}
-                  </Tag>
-                ) : (
-                  '-'
-                ),
-              },
-              {
-                key: 'failureCategory',
-                label: '失败分类',
-                children: getFailureCategoryLabel(executionDetail?.failureCategory),
-              },
-              {
-                key: 'failureCode',
-                label: '失败代码',
-                children: executionDetail?.failureCode || '-',
-              },
-              {
-                key: 'startedAt',
-                label: '开始时间',
-                children: executionDetail?.startedAt
-                  ? dayjs(executionDetail.startedAt).format('YYYY-MM-DD HH:mm:ss')
-                  : '-',
-              },
-              {
-                key: 'completedAt',
-                label: '结束时间',
-                span: 2,
-                children: executionDetail?.completedAt
-                  ? dayjs(executionDetail.completedAt).format('YYYY-MM-DD HH:mm:ss')
-                  : '-',
-              },
-              {
-                key: 'errorMessage',
-                label: '错误信息',
-                span: 2,
-                children: executionDetail?.errorMessage || '-',
-              },
-              {
-                key: 'riskGateResult',
-                label: '风控结论',
-                children: riskGateSummary ? (
-                  <Tag color={riskGateSummary.passed ? 'success' : 'error'}>
-                    {riskGateSummary.passed ? '通过' : riskGateSummary.blocked ? '阻断' : '待定'}
-                  </Tag>
-                ) : (
-                  '-'
-                ),
-              },
-              {
-                key: 'riskLevel',
-                label: '风险等级',
-                children: riskGateSummary?.riskLevel ? (
-                  <Tag color={riskLevelColorMap[riskGateSummary.riskLevel] || 'default'}>
-                    {getRiskLevelLabel(riskGateSummary.riskLevel)}
-                  </Tag>
-                ) : (
-                  '-'
-                ),
-              },
-              {
-                key: 'degradeAction',
-                label: '降级动作',
-                children: getDegradeActionLabel(riskGateSummary?.degradeAction),
-              },
-              {
-                key: 'riskProfileCode',
-                label: '风控模板',
-                children: riskGateSummary?.riskProfileCode || '-',
-              },
-              {
-                key: 'summarySchemaVersion',
-                label: '摘要版本',
-                children: riskGateSummary?.summarySchemaVersion || '-',
-              },
-              {
-                key: 'threshold',
-                label: '风控阈值',
-                children: riskGateSummary?.threshold || '-',
-              },
-              {
-                key: 'blockers',
-                label: '阻断项',
-                children: riskGateSummary?.blockers.length
-                  ? riskGateSummary.blockers.join(', ')
-                  : '-',
-              },
-              {
-                key: 'blockerCount',
-                label: '阻断项数量',
-                children: riskGateSummary?.blockerCount ?? '-',
-              },
-              {
-                key: 'riskEvaluatedAt',
-                label: '风控评估时间',
-                span: 2,
-                children: riskGateSummary?.riskEvaluatedAt || '-',
-              },
-              {
-                key: 'blockReason',
-                label: '阻断原因',
-                span: 2,
-                children: riskGateSummary?.blockReason || '-',
-              },
-            ]}
-          />
-
-          {riskGateSummaryJson ? (
-            <Card size="small" title="风控摘要 JSON">
-              <Paragraph copyable={{ text: riskGateSummaryJson }} style={{ marginBottom: 0 }}>
-                <pre style={{ margin: 0, whiteSpace: 'pre-wrap' }}>{riskGateSummaryJson}</pre>
-              </Paragraph>
-            </Card>
-          ) : null}
-
-          {workflowBindingSnapshotJson ? (
-            <Card size="small" title="运行绑定快照 (_workflowBindings)">
-              {workflowBindingSnapshot ? (
-                <Space direction="vertical" style={{ width: '100%', marginBottom: 12 }} size={8}>
-                  <div>
-                    <Text type="secondary">声明绑定</Text>
-                    <div>
-                      <Text>
-                        智能体：{' '}
-                        {(workflowBindingSnapshot.workflowBindings?.agentBindings || []).join(
-                          ', ',
-                        ) || '-'}
-                      </Text>
-                    </div>
-                    <div>
-                      <Text>
-                        参数集：{' '}
-                        {(workflowBindingSnapshot.workflowBindings?.paramSetBindings || []).join(
-                          ', ',
-                        ) || '-'}
-                      </Text>
-                    </div>
-                    <div>
-                      <Text>
-                        数据连接器：{' '}
-                        {(
-                          workflowBindingSnapshot.workflowBindings?.dataConnectorBindings || []
-                        ).join(', ') || '-'}
-                      </Text>
-                    </div>
-                  </div>
-
-                  <div>
-                    <Text type="secondary">未解析绑定</Text>
-                    <div>
-                      {(workflowBindingSnapshot.unresolvedBindings?.agents || []).map((item) => (
-                        <Tag key={`ua-${item}`} color="red">
-                          智能体:{item}
-                        </Tag>
-                      ))}
-                      {(workflowBindingSnapshot.unresolvedBindings?.parameterSets || []).map(
-                        (item) => (
-                          <Tag key={`up-${item}`} color="red">
-                            参数集:{item}
+        <Tabs
+          defaultActiveKey="overview"
+          items={[
+            {
+              key: 'overview',
+              label: '概览',
+              children: (
+                <Space direction="vertical" style={{ width: '100%' }} size={16}>
+                  {riskGateSummaryConsistency.hasRiskGateNode &&
+                    (!riskGateSummaryConsistency.hasExecutionSummary ||
+                      riskGateSummaryConsistency.mismatchFields.length) ? (
+                    <Alert
+                      type="warning"
+                      showIcon
+                      message="风控摘要一致性告警"
+                      description={
+                        !riskGateSummaryConsistency.hasExecutionSummary
+                          ? '检测到 risk-gate 节点执行记录，但实例 outputSnapshot.riskGate 缺失。'
+                          : `实例 outputSnapshot.riskGate 与最新 risk-gate 节点摘要不一致（字段：${riskGateMismatchFieldLabels.join(
+                            ', ',
+                          )}）。`
+                      }
+                    />
+                  ) : null}
+                  <Descriptions
+                    column={2}
+                    bordered
+                    size="small"
+                    items={[
+                      {
+                        key: 'workflow',
+                        label: '流程',
+                        children: executionDetail?.workflowVersion?.workflowDefinition?.name || '-',
+                      },
+                      {
+                        key: 'version',
+                        label: '版本',
+                        children: executionDetail?.workflowVersion?.versionCode || '-',
+                      },
+                      {
+                        key: 'triggerType',
+                        label: '触发类型',
+                        children: getTriggerTypeLabel(executionDetail?.triggerType),
+                      },
+                      {
+                        key: 'sourceExecutionId',
+                        label: '来源实例',
+                        children: executionDetail?.sourceExecutionId
+                          ? executionDetail.sourceExecutionId.slice(0, 8)
+                          : '-',
+                      },
+                      {
+                        key: 'status',
+                        label: '执行状态',
+                        children: executionDetail?.status ? (
+                          <Tag color={executionStatusColorMap[executionDetail.status] ?? 'default'}>
+                            {getExecutionStatusLabel(executionDetail.status)}
                           </Tag>
+                        ) : (
+                          '-'
                         ),
-                      )}
-                      {(workflowBindingSnapshot.unresolvedBindings?.dataConnectors || []).map(
-                        (item) => (
-                          <Tag key={`uc-${item}`} color="red">
-                            连接器:{item}
-                          </Tag>
-                        ),
-                      )}
-                      {!(
-                        workflowBindingSnapshot.unresolvedBindings?.agents?.length ||
-                        workflowBindingSnapshot.unresolvedBindings?.parameterSets?.length ||
-                        workflowBindingSnapshot.unresolvedBindings?.dataConnectors?.length
-                      ) ? (
-                        <Text>-</Text>
-                      ) : null}
-                    </div>
-                  </div>
+                      },
+                      {
+                        key: 'failureCategory',
+                        label: '失败分类',
+                        children: getFailureCategoryLabel(executionDetail?.failureCategory),
+                      },
+                      {
+                        key: 'failureCode',
+                        label: '失败代码',
+                        children: executionDetail?.failureCode || '-',
+                      },
+                      {
+                        key: 'startedAt',
+                        label: '开始时间',
+                        children: executionDetail?.startedAt
+                          ? dayjs(executionDetail.startedAt).format('YYYY-MM-DD HH:mm:ss')
+                          : '-',
+                      },
+                      {
+                        key: 'completedAt',
+                        label: '结束时间',
+                        span: 2,
+                        children: executionDetail?.completedAt
+                          ? dayjs(executionDetail.completedAt).format('YYYY-MM-DD HH:mm:ss')
+                          : '-',
+                      },
+                      {
+                        key: 'errorMessage',
+                        label: '错误信息',
+                        span: 2,
+                        children: executionDetail?.errorMessage || '-',
+                      },
+                    ]}
+                  />
 
-                  <Space size={12}>
-                    <a href="/workflow/agents" target="_blank" rel="noreferrer">
-                      打开智能体中心
-                    </a>
-                    <a href="/workflow/parameters" target="_blank" rel="noreferrer">
-                      打开参数中心
-                    </a>
-                    <a href="/workflow/connectors" target="_blank" rel="noreferrer">
-                      打开连接器中心
-                    </a>
+                  <Card size="small" title="风控信息">
+                    <Descriptions
+                      column={2}
+                      bordered
+                      size="small"
+                      items={[
+                        {
+                          key: 'riskGateResult',
+                          label: '风控结论',
+                          children: riskGateSummary ? (
+                            <Tag color={riskGateSummary.passed ? 'success' : 'error'}>
+                              {riskGateSummary.passed ? '通过' : riskGateSummary.blocked ? '阻断' : '待定'}
+                            </Tag>
+                          ) : (
+                            '-'
+                          ),
+                        },
+                        {
+                          key: 'riskLevel',
+                          label: '风险等级',
+                          children: riskGateSummary?.riskLevel ? (
+                            <Tag color={riskLevelColorMap[riskGateSummary.riskLevel] || 'default'}>
+                              {getRiskLevelLabel(riskGateSummary.riskLevel)}
+                            </Tag>
+                          ) : (
+                            '-'
+                          ),
+                        },
+                        {
+                          key: 'degradeAction',
+                          label: '降级动作',
+                          children: getDegradeActionLabel(riskGateSummary?.degradeAction),
+                        },
+                        {
+                          key: 'riskProfileCode',
+                          label: '风控模板',
+                          children: riskGateSummary?.riskProfileCode || '-',
+                        },
+                        {
+                          key: 'blockReason',
+                          label: '阻断原因',
+                          span: 2,
+                          children: riskGateSummary?.blockReason || '-',
+                        },
+                        {
+                          key: 'blockers',
+                          label: '阻断项',
+                          span: 2,
+                          children: riskGateSummary?.blockers.length
+                            ? riskGateSummary.blockers.join(', ')
+                            : '-',
+                        },
+                      ]}
+                    />
+                  </Card>
+                </Space>
+              ),
+            },
+            {
+              key: 'nodes',
+              label: '节点执行',
+              children: (
+                <Table
+                  rowKey="id"
+                  loading={isDetailLoading}
+                  columns={nodeColumns}
+                  dataSource={executionDetail?.nodeExecutions || []}
+                  pagination={false}
+                />
+              ),
+            },
+            {
+              key: 'timeline',
+              label: '时间线',
+              children: (
+                <Space direction="vertical" style={{ width: '100%' }}>
+                  <Space wrap>
+                    <Input.Search
+                      allowClear
+                      placeholder="按事件类型筛选"
+                      value={timelineEventTypeInput}
+                      onChange={(e) => {
+                        setTimelineEventTypeInput(e.target.value);
+                        if (!e.target.value.trim()) {
+                          setTimelineEventType(undefined);
+                          setTimelinePage(1);
+                        }
+                      }}
+                      onSearch={(value) => {
+                        setTimelineEventType(value.trim() || undefined);
+                        setTimelinePage(1);
+                      }}
+                    />
+                    <Select
+                      allowClear
+                      style={{ width: 120 }}
+                      placeholder="按级别"
+                      options={[{ label: '信息', value: 'INFO' }, { label: '警告', value: 'WARN' }, { label: '错误', value: 'ERROR' }]}
+                      value={timelineLevel}
+                      onChange={(value) => { setTimelineLevel(value); setTimelinePage(1); }}
+                    />
+                  </Space>
+                  <Table
+                    rowKey="id"
+                    loading={isTimelineLoading}
+                    columns={timelineColumns}
+                    dataSource={timelineData}
+                    pagination={{
+                      current: executionTimeline?.page || timelinePage,
+                      pageSize: executionTimeline?.pageSize || timelinePageSize,
+                      total: executionTimeline?.total ?? executionDetail?.runtimeEvents?.length ?? 0,
+                      showSizeChanger: true,
+                      onChange: (nextPage, nextPageSize) => {
+                        setTimelinePage(nextPage);
+                        setTimelinePageSize(nextPageSize);
+                      },
+                    }}
+                    scroll={{ x: 860 }}
+                  />
+                </Space>
+              ),
+            },
+            {
+              key: 'debate',
+              label: '辩论回放',
+              children: (
+                <Space direction="vertical" style={{ width: '100%' }}>
+                  <Space wrap>
+                    <Input placeholder="轮次" style={{ width: 100 }} value={debateRoundNumber ?? ''} onChange={e => {
+                      const v = Number(e.target.value);
+                      setDebateRoundNumber(Number.isFinite(v) && e.target.value ? v : undefined);
+                    }} />
+                    <Input placeholder="参与者编码" value={debateParticipantCode} onChange={e => setDebateParticipantCode(e.target.value || undefined)} />
+                    <Checkbox checked={debateJudgementOnly} onChange={e => setDebateJudgementOnly(e.target.checked)}>仅裁决</Checkbox>
                   </Space>
 
-                  <div>
-                    <Text type="secondary">已解析绑定</Text>
-                    <Card size="small" title={`智能体（${resolvedAgents.length}）`}>
-                      <Table
-                        rowKey={(record) => `${record.id}-${record.version}`}
-                        dataSource={resolvedAgents}
-                        columns={bindingColumns}
-                        pagination={false}
-                        size="small"
-                      />
-                    </Card>
-                    <Card size="small" title={`参数集（${resolvedParameterSets.length}）`}>
-                      <Table
-                        rowKey={(record) => `${record.id}-${record.version}`}
-                        dataSource={resolvedParameterSets}
-                        columns={bindingColumns}
-                        pagination={false}
-                        size="small"
-                      />
-                    </Card>
-                    <Card size="small" title={`数据连接器（${resolvedDataConnectors.length}）`}>
-                      <Table
-                        rowKey={(record) => `${record.id}-${record.version}`}
-                        dataSource={resolvedDataConnectors}
-                        columns={bindingColumns}
-                        pagination={false}
-                        size="small"
-                      />
-                    </Card>
-                  </div>
+                  <Collapse
+                    items={debateRoundCollapseItems}
+                    defaultActiveKey={debateRoundCollapseItems.slice(0, 1).map((item) => item.key)}
+                  />
+
+                  <Table
+                    rowKey="id"
+                    loading={isDebateTracesLoading}
+                    columns={debateTraceColumns}
+                    dataSource={debateTraceData}
+                    pagination={{ pageSize: 20 }}
+                  />
                 </Space>
-              ) : null}
-              <Paragraph
-                copyable={{ text: workflowBindingSnapshotJson }}
-                style={{ marginBottom: 0 }}
-              >
-                <pre style={{ margin: 0, whiteSpace: 'pre-wrap' }}>
-                  {workflowBindingSnapshotJson}
-                </pre>
-              </Paragraph>
-            </Card>
-          ) : null}
-
-          <Table
-            rowKey="id"
-            loading={isDetailLoading}
-            columns={nodeColumns}
-            dataSource={executionDetail?.nodeExecutions || []}
-            pagination={false}
-          />
-
-          <Card size="small" title={`辩论回放（${debateRounds.length} 轮）`}>
-            <Space wrap style={{ marginBottom: 12 }}>
-              <Input
-                style={{ width: 140 }}
-                placeholder="轮次"
-                value={debateRoundNumber ?? ''}
-                onChange={(event) => {
-                  const value = event.target.value.trim();
-                  const parsed = value ? Number(value) : undefined;
-                  setDebateRoundNumber(parsed && Number.isFinite(parsed) ? parsed : undefined);
-                }}
-              />
-              <Input
-                style={{ width: 200 }}
-                placeholder="参与者编码"
-                value={debateParticipantCode}
-                onChange={(event) =>
-                  setDebateParticipantCode(event.target.value.trim() || undefined)
-                }
-              />
-              <Input
-                style={{ width: 180 }}
-                placeholder="参与者角色"
-                value={debateParticipantRole}
-                onChange={(event) =>
-                  setDebateParticipantRole(event.target.value.trim() || undefined)
-                }
-              />
-              <Input
-                style={{ width: 220 }}
-                placeholder="关键字（发言/裁决）"
-                value={debateKeyword}
-                onChange={(event) => setDebateKeyword(event.target.value.trim() || undefined)}
-              />
-              <Checkbox
-                checked={debateJudgementOnly}
-                onChange={(event) => setDebateJudgementOnly(event.target.checked)}
-              >
-                仅裁决
-              </Checkbox>
-              <Button
-                onClick={() => {
-                  setDebateRoundNumber(undefined);
-                  setDebateParticipantCode(undefined);
-                  setDebateParticipantRole(undefined);
-                  setDebateKeyword(undefined);
-                  setDebateJudgementOnly(false);
-                }}
-              >
-                重置辩论筛选
-              </Button>
-            </Space>
-
-            <Descriptions
-              size="small"
-              bordered
-              column={3}
-              style={{ marginBottom: 12 }}
-              items={[
-                { key: 'totalRounds', label: '总轮次', children: debateTimeline?.totalRounds ?? 0 },
-                { key: 'traceRows', label: '轨迹条数', children: debateTraceData.length },
-                {
-                  key: 'loading',
-                  label: '加载状态',
-                  children:
-                    isDebateTimelineLoading || isDebateTracesLoading ? (
-                      <Tag color="processing">加载中</Tag>
-                    ) : (
-                      <Tag color="green">就绪</Tag>
-                    ),
-                },
-              ]}
-            />
-
-            <Collapse
-              items={debateRoundCollapseItems}
-              defaultActiveKey={debateRoundCollapseItems.slice(0, 1).map((item) => item.key)}
-              style={{ marginBottom: 12 }}
-            />
-
-            <Table
-              rowKey="id"
-              loading={isDebateTracesLoading}
-              columns={debateTraceColumns}
-              dataSource={debateTraceData}
-              pagination={{ pageSize: 20, showSizeChanger: true }}
-            />
-          </Card>
-
-          <Card size="small" title="运行事件时间线">
-            <Space wrap style={{ marginBottom: 12 }}>
-              <Input.Search
-                allowClear
-                style={{ width: 260 }}
-                placeholder="按事件类型筛选"
-                value={timelineEventTypeInput}
-                onChange={(event) => {
-                  const nextValue = event.target.value;
-                  setTimelineEventTypeInput(nextValue);
-                  if (!nextValue.trim()) {
-                    setTimelineEventType(undefined);
-                    setTimelinePage(1);
-                  }
-                }}
-                onSearch={(value) => {
-                  const normalized = value.trim();
-                  setTimelineEventType(normalized ? normalized : undefined);
-                  setTimelinePage(1);
-                }}
-              />
-              <Select
-                allowClear
-                style={{ width: 180 }}
-                placeholder="按级别筛选"
-                options={[
-                  { label: '信息', value: 'INFO' },
-                  { label: '警告', value: 'WARN' },
-                  { label: '错误', value: 'ERROR' },
-                ]}
-                value={timelineLevel}
-                onChange={(value) => {
-                  setTimelineLevel(value);
-                  setTimelinePage(1);
-                }}
-              />
-              <Button
-                onClick={() => {
-                  setTimelineEventTypeInput('');
-                  setTimelineEventType(undefined);
-                  setTimelineLevel(undefined);
-                  setTimelinePage(1);
-                  setTimelinePageSize(20);
-                }}
-              >
-                重置时间线筛选
-              </Button>
-            </Space>
-            <Table
-              rowKey="id"
-              loading={isTimelineLoading}
-              columns={timelineColumns}
-              dataSource={timelineData}
-              pagination={{
-                current: executionTimeline?.page || timelinePage,
-                pageSize: executionTimeline?.pageSize || timelinePageSize,
-                total: executionTimeline?.total ?? executionDetail?.runtimeEvents?.length ?? 0,
-                showSizeChanger: true,
-                onChange: (nextPage, nextPageSize) => {
-                  setTimelinePage(nextPage);
-                  setTimelinePageSize(nextPageSize);
-                },
-              }}
-              scroll={{ x: 860 }}
-            />
-          </Card>
-        </Space>
+              )
+            },
+            {
+              key: 'bindings',
+              label: '绑定快照',
+              children: workflowBindingSnapshotJson ? (
+                <Card size="small" title="运行绑定快照">
+                  <Paragraph copyable={{ text: workflowBindingSnapshotJson }}>
+                    <pre>{workflowBindingSnapshotJson}</pre>
+                  </Paragraph>
+                </Card>
+              ) : <Empty description="无绑定数据" />
+            }
+          ]}
+        />
       </Drawer>
     </Card>
   );

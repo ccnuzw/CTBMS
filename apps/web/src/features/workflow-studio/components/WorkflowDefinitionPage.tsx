@@ -836,6 +836,8 @@ export const WorkflowDefinitionPage: React.FC = () => {
         title: '发布人',
         dataIndex: 'publishedByUserId',
         width: 150,
+        render: (_: unknown, record: WorkflowPublishAuditDto) =>
+          record.publishedByUserName || record.publishedByUserId,
       },
       {
         title: '备注',
@@ -1331,7 +1333,7 @@ export const WorkflowDefinitionPage: React.FC = () => {
       <Drawer
         title={`版本列表 - ${selectedDefinition?.name || ''}`}
         open={versionVisible}
-        width={920}
+        width={1400}
         extra={
           <Space>
             <Button
