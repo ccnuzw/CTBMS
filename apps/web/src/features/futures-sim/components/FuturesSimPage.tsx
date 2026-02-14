@@ -37,7 +37,11 @@ import {
 } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
 import { useSearchParams } from 'react-router-dom';
-import type { VirtualFuturesPositionDto, VirtualTradeLedgerDto } from '@packages/types';
+import type {
+  VirtualFuturesPositionDto,
+  VirtualTradeLedgerDto,
+  FuturesDerivedFeatureDto,
+} from '@packages/types';
 import {
   usePositions,
   usePositionDetail,
@@ -45,7 +49,13 @@ import {
   useClosePosition,
   useTrades,
   useAccountSummary,
+  useDerivedFeatures,
+  useCalculateDerivedFeatures,
+  useQuoteSnapshots,
+  useGenerateMockData,
 } from '../api/futures-sim';
+import { KLineChart } from './KLineChart';
+import dayjs from 'dayjs';
 
 const { Title, Text } = Typography;
 
@@ -76,6 +86,13 @@ const riskLevelConfig: Record<string, { color: string; label: string }> = {
   LIQUIDATION: { color: '#ff0000', label: '强平线' },
 };
 
+const derivedFeatureLabelMap: Record<string, string> = {
+  INTRADAY_RETURN_PCT: '日内涨跌幅(%)',
+  INTRADAY_RANGE_PCT: '日内振幅(%)',
+  VOLUME_SUM: '成交量汇总',
+  OPEN_INTEREST_CHANGE: '持仓变化',
+};
+
 export const FuturesSimPage: React.FC = () => {
   const { token } = theme.useToken();
   const { message } = App.useApp();
@@ -87,9 +104,16 @@ export const FuturesSimPage: React.FC = () => {
   const statusFilter = searchParams.get('status') ?? undefined;
   const directionFilter = searchParams.get('direction') ?? undefined;
   const accountId = searchParams.get('accountId') ?? 'default';
+  const featureTypeFilter = searchParams.get('featureType') ?? undefined;
+  const featureContractCode = searchParams.get('featureContractCode') ?? undefined;
+  const featureTradingDay = searchParams.get('featureTradingDay') ?? undefined;
+  const chartContractCode = searchParams.get('chartContractCode') ?? '';
+  const chartTradingDay = searchParams.get('chartTradingDay') ?? dayjs().format('YYYY-MM-DD');
 
   const [selectedPositionId, setSelectedPositionId] = useState<string | undefined>();
   const [isOpenModalOpen, setIsOpenModalOpen] = useState(false);
+  const [mockDataModalOpen, setMockDataModalOpen] = useState(false);
+  const [mockContract, setMockContract] = useState('rb2510');
   const [closeModal, setCloseModal] = useState<{ open: boolean; positionId: string; closePrice: number; quantity: number; reason: string }>({
     open: false, positionId: '', closePrice: 0, quantity: 1, reason: '',
   });
@@ -104,6 +128,11 @@ export const FuturesSimPage: React.FC = () => {
     stopLossPrice: '',
     takeProfitPrice: '',
   });
+  const [featureCalcForm, setFeatureCalcForm] = useState({
+    contractCode: featureContractCode ?? '',
+    tradingDay: featureTradingDay ?? new Date().toISOString().slice(0, 10),
+    featureTypes: ['INTRADAY_RETURN_PCT', 'INTRADAY_RANGE_PCT'] as string[],
+  });
 
   const { data: positionsData, isLoading: isPosLoading } = usePositions(
     activeTab === 'positions' ? { accountId, status: statusFilter, direction: directionFilter, page, pageSize } : undefined,
@@ -111,11 +140,35 @@ export const FuturesSimPage: React.FC = () => {
   const { data: tradesData, isLoading: isTradesLoading } = useTrades(
     activeTab === 'trades' ? { accountId, page, pageSize } : undefined,
   );
+  const { data: featureData, isLoading: isFeatureLoading } = useDerivedFeatures(
+    activeTab === 'features'
+      ? {
+        contractCode: featureContractCode,
+        featureType: featureTypeFilter,
+        tradingDay: featureTradingDay,
+        page,
+        pageSize,
+      }
+      : undefined,
+  );
+  const { data: quoteData, isLoading: isQuoteLoading } = useQuoteSnapshots(
+    activeTab === 'chart'
+      ? {
+        contractCode: chartContractCode,
+        tradingDay: chartTradingDay,
+        page: 1,
+        pageSize: 1000,
+      }
+      : undefined,
+  );
+
   const { data: positionDetail } = usePositionDetail(selectedPositionId);
   const { data: accountSummary } = useAccountSummary(accountId);
 
   const openMutation = useOpenPosition();
   const closeMutation = useClosePosition();
+  const calculateFeatureMutation = useCalculateDerivedFeatures();
+  const generateMockMutation = useGenerateMockData();
 
   const handleOpen = async () => {
     if (!openForm.contractCode || openForm.openPrice <= 0) {
@@ -160,6 +213,43 @@ export const FuturesSimPage: React.FC = () => {
       setCloseModal({ open: false, positionId: '', closePrice: 0, quantity: 1, reason: '' });
     } catch {
       message.error('平仓失败');
+    }
+  };
+
+  const handleCalculateFeatures = async () => {
+    const contractCode = featureCalcForm.contractCode.trim();
+    const tradingDay = featureCalcForm.tradingDay.trim();
+    if (!contractCode || !tradingDay) {
+      message.warning('请填写特征计算的合约与交易日');
+      return;
+    }
+
+    try {
+      const result = await calculateFeatureMutation.mutateAsync({
+        contractCode,
+        tradingDay,
+        featureTypes: featureCalcForm.featureTypes,
+      });
+      message.success(`特征计算完成，共 ${result.calculatedCount} 项`);
+      updateParams({
+        tab: 'features',
+        featureContractCode: contractCode,
+        featureTradingDay: tradingDay,
+        page: '1',
+      });
+    } catch {
+      message.error('特征计算失败');
+    }
+  };
+
+  const handleGenerateMock = async () => {
+    try {
+      const res = await generateMockMutation.mutateAsync({ contractCode: mockContract, days: 5 });
+      message.success(`生成了 ${res.count} 条行情数据`);
+      setMockDataModalOpen(false);
+      updateParams({ chartContractCode: mockContract, tab: 'chart' });
+    } catch {
+      message.error('生成失败');
     }
   };
 
@@ -271,6 +361,48 @@ export const FuturesSimPage: React.FC = () => {
     },
   ];
 
+  const featureColumns: ColumnsType<FuturesDerivedFeatureDto> = [
+    {
+      title: '合约',
+      dataIndex: 'contractCode',
+      width: 100,
+      render: (v: string) => <Text strong>{v}</Text>,
+    },
+    {
+      title: '特征类型',
+      dataIndex: 'featureType',
+      width: 180,
+      render: (v: string) => <Tag color="blue">{derivedFeatureLabelMap[v] ?? v}</Tag>,
+    },
+    {
+      title: '特征值',
+      dataIndex: 'featureValue',
+      width: 160,
+      render: (v: number) => v.toFixed(4),
+    },
+    {
+      title: '交易日',
+      dataIndex: 'tradingDay',
+      width: 120,
+    },
+    {
+      title: '计算时间',
+      dataIndex: 'calculatedAt',
+      width: 180,
+      render: (v: string) => (v ? new Date(v).toLocaleString('zh-CN') : '-'),
+    },
+    {
+      title: '参数摘要',
+      dataIndex: 'parameters',
+      width: 180,
+      render: (v: unknown) => {
+        if (!v || typeof v !== 'object') return '-';
+        const sampleSize = (v as { sampleSize?: number }).sampleSize;
+        return sampleSize ? `样本数: ${sampleSize}` : '-';
+      },
+    },
+  ];
+
   const riskCfg = riskLevelConfig[accountSummary?.riskAlertLevel ?? 'NORMAL'];
 
   return (
@@ -283,6 +415,7 @@ export const FuturesSimPage: React.FC = () => {
             <Title level={4} style={{ margin: 0 }}>期货模拟中心</Title>
           </Space>
           <Space>
+            <Button onClick={() => setMockDataModalOpen(true)}>生成模拟行情</Button>
             <Input
               style={{ width: 140 }}
               value={accountId}
@@ -355,9 +488,26 @@ export const FuturesSimPage: React.FC = () => {
           items={[
             { key: 'positions', label: `持仓 (${accountSummary?.openPositionCount ?? 0})` },
             { key: 'trades', label: '成交流水' },
+            { key: 'chart', label: '行情回放' },
+            { key: 'features', label: '衍生特征' },
           ]}
           tabBarExtraContent={
-            activeTab === 'positions' ? (
+            activeTab === 'chart' ? (
+              <Space>
+                <Input
+                  placeholder="合约代码"
+                  value={chartContractCode}
+                  onChange={e => updateParams({ chartContractCode: e.target.value, page: '1' })}
+                  style={{ width: 120 }}
+                />
+                <Input
+                  placeholder="交易日"
+                  value={chartTradingDay}
+                  onChange={e => updateParams({ chartTradingDay: e.target.value, page: '1' })}
+                  style={{ width: 120 }}
+                />
+              </Space>
+            ) : activeTab === 'positions' ? (
               <Space>
                 <Select
                   allowClear
@@ -383,6 +533,60 @@ export const FuturesSimPage: React.FC = () => {
                     { label: '已强平', value: 'LIQUIDATED' },
                   ]}
                 />
+              </Space>
+            ) : activeTab === 'features' ? (
+              <Space wrap>
+                <Input
+                  style={{ width: 130 }}
+                  placeholder="合约代码"
+                  value={featureCalcForm.contractCode}
+                  onChange={(e) =>
+                    setFeatureCalcForm((prev) => ({ ...prev, contractCode: e.target.value }))
+                  }
+                />
+                <Input
+                  style={{ width: 120 }}
+                  placeholder="交易日 YYYY-MM-DD"
+                  value={featureCalcForm.tradingDay}
+                  onChange={(e) =>
+                    setFeatureCalcForm((prev) => ({ ...prev, tradingDay: e.target.value }))
+                  }
+                />
+                <Select
+                  mode="multiple"
+                  style={{ width: 280 }}
+                  value={featureCalcForm.featureTypes}
+                  onChange={(v) =>
+                    setFeatureCalcForm((prev) => ({ ...prev, featureTypes: v as string[] }))
+                  }
+                  options={[
+                    { label: '日内涨跌幅(%)', value: 'INTRADAY_RETURN_PCT' },
+                    { label: '日内振幅(%)', value: 'INTRADAY_RANGE_PCT' },
+                    { label: '成交量汇总', value: 'VOLUME_SUM' },
+                    { label: '持仓变化', value: 'OPEN_INTEREST_CHANGE' },
+                  ]}
+                />
+                <Select
+                  allowClear
+                  style={{ width: 170 }}
+                  placeholder="特征类型筛选"
+                  value={featureTypeFilter}
+                  onChange={(v) => updateParams({ featureType: v, page: '1' })}
+                  options={[
+                    { label: '日内涨跌幅(%)', value: 'INTRADAY_RETURN_PCT' },
+                    { label: '日内振幅(%)', value: 'INTRADAY_RANGE_PCT' },
+                    { label: '成交量汇总', value: 'VOLUME_SUM' },
+                    { label: '持仓变化', value: 'OPEN_INTEREST_CHANGE' },
+                  ]}
+                />
+                <Button
+                  type="primary"
+                  icon={<SwapOutlined />}
+                  loading={calculateFeatureMutation.isPending}
+                  onClick={handleCalculateFeatures}
+                >
+                  计算特征
+                </Button>
               </Space>
             ) : null
           }
@@ -423,7 +627,48 @@ export const FuturesSimPage: React.FC = () => {
             }}
           />
         )}
+        {activeTab === 'chart' && (
+          <Card bordered={false}>
+            <KLineChart
+              data={quoteData?.data ?? []}
+              trades={tradesData?.data?.filter(t => t.contractCode === chartContractCode) ?? []}
+            />
+          </Card>
+        )}
+        {activeTab === 'features' && (
+          <Table<FuturesDerivedFeatureDto>
+            rowKey="id"
+            loading={isFeatureLoading}
+            dataSource={featureData?.data ?? []}
+            columns={featureColumns}
+            size="middle"
+            scroll={{ x: 900 }}
+            pagination={{
+              current: page,
+              pageSize,
+              total: featureData?.total ?? 0,
+              showSizeChanger: true,
+              showTotal: (total) => `共 ${total} 条`,
+              onChange: (p, ps) => updateParams({ page: String(p), pageSize: String(ps) }),
+            }}
+          />
+        )}
       </Card>
+
+      {/* ── Mock Data Modal ── */}
+      <Modal
+        title="生成模拟行情"
+        open={mockDataModalOpen}
+        onCancel={() => setMockDataModalOpen(false)}
+        onOk={handleGenerateMock}
+        confirmLoading={generateMockMutation.isPending}
+      >
+        <Space direction="vertical" style={{ width: '100%' }}>
+          <Text>合约代码</Text>
+          <Input value={mockContract} onChange={e => setMockContract(e.target.value)} />
+          <Text type="secondary">将生成最近5天的模拟K线数据</Text>
+        </Space>
+      </Modal>
 
       {/* ── Open Position Modal ── */}
       <Modal

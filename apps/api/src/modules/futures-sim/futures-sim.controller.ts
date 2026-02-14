@@ -13,6 +13,8 @@ import { FuturesSimService } from './futures-sim.service';
 import {
   CreateFuturesQuoteSnapshotRequest,
   FuturesQuoteQueryRequest,
+  CalculateFuturesDerivedFeatureRequest,
+  FuturesDerivedFeatureQueryRequest,
   OpenPositionRequest,
   ClosePositionRequest,
   PositionQueryRequest,
@@ -46,6 +48,18 @@ export class FuturesSimController {
   @Get('quotes/latest/:contractCode')
   getLatestQuote(@Param('contractCode') contractCode: string) {
     return this.service.getLatestQuote(contractCode);
+  }
+
+  // ── 衍生特征 ──
+
+  @Post('features/calculate')
+  calculateFeatures(@Body() dto: CalculateFuturesDerivedFeatureRequest) {
+    return this.service.calculateDerivedFeatures(dto);
+  }
+
+  @Get('features')
+  findFeatures(@Query() query: FuturesDerivedFeatureQueryRequest) {
+    return this.service.findDerivedFeatures(query);
   }
 
   // ── 虚拟持仓 ──
@@ -86,5 +100,11 @@ export class FuturesSimController {
   @Get('accounts/:accountId/summary')
   getAccountSummary(@Request() req: AuthRequest, @Param('accountId') accountId: string) {
     return this.service.getAccountSummary(this.getUserId(req), accountId);
+  }
+
+  // ── Mock Data (Dev/Test only) ──
+  @Post('mock-data')
+  generateMockData(@Body() body: { contractCode: string; days?: number }) {
+    return this.service.generateMockData(body.contractCode, body.days);
   }
 }

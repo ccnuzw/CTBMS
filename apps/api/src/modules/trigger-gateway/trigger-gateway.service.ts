@@ -1,5 +1,6 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException, HttpException, HttpStatus } from '@nestjs/common';
 import { PrismaService } from '../../prisma';
+import * as crypto from 'crypto';
 import type {
   CreateTriggerConfigDto,
   UpdateTriggerConfigDto,
@@ -7,6 +8,7 @@ import type {
   TriggerConfigQueryDto,
   TriggerLogQueryDto,
   WorkflowTriggerType,
+  ApiTriggerConfig,
 } from '@packages/types';
 import { WorkflowTriggerTypeEnum } from '@packages/types';
 import type { Prisma } from '@prisma/client';
@@ -14,13 +16,71 @@ import { WorkflowExecutionService } from '../workflow-execution/workflow-executi
 
 @Injectable()
 export class TriggerGatewayService {
+  // In-memory rate limiter: configId -> { tokens: number, lastRefill: number }
+  private rateLimiters = new Map<string, { tokens: number; lastRefill: number }>();
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly workflowExecutionService: WorkflowExecutionService,
   ) {}
 
+  private generateApiKey(): string {
+    return `sk_live_${crypto.randomBytes(24).toString('hex')}`;
+  }
+
+  private hashApiKey(key: string): string {
+    return crypto.createHash('sha256').update(key).digest('hex');
+  }
+
+  private validateApiKey(storedHash: string, inputKey: string): boolean {
+    const inputHash = this.hashApiKey(inputKey);
+    // Use timingSafeEqual to prevent timing attacks
+    const bufferStored = Buffer.from(storedHash, 'hex');
+    const bufferInput = Buffer.from(inputHash, 'hex');
+    return bufferStored.length === bufferInput.length && crypto.timingSafeEqual(bufferStored, bufferInput);
+  }
+
+  private checkRateLimit(configId: string, limitPerMinute: number): boolean {
+    const now = Date.now();
+    const bucket = this.rateLimiters.get(configId) || { tokens: limitPerMinute, lastRefill: now };
+
+    // Refill tokens based on time passed
+    const timePassed = now - bucket.lastRefill;
+    const tokensToAdd = Math.floor(timePassed * (limitPerMinute / 60000));
+
+    if (tokensToAdd > 0) {
+      bucket.tokens = Math.min(limitPerMinute, bucket.tokens + tokensToAdd);
+      bucket.lastRefill = now;
+    }
+
+    if (bucket.tokens >= 1) {
+      bucket.tokens -= 1;
+      this.rateLimiters.set(configId, bucket);
+      return true;
+    }
+
+    this.rateLimiters.set(configId, bucket);
+    return false;
+  }
+
   async create(userId: string, dto: CreateTriggerConfigDto) {
-    return this.prisma.triggerConfig.create({
+    let plainApiKey: string | undefined;
+
+    // Handle API Key generation for API triggers
+    if (dto.triggerType === 'API' && dto.apiConfig?.authMethod === 'API_KEY') {
+      if (!dto.apiConfig.apiKey) {
+        plainApiKey = this.generateApiKey();
+        dto.apiConfig.apiKey = this.hashApiKey(plainApiKey);
+      } else {
+        // If user provided a key (rare, usually we generate), we hash it
+        // But usually we assume if they provide it, it's what they want.
+        // However, for security, we should probably always generate or assume the user provided one is to be hashed.
+        // Let's assume if they provide it, we hash it.
+        dto.apiConfig.apiKey = this.hashApiKey(dto.apiConfig.apiKey);
+      }
+    }
+
+    const config = await this.prisma.triggerConfig.create({
       data: {
         workflowDefinitionId: dto.workflowDefinitionId,
         triggerType: dto.triggerType,
@@ -41,6 +101,12 @@ export class TriggerGatewayService {
         createdByUserId: userId,
       },
     });
+
+    // Return the plain key only once
+    return {
+      ...config,
+      generatedApiKey: plainApiKey,
+    };
   }
 
   async findAll(userId: string, query: TriggerConfigQueryDto) {
@@ -95,8 +161,38 @@ export class TriggerGatewayService {
   }
 
   async update(userId: string, id: string, dto: UpdateTriggerConfigDto) {
-    await this.findOne(userId, id);
-    return this.prisma.triggerConfig.update({
+    const existing = await this.findOne(userId, id);
+    let plainApiKey: string | undefined;
+
+    // Handle API Key generation if switching to API_KEY or resetting it
+    if (dto.apiConfig) {
+      if (dto.apiConfig.authMethod === 'API_KEY') {
+        if (dto.apiConfig.apiKey === 'GENERATE_NEW') {
+          // Special flag to regenerate
+          plainApiKey = this.generateApiKey();
+          dto.apiConfig.apiKey = this.hashApiKey(plainApiKey);
+        } else if (dto.apiConfig.apiKey) {
+           // If user sets a specific key (manual override)
+           dto.apiConfig.apiKey = this.hashApiKey(dto.apiConfig.apiKey);
+        } else {
+           // If apiKey is empty/undefined, keep existing or generate if not present?
+           // Typically update merges. If undefined, we don't touch it.
+           // But here dto.apiConfig replaces or merges?
+           // Prisma Json update usually replaces the whole object if we pass the whole object.
+           // We should check if we need to preserve existing key.
+           const existingApiConfig = existing.apiConfig as unknown as ApiTriggerConfig;
+           if (!dto.apiConfig.apiKey && existingApiConfig?.apiKey) {
+             dto.apiConfig.apiKey = existingApiConfig.apiKey;
+           } else if (!dto.apiConfig.apiKey) {
+             // Generate if no key exists
+             plainApiKey = this.generateApiKey();
+             dto.apiConfig.apiKey = this.hashApiKey(plainApiKey);
+           }
+        }
+      }
+    }
+
+    const updated = await this.prisma.triggerConfig.update({
       where: { id },
       data: {
         ...(dto.name !== undefined && { name: dto.name }),
@@ -116,6 +212,136 @@ export class TriggerGatewayService {
         }),
       },
     });
+
+    return {
+      ...updated,
+      generatedApiKey: plainApiKey,
+    };
+  }
+
+  // ... existing remove, activate, deactivate methods ...
+
+  async invokeExternal(id: string, apiKey: string, body: Record<string, unknown>) {
+    // 1. Get config (bypass user check)
+    const config = await this.prisma.triggerConfig.findUnique({
+      where: { id },
+    });
+
+    if (!config) {
+      throw new NotFoundException(`Trigger not found: ${id}`);
+    }
+
+    if (config.status !== 'ACTIVE') {
+      throw new BadRequestException(`Trigger is not active`);
+    }
+
+    if (config.triggerType !== 'API') {
+      throw new BadRequestException(`Trigger type is not API`);
+    }
+
+    const apiConfig = config.apiConfig as unknown as ApiTriggerConfig;
+
+    // 2. Auth Check
+    if (apiConfig?.authMethod === 'API_KEY') {
+       if (!apiKey) {
+         throw new HttpException('Missing API Key', HttpStatus.UNAUTHORIZED);
+       }
+       if (!apiConfig.apiKey || !this.validateApiKey(apiConfig.apiKey, apiKey)) {
+         throw new HttpException('Invalid API Key', HttpStatus.UNAUTHORIZED);
+       }
+    }
+
+    // 3. Rate Limit
+    const rateLimit = apiConfig?.rateLimitPerMinute || 60;
+    if (!this.checkRateLimit(id, rateLimit)) {
+      throw new HttpException('Too Many Requests', HttpStatus.TOO_MANY_REQUESTS);
+    }
+
+    // 4. IP Check (Optional - skipping for now as request IP extraction can be complex behind proxies)
+
+    // 5. Fire
+    return this.fireInternal(config, {
+      paramSnapshot: body,
+      // idempotencyKey? from header?
+    });
+  }
+
+  // Refactor fire to reuse internal logic
+  private async fireInternal(config: any, dto: FireTriggerConfigDto) {
+    const triggerType = this.normalizeTriggerType(config.triggerType);
+    const startedAt = Date.now();
+    const payload = this.mergeParamSnapshot(
+      this.toRecord(config.paramOverrides),
+      dto.paramSnapshot,
+    );
+
+    try {
+      const execution = await this.workflowExecutionService.trigger(config.createdByUserId, {
+        workflowDefinitionId: config.workflowDefinitionId,
+        workflowVersionId: dto.workflowVersionId,
+        experimentId: dto.experimentId,
+        triggerType,
+        idempotencyKey: dto.idempotencyKey,
+        paramSnapshot: payload,
+      });
+
+      if (!execution) {
+        throw new BadRequestException('Trigger failed to create execution');
+      }
+
+      const durationMs = Date.now() - startedAt;
+      const triggeredAt = new Date();
+
+      const [log] = await Promise.all([
+        this.prisma.triggerLog.create({
+          data: {
+            triggerConfigId: config.id,
+            workflowExecutionId: execution.id,
+            triggerType: config.triggerType,
+            status: 'SUCCESS',
+            payload: this.toJsonValue({
+              workflowDefinitionId: config.workflowDefinitionId,
+              workflowExecutionId: execution.id,
+              triggerType,
+              paramSnapshot: payload,
+              source: 'EXTERNAL_API'
+            }),
+            durationMs,
+            triggeredAt,
+          },
+        }),
+        this.prisma.triggerConfig.update({
+          where: { id: config.id },
+          data: { lastTriggeredAt: triggeredAt },
+        }),
+      ]);
+
+      return {
+        success: true,
+        executionId: execution.id,
+        status: execution.status,
+        traceId: log.id
+      };
+    } catch (error) {
+       const message = error instanceof Error ? error.message : String(error);
+       const durationMs = Date.now() - startedAt;
+       await this.prisma.triggerLog.create({
+        data: {
+          triggerConfigId: config.id,
+          triggerType: config.triggerType,
+          status: 'FAILED',
+          payload: this.toJsonValue({
+            workflowDefinitionId: config.workflowDefinitionId,
+            triggerType,
+            paramSnapshot: payload,
+          }),
+          errorMessage: message,
+          durationMs,
+          triggeredAt: new Date(),
+        },
+      });
+      throw error;
+    }
   }
 
   async remove(userId: string, id: string) {

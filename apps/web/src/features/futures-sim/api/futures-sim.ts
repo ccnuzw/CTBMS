@@ -2,6 +2,9 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type {
   FuturesQuotePageDto,
   FuturesQuoteSnapshotDto,
+  FuturesDerivedFeaturePageDto,
+  CalculateFuturesDerivedFeatureDto,
+  CalculateFuturesDerivedFeatureResultDto,
   PositionPageDto,
   VirtualFuturesPositionDto,
   TradeLedgerPageDto,
@@ -42,6 +45,44 @@ export const useLatestQuote = (contractCode?: string) => {
       return res.data;
     },
     enabled: Boolean(contractCode),
+  });
+};
+
+// ── 衍生特征 ──
+
+export interface DerivedFeatureQuery {
+  contractCode?: string;
+  featureType?: string;
+  tradingDay?: string;
+  page?: number;
+  pageSize?: number;
+}
+
+export const useDerivedFeatures = (query?: DerivedFeatureQuery) => {
+  return useQuery<FuturesDerivedFeaturePageDto>({
+    queryKey: ['futures-derived-features', query],
+    queryFn: async () => {
+      const res = await apiClient.get<FuturesDerivedFeaturePageDto>('/futures-sim/features', {
+        params: query,
+      });
+      return res.data;
+    },
+  });
+};
+
+export const useCalculateDerivedFeatures = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (dto: CalculateFuturesDerivedFeatureDto) => {
+      const res = await apiClient.post<CalculateFuturesDerivedFeatureResultDto>(
+        '/futures-sim/features/calculate',
+        dto,
+      );
+      return res.data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['futures-derived-features'] });
+    },
   });
 };
 
@@ -139,5 +180,23 @@ export const useAccountSummary = (accountId?: string) => {
       return res.data;
     },
     enabled: Boolean(accountId),
+  });
+};
+
+// ── Mock Data (Dev) ──
+
+export const useGenerateMockData = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ contractCode, days }: { contractCode: string; days?: number }) => {
+      const res = await apiClient.post<{ count: number }>('/futures-sim/mock-data', {
+        contractCode,
+        days,
+      });
+      return res.data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['futures-quotes'] });
+    },
   });
 };

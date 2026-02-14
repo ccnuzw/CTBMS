@@ -89,6 +89,67 @@ const buildDslSnapshot = (
   },
 });
 
+const buildOnDemandDslSnapshot = (
+  workflowId: string,
+  workflowName: string,
+  ownerUserId: string,
+  rulePackCode: string,
+) => ({
+  workflowId,
+  name: workflowName,
+  mode: 'LINEAR',
+  usageMethod: 'ON_DEMAND',
+  version: '1.0.0',
+  status: 'DRAFT',
+  ownerUserId,
+  nodes: [
+    { id: 'n_trigger', type: 'api-trigger', name: 'api trigger', enabled: true, config: {} },
+    {
+      id: 'n_rule_eval',
+      type: 'rule-eval',
+      name: 'rule eval',
+      enabled: true,
+      config: { rulePackCode },
+    },
+    {
+      id: 'n_risk_gate',
+      type: 'risk-gate',
+      name: 'risk gate',
+      enabled: true,
+      config: { riskProfileCode: 'ALIAS_PROFILE' },
+    },
+    {
+      id: 'n_notify',
+      type: 'notify',
+      name: 'notify',
+      enabled: true,
+      config: { channels: ['DASHBOARD'] },
+    },
+    { id: 'n_data_evidence', type: 'mock-fetch', name: 'mock fetch', enabled: true, config: {} },
+    {
+      id: 'n_model_evidence',
+      type: 'single-agent',
+      name: 'single agent',
+      enabled: true,
+      config: {},
+    },
+  ],
+  edges: [
+    { id: 'e1', from: 'n_trigger', to: 'n_rule_eval', edgeType: 'control-edge' },
+    { id: 'e2', from: 'n_rule_eval', to: 'n_risk_gate', edgeType: 'control-edge' },
+    { id: 'e3', from: 'n_risk_gate', to: 'n_notify', edgeType: 'control-edge' },
+    { id: 'e4', from: 'n_data_evidence', to: 'n_model_evidence', edgeType: 'control-edge' },
+  ],
+  runPolicy: {
+    nodeDefaults: {
+      timeoutMs: 30000,
+      retryCount: 1,
+      retryBackoffMs: 2000,
+      onError: 'FAIL_FAST',
+    },
+  },
+});
+
 const fetchJson = async <T>(
   input: string,
   init: RequestInit,
@@ -230,6 +291,73 @@ async function main() {
     );
     assert.equal(timeline.status, 200);
     assert.ok(timeline.body.total > 0);
+
+    const onDemandWorkflowId = `${token}_workflow_ondemand`;
+    const onDemandWorkflowName = `workflow ondemand ${token}`;
+
+    const createOnDemandDefinition = await fetchJson<{
+      definition: { id: string };
+      version: { id: string; status: string };
+    }>(`${baseUrl}/workflow-definitions`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-virtual-user-id': ownerUserId,
+      },
+      body: JSON.stringify({
+        workflowId: onDemandWorkflowId,
+        name: onDemandWorkflowName,
+        mode: 'LINEAR',
+        usageMethod: 'ON_DEMAND',
+        templateSource: 'PRIVATE',
+        dslSnapshot: buildOnDemandDslSnapshot(
+          onDemandWorkflowId,
+          onDemandWorkflowName,
+          ownerUserId,
+          rulePackCode,
+        ),
+        changelog: 'create ON_DEMAND definition for alias test',
+      }),
+    });
+    assert.equal(createOnDemandDefinition.status, 201);
+
+    const onDemandDefinitionId = createOnDemandDefinition.body.definition.id;
+    const onDemandVersionId = createOnDemandDefinition.body.version.id;
+
+    const publishOnDemandVersion = await fetchJson<{ id: string; status: string }>(
+      `${baseUrl}/workflow-definitions/${onDemandDefinitionId}/publish`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-virtual-user-id': ownerUserId,
+        },
+        body: JSON.stringify({ versionId: onDemandVersionId }),
+      },
+    );
+    assert.equal(publishOnDemandVersion.status, 201);
+    assert.equal(publishOnDemandVersion.body.status, 'PUBLISHED');
+
+    const triggerOnDemand = await fetchJson<{ id: string; status: string }>(
+      `${baseUrl}/workflow-executions/trigger`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-virtual-user-id': ownerUserId,
+        },
+        body: JSON.stringify({
+          workflowDefinitionId: onDemandDefinitionId,
+          workflowVersionId: onDemandVersionId,
+          triggerType: 'ON_DEMAND',
+          paramSnapshot: {
+            source: 'workflow-api-alias.e2e',
+          },
+        }),
+      },
+    );
+    assert.equal(triggerOnDemand.status, 201);
+    assert.equal(triggerOnDemand.body.status, 'SUCCESS');
 
     process.stdout.write('[workflow-api-alias.e2e] passed\n');
   } finally {

@@ -61,6 +61,27 @@ async function main() {
     assert.equal(createQuote.status, 201);
     assert.equal(createQuote.body.contractCode, contractCode);
 
+    const createQuote2 = await fetchJson<{ id: string; contractCode: string; lastPrice: number }>(
+      `${baseUrl}/futures-sim/quotes`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          contractCode,
+          exchange: 'DCE',
+          lastPrice: 708,
+          volume: 120,
+          openInterest: 2200,
+          tradingDay: '2026-02-13',
+          snapshotAt: new Date(Date.now() + 60_000).toISOString(),
+        }),
+      },
+    );
+    assert.equal(createQuote2.status, 201);
+    assert.equal(createQuote2.body.contractCode, contractCode);
+
     const latestQuote = await fetchJson<{ contractCode: string; lastPrice: number }>(
       `${baseUrl}/futures-sim/quotes/latest/${contractCode}`,
       {
@@ -71,7 +92,47 @@ async function main() {
     );
     assert.equal(latestQuote.status, 200);
     assert.equal(latestQuote.body.contractCode, contractCode);
-    assert.equal(latestQuote.body.lastPrice, 700);
+    assert.equal(latestQuote.body.lastPrice, 708);
+
+    const calculatedFeatures = await fetchJson<{
+      contractCode: string;
+      tradingDay: string;
+      calculatedCount: number;
+      data: Array<{ featureType: string; featureValue: number }>;
+    }>(`${baseUrl}/futures-sim/features/calculate`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        contractCode,
+        tradingDay: '2026-02-13',
+        featureTypes: ['INTRADAY_RETURN_PCT', 'VOLUME_SUM'],
+      }),
+    });
+    assert.equal(calculatedFeatures.status, 201);
+    assert.equal(calculatedFeatures.body.contractCode, contractCode);
+    assert.equal(calculatedFeatures.body.tradingDay, '2026-02-13');
+    assert.equal(calculatedFeatures.body.calculatedCount, 2);
+    assert.ok(
+      calculatedFeatures.body.data.some((item) => item.featureType === 'INTRADAY_RETURN_PCT'),
+    );
+    assert.ok(calculatedFeatures.body.data.some((item) => item.featureType === 'VOLUME_SUM'));
+
+    const featurePage = await fetchJson<{
+      total: number;
+      data: Array<{ featureType: string; tradingDay: string }>;
+    }>(
+      `${baseUrl}/futures-sim/features?contractCode=${encodeURIComponent(contractCode)}&tradingDay=2026-02-13`,
+      {
+        headers: {
+          'x-virtual-user-id': ownerUserId,
+        },
+      },
+    );
+    assert.equal(featurePage.status, 200);
+    assert.ok(featurePage.body.total >= 2);
+    assert.ok(featurePage.body.data.some((item) => item.featureType === 'INTRADAY_RETURN_PCT'));
 
     const openPosition = await fetchJson<{ id: string; status: string; remainingQty: number }>(
       `${baseUrl}/futures-sim/positions`,
@@ -172,6 +233,7 @@ async function main() {
     assert.ok(['NORMAL', 'WARNING', 'DANGER', 'LIQUIDATION'].includes(accountSummary.body.riskAlertLevel));
     assert.ok(accountSummary.body.marginUsageRate >= 0);
   } finally {
+    await prisma.futuresDerivedFeature.deleteMany({ where: { contractCode } });
     await prisma.virtualTradeLedger.deleteMany({ where: { ownerUserId, accountId } });
     await prisma.virtualFuturesPosition.deleteMany({ where: { ownerUserId, accountId } });
     await prisma.futuresQuoteSnapshot.deleteMany({ where: { contractCode } });

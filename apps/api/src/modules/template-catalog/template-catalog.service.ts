@@ -1,4 +1,10 @@
-import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  BadRequestException,
+  Logger,
+  ForbiddenException,
+} from '@nestjs/common';
 import { PrismaService } from '../../prisma';
 import type {
   CreateTemplateCatalogDto,
@@ -11,6 +17,7 @@ import { Prisma, WorkflowMode, WorkflowUsageMethod } from '@prisma/client';
 @Injectable()
 export class TemplateCatalogService {
   private readonly logger = new Logger(TemplateCatalogService.name);
+  private readonly publicTemplateRoleAllowlist = new Set(['ADMIN', 'TEMPLATE_ADMIN', 'SUPER_ADMIN']);
 
   constructor(private readonly prisma: PrismaService) { }
 
@@ -18,6 +25,8 @@ export class TemplateCatalogService {
    * 从现有工作流版本创建模板
    */
   async create(userId: string, dto: CreateTemplateCatalogDto) {
+    await this.ensurePublicTemplatePermission(userId);
+
     const version = await this.prisma.workflowVersion.findUnique({
       where: { id: dto.sourceVersionId },
       include: { workflowDefinition: { select: { ownerUserId: true } } },
@@ -150,6 +159,8 @@ export class TemplateCatalogService {
   }
 
   async publish(userId: string, id: string) {
+    await this.ensurePublicTemplatePermission(userId);
+
     const template = await this.prisma.templateCatalog.findFirst({
       where: { id, authorUserId: userId },
     });
@@ -234,5 +245,29 @@ export class TemplateCatalogService {
     this.logger.log(`模板 ${template.templateCode} 被用户 ${userId} 复制到工作流 ${workflowId}`);
 
     return definition;
+  }
+
+  private async ensurePublicTemplatePermission(userId: string): Promise<void> {
+    const userWithRoles = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: {
+        roles: {
+          select: {
+            role: {
+              select: {
+                code: true,
+              },
+            },
+          },
+        },
+      },
+    });
+    const hasPermission = (userWithRoles?.roles ?? []).some((item) =>
+      this.publicTemplateRoleAllowlist.has(item.role.code),
+    );
+
+    if (!hasPermission) {
+      throw new ForbiddenException('仅 ADMIN/TEMPLATE_ADMIN 可创建或发布公共模板');
+    }
   }
 }

@@ -69,11 +69,15 @@ export const useTriggerConfigDetail = (id?: string) => {
   });
 };
 
+export interface TriggerConfigResponse extends TriggerConfigDto {
+  generatedApiKey?: string;
+}
+
 export const useCreateTriggerConfig = () => {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async (dto: CreateTriggerConfigDto) => {
-      const res = await apiClient.post<TriggerConfigDto>('/trigger-configs', dto);
+      const res = await apiClient.post<TriggerConfigResponse>('/trigger-configs', dto);
       return res.data;
     },
     onSuccess: () => {
@@ -86,7 +90,7 @@ export const useUpdateTriggerConfig = () => {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async ({ id, dto }: { id: string; dto: UpdateTriggerConfigDto }) => {
-      const res = await apiClient.patch<TriggerConfigDto>(`/trigger-configs/${id}`, dto);
+      const res = await apiClient.patch<TriggerConfigResponse>(`/trigger-configs/${id}`, dto);
       return res.data;
     },
     onSuccess: (data) => {

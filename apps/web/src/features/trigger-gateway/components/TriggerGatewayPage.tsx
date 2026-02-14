@@ -126,16 +126,82 @@ export const TriggerGatewayPage: React.FC = () => {
   const activateMutation = useActivateTriggerConfig();
   const deactivateMutation = useDeactivateTriggerConfig();
 
+  const [apiKeyModalVisible, setApiKeyModalVisible] = useState(false);
+  const [createdApiKey, setCreatedApiKey] = useState<string | null>(null);
+  const [currentTriggerId, setCurrentTriggerId] = useState<string | null>(null);
+
   const handleCreate = async () => {
     try {
       const values = await form.validateFields();
-      await createMutation.mutateAsync(values);
+      const result = await createMutation.mutateAsync(values);
       message.success('触发器创建成功');
       setCreateVisible(false);
       form.resetFields();
+
+      if (result.generatedApiKey) {
+        setCreatedApiKey(result.generatedApiKey);
+        setCurrentTriggerId(result.id);
+        setApiKeyModalVisible(true);
+      }
     } catch (error) {
       message.error(getErrorMessage(error) || '创建失败');
     }
+  };
+
+  const renderApiKeyModal = () => {
+    const curlCommand = `curl -X POST ${window.location.origin}/api/external/triggers/${currentTriggerId}/invoke \\
+  -H "x-api-key: ${createdApiKey}" \\
+  -H "Content-Type: application/json" \\
+  -d '{"paramSnapshot": {"key": "value"}}'`;
+
+    return (
+      <Modal
+        title="API Key 生成成功"
+        open={apiKeyModalVisible}
+        onCancel={() => setApiKeyModalVisible(false)}
+        footer={[
+          <Button key="close" type="primary" onClick={() => setApiKeyModalVisible(false)}>
+            我已保存
+          </Button>,
+        ]}
+      >
+        <Space direction="vertical" style={{ width: '100%' }}>
+          <Typography.Text type="warning">
+            请立即保存您的 API Key，它只显示一次，之后将无法查看。
+          </Typography.Text>
+          <Input.Password
+            value={createdApiKey || ''}
+            addonAfter={
+              <Typography.Link
+                onClick={() => {
+                  navigator.clipboard.writeText(createdApiKey || '');
+                  message.success('已复制');
+                }}
+              >
+                复制
+              </Typography.Link>
+            }
+            visibilityToggle
+          />
+          <Typography.Title level={5} style={{ marginTop: 16 }}>
+            调用示例
+          </Typography.Title>
+          <Typography.Paragraph copyable={{ text: curlCommand }}>
+            <pre
+              style={{
+                background: '#f5f5f5',
+                padding: 12,
+                borderRadius: 4,
+                overflowX: 'auto',
+                fontSize: 12,
+              }}
+            >
+              {curlCommand}
+            </pre>
+          </Typography.Paragraph>
+        </Space>
+      </Modal>
+    );
   };
 
   const configColumns = useMemo<ColumnsType<TriggerConfigDto>>(
@@ -447,6 +513,8 @@ export const TriggerGatewayPage: React.FC = () => {
           ]}
         />
       </Space>
+
+      {renderApiKeyModal()}
 
       <Modal
         title="新建触发器"

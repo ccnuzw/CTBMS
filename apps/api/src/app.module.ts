@@ -41,6 +41,7 @@ import { ReportExportModule } from './modules/report-export';
 import { ExecutionAnalyticsModule } from './modules/execution-analytics';
 import { TemplateCatalogModule } from './modules/template-catalog';
 import { FuturesSimModule } from './modules/futures-sim';
+import { UserConfigBindingModule } from './modules/user-config-binding';
 
 @Module({
   imports: [
@@ -83,6 +84,7 @@ import { FuturesSimModule } from './modules/futures-sim';
     ExecutionAnalyticsModule,
     TemplateCatalogModule,
     FuturesSimModule,
+    UserConfigBindingModule,
   ],
   controllers: [AppController],
   providers: [],

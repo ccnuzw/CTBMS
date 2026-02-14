@@ -19,3 +19,4 @@ export * from './modules/report-export.js';
 export * from './modules/execution-analytics.js';
 export * from './modules/template-catalog.js';
 export * from './modules/futures-sim.js';
+export * from './modules/user-config-binding.js';

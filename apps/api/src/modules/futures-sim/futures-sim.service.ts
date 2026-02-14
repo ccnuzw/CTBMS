@@ -3,6 +3,8 @@ import { PrismaService } from '../../prisma';
 import type {
   CreateFuturesQuoteSnapshotDto,
   FuturesQuoteQueryDto,
+  CalculateFuturesDerivedFeatureDto,
+  FuturesDerivedFeatureQueryDto,
   OpenPositionDto,
   ClosePositionDto,
   PositionQueryDto,
@@ -72,6 +74,190 @@ export class FuturesSimService {
     });
     if (!quote) throw new NotFoundException(`合约 ${contractCode} 无行情数据`);
     return quote;
+  }
+
+  // ── 衍生特征 ──
+
+  async calculateDerivedFeatures(dto: CalculateFuturesDerivedFeatureDto) {
+    const quotes = await this.prisma.futuresQuoteSnapshot.findMany({
+      where: {
+        contractCode: dto.contractCode,
+        tradingDay: dto.tradingDay,
+      },
+      orderBy: {
+        snapshotAt: 'asc',
+      },
+      select: {
+        lastPrice: true,
+        volume: true,
+        openInterest: true,
+        snapshotAt: true,
+      },
+    });
+
+    if (quotes.length < 2) {
+      throw new BadRequestException(
+        `合约 ${dto.contractCode} 在 ${dto.tradingDay} 的行情样本不足，至少需要 2 条快照`,
+      );
+    }
+
+    const firstQuote = quotes[0];
+    const lastQuote = quotes[quotes.length - 1];
+    if (!firstQuote?.lastPrice || !lastQuote?.lastPrice) {
+      throw new BadRequestException('行情快照缺少有效 lastPrice，无法计算衍生特征');
+    }
+
+    const prices = quotes.map((item) => item.lastPrice);
+    const highPrice = Math.max(...prices);
+    const lowPrice = Math.min(...prices);
+    const volumeSum = quotes.reduce((sum, item) => sum + (item.volume ?? 0), 0);
+    const firstOpenInterest = quotes.find((item) => item.openInterest !== null)?.openInterest ?? null;
+    const lastOpenInterest =
+      [...quotes].reverse().find((item) => item.openInterest !== null)?.openInterest ?? null;
+
+    const supportedFeatures = new Map<string, number>([
+      ['INTRADAY_RETURN_PCT', ((lastQuote.lastPrice - firstQuote.lastPrice) / firstQuote.lastPrice) * 100],
+      ['INTRADAY_RANGE_PCT', ((highPrice - lowPrice) / firstQuote.lastPrice) * 100],
+      ['VOLUME_SUM', volumeSum],
+      [
+        'OPEN_INTEREST_CHANGE',
+        firstOpenInterest !== null && lastOpenInterest !== null
+          ? lastOpenInterest - firstOpenInterest
+          : 0,
+      ],
+    ]);
+
+    const requestedFeatureTypes = dto.featureTypes?.length
+      ? Array.from(new Set(dto.featureTypes.map((item) => item.trim()).filter(Boolean)))
+      : [...supportedFeatures.keys()];
+    const unsupported = requestedFeatureTypes.filter((item) => !supportedFeatures.has(item));
+    if (unsupported.length > 0) {
+      throw new BadRequestException(`不支持的衍生特征类型: ${unsupported.join(', ')}`);
+    }
+
+    const calculatedAt = new Date();
+    const savedFeatures = [];
+    for (const featureType of requestedFeatureTypes) {
+      const featureValue = supportedFeatures.get(featureType);
+      if (featureValue === undefined || Number.isNaN(featureValue)) {
+        continue;
+      }
+
+      const existing = await this.prisma.futuresDerivedFeature.findFirst({
+        where: {
+          contractCode: dto.contractCode,
+          tradingDay: dto.tradingDay,
+          featureType,
+        },
+        orderBy: { createdAt: 'desc' },
+      });
+
+      const payload: Prisma.FuturesDerivedFeatureUncheckedCreateInput = {
+        contractCode: dto.contractCode,
+        tradingDay: dto.tradingDay,
+        featureType,
+        featureValue,
+        calculatedAt,
+        parameters: {
+          sampleSize: quotes.length,
+          firstSnapshotAt: firstQuote.snapshotAt.toISOString(),
+          lastSnapshotAt: lastQuote.snapshotAt.toISOString(),
+        },
+      };
+
+      if (existing) {
+        const updated = await this.prisma.futuresDerivedFeature.update({
+          where: { id: existing.id },
+          data: payload,
+        });
+        savedFeatures.push(updated);
+      } else {
+        const created = await this.prisma.futuresDerivedFeature.create({
+          data: payload,
+        });
+        savedFeatures.push(created);
+      }
+    }
+
+    return {
+      contractCode: dto.contractCode,
+      tradingDay: dto.tradingDay,
+      calculatedCount: savedFeatures.length,
+      data: savedFeatures,
+    };
+  }
+
+  async findDerivedFeatures(query: FuturesDerivedFeatureQueryDto) {
+    const where: Prisma.FuturesDerivedFeatureWhereInput = {};
+    if (query.contractCode) where.contractCode = query.contractCode;
+    if (query.featureType) where.featureType = query.featureType;
+    if (query.tradingDay) where.tradingDay = query.tradingDay;
+
+    const page = query.page ?? 1;
+    const pageSize = query.pageSize ?? 20;
+
+    const [data, total] = await Promise.all([
+      this.prisma.futuresDerivedFeature.findMany({
+        where,
+        orderBy: [{ tradingDay: 'desc' }, { calculatedAt: 'desc' }],
+        skip: (page - 1) * pageSize,
+        take: pageSize,
+      }),
+      this.prisma.futuresDerivedFeature.count({ where }),
+    ]);
+
+    return {
+      data,
+      total,
+      page,
+      pageSize,
+      totalPages: Math.ceil(total / pageSize),
+    };
+  }
+
+  // ── Mock Data Generation ──
+
+  async generateMockData(contractCode: string, days: number = 5) {
+    const now = new Date();
+    const snapshots: CreateFuturesQuoteSnapshotDto[] = [];
+    const basePrice = 3000 + Math.random() * 500;
+
+    for (let d = days; d >= 0; d--) {
+      const date = new Date(now);
+      date.setDate(date.getDate() - d);
+      const tradingDay = date.toISOString().slice(0, 10);
+
+      // Simulate trading hours (9:00 - 15:00) with 30 min intervals
+      for (let h = 9; h <= 15; h++) {
+        if (h === 12) continue; // Lunch break
+        for (let m = 0; m < 60; m += 30) {
+          if (h === 15 && m > 0) break;
+
+          const time = new Date(date);
+          time.setHours(h, m, 0, 0);
+
+          // Generate realistic-ish price movement (sine wave + random walk)
+          const trend = Math.sin(time.getTime() / 10000000) * 50;
+          const noise = (Math.random() - 0.5) * 20;
+          const lastPrice = basePrice + trend + noise;
+
+          snapshots.push({
+            contractCode,
+            exchange: 'SHFE',
+            lastPrice: Number(lastPrice.toFixed(2)),
+            openPrice: Number((lastPrice - 10).toFixed(2)),
+            highPrice: Number((lastPrice + 15).toFixed(2)),
+            lowPrice: Number((lastPrice - 15).toFixed(2)),
+            volume: Math.floor(Math.random() * 10000),
+            openInterest: Math.floor(Math.random() * 50000 + 50000),
+            tradingDay,
+            snapshotAt: time.toISOString(),
+          });
+        }
+      }
+    }
+
+    return this.createQuoteSnapshotBatch(snapshots);
   }
 
   // ── 虚拟持仓 ──

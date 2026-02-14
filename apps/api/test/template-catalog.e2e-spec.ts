@@ -36,12 +36,17 @@ async function main() {
   const baseUrl = (await app.getUrl()).replace('[::1]', '127.0.0.1');
 
   const ownerUserId = randomUUID();
+  const nonPrivilegedUserId = randomUUID();
   const templateCode = `TPL_E2E_${Date.now()}`;
   const workflowId = `wf-tpl-e2e-${Date.now()}`;
+  const nonPrivilegedWorkflowId = `wf-tpl-e2e-non-priv-${Date.now()}`;
 
   let definitionId: string | undefined;
   let versionId: string | undefined;
   let templateId: string | undefined;
+  let nonPrivilegedDefinitionId: string | undefined;
+  let nonPrivilegedVersionId: string | undefined;
+  let nonPrivilegedTemplateId: string | undefined;
 
   try {
     // ── Seed prerequisite data: user + workflow definition + version ──
@@ -55,6 +60,41 @@ async function main() {
         username: `tpl-e2e-${Date.now()}`,
         email: `tpl-e2e-${Date.now()}@test.com`,
         name: 'Template E2E User',
+      },
+    });
+    await prisma.user.upsert({
+      where: { id: nonPrivilegedUserId },
+      update: {},
+      create: {
+        id: nonPrivilegedUserId,
+        username: `tpl-non-priv-${Date.now()}`,
+        email: `tpl-non-priv-${Date.now()}@test.com`,
+        name: 'Template Non Privileged User',
+      },
+    });
+
+    const templateAdminRole = await prisma.role.upsert({
+      where: { code: 'TEMPLATE_ADMIN' },
+      update: {
+        name: '模板管理员',
+      },
+      create: {
+        name: '模板管理员',
+        code: 'TEMPLATE_ADMIN',
+        isSystem: true,
+      },
+    });
+    await prisma.userRole.upsert({
+      where: {
+        userId_roleId: {
+          userId: ownerUserId,
+          roleId: templateAdminRole.id,
+        },
+      },
+      update: {},
+      create: {
+        userId: ownerUserId,
+        roleId: templateAdminRole.id,
       },
     });
 
@@ -87,7 +127,53 @@ async function main() {
     });
     versionId = version.id;
 
-    // ── Test 1: Create template from workflow version ──
+    const nonPrivilegedDefinition = await prisma.workflowDefinition.create({
+      data: {
+        workflowId: nonPrivilegedWorkflowId,
+        name: 'Template Source Workflow Non Privileged',
+        ownerUserId: nonPrivilegedUserId,
+        mode: 'LINEAR',
+        usageMethod: 'COPILOT',
+        status: 'ACTIVE',
+      },
+    });
+    nonPrivilegedDefinitionId = nonPrivilegedDefinition.id;
+
+    const nonPrivilegedVersion = await prisma.workflowVersion.create({
+      data: {
+        workflowDefinitionId: nonPrivilegedDefinition.id,
+        versionCode: 'v1.0.0',
+        dslSnapshot: {
+          nodes: [
+            { id: 'start', type: 'manual-trigger', data: {} },
+            { id: 'fetch', type: 'data-fetch', data: {} },
+          ],
+          edges: [{ source: 'start', target: 'fetch' }],
+        },
+        status: 'PUBLISHED',
+        createdByUserId: nonPrivilegedUserId,
+      },
+    });
+    nonPrivilegedVersionId = nonPrivilegedVersion.id;
+
+    // ── Test 1: Non-privileged user cannot create public template ──
+    const nonPrivilegedCreate = await fetchJson<{ statusCode: number }>(`${baseUrl}/template-catalog`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-virtual-user-id': nonPrivilegedUserId,
+      },
+      body: JSON.stringify({
+        sourceVersionId: nonPrivilegedVersionId,
+        sourceWorkflowDefinitionId: nonPrivilegedDefinitionId,
+        templateCode: `${templateCode}_NON_PRIV`,
+        name: 'Non Privileged Create',
+        category: 'TRADING',
+      }),
+    });
+    assert.equal(nonPrivilegedCreate.status, 403);
+
+    // ── Test 2: Create template from workflow version ──
     const created = await fetchJson<{
       id: string;
       templateCode: string;
@@ -119,7 +205,7 @@ async function main() {
     assert.equal(created.body.edgeCount, 1);
     templateId = created.body.id;
 
-    // ── Test 2: Get template detail ──
+    // ── Test 3: Get template detail ──
     const detail = await fetchJson<{ id: string; templateCode: string }>(
       `${baseUrl}/template-catalog/${templateId}`,
       {
@@ -130,7 +216,7 @@ async function main() {
     assert.equal(detail.status, 200);
     assert.equal(detail.body.templateCode, templateCode);
 
-    // ── Test 3: Update template ──
+    // ── Test 4: Update template ──
     const updated = await fetchJson<{ id: string; name: string; description: string }>(
       `${baseUrl}/template-catalog/${templateId}`,
       {
@@ -148,7 +234,7 @@ async function main() {
     assert.equal(updated.status, 200);
     assert.equal(updated.body.name, 'Updated E2E Template');
 
-    // ── Test 4: List my templates ──
+    // ── Test 5: List my templates ──
     const myTemplates = await fetchJson<{
       data: Array<{ id: string }>;
       total: number;
@@ -161,7 +247,7 @@ async function main() {
     const found = myTemplates.body.data.find((t) => t.id === templateId);
     assert.ok(found, 'my templates should contain the created template');
 
-    // ── Test 5: Public listing does NOT include DRAFT templates ──
+    // ── Test 6: Public listing does NOT include DRAFT templates ──
     const publicList = await fetchJson<{
       data: Array<{ id: string }>;
       total: number;
@@ -170,7 +256,36 @@ async function main() {
     const draftInPublic = publicList.body.data.find((t) => t.id === templateId);
     assert.equal(draftInPublic, undefined, 'DRAFT template should not appear in public listing');
 
-    // ── Test 6: Publish template ──
+    nonPrivilegedTemplateId = (
+      await prisma.templateCatalog.create({
+        data: {
+          templateCode: `${templateCode}_NON_PRIV_DRAFT`,
+          name: 'Non Privileged Draft',
+          category: 'TRADING',
+          status: 'DRAFT',
+          dslSnapshot: {
+            nodes: [{ id: 'start', type: 'manual-trigger', data: {} }],
+            edges: [],
+          },
+          authorUserId: nonPrivilegedUserId,
+          authorName: 'Template Non Privileged User',
+          nodeCount: 1,
+          edgeCount: 0,
+        },
+      })
+    ).id;
+
+    // ── Test 7: Non-privileged user cannot publish public template ──
+    const nonPrivilegedPublish = await fetchJson<{ statusCode: number }>(
+      `${baseUrl}/template-catalog/${nonPrivilegedTemplateId}/publish`,
+      {
+        method: 'POST',
+        headers: { 'x-virtual-user-id': nonPrivilegedUserId },
+      },
+    );
+    assert.equal(nonPrivilegedPublish.status, 403);
+
+    // ── Test 8: Publish template ──
     const published = await fetchJson<{ id: string; status: string }>(
       `${baseUrl}/template-catalog/${templateId}/publish`,
       {
@@ -181,7 +296,7 @@ async function main() {
     assert.equal(published.status, 201);
     assert.equal(published.body.status, 'PUBLISHED');
 
-    // ── Test 7: Published template now appears in public listing ──
+    // ── Test 9: Published template now appears in public listing ──
     const publicListAfter = await fetchJson<{
       data: Array<{ id: string }>;
     }>(`${baseUrl}/template-catalog`, { method: 'GET' });
@@ -189,7 +304,7 @@ async function main() {
     const publishedInPublic = publicListAfter.body.data.find((t) => t.id === templateId);
     assert.ok(publishedInPublic, 'PUBLISHED template should appear in public listing');
 
-    // ── Test 8: Duplicate publish returns 400 ──
+    // ── Test 10: Duplicate publish returns 400 ──
     const dupPublish = await fetchJson<{ statusCode: number }>(
       `${baseUrl}/template-catalog/${templateId}/publish`,
       {
@@ -199,7 +314,7 @@ async function main() {
     );
     assert.equal(dupPublish.status, 400);
 
-    // ── Test 9: Copy template to workspace ──
+    // ── Test 11: Copy template to workspace ──
     const copied = await fetchJson<{
       id: string;
       workflowId: string;
@@ -239,7 +354,7 @@ async function main() {
       .delete({ where: { id: copied.body.id } })
       .catch(() => undefined);
 
-    // ── Test 10: Archive template ──
+    // ── Test 12: Archive template ──
     const archived = await fetchJson<{ id: string; status: string }>(
       `${baseUrl}/template-catalog/${templateId}/archive`,
       {
@@ -250,7 +365,7 @@ async function main() {
     assert.equal(archived.status, 201);
     assert.equal(archived.body.status, 'ARCHIVED');
 
-    // ── Test 11: Delete template ──
+    // ── Test 13: Delete template ──
     const deleted = await fetchJson<{ deleted: boolean }>(
       `${baseUrl}/template-catalog/${templateId}`,
       {
@@ -262,14 +377,14 @@ async function main() {
     assert.equal(deleted.body.deleted, true);
     templateId = undefined; // Already deleted
 
-    // ── Test 12: Deleted template returns 404 ──
+    // ── Test 14: Deleted template returns 404 ──
     const notFound = await fetchJson<{ statusCode: number }>(
       `${baseUrl}/template-catalog/${archived.body.id}`,
       { method: 'GET' },
     );
     assert.equal(notFound.status, 404);
 
-    // ── Test 13: Non-owner cannot update ──
+    // ── Test 15: Non-owner cannot update ──
     // Create a new template for cross-user test
     const otherTemplate = await fetchJson<{ id: string }>(
       `${baseUrl}/template-catalog`,
@@ -308,6 +423,10 @@ async function main() {
     await prisma.templateCatalog
       .delete({ where: { id: otherTemplate.body.id } })
       .catch(() => undefined);
+    await prisma.templateCatalog
+      .delete({ where: { id: nonPrivilegedTemplateId } })
+      .catch(() => undefined);
+    nonPrivilegedTemplateId = undefined;
 
     console.log('Template catalog e2e checks passed.');
   } finally {
@@ -318,13 +437,29 @@ async function main() {
     await prisma.templateCatalog
       .deleteMany({ where: { templateCode: { startsWith: templateCode } } })
       .catch(() => undefined);
+    if (nonPrivilegedTemplateId) {
+      await prisma.templateCatalog
+        .delete({ where: { id: nonPrivilegedTemplateId } })
+        .catch(() => undefined);
+    }
     if (versionId) {
       await prisma.workflowVersion.delete({ where: { id: versionId } }).catch(() => undefined);
     }
     if (definitionId) {
       await prisma.workflowDefinition.delete({ where: { id: definitionId } }).catch(() => undefined);
     }
+    if (nonPrivilegedVersionId) {
+      await prisma.workflowVersion
+        .delete({ where: { id: nonPrivilegedVersionId } })
+        .catch(() => undefined);
+    }
+    if (nonPrivilegedDefinitionId) {
+      await prisma.workflowDefinition
+        .delete({ where: { id: nonPrivilegedDefinitionId } })
+        .catch(() => undefined);
+    }
     await prisma.user.delete({ where: { id: ownerUserId } }).catch(() => undefined);
+    await prisma.user.delete({ where: { id: nonPrivilegedUserId } }).catch(() => undefined);
     await app.close();
     await prisma.$disconnect();
   }

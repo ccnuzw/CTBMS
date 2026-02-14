@@ -122,6 +122,11 @@ export const MainLayout: React.FC = () => {
             label: '参数中心',
           },
           {
+            key: '/workflow/bindings',
+            icon: <SettingOutlined />,
+            label: '配置绑定',
+          },
+          {
             key: '/workflow/connectors',
             icon: <CloudOutlined />,
             label: '连接器中心',

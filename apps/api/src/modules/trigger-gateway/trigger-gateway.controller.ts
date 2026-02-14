@@ -77,6 +77,24 @@ export class TriggerGatewayController {
     return this.service.fire(this.getUserId(req), id, dto);
   }
 
+  // External trigger endpoint (No AuthRequest required, but API Key check handled in service)
+  @Post('external/triggers/:id/invoke')
+  async invoke(
+    @Param('id') id: string,
+    @Body() body: any,
+    @Request() req: ExpressRequest,
+    @Query('apiKey') queryKey?: string,
+  ) {
+    // Extract API Key from Header or Query
+    const apiKey = (req.headers['x-api-key'] as string) || queryKey;
+
+    if (!apiKey) {
+      throw new UnauthorizedException('API Key is required');
+    }
+
+    return this.service.invokeExternal(id, apiKey, body);
+  }
+
   @Get(':id/logs')
   findLogsByConfigId(
     @Request() req: AuthRequest,

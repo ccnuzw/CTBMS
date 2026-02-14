@@ -74,6 +74,27 @@ export const FuturesDerivedFeatureSchema = z.object({
   createdAt: z.date().optional(),
 });
 
+export const CalculateFuturesDerivedFeatureSchema = z.object({
+  contractCode: z.string().min(1).max(30),
+  tradingDay: z.string().min(1).max(10),
+  featureTypes: z.array(z.string().min(1).max(60)).max(20).optional(),
+});
+
+export const FuturesDerivedFeatureQuerySchema = z.object({
+  contractCode: z.string().optional(),
+  featureType: z.string().optional(),
+  tradingDay: z.string().optional(),
+  page: z.coerce.number().int().min(1).default(1),
+  pageSize: z.coerce.number().int().min(1).max(200).default(20),
+});
+
+export const CalculateFuturesDerivedFeatureResultSchema = z.object({
+  contractCode: z.string(),
+  tradingDay: z.string(),
+  calculatedCount: z.number().int(),
+  data: z.array(FuturesDerivedFeatureSchema),
+});
+
 // ── 虚拟持仓 ──
 
 export const VirtualFuturesPositionSchema = z.object({
@@ -201,6 +222,14 @@ export const TradeLedgerPageSchema = z.object({
   totalPages: z.number().int(),
 });
 
+export const FuturesDerivedFeaturePageSchema = z.object({
+  data: z.array(FuturesDerivedFeatureSchema),
+  total: z.number().int(),
+  page: z.number().int(),
+  pageSize: z.number().int(),
+  totalPages: z.number().int(),
+});
+
 // ── Types ──
 
 export type FuturesExchange = z.infer<typeof FuturesExchangeEnum>;
@@ -214,6 +243,9 @@ export type FuturesQuoteSnapshotDto = z.infer<typeof FuturesQuoteSnapshotSchema>
 export type CreateFuturesQuoteSnapshotDto = z.infer<typeof CreateFuturesQuoteSnapshotSchema>;
 export type FuturesQuoteQueryDto = z.infer<typeof FuturesQuoteQuerySchema>;
 export type FuturesDerivedFeatureDto = z.infer<typeof FuturesDerivedFeatureSchema>;
+export type CalculateFuturesDerivedFeatureDto = z.infer<typeof CalculateFuturesDerivedFeatureSchema>;
+export type FuturesDerivedFeatureQueryDto = z.infer<typeof FuturesDerivedFeatureQuerySchema>;
+export type CalculateFuturesDerivedFeatureResultDto = z.infer<typeof CalculateFuturesDerivedFeatureResultSchema>;
 export type VirtualFuturesPositionDto = z.infer<typeof VirtualFuturesPositionSchema>;
 export type OpenPositionDto = z.infer<typeof OpenPositionSchema>;
 export type ClosePositionDto = z.infer<typeof ClosePositionSchema>;
@@ -222,5 +254,6 @@ export type VirtualTradeLedgerDto = z.infer<typeof VirtualTradeLedgerSchema>;
 export type TradeLedgerQueryDto = z.infer<typeof TradeLedgerQuerySchema>;
 export type VirtualAccountSummaryDto = z.infer<typeof VirtualAccountSummarySchema>;
 export type FuturesQuotePageDto = z.infer<typeof FuturesQuotePageSchema>;
+export type FuturesDerivedFeaturePageDto = z.infer<typeof FuturesDerivedFeaturePageSchema>;
 export type PositionPageDto = z.infer<typeof PositionPageSchema>;
 export type TradeLedgerPageDto = z.infer<typeof TradeLedgerPageSchema>;

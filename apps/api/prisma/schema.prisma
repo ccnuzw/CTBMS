@@ -57,6 +57,7 @@ model User {
 
   // 角色（通过 UserRole 关联）
   roles UserRole[]
+  userConfigBindings UserConfigBinding[]
 
   // 商情情报关联
   marketIntels MarketIntel[]
@@ -2541,6 +2542,27 @@ model TemplateCatalog {
   @@index([status, createdAt])
   @@index([authorUserId])
   @@index([isOfficial, status])
+}
+
+// ─────────────── UserConfigBinding (用户配置绑定) ───────────────
+
+model UserConfigBinding {
+  id                String    @id @default(uuid())
+  userId            String
+  bindingType       String    @db.VarChar(50)
+  targetId          String
+  targetCode        String?   @db.VarChar(100)
+  metadata          Json?
+  isActive          Boolean   @default(true)
+  priority          Int       @default(100)
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  user              User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, bindingType, targetId])
+  @@index([userId, bindingType, isActive])
+  @@index([bindingType, targetId])
 }
 
 // ─────────────── FuturesQuoteSnapshot (期货行情快照) ───────────────
