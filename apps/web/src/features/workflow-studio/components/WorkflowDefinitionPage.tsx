@@ -139,19 +139,19 @@ const buildInitialDslSnapshot = (
     },
     ...(hasRulePackNode
       ? [
-          {
-            id: 'n_rule_pack',
-            type: 'rule-pack-eval',
-            name: '规则包评估',
-            enabled: true,
-            config: {
-              rulePackCode: normalizedRulePackCode,
-              ruleVersionPolicy: 'LOCKED',
-              minHitScore: 60,
-            },
-            runtimePolicy,
+        {
+          id: 'n_rule_pack',
+          type: 'rule-pack-eval',
+          name: '规则包评估',
+          enabled: true,
+          config: {
+            rulePackCode: normalizedRulePackCode,
+            ruleVersionPolicy: 'LOCKED',
+            minHitScore: 60,
           },
-        ]
+          runtimePolicy,
+        },
+      ]
       : []),
     {
       id: 'n_risk_gate',
@@ -175,39 +175,39 @@ const buildInitialDslSnapshot = (
   ];
   const edges = hasRulePackNode
     ? [
-        {
-          id: 'e_trigger_rule_pack',
-          from: 'n_trigger',
-          to: 'n_rule_pack',
-          edgeType: 'control-edge' as const,
-        },
-        {
-          id: 'e_rule_pack_risk_gate',
-          from: 'n_rule_pack',
-          to: 'n_risk_gate',
-          edgeType: 'control-edge' as const,
-        },
-        {
-          id: 'e_risk_gate_notify',
-          from: 'n_risk_gate',
-          to: 'n_notify',
-          edgeType: 'control-edge' as const,
-        },
-      ]
+      {
+        id: 'e_trigger_rule_pack',
+        from: 'n_trigger',
+        to: 'n_rule_pack',
+        edgeType: 'control-edge' as const,
+      },
+      {
+        id: 'e_rule_pack_risk_gate',
+        from: 'n_rule_pack',
+        to: 'n_risk_gate',
+        edgeType: 'control-edge' as const,
+      },
+      {
+        id: 'e_risk_gate_notify',
+        from: 'n_risk_gate',
+        to: 'n_notify',
+        edgeType: 'control-edge' as const,
+      },
+    ]
     : [
-        {
-          id: 'e_trigger_risk_gate',
-          from: 'n_trigger',
-          to: 'n_risk_gate',
-          edgeType: 'control-edge' as const,
-        },
-        {
-          id: 'e_risk_gate_notify',
-          from: 'n_risk_gate',
-          to: 'n_notify',
-          edgeType: 'control-edge' as const,
-        },
-      ];
+      {
+        id: 'e_trigger_risk_gate',
+        from: 'n_trigger',
+        to: 'n_risk_gate',
+        edgeType: 'control-edge' as const,
+      },
+      {
+        id: 'e_risk_gate_notify',
+        from: 'n_risk_gate',
+        to: 'n_notify',
+        edgeType: 'control-edge' as const,
+      },
+    ];
 
   return {
     workflowId: values.workflowId,
@@ -405,9 +405,9 @@ export const WorkflowDefinitionPage: React.FC = () => {
       (rulePackCatalog?.data || [])
         .filter((pack) => pack.isActive)
         .map((pack) => ({
-        label: `${pack.name} (${pack.rulePackCode})`,
-        value: pack.rulePackCode,
-      })),
+          label: `${pack.name} (${pack.rulePackCode})`,
+          value: pack.rulePackCode,
+        })),
     [rulePackCatalog?.data],
   );
 
@@ -689,8 +689,8 @@ export const WorkflowDefinitionPage: React.FC = () => {
             : checkPublishDependencies(record.dslSnapshot);
           const hasBlockingDependencyIssues = Boolean(
             dependencyResult &&
-              (hasDependencyIssues(dependencyResult.unpublished) ||
-                hasDependencyIssues(dependencyResult.unavailable)),
+            (hasDependencyIssues(dependencyResult.unpublished) ||
+              hasDependencyIssues(dependencyResult.unavailable)),
           );
           const canPublish = canPublishBase && !hasBlockingDependencyIssues;
           const canRun = record.status === 'PUBLISHED' && Boolean(selectedDefinition?.id);
@@ -985,6 +985,42 @@ export const WorkflowDefinitionPage: React.FC = () => {
       message.error(getErrorMessage(error));
     } finally {
       setRunningVersionId(null);
+    }
+  };
+
+  const handleStudioRun = async (dsl: WorkflowDsl) => {
+    if (!selectedDefinition?.id || !studioVersion) {
+      return undefined;
+    }
+
+    try {
+      // 1. Create a Snapshot Version for Debugging
+      const newVersion = await createVersionMutation.mutateAsync({
+        workflowDefinitionId: selectedDefinition.id,
+        payload: {
+          dslSnapshot: {
+            ...studioVersion.dslSnapshot,
+            nodes: dsl.nodes,
+            edges: dsl.edges,
+          },
+          changelog: `Studio 调试运行快照（基于 ${studioVersion.versionCode}）`,
+        },
+      });
+
+      // 2. Update Studio Context to use this new version as base for future runs/saves
+      setStudioVersion(newVersion);
+
+      // 3. Trigger Execution
+      const execution = await triggerExecutionMutation.mutateAsync({
+        workflowDefinitionId: selectedDefinition.id,
+        workflowVersionId: newVersion.id,
+      });
+
+      message.success(`已发起运行: ${execution.id}`);
+      return execution.id;
+    } catch (error) {
+      message.error(getErrorMessage(error));
+      return undefined;
     }
   };
 
@@ -1283,9 +1319,9 @@ export const WorkflowDefinitionPage: React.FC = () => {
               validationResult.valid
                 ? undefined
                 : validationResult.issues
-                    .slice(0, 5)
-                    .map((issue) => `${issue.code}: ${issue.message}`)
-                    .join('；')
+                  .slice(0, 5)
+                  .map((issue) => `${issue.code}: ${issue.message}`)
+                  .join('；')
             }
           />
         ) : null}
@@ -1318,15 +1354,15 @@ export const WorkflowDefinitionPage: React.FC = () => {
                   </Text>
                   {latestDraftDependencyResult
                     ? renderDependencySection(
-                        '未发布依赖（需要 version >= 2）',
-                        latestDraftDependencyResult.unpublished,
-                      )
+                      '未发布依赖（需要 version >= 2）',
+                      latestDraftDependencyResult.unpublished,
+                    )
                     : null}
                   {latestDraftDependencyResult
                     ? renderDependencySection(
-                        '不可用依赖（不存在、未启用或无权限）',
-                        latestDraftDependencyResult.unavailable,
-                      )
+                      '不可用依赖（不存在、未启用或无权限）',
+                      latestDraftDependencyResult.unavailable,
+                    )
                     : null}
                   {latestDraftDependencyResult
                     ? renderDependencyQuickActions(latestDraftDependencyResult)
@@ -1430,7 +1466,11 @@ export const WorkflowDefinitionPage: React.FC = () => {
       >
         {studioVersion ? (
           <div style={{ height: '78vh' }}>
-            <WorkflowCanvas initialDsl={studioVersion.dslSnapshot} onSave={handleSaveStudioDsl} />
+            <WorkflowCanvas
+              initialDsl={studioVersion.dslSnapshot}
+              onSave={handleSaveStudioDsl}
+              onRun={handleStudioRun}
+            />
           </div>
         ) : null}
       </Drawer>

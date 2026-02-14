@@ -1,8 +1,8 @@
-import React, { type DragEvent, useState } from 'react';
-import { Input, Space, Tag, theme, Typography, Collapse, Tooltip } from 'antd';
+import React, { type DragEvent, useState, useMemo } from 'react';
+import { Input, Collapse, Tooltip, theme, Typography, Tag } from 'antd';
 import { SearchOutlined } from '@ant-design/icons';
 import {
-    getNodeTypesByCategory,
+    getNodesByCategory,
     CATEGORY_LABELS,
     type NodeCategory,
     type NodeTypeConfig,
@@ -22,16 +22,16 @@ interface NodePaletteProps {
  */
 export const NodePalette: React.FC<NodePaletteProps> = ({ style }) => {
     const { token } = theme.useToken();
-    const [searchText, setSearchText] = useState('');
-    const grouped = getNodeTypesByCategory();
+    const [search, setSearch] = useState('');
+    const categories = useMemo(() => getNodesByCategory(), []);
 
-    const filteredGroups: [NodeCategory, NodeTypeConfig[]][] = Object.entries(grouped)
+    const filteredGroups: [NodeCategory, NodeTypeConfig[]][] = Object.entries(categories)
         .map(([category, configs]) => {
             const filtered = configs.filter(
                 (c) =>
-                    !searchText ||
-                    c.label.toLowerCase().includes(searchText.toLowerCase()) ||
-                    c.type.toLowerCase().includes(searchText.toLowerCase()),
+                    !search ||
+                    c.label.toLowerCase().includes(search.toLowerCase()) ||
+                    c.type.toLowerCase().includes(search.toLowerCase()),
             );
             return [category as NodeCategory, filtered] as [NodeCategory, NodeTypeConfig[]];
         })
@@ -135,8 +135,8 @@ export const NodePalette: React.FC<NodePaletteProps> = ({ style }) => {
                     placeholder="搜索节点..."
                     size="small"
                     allowClear
-                    value={searchText}
-                    onChange={(e) => setSearchText(e.target.value)}
+                    value={search}
+                    onChange={(e) => setSearch(e.target.value)}
                     style={{ marginTop: 8 }}
                 />
             </div>
@@ -144,7 +144,7 @@ export const NodePalette: React.FC<NodePaletteProps> = ({ style }) => {
             <div style={{ flex: 1, overflow: 'auto', padding: '0 8px 12px' }}>
                 <Collapse
                     bordered={false}
-                    defaultActiveKey={['trigger', 'data', 'agent', 'compute', 'rule', 'decision']}
+                    defaultActiveKey={['TRIGGER', 'DATA']}
                     size="small"
                     items={collapseItems}
                     style={{ background: 'transparent' }}

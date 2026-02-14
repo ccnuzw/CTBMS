@@ -4,6 +4,7 @@ import type {
   CreateFuturesQuoteSnapshotDto,
   FuturesQuoteQueryDto,
   CalculateFuturesDerivedFeatureDto,
+  CalculateFuturesDerivedFeatureBatchDto,
   FuturesDerivedFeatureQueryDto,
   OpenPositionDto,
   ClosePositionDto,
@@ -187,6 +188,52 @@ export class FuturesSimService {
     };
   }
 
+  async calculateDerivedFeaturesBatch(dto: CalculateFuturesDerivedFeatureBatchDto) {
+    let contractCodes = this.uniqueContractCodes(dto.contractCodes);
+    if (contractCodes.length === 0) {
+      const rows = await this.prisma.futuresQuoteSnapshot.findMany({
+        where: {
+          tradingDay: dto.tradingDay,
+        },
+        select: {
+          contractCode: true,
+        },
+        distinct: ['contractCode'],
+      });
+      contractCodes = rows.map((item) => item.contractCode);
+    }
+
+    if (contractCodes.length === 0) {
+      throw new BadRequestException(`交易日 ${dto.tradingDay} 无可计算合约`);
+    }
+
+    let calculatedCount = 0;
+    const errors: Array<{ contractCode: string; message: string }> = [];
+
+    for (const contractCode of contractCodes) {
+      try {
+        const result = await this.calculateDerivedFeatures({
+          contractCode,
+          tradingDay: dto.tradingDay,
+          featureTypes: dto.featureTypes,
+        });
+        calculatedCount += result.calculatedCount;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        errors.push({ contractCode, message });
+      }
+    }
+
+    return {
+      tradingDay: dto.tradingDay,
+      requestedContracts: contractCodes.length,
+      successContracts: contractCodes.length - errors.length,
+      failedContracts: errors.length,
+      calculatedCount,
+      errors,
+    };
+  }
+
   async findDerivedFeatures(query: FuturesDerivedFeatureQueryDto) {
     const where: Prisma.FuturesDerivedFeatureWhereInput = {};
     if (query.contractCode) where.contractCode = query.contractCode;
@@ -213,6 +260,24 @@ export class FuturesSimService {
       pageSize,
       totalPages: Math.ceil(total / pageSize),
     };
+  }
+
+  private uniqueContractCodes(value: unknown): string[] {
+    if (!Array.isArray(value)) {
+      return [];
+    }
+    const set = new Set<string>();
+    for (const item of value) {
+      if (typeof item !== 'string') {
+        continue;
+      }
+      const normalized = item.trim();
+      if (!normalized) {
+        continue;
+      }
+      set.add(normalized);
+    }
+    return [...set];
   }
 
   // ── Mock Data Generation ──

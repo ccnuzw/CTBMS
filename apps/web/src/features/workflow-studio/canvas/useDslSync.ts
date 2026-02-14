@@ -1,64 +1,98 @@
 import { useCallback, useMemo, useRef } from 'react';
-import { useNodesState, useEdgesState, type Node, type Edge, addEdge, type Connection } from '@xyflow/react';
+import {
+    useNodesState,
+    useEdgesState,
+    type Node,
+    type Edge,
+    addEdge,
+    type Connection,
+} from '@xyflow/react';
+import { message } from 'antd';
 import type { WorkflowDsl, WorkflowNode, WorkflowEdge } from '@packages/types';
 import { getNodeTypeConfig } from './nodeTypeRegistry';
 
-/**
- * DSL ↔ ReactFlow 数据双向同步 Hook
- *
- * 职责:
- * 1. 将 WorkflowDsl 转换为 ReactFlow 的 Node[] 和 Edge[]
- * 2. 将 ReactFlow 的编辑操作同步回 DSL
- * 3. 管理画布状态（节点位置、选中状态）
- * 4. 提供 DSL 导出（用于保存）
- */
-export const useDslSync = (initialDsl?: WorkflowDsl) => {
-    const dslRef = useRef<WorkflowDsl | undefined>(initialDsl);
+export const useDslSync = (
+    initialDsl: WorkflowDsl,
+    onChange?: (dsl: WorkflowDsl) => void,
+    onSnapshot?: (nodes: Node[], edges: Edge[]) => void,
+) => {
+    const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
+    const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
 
-    // ── DSL → ReactFlow 转换 ──
+    const dslRef = useRef<WorkflowDsl>(initialDsl);
 
-    const initialNodes = useMemo<Node[]>(() => {
-        if (!initialDsl) return [];
-        return dslNodesToFlow(initialDsl.nodes);
-    }, [initialDsl]);
+    useMemo(() => {
+        if (!initialDsl) {
+            setNodes([]);
+            setEdges([]);
+            return;
+        }
+        setNodes(dslNodesToFlow(initialDsl.nodes));
+        setEdges(dslEdgesToFlow(initialDsl.edges));
+    }, []);
 
-    const initialEdges = useMemo<Edge[]>(() => {
-        if (!initialDsl) return [];
-        return dslEdgesToFlow(initialDsl.edges);
-    }, [initialDsl]);
-
-    const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
-    const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
-
-    // ── 连线回调 ──
+    const syncToDsl = useCallback(() => {
+        const newDsl = flowToDsl(nodes, edges, dslRef.current);
+        dslRef.current = newDsl;
+        onChange?.(newDsl);
+    }, [nodes, edges, onChange]);
 
     const onConnect = useCallback(
-        (connection: Connection) => {
+        (params: Connection) => {
+            const sourceNode = nodes.find((n) => n.id === params.source);
+            const targetNode = nodes.find((n) => n.id === params.target);
+
+            if (sourceNode && targetNode) {
+                const sourceConfig = getNodeTypeConfig(sourceNode.data.type as string);
+                const targetConfig = getNodeTypeConfig(targetNode.data.type as string);
+
+                const sourceHandle = params.sourceHandle;
+                const targetHandle = params.targetHandle;
+
+                const outputSchema = sourceConfig?.outputsSchema?.find(o => o.name === sourceHandle);
+                const inputSchema = targetConfig?.inputsSchema?.find(i => i.name === targetHandle);
+
+                if (outputSchema && inputSchema) {
+                    if (outputSchema.type !== 'any' && inputSchema.type !== 'any' && outputSchema.type !== inputSchema.type) {
+                        message.error(`类型不匹配: 无法将 ${outputSchema.type} 连接到 ${inputSchema.type}`);
+                        return;
+                    }
+                }
+            }
+
+            if (sourceNode && targetNode) {
+                // ... type checks ...
+            }
+
+            // Snapshot before connecting
+            onSnapshot?.(nodes, edges);
+
             const newEdge: Edge = {
-                id: `edge_${connection.source}_${connection.target}_${Date.now()}`,
-                source: connection.source!,
-                target: connection.target!,
-                sourceHandle: connection.sourceHandle ?? undefined,
-                targetHandle: connection.targetHandle ?? undefined,
+                id: `edge_${params.source}_${params.target}_${Date.now()}`,
+                source: params.source,
+                target: params.target,
+                sourceHandle: params.sourceHandle,
+                targetHandle: params.targetHandle,
                 type: 'smoothstep',
                 animated: true,
                 data: { edgeType: 'data-edge' },
             };
             setEdges((eds) => addEdge(newEdge, eds));
         },
-        [setEdges],
+        [setEdges, nodes],
     );
-
-    // ── 添加节点 ──
 
     const addNode = useCallback(
         (nodeType: string, position: { x: number; y: number }) => {
+            // Snapshot before adding
+            onSnapshot?.(nodes, edges);
+
             const typeConfig = getNodeTypeConfig(nodeType);
             const nodeId = `${nodeType}_${Date.now()}`;
 
             const newNode: Node = {
                 id: nodeId,
-                type: 'workflowNode',
+                type: nodeType === 'group' ? 'group' : 'workflowNode',
                 position,
                 data: {
                     type: nodeType,
@@ -72,23 +106,36 @@ export const useDslSync = (initialDsl?: WorkflowDsl) => {
             setNodes((nds) => [...nds, newNode]);
             return nodeId;
         },
-        [setNodes],
+        [setNodes, nodes, edges, onSnapshot],
     );
-
-    // ── 删除节点 ──
 
     const removeNode = useCallback(
         (nodeId: string) => {
+            onSnapshot?.(nodes, edges);
             setNodes((nds) => nds.filter((n) => n.id !== nodeId));
             setEdges((eds) => eds.filter((e) => e.source !== nodeId && e.target !== nodeId));
         },
-        [setNodes, setEdges],
+        [setNodes, setEdges, nodes, edges, onSnapshot],
     );
 
-    // ── 更新节点数据 ──
+    const onNodesDelete = useCallback(
+        (deleted: Node[]) => {
+            // Optional: Handle side effects here
+        },
+        [],
+    );
 
     const updateNodeData = useCallback(
         (nodeId: string, data: Partial<Record<string, unknown>>) => {
+            // Snapshot? Note: this might be called frequently if typing in input.
+            // Ideally snapshot only on blur or distinct action. 
+            // For now, let's NOT snapshot on generic data update to avoid spam, 
+            // or rely on component to trigger snapshot on blur? 
+            // Actually, PropertyPanel calls this. 
+            // We should expose a separate 'snapshot' method or let caller handle it?
+            // Let's assume caller (PropertyPanel) might want to trigger snapshot.
+            // But here we are inside the hook.
+            // Let's add a `skipSnapshot` optional arg? Or just leave it for now and handle in PropertyPanel?
             setNodes((nds) =>
                 nds.map((n) => (n.id === nodeId ? { ...n, data: { ...n.data, ...data } } : n)),
             );
@@ -96,32 +143,25 @@ export const useDslSync = (initialDsl?: WorkflowDsl) => {
         [setNodes],
     );
 
-    // ── ReactFlow → DSL 导出 ──
+    const updateEdgeData = useCallback(
+        (edgeId: string, data: Partial<Record<string, unknown>> & { type?: string }) => {
+            setEdges((eds) =>
+                eds.map((edge) => {
+                    if (edge.id !== edgeId) return edge;
+                    return {
+                        ...edge,
+                        type: data.type ?? edge.type,
+                        data: { ...edge.data, ...data },
+                    };
+                }),
+            );
+        },
+        [setEdges],
+    );
 
-    const exportDsl = useCallback((): { nodes: WorkflowNode[]; edges: WorkflowEdge[] } => {
-        const dslNodes: WorkflowNode[] = nodes.map((n) => ({
-            id: n.id,
-            type: n.data.type as string,
-            name: n.data.name as string,
-            enabled: (n.data.enabled as boolean) ?? true,
-            config: (n.data.config as Record<string, unknown>) ?? {},
-            runtimePolicy: n.data.runtimePolicy as Record<string, unknown> | undefined,
-            inputBindings: n.data.inputBindings as Record<string, unknown> | undefined,
-            outputSchema: n.data.outputSchema as string | Record<string, unknown> | undefined,
-        }));
-
-        const dslEdges: WorkflowEdge[] = edges.map((e) => ({
-            id: e.id,
-            from: e.source,
-            to: e.target,
-            edgeType: (e.data?.edgeType as WorkflowEdge['edgeType']) ?? 'data-edge',
-            condition: e.data?.condition ?? null,
-        }));
-
-        return { nodes: dslNodes, edges: dslEdges };
+    const exportDsl = useCallback((): WorkflowDsl => {
+        return flowToDsl(nodes, edges, dslRef.current);
     }, [nodes, edges]);
-
-    // ── 从 DSL 重新加载 ──
 
     const loadDsl = useCallback(
         (dsl: WorkflowDsl) => {
@@ -132,6 +172,8 @@ export const useDslSync = (initialDsl?: WorkflowDsl) => {
         [setNodes, setEdges],
     );
 
+    const importDsl = loadDsl;
+
     return {
         nodes,
         edges,
@@ -141,26 +183,26 @@ export const useDslSync = (initialDsl?: WorkflowDsl) => {
         addNode,
         removeNode,
         updateNodeData,
+        updateEdgeData,
         exportDsl,
         loadDsl,
+        importDsl,
         setNodes,
         setEdges,
+        syncToDsl,
+        onNodesDelete,
     };
 };
 
-// ────────────────── 转换工具函数 ──────────────────
-
-/**
- * WorkflowNode[] → ReactFlow Node[]
- */
 function dslNodesToFlow(dslNodes: WorkflowNode[]): Node[] {
-    return dslNodes.map((n, idx) => {
+    const nodes = dslNodes.map((n, idx) => {
         const typeConfig = getNodeTypeConfig(n.type);
+        const config = n.config as Record<string, unknown>;
+
         return {
             id: n.id,
-            type: 'workflowNode',
-            // 在保存时位置可能存于 config._position，否则按列自动排列
-            position: (n.config._position as { x: number; y: number }) ?? {
+            type: n.type === 'group' ? 'group' : 'workflowNode',
+            position: (config._position as { x: number; y: number }) ?? {
                 x: 250,
                 y: 100 + idx * 120,
             },
@@ -174,13 +216,18 @@ function dslNodesToFlow(dslNodes: WorkflowNode[]): Node[] {
                 outputSchema: n.outputSchema,
                 nodeTypeConfig: typeConfig,
             },
+            parentId: (config.parentId as string) || undefined,
+            extent: (config.extent as 'parent' | undefined),
         };
+    });
+
+    return nodes.sort((a, b) => {
+        if (a.type === 'group' && b.type !== 'group') return -1;
+        if (a.type !== 'group' && b.type === 'group') return 1;
+        return 0;
     });
 }
 
-/**
- * WorkflowEdge[] → ReactFlow Edge[]
- */
 function dslEdgesToFlow(dslEdges: WorkflowEdge[]): Edge[] {
     return dslEdges.map((e) => ({
         id: e.id,
@@ -194,6 +241,38 @@ function dslEdgesToFlow(dslEdges: WorkflowEdge[]): Edge[] {
             condition: e.condition,
         },
     }));
+}
+
+function flowToDsl(nodes: Node[], edges: Edge[], originalDsl: WorkflowDsl): WorkflowDsl {
+    const dslNodes: WorkflowNode[] = nodes.map((n) => ({
+        id: n.id,
+        type: n.data.type as string,
+        name: n.data.name as string,
+        enabled: (n.data.enabled as boolean) ?? true,
+        config: {
+            ...(n.data.config as Record<string, unknown>),
+            _position: n.position,
+            parentId: n.parentId,
+            extent: n.extent,
+        },
+        runtimePolicy: n.data.runtimePolicy as Record<string, unknown> | undefined,
+        inputBindings: n.data.inputBindings as Record<string, unknown> | undefined,
+        outputSchema: n.data.outputSchema as string | Record<string, unknown> | undefined,
+    }));
+
+    const dslEdges: WorkflowEdge[] = edges.map((e) => ({
+        id: e.id,
+        from: e.source,
+        to: e.target,
+        edgeType: (e.data?.edgeType as WorkflowEdge['edgeType']) ?? 'data-edge',
+        condition: (e.data?.condition as string) ?? null,
+    }));
+
+    return {
+        ...originalDsl,
+        nodes: dslNodes,
+        edges: dslEdges,
+    };
 }
 
 function getEdgeStyle(edgeType: string): React.CSSProperties {

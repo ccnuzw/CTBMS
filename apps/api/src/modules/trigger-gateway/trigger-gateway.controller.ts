@@ -81,7 +81,7 @@ export class TriggerGatewayController {
   @Post('external/triggers/:id/invoke')
   async invoke(
     @Param('id') id: string,
-    @Body() body: any,
+    @Body() body: Record<string, unknown>,
     @Request() req: ExpressRequest,
     @Query('apiKey') queryKey?: string,
   ) {

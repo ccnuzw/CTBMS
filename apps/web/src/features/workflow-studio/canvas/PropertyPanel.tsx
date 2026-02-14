@@ -1,15 +1,18 @@
 import React from 'react';
 import { Card, Divider, Form, Input, InputNumber, Select, Space, Switch, Tag, theme, Typography } from 'antd';
 import { CloseOutlined, SettingOutlined } from '@ant-design/icons';
-import type { Node } from '@xyflow/react';
+import type { Edge, Node } from '@xyflow/react';
 import type { NodeTypeConfig } from './nodeTypeRegistry';
 import { getNodeTypeConfig } from './nodeTypeRegistry';
+import { VariableSelector } from './VariableSelector';
 
 const { Text, Title } = Typography;
 
 interface PropertyPanelProps {
-    selectedNode: Node | null;
-    onUpdateNode: (nodeId: string, data: Partial<Record<string, unknown>>) => void;
+    selectedNode?: Node | null;
+    selectedEdge?: Edge | null;
+    onUpdateNode?: (nodeId: string, data: Partial<Record<string, unknown>>) => void;
+    onUpdateEdge?: (edgeId: string, data: Partial<Record<string, unknown>> & { type?: string }) => void;
     onClose: () => void;
 }
 
@@ -23,10 +26,23 @@ interface PropertyPanelProps {
  */
 export const PropertyPanel: React.FC<PropertyPanelProps> = ({
     selectedNode,
+    selectedEdge,
     onUpdateNode,
+    onUpdateEdge,
     onClose,
 }) => {
     const { token } = theme.useToken();
+
+    if (selectedEdge) {
+        return (
+            <EdgePropertyPanel
+                selectedEdge={selectedEdge}
+                onUpdateEdge={onUpdateEdge!}
+                onClose={onClose}
+                token={token}
+            />
+        );
+    }
 
     if (!selectedNode) return null;
 
@@ -39,17 +55,17 @@ export const PropertyPanel: React.FC<PropertyPanelProps> = ({
     const isEnabled = (nodeData.enabled as boolean) ?? true;
 
     const handleFieldChange = (field: string, value: unknown) => {
-        onUpdateNode(selectedNode.id, { [field]: value });
+        onUpdateNode?.(selectedNode.id, { [field]: value });
     };
 
     const handleConfigChange = (key: string, value: unknown) => {
-        onUpdateNode(selectedNode.id, {
+        onUpdateNode?.(selectedNode.id, {
             config: { ...config, [key]: value },
         });
     };
 
     const handleRuntimePolicyChange = (key: string, value: unknown) => {
-        onUpdateNode(selectedNode.id, {
+        onUpdateNode?.(selectedNode.id, {
             runtimePolicy: { ...runtimePolicy, [key]: value },
         });
     };
@@ -202,7 +218,7 @@ export const PropertyPanel: React.FC<PropertyPanelProps> = ({
                         .filter(([key]) => !key.startsWith('_'))
                         .map(([key, value]) => (
                             <Form.Item key={key} label={key} style={{ marginBottom: 12 }}>
-                                {renderConfigField(key, value, (v) => handleConfigChange(key, v))}
+                                {renderConfigField(key, value, (v) => handleConfigChange(key, v), selectedNode.id)}
                             </Form.Item>
                         ))}
                 </Form>
@@ -218,6 +234,7 @@ function renderConfigField(
     key: string,
     value: unknown,
     onChange: (value: unknown) => void,
+    nodeId: string,
 ): React.ReactNode {
     if (typeof value === 'boolean') {
         return <Switch checked={value} onChange={onChange} size="small" />;
@@ -235,11 +252,19 @@ function renderConfigField(
         // 长文本使用 TextArea
         if (value.length > 80 || key.includes('expression') || key.includes('prompt')) {
             return (
-                <Input.TextArea
-                    value={value}
-                    onChange={(e) => onChange(e.target.value)}
-                    autoSize={{ minRows: 2, maxRows: 6 }}
-                />
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    <VariableSelector
+                        value={value}
+                        onChange={(v) => onChange(v)}
+                        currentNodeId={nodeId}
+                    />
+                    <Input.TextArea
+                        value={value}
+                        onChange={(e) => onChange(e.target.value)}
+                        autoSize={{ minRows: 2, maxRows: 6 }}
+                        placeholder="在此输入表达式或使用上方选择器..."
+                    />
+                </div>
             );
         }
         return <Input value={value} onChange={(e) => onChange(e.target.value)} />;
@@ -277,4 +302,127 @@ function renderConfigField(
         );
     }
     return <Input value={String(value ?? '')} onChange={(e) => onChange(e.target.value)} />;
+}
+
+// ── Edge Property Panel ──
+
+interface EdgePropertyPanelProps {
+    selectedEdge: Edge;
+    onUpdateEdge: (edgeId: string, data: Partial<Record<string, unknown>> & { type?: string }) => void;
+    onClose: () => void;
+    token: any;
+}
+
+const EdgePropertyPanel: React.FC<EdgePropertyPanelProps> = ({
+    selectedEdge,
+    onUpdateEdge,
+    onClose,
+    token,
+}) => {
+    const edgeData = selectedEdge.data ?? {};
+    const edgeType = (edgeData.edgeType as string) ?? 'data-edge';
+    const condition = (edgeData.condition as string) ?? '';
+
+    const handleTypeChange = (type: string) => {
+        onUpdateEdge(selectedEdge.id, { edgeType: type, type: getFlowEdgeType(type) });
+    };
+
+    const handleConditionChange = (value: string) => {
+        onUpdateEdge(selectedEdge.id, { condition: value });
+    };
+
+    return (
+        <div
+            style={{
+                width: 320,
+                height: '100%',
+                background: token.colorBgContainer,
+                borderLeft: `1px solid ${token.colorBorderSecondary}`,
+                display: 'flex',
+                flexDirection: 'column',
+                overflow: 'hidden',
+                boxShadow: '-2px 0 8px rgba(0,0,0,0.05)',
+            }}
+        >
+            {/* Header */}
+            <div
+                style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    padding: '12px 16px',
+                    borderBottom: `1px solid ${token.colorBorderSecondary}`,
+                }}
+            >
+                <Space>
+                    <div
+                        style={{
+                            width: 24,
+                            height: 24,
+                            borderRadius: token.borderRadiusSM,
+                            background: `#1677FF15`,
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            color: '#1677FF',
+                            fontSize: 12,
+                        }}
+                    >
+                        <SettingOutlined />
+                    </div>
+                    <Text strong style={{ fontSize: 14 }}>
+                        连线属性
+                    </Text>
+                </Space>
+                <CloseOutlined
+                    style={{ cursor: 'pointer', color: token.colorTextSecondary }}
+                    onClick={onClose}
+                />
+            </div>
+
+            {/* Body */}
+            <div style={{ flex: 1, overflow: 'auto', padding: 16 }}>
+                <Form layout="vertical" size="small">
+                    <Form.Item label="连线类型" style={{ marginBottom: 16 }}>
+                        <Select
+                            value={edgeType}
+                            onChange={handleTypeChange}
+                            options={[
+                                { label: '数据流 (Data Edge)', value: 'data-edge' },
+                                { label: '控制流 (Control Edge)', value: 'control-edge' },
+                                { label: '条件流 (Condition Edge)', value: 'condition-edge' },
+                                { label: '错误流 (Error Edge)', value: 'error-edge' },
+                            ]}
+                        />
+                    </Form.Item>
+
+                    {edgeType === 'condition-edge' && (
+                        <Form.Item
+                            label="条件表达式"
+                            style={{ marginBottom: 16 }}
+                            help="例如: result.score > 80"
+                        >
+                            <Input.TextArea
+                                value={condition}
+                                onChange={(e) => handleConditionChange(e.target.value)}
+                                autoSize={{ minRows: 2, maxRows: 6 }}
+                                placeholder="输入条件表达式..."
+                            />
+                        </Form.Item>
+                    )}
+
+                    <Form.Item label="连线 ID" style={{ marginBottom: 12 }}>
+                        <Text type="secondary" style={{ fontSize: 11 }}>
+                            {selectedEdge.id}
+                        </Text>
+                    </Form.Item>
+                </Form>
+            </div>
+        </div>
+    );
+};
+
+// Helper: map dsl edge type to flow edge type (usually just 'smoothstep' but kept generic)
+function getFlowEdgeType(edgeType: string): string {
+    return 'smoothstep';
 }

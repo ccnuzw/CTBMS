@@ -173,6 +173,17 @@ async function main() {
   const rulePackCode = `${token}_RULE_PACK`;
 
   try {
+    await prisma.user.upsert({
+      where: { id: ownerUserId },
+      update: {},
+      create: {
+        id: ownerUserId,
+        username: `wf-alias-${Date.now()}`,
+        email: `wf-alias-${Date.now()}@test.com`,
+        name: 'Workflow Alias Owner',
+      },
+    });
+
     const rulePack = await prisma.decisionRulePack.create({
       data: {
         rulePackCode,
@@ -190,6 +201,16 @@ async function main() {
         operator: 'GT',
         expectedValue: 0,
         weight: 1,
+      },
+    });
+    await prisma.userConfigBinding.create({
+      data: {
+        userId: ownerUserId,
+        bindingType: 'DECISION_RULE_PACK',
+        targetId: rulePack.id,
+        targetCode: rulePackCode,
+        isActive: true,
+        priority: 10,
       },
     });
 
@@ -270,7 +291,19 @@ async function main() {
     assert.equal(triggerExecution.body.status, 'SUCCESS');
 
     const executionId = triggerExecution.body.id;
-    const replay = await fetchJson<{ execution: { id: string; status: string } }>(
+    const replay = await fetchJson<{
+      execution: {
+        id: string;
+        status: string;
+        paramSnapshot?: {
+          _workflowBindings?: {
+            workflowBindings?: {
+              rulePackBindings?: string[];
+            };
+          };
+        };
+      };
+    }>(
       `${baseUrl}/workflow-replays/${executionId}`,
       {
         headers: {
@@ -280,6 +313,11 @@ async function main() {
     );
     assert.equal(replay.status, 200);
     assert.equal(replay.body.execution.id, executionId);
+    assert.ok(
+      replay.body.execution.paramSnapshot?._workflowBindings?.workflowBindings?.rulePackBindings?.includes(
+        rulePackCode,
+      ),
+    );
 
     const timeline = await fetchJson<{ total: number }>(
       `${baseUrl}/workflow-replays/${executionId}/timeline`,
@@ -375,6 +413,12 @@ async function main() {
         },
       },
     });
+    await prisma.userConfigBinding.deleteMany({
+      where: {
+        userId: ownerUserId,
+      },
+    });
+    await prisma.user.delete({ where: { id: ownerUserId } }).catch(() => undefined);
     await app.close();
     await prisma.$disconnect();
   }

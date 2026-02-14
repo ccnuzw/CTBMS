@@ -134,6 +134,30 @@ async function main() {
     assert.ok(featurePage.body.total >= 2);
     assert.ok(featurePage.body.data.some((item) => item.featureType === 'INTRADAY_RETURN_PCT'));
 
+    const batchCalculated = await fetchJson<{
+      tradingDay: string;
+      requestedContracts: number;
+      successContracts: number;
+      failedContracts: number;
+      calculatedCount: number;
+    }>(`${baseUrl}/futures-sim/features/calculate-batch`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        tradingDay: '2026-02-13',
+        contractCodes: [contractCode],
+        featureTypes: ['INTRADAY_RANGE_PCT'],
+      }),
+    });
+    assert.equal(batchCalculated.status, 201);
+    assert.equal(batchCalculated.body.tradingDay, '2026-02-13');
+    assert.equal(batchCalculated.body.requestedContracts, 1);
+    assert.equal(batchCalculated.body.successContracts, 1);
+    assert.equal(batchCalculated.body.failedContracts, 0);
+    assert.equal(batchCalculated.body.calculatedCount, 1);
+
     const openPosition = await fetchJson<{ id: string; status: string; remainingQty: number }>(
       `${baseUrl}/futures-sim/positions`,
       {

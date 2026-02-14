@@ -4,6 +4,7 @@ import type {
   FuturesQuoteSnapshotDto,
   FuturesDerivedFeaturePageDto,
   CalculateFuturesDerivedFeatureDto,
+  CalculateFuturesDerivedFeatureBatchDto,
   CalculateFuturesDerivedFeatureResultDto,
   PositionPageDto,
   VirtualFuturesPositionDto,
@@ -78,6 +79,19 @@ export const useCalculateDerivedFeatures = () => {
         '/futures-sim/features/calculate',
         dto,
       );
+      return res.data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['futures-derived-features'] });
+    },
+  });
+};
+
+export const useCalculateDerivedFeaturesBatch = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (dto: CalculateFuturesDerivedFeatureBatchDto) => {
+      const res = await apiClient.post('/futures-sim/features/calculate-batch', dto);
       return res.data;
     },
     onSuccess: () => {

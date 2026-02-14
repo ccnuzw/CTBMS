@@ -2,6 +2,7 @@ import {
   Controller,
   Get,
   Post,
+  UseGuards,
   Put,
   Delete,
   Body,
@@ -11,6 +12,8 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { Request as ExpressRequest } from 'express';
+import { RequireDbRoles } from '../../common/decorators/require-db-roles.decorator';
+import { DbRoleGuard } from '../../common/guards/db-role.guard';
 import { TemplateCatalogService } from './template-catalog.service';
 import {
   CreateTemplateCatalogRequest,
@@ -32,6 +35,8 @@ export class TemplateCatalogController {
   }
 
   @Post()
+  @UseGuards(DbRoleGuard)
+  @RequireDbRoles('ADMIN', 'TEMPLATE_ADMIN', 'SUPER_ADMIN')
   create(@Request() req: AuthRequest, @Body() dto: CreateTemplateCatalogRequest) {
     return this.service.create(this.getUserId(req), dto);
   }
@@ -58,6 +63,8 @@ export class TemplateCatalogController {
   }
 
   @Post(':id/publish')
+  @UseGuards(DbRoleGuard)
+  @RequireDbRoles('ADMIN', 'TEMPLATE_ADMIN', 'SUPER_ADMIN')
   publish(@Request() req: AuthRequest, @Param('id') id: string) {
     return this.service.publish(this.getUserId(req), id);
   }

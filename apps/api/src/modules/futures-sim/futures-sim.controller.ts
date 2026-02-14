@@ -14,6 +14,7 @@ import {
   CreateFuturesQuoteSnapshotRequest,
   FuturesQuoteQueryRequest,
   CalculateFuturesDerivedFeatureRequest,
+  CalculateFuturesDerivedFeatureBatchRequest,
   FuturesDerivedFeatureQueryRequest,
   OpenPositionRequest,
   ClosePositionRequest,
@@ -55,6 +56,11 @@ export class FuturesSimController {
   @Post('features/calculate')
   calculateFeatures(@Body() dto: CalculateFuturesDerivedFeatureRequest) {
     return this.service.calculateDerivedFeatures(dto);
+  }
+
+  @Post('features/calculate-batch')
+  calculateFeaturesBatch(@Body() dto: CalculateFuturesDerivedFeatureBatchRequest) {
+    return this.service.calculateDerivedFeaturesBatch(dto);
   }
 
   @Get('features')

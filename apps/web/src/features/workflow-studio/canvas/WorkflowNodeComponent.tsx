@@ -2,6 +2,7 @@ import React, { memo } from 'react';
 import { Handle, Position, type NodeProps } from '@xyflow/react';
 import { Badge, theme, Typography } from 'antd';
 import type { NodeTypeConfig } from './nodeTypeRegistry';
+import { getNodeTypeConfig } from './nodeTypeRegistry';
 
 const { Text } = Typography;
 
@@ -12,12 +13,17 @@ const { Text } = Typography;
  */
 export const WorkflowNodeComponent = memo(({ data, selected }: NodeProps) => {
     const { token } = theme.useToken();
-    const nodeTypeConfig = data.nodeTypeConfig as NodeTypeConfig | undefined;
+    // Use getNodeTypeConfig to get the full config, including schemas
+    const nodeTypeConfig = getNodeTypeConfig(data.type as string);
     const isEnabled = (data.enabled as boolean) ?? true;
     const nodeName = data.name as string;
     const nodeType = data.type as string;
     const color = nodeTypeConfig?.color ?? token.colorPrimary;
     const IconComponent = nodeTypeConfig?.icon;
+
+    // Extract schemas for handle rendering
+    const inputsSchema = nodeTypeConfig?.inputsSchema;
+    const outputsSchema = nodeTypeConfig?.outputsSchema;
 
     return (
         <div
@@ -34,16 +40,42 @@ export const WorkflowNodeComponent = memo(({ data, selected }: NodeProps) => {
                 cursor: 'pointer',
             }}
         >
-            <Handle
-                type="target"
-                position={Position.Top}
-                style={{
-                    width: 10,
-                    height: 10,
-                    background: color,
-                    border: `2px solid ${token.colorBgContainer}`,
-                }}
-            />
+            {/* Input Handles */}
+            {inputsSchema ? (
+                inputsSchema.map((input, index) => (
+                    <Handle
+                        key={input.name}
+                        type="target"
+                        position={Position.Top}
+                        id={input.name}
+                        style={{
+                            left: inputsSchema.length === 1 ? '50%' : `${((index + 1) * 100) / (inputsSchema.length + 1)}%`,
+                            top: -6,
+                            width: 10,
+                            height: 10,
+                            background: color,
+                            border: `2px solid ${token.colorBgContainer}`,
+                        }}
+                    >
+                        {inputsSchema.length > 1 && (
+                            <div style={{ position: 'absolute', top: -16, left: -10, fontSize: 10, color: token.colorTextSecondary, whiteSpace: 'nowrap' }}>
+                                {input.name}
+                            </div>
+                        )}
+                    </Handle>
+                ))
+            ) : (
+                <Handle
+                    type="target"
+                    position={Position.Top}
+                    style={{
+                        width: 10,
+                        height: 10,
+                        background: color,
+                        border: `2px solid ${token.colorBgContainer}`,
+                    }}
+                />
+            )}
 
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 {IconComponent && (
@@ -92,16 +124,42 @@ export const WorkflowNodeComponent = memo(({ data, selected }: NodeProps) => {
                 )}
             </div>
 
-            <Handle
-                type="source"
-                position={Position.Bottom}
-                style={{
-                    width: 10,
-                    height: 10,
-                    background: color,
-                    border: `2px solid ${token.colorBgContainer}`,
-                }}
-            />
+            {/* Output Handles */}
+            {outputsSchema ? (
+                outputsSchema.map((output, index) => (
+                    <Handle
+                        key={output.name}
+                        type="source"
+                        position={Position.Bottom}
+                        id={output.name}
+                        style={{
+                            left: outputsSchema.length === 1 ? '50%' : `${((index + 1) * 100) / (outputsSchema.length + 1)}%`,
+                            bottom: -6,
+                            width: 10,
+                            height: 10,
+                            background: color,
+                            border: `2px solid ${token.colorBgContainer}`,
+                        }}
+                    >
+                        {outputsSchema.length > 1 && (
+                            <div style={{ position: 'absolute', bottom: -16, left: -10, fontSize: 10, color: token.colorTextSecondary, whiteSpace: 'nowrap' }}>
+                                {output.name}
+                            </div>
+                        )}
+                    </Handle>
+                ))
+            ) : (
+                <Handle
+                    type="source"
+                    position={Position.Bottom}
+                    style={{
+                        width: 10,
+                        height: 10,
+                        background: color,
+                        border: `2px solid ${token.colorBgContainer}`,
+                    }}
+                />
+            )}
         </div>
     );
 });

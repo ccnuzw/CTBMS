@@ -1621,17 +1621,45 @@ export class WorkflowExecutionService {
     ownerUserId: string,
     dsl: WorkflowDsl,
   ): Promise<Record<string, unknown>> {
-    const agentBindings = this.uniqueStringList(dsl.agentBindings);
-    const paramSetBindings = this.uniqueStringList(dsl.paramSetBindings);
+    const userConfigBindings = await this.prisma.userConfigBinding.findMany({
+      where: {
+        userId: ownerUserId,
+        isActive: true,
+        bindingType: {
+          in: ['AGENT_PROFILE', 'PARAMETER_SET', 'DECISION_RULE_PACK'],
+        },
+      },
+      select: {
+        id: true,
+        bindingType: true,
+        targetId: true,
+        targetCode: true,
+        priority: true,
+      },
+      orderBy: [{ priority: 'asc' }, { createdAt: 'asc' }],
+    });
+
+    const bindingTargetsByType = this.groupBindingTargetsByType(userConfigBindings);
+    const agentBindings = this.uniqueStringList([
+      ...this.uniqueStringList(dsl.agentBindings),
+      ...bindingTargetsByType.AGENT_PROFILE,
+    ]);
+    const paramSetBindings = this.uniqueStringList([
+      ...this.uniqueStringList(dsl.paramSetBindings),
+      ...bindingTargetsByType.PARAMETER_SET,
+    ]);
+    const rulePackBindings = this.uniqueStringList(bindingTargetsByType.DECISION_RULE_PACK);
     const dataConnectorBindings = this.uniqueStringList(dsl.dataConnectorBindings);
 
-    const [agents, parameterSets, connectors] = await Promise.all([
+    const [agents, parameterSets, rulePacks, connectors] = await Promise.all([
       agentBindings.length > 0
         ? this.prisma.agentProfile.findMany({
             where: {
-              agentCode: { in: agentBindings },
               isActive: true,
-              OR: [{ ownerUserId }, { templateSource: 'PUBLIC' }],
+              AND: [
+                { OR: [{ agentCode: { in: agentBindings } }, { id: { in: agentBindings } }] },
+                { OR: [{ ownerUserId }, { templateSource: 'PUBLIC' }] },
+              ],
             },
             select: {
               id: true,
@@ -1645,9 +1673,11 @@ export class WorkflowExecutionService {
       paramSetBindings.length > 0
         ? this.prisma.parameterSet.findMany({
             where: {
-              setCode: { in: paramSetBindings },
               isActive: true,
-              OR: [{ ownerUserId }, { templateSource: 'PUBLIC' }],
+              AND: [
+                { OR: [{ setCode: { in: paramSetBindings } }, { id: { in: paramSetBindings } }] },
+                { OR: [{ ownerUserId }, { templateSource: 'PUBLIC' }] },
+              ],
             },
             select: {
               id: true,
@@ -1657,10 +1687,32 @@ export class WorkflowExecutionService {
             },
           })
         : Promise.resolve([]),
+      rulePackBindings.length > 0
+        ? this.prisma.decisionRulePack.findMany({
+            where: {
+              isActive: true,
+              AND: [
+                {
+                  OR: [{ rulePackCode: { in: rulePackBindings } }, { id: { in: rulePackBindings } }],
+                },
+                { OR: [{ ownerUserId }, { templateSource: 'PUBLIC' }] },
+              ],
+            },
+            select: {
+              id: true,
+              rulePackCode: true,
+              version: true,
+              templateSource: true,
+            },
+          })
+        : Promise.resolve([]),
       dataConnectorBindings.length > 0
         ? this.prisma.dataConnector.findMany({
             where: {
-              connectorCode: { in: dataConnectorBindings },
+              OR: [
+                { connectorCode: { in: dataConnectorBindings } },
+                { id: { in: dataConnectorBindings } },
+              ],
               isActive: true,
             },
             select: {
@@ -1673,25 +1725,38 @@ export class WorkflowExecutionService {
         : Promise.resolve([]),
     ]);
 
-    const resolvedAgentCodes = new Set(agents.map((item) => item.agentCode));
-    const resolvedSetCodes = new Set(parameterSets.map((item) => item.setCode));
-    const resolvedConnectorCodes = new Set(connectors.map((item) => item.connectorCode));
+    const resolvedAgentTargets = new Set(
+      agents.flatMap((item) => [item.id, item.agentCode].filter(Boolean)),
+    );
+    const resolvedSetTargets = new Set(
+      parameterSets.flatMap((item) => [item.id, item.setCode].filter(Boolean)),
+    );
+    const resolvedRulePackTargets = new Set(
+      rulePacks.flatMap((item) => [item.id, item.rulePackCode].filter(Boolean)),
+    );
+    const resolvedConnectorTargets = new Set(
+      connectors.flatMap((item) => [item.id, item.connectorCode].filter(Boolean)),
+    );
 
     return {
       workflowBindings: {
         agentBindings,
         paramSetBindings,
+        rulePackBindings,
         dataConnectorBindings,
       },
+      userConfigBindings,
       resolvedBindings: {
         agents,
         parameterSets,
+        rulePacks,
         dataConnectors: connectors,
       },
       unresolvedBindings: {
-        agents: agentBindings.filter((item) => !resolvedAgentCodes.has(item)),
-        parameterSets: paramSetBindings.filter((item) => !resolvedSetCodes.has(item)),
-        dataConnectors: dataConnectorBindings.filter((item) => !resolvedConnectorCodes.has(item)),
+        agents: agentBindings.filter((item) => !resolvedAgentTargets.has(item)),
+        parameterSets: paramSetBindings.filter((item) => !resolvedSetTargets.has(item)),
+        rulePacks: rulePackBindings.filter((item) => !resolvedRulePackTargets.has(item)),
+        dataConnectors: dataConnectorBindings.filter((item) => !resolvedConnectorTargets.has(item)),
       },
     };
   }
@@ -1706,12 +1771,9 @@ export class WorkflowExecutionService {
   }
 
   private uniqueStringList(value: unknown): string[] {
-    if (!Array.isArray(value)) {
-      return [];
-    }
-
+    const source = Array.isArray(value) ? value : [];
     const set = new Set<string>();
-    for (const item of value) {
+    for (const item of source) {
       if (typeof item !== 'string') {
         continue;
       }
@@ -1722,6 +1784,37 @@ export class WorkflowExecutionService {
       set.add(normalized);
     }
     return [...set];
+  }
+
+  private groupBindingTargetsByType(
+    bindings: Array<{
+      bindingType: string;
+      targetId: string;
+      targetCode: string | null;
+    }>,
+  ): Record<'AGENT_PROFILE' | 'PARAMETER_SET' | 'DECISION_RULE_PACK', string[]> {
+    const grouped: Record<'AGENT_PROFILE' | 'PARAMETER_SET' | 'DECISION_RULE_PACK', string[]> = {
+      AGENT_PROFILE: [],
+      PARAMETER_SET: [],
+      DECISION_RULE_PACK: [],
+    };
+
+    for (const binding of bindings) {
+      if (
+        binding.bindingType !== 'AGENT_PROFILE' &&
+        binding.bindingType !== 'PARAMETER_SET' &&
+        binding.bindingType !== 'DECISION_RULE_PACK'
+      ) {
+        continue;
+      }
+      grouped[binding.bindingType].push(binding.targetCode || binding.targetId);
+    }
+
+    return {
+      AGENT_PROFILE: this.uniqueStringList(grouped.AGENT_PROFILE),
+      PARAMETER_SET: this.uniqueStringList(grouped.PARAMETER_SET),
+      DECISION_RULE_PACK: this.uniqueStringList(grouped.DECISION_RULE_PACK),
+    };
   }
 
   private toJsonValue(value: unknown): Prisma.InputJsonValue {

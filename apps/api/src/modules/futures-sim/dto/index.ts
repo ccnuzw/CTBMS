@@ -3,6 +3,7 @@ import {
   CreateFuturesQuoteSnapshotSchema,
   FuturesQuoteQuerySchema,
   CalculateFuturesDerivedFeatureSchema,
+  CalculateFuturesDerivedFeatureBatchSchema,
   FuturesDerivedFeatureQuerySchema,
   OpenPositionSchema,
   ClosePositionSchema,
@@ -14,6 +15,9 @@ export class CreateFuturesQuoteSnapshotRequest extends createZodDto(CreateFuture
 export class FuturesQuoteQueryRequest extends createZodDto(FuturesQuoteQuerySchema) {}
 export class CalculateFuturesDerivedFeatureRequest extends createZodDto(
   CalculateFuturesDerivedFeatureSchema,
+) {}
+export class CalculateFuturesDerivedFeatureBatchRequest extends createZodDto(
+  CalculateFuturesDerivedFeatureBatchSchema,
 ) {}
 export class FuturesDerivedFeatureQueryRequest extends createZodDto(FuturesDerivedFeatureQuerySchema) {}
 export class OpenPositionRequest extends createZodDto(OpenPositionSchema) {}

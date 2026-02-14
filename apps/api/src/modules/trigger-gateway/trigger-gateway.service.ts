@@ -14,6 +14,14 @@ import { WorkflowTriggerTypeEnum } from '@packages/types';
 import type { Prisma } from '@prisma/client';
 import { WorkflowExecutionService } from '../workflow-execution/workflow-execution.service';
 
+type TriggerConfigForFire = {
+  id: string;
+  triggerType: string;
+  createdByUserId: string;
+  workflowDefinitionId: string;
+  paramOverrides: Prisma.JsonValue | null;
+};
+
 @Injectable()
 export class TriggerGatewayService {
   // In-memory rate limiter: configId -> { tokens: number, lastRefill: number }
@@ -267,7 +275,7 @@ export class TriggerGatewayService {
   }
 
   // Refactor fire to reuse internal logic
-  private async fireInternal(config: any, dto: FireTriggerConfigDto) {
+  private async fireInternal(config: TriggerConfigForFire, dto: FireTriggerConfigDto) {
     const triggerType = this.normalizeTriggerType(config.triggerType);
     const startedAt = Date.now();
     const payload = this.mergeParamSnapshot(

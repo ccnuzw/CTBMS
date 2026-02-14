@@ -80,6 +80,12 @@ export const CalculateFuturesDerivedFeatureSchema = z.object({
   featureTypes: z.array(z.string().min(1).max(60)).max(20).optional(),
 });
 
+export const CalculateFuturesDerivedFeatureBatchSchema = z.object({
+  tradingDay: z.string().min(1).max(10),
+  contractCodes: z.array(z.string().min(1).max(30)).max(200).optional(),
+  featureTypes: z.array(z.string().min(1).max(60)).max(20).optional(),
+});
+
 export const FuturesDerivedFeatureQuerySchema = z.object({
   contractCode: z.string().optional(),
   featureType: z.string().optional(),
@@ -93,6 +99,20 @@ export const CalculateFuturesDerivedFeatureResultSchema = z.object({
   tradingDay: z.string(),
   calculatedCount: z.number().int(),
   data: z.array(FuturesDerivedFeatureSchema),
+});
+
+export const CalculateFuturesDerivedFeatureBatchResultSchema = z.object({
+  tradingDay: z.string(),
+  requestedContracts: z.number().int(),
+  successContracts: z.number().int(),
+  failedContracts: z.number().int(),
+  calculatedCount: z.number().int(),
+  errors: z.array(
+    z.object({
+      contractCode: z.string(),
+      message: z.string(),
+    }),
+  ),
 });
 
 // ── 虚拟持仓 ──
@@ -244,8 +264,14 @@ export type CreateFuturesQuoteSnapshotDto = z.infer<typeof CreateFuturesQuoteSna
 export type FuturesQuoteQueryDto = z.infer<typeof FuturesQuoteQuerySchema>;
 export type FuturesDerivedFeatureDto = z.infer<typeof FuturesDerivedFeatureSchema>;
 export type CalculateFuturesDerivedFeatureDto = z.infer<typeof CalculateFuturesDerivedFeatureSchema>;
+export type CalculateFuturesDerivedFeatureBatchDto = z.infer<
+  typeof CalculateFuturesDerivedFeatureBatchSchema
+>;
 export type FuturesDerivedFeatureQueryDto = z.infer<typeof FuturesDerivedFeatureQuerySchema>;
 export type CalculateFuturesDerivedFeatureResultDto = z.infer<typeof CalculateFuturesDerivedFeatureResultSchema>;
+export type CalculateFuturesDerivedFeatureBatchResultDto = z.infer<
+  typeof CalculateFuturesDerivedFeatureBatchResultSchema
+>;
 export type VirtualFuturesPositionDto = z.infer<typeof VirtualFuturesPositionSchema>;
 export type OpenPositionDto = z.infer<typeof OpenPositionSchema>;
 export type ClosePositionDto = z.infer<typeof ClosePositionSchema>;

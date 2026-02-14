@@ -98,7 +98,7 @@ export const ParameterSetQuerySchema = z.object({
   includePublic: z.coerce.boolean().default(true),
   isActive: z.coerce.boolean().optional(),
   page: z.coerce.number().int().min(1).default(1),
-  pageSize: z.coerce.number().int().min(1).max(200).default(20),
+  pageSize: z.coerce.number().int().min(1).max(1000).default(20),
 });
 
 export const PublishParameterSetSchema = z.object({
@@ -204,7 +204,7 @@ export const DataConnectorQuerySchema = z.object({
   connectorType: DataConnectorTypeEnum.optional(),
   isActive: z.coerce.boolean().optional(),
   page: z.coerce.number().int().min(1).default(1),
-  pageSize: z.coerce.number().int().min(1).max(200).default(20),
+  pageSize: z.coerce.number().int().min(1).max(1000).default(20),
 });
 
 export const DataConnectorPageSchema = z.object({

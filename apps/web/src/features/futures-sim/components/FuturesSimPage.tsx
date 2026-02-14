@@ -51,6 +51,7 @@ import {
   useAccountSummary,
   useDerivedFeatures,
   useCalculateDerivedFeatures,
+  useCalculateDerivedFeaturesBatch,
   useQuoteSnapshots,
   useGenerateMockData,
 } from '../api/futures-sim';
@@ -168,6 +169,7 @@ export const FuturesSimPage: React.FC = () => {
   const openMutation = useOpenPosition();
   const closeMutation = useClosePosition();
   const calculateFeatureMutation = useCalculateDerivedFeatures();
+  const calculateFeatureBatchMutation = useCalculateDerivedFeaturesBatch();
   const generateMockMutation = useGenerateMockData();
 
   const handleOpen = async () => {
@@ -239,6 +241,38 @@ export const FuturesSimPage: React.FC = () => {
       });
     } catch {
       message.error('特征计算失败');
+    }
+  };
+
+  const handleCalculateFeaturesBatch = async () => {
+    const tradingDay = featureCalcForm.tradingDay.trim();
+    if (!tradingDay) {
+      message.warning('请填写交易日');
+      return;
+    }
+
+    try {
+      const result = (await calculateFeatureBatchMutation.mutateAsync({
+        tradingDay,
+        contractCodes: featureCalcForm.contractCode.trim()
+          ? [featureCalcForm.contractCode.trim()]
+          : undefined,
+        featureTypes: featureCalcForm.featureTypes,
+      })) as {
+        successContracts: number;
+        failedContracts: number;
+        calculatedCount: number;
+      };
+      message.success(
+        `批量计算完成：成功 ${result.successContracts}，失败 ${result.failedContracts}，特征 ${result.calculatedCount} 项`,
+      );
+      updateParams({
+        tab: 'features',
+        featureTradingDay: tradingDay,
+        page: '1',
+      });
+    } catch {
+      message.error('批量计算失败');
     }
   };
 
@@ -586,6 +620,12 @@ export const FuturesSimPage: React.FC = () => {
                   onClick={handleCalculateFeatures}
                 >
                   计算特征
+                </Button>
+                <Button
+                  loading={calculateFeatureBatchMutation.isPending}
+                  onClick={handleCalculateFeaturesBatch}
+                >
+                  批量计算
                 </Button>
               </Space>
             ) : null

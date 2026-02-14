@@ -1,5 +1,5 @@
 import React from 'react';
-import { Button, Divider, Space, Tooltip, theme, Popconfirm } from 'antd';
+import { Button, Divider, Space, Tooltip, Segmented, theme, Popconfirm, Select, Typography } from 'antd';
 import {
     UndoOutlined,
     RedoOutlined,
@@ -10,17 +10,34 @@ import {
     SaveOutlined,
     DownloadOutlined,
     DeleteOutlined,
+    PlayCircleOutlined,
+    CodeOutlined,
+    DragOutlined,
+    SelectOutlined,
 } from '@ant-design/icons';
 import { useReactFlow } from '@xyflow/react';
 
 interface CanvasToolbarProps {
     onSave: () => void;
     onExportDsl: () => void;
-    onAutoLayout: () => void;
-    onClearCanvas: () => void;
+    onAutoLayout?: () => void;
+    onClearCanvas?: () => void;
     isSaving?: boolean;
     hasUnsavedChanges?: boolean;
+    onRun?: () => void;
+    onToggleLogs?: () => void;
+    selectionMode?: 'hand' | 'pointer';
+    onSelectionModeChange?: (mode: 'hand' | 'pointer') => void;
+    workflowMode?: 'linear' | 'dag' | 'debate';
+    onWorkflowModeChange?: (mode: 'linear' | 'dag' | 'debate') => void;
+    onToggleDebatePanel?: () => void;
+    onUndo?: () => void;
+    onRedo?: () => void;
+    canUndo?: boolean;
+    canRedo?: boolean;
 }
+
+const { Text } = Typography;
 
 /**
  * 画布工具栏
@@ -30,6 +47,8 @@ interface CanvasToolbarProps {
  * - 自动布局
  * - 保存 DSL / 导出 DSL JSON
  * - 清空画布
+ * - 运行/日志 (如果提供)
+ * - 模式切换 (移动/选择)
  */
 export const CanvasToolbar: React.FC<CanvasToolbarProps> = ({
     onSave,
@@ -38,6 +57,17 @@ export const CanvasToolbar: React.FC<CanvasToolbarProps> = ({
     onClearCanvas,
     isSaving = false,
     hasUnsavedChanges = false,
+    onRun,
+    onToggleLogs,
+    selectionMode = 'hand',
+    onSelectionModeChange,
+    workflowMode = 'dag',
+    onWorkflowModeChange,
+    onToggleDebatePanel,
+    onUndo,
+    onRedo,
+    canUndo = false,
+    canRedo = false,
 }) => {
     const { token } = theme.useToken();
     const { zoomIn, zoomOut, fitView } = useReactFlow();
@@ -51,8 +81,41 @@ export const CanvasToolbar: React.FC<CanvasToolbarProps> = ({
                 padding: '8px 16px',
                 background: token.colorBgContainer,
                 borderBottom: `1px solid ${token.colorBorderSecondary}`,
+                position: 'relative',
             }}
         >
+            {/* Center Selection Mode Switch */}
+            <div
+                style={{
+                    position: 'absolute',
+                    left: '50%',
+                    transform: 'translateX(-50%)',
+                    zIndex: 10,
+                    background: token.colorBgContainer,
+                    padding: '4px',
+                    borderRadius: token.borderRadiusLG,
+                    boxShadow: token.boxShadowSecondary,
+                }}
+            >
+                <Segmented
+                    value={selectionMode}
+                    onChange={(val) => onSelectionModeChange?.(val as 'hand' | 'pointer')}
+                    options={[
+                        {
+                            value: 'pointer',
+                            icon: <SelectOutlined />,
+                            label: '选择',
+                        },
+                        {
+                            value: 'hand',
+                            icon: <DragOutlined />,
+                            label: '移动',
+                        },
+                    ]}
+                    size="small"
+                />
+            </div>
+
             <Space size={4}>
                 <Tooltip title="放大">
                     <Button
@@ -81,6 +144,24 @@ export const CanvasToolbar: React.FC<CanvasToolbarProps> = ({
 
                 <Divider type="vertical" />
 
+                <Space size={8} align="center">
+                    <Text type="secondary" style={{ fontSize: 12 }}>模式:</Text>
+                    <Select
+                        value={workflowMode}
+                        onChange={onWorkflowModeChange}
+                        size="small"
+                        options={[
+                            { value: 'linear', label: '线性流' },
+                            { value: 'dag', label: 'DAG' },
+                            { value: 'debate', label: '辩论模式' },
+                        ]}
+                        style={{ width: 100 }}
+                        bordered={false}
+                    />
+                </Space>
+
+                <Divider type="vertical" />
+
                 <Tooltip title="自动布局">
                     <Button
                         type="text"
@@ -89,9 +170,67 @@ export const CanvasToolbar: React.FC<CanvasToolbarProps> = ({
                         onClick={onAutoLayout}
                     />
                 </Tooltip>
+
+                {onRun && (
+                    <>
+                        <Divider type="vertical" />
+                        <Tooltip title="运行调试">
+                            <Button
+                                type="text"
+                                size="small"
+                                icon={<PlayCircleOutlined />}
+                                onClick={onRun}
+                            />
+                        </Tooltip>
+                    </>
+                )}
+
+                {onToggleLogs && (
+                    <Tooltip title="查看日志">
+                        <Button
+                            type="text"
+                            size="small"
+                            icon={<CodeOutlined />}
+                            onClick={onToggleLogs}
+                        />
+                    </Tooltip>
+                )}
+
+                {workflowMode === 'debate' && onToggleDebatePanel && (
+                    <>
+                        <Divider type="vertical" />
+                        <Tooltip title="辩论时间线">
+                            <Button
+                                type="text"
+                                size="small"
+                                icon={<CodeOutlined />}
+                                onClick={onToggleDebatePanel}
+                            />
+                        </Tooltip>
+                    </>
+                )}
             </Space>
 
             <Space size={8}>
+                <Tooltip title="撤销">
+                    <Button
+                        icon={<UndoOutlined />}
+                        onClick={onUndo}
+                        disabled={!canUndo}
+                        size="small"
+                        type="text"
+                    />
+                </Tooltip>
+                <Tooltip title="重做">
+                    <Button
+                        icon={<RedoOutlined />}
+                        onClick={onRedo}
+                        disabled={!canRedo}
+                        size="small"
+                        type="text"
+                    />
+                </Tooltip>
+                <Divider type="vertical" />
                 <Tooltip title="导出 DSL JSON">
                     <Button
                         size="small"

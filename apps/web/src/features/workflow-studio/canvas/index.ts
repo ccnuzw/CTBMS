@@ -8,6 +8,6 @@ export {
     NODE_TYPE_REGISTRY,
     CATEGORY_LABELS,
     getNodeTypeConfig,
-    getNodeTypesByCategory,
+    getNodesByCategory,
 } from './nodeTypeRegistry';
 export type { NodeCategory, NodeTypeConfig } from './nodeTypeRegistry';
