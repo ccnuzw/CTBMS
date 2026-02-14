@@ -5,6 +5,8 @@ on:
   pull_request:
     paths:
       - 'apps/api/src/modules/workflow-execution/**'
+      - 'apps/api/src/modules/workflow-validation/**'
+      - 'apps/api/src/modules/workflow-replay/**'
       - 'apps/api/src/scripts/**'
       - 'apps/api/src/scripts/workflow-execution-baseline.ts'
       - 'apps/api/test/**'

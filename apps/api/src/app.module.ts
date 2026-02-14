@@ -26,6 +26,8 @@ import { PriceSubmissionModule } from './modules/price-submission';
 import { KnowledgeModule } from './modules/knowledge/knowledge.module';
 import { WorkflowDefinitionModule } from './modules/workflow-definition';
 import { WorkflowExecutionModule } from './modules/workflow-execution';
+import { WorkflowValidationModule } from './modules/workflow-validation';
+import { WorkflowReplayModule } from './modules/workflow-replay';
 import { DecisionRuleModule } from './modules/decision-rule';
 import { AgentProfileModule } from './modules/agent-profile';
 import { AgentPromptTemplateModule } from './modules/agent-prompt-template';
@@ -66,6 +68,8 @@ import { FuturesSimModule } from './modules/futures-sim';
     KnowledgeModule,
     WorkflowDefinitionModule,
     WorkflowExecutionModule,
+    WorkflowValidationModule,
+    WorkflowReplayModule,
     DecisionRuleModule,
     AgentProfileModule,
     AgentPromptTemplateModule,
