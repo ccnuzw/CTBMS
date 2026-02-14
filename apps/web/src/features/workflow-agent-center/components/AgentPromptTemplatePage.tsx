@@ -28,20 +28,10 @@ import {
     useCreateAgentPromptTemplate,
     useUpdateAgentPromptTemplate,
 } from '../api';
+import { AGENT_ROLE_OPTIONS, getAgentRoleLabel, getAgentStatusLabel } from '../constants';
 import { AgentPromptTemplateHistory } from './AgentPromptTemplateHistory';
 
 const { Title } = Typography;
-
-const roleOptions: AgentRoleType[] = [
-    'ANALYST',
-    'RISK_OFFICER',
-    'JUDGE',
-    'COST_SPREAD',
-    'FUTURES_EXPERT',
-    'SPOT_EXPERT',
-    'LOGISTICS_EXPERT',
-    'EXECUTION_ADVISOR',
-];
 
 export const AgentPromptTemplatePage: React.FC = () => {
     const { message } = App.useApp();
@@ -132,14 +122,19 @@ export const AgentPromptTemplatePage: React.FC = () => {
         () => [
             { title: '编码', dataIndex: 'promptCode', width: 200 },
             { title: '名称', dataIndex: 'name', width: 200 },
-            { title: '角色', dataIndex: 'roleType', width: 150, render: (v) => <Tag>{v}</Tag> },
-            { title: '输出Schema', dataIndex: 'outputSchemaCode', width: 150 },
+            {
+                title: '角色',
+                dataIndex: 'roleType',
+                width: 150,
+                render: (v: AgentRoleType) => <Tag>{getAgentRoleLabel(v)}</Tag>,
+            },
+            { title: '输出 Schema', dataIndex: 'outputSchemaCode', width: 150 },
             { title: '版本', dataIndex: 'version', width: 80, render: (v) => <Tag>v{v}</Tag> },
             {
                 title: '状态',
                 dataIndex: 'isActive',
                 width: 100,
-                render: (v) => <Tag color={v ? 'green' : 'red'}>{v ? 'ACTIVE' : 'INACTIVE'}</Tag>,
+                render: (v) => <Tag color={v ? 'green' : 'red'}>{getAgentStatusLabel(v)}</Tag>,
             },
             {
                 title: '更新时间',
@@ -184,7 +179,7 @@ export const AgentPromptTemplatePage: React.FC = () => {
         <Card>
             <Space direction="vertical" style={{ width: '100%' }} size={16}>
                 <Space style={{ justifyContent: 'space-between', width: '100%' }}>
-                    <Title level={4}>Agent Prompt 模板管理</Title>
+                    <Title level={4}>智能体提示词模板管理</Title>
                     <Space>
                         <Input.Search
                             placeholder="搜索编码/名称"
@@ -192,7 +187,7 @@ export const AgentPromptTemplatePage: React.FC = () => {
                             style={{ width: 240 }}
                         />
                         <Button type="primary" onClick={() => setVisible(true)}>
-                            新建模板
+                            新建提示词模板
                         </Button>
                     </Space>
                 </Space>
@@ -212,7 +207,7 @@ export const AgentPromptTemplatePage: React.FC = () => {
             </Space>
 
             <Drawer
-                title="新建 Prompt 模板"
+                title="新建提示词模板"
                 width={720}
                 open={visible}
                 onClose={() => setVisible(false)}
@@ -230,29 +225,29 @@ export const AgentPromptTemplatePage: React.FC = () => {
                     variables: '{}',
                     guardrails: '{}',
                 }}>
-                    <Form.Item name="promptCode" label="Prompt 编码" rules={[{ required: true }]}>
+                    <Form.Item name="promptCode" label="提示词编码" rules={[{ required: true }]}>
                         <Input placeholder="例如: MARKET_ANALYSIS_PROMPT_V1" />
                     </Form.Item>
                     <Form.Item name="name" label="模板名称" rules={[{ required: true }]}>
                         <Input />
                     </Form.Item>
                     <Form.Item name="roleType" label="适用角色" rules={[{ required: true }]}>
-                        <Select options={roleOptions.map((r) => ({ label: r, value: r }))} />
+                        <Select options={AGENT_ROLE_OPTIONS.map((r) => ({ label: getAgentRoleLabel(r), value: r }))} />
                     </Form.Item>
-                    <Form.Item name="systemPrompt" label="System Prompt" rules={[{ required: true }]}>
+                    <Form.Item name="systemPrompt" label="系统提示词" rules={[{ required: true }]}>
                         <Input.TextArea rows={6} />
                     </Form.Item>
-                    <Form.Item name="userPromptTemplate" label="User Prompt Template" rules={[{ required: true }]}>
+                    <Form.Item name="userPromptTemplate" label="用户提示模板" rules={[{ required: true }]}>
                         <Input.TextArea rows={6} />
                     </Form.Item>
                     <Form.Item name="outputSchemaCode" label="输出 Schema 编码">
-                        <Input placeholder="关联的 Output Schema Code" />
+                        <Input placeholder="关联的输出 Schema 编码" />
                     </Form.Item>
 
                     <Form.Item name="variables" label="变量定义 (JSON)">
                         <Input.TextArea rows={4} />
                     </Form.Item>
-                    <Form.Item name="guardrails" label="Guardrails (JSON)">
+                    <Form.Item name="guardrails" label="防护规则 (JSON)">
                         <Input.TextArea rows={4} placeholder="例如: { 'no_hallucination': true }" />
                     </Form.Item>
                     <Form.Item name="templateSource" label="来源" hidden>
@@ -262,7 +257,7 @@ export const AgentPromptTemplatePage: React.FC = () => {
             </Drawer>
 
             <Drawer
-                title={`编辑 Prompt 模板 - ${editingTemplate?.promptCode}`}
+                title={`编辑提示词模板 - ${editingTemplate?.promptCode}`}
                 width={800}
                 open={editVisible}
                 onClose={() => setEditVisible(false)}
@@ -285,24 +280,24 @@ export const AgentPromptTemplatePage: React.FC = () => {
                                         <Input />
                                     </Form.Item>
                                     <Form.Item name="roleType" label="适用角色" rules={[{ required: true }]}>
-                                        <Select options={roleOptions.map((r) => ({ label: r, value: r }))} />
+                                        <Select options={AGENT_ROLE_OPTIONS.map((r) => ({ label: getAgentRoleLabel(r), value: r }))} />
                                     </Form.Item>
-                                    <Form.Item name="systemPrompt" label="System Prompt" rules={[{ required: true }]}>
+                                    <Form.Item name="systemPrompt" label="系统提示词" rules={[{ required: true }]}>
                                         <Input.TextArea rows={6} />
                                     </Form.Item>
-                                    <Form.Item name="userPromptTemplate" label="User Prompt Template" rules={[{ required: true }]}>
+                                    <Form.Item name="userPromptTemplate" label="用户提示模板" rules={[{ required: true }]}>
                                         <Input.TextArea rows={6} />
                                     </Form.Item>
                                     <Form.Item name="outputSchemaCode" label="输出 Schema 编码">
                                         <Input />
                                     </Form.Item>
                                     <Form.Item name="isActive" label="启用状态" valuePropName="checked">
-                                        <Switch />
+                                        <Switch checkedChildren="启用" unCheckedChildren="停用" />
                                     </Form.Item>
                                     <Form.Item name="variablesText" label="变量定义 (JSON)">
                                         <Input.TextArea rows={4} />
                                     </Form.Item>
-                                    <Form.Item name="guardrailsText" label="Guardrails (JSON)">
+                                    <Form.Item name="guardrailsText" label="防护规则 (JSON)">
                                         <Input.TextArea rows={4} />
                                     </Form.Item>
                                 </Form>
@@ -334,16 +329,16 @@ export const AgentPromptTemplatePage: React.FC = () => {
                 <Descriptions column={1} bordered>
                     <Descriptions.Item label="编码">{selectedTemplate?.promptCode}</Descriptions.Item>
                     <Descriptions.Item label="名称">{selectedTemplate?.name}</Descriptions.Item>
-                    <Descriptions.Item label="角色">{selectedTemplate?.roleType}</Descriptions.Item>
-                    <Descriptions.Item label="输出Schema">{selectedTemplate?.outputSchemaCode}</Descriptions.Item>
+                    <Descriptions.Item label="角色">{getAgentRoleLabel(selectedTemplate?.roleType)}</Descriptions.Item>
+                    <Descriptions.Item label="输出 Schema">{selectedTemplate?.outputSchemaCode}</Descriptions.Item>
                     <Descriptions.Item label="版本">{selectedTemplate?.version}</Descriptions.Item>
-                    <Descriptions.Item label="System Prompt">
+                    <Descriptions.Item label="系统提示词">
                         <pre style={{ whiteSpace: 'pre-wrap' }}>{selectedTemplate?.systemPrompt}</pre>
                     </Descriptions.Item>
-                    <Descriptions.Item label="User Prompt">
+                    <Descriptions.Item label="用户提示词">
                         <pre style={{ whiteSpace: 'pre-wrap' }}>{selectedTemplate?.userPromptTemplate}</pre>
                     </Descriptions.Item>
-                    <Descriptions.Item label="Guardrails">
+                    <Descriptions.Item label="防护规则">
                         <pre>{JSON.stringify(selectedTemplate?.guardrails || {}, null, 2)}</pre>
                     </Descriptions.Item>
                 </Descriptions>

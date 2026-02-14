@@ -34,20 +34,17 @@ import {
   usePublishAgentProfile,
   useUpdateAgentProfile,
 } from '../api';
+import {
+  AGENT_ROLE_OPTIONS,
+  getAgentDisplayName,
+  getAgentRoleLabel,
+  getMemoryPolicyLabel,
+  getAgentStatusLabel,
+  getTemplateSourceLabel,
+} from '../constants';
 import { GuardrailsForm, RetryPolicyForm, ToolPolicyForm } from './index';
 
 const { Title } = Typography;
-
-const roleOptions: AgentRoleType[] = [
-  'ANALYST',
-  'RISK_OFFICER',
-  'JUDGE',
-  'COST_SPREAD',
-  'FUTURES_EXPERT',
-  'SPOT_EXPERT',
-  'LOGISTICS_EXPERT',
-  'EXECUTION_ADVISOR',
-];
 
 const memoryOptions: AgentMemoryPolicy[] = ['none', 'short-term', 'windowed'];
 
@@ -125,7 +122,12 @@ export const AgentProfilePage: React.FC = () => {
     const fuzzyMatch = rows.find((item) => {
       const code = item.agentCode.trim().toLowerCase();
       const name = item.agentName.trim().toLowerCase();
-      return code.includes(normalizedKeyword) || name.includes(normalizedKeyword);
+      const displayName = getAgentDisplayName(item.agentName, item.agentCode).trim().toLowerCase();
+      return (
+        code.includes(normalizedKeyword) ||
+        name.includes(normalizedKeyword) ||
+        displayName.includes(normalizedKeyword)
+      );
     });
     return fuzzyMatch?.id || null;
   }, [data?.data, normalizedKeyword]);
@@ -164,17 +166,27 @@ export const AgentProfilePage: React.FC = () => {
   const columns = useMemo<ColumnsType<AgentProfileDto>>(
     () => [
       { title: '编码', dataIndex: 'agentCode', width: 200 },
-      { title: '名称', dataIndex: 'agentName', width: 180 },
-      { title: '角色', dataIndex: 'roleType', width: 140, render: (v: string) => <Tag>{v}</Tag> },
-      { title: '模型Key', dataIndex: 'modelConfigKey', width: 160 },
-      { title: 'Prompt编码', dataIndex: 'agentPromptCode', width: 180 },
+      {
+        title: '名称',
+        dataIndex: 'agentName',
+        width: 180,
+        render: (_: string, record) => getAgentDisplayName(record.agentName, record.agentCode),
+      },
+      {
+        title: '角色',
+        dataIndex: 'roleType',
+        width: 140,
+        render: (v: AgentRoleType) => <Tag>{getAgentRoleLabel(v)}</Tag>,
+      },
+      { title: '模型配置Key', dataIndex: 'modelConfigKey', width: 160 },
+      { title: '提示词编码', dataIndex: 'agentPromptCode', width: 180 },
       { title: '版本', dataIndex: 'version', width: 80 },
       {
         title: '状态',
         dataIndex: 'isActive',
         width: 90,
         render: (value: boolean) => (
-          <Tag color={value ? 'green' : 'red'}>{value ? 'ACTIVE' : 'INACTIVE'}</Tag>
+          <Tag color={value ? 'green' : 'red'}>{getAgentStatusLabel(value)}</Tag>
         ),
       },
       {
@@ -223,7 +235,7 @@ export const AgentProfilePage: React.FC = () => {
               发布
             </Button>
             <Popconfirm
-              title="确认停用该 Agent?"
+              title="确认停用该智能体?"
               onConfirm={async () => {
                 try {
                   await deleteMutation.mutateAsync(record.id);
@@ -311,7 +323,7 @@ export const AgentProfilePage: React.FC = () => {
       <Space direction="vertical" style={{ width: '100%' }} size={16}>
         <Space style={{ justifyContent: 'space-between', width: '100%' }}>
           <Title level={4} style={{ margin: 0 }}>
-            Agent 管理中心
+            智能体管理中心
           </Title>
           <Space>
             <Input.Search
@@ -339,8 +351,8 @@ export const AgentProfilePage: React.FC = () => {
               placeholder="状态筛选"
               style={{ width: 140 }}
               options={[
-                { label: 'ACTIVE', value: true },
-                { label: 'INACTIVE', value: false },
+                { label: '启用', value: true },
+                { label: '停用', value: false },
               ]}
               value={isActiveFilter}
               onChange={(value) => {
@@ -349,7 +361,7 @@ export const AgentProfilePage: React.FC = () => {
               }}
             />
             <Button type="primary" onClick={() => setVisible(true)}>
-              新建 Agent
+              新建智能体
             </Button>
           </Space>
         </Space>
@@ -385,7 +397,7 @@ export const AgentProfilePage: React.FC = () => {
       </Space>
 
       <Modal
-        title="新建 Agent"
+        title="新建智能体"
         open={visible}
         onCancel={() => setVisible(false)}
         onOk={handleCreate}
@@ -412,7 +424,9 @@ export const AgentProfilePage: React.FC = () => {
             <Input />
           </Form.Item>
           <Form.Item name="roleType" label="角色" rules={[{ required: true }]}>
-            <Select options={roleOptions.map((item) => ({ label: item, value: item }))} />
+            <Select
+              options={AGENT_ROLE_OPTIONS.map((item) => ({ label: getAgentRoleLabel(item), value: item }))}
+            />
           </Form.Item>
           <Form.Item name="objective" label="目标">
             <Input.TextArea rows={2} />
@@ -420,14 +434,14 @@ export const AgentProfilePage: React.FC = () => {
           <Form.Item name="modelConfigKey" label="模型配置Key" rules={[{ required: true }]}>
             <Input />
           </Form.Item>
-          <Form.Item name="agentPromptCode" label="Prompt编码" rules={[{ required: true }]}>
+          <Form.Item name="agentPromptCode" label="提示词编码" rules={[{ required: true }]}>
             <Input />
           </Form.Item>
-          <Form.Item name="outputSchemaCode" label="输出Schema编码" rules={[{ required: true }]}>
+          <Form.Item name="outputSchemaCode" label="输出 Schema 编码" rules={[{ required: true }]}>
             <Input />
           </Form.Item>
           <Form.Item name="memoryPolicy" label="记忆策略" rules={[{ required: true }]}>
-            <Select options={memoryOptions.map((item) => ({ label: item, value: item }))} />
+            <Select options={memoryOptions.map((item) => ({ label: getMemoryPolicyLabel(item), value: item }))} />
           </Form.Item>
           <Form.Item name="timeoutMs" label="超时(ms)" rules={[{ required: true }]}>
             <InputNumber min={1000} max={120000} style={{ width: '100%' }} />
@@ -438,8 +452,8 @@ export const AgentProfilePage: React.FC = () => {
           <Form.Item name="templateSource" label="模板来源" rules={[{ required: true }]}>
             <Select
               options={[
-                { label: 'PRIVATE', value: 'PRIVATE' },
-                { label: 'PUBLIC', value: 'PUBLIC' },
+                { label: '私有', value: 'PRIVATE' },
+                { label: '公共', value: 'PUBLIC' },
               ]}
             />
           </Form.Item>
@@ -447,7 +461,7 @@ export const AgentProfilePage: React.FC = () => {
       </Modal>
 
       <Modal
-        title={`编辑 Agent - ${editingAgent?.agentCode || ''}`}
+        title={`编辑智能体 - ${editingAgent?.agentCode || ''}`}
         open={editVisible}
         onCancel={() => {
           setEditVisible(false);
@@ -464,7 +478,7 @@ export const AgentProfilePage: React.FC = () => {
             <InputNumber min={1000} max={120000} style={{ width: '100%' }} />
           </Form.Item>
           <Form.Item name="isActive" label="是否启用" valuePropName="checked">
-            <Switch checkedChildren="ACTIVE" unCheckedChildren="INACTIVE" />
+            <Switch checkedChildren="启用" unCheckedChildren="停用" />
           </Form.Item>
           <ToolPolicyForm name="toolPolicy" />
           <GuardrailsForm name="guardrails" />
@@ -473,7 +487,7 @@ export const AgentProfilePage: React.FC = () => {
       </Modal>
 
       <Drawer
-        title="Agent 详情"
+        title="智能体详情"
         width={860}
         open={Boolean(selectedAgent)}
         onClose={() => setSelectedAgent(null)}
@@ -484,24 +498,37 @@ export const AgentProfilePage: React.FC = () => {
           column={2}
           items={[
             { key: 'code', label: '编码', children: selectedAgent?.agentCode || '-' },
-            { key: 'name', label: '名称', children: selectedAgent?.agentName || '-' },
-            { key: 'role', label: '角色', children: selectedAgent?.roleType || '-' },
-            { key: 'model', label: '模型Key', children: selectedAgent?.modelConfigKey || '-' },
-            { key: 'prompt', label: 'Prompt编码', children: selectedAgent?.agentPromptCode || '-' },
+            {
+              key: 'name',
+              label: '名称',
+              children: getAgentDisplayName(selectedAgent?.agentName, selectedAgent?.agentCode),
+            },
+            { key: 'role', label: '角色', children: getAgentRoleLabel(selectedAgent?.roleType) },
+            { key: 'model', label: '模型配置Key', children: selectedAgent?.modelConfigKey || '-' },
+            { key: 'prompt', label: '提示词编码', children: selectedAgent?.agentPromptCode || '-' },
             {
               key: 'schema',
-              label: '输出Schema',
+              label: '输出 Schema',
               children: selectedAgent?.outputSchemaCode || '-',
             },
-            { key: 'memory', label: '记忆策略', children: selectedAgent?.memoryPolicy || '-' },
+            {
+              key: 'memory',
+              label: '记忆策略',
+              children: getMemoryPolicyLabel(selectedAgent?.memoryPolicy),
+            },
             { key: 'timeout', label: '超时(ms)', children: selectedAgent?.timeoutMs ?? '-' },
             { key: 'version', label: '版本', children: selectedAgent?.version ?? '-' },
+            {
+              key: 'source',
+              label: '模板来源',
+              children: getTemplateSourceLabel(selectedAgent?.templateSource),
+            },
             {
               key: 'status',
               label: '状态',
               children: selectedAgent ? (
                 <Tag color={selectedAgent.isActive ? 'green' : 'red'}>
-                  {selectedAgent.isActive ? 'ACTIVE' : 'INACTIVE'}
+                  {getAgentStatusLabel(selectedAgent.isActive)}
                 </Tag>
               ) : (
                 '-'
@@ -515,7 +542,7 @@ export const AgentProfilePage: React.FC = () => {
             },
             {
               key: 'toolPolicy',
-              label: 'toolPolicy',
+              label: '工具策略',
               span: 2,
               children: (
                 <pre style={{ margin: 0, whiteSpace: 'pre-wrap' }}>
@@ -527,7 +554,7 @@ export const AgentProfilePage: React.FC = () => {
             },
             {
               key: 'guardrails',
-              label: 'guardrails',
+              label: '防护规则',
               span: 2,
               children: (
                 <pre style={{ margin: 0, whiteSpace: 'pre-wrap' }}>

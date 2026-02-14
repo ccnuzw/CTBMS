@@ -9,19 +9,19 @@ interface SingleAgentFormProps {
 export const SingleAgentForm: React.FC<SingleAgentFormProps> = ({ config, onChange }) => {
     return (
         <Form layout="vertical" size="small">
-            <Form.Item label="智能体标识 (Agent Code)" required>
+            <Form.Item label="智能体编码" required>
                 <Input
                     value={config.agentCode as string}
                     onChange={(e) => onChange('agentCode', e.target.value)}
                     placeholder="例如: AGENT_MARKET_EVAL_V1"
                 />
             </Form.Item>
-            <Form.Item label="模型覆盖 (Model Override)">
+            <Form.Item label="模型覆盖">
                 <Select
                     value={config.model as string}
                     onChange={(v) => onChange('model', v)}
                     options={[
-                        { label: 'Default', value: '' },
+                        { label: '默认模型', value: '' },
                         { label: 'GPT-4', value: 'gpt-4' },
                         { label: 'Claude 3 Opus', value: 'claude-3-opus' },
                         { label: 'Gemini Pro', value: 'gemini-pro' },
@@ -29,7 +29,7 @@ export const SingleAgentForm: React.FC<SingleAgentFormProps> = ({ config, onChan
                     allowClear
                 />
             </Form.Item>
-            <Form.Item label="温度 (Temperature)">
+            <Form.Item label="温度">
                 <Slider
                     min={0}
                     max={1}

@@ -19,6 +19,7 @@ import { EventTriggerNodeExecutor } from './node-executors/event-trigger.executo
 import { ContextBuilderNodeExecutor } from './node-executors/context-builder.executor';
 import { JudgeAgentNodeExecutor } from './node-executors/judge-agent.executor';
 import { ApprovalNodeExecutor } from './node-executors/approval.executor';
+import { FuturesDataFetchNodeExecutor } from './node-executors/futures-data-fetch.executor';
 
 @Injectable()
 export class NodeExecutorRegistry {
@@ -43,6 +44,7 @@ export class NodeExecutorRegistry {
         private readonly contextBuilderNodeExecutor: ContextBuilderNodeExecutor,
         private readonly judgeAgentNodeExecutor: JudgeAgentNodeExecutor,
         private readonly approvalNodeExecutor: ApprovalNodeExecutor,
+        private readonly futuresDataFetchNodeExecutor: FuturesDataFetchNodeExecutor,
     ) {
         // WHY: cron-trigger 和 event-trigger 必须在 ManualTriggerNodeExecutor 之前，
         // 因为 ManualTriggerNodeExecutor.supports() 会匹配所有 *-trigger 类型
@@ -56,6 +58,7 @@ export class NodeExecutorRegistry {
             this.notifyNodeExecutor,
             this.agentCallNodeExecutor,
             this.dataFetchNodeExecutor,
+            this.futuresDataFetchNodeExecutor,
             this.computeNodeExecutor,
             this.debateRoundNodeExecutor,
             this.contextBuilderNodeExecutor,

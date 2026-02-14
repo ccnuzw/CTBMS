@@ -42,6 +42,7 @@ import {
   useWorkflowExecutions,
 } from '../api';
 import { useWorkflowDefinitions } from '../../workflow-studio/api';
+import { getAgentRoleLabel, getTemplateSourceLabel } from '../../workflow-agent-center/constants';
 import { getErrorMessage } from '../../../api/client';
 import { useSearchParams } from 'react-router-dom';
 
@@ -74,11 +75,21 @@ const getBindingCode = (record: WorkflowBindingEntity): string =>
   readString(record.connectorCode) ||
   '-';
 
-const getBindingType = (record: WorkflowBindingEntity): string =>
-  readString(record.roleType) || readString(record.connectorType) || '-';
+const getBindingType = (record: WorkflowBindingEntity): string => {
+  const roleType = readString(record.roleType);
+  if (roleType) {
+    return getAgentRoleLabel(roleType);
+  }
+  return readString(record.connectorType) || '-';
+};
 
-const getBindingSource = (record: WorkflowBindingEntity): string =>
-  readString(record.templateSource) || readString(record.ownerType) || '-';
+const getBindingSource = (record: WorkflowBindingEntity): string => {
+  const templateSource = readString(record.templateSource);
+  if (templateSource) {
+    return getTemplateSourceLabel(templateSource);
+  }
+  return readString(record.ownerType) || '-';
+};
 
 const { Title, Text, Paragraph } = Typography;
 const { RangePicker } = DatePicker;
@@ -238,6 +249,12 @@ const parseWorkflowRiskLevelParam = (value: string | null): WorkflowRiskLevel | 
     return value;
   }
   return undefined;
+};
+
+const runtimeEventLevelLabelMap: Record<WorkflowRuntimeEventLevel, string> = {
+  INFO: '信息',
+  WARN: '警告',
+  ERROR: '错误',
 };
 
 const parseWorkflowRiskDegradeActionParam = (
@@ -480,6 +497,141 @@ const executionStatusColorMap: Record<string, string> = {
   CANCELED: 'warning',
 };
 
+const workflowExecutionStatusLabelMap: Record<WorkflowExecutionStatus, string> = {
+  PENDING: '等待中',
+  RUNNING: '运行中',
+  SUCCESS: '成功',
+  FAILED: '失败',
+  CANCELED: '已取消',
+};
+
+const workflowTriggerTypeLabelMap: Record<WorkflowTriggerType, string> = {
+  MANUAL: '手动触发',
+  API: 'API 触发',
+  SCHEDULE: '定时触发',
+  EVENT: '事件触发',
+  ON_DEMAND: '按需触发',
+};
+
+const workflowFailureCategoryLabelMap: Record<WorkflowFailureCategory, string> = {
+  VALIDATION: '参数校验',
+  EXECUTOR: '执行器异常',
+  TIMEOUT: '超时',
+  CANCELED: '已取消',
+  INTERNAL: '内部错误',
+};
+
+const workflowRiskLevelLabelMap: Record<WorkflowRiskLevel, string> = {
+  LOW: '低',
+  MEDIUM: '中',
+  HIGH: '高',
+  EXTREME: '极高',
+};
+
+const workflowRiskDegradeActionLabelMap: Record<WorkflowRiskDegradeAction, string> = {
+  HOLD: '观望',
+  REDUCE: '降仓',
+  REVIEW_ONLY: '仅复核',
+};
+
+const nodeStatusLabelMap: Record<string, string> = {
+  PENDING: '等待中',
+  RUNNING: '运行中',
+  SUCCESS: '成功',
+  FAILED: '失败',
+  SKIPPED: '已跳过',
+};
+
+const nodeTypeLabelMap: Record<string, string> = {
+  'manual-trigger': '手动触发',
+  'cron-trigger': '定时触发',
+  'event-trigger': '事件触发',
+  'api-trigger': 'API 触发',
+  'data-fetch': '数据采集',
+  'futures-data-fetch': '期货数据采集',
+  'report-fetch': '研报获取',
+  'knowledge-fetch': '知识检索',
+  'external-api-fetch': '外部 API 获取',
+  'formula-calc': '公式计算',
+  'feature-calc': '特征工程',
+  'quantile-calc': '分位数',
+  'rule-eval': '规则评估',
+  'rule-pack-eval': '规则包评估',
+  'alert-check': '告警检查',
+  'agent-call': '智能体调用',
+  'single-agent': '单智能体',
+  'agent-group': '智能体组',
+  'context-builder': '上下文构建',
+  'debate-round': '辩论轮次',
+  'judge-agent': '裁判智能体',
+  'if-else': '条件分支',
+  switch: '多路分支',
+  'parallel-split': '并行拆分',
+  join: '汇聚等待',
+  'control-loop': '循环控制',
+  'control-delay': '延时等待',
+  'subflow-call': '子流程调用',
+  'decision-merge': '决策合成',
+  'risk-gate': '风控门禁',
+  approval: '人工审批',
+  notify: '消息通知',
+  'report-generate': '报告生成',
+  'dashboard-publish': '看板发布',
+};
+
+const getExecutionStatusLabel = (status?: WorkflowExecutionStatus | string | null): string => {
+  if (!status) {
+    return '-';
+  }
+  return workflowExecutionStatusLabelMap[status as WorkflowExecutionStatus] || status;
+};
+
+const getTriggerTypeLabel = (triggerType?: WorkflowTriggerType | string | null): string => {
+  if (!triggerType) {
+    return '-';
+  }
+  return workflowTriggerTypeLabelMap[triggerType as WorkflowTriggerType] || triggerType;
+};
+
+const getFailureCategoryLabel = (
+  failureCategory?: WorkflowFailureCategory | string | null,
+): string => {
+  if (!failureCategory) {
+    return '-';
+  }
+  return workflowFailureCategoryLabelMap[failureCategory as WorkflowFailureCategory] || failureCategory;
+};
+
+const getRiskLevelLabel = (riskLevel?: WorkflowRiskLevel | string | null): string => {
+  if (!riskLevel) {
+    return '-';
+  }
+  return workflowRiskLevelLabelMap[riskLevel as WorkflowRiskLevel] || riskLevel;
+};
+
+const getDegradeActionLabel = (
+  degradeAction?: WorkflowRiskDegradeAction | string | null,
+): string => {
+  if (!degradeAction) {
+    return '-';
+  }
+  return workflowRiskDegradeActionLabelMap[degradeAction as WorkflowRiskDegradeAction] || degradeAction;
+};
+
+const getNodeStatusLabel = (status?: string | null): string => {
+  if (!status) {
+    return '-';
+  }
+  return nodeStatusLabelMap[status] || status;
+};
+
+const getNodeTypeLabel = (nodeType?: string | null): string => {
+  if (!nodeType) {
+    return '-';
+  }
+  return nodeTypeLabelMap[nodeType] || nodeType;
+};
+
 const nodeStatusColorMap: Record<string, string> = {
   PENDING: 'default',
   RUNNING: 'processing',
@@ -489,27 +641,27 @@ const nodeStatusColorMap: Record<string, string> = {
 };
 
 const executionStatusOptions: { label: string; value: WorkflowExecutionStatus }[] = [
-  { label: 'PENDING', value: 'PENDING' },
-  { label: 'RUNNING', value: 'RUNNING' },
-  { label: 'SUCCESS', value: 'SUCCESS' },
-  { label: 'FAILED', value: 'FAILED' },
-  { label: 'CANCELED', value: 'CANCELED' },
+  { label: '等待中', value: 'PENDING' },
+  { label: '运行中', value: 'RUNNING' },
+  { label: '成功', value: 'SUCCESS' },
+  { label: '失败', value: 'FAILED' },
+  { label: '已取消', value: 'CANCELED' },
 ];
 
 const triggerTypeOptions: { label: string; value: WorkflowTriggerType }[] = [
-  { label: 'MANUAL', value: 'MANUAL' },
-  { label: 'API', value: 'API' },
-  { label: 'SCHEDULE', value: 'SCHEDULE' },
-  { label: 'EVENT', value: 'EVENT' },
-  { label: 'ON_DEMAND', value: 'ON_DEMAND' },
+  { label: '手动触发', value: 'MANUAL' },
+  { label: 'API 触发', value: 'API' },
+  { label: '定时触发', value: 'SCHEDULE' },
+  { label: '事件触发', value: 'EVENT' },
+  { label: '按需触发', value: 'ON_DEMAND' },
 ];
 
 const failureCategoryOptions: { label: string; value: WorkflowFailureCategory }[] = [
-  { label: 'VALIDATION', value: 'VALIDATION' },
-  { label: 'EXECUTOR', value: 'EXECUTOR' },
-  { label: 'TIMEOUT', value: 'TIMEOUT' },
-  { label: 'CANCELED', value: 'CANCELED' },
-  { label: 'INTERNAL', value: 'INTERNAL' },
+  { label: '参数校验', value: 'VALIDATION' },
+  { label: '执行器异常', value: 'EXECUTOR' },
+  { label: '超时', value: 'TIMEOUT' },
+  { label: '已取消', value: 'CANCELED' },
+  { label: '内部错误', value: 'INTERNAL' },
 ];
 
 const runtimeEventLevelColorMap: Record<WorkflowRuntimeEventLevel, string> = {
@@ -519,16 +671,16 @@ const runtimeEventLevelColorMap: Record<WorkflowRuntimeEventLevel, string> = {
 };
 
 const riskLevelOptions: { label: string; value: WorkflowRiskLevel }[] = [
-  { label: 'LOW', value: 'LOW' },
-  { label: 'MEDIUM', value: 'MEDIUM' },
-  { label: 'HIGH', value: 'HIGH' },
-  { label: 'EXTREME', value: 'EXTREME' },
+  { label: '低', value: 'LOW' },
+  { label: '中', value: 'MEDIUM' },
+  { label: '高', value: 'HIGH' },
+  { label: '极高', value: 'EXTREME' },
 ];
 
 const degradeActionOptions: { label: string; value: WorkflowRiskDegradeAction }[] = [
-  { label: 'HOLD', value: 'HOLD' },
-  { label: 'REDUCE', value: 'REDUCE' },
-  { label: 'REVIEW_ONLY', value: 'REVIEW_ONLY' },
+  { label: '观望', value: 'HOLD' },
+  { label: '降仓', value: 'REDUCE' },
+  { label: '仅复核', value: 'REVIEW_ONLY' },
 ];
 
 const riskGatePresenceOptions: { label: string; value: boolean }[] = [
@@ -983,7 +1135,9 @@ export const WorkflowExecutionPage: React.FC = () => {
         dataIndex: 'level',
         width: 100,
         render: (value: WorkflowRuntimeEventLevel) => (
-          <Tag color={runtimeEventLevelColorMap[value] ?? 'default'}>{value}</Tag>
+          <Tag color={runtimeEventLevelColorMap[value] ?? 'default'}>
+            {runtimeEventLevelLabelMap[value] || value}
+          </Tag>
         ),
       },
       {
@@ -1020,6 +1174,7 @@ export const WorkflowExecutionPage: React.FC = () => {
         title: '角色',
         dataIndex: 'participantRole',
         width: 140,
+        render: (value: string) => getAgentRoleLabel(value),
       },
       {
         title: '置信度',
@@ -1031,7 +1186,7 @@ export const WorkflowExecutionPage: React.FC = () => {
         title: '裁决',
         dataIndex: 'isJudgement',
         width: 90,
-        render: (value: boolean) => (value ? <Tag color="purple">JUDGE</Tag> : '-'),
+        render: (value: boolean) => (value ? <Tag color="purple">裁判</Tag> : '-'),
       },
       {
         title: '发言摘要',
@@ -1045,13 +1200,11 @@ export const WorkflowExecutionPage: React.FC = () => {
     () =>
       debateRounds.map((round) => ({
         key: String(round.roundNumber),
-        label: `第 ${round.roundNumber} 轮 · 参与者 ${round.roundSummary.participantCount} · 裁决 ${
-          round.roundSummary.hasJudgement ? '是' : '否'
-        } · 平均置信度 ${
-          typeof round.roundSummary.avgConfidence === 'number'
+        label: `第 ${round.roundNumber} 轮 · 参与者 ${round.roundSummary.participantCount} · 裁决 ${round.roundSummary.hasJudgement ? '是' : '否'
+          } · 平均置信度 ${typeof round.roundSummary.avgConfidence === 'number'
             ? round.roundSummary.avgConfidence.toFixed(3)
             : '-'
-        }`,
+          }`,
         children: (
           <Table
             rowKey="id"
@@ -1096,21 +1249,23 @@ export const WorkflowExecutionPage: React.FC = () => {
         title: '触发类型',
         dataIndex: 'triggerType',
         width: 120,
-        render: (value: string) => <Tag>{value}</Tag>,
+        render: (value: string) => <Tag>{getTriggerTypeLabel(value)}</Tag>,
       },
       {
         title: '状态',
         dataIndex: 'status',
         width: 120,
         render: (value: WorkflowExecutionStatus) => (
-          <Tag color={executionStatusColorMap[value] ?? 'default'}>{value}</Tag>
+          <Tag color={executionStatusColorMap[value] ?? 'default'}>
+            {getExecutionStatusLabel(value)}
+          </Tag>
         ),
       },
       {
         title: '失败分类',
         dataIndex: 'failureCategory',
         width: 130,
-        render: (value?: WorkflowFailureCategory | null) => value || '-',
+        render: (value?: WorkflowFailureCategory | null) => getFailureCategoryLabel(value),
       },
       {
         title: '失败代码',
@@ -1136,7 +1291,7 @@ export const WorkflowExecutionPage: React.FC = () => {
             <Space size={4}>
               {summary.riskLevel ? (
                 <Tag color={riskLevelColorMap[summary.riskLevel] || 'default'}>
-                  {summary.riskLevel}
+                  {getRiskLevelLabel(summary.riskLevel)}
                 </Tag>
               ) : null}
               {summary.blocked ? (
@@ -1145,7 +1300,9 @@ export const WorkflowExecutionPage: React.FC = () => {
                     [
                       summary.blockReason ? `原因: ${summary.blockReason}` : null,
                       summary.blockers.length ? `阻断项: ${summary.blockers.join(', ')}` : null,
-                      summary.degradeAction ? `降级动作: ${summary.degradeAction}` : null,
+                      summary.degradeAction
+                        ? `降级动作: ${getDegradeActionLabel(summary.degradeAction)}`
+                        : null,
                       summary.threshold ? `阈值: ${summary.threshold}` : null,
                       summary.riskProfileCode ? `风控模板: ${summary.riskProfileCode}` : null,
                       summary.blockedByRiskLevel !== null
@@ -1181,7 +1338,9 @@ export const WorkflowExecutionPage: React.FC = () => {
           const tooltipTitle = [
             `原因: ${summary.blockReason}`,
             summary.blockers.length ? `阻断项: ${summary.blockers.join(', ')}` : null,
-            summary.degradeAction ? `降级动作: ${summary.degradeAction}` : null,
+            summary.degradeAction
+              ? `降级动作: ${getDegradeActionLabel(summary.degradeAction)}`
+              : null,
             summary.threshold ? `阈值: ${summary.threshold}` : null,
             summary.riskProfileCode ? `风控模板: ${summary.riskProfileCode}` : null,
           ]
@@ -1203,7 +1362,7 @@ export const WorkflowExecutionPage: React.FC = () => {
         width: 140,
         render: (_, record) => {
           const summary = getExecutionRiskGateSummary(record);
-          return summary?.degradeAction || '-';
+          return getDegradeActionLabel(summary?.degradeAction);
         },
       },
       {
@@ -1273,13 +1432,14 @@ export const WorkflowExecutionPage: React.FC = () => {
         title: '节点类型',
         dataIndex: 'nodeType',
         width: 180,
+        render: (value: string) => getNodeTypeLabel(value),
       },
       {
         title: '状态',
         dataIndex: 'status',
         width: 120,
         render: (value: string) => (
-          <Tag color={nodeStatusColorMap[value] ?? 'default'}>{value}</Tag>
+          <Tag color={nodeStatusColorMap[value] ?? 'default'}>{getNodeStatusLabel(value)}</Tag>
         ),
       },
       {
@@ -1600,8 +1760,8 @@ export const WorkflowExecutionPage: React.FC = () => {
       >
         <Space direction="vertical" style={{ width: '100%' }} size={16}>
           {riskGateSummaryConsistency.hasRiskGateNode &&
-          (!riskGateSummaryConsistency.hasExecutionSummary ||
-            riskGateSummaryConsistency.mismatchFields.length) ? (
+            (!riskGateSummaryConsistency.hasExecutionSummary ||
+              riskGateSummaryConsistency.mismatchFields.length) ? (
             <Alert
               type="warning"
               showIcon
@@ -1610,14 +1770,14 @@ export const WorkflowExecutionPage: React.FC = () => {
                 !riskGateSummaryConsistency.hasExecutionSummary
                   ? '检测到 risk-gate 节点执行记录，但实例 outputSnapshot.riskGate 缺失。'
                   : `实例 outputSnapshot.riskGate 与最新 risk-gate 节点摘要不一致（字段：${riskGateMismatchFieldLabels.join(
-                      ', ',
-                    )}）。`
+                    ', ',
+                  )}）。`
               }
             />
           ) : null}
           {riskGateSummaryConsistency.hasRiskGateNode &&
-          (!riskGateSummaryConsistency.hasExecutionSummary ||
-            riskGateSummaryConsistency.mismatchFields.length) ? (
+            (!riskGateSummaryConsistency.hasExecutionSummary ||
+              riskGateSummaryConsistency.mismatchFields.length) ? (
             <Card size="small" title="风控摘要比对">
               <Space direction="vertical" style={{ width: '100%' }} size={12}>
                 <div>
@@ -1663,7 +1823,7 @@ export const WorkflowExecutionPage: React.FC = () => {
               {
                 key: 'triggerType',
                 label: '触发类型',
-                children: executionDetail?.triggerType || '-',
+                children: getTriggerTypeLabel(executionDetail?.triggerType),
               },
               {
                 key: 'sourceExecutionId',
@@ -1677,7 +1837,7 @@ export const WorkflowExecutionPage: React.FC = () => {
                 label: '执行状态',
                 children: executionDetail?.status ? (
                   <Tag color={executionStatusColorMap[executionDetail.status] ?? 'default'}>
-                    {executionDetail.status}
+                    {getExecutionStatusLabel(executionDetail.status)}
                   </Tag>
                 ) : (
                   '-'
@@ -1686,7 +1846,7 @@ export const WorkflowExecutionPage: React.FC = () => {
               {
                 key: 'failureCategory',
                 label: '失败分类',
-                children: executionDetail?.failureCategory || '-',
+                children: getFailureCategoryLabel(executionDetail?.failureCategory),
               },
               {
                 key: 'failureCode',
@@ -1703,6 +1863,7 @@ export const WorkflowExecutionPage: React.FC = () => {
               {
                 key: 'completedAt',
                 label: '结束时间',
+                span: 2,
                 children: executionDetail?.completedAt
                   ? dayjs(executionDetail.completedAt).format('YYYY-MM-DD HH:mm:ss')
                   : '-',
@@ -1729,7 +1890,7 @@ export const WorkflowExecutionPage: React.FC = () => {
                 label: '风险等级',
                 children: riskGateSummary?.riskLevel ? (
                   <Tag color={riskLevelColorMap[riskGateSummary.riskLevel] || 'default'}>
-                    {riskGateSummary.riskLevel}
+                    {getRiskLevelLabel(riskGateSummary.riskLevel)}
                   </Tag>
                 ) : (
                   '-'
@@ -1738,7 +1899,7 @@ export const WorkflowExecutionPage: React.FC = () => {
               {
                 key: 'degradeAction',
                 label: '降级动作',
-                children: riskGateSummary?.degradeAction || '-',
+                children: getDegradeActionLabel(riskGateSummary?.degradeAction),
               },
               {
                 key: 'riskProfileCode',
@@ -1770,6 +1931,7 @@ export const WorkflowExecutionPage: React.FC = () => {
               {
                 key: 'riskEvaluatedAt',
                 label: '风控评估时间',
+                span: 2,
                 children: riskGateSummary?.riskEvaluatedAt || '-',
               },
               {
@@ -1797,7 +1959,7 @@ export const WorkflowExecutionPage: React.FC = () => {
                     <Text type="secondary">声明绑定</Text>
                     <div>
                       <Text>
-                        Agents:{' '}
+                        智能体：{' '}
                         {(workflowBindingSnapshot.workflowBindings?.agentBindings || []).join(
                           ', ',
                         ) || '-'}
@@ -1805,7 +1967,7 @@ export const WorkflowExecutionPage: React.FC = () => {
                     </div>
                     <div>
                       <Text>
-                        ParameterSets:{' '}
+                        参数集：{' '}
                         {(workflowBindingSnapshot.workflowBindings?.paramSetBindings || []).join(
                           ', ',
                         ) || '-'}
@@ -1813,7 +1975,7 @@ export const WorkflowExecutionPage: React.FC = () => {
                     </div>
                     <div>
                       <Text>
-                        DataConnectors:{' '}
+                        数据连接器：{' '}
                         {(
                           workflowBindingSnapshot.workflowBindings?.dataConnectorBindings || []
                         ).join(', ') || '-'}
@@ -1826,20 +1988,20 @@ export const WorkflowExecutionPage: React.FC = () => {
                     <div>
                       {(workflowBindingSnapshot.unresolvedBindings?.agents || []).map((item) => (
                         <Tag key={`ua-${item}`} color="red">
-                          AGENT:{item}
+                          智能体:{item}
                         </Tag>
                       ))}
                       {(workflowBindingSnapshot.unresolvedBindings?.parameterSets || []).map(
                         (item) => (
                           <Tag key={`up-${item}`} color="red">
-                            PARAM:{item}
+                            参数集:{item}
                           </Tag>
                         ),
                       )}
                       {(workflowBindingSnapshot.unresolvedBindings?.dataConnectors || []).map(
                         (item) => (
                           <Tag key={`uc-${item}`} color="red">
-                            CONNECTOR:{item}
+                            连接器:{item}
                           </Tag>
                         ),
                       )}
@@ -1855,7 +2017,7 @@ export const WorkflowExecutionPage: React.FC = () => {
 
                   <Space size={12}>
                     <a href="/workflow/agents" target="_blank" rel="noreferrer">
-                      打开 Agent 中心
+                      打开智能体中心
                     </a>
                     <a href="/workflow/parameters" target="_blank" rel="noreferrer">
                       打开参数中心
@@ -1867,7 +2029,7 @@ export const WorkflowExecutionPage: React.FC = () => {
 
                   <div>
                     <Text type="secondary">已解析绑定</Text>
-                    <Card size="small" title={`Agents (${resolvedAgents.length})`}>
+                    <Card size="small" title={`智能体（${resolvedAgents.length}）`}>
                       <Table
                         rowKey={(record) => `${record.id}-${record.version}`}
                         dataSource={resolvedAgents}
@@ -1876,7 +2038,7 @@ export const WorkflowExecutionPage: React.FC = () => {
                         size="small"
                       />
                     </Card>
-                    <Card size="small" title={`ParameterSets (${resolvedParameterSets.length})`}>
+                    <Card size="small" title={`参数集（${resolvedParameterSets.length}）`}>
                       <Table
                         rowKey={(record) => `${record.id}-${record.version}`}
                         dataSource={resolvedParameterSets}
@@ -1885,7 +2047,7 @@ export const WorkflowExecutionPage: React.FC = () => {
                         size="small"
                       />
                     </Card>
-                    <Card size="small" title={`DataConnectors (${resolvedDataConnectors.length})`}>
+                    <Card size="small" title={`数据连接器（${resolvedDataConnectors.length}）`}>
                       <Table
                         rowKey={(record) => `${record.id}-${record.version}`}
                         dataSource={resolvedDataConnectors}
@@ -1916,7 +2078,7 @@ export const WorkflowExecutionPage: React.FC = () => {
             pagination={false}
           />
 
-          <Card size="small" title={`Debate 回放 (${debateRounds.length} 轮)`}>
+          <Card size="small" title={`辩论回放（${debateRounds.length} 轮）`}>
             <Space wrap style={{ marginBottom: 12 }}>
               <Input
                 style={{ width: 140 }}
@@ -1965,7 +2127,7 @@ export const WorkflowExecutionPage: React.FC = () => {
                   setDebateJudgementOnly(false);
                 }}
               >
-                重置 Debate 筛选
+                重置辩论筛选
               </Button>
             </Space>
 
@@ -1982,9 +2144,9 @@ export const WorkflowExecutionPage: React.FC = () => {
                   label: '加载状态',
                   children:
                     isDebateTimelineLoading || isDebateTracesLoading ? (
-                      <Tag color="processing">LOADING</Tag>
+                      <Tag color="processing">加载中</Tag>
                     ) : (
-                      <Tag color="green">READY</Tag>
+                      <Tag color="green">就绪</Tag>
                     ),
                 },
               ]}
@@ -2031,9 +2193,9 @@ export const WorkflowExecutionPage: React.FC = () => {
                 style={{ width: 180 }}
                 placeholder="按级别筛选"
                 options={[
-                  { label: 'INFO', value: 'INFO' },
-                  { label: 'WARN', value: 'WARN' },
-                  { label: 'ERROR', value: 'ERROR' },
+                  { label: '信息', value: 'INFO' },
+                  { label: '警告', value: 'WARN' },
+                  { label: '错误', value: 'ERROR' },
                 ]}
                 value={timelineLevel}
                 onChange={(value) => {

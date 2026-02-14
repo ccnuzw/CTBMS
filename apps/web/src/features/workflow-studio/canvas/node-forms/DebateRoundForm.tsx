@@ -9,7 +9,7 @@ interface DebateRoundFormProps {
 export const DebateRoundForm: React.FC<DebateRoundFormProps> = ({ config, onChange }) => {
     return (
         <Form layout="vertical" size="small">
-            <Form.Item label="最大轮次 (Max Rounds)">
+            <Form.Item label="最大轮次">
                 <InputNumber
                     min={1}
                     max={10}
@@ -29,12 +29,12 @@ export const DebateRoundForm: React.FC<DebateRoundFormProps> = ({ config, onChan
                     ]}
                 />
             </Form.Item>
-            <Form.Item label="参与者 (Participants)">
+            <Form.Item label="参与者">
                 <Select
                     mode="tags"
                     value={(config.participants as string[]) ?? []}
                     onChange={(v) => onChange('participants', v)}
-                    placeholder="输入参与者 Agent ID"
+                    placeholder="输入参与者智能体编码"
                     tokenSeparators={[',']}
                 />
             </Form.Item>

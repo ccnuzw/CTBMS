@@ -78,15 +78,15 @@ const parseBindingInput = (value?: string): string[] | undefined => {
 };
 
 const modeOptions: { label: string; value: WorkflowMode }[] = [
-  { label: '线性 (LINEAR)', value: 'LINEAR' },
-  { label: '并行 (DAG)', value: 'DAG' },
-  { label: '辩论 (DEBATE)', value: 'DEBATE' },
+  { label: '线性', value: 'LINEAR' },
+  { label: '并行', value: 'DAG' },
+  { label: '辩论', value: 'DEBATE' },
 ];
 
 const usageMethodOptions: { label: string; value: WorkflowUsageMethod }[] = [
-  { label: '后台自动 (HEADLESS)', value: 'HEADLESS' },
-  { label: '人机协同 (COPILOT)', value: 'COPILOT' },
-  { label: '按需触发 (ON_DEMAND)', value: 'ON_DEMAND' },
+  { label: '后台自动', value: 'HEADLESS' },
+  { label: '人机协同', value: 'COPILOT' },
+  { label: '按需触发', value: 'ON_DEMAND' },
 ];
 
 const runtimeOnErrorOptions: { label: string; value: WorkflowNodeOnErrorPolicy }[] = [
@@ -108,10 +108,52 @@ const versionStatusColorMap: Record<string, string> = {
 };
 
 const definitionStatusOptions: { label: string; value: WorkflowDefinitionStatus }[] = [
-  { label: 'DRAFT', value: 'DRAFT' },
-  { label: 'ACTIVE', value: 'ACTIVE' },
-  { label: 'ARCHIVED', value: 'ARCHIVED' },
+  { label: '草稿', value: 'DRAFT' },
+  { label: '启用', value: 'ACTIVE' },
+  { label: '归档', value: 'ARCHIVED' },
 ];
+
+const workflowModeLabelMap: Record<WorkflowMode, string> = {
+  LINEAR: '线性',
+  DAG: '并行',
+  DEBATE: '辩论',
+};
+
+const workflowUsageMethodLabelMap: Record<WorkflowUsageMethod, string> = {
+  HEADLESS: '后台自动',
+  COPILOT: '人机协同',
+  ON_DEMAND: '按需触发',
+};
+
+const workflowDefinitionStatusLabelMap: Record<WorkflowDefinitionStatus, string> = {
+  DRAFT: '草稿',
+  ACTIVE: '启用',
+  ARCHIVED: '归档',
+};
+
+const workflowVersionStatusLabelMap: Record<string, string> = {
+  DRAFT: '草稿',
+  PUBLISHED: '已发布',
+  ARCHIVED: '归档',
+};
+
+const workflowPublishOperationLabelMap: Record<string, string> = {
+  PUBLISH: '发布',
+};
+
+const getWorkflowVersionStatusLabel = (status?: string | null): string => {
+  if (!status) {
+    return '-';
+  }
+  return workflowVersionStatusLabelMap[status] || status;
+};
+
+const getWorkflowPublishOperationLabel = (operation?: string | null): string => {
+  if (!operation) {
+    return '-';
+  }
+  return workflowPublishOperationLabelMap[operation] || operation;
+};
 
 const buildInitialDslSnapshot = (
   values: CreateWorkflowDefinitionFormValues,
@@ -509,7 +551,7 @@ export const WorkflowDefinitionPage: React.FC = () => {
         <Text strong>{title}</Text>
         {renderCodeTags(group.rulePacks, '/workflow/rules', '规则包')}
         {renderCodeTags(group.parameterSets, '/workflow/parameters', '参数包')}
-        {renderCodeTags(group.agentProfiles, '/workflow/agents', 'Agent')}
+        {renderCodeTags(group.agentProfiles, '/workflow/agents', '智能体')}
       </Space>
     );
   };
@@ -538,7 +580,7 @@ export const WorkflowDefinitionPage: React.FC = () => {
         ) : null}
         {needAgentCenter ? (
           <Button size="small" href="/workflow/agents" target="_blank" rel="noreferrer">
-            前往 Agent 中心
+            前往智能体中心
           </Button>
         ) : null}
       </Space>
@@ -570,20 +612,26 @@ export const WorkflowDefinitionPage: React.FC = () => {
         title: '模式',
         dataIndex: 'mode',
         width: 120,
-        render: (value: WorkflowMode) => <Tag color="blue">{value}</Tag>,
+        render: (value: WorkflowMode) => (
+          <Tag color="blue">{workflowModeLabelMap[value] || value}</Tag>
+        ),
       },
       {
         title: '使用方式',
         dataIndex: 'usageMethod',
         width: 160,
-        render: (value: WorkflowUsageMethod) => <Tag>{value}</Tag>,
+        render: (value: WorkflowUsageMethod) => (
+          <Tag>{workflowUsageMethodLabelMap[value] || value}</Tag>
+        ),
       },
       {
         title: '状态',
         dataIndex: 'status',
         width: 120,
         render: (value: string) => (
-          <Tag color={definitionStatusColorMap[value] ?? 'default'}>{value}</Tag>
+          <Tag color={definitionStatusColorMap[value] ?? 'default'}>
+            {workflowDefinitionStatusLabelMap[value as WorkflowDefinitionStatus] || value}
+          </Tag>
         ),
       },
       {
@@ -631,7 +679,9 @@ export const WorkflowDefinitionPage: React.FC = () => {
         dataIndex: 'status',
         width: 120,
         render: (value: string) => (
-          <Tag color={versionStatusColorMap[value] ?? 'default'}>{value}</Tag>
+          <Tag color={versionStatusColorMap[value] ?? 'default'}>
+            {getWorkflowVersionStatusLabel(value)}
+          </Tag>
         ),
       },
       {
@@ -703,7 +753,7 @@ export const WorkflowDefinitionPage: React.FC = () => {
                   setStudioVisible(true);
                 }}
               >
-                Studio
+                画布编辑
               </Button>
               <Button
                 type="link"
@@ -778,7 +828,9 @@ export const WorkflowDefinitionPage: React.FC = () => {
         title: '操作',
         dataIndex: 'operation',
         width: 120,
-        render: (value: string) => <Tag color="blue">{value}</Tag>,
+        render: (value: string) => (
+          <Tag color="blue">{getWorkflowPublishOperationLabel(value)}</Tag>
+        ),
       },
       {
         title: '发布人',
@@ -1234,7 +1286,7 @@ export const WorkflowDefinitionPage: React.FC = () => {
             />
           </Form.Item>
           <Form.Item
-            label="默认 Agent 绑定（可选）"
+            label="默认智能体绑定（可选）"
             name="defaultAgentBindingsText"
             extra="多个编码用逗号分隔，例如 MARKET_ANALYST_V1,RISK_OFFICER_V1"
           >
@@ -1350,7 +1402,7 @@ export const WorkflowDefinitionPage: React.FC = () => {
             }
             description={
               dependencyCatalogLoading ? (
-                '正在加载规则包、参数包与 Agent 目录。'
+                '正在加载规则包、参数包与智能体目录。'
               ) : latestDraftHasBlockingIssues ? (
                 <Space direction="vertical" size={8}>
                   <Text type="secondary">

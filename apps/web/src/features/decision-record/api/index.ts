@@ -7,4 +7,6 @@ export {
   useDeleteDecisionRecord,
   usePublishDecisionRecord,
   useReviewDecisionRecord,
+  useDecisionRecordStats,
 } from './decision-records';
+

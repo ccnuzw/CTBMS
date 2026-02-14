@@ -38,12 +38,50 @@ const { Title } = Typography;
 const typeOptions: DataConnectorType[] = [
   'INTERNAL_DB',
   'REST_API',
+  'EXCHANGE_API',
   'GRAPHQL',
   'FILE_IMPORT',
   'WEBHOOK',
 ];
 
 const ownerTypeOptions: DataConnectorOwnerType[] = ['SYSTEM', 'ADMIN'];
+
+const connectorTypeLabelMap: Record<DataConnectorType, string> = {
+  INTERNAL_DB: '内部数据库',
+  REST_API: 'REST 接口',
+  EXCHANGE_API: '交易所接口',
+  GRAPHQL: 'GraphQL 接口',
+  FILE_IMPORT: '文件导入',
+  WEBHOOK: 'Webhook 回调',
+};
+
+const connectorCategoryLabelMap: Record<string, string> = {
+  MARKET_INTEL: '市场情报',
+  MARKET_EVENT: '市场事件',
+  MARKET_INSIGHT: '市场洞察',
+  MARKET: '市场',
+  PRICE: '价格',
+  FUTURES: '期货',
+  INTEL: '情报',
+  ANALYSIS: '分析',
+  TRADING: '交易',
+  RISK_MANAGEMENT: '风控管理',
+  MONITORING: '监控',
+  REPORTING: '报表',
+};
+
+const getConnectorTypeLabel = (value?: DataConnectorType | null): string => {
+  if (!value) return '-';
+  return connectorTypeLabelMap[value] ?? value;
+};
+
+const getConnectorCategoryLabel = (value?: string | null): string => {
+  if (!value) return '-';
+  const normalized = value.trim().toUpperCase();
+  return connectorCategoryLabelMap[normalized] ?? value;
+};
+
+const getActiveStatusLabel = (value?: boolean): string => (value ? '启用' : '停用');
 
 const parsePositiveInt = (value: string | null, fallback: number): number => {
   if (!value) {
@@ -109,14 +147,26 @@ export const DataConnectorPage: React.FC = () => {
     () => [
       { title: '连接器编码', dataIndex: 'connectorCode', width: 220 },
       { title: '名称', dataIndex: 'connectorName', width: 180 },
-      { title: '类型', dataIndex: 'connectorType', width: 120 },
-      { title: '分类', dataIndex: 'category', width: 120 },
+      {
+        title: '类型',
+        dataIndex: 'connectorType',
+        width: 140,
+        render: (value: DataConnectorType) => (
+          <Tag color="blue">{getConnectorTypeLabel(value)}</Tag>
+        ),
+      },
+      {
+        title: '分类',
+        dataIndex: 'category',
+        width: 140,
+        render: (value: string) => <Tag>{getConnectorCategoryLabel(value)}</Tag>,
+      },
       {
         title: '状态',
         dataIndex: 'isActive',
         width: 100,
         render: (value: boolean) => (
-          <Tag color={value ? 'green' : 'red'}>{value ? 'ACTIVE' : 'INACTIVE'}</Tag>
+          <Tag color={value ? 'green' : 'red'}>{getActiveStatusLabel(value)}</Tag>
         ),
       },
       { title: '版本', dataIndex: 'version', width: 80 },
@@ -197,17 +247,21 @@ export const DataConnectorPage: React.FC = () => {
     try {
       const values = await form.validateFields();
       let endpointConfig: Record<string, unknown> | undefined;
+
       if (values.endpointConfig) {
-        try {
-          endpointConfig = JSON.parse(values.endpointConfig as unknown as string) as Record<
-            string,
-            unknown
-          >;
-        } catch {
-          message.error('Endpoint配置必须是合法 JSON');
-          return;
+        if (typeof values.endpointConfig === 'string') {
+          try {
+            endpointConfig = JSON.parse(values.endpointConfig);
+          } catch {
+            message.error('Endpoint配置必须是合法 JSON');
+            return;
+          }
+        } else {
+          // It's already an object (from EXCHANGE_API fields)
+          endpointConfig = values.endpointConfig as Record<string, unknown>;
         }
       }
+
       const payload: CreateDataConnectorDto = {
         ...values,
         endpointConfig,
@@ -274,8 +328,8 @@ export const DataConnectorPage: React.FC = () => {
               style={{ width: 140 }}
               placeholder="状态筛选"
               options={[
-                { label: 'ACTIVE', value: true },
-                { label: 'INACTIVE', value: false },
+                { label: getActiveStatusLabel(true), value: true },
+                { label: getActiveStatusLabel(false), value: false },
               ]}
               value={isActiveFilter}
               onChange={(value) => {
@@ -331,10 +385,10 @@ export const DataConnectorPage: React.FC = () => {
             <Input />
           </Form.Item>
           <Form.Item name="connectorType" label="类型" rules={[{ required: true }]}>
-            <Select options={typeOptions.map((item) => ({ label: item, value: item }))} />
+            <Select options={typeOptions.map((item) => ({ label: getConnectorTypeLabel(item), value: item }))} />
           </Form.Item>
           <Form.Item name="category" label="分类" rules={[{ required: true }]}>
-            <Input placeholder="如 PRICE / FUTURES" />
+            <Input placeholder="如 MARKET_INTEL（市场情报）" />
           </Form.Item>
           <Form.Item name="ownerType" label="所有者类型" rules={[{ required: true }]}>
             <Select options={ownerTypeOptions.map((item) => ({ label: item, value: item }))} />
@@ -342,9 +396,38 @@ export const DataConnectorPage: React.FC = () => {
           <Form.Item name="fallbackConnectorCode" label="Fallback连接器编码">
             <Input />
           </Form.Item>
-          <Form.Item name="endpointConfig" label="Endpoint配置(JSON)">
-            <Input.TextArea rows={3} placeholder={'例如 {"url":"https://example.com/health"}'} />
+          <Form.Item
+            noStyle
+            shouldUpdate={(prev, curr) => prev.connectorType !== curr.connectorType}
+          >
+            {({ getFieldValue }) => {
+              const type = getFieldValue('connectorType');
+              if (type === 'EXCHANGE_API') {
+                return (
+                  <>
+                    <Form.Item name={['endpointConfig', 'baseUrl']} label="API Base URL">
+                      <Input placeholder="https://api.exchange.com" />
+                    </Form.Item>
+                    <Form.Item name={['endpointConfig', 'apiKey']} label="API Key">
+                      <Input.Password placeholder="Access Key" />
+                    </Form.Item>
+                    <Form.Item name={['endpointConfig', 'secretKey']} label="Secret Key">
+                      <Input.Password placeholder="Secret Key" />
+                    </Form.Item>
+                  </>
+                );
+              }
+              return (
+                <Form.Item name="endpointConfig" label="Endpoint配置(JSON)">
+                  <Input.TextArea
+                    rows={3}
+                    placeholder={'例如 {"url":"https://example.com/health"}'}
+                  />
+                </Form.Item>
+              );
+            }}
           </Form.Item>
+
         </Form>
       </Modal>
 
@@ -363,8 +446,8 @@ export const DataConnectorPage: React.FC = () => {
           <Form.Item name="isActive" label="是否启用">
             <Select
               options={[
-                { label: 'ACTIVE', value: true },
-                { label: 'INACTIVE', value: false },
+                { label: getActiveStatusLabel(true), value: true },
+                { label: getActiveStatusLabel(false), value: false },
               ]}
             />
           </Form.Item>
@@ -387,8 +470,16 @@ export const DataConnectorPage: React.FC = () => {
           items={[
             { key: 'code', label: '编码', children: selectedConnector?.connectorCode || '-' },
             { key: 'name', label: '名称', children: selectedConnector?.connectorName || '-' },
-            { key: 'type', label: '类型', children: selectedConnector?.connectorType || '-' },
-            { key: 'category', label: '分类', children: selectedConnector?.category || '-' },
+            {
+              key: 'type',
+              label: '类型',
+              children: getConnectorTypeLabel(selectedConnector?.connectorType),
+            },
+            {
+              key: 'category',
+              label: '分类',
+              children: getConnectorCategoryLabel(selectedConnector?.category),
+            },
             { key: 'owner', label: 'OwnerType', children: selectedConnector?.ownerType || '-' },
             { key: 'version', label: '版本', children: selectedConnector?.version ?? '-' },
             {
@@ -396,7 +487,7 @@ export const DataConnectorPage: React.FC = () => {
               label: '状态',
               children: selectedConnector ? (
                 <Tag color={selectedConnector.isActive ? 'green' : 'red'}>
-                  {selectedConnector.isActive ? 'ACTIVE' : 'INACTIVE'}
+                  {getActiveStatusLabel(selectedConnector.isActive)}
                 </Tag>
               ) : (
                 '-'

@@ -5,6 +5,8 @@ import { AIProviderFactory } from '../../../ai/providers/provider.factory';
 import { AIRequestOptions } from '../../../ai/providers/base.provider';
 import type { WorkflowNode } from '@packages/types';
 
+import { DecisionRecordService } from '../../../decision-record/decision-record.service';
+
 /**
  * 裁判 Agent 执行器
  *
@@ -32,7 +34,9 @@ export class JudgeAgentNodeExecutor implements WorkflowNodeExecutor {
     constructor(
         private readonly prisma: PrismaService,
         private readonly aiProviderFactory: AIProviderFactory,
-    ) {}
+        private readonly decisionRecordService: DecisionRecordService,
+    ) { }
+
 
     supports(node: WorkflowNode): boolean {
         return node.type === 'judge-agent';
@@ -61,8 +65,8 @@ export class JudgeAgentNodeExecutor implements WorkflowNodeExecutor {
         // 加载裁判 Agent Profile
         const profile = judgeAgentCode
             ? await this.prisma.agentProfile.findFirst({
-                  where: { agentCode: judgeAgentCode, isActive: true },
-              })
+                where: { agentCode: judgeAgentCode, isActive: true },
+            })
             : null;
 
         // 加载模型配置
@@ -74,7 +78,14 @@ export class JudgeAgentNodeExecutor implements WorkflowNodeExecutor {
         if (!modelConfig) {
             // 无 AI 模型时使用规则裁决
             this.logger.warn(`[${node.name}] 无可用 AI 模型，使用规则裁决`);
-            return this.ruleBasedVerdict(node, debateData, scoringDimensions, outputAction, minConfidenceForAction);
+            return this.ruleBasedVerdict(
+                node,
+                debateData,
+                scoringDimensions,
+                outputAction,
+                minConfidenceForAction,
+                context
+            );
         }
 
         // 构建裁判提示词
@@ -122,6 +133,18 @@ export class JudgeAgentNodeExecutor implements WorkflowNodeExecutor {
                 verdict.actionOverrideReason = `置信度 ${confidence} 低于阈值 ${minConfidenceForAction}`;
             }
 
+            // 保存决策记录
+            const decisionRecord = await this.saveDecisionRecord(
+                context,
+                node,
+                verdict,
+                confidence,
+                outputAction,
+                debateData,
+                config,
+                judgeAgentCode
+            );
+
             return {
                 status: 'SUCCESS',
                 output: {
@@ -138,6 +161,7 @@ export class JudgeAgentNodeExecutor implements WorkflowNodeExecutor {
                     },
                     _meta: {
                         executor: this.name,
+                        decisionRecordId: decisionRecord?.id,
                     },
                 },
             };
@@ -146,7 +170,14 @@ export class JudgeAgentNodeExecutor implements WorkflowNodeExecutor {
             this.logger.error(`[${node.name}] judge-agent 调用失败: ${errorMsg}`);
 
             // 降级为规则裁决
-            return this.ruleBasedVerdict(node, debateData, scoringDimensions, outputAction, minConfidenceForAction);
+            return this.ruleBasedVerdict(
+                node,
+                debateData,
+                scoringDimensions,
+                outputAction,
+                minConfidenceForAction,
+                context
+            );
         }
     }
 
@@ -178,13 +209,16 @@ export class JudgeAgentNodeExecutor implements WorkflowNodeExecutor {
 
     // ────────────────── 规则裁决（降级方案） ──────────────────
 
-    private ruleBasedVerdict(
+    // ────────────────── 规则裁决（降级方案） ──────────────────
+
+    private async ruleBasedVerdict(
         node: WorkflowNode,
         debateData: Record<string, unknown>,
         scoringDimensions: string[],
         outputAction: boolean,
         minConfidenceForAction: number,
-    ): NodeExecutionResult {
+        context: NodeExecutionContext,
+    ): Promise<NodeExecutionResult> {
         const rounds = debateData.rounds as Array<Record<string, unknown>> | undefined;
         const lastRound = rounds?.[rounds.length - 1];
         const args = (lastRound?.arguments as Array<Record<string, unknown>>) ?? [];
@@ -227,6 +261,23 @@ export class JudgeAgentNodeExecutor implements WorkflowNodeExecutor {
             verdict.action = avgConfidence >= minConfidenceForAction ? 'REVIEW_ONLY' : 'HOLD';
         }
 
+        const decisionRecord = await this.saveDecisionRecord(
+            context,
+            node,
+            verdict,
+            avgConfidence,
+            outputAction,
+            debateData,
+            {
+                scoringDimensions,
+                outputAction,
+                minConfidenceForAction,
+                verdictFormat: 'structured',
+                fallback: true,
+            },
+            'rule-based-fallback'
+        );
+
         this.logger.log(
             `[${node.name}] judge-agent 规则裁决: confidence=${avgConfidence}, consensus=${consensusScore}`,
         );
@@ -246,9 +297,52 @@ export class JudgeAgentNodeExecutor implements WorkflowNodeExecutor {
                 _meta: {
                     executor: this.name,
                     fallback: true,
+                    decisionRecordId: decisionRecord?.id,
                 },
             },
         };
+    }
+
+    private async saveDecisionRecord(
+        context: NodeExecutionContext,
+        node: WorkflowNode,
+        verdict: Record<string, unknown>,
+        confidence: number,
+        outputAction: boolean,
+        debateData: Record<string, unknown>,
+        configSnapshot: Record<string, unknown>,
+        judgeAgentCode?: string,
+    ) {
+        if (!outputAction || !verdict.action) {
+            return null;
+        }
+
+        try {
+            return await this.decisionRecordService.create(context.triggerUserId, {
+                workflowExecutionId: context.executionId,
+                action: verdict.action as any,
+                confidence: confidence,
+                riskLevel: (verdict.riskLevel as string) || 'MEDIUM',
+                reasoningSummary: (verdict.conclusion as string) || (verdict.actionRationale as string) || '',
+                evidenceSummary: {
+                    debateSummary: {
+                        topic: debateData.topic ?? '',
+                        rounds: (debateData.rounds as any[])?.length || 0,
+                    },
+                    keyFindings: verdict.keyFindings,
+                    nodeId: node.id,
+                },
+                paramSnapshot: {
+                    ...configSnapshot,
+                    nodeId: node.id,
+                    judgeAgentCode,
+                },
+                outputSnapshot: verdict,
+            });
+        } catch (e) {
+            this.logger.error(`[${node.name}] 保存决策记录失败: ${e}`);
+            return null;
+        }
     }
 
     // ────────────────── 提示词构建 ──────────────────
@@ -272,6 +366,7 @@ export class JudgeAgentNodeExecutor implements WorkflowNodeExecutor {
             parts.push('{');
             parts.push('  "conclusion": "综合结论",');
             parts.push(`  "confidence": 0-100,`);
+            parts.push(`  "riskLevel": "LOW|MEDIUM|HIGH|EXTREME",`);
             parts.push(`  "scores": { ${scoringDimensions.map((d) => `"${d}": 0-100`).join(', ')} },`);
             parts.push('  "keyFindings": ["要点1", "要点2"],');
             parts.push('  "dissent": "少数派观点摘要",');
@@ -281,11 +376,12 @@ export class JudgeAgentNodeExecutor implements WorkflowNodeExecutor {
             }
             parts.push('}');
         } else {
-            parts.push('请以叙述格式输出裁决结论，包含：综合分析、关键发现、置信度评估。');
+            parts.push('请以叙述格式输出裁决结论，包含：综合分析、关键发现、置信度评估、风险等级。');
         }
 
         return parts.join('\n');
     }
+
 
     private buildJudgeUserPrompt(
         debateData: Record<string, unknown>,

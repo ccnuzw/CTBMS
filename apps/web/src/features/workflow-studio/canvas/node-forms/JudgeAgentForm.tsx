@@ -9,7 +9,7 @@ interface FormProps {
 export const JudgeAgentForm: React.FC<FormProps> = ({ config, onChange }) => {
     return (
         <Form layout="vertical" size="small">
-            <Form.Item label="裁判 Agent 代码 (Agent Code)" required>
+            <Form.Item label="裁判智能体编码" required>
                 <Input
                     value={config.agentCode as string}
                     onChange={(e) => onChange('agentCode', e.target.value)}
@@ -17,25 +17,25 @@ export const JudgeAgentForm: React.FC<FormProps> = ({ config, onChange }) => {
                 />
             </Form.Item>
 
-            <Form.Item label="裁决策略 (Judge Policy)">
+            <Form.Item label="裁决策略">
                 <Select
                     value={config.judgePolicy as string ?? 'WEIGHTED'}
                     onChange={(v) => onChange('judgePolicy', v)}
                     options={[
-                        { label: '加权评分 (Weighted Score)', value: 'WEIGHTED' },
-                        { label: '全票通过 (Unanimous)', value: 'UNANIMOUS' },
-                        { label: '多数票 (Majority)', value: 'MAJORITY' },
-                        { label: '一票否决 (Veto)', value: 'VETO' },
+                        { label: '加权评分', value: 'WEIGHTED' },
+                        { label: '全票通过', value: 'UNANIMOUS' },
+                        { label: '多数票', value: 'MAJORITY' },
+                        { label: '一票否决', value: 'VETO' },
                     ]}
                 />
             </Form.Item>
 
-            <Form.Item label="评分标准 (Rubric)">
+            <Form.Item label="评分标准">
                 <Input.TextArea
                     value={config.rubric as string}
                     onChange={(e) => onChange('rubric', e.target.value)}
                     rows={4}
-                    placeholder="输入评分标准或 Prompt 指令..."
+                    placeholder="输入评分标准或提示词指令..."
                 />
             </Form.Item>
         </Form>

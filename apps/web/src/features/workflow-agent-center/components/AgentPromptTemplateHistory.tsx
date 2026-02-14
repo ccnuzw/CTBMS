@@ -46,7 +46,7 @@ export const AgentPromptTemplateHistory: React.FC<AgentPromptTemplateHistoryProp
             render: (v: number) => <Tag color="blue">v{v}</Tag>,
         },
         {
-            title: 'Prompt编码',
+            title: '提示词编码',
             dataIndex: 'promptCode',
             key: 'promptCode',
         },
@@ -86,11 +86,11 @@ export const AgentPromptTemplateHistory: React.FC<AgentPromptTemplateHistoryProp
             expandable={{
                 expandedRowRender: (record) => (
                     <div style={{ padding: 16, background: '#f5f5f5', borderRadius: 4 }}>
-                        <p><strong>System Prompt:</strong></p>
+                        <p><strong>系统提示词：</strong></p>
                         <div style={{ whiteSpace: 'pre-wrap', maxHeight: 200, overflowY: 'auto' }}>
                             {record.data.systemPrompt}
                         </div>
-                        <p style={{ marginTop: 8 }}><strong>User Prompt:</strong></p>
+                        <p style={{ marginTop: 8 }}><strong>用户提示词：</strong></p>
                         <div style={{ whiteSpace: 'pre-wrap', maxHeight: 200, overflowY: 'auto' }}>
                             {record.data.userPromptTemplate}
                         </div>

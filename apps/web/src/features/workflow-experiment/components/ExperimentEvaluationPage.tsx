@@ -25,6 +25,8 @@ import {
   usePauseExperiment,
   useStartExperiment,
 } from '../api';
+import { ExperimentCreateModal } from './ExperimentCreateModal';
+
 
 const { Title, Text } = Typography;
 
@@ -71,6 +73,9 @@ export const ExperimentEvaluationPage: React.FC = () => {
     page: 1,
     pageSize: 100,
   });
+
+  const [createVisible, setCreateVisible] = useState(false);
+
 
   const startMutation = useStartExperiment();
   const pauseMutation = usePauseExperiment();
@@ -271,9 +276,18 @@ export const ExperimentEvaluationPage: React.FC = () => {
                 label: cfg.label,
               }))}
             />
+            <Button type="primary" onClick={() => setCreateVisible(true)}>
+              创建实验
+            </Button>
           </Space>
         </Space>
       </Card>
+
+      <ExperimentCreateModal
+        open={createVisible}
+        onCancel={() => setCreateVisible(false)}
+        onSuccess={() => setCreateVisible(false)}
+      />
 
       <Card>
         <Table<WorkflowExperimentDto>

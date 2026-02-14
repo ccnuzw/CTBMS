@@ -9,13 +9,13 @@ import {
   Descriptions,
   Drawer,
   Input,
-  Modal,
   Popconfirm,
   Select,
   Space,
   Table,
   Tag,
   Typography,
+  Tabs,
 } from 'antd';
 import type { DecisionRecordDto } from '@packages/types';
 import { useSearchParams } from 'react-router-dom';
@@ -27,6 +27,7 @@ import {
   useDeleteDecisionRecord,
   useReviewDecisionRecord,
 } from '../api';
+import { SignalDashboard } from './SignalDashboard';
 
 const { Title } = Typography;
 const { RangePicker } = DatePicker;
@@ -58,6 +59,8 @@ const parsePositiveInt = (value: string | null, fallback: number): number => {
 export const DecisionRecordPage: React.FC = () => {
   const { message, modal } = App.useApp();
   const [searchParams, setSearchParams] = useSearchParams();
+  const [activeTab, setActiveTab] = useState(searchParams.get('tab') || 'dashboard');
+
   const [keywordInput, setKeywordInput] = useState(searchParams.get('keyword')?.trim() || '');
   const [keyword, setKeyword] = useState<string | undefined>(
     searchParams.get('keyword')?.trim() || undefined,
@@ -84,8 +87,16 @@ export const DecisionRecordPage: React.FC = () => {
     if (publishedFilter !== undefined) next.set('isPublished', String(publishedFilter));
     next.set('page', String(page));
     next.set('pageSize', String(pageSize));
+    // Persist tab
+    if (activeTab) next.set('tab', activeTab);
+
     setSearchParams(next, { replace: true });
-  }, [actionFilter, keyword, page, pageSize, publishedFilter, setSearchParams]);
+  }, [actionFilter, keyword, page, pageSize, publishedFilter, setSearchParams, activeTab]);
+
+  const handleTabChange = (key: string) => {
+    setActiveTab(key);
+    // useEffect will update URL
+  };
 
   const { data, isLoading } = useDecisionRecords({
     keyword,
@@ -244,86 +255,97 @@ export const DecisionRecordPage: React.FC = () => {
     [deleteMutation, message, publishMutation],
   );
 
-  return (
-    <Card>
-      <Space direction="vertical" style={{ width: '100%' }} size={16}>
-        <Space style={{ justifyContent: 'space-between', width: '100%' }}>
-          <Title level={4} style={{ margin: 0 }}>
-            决策记录管理
-          </Title>
-          <Space wrap>
-            <Input.Search
-              allowClear
-              placeholder="按摘要搜索"
-              value={keywordInput}
-              onChange={(e) => {
-                const nextValue = e.target.value;
-                setKeywordInput(nextValue);
-                if (!nextValue.trim()) {
-                  setKeyword(undefined);
-                  setPage(1);
-                }
-              }}
-              onSearch={(value) => {
-                const normalized = value?.trim() || '';
-                setKeywordInput(normalized);
-                setKeyword(normalized || undefined);
+  const renderList = () => (
+    <Space direction="vertical" style={{ width: '100%' }} size={16}>
+      <Space style={{ justifyContent: 'space-between', width: '100%' }}>
+        <Title level={4} style={{ margin: 0 }}>
+          决策记录列表
+        </Title>
+        <Space wrap>
+          <Input.Search
+            allowClear
+            placeholder="按摘要搜索"
+            value={keywordInput}
+            onChange={(e) => {
+              const nextValue = e.target.value;
+              setKeywordInput(nextValue);
+              if (!nextValue.trim()) {
+                setKeyword(undefined);
                 setPage(1);
-              }}
-              style={{ width: 240 }}
-            />
-            <Select
-              allowClear
-              style={{ width: 130 }}
-              placeholder="决策行为"
-              options={actionOptions.map((item) => ({ label: item, value: item }))}
-              value={actionFilter}
-              onChange={(value) => {
-                setActionFilter(value);
-                setPage(1);
-              }}
-            />
-            <Select
-              allowClear
-              style={{ width: 130 }}
-              placeholder="发布状态"
-              options={[
-                { label: '已发布', value: true },
-                { label: '未发布', value: false },
-              ]}
-              value={publishedFilter}
-              onChange={(value) => {
-                setPublishedFilter(value);
-                setPage(1);
-              }}
-            />
-            <RangePicker
-              onChange={(dates) => {
-                setDateRange(dates as [dayjs.Dayjs | null, dayjs.Dayjs | null] | null);
-                setPage(1);
-              }}
-            />
-          </Space>
+              }
+            }}
+            onSearch={(value) => {
+              const normalized = value?.trim() || '';
+              setKeywordInput(normalized);
+              setKeyword(normalized || undefined);
+              setPage(1);
+            }}
+            style={{ width: 240 }}
+          />
+          <Select
+            allowClear
+            style={{ width: 130 }}
+            placeholder="决策行为"
+            options={actionOptions.map((item) => ({ label: item, value: item }))}
+            value={actionFilter}
+            onChange={(value) => {
+              setActionFilter(value);
+              setPage(1);
+            }}
+          />
+          <Select
+            allowClear
+            style={{ width: 130 }}
+            placeholder="发布状态"
+            options={[
+              { label: '已发布', value: true },
+              { label: '未发布', value: false },
+            ]}
+            value={publishedFilter}
+            onChange={(value) => {
+              setPublishedFilter(value);
+              setPage(1);
+            }}
+          />
+          <RangePicker
+            onChange={(dates) => {
+              setDateRange(dates as [dayjs.Dayjs | null, dayjs.Dayjs | null] | null);
+              setPage(1);
+            }}
+          />
         </Space>
-
-        <Table<DecisionRecordDto>
-          rowKey="id"
-          loading={isLoading}
-          dataSource={data?.data ?? []}
-          columns={columns}
-          scroll={{ x: 1500 }}
-          pagination={{
-            current: data?.page ?? page,
-            pageSize: data?.pageSize ?? pageSize,
-            total: data?.total ?? 0,
-            showSizeChanger: true,
-            onChange: (nextPage, nextPageSize) => {
-              setPage(nextPage);
-              setPageSize(nextPageSize);
-            },
-          }}
-        />
       </Space>
+
+      <Table<DecisionRecordDto>
+        rowKey="id"
+        loading={isLoading}
+        dataSource={data?.data ?? []}
+        columns={columns}
+        scroll={{ x: 1500 }}
+        pagination={{
+          current: data?.page ?? page,
+          pageSize: data?.pageSize ?? pageSize,
+          total: data?.total ?? 0,
+          showSizeChanger: true,
+          onChange: (nextPage, nextPageSize) => {
+            setPage(nextPage);
+            setPageSize(nextPageSize);
+          },
+        }}
+      />
+    </Space>
+  );
+
+  return (
+    <Card bodyStyle={{ padding: '16px 24px' }}>
+      <Tabs
+        activeKey={activeTab}
+        onChange={handleTabChange}
+        items={[
+          { key: 'dashboard', label: '运营看板', children: <SignalDashboard /> },
+          { key: 'list', label: '决策记录明细', children: renderList() },
+        ]}
+      />
 
       <Drawer
         title="决策记录详情"

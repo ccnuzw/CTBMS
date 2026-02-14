@@ -84,3 +84,15 @@ export type CreateDecisionRecordDto = z.infer<typeof CreateDecisionRecordSchema>
 export type UpdateDecisionRecordDto = z.infer<typeof UpdateDecisionRecordSchema>;
 export type DecisionRecordQueryDto = z.infer<typeof DecisionRecordQuerySchema>;
 export type DecisionRecordPageDto = z.infer<typeof DecisionRecordPageSchema>;
+export type DecisionRecordStatsDto = z.infer<typeof DecisionRecordStatsSchema>;
+
+export const DecisionRecordStatsSchema = z.object({
+    total: z.number(),
+    actionDistribution: z.record(z.number()),
+    riskDistribution: z.record(z.number()),
+    dailyTrend: z.array(z.object({
+        date: z.string(),
+        count: z.number(),
+    })),
+});
+

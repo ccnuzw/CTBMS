@@ -208,4 +208,87 @@ export class DecisionRecordService {
             orderBy: { createdAt: 'desc' },
         });
     }
+
+    /**
+     * 获取统计数据
+     */
+    async getStats(userId: string) {
+        const now = new Date();
+        const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+        const fourteenDaysAgo = new Date(now.getTime() - 14 * 24 * 60 * 60 * 1000);
+
+        // 1. Total (Last 30 days)
+        const total = await this.prisma.decisionRecord.count({
+            where: {
+                createdByUserId: userId,
+                createdAt: { gte: thirtyDaysAgo },
+            },
+        });
+
+        // 2. Action Distribution (Last 30 days)
+        const actionGroups = await this.prisma.decisionRecord.groupBy({
+            by: ['action'],
+            where: {
+                createdByUserId: userId,
+                createdAt: { gte: thirtyDaysAgo },
+            },
+            _count: { action: true },
+        });
+        const actionDistribution: Record<string, number> = {};
+        actionGroups.forEach(g => {
+            actionDistribution[g.action] = g._count.action;
+        });
+
+        // 3. Risk Distribution (Last 30 days)
+        const riskGroups = await this.prisma.decisionRecord.groupBy({
+            by: ['riskLevel'],
+            where: {
+                createdByUserId: userId,
+                createdAt: { gte: thirtyDaysAgo },
+                riskLevel: { not: null },
+            },
+            _count: { riskLevel: true },
+        });
+        const riskDistribution: Record<string, number> = {};
+        riskGroups.forEach(g => {
+            if (g.riskLevel) riskDistribution[g.riskLevel] = g._count.riskLevel;
+        });
+
+        // 4. Daily Trend (Last 14 days)
+        // Fetch inputs for aggregation
+        const trendRecords = await this.prisma.decisionRecord.findMany({
+            where: {
+                createdByUserId: userId,
+                createdAt: { gte: fourteenDaysAgo },
+            },
+            select: { createdAt: true },
+        });
+
+        const trendMap = new Map<string, number>();
+        // Initialize last 14 days
+        for (let i = 0; i < 14; i++) {
+            const d = new Date(now.getTime() - i * 24 * 60 * 60 * 1000);
+            const key = d.toISOString().split('T')[0];
+            trendMap.set(key, 0);
+        }
+
+        trendRecords.forEach(r => {
+            const key = r.createdAt.toISOString().split('T')[0];
+            if (trendMap.has(key)) {
+                trendMap.set(key, (trendMap.get(key) || 0) + 1);
+            }
+        });
+
+        const dailyTrend = Array.from(trendMap.entries())
+            .map(([date, count]) => ({ date, count }))
+            .sort((a, b) => a.date.localeCompare(b.date));
+
+        return {
+            total,
+            actionDistribution,
+            riskDistribution,
+            dailyTrend,
+        };
+    }
+
 }

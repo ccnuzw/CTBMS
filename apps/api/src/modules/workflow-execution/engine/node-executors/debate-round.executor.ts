@@ -106,9 +106,15 @@ export class DebateRoundNodeExecutor implements WorkflowNodeExecutor {
                 const profile = agentProfiles.get(participant.agentCode);
                 if (!profile) continue;
 
+                const effectiveParticipant: DebateParticipant = {
+                    ...participant,
+                    role: (profile.agentName as string) || participant.role,
+                    perspective: (profile.objective as string) || participant.perspective,
+                };
+
                 const response = await this.callAgent(
                     profile,
-                    participant,
+                    effectiveParticipant,
                     debateTopic,
                     input,
                     paramSnapshot,
@@ -118,8 +124,8 @@ export class DebateRoundNodeExecutor implements WorkflowNodeExecutor {
                 );
 
                 roundArguments.push({
-                    agentCode: participant.agentCode,
-                    role: participant.role,
+                    agentCode: effectiveParticipant.agentCode,
+                    role: effectiveParticipant.role,
                     response: response.text,
                     confidence: response.confidence,
                     keyPoints: response.keyPoints,
@@ -219,7 +225,6 @@ export class DebateRoundNodeExecutor implements WorkflowNodeExecutor {
             isJudgement: false,
             keyPoints: arg.keyPoints,
             evidenceRefs: {} as Record<string, unknown>,
-            consensusScore,
         }));
 
         await this.debateTraceService.createBatch(traces);
@@ -449,13 +454,21 @@ export class DebateRoundNodeExecutor implements WorkflowNodeExecutor {
     private parseParticipants(raw: unknown): DebateParticipant[] {
         if (!Array.isArray(raw)) return [];
         return raw
-            .filter((p) => p && typeof p === 'object' && p.agentCode)
-            .map((p) => ({
-                agentCode: String(p.agentCode),
-                role: String(p.role ?? p.agentCode),
-                perspective: String(p.perspective ?? ''),
-                weight: Number(p.weight ?? 1),
-            }));
+            .map((p) => {
+                if (typeof p === 'string') {
+                    return { agentCode: p, role: p, perspective: '', weight: 1 };
+                }
+                if (p && typeof p === 'object' && p.agentCode) {
+                    return {
+                        agentCode: String(p.agentCode),
+                        role: String(p.role ?? p.agentCode),
+                        perspective: String(p.perspective ?? ''),
+                        weight: Number(p.weight ?? 1),
+                    };
+                }
+                return null;
+            })
+            .filter((p): p is DebateParticipant => p !== null);
     }
 
     private extractTopicFromInput(input: Record<string, unknown>): string {

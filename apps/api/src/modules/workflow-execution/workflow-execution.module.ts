@@ -9,6 +9,7 @@ import { RulePackEvalNodeExecutor } from './engine/node-executors/rule-pack-eval
 import { RiskGateNodeExecutor } from './engine/node-executors/risk-gate.executor';
 import { AgentCallNodeExecutor } from './engine/node-executors/agent-call.executor';
 import { DataFetchNodeExecutor } from './engine/node-executors/data-fetch.executor';
+import { FuturesDataFetchNodeExecutor } from './engine/node-executors/futures-data-fetch.executor';
 import { ComputeNodeExecutor } from './engine/node-executors/compute.executor';
 import { VariableResolver } from './engine/variable-resolver';
 import { EvidenceCollector } from './engine/evidence-collector';
@@ -28,9 +29,12 @@ import { DebateTraceModule } from '../debate-trace/debate-trace.module';
 import { WorkflowExperimentModule } from '../workflow-experiment/workflow-experiment.module';
 import { AIProviderFactory } from '../ai/providers/provider.factory';
 import { AgentProfileModule } from '../agent-profile';
+import { DecisionRecordModule } from '../decision-record/decision-record.module';
+
 
 @Module({
-    imports: [DebateTraceModule, WorkflowExperimentModule, AgentProfileModule],
+    imports: [DebateTraceModule, WorkflowExperimentModule, AgentProfileModule, DecisionRecordModule],
+
     controllers: [WorkflowExecutionController],
     providers: [
         WorkflowExecutionService,
@@ -42,6 +46,7 @@ import { AgentProfileModule } from '../agent-profile';
         PassthroughNodeExecutor,
         AgentCallNodeExecutor,
         DataFetchNodeExecutor,
+        FuturesDataFetchNodeExecutor,
         ComputeNodeExecutor,
         DebateRoundNodeExecutor,
         ApiTriggerNodeExecutor,

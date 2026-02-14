@@ -43,6 +43,7 @@ import type {
   ParameterScopeLevel,
   ParameterSetDto,
   UpdateParameterItemDto,
+  WorkflowTemplateSource,
 } from '@packages/types';
 import { useSearchParams } from 'react-router-dom';
 import { getErrorMessage } from '../../../api/client';
@@ -96,6 +97,19 @@ const operationColorMap: Record<string, string> = {
   BATCH_RESET: 'volcano',
   PUBLISH: 'purple',
 };
+
+const templateSourceLabelMap: Record<WorkflowTemplateSource, string> = {
+  PUBLIC: '公共',
+  PRIVATE: '私有',
+  COPIED: '复制',
+};
+
+const getTemplateSourceLabel = (value?: WorkflowTemplateSource | null): string => {
+  if (!value) return '-';
+  return templateSourceLabelMap[value] ?? value;
+};
+
+const getActiveStatusLabel = (value?: boolean): string => (value ? '启用' : '停用');
 
 const parsePositiveInt = (value: string | null, fallback: number): number => {
   if (!value) return fallback;
@@ -308,7 +322,9 @@ export const ParameterSetPage: React.FC = () => {
         dataIndex: 'templateSource',
         width: 100,
         render: (value: string) => (
-          <Tag color={value === 'PUBLIC' ? 'blue' : 'default'}>{value}</Tag>
+          <Tag color={value === 'PUBLIC' ? 'blue' : 'default'}>
+            {getTemplateSourceLabel(value as WorkflowTemplateSource)}
+          </Tag>
         ),
       },
       {
@@ -316,7 +332,7 @@ export const ParameterSetPage: React.FC = () => {
         dataIndex: 'isActive',
         width: 100,
         render: (value: boolean) => (
-          <Tag color={value ? 'green' : 'red'}>{value ? 'ACTIVE' : 'INACTIVE'}</Tag>
+          <Tag color={value ? 'green' : 'red'}>{getActiveStatusLabel(value)}</Tag>
         ),
       },
       {
@@ -424,7 +440,7 @@ export const ParameterSetPage: React.FC = () => {
         dataIndex: 'isActive',
         width: 80,
         render: (value: boolean) => (
-          <Tag color={value ? 'green' : 'red'}>{value ? 'ON' : 'OFF'}</Tag>
+          <Tag color={value ? 'green' : 'red'}>{getActiveStatusLabel(value)}</Tag>
         ),
       },
       {
@@ -680,8 +696,8 @@ export const ParameterSetPage: React.FC = () => {
               style={{ width: 140 }}
               placeholder="状态筛选"
               options={[
-                { label: 'ACTIVE', value: true },
-                { label: 'INACTIVE', value: false },
+                { label: getActiveStatusLabel(true), value: true },
+                { label: getActiveStatusLabel(false), value: false },
               ]}
               value={isActiveFilter}
               onChange={(value) => { setIsActiveFilter(value); setPage(1); }}
@@ -742,8 +758,8 @@ export const ParameterSetPage: React.FC = () => {
           <Form.Item name="templateSource" label="模板来源" rules={[{ required: true }]}>
             <Select
               options={[
-                { label: 'PRIVATE', value: 'PRIVATE' },
-                { label: 'PUBLIC', value: 'PUBLIC' },
+                { label: getTemplateSourceLabel('PRIVATE'), value: 'PRIVATE' },
+                { label: getTemplateSourceLabel('PUBLIC'), value: 'PUBLIC' },
               ]}
             />
           </Form.Item>
@@ -761,7 +777,7 @@ export const ParameterSetPage: React.FC = () => {
             <Space>
               <span>{setDetail?.name || '-'}</span>
               <Tag color={setDetail?.isActive ? 'green' : 'red'}>
-                {setDetail?.isActive ? 'ACTIVE' : 'INACTIVE'}
+                {getActiveStatusLabel(setDetail?.isActive)}
               </Tag>
               <Tag color={isPublished(setDetail?.version) ? 'green' : 'orange'}>
                 {isPublished(setDetail?.version) ? '已发布' : '未发布'}
@@ -1157,8 +1173,8 @@ export const ParameterSetPage: React.FC = () => {
           <Form.Item name="isActive" label="启用状态">
             <Select
               options={[
-                { label: 'ACTIVE', value: true },
-                { label: 'INACTIVE', value: false },
+                { label: getActiveStatusLabel(true), value: true },
+                { label: getActiveStatusLabel(false), value: false },
               ]}
             />
           </Form.Item>

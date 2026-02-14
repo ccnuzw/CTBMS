@@ -41,6 +41,7 @@ import {
   ReferenceLine,
 } from 'recharts';
 import type { DebateTimelineDto, DebateTimelineEntryDto, DebateRoundTraceDto } from '@packages/types';
+import { getAgentRoleLabel } from '../../workflow-agent-center/constants';
 
 const { Text, Title, Paragraph } = Typography;
 
@@ -477,7 +478,7 @@ export const DebateReplayViewer: React.FC<DebateReplayViewerProps> = ({
                           )}
                           <Text strong>{entry.participantCode}</Text>
                           <Tag color={roleColorMap[entry.participantRole] || 'default'}>
-                            {entry.participantRole}
+                            {getAgentRoleLabel(entry.participantRole)}
                           </Tag>
                           {entry.stance && (
                             <Tag color={stanceColorMap[entry.stance] || 'default'}>

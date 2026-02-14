@@ -23,7 +23,7 @@ export const RetryPolicyForm: React.FC<RetryPolicyFormProps> = ({ name }) => {
                 </Form.Item>
                 <Form.Item
                     name={[...(Array.isArray(name) ? name : [name]), 'retryBackoffMs']}
-                    label="重试间隔 (ms)"
+                    label="重试间隔（毫秒）"
                     tooltip="每次重试之间的等待时间"
                     initialValue={2000}
                     rules={[{ type: 'number', min: 0 }]}
@@ -33,7 +33,7 @@ export const RetryPolicyForm: React.FC<RetryPolicyFormProps> = ({ name }) => {
                 </Form.Item>
             </Space>
             <Text type="secondary" style={{ fontSize: 12 }}>
-                配置 Agent 执行失败时的重试逻辑。
+                配置智能体执行失败时的重试逻辑。
             </Text>
         </Space>
     );

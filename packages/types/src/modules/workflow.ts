@@ -8,20 +8,21 @@ export const WorkflowTemplateSourceEnum = z.enum(['PUBLIC', 'PRIVATE', 'COPIED']
 
 export const WORKFLOW_MODE_UI_ENUM = z.enum(['linear', 'dag', 'debate']);
 export const WORKFLOW_MODE_UI_TO_DSL: Record<z.infer<typeof WORKFLOW_MODE_UI_ENUM>, z.infer<typeof WorkflowModeEnum>> =
-  {
-    linear: 'LINEAR',
-    dag: 'DAG',
-    debate: 'DEBATE',
-  };
+{
+  linear: 'LINEAR',
+  dag: 'DAG',
+  debate: 'DEBATE',
+};
 export const WORKFLOW_MODE_DSL_TO_UI: Record<z.infer<typeof WorkflowModeEnum>, z.infer<typeof WORKFLOW_MODE_UI_ENUM>> =
-  {
-    LINEAR: 'linear',
-    DAG: 'dag',
-    DEBATE: 'debate',
-  };
+{
+  LINEAR: 'linear',
+  DAG: 'dag',
+  DEBATE: 'debate',
+};
 
 export const WORKFLOW_NODE_TYPE_ALIASES = {
   'market-data-fetch': 'data-fetch',
+  'exchange-data-fetch': 'futures-data-fetch',
   'single-agent': 'agent-call',
   'control-branch': 'if-else',
   'control-join': 'join',
@@ -34,6 +35,7 @@ export const WORKFLOW_CANONICAL_NODE_TYPES = [
   'event-trigger',
   'api-trigger',
   'data-fetch',
+  'futures-data-fetch',
   'report-fetch',
   'knowledge-fetch',
   'external-api-fetch',

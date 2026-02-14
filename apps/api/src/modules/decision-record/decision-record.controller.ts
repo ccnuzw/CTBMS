@@ -31,10 +31,16 @@ export class DecisionRecordController {
         return this.service.create(this.getUserId(req), dto);
     }
 
+    @Get('stats')
+    getStats(@Request() req: AuthRequest) {
+        return this.service.getStats(this.getUserId(req));
+    }
+
     @Get()
     findMany(@Request() req: AuthRequest, @Query() dto: DecisionRecordQueryDto) {
         return this.service.findMany(this.getUserId(req), dto);
     }
+
 
     @Get('execution/:executionId')
     findByExecutionId(@Param('executionId') executionId: string) {

@@ -145,10 +145,12 @@ export const ResolveParameterSetResultSchema = z.object({
 export const DataConnectorTypeEnum = z.enum([
   'INTERNAL_DB',
   'REST_API',
+  'EXCHANGE_API',
   'GRAPHQL',
   'FILE_IMPORT',
   'WEBHOOK',
 ]);
+
 export const DataConnectorOwnerTypeEnum = z.enum(['SYSTEM', 'ADMIN']);
 
 export const DataConnectorSchema = z.object({

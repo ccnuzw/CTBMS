@@ -60,7 +60,7 @@ const buildDebateDslSnapshot = (
       enabled: true,
       config: {
         topic: '政策冲击对玉米价格的影响',
-        participants,
+        participants: participants.map((p) => p.agentCode),
         maxRounds: 2,
         judgePolicy: 'WEIGHTED',
         consensusThreshold: 0.95,
@@ -122,7 +122,7 @@ const fetchJson = async <T>(
 };
 
 async function main() {
-  const app = await NestFactory.create(WorkflowDebateExecutionE2eModule, { logger: false });
+  const app = await NestFactory.create(WorkflowDebateExecutionE2eModule, { logger: ['error', 'warn'] });
   app.useGlobalPipes(new ZodValidationPipe());
   await app.listen(0);
   const baseUrl = (await app.getUrl()).replace('[::1]', '127.0.0.1');
@@ -285,6 +285,23 @@ async function main() {
     });
     assert.equal(timeline.status, 200);
 
+    // 4. 验证决策记录生成
+    const decisionRecords = await prisma.decisionRecord.findMany({
+      where: { workflowExecutionId: executionId },
+    });
+    // 我们期望至少有一个决策记录（来自 Judge Agent，无论是 AI 还是规则降级）
+    assert.ok(decisionRecords.length > 0, 'Should create at least one decision record');
+    const record = decisionRecords[0];
+    assert.ok(record.action, 'Decision record should have an action');
+    assert.equal(record.riskLevel, 'MEDIUM'); // 规则裁决默认 MEDIUM
+    console.log('Decision Record Verified:', record.id, record.action);
+
+    // 验证 DebateTrace (Check DB directly)
+    const dbTraces = await prisma.debateRoundTrace.findMany({
+      where: { workflowExecutionId: executionId },
+    });
+    assert.ok(dbTraces.length > 0, 'Should create debate traces in DB');
+
     process.stdout.write('[workflow-debate-execution.e2e] passed\n');
   } finally {
     await prisma.workflowDefinition.deleteMany({
@@ -308,6 +325,7 @@ async function main() {
         },
       },
     });
+
     await app.close();
     await prisma.$disconnect();
   }

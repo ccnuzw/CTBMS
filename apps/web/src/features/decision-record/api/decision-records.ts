@@ -4,7 +4,9 @@ import {
   DecisionRecordQueryDto,
   CreateDecisionRecordDto,
   UpdateDecisionRecordDto,
+  DecisionRecordStatsDto,
 } from '@packages/types';
+
 import { apiClient } from '../../../api/client';
 
 export interface DecisionRecordPageResponse {
@@ -133,3 +135,14 @@ export const useReviewDecisionRecord = () => {
     },
   });
 };
+
+export const useDecisionRecordStats = () => {
+  return useQuery<DecisionRecordStatsDto>({
+    queryKey: ['decision-record-stats'],
+    queryFn: async () => {
+      const res = await apiClient.get<DecisionRecordStatsDto>('/decision-records/stats');
+      return res.data;
+    },
+  });
+};
+

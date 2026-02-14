@@ -256,7 +256,9 @@ function dslNodesToFlow(dslNodes: WorkflowNode[]): Node[] {
                 inputBindings: n.inputBindings,
                 outputSchema: n.outputSchema,
                 nodeTypeConfig: typeConfig,
+                diffStatus: (config.diffStatus as string) || undefined,
             },
+
             parentId: (config.parentId as string) || undefined,
             extent: (config.extent as 'parent' | undefined),
         };

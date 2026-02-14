@@ -18,8 +18,16 @@ export const WorkflowNodeComponent = memo(({ data, selected }: NodeProps) => {
     const isEnabled = (data.enabled as boolean) ?? true;
     const nodeName = data.name as string;
     const nodeType = data.type as string;
-    const color = nodeTypeConfig?.color ?? token.colorPrimary;
+    const diffStatus = data.diffStatus as 'added' | 'removed' | 'modified' | 'unchanged' | undefined;
+
+    let color = nodeTypeConfig?.color ?? token.colorPrimary;
+    if (diffStatus === 'added') color = token.colorSuccess;
+    if (diffStatus === 'removed') color = token.colorError;
+    if (diffStatus === 'modified') color = token.colorWarning;
+    if (diffStatus === 'unchanged') color = token.colorTextQuaternary;
+
     const IconComponent = nodeTypeConfig?.icon;
+
 
     // Extract schemas for handle rendering
     const inputsSchema = nodeTypeConfig?.inputsSchema;
@@ -35,8 +43,10 @@ export const WorkflowNodeComponent = memo(({ data, selected }: NodeProps) => {
                 minWidth: 180,
                 maxWidth: 240,
                 boxShadow: selected ? `0 0 0 3px ${token.colorPrimaryBg}` : token.boxShadowTertiary,
-                opacity: isEnabled ? 1 : 0.5,
+                opacity: isEnabled ? (diffStatus === 'unchanged' ? 0.5 : 1) : 0.5,
+
                 transition: 'all 0.2s ease',
+
                 cursor: 'pointer',
             }}
         >
@@ -116,8 +126,16 @@ export const WorkflowNodeComponent = memo(({ data, selected }: NodeProps) => {
                         {nodeTypeConfig?.label ?? nodeType}
                     </Text>
                 </div>
+                {diffStatus && diffStatus !== 'unchanged' && (
+                    <Badge
+                        count={diffStatus === 'added' ? '新增' : diffStatus === 'removed' ? '删除' : '变更'}
+                        color={color}
+                        style={{ fontSize: 10 }}
+                    />
+                )}
                 {!isEnabled && (
                     <Badge
+
                         count="禁用"
                         style={{ fontSize: 10, backgroundColor: token.colorTextQuaternary }}
                     />

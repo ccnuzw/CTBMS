@@ -56,9 +56,24 @@ interface RuleFormValues {
     isActive?: boolean;
 }
 
+const templateSourceLabelMap: Record<WorkflowTemplateSource, string> = {
+    PUBLIC: '公共',
+    PRIVATE: '私有',
+    COPIED: '复制',
+};
+
+const getTemplateSourceLabel = (value?: WorkflowTemplateSource | null): string => {
+    if (!value) {
+        return '-';
+    }
+    return templateSourceLabelMap[value] ?? value;
+};
+
+const getActiveStatusLabel = (value?: boolean): string => (value ? '启用' : '停用');
+
 const templateSourceOptions: { label: string; value: WorkflowTemplateSource }[] = [
-    { label: '私有 (PRIVATE)', value: 'PRIVATE' },
-    { label: '公共 (PUBLIC)', value: 'PUBLIC' },
+    { label: getTemplateSourceLabel('PRIVATE'), value: 'PRIVATE' },
+    { label: getTemplateSourceLabel('PUBLIC'), value: 'PUBLIC' },
 ];
 
 const operatorOptions: { label: string; value: DecisionRuleOperator }[] = [
@@ -271,7 +286,9 @@ export const DecisionRulePackPage: React.FC = () => {
                 dataIndex: 'templateSource',
                 width: 110,
                 render: (value: WorkflowTemplateSource) => (
-                    <Tag color={value === 'PUBLIC' ? 'blue' : 'default'}>{value}</Tag>
+                    <Tag color={value === 'PUBLIC' ? 'blue' : 'default'}>
+                        {getTemplateSourceLabel(value)}
+                    </Tag>
                 ),
             },
             {
@@ -279,7 +296,7 @@ export const DecisionRulePackPage: React.FC = () => {
                 dataIndex: 'isActive',
                 width: 100,
                 render: (value: boolean) => (
-                    <Tag color={value ? 'green' : 'red'}>{value ? 'ACTIVE' : 'INACTIVE'}</Tag>
+                    <Tag color={value ? 'green' : 'red'}>{getActiveStatusLabel(value)}</Tag>
                 ),
             },
             {
@@ -380,7 +397,7 @@ export const DecisionRulePackPage: React.FC = () => {
                 dataIndex: 'isActive',
                 width: 100,
                 render: (value: boolean) => (
-                    <Tag color={value ? 'green' : 'red'}>{value ? 'ACTIVE' : 'INACTIVE'}</Tag>
+                    <Tag color={value ? 'green' : 'red'}>{getActiveStatusLabel(value)}</Tag>
                 ),
             },
             {
@@ -592,8 +609,8 @@ export const DecisionRulePackPage: React.FC = () => {
                         placeholder="按状态筛选"
                         value={isActiveFilter}
                         options={[
-                            { label: 'ACTIVE', value: true },
-                            { label: 'INACTIVE', value: false },
+                            { label: getActiveStatusLabel(true), value: true },
+                            { label: getActiveStatusLabel(false), value: false },
                         ]}
                         onChange={(value) => {
                             setIsActiveFilter(value);
@@ -729,7 +746,7 @@ export const DecisionRulePackPage: React.FC = () => {
                     <Form form={updatePackForm} layout="vertical">
                         <Space style={{ marginBottom: 8 }} wrap>
                             <Tag color={selectedPack?.isActive ? 'green' : 'red'}>
-                                {selectedPack?.isActive ? 'ACTIVE' : 'INACTIVE'}
+                                {getActiveStatusLabel(selectedPack?.isActive)}
                             </Tag>
                             <Tag color={isPublished(selectedPack?.version) ? 'green' : 'orange'}>
                                 {isPublished(selectedPack?.version) ? '已发布' : '未发布'}

@@ -12,6 +12,8 @@ import {
   Tag,
   Typography,
   theme,
+  Tabs,
+  Spin,
 } from 'antd';
 import {
   DiffOutlined,
@@ -19,9 +21,13 @@ import {
   MinusCircleOutlined,
   EditOutlined,
   SwapOutlined,
+  AppstoreOutlined,
+  BarsOutlined,
 } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
 import type { WorkflowVersionDto, WorkflowDsl, WorkflowNode, WorkflowEdge } from '@packages/types';
+import { WorkflowCanvas } from '../canvas/WorkflowCanvas';
+import { computeWorkflowDiff } from '../canvas/workflowDiff';
 
 const { Text, Title } = Typography;
 
@@ -194,6 +200,7 @@ export const VersionDiffViewer: React.FC<VersionDiffViewerProps> = ({ versions }
     versions.length >= 1 ? versions[0].id : undefined,
   );
   const [showUnchanged, setShowUnchanged] = useState(false);
+  const [viewMode, setViewMode] = useState<'visual' | 'list'>('visual');
 
   const leftVersion = versions.find((v) => v.id === leftVersionId);
   const rightVersion = versions.find((v) => v.id === rightVersionId);
@@ -232,6 +239,14 @@ export const VersionDiffViewer: React.FC<VersionDiffViewerProps> = ({ versions }
     };
     return { nodeStats, edgeStats };
   }, [nodeDiffs, edgeDiffs]);
+
+  // Visual Diff Data
+  const { mergedDsl, stats: visualStats } = useMemo(() => {
+    if (!leftDsl || !rightDsl) {
+      return { mergedDsl: undefined, stats: undefined };
+    }
+    return computeWorkflowDiff(leftDsl, rightDsl);
+  }, [leftDsl, rightDsl]);
 
   const versionOptions = versions.map((v) => ({
     label: `${v.versionCode} (${v.status})`,
@@ -334,11 +349,93 @@ export const VersionDiffViewer: React.FC<VersionDiffViewerProps> = ({ versions }
 
   if (versions.length < 2) {
     return (
-      <Card>
-        <Empty description="至少需要两个版本才能进行对比" />
-      </Card>
+      <Empty description="至少需要两个版本才能进行对比" />
     );
   }
+
+  if (!leftDsl || !rightDsl) {
+    return <Empty description="无法加载版本DSL" />;
+  }
+
+  const renderVisualDiff = () => {
+    if (!mergedDsl) return <Spin />;
+    return (
+      <div style={{ height: 600, border: `1px solid ${token.colorBorderSecondary}`, borderRadius: token.borderRadiusLG }}>
+        <WorkflowCanvas
+          initialDsl={mergedDsl}
+          isReadOnly={true}
+        />
+      </div>
+    );
+  };
+
+  const renderListDiff = () => {
+    return (
+      <>
+        {/* ── Config Diff ── */}
+        {configDiffs.length > 0 && (
+          <Card title="顶层配置变更" size="small" style={{ marginBottom: 16 }}>
+            <Table<ConfigDiffItem>
+              rowKey="field"
+              dataSource={configDiffs}
+              columns={configColumns}
+              pagination={false}
+              size="small"
+              scroll={{ x: 800 }}
+            />
+          </Card>
+        )}
+
+        {/* ── Node Diff ── */}
+        <Card title={`节点差异 (${nodeDiffs.length})`} size="small" style={{ marginBottom: 16 }}>
+          <Table<NodeDiffItem>
+            rowKey="nodeId"
+            dataSource={nodeDiffs}
+            columns={nodeColumns}
+            pagination={false}
+            size="small"
+            scroll={{ x: 900 }}
+            expandable={{
+              expandedRowRender: (record) => {
+                if (!record.leftConfig && !record.rightConfig) return null;
+                return (
+                  <Row gutter={16}>
+                    <Col span={12}>
+                      <Card title="旧版本配置" size="small">
+                        <pre style={{ fontSize: 11, margin: 0, whiteSpace: 'pre-wrap', maxHeight: 200, overflow: 'auto' }}>
+                          {record.leftConfig ? JSON.stringify(record.leftConfig, null, 2) : '(无)'}
+                        </pre>
+                      </Card>
+                    </Col>
+                    <Col span={12}>
+                      <Card title="新版本配置" size="small">
+                        <pre style={{ fontSize: 11, margin: 0, whiteSpace: 'pre-wrap', maxHeight: 200, overflow: 'auto' }}>
+                          {record.rightConfig ? JSON.stringify(record.rightConfig, null, 2) : '(无)'}
+                        </pre>
+                      </Card>
+                    </Col>
+                  </Row>
+                );
+              },
+              rowExpandable: (record) => record.status !== 'unchanged',
+            }}
+          />
+        </Card>
+
+        {/* ── Edge Diff ── */}
+        <Card title={`连线差异 (${edgeDiffs.length})`} size="small">
+          <Table<EdgeDiffItem>
+            rowKey="edgeId"
+            dataSource={edgeDiffs}
+            columns={edgeColumns}
+            pagination={false}
+            size="small"
+            scroll={{ x: 800 }}
+          />
+        </Card>
+      </>
+    );
+  };
 
   return (
     <Card>
@@ -378,95 +475,52 @@ export const VersionDiffViewer: React.FC<VersionDiffViewerProps> = ({ versions }
           </Space>
         </Flex>
 
-        {leftDsl && rightDsl ? (
-          <>
-            {/* ── Stats ── */}
-            <Row gutter={[16, 16]}>
-              <Col xs={24} sm={12}>
-                <Card size="small" title="节点变更">
-                  <Space size={16}>
-                    <Tag color="green">新增 {stats.nodeStats.added}</Tag>
-                    <Tag color="red">删除 {stats.nodeStats.removed}</Tag>
-                    <Tag color="orange">修改 {stats.nodeStats.modified}</Tag>
-                  </Space>
-                </Card>
-              </Col>
-              <Col xs={24} sm={12}>
-                <Card size="small" title="连线变更">
-                  <Space size={16}>
-                    <Tag color="green">新增 {stats.edgeStats.added}</Tag>
-                    <Tag color="red">删除 {stats.edgeStats.removed}</Tag>
-                    <Tag color="orange">修改 {stats.edgeStats.modified}</Tag>
-                  </Space>
-                </Card>
-              </Col>
-            </Row>
-
-            {/* ── Config Diff ── */}
-            {configDiffs.length > 0 && (
-              <Card title="顶层配置变更" size="small">
-                <Table<ConfigDiffItem>
-                  rowKey="field"
-                  dataSource={configDiffs}
-                  columns={configColumns}
-                  pagination={false}
-                  size="small"
-                  scroll={{ x: 800 }}
-                />
-              </Card>
-            )}
-
-            {/* ── Node Diff ── */}
-            <Card title={`节点差异 (${nodeDiffs.length})`} size="small">
-              <Table<NodeDiffItem>
-                rowKey="nodeId"
-                dataSource={nodeDiffs}
-                columns={nodeColumns}
-                pagination={false}
-                size="small"
-                scroll={{ x: 900 }}
-                expandable={{
-                  expandedRowRender: (record) => {
-                    if (!record.leftConfig && !record.rightConfig) return null;
-                    return (
-                      <Row gutter={16}>
-                        <Col span={12}>
-                          <Card title="旧版本配置" size="small">
-                            <pre style={{ fontSize: 11, margin: 0, whiteSpace: 'pre-wrap', maxHeight: 200, overflow: 'auto' }}>
-                              {record.leftConfig ? JSON.stringify(record.leftConfig, null, 2) : '(无)'}
-                            </pre>
-                          </Card>
-                        </Col>
-                        <Col span={12}>
-                          <Card title="新版本配置" size="small">
-                            <pre style={{ fontSize: 11, margin: 0, whiteSpace: 'pre-wrap', maxHeight: 200, overflow: 'auto' }}>
-                              {record.rightConfig ? JSON.stringify(record.rightConfig, null, 2) : '(无)'}
-                            </pre>
-                          </Card>
-                        </Col>
-                      </Row>
-                    );
-                  },
-                  rowExpandable: (record) => record.status !== 'unchanged',
-                }}
-              />
+        {/* Stats Row */}
+        <Row gutter={[16, 16]}>
+          <Col xs={24} sm={12}>
+            <Card size="small" title="节点变更">
+              <Space size={16}>
+                <Tag color="green">新增 {stats.nodeStats.added}</Tag>
+                <Tag color="red">删除 {stats.nodeStats.removed}</Tag>
+                <Tag color="orange">修改 {stats.nodeStats.modified}</Tag>
+              </Space>
             </Card>
-
-            {/* ── Edge Diff ── */}
-            <Card title={`连线差异 (${edgeDiffs.length})`} size="small">
-              <Table<EdgeDiffItem>
-                rowKey="edgeId"
-                dataSource={edgeDiffs}
-                columns={edgeColumns}
-                pagination={false}
-                size="small"
-                scroll={{ x: 800 }}
-              />
+          </Col>
+          <Col xs={24} sm={12}>
+            <Card size="small" title="连线变更">
+              <Space size={16}>
+                <Tag color="green">新增 {stats.edgeStats.added}</Tag>
+                <Tag color="red">删除 {stats.edgeStats.removed}</Tag>
+                <Tag color="orange">修改 {stats.edgeStats.modified}</Tag>
+              </Space>
             </Card>
-          </>
-        ) : (
-          <Empty description="请选择两个版本进行对比" />
-        )}
+          </Col>
+        </Row>
+
+        <Tabs
+          items={[
+            {
+              key: 'visual',
+              label: (
+                <span>
+                  <AppstoreOutlined />
+                  可视化对比
+                </span>
+              ),
+              children: renderVisualDiff(),
+            },
+            {
+              key: 'list',
+              label: (
+                <span>
+                  <BarsOutlined />
+                  列表明细
+                </span>
+              ),
+              children: renderListDiff(),
+            },
+          ]}
+        />
       </Space>
     </Card>
   );
