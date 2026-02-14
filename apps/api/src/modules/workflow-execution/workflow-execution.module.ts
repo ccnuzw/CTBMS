@@ -27,9 +27,10 @@ import { ApprovalNodeExecutor } from './engine/node-executors/approval.executor'
 import { DebateTraceModule } from '../debate-trace/debate-trace.module';
 import { WorkflowExperimentModule } from '../workflow-experiment/workflow-experiment.module';
 import { AIProviderFactory } from '../ai/providers/provider.factory';
+import { AgentProfileModule } from '../agent-profile';
 
 @Module({
-    imports: [DebateTraceModule, WorkflowExperimentModule],
+    imports: [DebateTraceModule, WorkflowExperimentModule, AgentProfileModule],
     controllers: [WorkflowExecutionController],
     providers: [
         WorkflowExecutionService,

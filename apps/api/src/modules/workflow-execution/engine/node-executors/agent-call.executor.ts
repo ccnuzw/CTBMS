@@ -1,8 +1,10 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { WorkflowNode } from '@packages/types';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../../../prisma';
 import { AIProviderFactory } from '../../../ai/providers/provider.factory';
 import { AIRequestOptions } from '../../../ai/providers/base.provider';
+import { OutputSchemaRegistryService } from '../../../agent-profile';
 import {
     NodeExecutionContext,
     NodeExecutionResult,
@@ -27,6 +29,7 @@ export class AgentCallNodeExecutor implements WorkflowNodeExecutor {
     constructor(
         private readonly prisma: PrismaService,
         private readonly aiProviderFactory: AIProviderFactory,
+        private readonly outputSchemaRegistryService: OutputSchemaRegistryService,
     ) { }
 
     supports(node: WorkflowNode): boolean {
@@ -53,7 +56,11 @@ export class AgentCallNodeExecutor implements WorkflowNodeExecutor {
 
         // 1. 获取 AgentProfile
         const profile = await this.prisma.agentProfile.findFirst({
-            where: { agentCode, isActive: true },
+            where: {
+                agentCode,
+                isActive: true,
+                OR: [{ ownerUserId: context.triggerUserId }, { templateSource: 'PUBLIC' }],
+            },
         });
         if (!profile) {
             return {
@@ -63,9 +70,21 @@ export class AgentCallNodeExecutor implements WorkflowNodeExecutor {
             };
         }
 
+        const promptAccessConditions: Prisma.AgentPromptTemplateWhereInput[] = [
+            { ownerUserId: context.triggerUserId },
+            { templateSource: 'PUBLIC' },
+        ];
+        if (profile.ownerUserId) {
+            promptAccessConditions.push({ ownerUserId: profile.ownerUserId });
+        }
+
         // 2. 获取 AgentPromptTemplate
         const promptTemplate = await this.prisma.agentPromptTemplate.findFirst({
-            where: { promptCode: profile.agentPromptCode, isActive: true },
+            where: {
+                promptCode: profile.agentPromptCode,
+                isActive: true,
+                OR: promptAccessConditions,
+            },
         });
         if (!promptTemplate) {
             return {
@@ -169,9 +188,19 @@ export class AgentCallNodeExecutor implements WorkflowNodeExecutor {
         // 9. 应用 Guardrails（输出校验）
         const guardrails = profile.guardrails as Record<string, unknown> | null;
         const guardrailResult = this.applyGuardrails(parsedOutput, guardrails);
+        const baseFieldResult = this.validateBaseOutputFields(parsedOutput, promptTemplate.outputFormat);
+        const schemaResult = this.validateOutputSchema(
+            parsedOutput,
+            String(profile.outputSchemaCode ?? ''),
+            promptTemplate.outputFormat,
+        );
+        const passed = guardrailResult.passed && baseFieldResult.passed && schemaResult.passed;
+        const failedReason = [guardrailResult.message, baseFieldResult.message, schemaResult.message]
+            .filter(Boolean)
+            .join('; ');
 
         return {
-            status: guardrailResult.passed ? 'SUCCESS' : 'FAILED',
+            status: passed ? 'SUCCESS' : 'FAILED',
             output: {
                 agentCode,
                 roleType: profile.roleType,
@@ -185,10 +214,14 @@ export class AgentCallNodeExecutor implements WorkflowNodeExecutor {
                 parsed: parsedOutput,
                 guardrailsPassed: guardrailResult.passed,
                 guardrailsMessage: guardrailResult.message,
+                baseFieldsPassed: baseFieldResult.passed,
+                baseFieldsMessage: baseFieldResult.message,
+                schemaValidationPassed: schemaResult.passed,
+                schemaValidationMessage: schemaResult.message,
             },
-            message: guardrailResult.passed
+            message: passed
                 ? `Agent[${agentCode}] 执行成功 (${durationMs}ms)`
-                : `Agent[${agentCode}] 输出未通过 Guardrails: ${guardrailResult.message}`,
+                : `Agent[${agentCode}] 输出校验失败: ${failedReason}`,
         };
     }
 
@@ -393,6 +426,46 @@ export class AgentCallNodeExecutor implements WorkflowNodeExecutor {
             }
         }
 
+        return { passed: true };
+    }
+
+    private validateBaseOutputFields(
+        output: Record<string, unknown>,
+        outputFormat: string,
+    ): { passed: boolean; message?: string } {
+        if (outputFormat !== 'json') {
+            return { passed: false, message: 'Agent 输出必须为 JSON 结构化格式' };
+        }
+        const thesis = output.thesis;
+        const confidence = output.confidence;
+        const evidence = output.evidence;
+        if (typeof thesis !== 'string' || !thesis.trim()) {
+            return { passed: false, message: '缺少基础字段 thesis' };
+        }
+        if (typeof confidence !== 'number' || !Number.isFinite(confidence)) {
+            return { passed: false, message: '缺少基础字段 confidence 或类型错误' };
+        }
+        if (!Array.isArray(evidence)) {
+            return { passed: false, message: '缺少基础字段 evidence[] 或类型错误' };
+        }
+        return { passed: true };
+    }
+
+    private validateOutputSchema(
+        output: Record<string, unknown>,
+        outputSchemaCode: string,
+        outputFormat: string,
+    ): { passed: boolean; message?: string } {
+        if (outputFormat !== 'json') {
+            return { passed: false, message: 'outputFormat 非 json，不符合结构化输出约束' };
+        }
+        if (!outputSchemaCode.trim()) {
+            return { passed: false, message: '未配置 outputSchemaCode' };
+        }
+        const result = this.outputSchemaRegistryService.validateByCode(outputSchemaCode, output);
+        if (!result.valid) {
+            return { passed: false, message: result.errors.join(' | ') };
+        }
         return { passed: true };
     }
 

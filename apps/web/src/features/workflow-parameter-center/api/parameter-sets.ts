@@ -3,6 +3,7 @@ import {
   CreateParameterItemDto,
   CreateParameterSetDto,
   PublishParameterSetDto,
+  UpdateParameterItemDto,
   ParameterSetDetailDto,
   ParameterSetDto,
   ParameterSetPageDto,
@@ -10,6 +11,7 @@ import {
   ParameterChangeLogPageDto,
   ParameterOverrideDiffDto,
   BatchResetParameterItemsDto,
+  ParameterImpactPreviewDto,
 } from '@packages/types';
 import { apiClient } from '../../../api/client';
 
@@ -75,6 +77,30 @@ export const useCreateParameterItem = () => {
   });
 };
 
+export const useUpdateParameterItem = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({
+      setId,
+      itemId,
+      payload,
+    }: {
+      setId: string;
+      itemId: string;
+      payload: UpdateParameterItemDto;
+    }) => {
+      const res = await apiClient.patch(`${API_BASE}/${setId}/items/${itemId}`, payload);
+      return res.data;
+    },
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: ['parameter-set', variables.setId] });
+      queryClient.invalidateQueries({ queryKey: ['parameter-override-diff', variables.setId] });
+      queryClient.invalidateQueries({ queryKey: ['parameter-change-logs', variables.setId] });
+      queryClient.invalidateQueries({ queryKey: ['parameter-impact-preview', variables.setId] });
+    },
+  });
+};
+
 export const usePublishParameterSet = () => {
   const queryClient = useQueryClient();
   return useMutation({
@@ -120,6 +146,17 @@ export const useParameterOverrideDiff = (setId?: string) => {
       const res = await apiClient.get<ParameterOverrideDiffDto>(
         `${API_BASE}/${setId}/override-diff`,
       );
+      return res.data;
+    },
+    enabled: Boolean(setId),
+  });
+};
+
+export const useParameterImpactPreview = (setId?: string) => {
+  return useQuery<ParameterImpactPreviewDto>({
+    queryKey: ['parameter-impact-preview', setId],
+    queryFn: async () => {
+      const res = await apiClient.get<ParameterImpactPreviewDto>(`${API_BASE}/${setId}/impact-preview`);
       return res.data;
     },
     enabled: Boolean(setId),

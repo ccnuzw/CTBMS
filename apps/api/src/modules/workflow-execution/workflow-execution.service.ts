@@ -15,6 +15,7 @@ import {
   WorkflowExecutionQueryDto,
   WorkflowFailureCategory,
   WorkflowRuntimeEventQueryDto,
+  type ParameterScopeLevel,
 } from '@packages/types';
 import { PrismaService } from '../../prisma';
 import { NodeExecutorRegistry } from './engine/node-executor.registry';
@@ -60,6 +61,16 @@ type ExperimentRoutingContext = {
 } | null;
 
 const MAX_SUBFLOW_DEPTH = 4;
+const WORKFLOW_PARAM_SCOPE_PRIORITY: ParameterScopeLevel[] = [
+  'PUBLIC_TEMPLATE',
+  'USER_TEMPLATE',
+  'GLOBAL',
+  'COMMODITY',
+  'REGION',
+  'ROUTE',
+  'STRATEGY',
+  'SESSION',
+];
 
 @Injectable()
 export class WorkflowExecutionService {
@@ -203,7 +214,7 @@ export class WorkflowExecutionService {
     }
 
     const dsl = canonicalizeWorkflowDsl(parsedDsl.data);
-    const bindingSnapshot = await this.buildBindingSnapshot(ownerUserId, dsl);
+    const bindingSnapshot = await this.buildBindingSnapshot(ownerUserId, dsl, dto.paramSnapshot);
     const mergedParamSnapshot = this.mergeParamSnapshot(dto.paramSnapshot, bindingSnapshot);
 
     let execution: { id: string };
@@ -1740,6 +1751,7 @@ export class WorkflowExecutionService {
   private async buildBindingSnapshot(
     ownerUserId: string,
     dsl: WorkflowDsl,
+    runtimeParamSnapshot?: Record<string, unknown>,
   ): Promise<Record<string, unknown>> {
     const userConfigBindings = await this.prisma.userConfigBinding.findMany({
       where: {
@@ -1804,6 +1816,7 @@ export class WorkflowExecutionService {
               setCode: true,
               version: true,
               templateSource: true,
+              updatedAt: true,
             },
           })
         : Promise.resolve([]),
@@ -1857,6 +1870,32 @@ export class WorkflowExecutionService {
     const resolvedConnectorTargets = new Set(
       connectors.flatMap((item) => [item.id, item.connectorCode].filter(Boolean)),
     );
+    const parameterItems = parameterSets.length > 0
+      ? await this.prisma.parameterItem.findMany({
+          where: {
+            parameterSetId: { in: parameterSets.map((item) => item.id) },
+            isActive: true,
+          },
+          select: {
+            parameterSetId: true,
+            paramCode: true,
+            scopeLevel: true,
+            scopeValue: true,
+            value: true,
+            defaultValue: true,
+            effectiveFrom: true,
+            effectiveTo: true,
+            updatedAt: true,
+          },
+        })
+      : [];
+    const scopeContext = this.extractParameterScopeContext(runtimeParamSnapshot);
+    const resolvedParameters = this.resolveBoundParameterValues(
+      parameterSets,
+      parameterItems,
+      scopeContext,
+      paramSetBindings,
+    );
 
     return {
       workflowBindings: {
@@ -1872,6 +1911,8 @@ export class WorkflowExecutionService {
         rulePacks,
         dataConnectors: connectors,
       },
+      resolvedParameters,
+      parameterResolutionContext: scopeContext,
       unresolvedBindings: {
         agents: agentBindings.filter((item) => !resolvedAgentTargets.has(item)),
         parameterSets: paramSetBindings.filter((item) => !resolvedSetTargets.has(item)),
@@ -1886,6 +1927,20 @@ export class WorkflowExecutionService {
     bindingSnapshot: Record<string, unknown>,
   ): Record<string, unknown> {
     const base = paramSnapshot ? { ...paramSnapshot } : {};
+    const resolvedParameters = this.readObject(bindingSnapshot.resolvedParameters) ?? {};
+    const baseParams = this.readObject(base.params) ?? {};
+    base.params = {
+      ...baseParams,
+      ...resolvedParameters,
+    };
+    base.resolvedParams = {
+      ...resolvedParameters,
+    };
+    for (const [key, value] of Object.entries(resolvedParameters)) {
+      if (!(key in base)) {
+        base[key] = value;
+      }
+    }
     base._workflowBindings = bindingSnapshot;
     return base;
   }
@@ -1957,6 +2012,143 @@ export class WorkflowExecutionService {
       PARAMETER_SET: this.uniqueStringList(grouped.PARAMETER_SET),
       DECISION_RULE_PACK: this.uniqueStringList(grouped.DECISION_RULE_PACK),
     };
+  }
+
+  private extractParameterScopeContext(
+    runtimeParamSnapshot?: Record<string, unknown>,
+  ): {
+    commodity?: string;
+    region?: string;
+    route?: string;
+    strategy?: string;
+    sessionOverrides: Record<string, unknown>;
+  } {
+    const snapshot = runtimeParamSnapshot ?? {};
+    const context = this.readObject(snapshot.context) ?? {};
+    const sessionOverrides = this.readObject(snapshot.sessionOverrides) ?? {};
+    return {
+      commodity: this.readString(snapshot.commodity) ?? this.readString(context.commodity) ?? undefined,
+      region: this.readString(snapshot.region) ?? this.readString(context.region) ?? undefined,
+      route: this.readString(snapshot.route) ?? this.readString(context.route) ?? undefined,
+      strategy: this.readString(snapshot.strategy) ?? this.readString(context.strategy) ?? undefined,
+      sessionOverrides,
+    };
+  }
+
+  private resolveBoundParameterValues(
+    parameterSets: Array<{
+      id: string;
+      setCode: string;
+      version: number;
+      templateSource: string;
+      updatedAt: Date;
+    }>,
+    parameterItems: Array<{
+      parameterSetId: string;
+      paramCode: string;
+      scopeLevel: string;
+      scopeValue: string | null;
+      value: Prisma.JsonValue | null;
+      defaultValue: Prisma.JsonValue | null;
+      effectiveFrom: Date | null;
+      effectiveTo: Date | null;
+      updatedAt: Date;
+    }>,
+    scopeContext: {
+      commodity?: string;
+      region?: string;
+      route?: string;
+      strategy?: string;
+      sessionOverrides: Record<string, unknown>;
+    },
+    setBindingOrder: string[],
+  ): Record<string, unknown> {
+    const bindingIndex = new Map<string, number>();
+    setBindingOrder.forEach((codeOrId, index) => {
+      if (!bindingIndex.has(codeOrId)) {
+        bindingIndex.set(codeOrId, index);
+      }
+    });
+    const orderedSets = [...parameterSets].sort((left, right) => {
+      const leftIndex =
+        bindingIndex.get(left.setCode) ?? bindingIndex.get(left.id) ?? Number.MAX_SAFE_INTEGER;
+      const rightIndex =
+        bindingIndex.get(right.setCode) ?? bindingIndex.get(right.id) ?? Number.MAX_SAFE_INTEGER;
+      if (leftIndex !== rightIndex) {
+        return leftIndex - rightIndex;
+      }
+      return left.updatedAt.getTime() - right.updatedAt.getTime();
+    });
+    const setOrderIndex = new Map<string, number>(orderedSets.map((item, index) => [item.id, index]));
+    const now = new Date();
+    const matchedItems = parameterItems.filter((item) => {
+      if (!this.matchParameterScope(item.scopeLevel, item.scopeValue, scopeContext)) {
+        return false;
+      }
+      if (item.effectiveFrom && item.effectiveFrom.getTime() > now.getTime()) {
+        return false;
+      }
+      if (item.effectiveTo && item.effectiveTo.getTime() < now.getTime()) {
+        return false;
+      }
+      return true;
+    });
+    matchedItems.sort((left, right) => {
+      const leftSetOrder = setOrderIndex.get(left.parameterSetId) ?? Number.MAX_SAFE_INTEGER;
+      const rightSetOrder = setOrderIndex.get(right.parameterSetId) ?? Number.MAX_SAFE_INTEGER;
+      if (leftSetOrder !== rightSetOrder) {
+        return leftSetOrder - rightSetOrder;
+      }
+      const leftScopeOrder = WORKFLOW_PARAM_SCOPE_PRIORITY.indexOf(left.scopeLevel as ParameterScopeLevel);
+      const rightScopeOrder = WORKFLOW_PARAM_SCOPE_PRIORITY.indexOf(
+        right.scopeLevel as ParameterScopeLevel,
+      );
+      if (leftScopeOrder !== rightScopeOrder) {
+        return leftScopeOrder - rightScopeOrder;
+      }
+      return left.updatedAt.getTime() - right.updatedAt.getTime();
+    });
+
+    const resolved = new Map<string, unknown>();
+    for (const item of matchedItems) {
+      const nextValue = item.value ?? item.defaultValue ?? null;
+      resolved.set(item.paramCode, nextValue);
+    }
+    for (const [paramCode, value] of Object.entries(scopeContext.sessionOverrides)) {
+      resolved.set(paramCode, value);
+    }
+    return Object.fromEntries(resolved);
+  }
+
+  private matchParameterScope(
+    scopeLevel: string,
+    scopeValue: string | null,
+    context: {
+      commodity?: string;
+      region?: string;
+      route?: string;
+      strategy?: string;
+      sessionOverrides: Record<string, unknown>;
+    },
+  ): boolean {
+    switch (scopeLevel) {
+      case 'PUBLIC_TEMPLATE':
+      case 'USER_TEMPLATE':
+      case 'GLOBAL':
+        return true;
+      case 'COMMODITY':
+        return Boolean(context.commodity && context.commodity === scopeValue);
+      case 'REGION':
+        return Boolean(context.region && context.region === scopeValue);
+      case 'ROUTE':
+        return Boolean(context.route && context.route === scopeValue);
+      case 'STRATEGY':
+        return Boolean(context.strategy && context.strategy === scopeValue);
+      case 'SESSION':
+        return false;
+      default:
+        return false;
+    }
   }
 
   private toJsonValue(value: unknown): Prisma.InputJsonValue {

@@ -101,7 +101,10 @@ export const AgentPromptTemplateSchema = z.object({
   fewShotExamples: z.array(z.record(z.unknown())).nullable().optional(),
   outputFormat: AgentPromptOutputFormatEnum,
   variables: z.record(z.unknown()).nullable().optional(),
+  guardrails: z.record(z.unknown()).nullable().optional(),
+  outputSchemaCode: z.string().nullable().optional(),
   version: z.number().int(),
+  previousVersionId: z.string().nullable().optional(),
   ownerUserId: z.string().nullable().optional(),
   templateSource: WorkflowTemplateSourceEnum,
   isActive: z.boolean(),
@@ -118,6 +121,8 @@ export const CreateAgentPromptTemplateSchema = z.object({
   fewShotExamples: z.array(z.record(z.unknown())).max(20).optional(),
   outputFormat: AgentPromptOutputFormatEnum.default('json'),
   variables: z.record(z.unknown()).optional(),
+  guardrails: z.record(z.unknown()).optional(),
+  outputSchemaCode: z.string().max(120).optional(),
   templateSource: WorkflowTemplateSourceEnum.default('PRIVATE'),
 });
 
@@ -129,6 +134,8 @@ export const UpdateAgentPromptTemplateSchema = z.object({
   fewShotExamples: z.array(z.record(z.unknown())).max(20).optional(),
   outputFormat: AgentPromptOutputFormatEnum.optional(),
   variables: z.record(z.unknown()).optional(),
+  guardrails: z.record(z.unknown()).optional(),
+  outputSchemaCode: z.string().max(120).optional(),
   isActive: z.boolean().optional(),
 });
 

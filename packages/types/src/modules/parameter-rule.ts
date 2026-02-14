@@ -9,6 +9,7 @@ export const ParameterTypeEnum = z.enum([
   'json',
   'expression',
 ]);
+export const ParameterOwnerTypeEnum = z.enum(['SYSTEM', 'ADMIN', 'USER']);
 export const ParameterScopeLevelEnum = z.enum([
   'PUBLIC_TEMPLATE',
   'USER_TEMPLATE',
@@ -46,8 +47,13 @@ export const ParameterItemSchema = z.object({
   maxValue: z.unknown().nullable().optional(),
   scopeLevel: ParameterScopeLevelEnum,
   scopeValue: z.string().nullable().optional(),
+  inheritedFrom: z.string().nullable().optional(),
   source: z.string().nullable().optional(),
   changeReason: z.string().nullable().optional(),
+  ownerType: ParameterOwnerTypeEnum.default('USER'),
+  ownerUserId: z.string().nullable().optional(),
+  itemSource: WorkflowTemplateSourceEnum,
+  version: z.number().int(),
   effectiveFrom: z.date().nullable().optional(),
   effectiveTo: z.date().nullable().optional(),
   isActive: z.boolean(),
@@ -83,8 +89,12 @@ export const CreateParameterItemSchema = z.object({
   maxValue: z.unknown().optional(),
   scopeLevel: ParameterScopeLevelEnum,
   scopeValue: z.string().max(120).optional(),
+  inheritedFrom: z.string().max(120).optional(),
   source: z.string().max(120).optional(),
   changeReason: z.string().max(500).optional(),
+  ownerType: ParameterOwnerTypeEnum.optional(),
+  ownerUserId: z.string().max(120).optional(),
+  itemSource: WorkflowTemplateSourceEnum.optional(),
   effectiveFrom: z.coerce.date().optional(),
   effectiveTo: z.coerce.date().optional(),
 });
@@ -293,8 +303,44 @@ export const ParameterOverrideDiffSchema = z.object({
 // ── 批量重置请求 ──
 
 export const BatchResetParameterItemsSchema = z.object({
-  itemIds: z.array(z.string().uuid()).min(1).max(200),
+  itemIds: z.array(z.string().uuid()).min(1).max(200).optional(),
+  scopeLevel: ParameterScopeLevelEnum.optional(),
+  scopeValue: z.string().max(120).optional(),
   reason: z.string().max(500).optional(),
+}).superRefine((value, ctx) => {
+  const hasItemIds = Boolean(value.itemIds && value.itemIds.length > 0);
+  const hasScope = Boolean(value.scopeLevel);
+  if (!hasItemIds && !hasScope) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'itemIds 与 scopeLevel 至少提供一个',
+      path: ['itemIds'],
+    });
+  }
+});
+
+export const ParameterImpactWorkflowSchema = z.object({
+  workflowDefinitionId: z.string().uuid(),
+  workflowCode: z.string(),
+  workflowName: z.string(),
+  workflowVersionId: z.string().uuid(),
+  versionCode: z.string(),
+});
+
+export const ParameterImpactAgentSchema = z.object({
+  id: z.string().uuid(),
+  agentCode: z.string(),
+  agentName: z.string(),
+  roleType: z.string(),
+});
+
+export const ParameterImpactPreviewSchema = z.object({
+  parameterSetId: z.string().uuid(),
+  setCode: z.string(),
+  workflowCount: z.number().int(),
+  agentCount: z.number().int(),
+  workflows: z.array(ParameterImpactWorkflowSchema),
+  agents: z.array(ParameterImpactAgentSchema),
 });
 
 export type ParameterChangeOperation = z.infer<typeof ParameterChangeOperationEnum>;
@@ -304,8 +350,12 @@ export type ParameterChangeLogPageDto = z.infer<typeof ParameterChangeLogPageSch
 export type ParameterOverrideDiffItemDto = z.infer<typeof ParameterOverrideDiffItemSchema>;
 export type ParameterOverrideDiffDto = z.infer<typeof ParameterOverrideDiffSchema>;
 export type BatchResetParameterItemsDto = z.infer<typeof BatchResetParameterItemsSchema>;
+export type ParameterImpactWorkflowDto = z.infer<typeof ParameterImpactWorkflowSchema>;
+export type ParameterImpactAgentDto = z.infer<typeof ParameterImpactAgentSchema>;
+export type ParameterImpactPreviewDto = z.infer<typeof ParameterImpactPreviewSchema>;
 
 export type ParameterType = z.infer<typeof ParameterTypeEnum>;
+export type ParameterOwnerType = z.infer<typeof ParameterOwnerTypeEnum>;
 export type ParameterScopeLevel = z.infer<typeof ParameterScopeLevelEnum>;
 export type ParameterSetDto = z.infer<typeof ParameterSetSchema>;
 export type ParameterItemDto = z.infer<typeof ParameterItemSchema>;

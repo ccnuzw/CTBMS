@@ -6,10 +6,14 @@ import {
     UpdateAgentPromptTemplateDto,
 } from '@packages/types';
 import { PrismaService } from '../../prisma';
+import { OutputSchemaRegistryService } from '../agent-profile';
 
 @Injectable()
 export class AgentPromptTemplateService {
-    constructor(private readonly prisma: PrismaService) { }
+    constructor(
+        private readonly prisma: PrismaService,
+        private readonly outputSchemaRegistryService: OutputSchemaRegistryService,
+    ) { }
 
     async create(ownerUserId: string, dto: CreateAgentPromptTemplateDto) {
         const existing = await this.prisma.agentPromptTemplate.findUnique({
@@ -19,7 +23,10 @@ export class AgentPromptTemplateService {
             throw new BadRequestException(`promptCode 已存在: ${dto.promptCode}`);
         }
 
-        return this.prisma.agentPromptTemplate.create({
+        if (dto.outputSchemaCode) {
+            this.ensureOutputSchemaKnown(dto.outputSchemaCode);
+        }
+        const template = await this.prisma.agentPromptTemplate.create({
             data: {
                 promptCode: dto.promptCode,
                 name: dto.name,
@@ -29,10 +36,17 @@ export class AgentPromptTemplateService {
                 fewShotExamples: this.toNullableJsonValue(dto.fewShotExamples),
                 outputFormat: dto.outputFormat,
                 variables: this.toNullableJsonValue(dto.variables),
+                guardrails: this.toNullableJsonValue(dto.guardrails),
+                outputSchemaCode: dto.outputSchemaCode,
+                previousVersionId: null,
                 ownerUserId,
                 templateSource: dto.templateSource,
+                version: 1,
             },
         });
+
+        await this.createSnapshot(template);
+        return template;
     }
 
     async findAll(ownerUserId: string, query: AgentPromptTemplateQueryDto) {
@@ -89,7 +103,15 @@ export class AgentPromptTemplateService {
     }
 
     async update(ownerUserId: string, id: string, dto: UpdateAgentPromptTemplateDto) {
-        await this.ensureEditableTemplate(ownerUserId, id);
+        const current = await this.ensureEditableTemplate(ownerUserId, id);
+        if (dto.outputSchemaCode) {
+            this.ensureOutputSchemaKnown(dto.outputSchemaCode);
+        }
+        const previousSnapshot = await this.prisma.agentPromptTemplateSnapshot.findFirst({
+            where: { templateId: id, version: current.version },
+            orderBy: { createdAt: 'desc' },
+            select: { id: true },
+        });
 
         const data: Prisma.AgentPromptTemplateUpdateInput = {
             name: dto.name,
@@ -98,6 +120,8 @@ export class AgentPromptTemplateService {
             userPromptTemplate: dto.userPromptTemplate,
             outputFormat: dto.outputFormat,
             isActive: dto.isActive,
+            version: { increment: 1 },
+            previousVersionId: previousSnapshot?.id ?? current.previousVersionId ?? null,
         };
 
         if (Object.prototype.hasOwnProperty.call(dto, 'fewShotExamples')) {
@@ -106,11 +130,20 @@ export class AgentPromptTemplateService {
         if (Object.prototype.hasOwnProperty.call(dto, 'variables')) {
             data.variables = this.toNullableJsonValue(dto.variables);
         }
+        if (Object.prototype.hasOwnProperty.call(dto, 'guardrails')) {
+            data.guardrails = this.toNullableJsonValue(dto.guardrails);
+        }
+        if (Object.prototype.hasOwnProperty.call(dto, 'outputSchemaCode')) {
+            data.outputSchemaCode = dto.outputSchemaCode;
+        }
 
-        return this.prisma.agentPromptTemplate.update({
+        const updated = await this.prisma.agentPromptTemplate.update({
             where: { id },
             data,
         });
+
+        await this.createSnapshot(updated);
+        return updated;
     }
 
     async remove(ownerUserId: string, id: string) {
@@ -119,6 +152,79 @@ export class AgentPromptTemplateService {
             where: { id },
             data: { isActive: false },
         });
+    }
+
+    async getHistory(ownerUserId: string, id: string) {
+        await this.findOne(ownerUserId, id); // Ensure access
+        return this.prisma.agentPromptTemplateSnapshot.findMany({
+            where: { templateId: id },
+            orderBy: { version: 'desc' },
+        });
+    }
+
+    async rollback(ownerUserId: string, id: string, targetVersion: number) {
+        const current = await this.ensureEditableTemplate(ownerUserId, id);
+        const snapshot = await this.prisma.agentPromptTemplateSnapshot.findFirst({
+            where: { templateId: id, version: targetVersion },
+        });
+
+        if (!snapshot) {
+            throw new NotFoundException(`Snapshot for version ${targetVersion} not found`);
+        }
+
+        const snapshotData = snapshot.data as any;
+        if (snapshotData.outputSchemaCode) {
+            this.ensureOutputSchemaKnown(String(snapshotData.outputSchemaCode));
+        }
+        const previousSnapshot = await this.prisma.agentPromptTemplateSnapshot.findFirst({
+            where: { templateId: id, version: current.version },
+            orderBy: { createdAt: 'desc' },
+            select: { id: true },
+        });
+
+        // Create new version with reverted data
+        const updated = await this.prisma.agentPromptTemplate.update({
+            where: { id },
+            data: {
+                name: snapshotData.name,
+                roleType: snapshotData.roleType,
+                systemPrompt: snapshotData.systemPrompt,
+                userPromptTemplate: snapshotData.userPromptTemplate,
+                fewShotExamples: snapshotData.fewShotExamples,
+                outputFormat: snapshotData.outputFormat,
+                variables: snapshotData.variables,
+                guardrails: snapshotData.guardrails,
+                outputSchemaCode: snapshotData.outputSchemaCode,
+                version: { increment: 1 },
+                previousVersionId: previousSnapshot?.id ?? current.previousVersionId ?? null,
+            },
+        });
+
+        await this.createSnapshot(updated);
+        return updated;
+    }
+
+    private async createSnapshot(
+        template: Prisma.AgentPromptTemplateGetPayload<object>,
+        userId?: string,
+    ) {
+        const data = JSON.parse(JSON.stringify(template)) as Prisma.InputJsonValue;
+        await this.prisma.agentPromptTemplateSnapshot.create({
+            data: {
+                templateId: template.id,
+                promptCode: template.promptCode,
+                version: template.version,
+                data,
+                createdByUserId: userId || template.ownerUserId,
+            },
+        });
+    }
+
+    private ensureOutputSchemaKnown(outputSchemaCode: string) {
+        if (this.outputSchemaRegistryService.getSchema(outputSchemaCode)) {
+            return;
+        }
+        throw new BadRequestException(`outputSchemaCode 不存在: ${outputSchemaCode}`);
     }
 
     private buildAccessibleWhere(

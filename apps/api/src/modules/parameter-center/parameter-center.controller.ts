@@ -171,6 +171,18 @@ export class ParameterCenterController {
     return this.parameterCenterService.getOverrideDiff(userId, id);
   }
 
+  @Get(':id/impact-preview')
+  getImpactPreview(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Request() req: AuthRequest,
+  ) {
+    const userId = req.user?.id;
+    if (!userId) {
+      throw new UnauthorizedException('User not authenticated');
+    }
+    return this.parameterCenterService.getImpactPreview(userId, id);
+  }
+
   @Post(':id/items/:itemId/reset')
   resetItemToDefault(
     @Param('id', ParseUUIDPipe) id: string,

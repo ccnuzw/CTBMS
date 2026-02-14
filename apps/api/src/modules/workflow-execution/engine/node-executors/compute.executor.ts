@@ -64,7 +64,7 @@ export class ComputeNodeExecutor implements WorkflowNodeExecutor {
             const inputVars = this.resolveInputVars(config, context);
 
             // 2. 解析参数引用
-            const paramValues = await this.resolveParameterRefs(config);
+            const paramValues = await this.resolveParameterRefs(config, context);
 
             // 3. 合并所有变量
             const allVars = { ...inputVars, ...paramValues };
@@ -287,22 +287,128 @@ export class ComputeNodeExecutor implements WorkflowNodeExecutor {
      */
     private async resolveParameterRefs(
         config: Record<string, unknown>,
+        context: NodeExecutionContext,
     ): Promise<Record<string, number>> {
         const paramRefs = config.parameterRefs as string[] | undefined;
         if (!paramRefs || paramRefs.length === 0) return {};
 
+        const result: Record<string, number> = {};
+        const missingRefs = new Set<string>();
+        for (const ref of paramRefs) {
+            const snapshotValue = this.readParamFromSnapshot(context.paramSnapshot, ref);
+            if (snapshotValue !== null) {
+                result[ref] = snapshotValue;
+                continue;
+            }
+            missingRefs.add(ref);
+        }
+        if (missingRefs.size === 0) {
+            return result;
+        }
+
+        const boundSetIds = this.extractBoundParameterSetIds(context.paramSnapshot);
+        if (boundSetIds.length === 0) {
+            return result;
+        }
+
         const params = await this.prisma.parameterItem.findMany({
-            where: { paramCode: { in: paramRefs }, isActive: true },
+            where: {
+                parameterSetId: { in: boundSetIds },
+                paramCode: { in: [...missingRefs] },
+                isActive: true,
+                parameterSet: {
+                    OR: [
+                        { ownerUserId: context.triggerUserId },
+                        { templateSource: 'PUBLIC' },
+                    ],
+                },
+            },
+            orderBy: [{ updatedAt: 'desc' }],
         });
 
-        const result: Record<string, number> = {};
         for (const param of params) {
+            if (result[param.paramCode] !== undefined) {
+                continue;
+            }
             const num = Number(param.value);
             if (Number.isFinite(num)) {
                 result[param.paramCode] = num;
             }
         }
         return result;
+    }
+
+    private readParamFromSnapshot(
+        snapshot: Record<string, unknown> | undefined,
+        paramCode: string,
+    ): number | null {
+        if (!snapshot) {
+            return null;
+        }
+        const containers: Array<Record<string, unknown> | null> = [
+            this.readObject(snapshot.resolvedParams),
+            this.readObject(snapshot.params),
+            this.readObject(snapshot.parameters),
+            this.readObject(snapshot.values),
+            snapshot,
+        ];
+
+        for (const container of containers) {
+            if (!container) {
+                continue;
+            }
+            const value = paramCode.includes('.')
+                ? this.resolveDeepValue(container, paramCode)
+                : container[paramCode];
+            const unwrapped = this.unwrapParamValue(value);
+            const numeric = Number(unwrapped);
+            if (Number.isFinite(numeric)) {
+                return numeric;
+            }
+        }
+
+        return null;
+    }
+
+    private extractBoundParameterSetIds(snapshot: Record<string, unknown> | undefined): string[] {
+        const workflowBindings = this.readObject(snapshot?._workflowBindings);
+        const resolvedBindings = this.readObject(workflowBindings?.resolvedBindings);
+        const parameterSets = resolvedBindings?.parameterSets;
+        if (!Array.isArray(parameterSets)) {
+            return [];
+        }
+        const ids = new Set<string>();
+        for (const item of parameterSets) {
+            if (!item || typeof item !== 'object' || Array.isArray(item)) {
+                continue;
+            }
+            const id = (item as Record<string, unknown>).id;
+            if (typeof id === 'string' && id.trim()) {
+                ids.add(id.trim());
+            }
+        }
+        return [...ids];
+    }
+
+    private unwrapParamValue(value: unknown): unknown {
+        if (!value || typeof value !== 'object' || Array.isArray(value)) {
+            return value;
+        }
+        const record = value as Record<string, unknown>;
+        if (record.value !== undefined) {
+            return record.value;
+        }
+        if (record.currentValue !== undefined) {
+            return record.currentValue;
+        }
+        return value;
+    }
+
+    private readObject(value: unknown): Record<string, unknown> | null {
+        if (!value || typeof value !== 'object' || Array.isArray(value)) {
+            return null;
+        }
+        return value as Record<string, unknown>;
     }
 
     /**

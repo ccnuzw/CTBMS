@@ -34,6 +34,7 @@ import {
   usePublishAgentProfile,
   useUpdateAgentProfile,
 } from '../api';
+import { GuardrailsForm, RetryPolicyForm, ToolPolicyForm } from './index';
 
 const { Title } = Typography;
 
@@ -61,16 +62,25 @@ const parsePositiveInt = (value: string | null, fallback: number): number => {
   return Math.floor(parsed);
 };
 
+type CreateAgentProfileFormValues = Omit<
+  CreateAgentProfileDto,
+  'toolPolicy' | 'guardrails' | 'retryPolicy'
+> & {
+  toolPolicy: Record<string, unknown>;
+  guardrails: Record<string, unknown>;
+  retryPolicy: Record<string, unknown>;
+};
+
 export const AgentProfilePage: React.FC = () => {
   const { message } = App.useApp();
-  const [form] = Form.useForm<CreateAgentProfileDto>();
+  const [form] = Form.useForm<CreateAgentProfileFormValues>();
   const [editForm] = Form.useForm<{
     agentName: string;
     timeoutMs: number;
     isActive: boolean;
-    toolPolicyText?: string;
-    guardrailsText?: string;
-    retryPolicyText?: string;
+    toolPolicy: Record<string, unknown>;
+    guardrails: Record<string, unknown>;
+    retryPolicy: Record<string, unknown>;
   }>();
   const [searchParams, setSearchParams] = useSearchParams();
   const [keywordInput, setKeywordInput] = useState(searchParams.get('keyword')?.trim() || '');
@@ -190,9 +200,9 @@ export const AgentProfilePage: React.FC = () => {
                   agentName: record.agentName,
                   timeoutMs: record.timeoutMs,
                   isActive: record.isActive,
-                  toolPolicyText: JSON.stringify(record.toolPolicy || {}, null, 2),
-                  guardrailsText: JSON.stringify(record.guardrails || {}, null, 2),
-                  retryPolicyText: JSON.stringify(record.retryPolicy || {}, null, 2),
+                  toolPolicy: (record.toolPolicy || {}) as any,
+                  guardrails: (record.guardrails || {}) as any,
+                  retryPolicy: (record.retryPolicy || {}) as any,
                 });
                 setEditVisible(true);
               }}
@@ -241,26 +251,19 @@ export const AgentProfilePage: React.FC = () => {
 
     try {
       const values = await editForm.validateFields();
-      let toolPolicy: Record<string, unknown> | undefined;
-      let guardrails: Record<string, unknown> | undefined;
-      let retryPolicy: Record<string, unknown> | undefined;
-      try {
-        toolPolicy = values.toolPolicyText ? JSON.parse(values.toolPolicyText) : undefined;
-        guardrails = values.guardrailsText ? JSON.parse(values.guardrailsText) : undefined;
-        retryPolicy = values.retryPolicyText ? JSON.parse(values.retryPolicyText) : undefined;
-      } catch {
-        message.error('JSON 配置格式错误，请检查 toolPolicy/guardrails/retryPolicy');
-        return;
-      }
+
+      // Removed manual JSON parsing logic since forms now return objects
+
+      // Removed manual JSON parsing logic since forms now return objects
       await updateMutation.mutateAsync({
         id: editingAgent.id,
         payload: {
           agentName: values.agentName,
           timeoutMs: values.timeoutMs,
           isActive: values.isActive,
-          toolPolicy,
-          guardrails,
-          retryPolicy,
+          toolPolicy: values.toolPolicy,
+          guardrails: values.guardrails,
+          retryPolicy: values.retryPolicy,
         },
       });
       message.success('更新成功');
@@ -274,7 +277,27 @@ export const AgentProfilePage: React.FC = () => {
   const handleCreate = async () => {
     try {
       const values = await form.validateFields();
-      await createMutation.mutateAsync(values);
+
+      // Removed manual JSON parsing logic since forms now return objects
+
+      // Removed manual JSON parsing logic since forms now return objects
+
+      const payload: CreateAgentProfileDto = {
+        agentCode: values.agentCode,
+        agentName: values.agentName,
+        roleType: values.roleType,
+        objective: values.objective,
+        modelConfigKey: values.modelConfigKey,
+        agentPromptCode: values.agentPromptCode,
+        memoryPolicy: values.memoryPolicy,
+        outputSchemaCode: values.outputSchemaCode,
+        timeoutMs: values.timeoutMs,
+        templateSource: values.templateSource,
+        toolPolicy: values.toolPolicy,
+        guardrails: values.guardrails,
+        retryPolicy: values.retryPolicy,
+      };
+      await createMutation.mutateAsync(payload);
       message.success('创建成功');
       setVisible(false);
       form.resetFields();
@@ -340,10 +363,10 @@ export const AgentProfilePage: React.FC = () => {
             onRow={(record) =>
               record.id === highlightedAgentId
                 ? {
-                    style: {
-                      backgroundColor: '#fffbe6',
-                    },
-                  }
+                  style: {
+                    backgroundColor: '#fffbe6',
+                  },
+                }
                 : {}
             }
             scroll={{ x: 1300 }}
@@ -369,7 +392,7 @@ export const AgentProfilePage: React.FC = () => {
         confirmLoading={createMutation.isPending}
         width={760}
       >
-        <Form<CreateAgentProfileDto>
+        <Form<CreateAgentProfileFormValues>
           layout="vertical"
           form={form}
           initialValues={{
@@ -378,7 +401,7 @@ export const AgentProfilePage: React.FC = () => {
             timeoutMs: 30000,
             templateSource: 'PRIVATE',
             toolPolicy: {},
-            guardrails: {},
+            guardrails: { requireEvidence: true, noHallucination: true },
             retryPolicy: { retryCount: 1, retryBackoffMs: 2000 },
           }}
         >
@@ -409,6 +432,9 @@ export const AgentProfilePage: React.FC = () => {
           <Form.Item name="timeoutMs" label="超时(ms)" rules={[{ required: true }]}>
             <InputNumber min={1000} max={120000} style={{ width: '100%' }} />
           </Form.Item>
+          <ToolPolicyForm name="toolPolicy" />
+          <GuardrailsForm name="guardrails" />
+          <RetryPolicyForm name="retryPolicy" />
           <Form.Item name="templateSource" label="模板来源" rules={[{ required: true }]}>
             <Select
               options={[
@@ -440,15 +466,9 @@ export const AgentProfilePage: React.FC = () => {
           <Form.Item name="isActive" label="是否启用" valuePropName="checked">
             <Switch checkedChildren="ACTIVE" unCheckedChildren="INACTIVE" />
           </Form.Item>
-          <Form.Item name="toolPolicyText" label="toolPolicy(JSON)">
-            <Input.TextArea rows={3} />
-          </Form.Item>
-          <Form.Item name="guardrailsText" label="guardrails(JSON)">
-            <Input.TextArea rows={3} />
-          </Form.Item>
-          <Form.Item name="retryPolicyText" label="retryPolicy(JSON)">
-            <Input.TextArea rows={3} />
-          </Form.Item>
+          <ToolPolicyForm name="toolPolicy" />
+          <GuardrailsForm name="guardrails" />
+          <RetryPolicyForm name="retryPolicy" />
         </Form>
       </Modal>
 

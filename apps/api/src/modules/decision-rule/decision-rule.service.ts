@@ -27,6 +27,9 @@ export class DecisionRuleService {
         rulePackCode: dto.rulePackCode,
         name: dto.name,
         description: dto.description ?? null,
+        applicableScopes: this.normalizeApplicableScopes(dto.applicableScopes),
+        ruleLayer: this.normalizeRuleLayer(dto.ruleLayer),
+        ownerType: this.inferPackOwnerType(dto.templateSource, dto.ownerType),
         ownerUserId,
         templateSource: dto.templateSource,
         priority: dto.priority,
@@ -105,6 +108,11 @@ export class DecisionRuleService {
       data: {
         name: dto.name,
         description: dto.description,
+        applicableScopes: dto.applicableScopes
+          ? this.normalizeApplicableScopes(dto.applicableScopes)
+          : undefined,
+        ruleLayer: dto.ruleLayer ? this.normalizeRuleLayer(dto.ruleLayer) : undefined,
+        ownerType: dto.ownerType,
         isActive: dto.isActive,
         priority: dto.priority,
       },
@@ -120,12 +128,16 @@ export class DecisionRuleService {
   }
 
   async publishPack(ownerUserId: string, id: string, _dto: PublishDecisionRulePackDto) {
+    const dto = _dto;
     await this.ensureEditablePack(ownerUserId, id);
     return this.prisma.decisionRulePack.update({
       where: { id },
       data: {
         version: { increment: 1 },
         isActive: true,
+        publishedByUserId: ownerUserId,
+        publishedAt: new Date(),
+        lastPublishComment: dto.comment?.trim() || null,
       },
     });
   }
@@ -218,6 +230,9 @@ export class DecisionRuleService {
     if (query.isActive !== undefined) {
       where.isActive = query.isActive;
     }
+    if (query.ruleLayer) {
+      where.ruleLayer = query.ruleLayer;
+    }
 
     const keyword = query.keyword?.trim();
     if (keyword) {
@@ -245,6 +260,52 @@ export class DecisionRuleService {
       throw new NotFoundException('规则包不存在或无权限编辑');
     }
     return pack;
+  }
+
+  private normalizeApplicableScopes(scopes?: string[] | null): string[] {
+    if (!scopes || scopes.length === 0) {
+      return [];
+    }
+    const deduped = new Set<string>();
+    for (const scope of scopes) {
+      if (typeof scope !== 'string') {
+        continue;
+      }
+      const normalized = scope.trim();
+      if (!normalized) {
+        continue;
+      }
+      deduped.add(normalized);
+    }
+    return [...deduped];
+  }
+
+  private normalizeRuleLayer(layer?: string | null): string {
+    const normalized = (layer || '').trim().toUpperCase();
+    if (
+      normalized === 'DEFAULT' ||
+      normalized === 'INDUSTRY' ||
+      normalized === 'EXPERIENCE' ||
+      normalized === 'RUNTIME_OVERRIDE'
+    ) {
+      return normalized;
+    }
+    return 'DEFAULT';
+  }
+
+  private inferPackOwnerType(
+    templateSource: string,
+    requested?: string,
+  ): 'SYSTEM' | 'ADMIN' | 'USER' {
+    const normalizedRequested = (requested || '').trim().toUpperCase();
+    if (
+      normalizedRequested === 'SYSTEM' ||
+      normalizedRequested === 'ADMIN' ||
+      normalizedRequested === 'USER'
+    ) {
+      return normalizedRequested;
+    }
+    return templateSource === 'PUBLIC' ? 'ADMIN' : 'USER';
   }
 
   private toNullableJsonValue(

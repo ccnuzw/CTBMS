@@ -17,6 +17,14 @@ export const DecisionRuleOperatorEnum = z.enum([
   'BETWEEN',
 ]);
 
+export const DecisionRulePackOwnerTypeEnum = z.enum(['SYSTEM', 'ADMIN', 'USER']);
+export const DecisionRuleLayerEnum = z.enum([
+  'DEFAULT',
+  'INDUSTRY',
+  'EXPERIENCE',
+  'RUNTIME_OVERRIDE',
+]);
+
 export const DecisionRuleSchema = z.object({
   id: z.string().uuid(),
   rulePackId: z.string().uuid(),
@@ -38,11 +46,17 @@ export const DecisionRulePackSchema = z.object({
   rulePackCode: z.string(),
   name: z.string(),
   description: z.string().nullable().optional(),
+  applicableScopes: z.array(z.string()).default([]),
+  ruleLayer: DecisionRuleLayerEnum.default('DEFAULT'),
+  ownerType: DecisionRulePackOwnerTypeEnum.default('USER'),
   ownerUserId: z.string().nullable().optional(),
   templateSource: WorkflowTemplateSourceEnum,
   isActive: z.boolean(),
   version: z.number().int(),
   priority: z.number().int(),
+  publishedByUserId: z.string().nullable().optional(),
+  publishedAt: z.date().nullable().optional(),
+  lastPublishComment: z.string().nullable().optional(),
   createdAt: z.date().optional(),
   updatedAt: z.date().optional(),
 });
@@ -77,6 +91,9 @@ export const CreateDecisionRulePackSchema = z.object({
   rulePackCode: z.string().regex(/^[a-zA-Z0-9_-]{3,100}$/, 'rulePackCode 格式不正确'),
   name: z.string().min(1).max(120),
   description: z.string().max(1000).optional(),
+  applicableScopes: z.array(z.string().max(120)).max(64).default([]),
+  ruleLayer: DecisionRuleLayerEnum.default('DEFAULT'),
+  ownerType: DecisionRulePackOwnerTypeEnum.optional(),
   templateSource: WorkflowTemplateSourceEnum.default('PRIVATE'),
   priority: z.coerce.number().int().min(0).max(1000).default(0),
   rules: z.array(CreateDecisionRuleSchema).max(200).optional(),
@@ -85,12 +102,16 @@ export const CreateDecisionRulePackSchema = z.object({
 export const UpdateDecisionRulePackSchema = z.object({
   name: z.string().min(1).max(120).optional(),
   description: z.string().max(1000).optional(),
+  applicableScopes: z.array(z.string().max(120)).max(64).optional(),
+  ruleLayer: DecisionRuleLayerEnum.optional(),
+  ownerType: DecisionRulePackOwnerTypeEnum.optional(),
   isActive: z.boolean().optional(),
   priority: z.coerce.number().int().min(0).max(1000).optional(),
 });
 
 export const DecisionRulePackQuerySchema = z.object({
   keyword: z.string().max(120).optional(),
+  ruleLayer: DecisionRuleLayerEnum.optional(),
   includePublic: z.coerce.boolean().default(true),
   isActive: z.coerce.boolean().optional(),
   page: z.coerce.number().int().min(1).default(1),
@@ -110,6 +131,8 @@ export const DecisionRulePackPageSchema = z.object({
 });
 
 export type DecisionRuleOperator = z.infer<typeof DecisionRuleOperatorEnum>;
+export type DecisionRulePackOwnerType = z.infer<typeof DecisionRulePackOwnerTypeEnum>;
+export type DecisionRuleLayer = z.infer<typeof DecisionRuleLayerEnum>;
 export type DecisionRuleDto = z.infer<typeof DecisionRuleSchema>;
 export type DecisionRulePackDto = z.infer<typeof DecisionRulePackSchema>;
 export type DecisionRulePackDetailDto = z.infer<typeof DecisionRulePackDetailSchema>;

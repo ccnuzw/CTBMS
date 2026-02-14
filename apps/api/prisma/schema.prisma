@@ -2114,11 +2114,17 @@ model DecisionRulePack {
   rulePackCode   String                 @unique
   name           String
   description    String?
+  applicableScopes String[]             @default([])
+  ruleLayer      String                 @default("DEFAULT")
+  ownerType      String                 @default("USER")
   ownerUserId    String?
   templateSource WorkflowTemplateSource @default(PRIVATE)
   isActive       Boolean                @default(true)
   version        Int                    @default(1)
   priority       Int                    @default(0)
+  publishedByUserId String?
+  publishedAt    DateTime?
+  lastPublishComment String?
 
   rules DecisionRule[]
 
@@ -2127,6 +2133,8 @@ model DecisionRulePack {
 
   @@index([isActive, priority])
   @@index([ownerUserId, isActive])
+  @@index([ruleLayer, isActive, priority])
+  @@index([publishedAt])
 }
 
 model DecisionRule {
@@ -2163,8 +2171,12 @@ model AgentPromptTemplate {
   fewShotExamples    Json?
   outputFormat       String @default("json")
   variables          Json?
+  guardrails         Json?
+  outputSchemaCode   String? // Optional initially as we migrate or create new ones
 
-  version        Int                    @default(1)
+  version           Int                    @default(1)
+  previousVersionId String?
+
   ownerUserId    String?
   templateSource WorkflowTemplateSource @default(PRIVATE)
   isActive       Boolean                @default(true)
@@ -2241,10 +2253,16 @@ model ParameterItem {
   minValue     Json?
   maxValue     Json?
 
-  scopeLevel   String
-  scopeValue   String?
-  source       String?
-  changeReason String?
+  scopeLevel    String
+  scopeValue    String?
+  inheritedFrom String? // Tracks inheritance source (e.g. "TEMPLATE:BASELINE_SET")
+  source        String?
+  changeReason  String?
+
+  ownerType    String                 @default("USER")
+  ownerUserId  String?
+  itemSource   WorkflowTemplateSource @default(PRIVATE)
+  version      Int                    @default(1)
 
   effectiveFrom DateTime?
   effectiveTo   DateTime?
@@ -2253,9 +2271,34 @@ model ParameterItem {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@unique([parameterSetId, paramCode])
+  @@unique([parameterSetId, paramCode, scopeLevel, scopeValue])
   @@index([parameterSetId, scopeLevel, isActive])
   @@index([paramCode, scopeLevel, scopeValue])
+  @@index([ownerUserId, isActive])
+}
+
+model AgentPromptTemplateSnapshot {
+  id String @id @default(uuid())
+  templateId String
+  promptCode String
+  version Int
+  data Json // Full snapshot of the template
+  createdAt DateTime @default(now())
+  createdByUserId String?
+
+  @@index([templateId, version])
+}
+
+model AgentProfileSnapshot {
+  id String @id @default(uuid())
+  profileId String
+  agentCode String
+  version Int
+  data Json // Full snapshot
+  createdAt DateTime @default(now())
+  createdByUserId String?
+
+  @@index([profileId, version])
 }
 
 model DataConnector {

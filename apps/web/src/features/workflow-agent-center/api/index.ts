@@ -1,2 +1,2 @@
 export * from './agent-profiles';
-export * from './agent-prompt-templates';
+export * from './agent-prompt-template';

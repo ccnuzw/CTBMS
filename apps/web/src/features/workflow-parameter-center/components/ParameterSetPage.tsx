@@ -37,10 +37,12 @@ import type {
   CreateParameterItemDto,
   CreateParameterSetDto,
   ParameterChangeLogDto,
+  ParameterImpactPreviewDto,
   ParameterItemDto,
   ParameterOverrideDiffItemDto,
   ParameterScopeLevel,
   ParameterSetDto,
+  UpdateParameterItemDto,
 } from '@packages/types';
 import { useSearchParams } from 'react-router-dom';
 import { getErrorMessage } from '../../../api/client';
@@ -50,12 +52,15 @@ import {
   useCreateParameterSet,
   useDeleteParameterSet,
   useParameterChangeLogs,
+  useParameterImpactPreview,
   useParameterOverrideDiff,
   useParameterSetDetail,
   useParameterSets,
   usePublishParameterSet,
   useResetParameterItemToDefault,
+  useUpdateParameterItem,
 } from '../api';
+import { ParameterDiffView, ParameterInheritanceStatus } from './index';
 
 const { Title } = Typography;
 
@@ -108,6 +113,16 @@ const formatValue = (value: unknown): string => {
   return JSON.stringify(value);
 };
 
+const parseMaybeJsonText = (value?: string): unknown => {
+  const raw = value?.trim();
+  if (!raw) return undefined;
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return raw;
+  }
+};
+
 export const ParameterSetPage: React.FC = () => {
   const { message } = App.useApp();
   const [setForm] = Form.useForm<CreateParameterSetDto>();
@@ -125,14 +140,33 @@ export const ParameterSetPage: React.FC = () => {
         : undefined,
   );
   const [createVisible, setCreateVisible] = useState(false);
+  const [compareVisible, setCompareVisible] = useState(false);
   const [selectedSetId, setSelectedSetId] = useState<string | null>(null);
   const [publishingSetId, setPublishingSetId] = useState<string | null>(null);
   const [itemVisible, setItemVisible] = useState(false);
+  const [editItemVisible, setEditItemVisible] = useState(false);
+  const [editingItem, setEditingItem] = useState<ParameterItemDto | null>(null);
   const [detailTab, setDetailTab] = useState('items');
   const [selectedItemIds, setSelectedItemIds] = useState<string[]>([]);
+  const [scopeResetLevel, setScopeResetLevel] = useState<ParameterScopeLevel | undefined>(undefined);
+  const [scopeResetValue, setScopeResetValue] = useState('');
   const [page, setPage] = useState(parsePositiveInt(searchParams.get('page'), 1));
   const [pageSize, setPageSize] = useState(parsePositiveInt(searchParams.get('pageSize'), 20));
   const [logPage, setLogPage] = useState(1);
+  const [editItemForm] = Form.useForm<{
+    paramName?: string;
+    paramType?: string;
+    scopeLevel?: ParameterScopeLevel;
+    scopeValue?: string;
+    valueText?: string;
+    defaultValueText?: string;
+    minValueText?: string;
+    maxValueText?: string;
+    unit?: string;
+    source?: string;
+    changeReason?: string;
+    isActive?: boolean;
+  }>();
   const setTableContainerRef = React.useRef<HTMLDivElement | null>(null);
 
   React.useEffect(() => {
@@ -160,6 +194,9 @@ export const ParameterSetPage: React.FC = () => {
   const { data: changeLogs, isLoading: isLogsLoading } = useParameterChangeLogs(
     detailTab === 'audit' ? selectedSetId || undefined : undefined,
     { page: logPage, pageSize: 20 },
+  );
+  const { data: impactPreview, isLoading: isImpactLoading } = useParameterImpactPreview(
+    detailTab === 'impact' ? selectedSetId || undefined : undefined,
   );
 
   const normalizedKeyword = keyword?.trim().toLowerCase() || '';
@@ -193,6 +230,7 @@ export const ParameterSetPage: React.FC = () => {
   const publishSetMutation = usePublishParameterSet();
   const resetItemMutation = useResetParameterItemToDefault();
   const batchResetMutation = useBatchResetParameterItems();
+  const updateItemMutation = useUpdateParameterItem();
 
   const handlePublishSet = async (record: ParameterSetDto) => {
     if (!record.isActive) {
@@ -235,6 +273,29 @@ export const ParameterSetPage: React.FC = () => {
       setSelectedItemIds([]);
     } catch (error) {
       message.error(getErrorMessage(error) || '批量重置失败');
+    }
+  };
+
+  const handleScopeBatchReset = async () => {
+    if (!selectedSetId || !scopeResetLevel) {
+      message.warning('请选择作用域后再执行批量重置');
+      return;
+    }
+    try {
+      const result = await batchResetMutation.mutateAsync({
+        setId: selectedSetId,
+        dto: {
+          scopeLevel: scopeResetLevel,
+          scopeValue: scopeResetValue.trim() || undefined,
+          reason: '按作用域批量重置',
+        },
+      });
+      message.success(`按作用域重置完成，影响 ${result.resetCount} 个参数项`);
+      setScopeResetLevel(undefined);
+      setScopeResetValue('');
+      setSelectedItemIds([]);
+    } catch (error) {
+      message.error(getErrorMessage(error) || '按作用域批量重置失败');
     }
   };
 
@@ -346,15 +407,16 @@ export const ParameterSetPage: React.FC = () => {
       {
         title: '继承状态',
         key: 'inheritStatus',
-        width: 100,
+        width: 120,
         render: (_, record) => {
           const hasDefault = record.defaultValue !== null && record.defaultValue !== undefined;
-          const hasValue = record.value !== null && record.value !== undefined;
-          if (!hasDefault) return <Tag>无模板</Tag>;
-          if (!hasValue || JSON.stringify(record.value) === JSON.stringify(record.defaultValue)) {
-            return <Tag color="green">继承</Tag>;
-          }
-          return <Tag color="orange">已覆盖</Tag>;
+          return (
+            <ParameterInheritanceStatus
+              defaultValue={record.defaultValue}
+              currentValue={record.value}
+              hasDefault={hasDefault}
+            />
+          );
         },
       },
       {
@@ -368,21 +430,26 @@ export const ParameterSetPage: React.FC = () => {
       {
         title: '操作',
         key: 'actions',
-        width: 100,
+        width: 180,
         render: (_, record) => {
           const hasDefault = record.defaultValue !== null && record.defaultValue !== undefined;
           const isOverridden = hasDefault && record.value !== null && record.value !== undefined &&
             JSON.stringify(record.value) !== JSON.stringify(record.defaultValue);
           return (
-            <Popconfirm
-              title="确认重置到默认值?"
-              onConfirm={() => handleResetItem(record.id)}
-              disabled={!isOverridden}
-            >
-              <Button type="link" size="small" disabled={!isOverridden}>
-                重置
+            <Space size={4}>
+              <Button type="link" size="small" onClick={() => openEditItem(record)}>
+                编辑
               </Button>
-            </Popconfirm>
+              <Popconfirm
+                title="确认重置到默认值?"
+                onConfirm={() => handleResetItem(record.id)}
+                disabled={!isOverridden}
+              >
+                <Button type="link" size="small" disabled={!isOverridden}>
+                  重置
+                </Button>
+              </Popconfirm>
+            </Space>
           );
         },
       },
@@ -510,22 +577,76 @@ export const ParameterSetPage: React.FC = () => {
     if (!selectedSetId) return;
     try {
       const values = await itemForm.validateFields();
-      let parsedValue: unknown = undefined;
-      const rawValue = (values.value as unknown as string | undefined)?.trim();
-      if (rawValue) {
-        try {
-          parsedValue = JSON.parse(rawValue);
-        } catch {
-          parsedValue = rawValue;
-        }
-      }
-      const payload: CreateParameterItemDto = { ...values, value: parsedValue };
+      const payload: CreateParameterItemDto = {
+        ...values,
+        value: parseMaybeJsonText(values.value as unknown as string | undefined),
+        defaultValue: parseMaybeJsonText(values.defaultValue as unknown as string | undefined),
+      };
       await createItemMutation.mutateAsync({ setId: selectedSetId, payload });
       message.success('参数项创建成功');
       setItemVisible(false);
       itemForm.resetFields();
     } catch (error) {
       message.error(getErrorMessage(error) || '参数项创建失败');
+    }
+  };
+
+  const openEditItem = (record: ParameterItemDto) => {
+    setEditingItem(record);
+    editItemForm.setFieldsValue({
+      paramName: record.paramName,
+      paramType: record.paramType,
+      scopeLevel: record.scopeLevel,
+      scopeValue: record.scopeValue || undefined,
+      valueText: record.value === null || record.value === undefined ? '' : JSON.stringify(record.value, null, 2),
+      defaultValueText:
+        record.defaultValue === null || record.defaultValue === undefined
+          ? ''
+          : JSON.stringify(record.defaultValue, null, 2),
+      minValueText:
+        record.minValue === null || record.minValue === undefined
+          ? ''
+          : JSON.stringify(record.minValue, null, 2),
+      maxValueText:
+        record.maxValue === null || record.maxValue === undefined
+          ? ''
+          : JSON.stringify(record.maxValue, null, 2),
+      unit: record.unit || undefined,
+      source: record.source || undefined,
+      isActive: record.isActive,
+    });
+    setEditItemVisible(true);
+  };
+
+  const handleUpdateItem = async () => {
+    if (!selectedSetId || !editingItem) return;
+    try {
+      const values = await editItemForm.validateFields();
+      const payload: UpdateParameterItemDto = {
+        paramName: values.paramName,
+        paramType: values.paramType as UpdateParameterItemDto['paramType'],
+        scopeLevel: values.scopeLevel,
+        scopeValue: values.scopeValue,
+        value: parseMaybeJsonText(values.valueText),
+        defaultValue: parseMaybeJsonText(values.defaultValueText),
+        minValue: parseMaybeJsonText(values.minValueText),
+        maxValue: parseMaybeJsonText(values.maxValueText),
+        unit: values.unit,
+        source: values.source,
+        changeReason: values.changeReason || '更新参数项',
+        isActive: values.isActive,
+      };
+      await updateItemMutation.mutateAsync({
+        setId: selectedSetId,
+        itemId: editingItem.id,
+        payload,
+      });
+      message.success('参数项更新成功');
+      setEditItemVisible(false);
+      setEditingItem(null);
+      editItemForm.resetFields();
+    } catch (error) {
+      message.error(getErrorMessage(error) || '参数项更新失败');
     }
   };
 
@@ -565,6 +686,9 @@ export const ParameterSetPage: React.FC = () => {
               value={isActiveFilter}
               onChange={(value) => { setIsActiveFilter(value); setPage(1); }}
             />
+            <Button onClick={() => setCompareVisible(true)}>
+              版本对比
+            </Button>
             <Button type="primary" onClick={() => setCreateVisible(true)}>
               新建参数包
             </Button>
@@ -666,6 +790,32 @@ export const ParameterSetPage: React.FC = () => {
             </Space>
           </Space>
 
+          <Space wrap>
+            <Select<ParameterScopeLevel>
+              allowClear
+              style={{ width: 220 }}
+              placeholder="按作用域批量重置"
+              value={scopeResetLevel}
+              options={scopeOptions.map((item) => ({ label: item, value: item }))}
+              onChange={(value) => setScopeResetLevel(value)}
+            />
+            <Input
+              style={{ width: 220 }}
+              placeholder="作用域值(可选)"
+              value={scopeResetValue}
+              onChange={(event) => setScopeResetValue(event.target.value)}
+            />
+            <Popconfirm
+              title="确认按当前作用域批量重置到默认值?"
+              onConfirm={handleScopeBatchReset}
+              disabled={!scopeResetLevel}
+            >
+              <Button disabled={!scopeResetLevel} loading={batchResetMutation.isPending}>
+                按作用域批量重置
+              </Button>
+            </Popconfirm>
+          </Space>
+
           {/* Override Impact Summary */}
           {setDetail && (
             <Row gutter={[16, 16]}>
@@ -752,6 +902,62 @@ export const ParameterSetPage: React.FC = () => {
                     pagination={false}
                     scroll={{ x: 1100 }}
                   />
+                ),
+              },
+              {
+                key: 'impact',
+                label: '影响预览',
+                children: (
+                  <Space direction="vertical" style={{ width: '100%' }} size={16}>
+                    <Row gutter={[16, 16]}>
+                      <Col xs={12} sm={6}>
+                        <Card size="small">
+                          <Statistic
+                            title="受影响流程"
+                            value={impactPreview?.workflowCount ?? 0}
+                            loading={isImpactLoading}
+                          />
+                        </Card>
+                      </Col>
+                      <Col xs={12} sm={6}>
+                        <Card size="small">
+                          <Statistic
+                            title="受影响 Agent"
+                            value={impactPreview?.agentCount ?? 0}
+                            loading={isImpactLoading}
+                          />
+                        </Card>
+                      </Col>
+                    </Row>
+
+                    <Card size="small" title="流程影响列表">
+                      <Table<ParameterImpactPreviewDto['workflows'][number]>
+                        rowKey="workflowVersionId"
+                        loading={isImpactLoading}
+                        dataSource={impactPreview?.workflows ?? []}
+                        pagination={{ pageSize: 8 }}
+                        columns={[
+                          { title: '流程编码', dataIndex: 'workflowCode', width: 180 },
+                          { title: '流程名称', dataIndex: 'workflowName', width: 220 },
+                          { title: '版本', dataIndex: 'versionCode', width: 120, render: (v) => <Tag>{v}</Tag> },
+                        ]}
+                      />
+                    </Card>
+
+                    <Card size="small" title="Agent 影响列表">
+                      <Table<ParameterImpactPreviewDto['agents'][number]>
+                        rowKey="id"
+                        loading={isImpactLoading}
+                        dataSource={impactPreview?.agents ?? []}
+                        pagination={{ pageSize: 8 }}
+                        columns={[
+                          { title: 'Agent 编码', dataIndex: 'agentCode', width: 200 },
+                          { title: '名称', dataIndex: 'agentName', width: 180 },
+                          { title: '角色', dataIndex: 'roleType', width: 160, render: (v) => <Tag>{v}</Tag> },
+                        ]}
+                      />
+                    </Card>
+                  </Space>
                 ),
               },
               {
@@ -870,6 +1076,94 @@ export const ParameterSetPage: React.FC = () => {
           />
         </Space>
       </Drawer>
+
+      <Modal
+        title="参数版本/集合对比"
+        open={compareVisible}
+        onCancel={() => setCompareVisible(false)}
+        width={1100}
+        footer={null}
+        destroyOnClose
+      >
+        <ParameterDiffView
+          initialLeftId={selectedSetId || undefined}
+          parameterSets={data?.data || []}
+        />
+      </Modal>
+
+      <Modal
+        title={`编辑参数项${editingItem ? ` - ${editingItem.paramCode}` : ''}`}
+        open={editItemVisible}
+        onCancel={() => {
+          setEditItemVisible(false);
+          setEditingItem(null);
+        }}
+        onOk={handleUpdateItem}
+        confirmLoading={updateItemMutation.isPending}
+        width={720}
+      >
+        <Form layout="vertical" form={editItemForm}>
+          <Form.Item name="paramName" label="参数名称" rules={[{ required: true }]}>
+            <Input />
+          </Form.Item>
+          <Form.Item name="paramType" label="参数类型" rules={[{ required: true }]}>
+            <Select options={paramTypeOptions.map((item) => ({ label: item, value: item }))} />
+          </Form.Item>
+          <Row gutter={12}>
+            <Col span={12}>
+              <Form.Item name="scopeLevel" label="作用域" rules={[{ required: true }]}>
+                <Select options={scopeOptions.map((item) => ({ label: item, value: item }))} />
+              </Form.Item>
+            </Col>
+            <Col span={12}>
+              <Form.Item name="scopeValue" label="作用域值">
+                <Input />
+              </Form.Item>
+            </Col>
+          </Row>
+          <Form.Item name="valueText" label="当前值(JSON或文本)">
+            <Input.TextArea rows={3} />
+          </Form.Item>
+          <Form.Item name="defaultValueText" label="默认值(JSON或文本)">
+            <Input.TextArea rows={3} />
+          </Form.Item>
+          <Row gutter={12}>
+            <Col span={12}>
+              <Form.Item name="minValueText" label="最小值(JSON或文本)">
+                <Input.TextArea rows={2} />
+              </Form.Item>
+            </Col>
+            <Col span={12}>
+              <Form.Item name="maxValueText" label="最大值(JSON或文本)">
+                <Input.TextArea rows={2} />
+              </Form.Item>
+            </Col>
+          </Row>
+          <Row gutter={12}>
+            <Col span={12}>
+              <Form.Item name="unit" label="单位">
+                <Input />
+              </Form.Item>
+            </Col>
+            <Col span={12}>
+              <Form.Item name="source" label="来源">
+                <Input />
+              </Form.Item>
+            </Col>
+          </Row>
+          <Form.Item name="changeReason" label="变更原因">
+            <Input.TextArea rows={2} />
+          </Form.Item>
+          <Form.Item name="isActive" label="启用状态">
+            <Select
+              options={[
+                { label: 'ACTIVE', value: true },
+                { label: 'INACTIVE', value: false },
+              ]}
+            />
+          </Form.Item>
+        </Form>
+      </Modal>
 
       <Modal
         title="新建参数项"

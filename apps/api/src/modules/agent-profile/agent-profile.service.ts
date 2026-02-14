@@ -7,10 +7,14 @@ import {
   UpdateAgentProfileDto,
 } from '@packages/types';
 import { PrismaService } from '../../prisma';
+import { OutputSchemaRegistryService } from './output-schema-registry.service';
 
 @Injectable()
 export class AgentProfileService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly outputSchemaRegistryService: OutputSchemaRegistryService,
+  ) {}
 
   async create(ownerUserId: string, dto: CreateAgentProfileDto) {
     const existing = await this.prisma.agentProfile.findUnique({
@@ -20,7 +24,8 @@ export class AgentProfileService {
       throw new BadRequestException(`agentCode 已存在: ${dto.agentCode}`);
     }
 
-    return this.prisma.agentProfile.create({
+    this.ensureOutputSchemaKnown(dto.outputSchemaCode);
+    const created = await this.prisma.agentProfile.create({
       data: {
         agentCode: dto.agentCode,
         agentName: dto.agentName,
@@ -38,6 +43,8 @@ export class AgentProfileService {
         templateSource: dto.templateSource,
       },
     });
+    await this.createSnapshot(created, ownerUserId);
+    return created;
   }
 
   async findAll(ownerUserId: string, query: AgentProfileQueryDto) {
@@ -80,6 +87,9 @@ export class AgentProfileService {
 
   async update(ownerUserId: string, id: string, dto: UpdateAgentProfileDto) {
     await this.ensureEditableProfile(ownerUserId, id);
+    if (dto.outputSchemaCode) {
+      this.ensureOutputSchemaKnown(dto.outputSchemaCode);
+    }
 
     const data: Prisma.AgentProfileUpdateInput = {
       agentName: dto.agentName,
@@ -103,21 +113,25 @@ export class AgentProfileService {
       data.retryPolicy = this.toNullableJsonValue(dto.retryPolicy);
     }
 
-    return this.prisma.agentProfile.update({
+    const updated = await this.prisma.agentProfile.update({
       where: { id },
       data,
     });
+    await this.createSnapshot(updated, ownerUserId);
+    return updated;
   }
 
   async publish(ownerUserId: string, id: string, _dto: PublishAgentProfileDto) {
     await this.ensureEditableProfile(ownerUserId, id);
-    return this.prisma.agentProfile.update({
+    const updated = await this.prisma.agentProfile.update({
       where: { id },
       data: {
         version: { increment: 1 },
         isActive: true,
       },
     });
+    await this.createSnapshot(updated, ownerUserId);
+    return updated;
   }
 
   async remove(ownerUserId: string, id: string) {
@@ -126,6 +140,54 @@ export class AgentProfileService {
       where: { id },
       data: { isActive: false },
     });
+  }
+
+  async getHistory(ownerUserId: string, id: string) {
+    await this.findOne(ownerUserId, id);
+    return this.prisma.agentProfileSnapshot.findMany({
+      where: { profileId: id },
+      orderBy: [{ version: 'desc' }, { createdAt: 'desc' }],
+    });
+  }
+
+  async rollback(ownerUserId: string, id: string, targetVersion: number) {
+    if (!Number.isInteger(targetVersion) || targetVersion < 1) {
+      throw new BadRequestException('targetVersion 必须是正整数');
+    }
+    const current = await this.ensureEditableProfile(ownerUserId, id);
+    const snapshot = await this.prisma.agentProfileSnapshot.findFirst({
+      where: { profileId: id, version: targetVersion },
+      orderBy: { createdAt: 'desc' },
+    });
+    if (!snapshot) {
+      throw new NotFoundException(`AgentProfile 版本快照不存在: v${targetVersion}`);
+    }
+    const data = snapshot.data as Record<string, unknown>;
+    const outputSchemaCode = String(data.outputSchemaCode ?? current.outputSchemaCode);
+    this.ensureOutputSchemaKnown(outputSchemaCode);
+
+    const rolledBack = await this.prisma.agentProfile.update({
+      where: { id },
+      data: {
+        agentName: String(data.agentName ?? current.agentName),
+        roleType: String(data.roleType ?? current.roleType),
+        objective: data.objective === null || data.objective === undefined
+          ? null
+          : String(data.objective),
+        modelConfigKey: String(data.modelConfigKey ?? current.modelConfigKey),
+        agentPromptCode: String(data.agentPromptCode ?? current.agentPromptCode),
+        memoryPolicy: String(data.memoryPolicy ?? current.memoryPolicy),
+        toolPolicy: this.toNullableJsonValue(data.toolPolicy),
+        guardrails: this.toNullableJsonValue(data.guardrails),
+        outputSchemaCode,
+        timeoutMs: Number(data.timeoutMs ?? current.timeoutMs),
+        retryPolicy: this.toNullableJsonValue(data.retryPolicy),
+        isActive: Boolean(data.isActive ?? current.isActive),
+        version: { increment: 1 },
+      },
+    });
+    await this.createSnapshot(rolledBack, ownerUserId);
+    return rolledBack;
   }
 
   private buildAccessibleWhere(
@@ -170,6 +232,29 @@ export class AgentProfileService {
       throw new NotFoundException('Agent 配置不存在或无权限编辑');
     }
     return profile;
+  }
+
+  private ensureOutputSchemaKnown(outputSchemaCode: string) {
+    if (this.outputSchemaRegistryService.getSchema(outputSchemaCode)) {
+      return;
+    }
+    throw new BadRequestException(`outputSchemaCode 不存在: ${outputSchemaCode}`);
+  }
+
+  private async createSnapshot(
+    profile: Prisma.AgentProfileGetPayload<object>,
+    userId?: string,
+  ) {
+    const data = JSON.parse(JSON.stringify(profile)) as Prisma.InputJsonValue;
+    await this.prisma.agentProfileSnapshot.create({
+      data: {
+        profileId: profile.id,
+        agentCode: profile.agentCode,
+        version: profile.version,
+        data,
+        createdByUserId: userId || profile.ownerUserId || undefined,
+      },
+    });
   }
 
   private toNullableJsonValue(

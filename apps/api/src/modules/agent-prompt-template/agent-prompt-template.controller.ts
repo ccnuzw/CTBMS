@@ -73,4 +73,26 @@ export class AgentPromptTemplateController {
         }
         return this.agentPromptTemplateService.remove(userId, id);
     }
+
+    @Get(':id/history')
+    getHistory(@Param('id', ParseUUIDPipe) id: string, @Request() req: AuthRequest) {
+        const userId = req.user?.id;
+        if (!userId) {
+            throw new UnauthorizedException('User not authenticated');
+        }
+        return this.agentPromptTemplateService.getHistory(userId, id);
+    }
+
+    @Post(':id/rollback/:version')
+    rollback(
+        @Param('id', ParseUUIDPipe) id: string,
+        @Param('version') version: string,
+        @Request() req: AuthRequest,
+    ) {
+        const userId = req.user?.id;
+        if (!userId) {
+            throw new UnauthorizedException('User not authenticated');
+        }
+        return this.agentPromptTemplateService.rollback(userId, id, parseInt(version, 10));
+    }
 }

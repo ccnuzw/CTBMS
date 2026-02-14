@@ -85,7 +85,14 @@ export class DebateRoundNodeExecutor implements WorkflowNodeExecutor {
         );
 
         // ── 加载 Agent Profiles ──
-        const agentProfiles = await this.loadAgentProfiles(participants);
+        const agentProfiles = await this.loadAgentProfiles(participants, context.triggerUserId);
+        if (agentProfiles.size < 2) {
+            return {
+                status: 'FAILED',
+                output: {},
+                message: '可访问的辩论 Agent 少于 2 个，请检查权限与配置',
+            };
+        }
         const rounds: DebateRoundRecord[] = [];
         let previousArguments: string[] = [];
 
@@ -459,11 +466,16 @@ export class DebateRoundNodeExecutor implements WorkflowNodeExecutor {
 
     private async loadAgentProfiles(
         participants: DebateParticipant[],
+        ownerUserId: string,
     ): Promise<Map<string, Record<string, unknown>>> {
         const profiles = new Map<string, Record<string, unknown>>();
         for (const p of participants) {
             const profile = await this.prisma.agentProfile.findFirst({
-                where: { agentCode: p.agentCode, isActive: true },
+                where: {
+                    agentCode: p.agentCode,
+                    isActive: true,
+                    OR: [{ ownerUserId }, { templateSource: 'PUBLIC' }],
+                },
             });
             if (profile) {
                 profiles.set(p.agentCode, profile as unknown as Record<string, unknown>);

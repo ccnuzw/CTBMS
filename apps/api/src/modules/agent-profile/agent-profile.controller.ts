@@ -13,6 +13,7 @@ import {
 } from '@nestjs/common';
 import { Request as ExpressRequest } from 'express';
 import { AgentProfileService } from './agent-profile.service';
+import { OutputSchemaRegistryService } from './output-schema-registry.service';
 import {
   AgentProfileQueryRequest,
   CreateAgentProfileRequest,
@@ -24,7 +25,10 @@ type AuthRequest = ExpressRequest & { user?: { id?: string } };
 
 @Controller('agent-profiles')
 export class AgentProfileController {
-  constructor(private readonly agentProfileService: AgentProfileService) {}
+  constructor(
+    private readonly agentProfileService: AgentProfileService,
+    private readonly outputSchemaRegistryService: OutputSchemaRegistryService,
+  ) {}
 
   @Post()
   create(@Body() dto: CreateAgentProfileRequest, @Request() req: AuthRequest) {
@@ -42,6 +46,15 @@ export class AgentProfileController {
       throw new UnauthorizedException('User not authenticated');
     }
     return this.agentProfileService.findAll(userId, query);
+  }
+
+  @Get('output-schemas/catalog')
+  listOutputSchemas(@Request() req: AuthRequest) {
+    const userId = req.user?.id;
+    if (!userId) {
+      throw new UnauthorizedException('User not authenticated');
+    }
+    return this.outputSchemaRegistryService.listSchemas();
   }
 
   @Get(':id')
@@ -87,4 +100,27 @@ export class AgentProfileController {
     }
     return this.agentProfileService.remove(userId, id);
   }
+
+  @Get(':id/history')
+  getHistory(@Param('id', ParseUUIDPipe) id: string, @Request() req: AuthRequest) {
+    const userId = req.user?.id;
+    if (!userId) {
+      throw new UnauthorizedException('User not authenticated');
+    }
+    return this.agentProfileService.getHistory(userId, id);
+  }
+
+  @Post(':id/rollback/:version')
+  rollback(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('version') version: string,
+    @Request() req: AuthRequest,
+  ) {
+    const userId = req.user?.id;
+    if (!userId) {
+      throw new UnauthorizedException('User not authenticated');
+    }
+    return this.agentProfileService.rollback(userId, id, Number(version));
+  }
+
 }

@@ -492,24 +492,9 @@ export class WorkflowDefinitionService {
     ownerUserId: string,
     dslSnapshot: WorkflowDsl,
   ): Promise<void> {
-    const ruleNodeTypes = new Set(['rule-pack-eval', 'rule-eval', 'alert-check']);
-    const rulePackCodes = Array.from(
-      new Set(
-        dslSnapshot.nodes
-          .filter((node) => ruleNodeTypes.has(node.type))
-          .map((node) => {
-            const config = node.config as Record<string, unknown>;
-            return typeof config.rulePackCode === 'string' ? config.rulePackCode.trim() : '';
-          }),
-      ),
-    );
+    const rulePackCodes = this.extractRulePackCodesFromDsl(dslSnapshot);
     if (rulePackCodes.length === 0) {
       return;
-    }
-
-    const invalidCodes = rulePackCodes.filter((code) => !code);
-    if (invalidCodes.length > 0) {
-      throw new BadRequestException('规则节点缺少 rulePackCode 配置');
     }
 
     const packs = await this.prisma.decisionRulePack.findMany({
@@ -881,16 +866,66 @@ export class WorkflowDefinitionService {
         continue;
       }
       const config = this.asRecord(node.config);
-      const rulePackCode = config?.rulePackCode;
-      if (typeof rulePackCode !== 'string') {
+      if (!this.shouldUseDecisionRulePack(node.type, config)) {
         continue;
       }
-      const normalized = rulePackCode.trim();
-      if (normalized) {
-        deduped.add(normalized);
+      const codes = this.readRulePackCodes(config);
+      if (codes.length === 0) {
+        throw new BadRequestException(`规则节点 ${node.name} 缺少 rulePackCode 配置`);
+      }
+      for (const code of codes) {
+        if (code) {
+          deduped.add(code);
+        }
       }
     }
     return [...deduped];
+  }
+
+  private shouldUseDecisionRulePack(
+    nodeType: string,
+    config: Record<string, unknown> | null,
+  ): boolean {
+    if (nodeType === 'rule-pack-eval') {
+      return true;
+    }
+    const source = this.resolveRuleSource(nodeType, config);
+    return source === 'DECISION_RULE_PACK';
+  }
+
+  private resolveRuleSource(
+    nodeType: string,
+    config: Record<string, unknown> | null,
+  ): string {
+    const raw = config?.ruleSource;
+    if (typeof raw === 'string' && raw.trim()) {
+      return raw.trim().toUpperCase();
+    }
+    if (nodeType === 'alert-check') {
+      const hasAlertRefs = Boolean(
+        (typeof config?.alertRuleId === 'string' && config.alertRuleId.trim()) ||
+        (typeof config?.alertType === 'string' && config.alertType.trim()),
+      );
+      return hasAlertRefs ? 'MARKET_ALERT_RULE' : 'INLINE';
+    }
+    if (nodeType === 'rule-eval') {
+      return 'INLINE';
+    }
+    return 'DECISION_RULE_PACK';
+  }
+
+  private readRulePackCodes(config: Record<string, unknown> | null): string[] {
+    if (!config) {
+      return [];
+    }
+    const direct = typeof config.rulePackCode === 'string' ? config.rulePackCode.trim() : '';
+    const list = Array.isArray(config.rulePackCodes)
+      ? config.rulePackCodes
+          .filter((value): value is string => typeof value === 'string')
+          .map((value) => value.trim())
+          .filter(Boolean)
+      : [];
+    return [...new Set([direct, ...list].filter(Boolean))];
   }
 
   private extractAgentCodesFromDsl(dslSnapshot: WorkflowDsl): string[] {
