@@ -9,11 +9,16 @@ import {
     type Node,
     useReactFlow,
     SelectionMode,
-    Panel,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import { message, theme, Alert } from 'antd';
-import type { WorkflowDsl } from '@packages/types';
+import {
+    canonicalizeWorkflowDsl,
+    normalizeWorkflowModeValue,
+    toWorkflowModeUi,
+    type WorkflowDsl,
+    type WorkflowValidationResult,
+} from '@packages/types';
 
 import { WorkflowNodeComponent } from './WorkflowNodeComponent';
 import { GroupNode } from './GroupNode';
@@ -26,12 +31,19 @@ import { useDslSync } from './useDslSync';
 import { validateGraph } from './graphValidation';
 import { useUndoRedo } from './useUndoRedo';
 import { useCopyPaste } from './useCopyPaste';
+import { useAutoLayout } from './useAutoLayout';
+import { useCanvasAlignment } from './useCanvasAlignment';
 
 interface WorkflowCanvasProps {
     /** 初始 DSL */
     initialDsl?: WorkflowDsl;
     /** 保存回调 */
-    onSave?: (dsl: { nodes: WorkflowDsl['nodes']; edges: WorkflowDsl['edges'] }) => void | Promise<void>;
+    onSave?: (dsl: WorkflowDsl) => void | Promise<void>;
+    /** 保存前校验回调（优先使用服务端校验） */
+    onValidate?: (
+        dsl: WorkflowDsl,
+        stage?: 'SAVE' | 'PUBLISH',
+    ) => Promise<WorkflowValidationResult | undefined>;
     /** 是否只读 */
     isReadOnly?: boolean;
     /** 触发运行回调 (返回 executionId) */
@@ -44,6 +56,7 @@ interface WorkflowCanvasProps {
 const WorkflowCanvasInner: React.FC<WorkflowCanvasProps> = ({
     initialDsl,
     onSave,
+    onValidate,
     isReadOnly = false,
     onRun,
 }) => {
@@ -59,7 +72,10 @@ const WorkflowCanvasInner: React.FC<WorkflowCanvasProps> = ({
     const [debatePanelHeight, setDebatePanelHeight] = useState(400);
     const [executionId, setExecutionId] = useState<string | undefined>();
     const [selectionMode, setSelectionMode] = useState<'hand' | 'pointer'>('hand');
-    const [workflowMode, setWorkflowMode] = useState<'linear' | 'dag' | 'debate'>('dag');
+    const [snapToGrid, setSnapToGrid] = useState(true);
+    const [workflowMode, setWorkflowMode] = useState<'linear' | 'dag' | 'debate'>(
+        toWorkflowModeUi(initialDsl?.mode ?? 'DAG'),
+    );
     const [validationErrors, setValidationErrors] = useState<string[]>([]);
 
     // Undo/Redo
@@ -79,6 +95,12 @@ const WorkflowCanvasInner: React.FC<WorkflowCanvasProps> = ({
         edges: [],
     }), []);
 
+    React.useEffect(() => {
+        if (initialDsl?.mode) {
+            setWorkflowMode(toWorkflowModeUi(initialDsl.mode));
+        }
+    }, [initialDsl?.mode]);
+
     const {
         nodes,
         edges,
@@ -91,11 +113,14 @@ const WorkflowCanvasInner: React.FC<WorkflowCanvasProps> = ({
         exportDsl,
         setNodes,
         setEdges,
-        onNodesDelete, // Ensure this is exposed from useDslSync if needed, otherwise use default behavior
     } = useDslSync(initialDsl || defaultDsl, undefined, takeSnapshot);
 
     // Copy/Paste
     useCopyPaste(nodes, edges, setNodes, setEdges, () => takeSnapshot(nodes, edges));
+
+    // Auto Layout & Alignment
+    const { onLayout } = useAutoLayout();
+    const { alignNodes } = useCanvasAlignment();
 
     const nodeTypes: NodeTypes = useMemo(
         () => ({
@@ -115,11 +140,68 @@ const WorkflowCanvasInner: React.FC<WorkflowCanvasProps> = ({
         [edges, selectedEdgeId],
     );
 
-    // ── 验证逻辑 ──
+    const buildCurrentDsl = useCallback((): WorkflowDsl => {
+        const dsl = exportDsl();
+        const positionMap = new Map(
+            reactFlow.getNodes().map((node) => [node.id, node.position] as const),
+        );
+
+        return canonicalizeWorkflowDsl({
+            ...dsl,
+            mode: normalizeWorkflowModeValue(workflowMode),
+            nodes: dsl.nodes.map((node) => ({
+                ...node,
+                config: {
+                    ...(node.config ?? {}),
+                    _position: positionMap.get(node.id) ?? (node.config as Record<string, unknown>)?._position,
+                },
+            })),
+        });
+    }, [exportDsl, reactFlow, workflowMode]);
+
+    const runValidation = useCallback(
+        async (dsl: WorkflowDsl): Promise<string[]> => {
+            if (onValidate) {
+                const remoteResult = await onValidate(dsl, 'SAVE');
+                if (remoteResult) {
+                    return remoteResult.issues
+                        .filter((issue) => issue.severity === 'ERROR')
+                        .map((issue) =>
+                            issue.nodeId || issue.edgeId
+                                ? `${issue.code}: ${issue.message} (${issue.nodeId ?? issue.edgeId})`
+                                : `${issue.code}: ${issue.message}`,
+                        );
+                }
+            }
+
+            const fallback = validateGraph(nodes, edges, workflowMode);
+            return fallback.errors;
+        },
+        [onValidate, workflowMode, nodes, edges],
+    );
+
+    // ── 验证逻辑（优先服务端） ──
     React.useEffect(() => {
-        const result = validateGraph(nodes, edges, workflowMode);
-        setValidationErrors(result.errors);
-    }, [nodes, edges, workflowMode]);
+        let active = true;
+        const timer = setTimeout(async () => {
+            try {
+                const dsl = buildCurrentDsl();
+                const errors = await runValidation(dsl);
+                if (active) {
+                    setValidationErrors(errors);
+                }
+            } catch {
+                if (active) {
+                    setValidationErrors(['校验服务异常，请稍后重试']);
+                }
+            }
+        }, 300);
+
+        return () => {
+            active = false;
+            clearTimeout(timer);
+        };
+    }, [nodes, edges, workflowMode, buildCurrentDsl, runValidation]);
 
     // ── 拖拽放置 ──
 
@@ -175,17 +257,13 @@ const WorkflowCanvasInner: React.FC<WorkflowCanvasProps> = ({
         if (!onSave) return;
         setIsSaving(true);
         try {
-            // 保存前将节点位置写入 config._position
-            const currentNodes = reactFlow.getNodes();
-            for (const n of currentNodes) {
-                updateNodeData(n.id, {
-                    config: {
-                        ...((n.data.config as Record<string, unknown>) ?? {}),
-                        _position: { x: n.position.x, y: n.position.y },
-                    },
-                });
+            const dsl = buildCurrentDsl();
+            const errors = await runValidation(dsl);
+            if (errors.length > 0) {
+                setValidationErrors(errors);
+                message.error('保存失败：请先修复校验问题');
+                return;
             }
-            const dsl = exportDsl();
             await onSave(dsl);
             message.success('保存成功');
         } catch {
@@ -193,12 +271,12 @@ const WorkflowCanvasInner: React.FC<WorkflowCanvasProps> = ({
         } finally {
             setIsSaving(false);
         }
-    }, [onSave, exportDsl, reactFlow, updateNodeData]);
+    }, [onSave, buildCurrentDsl, runValidation]);
 
     // ── 导出 DSL ──
 
     const handleExportDsl = useCallback(() => {
-        const dsl = exportDsl();
+        const dsl = buildCurrentDsl();
         const blob = new Blob([JSON.stringify(dsl, null, 2)], { type: 'application/json' });
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
@@ -207,20 +285,7 @@ const WorkflowCanvasInner: React.FC<WorkflowCanvasProps> = ({
         a.click();
         URL.revokeObjectURL(url);
         message.success('DSL 已导出');
-    }, [exportDsl]);
-
-    // ── 自动布局 ──
-
-    const handleAutoLayout = useCallback(() => {
-        setNodes((nds) => {
-            const sorted = [...nds];
-            return sorted.map((node, idx) => ({
-                ...node,
-                position: { x: 300, y: 80 + idx * 130 },
-            }));
-        });
-        setTimeout(() => reactFlow.fitView({ padding: 0.2, duration: 300 }), 50);
-    }, [setNodes, reactFlow]);
+    }, [buildCurrentDsl]);
 
     // ── 清空画布 ──
 
@@ -233,9 +298,13 @@ const WorkflowCanvasInner: React.FC<WorkflowCanvasProps> = ({
     const handleRun = useCallback(async () => {
         if (onRun) {
             try {
-                // Determine current snapshot to run
-                // Note: exportDsl() returns the current state.
-                const dsl = exportDsl();
+                const dsl = buildCurrentDsl();
+                const errors = await runValidation(dsl);
+                if (errors.length > 0) {
+                    setValidationErrors(errors);
+                    message.error('运行失败：请先修复校验问题');
+                    return;
+                }
                 const id = await onRun(dsl);
                 if (id) {
                     setExecutionId(id);
@@ -251,7 +320,7 @@ const WorkflowCanvasInner: React.FC<WorkflowCanvasProps> = ({
             message.info('开始调试运行...');
             setShowLogPanel(true);
         }
-    }, [onRun, exportDsl, workflowMode]);
+    }, [onRun, buildCurrentDsl, workflowMode, runValidation]);
 
     const handleToggleLogs = useCallback(() => {
         setShowLogPanel((v) => !v);
@@ -270,7 +339,7 @@ const WorkflowCanvasInner: React.FC<WorkflowCanvasProps> = ({
                 // Note: reactFlow.getNode(groupNode.id) might be safer to ensure fresh position
                 const parentPos = groupNode.position;
                 // Using pure math for now, implicitly assuming single level nesting or flattened absolute positions?
-                // Actually React Flow nodes have absolute position in 'position' ONLY if no parent. 
+                // Actually React Flow nodes have absolute position in 'position' ONLY if no parent.
                 // If it has parent, it is relative.
                 // We need the *absolute* position of the node and the group to calculate new relative.
                 // node.position is current local position.
@@ -379,7 +448,6 @@ const WorkflowCanvasInner: React.FC<WorkflowCanvasProps> = ({
                     <CanvasToolbar
                         onSave={handleSave}
                         onExportDsl={handleExportDsl}
-                        onAutoLayout={handleAutoLayout}
                         onClearCanvas={handleClearCanvas}
                         isSaving={isSaving}
                         onRun={handleRun}
@@ -395,7 +463,11 @@ const WorkflowCanvasInner: React.FC<WorkflowCanvasProps> = ({
                         onRedo={() => redo(nodes, edges, setNodes, setEdges)}
                         canUndo={canUndo}
                         canRedo={canRedo}
+                        onAutoLayout={() => onLayout('LR')}
                         onToggleDebatePanel={() => setShowDebatePanel((v) => !v)}
+                        snapToGrid={snapToGrid}
+                        onToggleSnapToGrid={() => setSnapToGrid((v) => !v)}
+                        onAlign={alignNodes}
                     />
                 )}
 

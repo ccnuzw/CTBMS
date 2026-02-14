@@ -6,6 +6,64 @@ export const WorkflowDefinitionStatusEnum = z.enum(['DRAFT', 'ACTIVE', 'ARCHIVED
 export const WorkflowVersionStatusEnum = z.enum(['DRAFT', 'PUBLISHED', 'ARCHIVED']);
 export const WorkflowTemplateSourceEnum = z.enum(['PUBLIC', 'PRIVATE', 'COPIED']);
 
+export const WORKFLOW_MODE_UI_ENUM = z.enum(['linear', 'dag', 'debate']);
+export const WORKFLOW_MODE_UI_TO_DSL: Record<z.infer<typeof WORKFLOW_MODE_UI_ENUM>, z.infer<typeof WorkflowModeEnum>> =
+  {
+    linear: 'LINEAR',
+    dag: 'DAG',
+    debate: 'DEBATE',
+  };
+export const WORKFLOW_MODE_DSL_TO_UI: Record<z.infer<typeof WorkflowModeEnum>, z.infer<typeof WORKFLOW_MODE_UI_ENUM>> =
+  {
+    LINEAR: 'linear',
+    DAG: 'dag',
+    DEBATE: 'debate',
+  };
+
+export const WORKFLOW_NODE_TYPE_ALIASES = {
+  'market-data-fetch': 'data-fetch',
+  'single-agent': 'agent-call',
+  'control-branch': 'if-else',
+  'control-join': 'join',
+  'debate-judge': 'judge-agent',
+} as const;
+
+export const WORKFLOW_CANONICAL_NODE_TYPES = [
+  'manual-trigger',
+  'cron-trigger',
+  'event-trigger',
+  'api-trigger',
+  'data-fetch',
+  'report-fetch',
+  'knowledge-fetch',
+  'external-api-fetch',
+  'formula-calc',
+  'feature-calc',
+  'quantile-calc',
+  'rule-eval',
+  'rule-pack-eval',
+  'alert-check',
+  'agent-call',
+  'agent-group',
+  'context-builder',
+  'debate-round',
+  'judge-agent',
+  'if-else',
+  'switch',
+  'parallel-split',
+  'join',
+  'control-loop',
+  'control-delay',
+  'decision-merge',
+  'risk-gate',
+  'approval',
+  'notify',
+  'report-generate',
+  'dashboard-publish',
+  'group',
+  'subflow-call',
+] as const;
+
 export const WorkflowEdgeTypeEnum = z.enum([
   'data-edge',
   'control-edge',
@@ -69,6 +127,15 @@ export const WorkflowNodeSchema = z.object({
   outputSchema: z.union([z.string(), z.record(z.unknown())]).optional(),
 });
 
+export const WorkflowSubflowReferenceSchema = z.object({
+  id: z.string().min(1),
+  workflowDefinitionId: z.string().uuid(),
+  workflowVersionId: z.string().uuid().optional(),
+  name: z.string().optional(),
+  inputSchema: z.record(z.unknown()).optional(),
+  outputSchema: z.record(z.unknown()).optional(),
+});
+
 export const WorkflowEdgeSchema = z.object({
   id: z.string().min(1, '连线 ID 不能为空'),
   from: z.string().min(1, '起始节点不能为空'),
@@ -94,6 +161,7 @@ export const WorkflowDslSchema = z.object({
   runPolicy: WorkflowRunPolicySchema.optional(),
   outputConfig: z.record(z.unknown()).optional(),
   experimentConfig: z.record(z.unknown()).optional(),
+  subflows: z.array(WorkflowSubflowReferenceSchema).optional(),
 });
 
 export const WorkflowDefinitionSchema = z.object({
@@ -350,6 +418,7 @@ export const WorkflowValidationIssueCodeEnum = z.enum([
   'WF104',
   'WF105',
   'WF106',
+  'WF107',
   // ── 类型与表达式校验 ──
   'WF201', // data-edge 上下游字段类型兼容
   'WF202', // inputBindings 引用字段必须存在
@@ -472,3 +541,41 @@ export type WorkflowValidationIssue = z.infer<typeof WorkflowValidationIssueSche
 export type WorkflowValidationResult = z.infer<typeof WorkflowValidationResultSchema>;
 export type ValidateWorkflowDslDto = z.infer<typeof ValidateWorkflowDslSchema>;
 export type WorkflowValidationStage = z.infer<typeof WorkflowValidationStageEnum>;
+
+export type WorkflowModeUi = z.infer<typeof WORKFLOW_MODE_UI_ENUM>;
+export type WorkflowCanonicalNodeType = (typeof WORKFLOW_CANONICAL_NODE_TYPES)[number];
+
+export const normalizeWorkflowModeValue = (
+  value: string | WorkflowMode | WorkflowModeUi,
+): WorkflowMode => {
+  if (value in WORKFLOW_MODE_UI_TO_DSL) {
+    return WORKFLOW_MODE_UI_TO_DSL[value as WorkflowModeUi];
+  }
+  const parsed = WorkflowModeEnum.safeParse(value);
+  return parsed.success ? parsed.data : 'DAG';
+};
+
+export const toWorkflowModeUi = (value: string | WorkflowMode): WorkflowModeUi => {
+  const normalized = normalizeWorkflowModeValue(value);
+  return WORKFLOW_MODE_DSL_TO_UI[normalized];
+};
+
+export const normalizeWorkflowNodeType = (nodeType: string): string => {
+  if (!nodeType) {
+    return nodeType;
+  }
+  const aliasTarget =
+    WORKFLOW_NODE_TYPE_ALIASES[nodeType as keyof typeof WORKFLOW_NODE_TYPE_ALIASES];
+  return aliasTarget ?? nodeType;
+};
+
+export const canonicalizeWorkflowDsl = (dsl: WorkflowDsl): WorkflowDsl => {
+  return {
+    ...dsl,
+    mode: normalizeWorkflowModeValue(dsl.mode),
+    nodes: dsl.nodes.map((node) => ({
+      ...node,
+      type: normalizeWorkflowNodeType(node.type),
+    })),
+  };
+};

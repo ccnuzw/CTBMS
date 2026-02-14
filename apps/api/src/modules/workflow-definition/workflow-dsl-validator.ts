@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import {
+  canonicalizeWorkflowDsl,
   WorkflowDsl,
   WorkflowNode,
   WorkflowValidationIssue,
@@ -13,28 +14,30 @@ type WorkflowFieldTypeMap = Map<string, WorkflowFieldType>;
 @Injectable()
 export class WorkflowDslValidator {
   validate(dsl: WorkflowDsl, stage: WorkflowValidationStage = 'SAVE'): WorkflowValidationResult {
+    const normalizedDsl = canonicalizeWorkflowDsl(dsl);
     const issues: WorkflowValidationIssue[] = [];
 
-    this.validateTopLevelFields(dsl, issues);
-    this.validateUniqueness(dsl, issues);
-    this.validateEdgeReferences(dsl, issues);
-    this.validateOrphanNodes(dsl, issues);
-    this.validateLinearMode(dsl, issues);
-    this.validateDebateMode(dsl, issues);
-    this.validateDagMode(dsl, issues);
-    this.validateApprovalOutputs(dsl, issues);
-    this.validateJoinQuorum(dsl, issues);
-    this.validateDataEdgeTypeCompatibility(dsl, issues);
-    this.validateInputBindingReferences(dsl, issues);
-    this.validateParameterRefs(dsl, issues);
-    this.validateDecisionMergeFanIn(dsl, issues);
-    this.validateConditionEdgeSyntax(dsl, issues);
+    this.validateTopLevelFields(normalizedDsl, issues);
+    this.validateUniqueness(normalizedDsl, issues);
+    this.validateEdgeReferences(normalizedDsl, issues);
+    this.validateOrphanNodes(normalizedDsl, issues);
+    this.validateLinearMode(normalizedDsl, issues);
+    this.validateDebateMode(normalizedDsl, issues);
+    this.validateDagMode(normalizedDsl, issues);
+    this.validateApprovalOutputs(normalizedDsl, issues);
+    this.validateJoinQuorum(normalizedDsl, issues);
+    this.validateDataEdgeTypeCompatibility(normalizedDsl, issues);
+    this.validateInputBindingReferences(normalizedDsl, issues);
+    this.validateParameterRefs(normalizedDsl, issues);
+    this.validateDecisionMergeFanIn(normalizedDsl, issues);
+    this.validateConditionEdgeSyntax(normalizedDsl, issues);
+    this.validateSubflowCallNodes(normalizedDsl, issues);
     if (stage === 'PUBLISH') {
-      this.validateRiskGateExists(dsl, issues);
-      this.validateRuntimePolicyCoverageForPublish(dsl, issues);
-      this.validateOwnerIsolationForPublish(dsl, issues);
-      this.validateEvidenceConfigForPublish(dsl, issues);
-      this.validateExperimentConfigForPublish(dsl, issues);
+      this.validateRiskGateExists(normalizedDsl, issues);
+      this.validateRuntimePolicyCoverageForPublish(normalizedDsl, issues);
+      this.validateOwnerIsolationForPublish(normalizedDsl, issues);
+      this.validateEvidenceConfigForPublish(normalizedDsl, issues);
+      this.validateExperimentConfigForPublish(normalizedDsl, issues);
     }
 
     return {
@@ -517,6 +520,40 @@ export class WorkflowDslValidator {
         message: `条件边 ${edge.id} 的 condition 类型非法，必须是 boolean/string/object`,
         edgeId: edge.id,
       });
+    }
+  }
+
+  /** WF107: subflow-call 节点配置完整性 */
+  private validateSubflowCallNodes(dsl: WorkflowDsl, issues: WorkflowValidationIssue[]): void {
+    for (const node of dsl.nodes) {
+      if (node.type !== 'subflow-call') {
+        continue;
+      }
+      const config = this.asRecord(node.config);
+      const workflowDefinitionId = config?.workflowDefinitionId;
+      const workflowVersionId = config?.workflowVersionId;
+
+      if (typeof workflowDefinitionId !== 'string' || !workflowDefinitionId.trim()) {
+        issues.push({
+          code: 'WF107',
+          severity: 'ERROR',
+          message: `subflow-call 节点 ${node.name} 缺少 workflowDefinitionId`,
+          nodeId: node.id,
+        });
+      }
+
+      if (
+        workflowVersionId !== undefined &&
+        workflowVersionId !== null &&
+        (typeof workflowVersionId !== 'string' || !workflowVersionId.trim())
+      ) {
+        issues.push({
+          code: 'WF107',
+          severity: 'ERROR',
+          message: `subflow-call 节点 ${node.name} 的 workflowVersionId 格式非法`,
+          nodeId: node.id,
+        });
+      }
     }
   }
 

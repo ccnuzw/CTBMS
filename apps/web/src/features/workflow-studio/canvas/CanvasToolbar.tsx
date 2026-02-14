@@ -14,6 +14,14 @@ import {
     CodeOutlined,
     DragOutlined,
     SelectOutlined,
+    LayoutOutlined,
+    AlignLeftOutlined,
+    AlignCenterOutlined,
+    AlignRightOutlined,
+    VerticalAlignTopOutlined,
+    VerticalAlignMiddleOutlined,
+    VerticalAlignBottomOutlined,
+    TableOutlined,
 } from '@ant-design/icons';
 import { useReactFlow } from '@xyflow/react';
 
@@ -28,9 +36,14 @@ interface CanvasToolbarProps {
     onToggleLogs?: () => void;
     selectionMode?: 'hand' | 'pointer';
     onSelectionModeChange?: (mode: 'hand' | 'pointer') => void;
+    snapToGrid?: boolean;
+    onToggleSnapToGrid?: () => void;
+    onAlign?: (direction: 'left' | 'center' | 'right' | 'top' | 'middle' | 'bottom') => void;
     workflowMode?: 'linear' | 'dag' | 'debate';
     onWorkflowModeChange?: (mode: 'linear' | 'dag' | 'debate') => void;
     onToggleDebatePanel?: () => void;
+    onPublish?: () => void; // New prop from instruction snippet
+    isReadOnly?: boolean; // New prop from instruction snippet
     onUndo?: () => void;
     onRedo?: () => void;
     canUndo?: boolean;
@@ -61,6 +74,9 @@ export const CanvasToolbar: React.FC<CanvasToolbarProps> = ({
     onToggleLogs,
     selectionMode = 'hand',
     onSelectionModeChange,
+    snapToGrid = true,
+    onToggleSnapToGrid,
+    onAlign,
     workflowMode = 'dag',
     onWorkflowModeChange,
     onToggleDebatePanel,
@@ -160,14 +176,70 @@ export const CanvasToolbar: React.FC<CanvasToolbarProps> = ({
                     />
                 </Space>
 
-                <Divider type="vertical" />
-
-                <Tooltip title="自动布局">
+                <Tooltip title="自动布局 (Auto Layout)">
                     <Button
                         type="text"
                         size="small"
-                        icon={<ApartmentOutlined />}
+                        icon={<LayoutOutlined />}
                         onClick={onAutoLayout}
+                    />
+                </Tooltip>
+
+                <Divider type="vertical" />
+
+                <Tooltip title={`网格吸附 ${snapToGrid ? '开' : '关'}`}>
+                    <Button
+                        type={snapToGrid ? 'primary' : 'text'}
+                        size="small"
+                        icon={<TableOutlined />}
+                        onClick={onToggleSnapToGrid}
+                        ghost={snapToGrid}
+                        style={snapToGrid ? { color: token.colorPrimary } : undefined}
+                    />
+                </Tooltip>
+
+                {onAlign && (
+                    <>
+                        <Divider type="vertical" />
+                        <Space size={2}>
+                            <Tooltip title="左对齐">
+                                <Button size="small" type="text" icon={<AlignLeftOutlined />} onClick={() => onAlign('left')} />
+                            </Tooltip>
+                            <Tooltip title="水平居中">
+                                <Button size="small" type="text" icon={<AlignCenterOutlined />} onClick={() => onAlign('center')} />
+                            </Tooltip>
+                            <Tooltip title="右对齐">
+                                <Button size="small" type="text" icon={<AlignRightOutlined />} onClick={() => onAlign('right')} />
+                            </Tooltip>
+                            <Tooltip title="顶对齐">
+                                <Button size="small" type="text" icon={<VerticalAlignTopOutlined />} onClick={() => onAlign('top')} />
+                            </Tooltip>
+                            <Tooltip title="垂直居中">
+                                <Button size="small" type="text" icon={<VerticalAlignMiddleOutlined />} onClick={() => onAlign('middle')} />
+                            </Tooltip>
+                            <Tooltip title="底对齐">
+                                <Button size="small" type="text" icon={<VerticalAlignBottomOutlined />} onClick={() => onAlign('bottom')} />
+                            </Tooltip>
+                        </Space>
+                    </>
+                )}
+                <Divider type="vertical" />
+                <Tooltip title="撤销 (Undo)">
+                    <Button
+                        type="text"
+                        size="small"
+                        icon={<UndoOutlined />}
+                        onClick={onUndo}
+                        disabled={!canUndo}
+                    />
+                </Tooltip>
+                <Tooltip title="重做 (Redo)">
+                    <Button
+                        type="text"
+                        size="small"
+                        icon={<RedoOutlined />}
+                        onClick={onRedo}
+                        disabled={!canRedo}
                     />
                 </Tooltip>
 

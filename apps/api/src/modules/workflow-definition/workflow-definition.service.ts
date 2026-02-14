@@ -1,6 +1,7 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import {
+  canonicalizeWorkflowDsl,
   CreateWorkflowDefinitionDto,
   CreateWorkflowVersionDto,
   PublishWorkflowVersionDto,
@@ -202,7 +203,11 @@ export class WorkflowDefinitionService {
 
       await tx.workflowDefinition.update({
         where: { id: definition.id },
-        data: { latestVersionCode: nextVersionCode },
+        data: {
+          latestVersionCode: nextVersionCode,
+          mode: normalizedDsl.mode,
+          usageMethod: normalizedDsl.usageMethod,
+        },
       });
 
       return version;
@@ -356,7 +361,7 @@ export class WorkflowDefinitionService {
     dslSnapshot: WorkflowDsl,
     stage: WorkflowValidationStage = 'SAVE',
   ): WorkflowValidationResult {
-    return this.dslValidator.validate(dslSnapshot, stage);
+    return this.dslValidator.validate(canonicalizeWorkflowDsl(dslSnapshot), stage);
   }
 
   private buildAccessibleWhere(
@@ -759,6 +764,93 @@ export class WorkflowDefinitionService {
       }
     }
 
+    const subflowIssues = await this.validateSubflowReferencesForPublish(ownerUserId, dslSnapshot);
+    issues.push(...subflowIssues);
+
+    return issues;
+  }
+
+  private async validateSubflowReferencesForPublish(
+    ownerUserId: string,
+    dslSnapshot: WorkflowDsl,
+  ): Promise<WorkflowValidationIssue[]> {
+    const issues: WorkflowValidationIssue[] = [];
+    const subflowNodes = dslSnapshot.nodes.filter((node) => node.type === 'subflow-call');
+    if (subflowNodes.length === 0) {
+      return issues;
+    }
+
+    for (const node of subflowNodes) {
+      const config = this.asRecord(node.config);
+      const workflowDefinitionId =
+        typeof config?.workflowDefinitionId === 'string' ? config.workflowDefinitionId.trim() : '';
+      const workflowVersionId =
+        typeof config?.workflowVersionId === 'string' ? config.workflowVersionId.trim() : '';
+
+      if (!workflowDefinitionId) {
+        issues.push({
+          code: 'WF107',
+          severity: 'ERROR',
+          message: `subflow-call 节点 ${node.name} 缺少 workflowDefinitionId`,
+          nodeId: node.id,
+        });
+        continue;
+      }
+
+      const definition = await this.prisma.workflowDefinition.findFirst({
+        where: {
+          id: workflowDefinitionId,
+          OR: [{ ownerUserId }, { templateSource: 'PUBLIC' }],
+        },
+        select: { id: true },
+      });
+      if (!definition) {
+        issues.push({
+          code: 'WF107',
+          severity: 'ERROR',
+          message: `subflow-call 节点 ${node.name} 引用的流程不存在或无权限访问`,
+          nodeId: node.id,
+        });
+        continue;
+      }
+
+      if (workflowVersionId) {
+        const version = await this.prisma.workflowVersion.findFirst({
+          where: {
+            id: workflowVersionId,
+            workflowDefinitionId: definition.id,
+            status: 'PUBLISHED',
+          },
+          select: { id: true },
+        });
+        if (!version) {
+          issues.push({
+            code: 'WF107',
+            severity: 'ERROR',
+            message: `subflow-call 节点 ${node.name} 指定的版本不存在或未发布`,
+            nodeId: node.id,
+          });
+        }
+        continue;
+      }
+
+      const published = await this.prisma.workflowVersion.findFirst({
+        where: {
+          workflowDefinitionId: definition.id,
+          status: 'PUBLISHED',
+        },
+        select: { id: true },
+      });
+      if (!published) {
+        issues.push({
+          code: 'WF107',
+          severity: 'ERROR',
+          message: `subflow-call 节点 ${node.name} 引用流程缺少已发布版本`,
+          nodeId: node.id,
+        });
+      }
+    }
+
     return issues;
   }
 
@@ -912,7 +1004,7 @@ export class WorkflowDefinitionService {
     templateSource: 'PUBLIC' | 'PRIVATE' | 'COPIED',
   ): WorkflowDsl {
     if (!sourceDsl) {
-      return {
+      return canonicalizeWorkflowDsl({
         workflowId,
         name,
         mode,
@@ -969,18 +1061,18 @@ export class WorkflowDefinitionService {
             onError: 'FAIL_FAST',
           },
         },
-      };
+      });
     }
 
-    return {
+    return canonicalizeWorkflowDsl({
       ...sourceDsl,
       workflowId,
       name,
-      mode,
-      usageMethod,
+      mode: sourceDsl.mode,
+      usageMethod: sourceDsl.usageMethod ?? usageMethod,
       ownerUserId,
       templateSource,
-    };
+    });
   }
 
   private nextVersionCode(latestVersionCode: string | null | undefined): string {

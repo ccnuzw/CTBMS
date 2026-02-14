@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import type { WorkflowDsl, WorkflowNode, WorkflowEdge, WorkflowRunPolicy } from '@packages/types';
 import { NodeExecutorRegistry } from './node-executor.registry';
+import type { NodeExecutionResult } from './node-executor.interface';
 // NodeExecutionContext, NodeExecutionResult removed as they are unused imports
 
 /**
@@ -57,6 +58,14 @@ export interface DagNodeCallbacks {
         failureCategory: string;
         failureCode: string;
     };
+    /** 自定义节点执行（返回 null 表示走默认执行器） */
+    executeCustomNode?: (params: {
+        executionId: string;
+        triggerUserId: string;
+        node: WorkflowNode;
+        input: Record<string, unknown>;
+        paramSnapshot?: Record<string, unknown>;
+    }) => Promise<NodeExecutionResult | null>;
 }
 
 /**
@@ -417,14 +426,29 @@ export class DagScheduler {
             attempts = attempt + 1;
             try {
                 const result = await callbacks.executeWithTimeout(
-                    () =>
-                        nodeExecutor.execute({
+                    async () => {
+                        const customResult = callbacks.executeCustomNode
+                            ? await callbacks.executeCustomNode({
+                                executionId,
+                                triggerUserId,
+                                node,
+                                input: inputSnapshot,
+                                paramSnapshot,
+                            })
+                            : null;
+
+                        if (customResult) {
+                            return customResult;
+                        }
+
+                        return nodeExecutor.execute({
                             executionId,
                             triggerUserId,
                             node,
                             input: inputSnapshot,
                             paramSnapshot,
-                        }),
+                        });
+                    },
                     runtimePolicy.timeoutMs,
                     `[DAG] 节点 ${node.name} 执行超时（${runtimePolicy.timeoutMs}ms）`,
                 );

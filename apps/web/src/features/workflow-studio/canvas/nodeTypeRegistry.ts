@@ -24,7 +24,12 @@ import {
     GroupOutlined,
     SendOutlined,
     UndoOutlined,
+    NodeIndexOutlined,
+    SplitCellsOutlined,
+    BuildOutlined,
+    SafetyCertificateOutlined,
 } from '@ant-design/icons';
+import { normalizeWorkflowNodeType } from '@packages/types';
 
 /**
  * 节点类型分类
@@ -54,6 +59,7 @@ export interface NodeTypeConfig {
     outputFields?: { name: string; label: string; type: string }[];
     inputsSchema?: { name: string; type: string; required?: boolean }[];
     outputsSchema?: { name: string; type: string }[];
+    aliases?: string[]; // 为了兼容旧版本 DSL
 }
 
 import React from 'react';
@@ -122,6 +128,7 @@ export const NODE_TYPE_REGISTRY: NodeTypeConfig[] = [
     // ── 数据节点 ──
     {
         type: 'data-fetch',
+        aliases: ['market-data-fetch'],
         label: '数据采集',
         category: 'DATA',
         color: NODE_CATEGORIES.DATA.color,
@@ -248,7 +255,17 @@ export const NODE_TYPE_REGISTRY: NodeTypeConfig[] = [
 
     // ── Agent 节点 ──
     {
+        type: 'debate-topic',
+        label: '辩题 (Topic)',
+        category: 'AGENT',
+        color: NODE_CATEGORIES.AGENT.color,
+        icon: FileTextOutlined,
+        description: '辩论主题与背景设定',
+        defaultConfig: { topic: '', background: '' },
+    },
+    {
         type: 'agent-call',
+        aliases: ['single-agent'],
         label: '智能体调用',
         category: 'AGENT',
         color: NODE_CATEGORIES.AGENT.color,
@@ -259,6 +276,33 @@ export const NODE_TYPE_REGISTRY: NodeTypeConfig[] = [
             { name: 'response', label: '回复内容', type: 'string' },
             { name: 'reasoning', label: '思考过程', type: 'string' },
         ],
+    },
+    {
+        type: 'agent-group',
+        label: '智能体组',
+        category: 'AGENT',
+        color: NODE_CATEGORIES.AGENT.color,
+        icon: TeamOutlined,
+        description: '多 Agent 协同组',
+        defaultConfig: { agents: [] },
+    },
+    {
+        type: 'context-builder',
+        label: '上下文构建',
+        category: 'AGENT',
+        color: NODE_CATEGORIES.AGENT.color,
+        icon: BuildOutlined,
+        description: '构建辩论/决策上下文',
+        defaultConfig: {},
+    },
+    {
+        type: 'judge-agent',
+        label: '裁判 Agent',
+        category: 'AGENT',
+        color: NODE_CATEGORIES.AGENT.color,
+        icon: SafetyCertificateOutlined,
+        description: '对辩论结果进行裁决',
+        defaultConfig: { agentCode: 'JUDGE_V1' },
     },
     {
         type: 'debate-round',
@@ -276,12 +320,31 @@ export const NODE_TYPE_REGISTRY: NodeTypeConfig[] = [
 
     // ── 控制节点 ──
     {
-        type: 'control-branch',
-        label: '分支控制',
+        type: 'if-else',
+        aliases: ['control-branch'],
+        label: '条件分支',
         category: 'CONTROL',
         color: NODE_CATEGORIES.CONTROL.color,
         icon: BranchesOutlined,
-        description: '条件分支控制',
+        description: '条件分支控制 (If-Else)',
+        defaultConfig: {},
+    },
+    {
+        type: 'switch',
+        label: '多路分支',
+        category: 'CONTROL',
+        color: NODE_CATEGORIES.CONTROL.color,
+        icon: NodeIndexOutlined,
+        description: '多路 Switch 分支',
+        defaultConfig: { cases: [] },
+    },
+    {
+        type: 'parallel-split',
+        label: '并行拆分',
+        category: 'CONTROL',
+        color: NODE_CATEGORIES.CONTROL.color,
+        icon: SplitCellsOutlined,
+        description: '并行执行分支',
         defaultConfig: {},
     },
     {
@@ -303,13 +366,28 @@ export const NODE_TYPE_REGISTRY: NodeTypeConfig[] = [
         defaultConfig: { delaySeconds: 60 },
     },
     {
-        type: 'control-join',
+        type: 'join',
+        aliases: ['control-join'],
         label: '汇聚等待',
         category: 'CONTROL',
         color: NODE_CATEGORIES.CONTROL.color,
         icon: PartitionOutlined,
         description: '等待多路汇聚',
         defaultConfig: { joinMode: 'ALL' },
+    },
+    {
+        type: 'subflow-call',
+        label: '子流程调用',
+        category: 'CONTROL',
+        color: NODE_CATEGORIES.CONTROL.color,
+        icon: ClusterOutlined,
+        description: '调用已发布子流程（可复用策略组件）',
+        defaultConfig: {
+            workflowDefinitionId: '',
+            workflowVersionId: '',
+        },
+        inputsSchema: [{ name: 'input', type: 'object' }],
+        outputsSchema: [{ name: 'output', type: 'object' }],
     },
 
     // ── 输出节点 ──
@@ -359,7 +437,31 @@ export const NODE_TYPE_REGISTRY: NodeTypeConfig[] = [
  * 按类型查找注册信息
  */
 export const getNodeTypeConfig = (type: string): NodeTypeConfig | undefined => {
-    return NODE_TYPE_REGISTRY.find((c) => c.type === type);
+    const normalizedType = normalizeWorkflowNodeType(type);
+    const found = NODE_TYPE_REGISTRY.find(
+        (c) => c.type === normalizedType || c.aliases?.includes(normalizedType),
+    );
+    if (!found) {
+        return undefined;
+    }
+
+    if (found.type === 'group') {
+        return found;
+    }
+
+    const derivedOutputs =
+        found.outputsSchema
+        ?? found.outputFields?.map((field) => ({ name: field.name, type: field.type }))
+        ?? [{ name: 'output', type: 'any' }];
+    const derivedInputs =
+        found.inputsSchema
+        ?? (found.category === 'TRIGGER' ? [] : [{ name: 'input', type: 'any' }]);
+
+    return {
+        ...found,
+        inputsSchema: derivedInputs,
+        outputsSchema: derivedOutputs,
+    };
 };
 
 /**

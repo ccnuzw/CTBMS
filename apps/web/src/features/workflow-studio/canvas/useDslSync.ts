@@ -8,7 +8,12 @@ import {
     type Connection,
 } from '@xyflow/react';
 import { message } from 'antd';
-import type { WorkflowDsl, WorkflowNode, WorkflowEdge } from '@packages/types';
+import {
+    normalizeWorkflowNodeType,
+    type WorkflowDsl,
+    type WorkflowNode,
+    type WorkflowEdge,
+} from '@packages/types';
 import { getNodeTypeConfig } from './nodeTypeRegistry';
 
 export const useDslSync = (
@@ -46,22 +51,34 @@ export const useDslSync = (
                 const sourceConfig = getNodeTypeConfig(sourceNode.data.type as string);
                 const targetConfig = getNodeTypeConfig(targetNode.data.type as string);
 
-                const sourceHandle = params.sourceHandle;
-                const targetHandle = params.targetHandle;
+                const sourceSchemas = sourceConfig?.outputsSchema ?? [{ name: 'output', type: 'any' }];
+                const targetSchemas = targetConfig?.inputsSchema ?? [{ name: 'input', type: 'any' }];
 
-                const outputSchema = sourceConfig?.outputsSchema?.find(o => o.name === sourceHandle);
-                const inputSchema = targetConfig?.inputsSchema?.find(i => i.name === targetHandle);
+                const sourceHandle = params.sourceHandle ?? sourceSchemas[0]?.name;
+                const targetHandle = params.targetHandle ?? targetSchemas[0]?.name;
 
-                if (outputSchema && inputSchema) {
-                    if (outputSchema.type !== 'any' && inputSchema.type !== 'any' && outputSchema.type !== inputSchema.type) {
-                        message.error(`类型不匹配: 无法将 ${outputSchema.type} 连接到 ${inputSchema.type}`);
-                        return;
-                    }
+                const outputSchema = sourceSchemas.find((schema) => schema.name === sourceHandle);
+                const inputSchema = targetSchemas.find((schema) => schema.name === targetHandle);
+
+                if (!outputSchema || !inputSchema) {
+                    message.error('端口不存在或不可连接');
+                    return;
                 }
-            }
 
-            if (sourceNode && targetNode) {
-                // ... type checks ...
+                if (
+                    outputSchema.type !== 'any'
+                    && inputSchema.type !== 'any'
+                    && outputSchema.type !== inputSchema.type
+                ) {
+                    message.error(`类型不匹配: 无法将 ${outputSchema.type} 连接到 ${inputSchema.type}`);
+                    return;
+                }
+
+                params = {
+                    ...params,
+                    sourceHandle,
+                    targetHandle,
+                };
             }
 
             // Snapshot before connecting
@@ -79,7 +96,7 @@ export const useDslSync = (
             };
             setEdges((eds) => addEdge(newEdge, eds));
         },
-        [setEdges, nodes],
+        [setEdges, nodes, edges, onSnapshot],
     );
 
     const addNode = useCallback(
@@ -87,16 +104,17 @@ export const useDslSync = (
             // Snapshot before adding
             onSnapshot?.(nodes, edges);
 
-            const typeConfig = getNodeTypeConfig(nodeType);
-            const nodeId = `${nodeType}_${Date.now()}`;
+            const normalizedType = normalizeWorkflowNodeType(nodeType);
+            const typeConfig = getNodeTypeConfig(normalizedType);
+            const nodeId = `${normalizedType}_${Date.now()}`;
 
             const newNode: Node = {
                 id: nodeId,
-                type: nodeType === 'group' ? 'group' : 'workflowNode',
+                type: normalizedType === 'group' ? 'group' : 'workflowNode',
                 position,
                 data: {
-                    type: nodeType,
-                    name: typeConfig?.label ?? nodeType,
+                    type: normalizedType,
+                    name: typeConfig?.label ?? normalizedType,
                     enabled: true,
                     config: { ...(typeConfig?.defaultConfig ?? {}) },
                     nodeTypeConfig: typeConfig,
@@ -148,10 +166,16 @@ export const useDslSync = (
             setEdges((eds) =>
                 eds.map((edge) => {
                     if (edge.id !== edgeId) return edge;
+
+                    const newData = { ...edge.data, ...data };
+                    const edgeType = (newData.edgeType as string);
+
                     return {
                         ...edge,
                         type: data.type ?? edge.type,
-                        data: { ...edge.data, ...data },
+                        style: getEdgeStyle(edgeType),
+                        animated: edgeType === 'data-edge',
+                        data: newData,
                     };
                 }),
             );
@@ -196,18 +220,19 @@ export const useDslSync = (
 
 function dslNodesToFlow(dslNodes: WorkflowNode[]): Node[] {
     const nodes = dslNodes.map((n, idx) => {
-        const typeConfig = getNodeTypeConfig(n.type);
+        const normalizedType = normalizeWorkflowNodeType(n.type);
+        const typeConfig = getNodeTypeConfig(normalizedType);
         const config = n.config as Record<string, unknown>;
 
         return {
             id: n.id,
-            type: n.type === 'group' ? 'group' : 'workflowNode',
+            type: normalizedType === 'group' ? 'group' : 'workflowNode',
             position: (config._position as { x: number; y: number }) ?? {
                 x: 250,
                 y: 100 + idx * 120,
             },
             data: {
-                type: n.type,
+                type: normalizedType,
                 name: n.name,
                 enabled: n.enabled,
                 config: n.config,
@@ -246,7 +271,7 @@ function dslEdgesToFlow(dslEdges: WorkflowEdge[]): Edge[] {
 function flowToDsl(nodes: Node[], edges: Edge[], originalDsl: WorkflowDsl): WorkflowDsl {
     const dslNodes: WorkflowNode[] = nodes.map((n) => ({
         id: n.id,
-        type: n.data.type as string,
+        type: normalizeWorkflowNodeType(n.data.type as string),
         name: n.data.name as string,
         enabled: (n.data.enabled as boolean) ?? true,
         config: {

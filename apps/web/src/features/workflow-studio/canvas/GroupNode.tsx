@@ -1,5 +1,5 @@
 import React, { memo } from 'react';
-import { NodeProps, NodeResizer } from '@xyflow/react';
+import { NodeProps, NodeResizer, Handle, Position } from '@xyflow/react';
 import { theme } from 'antd';
 import { GroupOutlined } from '@ant-design/icons';
 
@@ -48,6 +48,17 @@ export const GroupNode: React.FC<NodeProps> = memo(({ data, selected }) => {
                 <GroupOutlined />
                 {label}
             </div>
+
+            <Handle
+                type="target"
+                position={Position.Left}
+                style={{ width: 10, height: 10, background: token.colorTextSecondary, borderRadius: 2 }}
+            />
+            <Handle
+                type="source"
+                position={Position.Right}
+                style={{ width: 10, height: 10, background: token.colorTextSecondary, borderRadius: 2 }}
+            />
 
             {/* The content of the group is rendered by React Flow as child nodes, 
                 so we don't need to render children property here. 

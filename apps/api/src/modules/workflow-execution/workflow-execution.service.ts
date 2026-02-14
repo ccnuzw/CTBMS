@@ -2,6 +2,7 @@ import { BadRequestException, Injectable, NotFoundException } from '@nestjs/comm
 import { Prisma } from '@prisma/client';
 import {
   CancelWorkflowExecutionDto,
+  canonicalizeWorkflowDsl,
   TriggerWorkflowExecutionDto,
   WorkflowDsl,
   WorkflowRunPolicy,
@@ -24,6 +25,7 @@ import { EvidenceCollector } from './engine/evidence-collector';
 import { DagScheduler } from './engine/dag-scheduler';
 import { ReplayAssembler, type ExecutionReplayBundle } from './engine/replay-assembler';
 import { WorkflowExperimentService } from '../workflow-experiment/workflow-experiment.service';
+import type { NodeExecutionResult } from './engine/node-executor.interface';
 
 type WorkflowFailureCode =
   | 'EXECUTION_TIMEOUT'
@@ -57,6 +59,8 @@ type ExperimentRoutingContext = {
   variant: 'A' | 'B';
 } | null;
 
+const MAX_SUBFLOW_DEPTH = 4;
+
 @Injectable()
 export class WorkflowExecutionService {
   constructor(
@@ -73,8 +77,13 @@ export class WorkflowExecutionService {
   async trigger(
     ownerUserId: string,
     dto: TriggerWorkflowExecutionDto,
-    options?: { sourceExecutionId?: string },
+    options?: { sourceExecutionId?: string; subflowDepth?: number },
   ) {
+    const subflowDepth = options?.subflowDepth ?? 0;
+    if (subflowDepth > MAX_SUBFLOW_DEPTH) {
+      throw new BadRequestException(`子流程嵌套层级超过限制（>${MAX_SUBFLOW_DEPTH}）`);
+    }
+
     const definition = await this.prisma.workflowDefinition.findFirst({
       where: {
         id: dto.workflowDefinitionId,
@@ -188,7 +197,8 @@ export class WorkflowExecutionService {
       });
     }
 
-    const bindingSnapshot = await this.buildBindingSnapshot(ownerUserId, parsedDsl.data);
+    const dsl = canonicalizeWorkflowDsl(parsedDsl.data);
+    const bindingSnapshot = await this.buildBindingSnapshot(ownerUserId, dsl);
     const mergedParamSnapshot = this.mergeParamSnapshot(dto.paramSnapshot, bindingSnapshot);
 
     let execution: { id: string };
@@ -233,30 +243,33 @@ export class WorkflowExecutionService {
       eventType: 'EXECUTION_STARTED',
       level: 'INFO',
       message: '执行开始',
-      detail: {
-        workflowDefinitionId: definition.id,
-        workflowVersionId: version.id,
-        triggerType: dto.triggerType,
-        sourceExecutionId: options?.sourceExecutionId ?? null,
-        idempotencyKey: idempotencyKey ?? null,
-        experimentId: experimentRouting?.experimentId ?? null,
-        experimentVariant: experimentRouting?.variant ?? null,
-      },
-    });
+        detail: {
+          workflowDefinitionId: definition.id,
+          workflowVersionId: version.id,
+          triggerType: dto.triggerType,
+          sourceExecutionId: options?.sourceExecutionId ?? null,
+          subflowDepth,
+          idempotencyKey: idempotencyKey ?? null,
+          experimentId: experimentRouting?.experimentId ?? null,
+          experimentVariant: experimentRouting?.variant ?? null,
+        },
+      });
 
-    if (parsedDsl.data.mode === 'DAG') {
+    if (dsl.mode === 'DAG') {
       return this.executeDagWorkflow({
         executionId: execution.id,
         ownerUserId,
-        dsl: parsedDsl.data,
+        dsl,
         paramSnapshot: mergedParamSnapshot,
         experimentRouting,
+        subflowDepth,
+        workflowDefinitionId: definition.id,
       });
     }
 
-    const sortedNodes = this.sortNodesByEdges(parsedDsl.data);
-    const incomingNodeMap = this.buildIncomingNodeMap(parsedDsl.data.edges);
-    const outgoingEdgeMap = this.buildOutgoingEdgeMap(parsedDsl.data.edges);
+    const sortedNodes = this.sortNodesByEdges(dsl);
+    const incomingNodeMap = this.buildIncomingNodeMap(dsl.edges);
+    const outgoingEdgeMap = this.buildOutgoingEdgeMap(dsl.edges);
     const outputsByNode = new Map<string, Record<string, unknown>>();
     const skipReasonByNode = new Map<string, string>();
     let softFailureCount = 0;
@@ -331,7 +344,7 @@ export class WorkflowExecutionService {
         const startedAt = new Date();
         const inputSnapshot = this.buildNodeInput(node.id, incomingNodeMap, outputsByNode);
         const nodeExecutor = this.nodeExecutorRegistry.resolve(node);
-        const runtimePolicy = this.resolveRuntimePolicy(node, parsedDsl.data.runPolicy);
+        const runtimePolicy = this.resolveRuntimePolicy(node, dsl.runPolicy);
 
         let status: 'SUCCESS' | 'FAILED' | 'SKIPPED' = 'SUCCESS';
         let errorMessage: string | null = null;
@@ -356,14 +369,27 @@ export class WorkflowExecutionService {
           attempts = attempt + 1;
           try {
             const result = await this.executeWithTimeout(
-              () =>
-                nodeExecutor.execute({
+              async () => {
+                const customResult = await this.executeCustomNode({
+                  ownerUserId,
+                  node,
+                  input: inputSnapshot,
+                  paramSnapshot: mergedParamSnapshot,
+                  sourceExecutionId: execution.id,
+                  currentWorkflowDefinitionId: definition.id,
+                  subflowDepth,
+                });
+                if (customResult) {
+                  return customResult;
+                }
+                return nodeExecutor.execute({
                   executionId: execution.id,
                   triggerUserId: ownerUserId,
                   node,
                   input: inputSnapshot,
                   paramSnapshot: mergedParamSnapshot,
-                }),
+                });
+              },
               runtimePolicy.timeoutMs,
               `节点 ${node.name} 执行超时（${runtimePolicy.timeoutMs}ms）`,
             );
@@ -525,7 +551,7 @@ export class WorkflowExecutionService {
           softFailureCount,
         },
       });
-      const replayBundle = await this.persistReplayBundle(execution.id, parsedDsl.data);
+      const replayBundle = await this.persistReplayBundle(execution.id, dsl);
       await this.recordExperimentOutcome(experimentRouting, completed, replayBundle);
       return completed;
     } catch (error) {
@@ -575,7 +601,7 @@ export class WorkflowExecutionService {
           },
         },
       });
-      const replayBundle = await this.persistReplayBundle(execution.id, parsedDsl.data);
+      const replayBundle = await this.persistReplayBundle(execution.id, dsl);
       await this.recordExperimentOutcome(experimentRouting, terminalExecution, replayBundle);
 
       if (isCanceled) {
@@ -808,6 +834,8 @@ export class WorkflowExecutionService {
   private async executeDagWorkflow(params: {
     executionId: string;
     ownerUserId: string;
+    workflowDefinitionId: string;
+    subflowDepth: number;
     dsl: WorkflowDsl;
     paramSnapshot?: Record<string, unknown>;
     experimentRouting: ExperimentRoutingContext;
@@ -877,6 +905,16 @@ export class WorkflowExecutionService {
             this.executeWithTimeout(task, timeoutMs, timeoutMessage),
           sleep: (ms) => this.sleep(ms),
           classifyFailure: (error) => this.classifyFailure(error),
+          executeCustomNode: ({ node, input, paramSnapshot }) =>
+            this.executeCustomNode({
+              ownerUserId: params.ownerUserId,
+              node,
+              input,
+              paramSnapshot,
+              sourceExecutionId: params.executionId,
+              currentWorkflowDefinitionId: params.workflowDefinitionId,
+              subflowDepth: params.subflowDepth,
+            }),
         },
       });
 
@@ -1006,7 +1044,7 @@ export class WorkflowExecutionService {
         issues: parsedDsl.error.issues,
       });
     }
-    const dsl = parsedDsl.data;
+    const dsl = canonicalizeWorkflowDsl(parsedDsl.data);
 
     const outputsByNode = new Map<string, Record<string, unknown>>();
     for (const nodeExecution of execution.nodeExecutions) {
@@ -1889,6 +1927,89 @@ export class WorkflowExecutionService {
       incomingNodeMap.set(edge.to, incomingNodeIds);
     }
     return incomingNodeMap;
+  }
+
+  private async executeCustomNode(params: {
+    ownerUserId: string;
+    node: WorkflowNode;
+    input: Record<string, unknown>;
+    paramSnapshot?: Record<string, unknown>;
+    sourceExecutionId: string;
+    currentWorkflowDefinitionId: string;
+    subflowDepth: number;
+  }): Promise<NodeExecutionResult | null> {
+    if (params.node.type !== 'subflow-call') {
+      return null;
+    }
+
+    return this.executeSubflowNode(params);
+  }
+
+  private async executeSubflowNode(params: {
+    ownerUserId: string;
+    node: WorkflowNode;
+    input: Record<string, unknown>;
+    paramSnapshot?: Record<string, unknown>;
+    sourceExecutionId: string;
+    currentWorkflowDefinitionId: string;
+    subflowDepth: number;
+  }): Promise<NodeExecutionResult> {
+    const config = (params.node.config ?? {}) as Record<string, unknown>;
+    const workflowDefinitionId =
+      typeof config.workflowDefinitionId === 'string' ? config.workflowDefinitionId.trim() : '';
+    const workflowVersionId =
+      typeof config.workflowVersionId === 'string' ? config.workflowVersionId.trim() : '';
+    const outputKeyPrefix =
+      typeof config.outputKeyPrefix === 'string' ? config.outputKeyPrefix.trim() : '';
+
+    if (!workflowDefinitionId) {
+      throw new BadRequestException(`subflow-call 节点 ${params.node.name} 缺少 workflowDefinitionId`);
+    }
+    if (params.subflowDepth >= MAX_SUBFLOW_DEPTH) {
+      throw new BadRequestException(`subflow-call 超过最大嵌套层级 ${MAX_SUBFLOW_DEPTH}`);
+    }
+    if (workflowDefinitionId === params.currentWorkflowDefinitionId) {
+      throw new BadRequestException(`subflow-call 不允许调用当前流程自身: ${params.node.name}`);
+    }
+
+    const childParamSnapshot = {
+      ...(params.paramSnapshot ?? {}),
+      subflowInput: params.input,
+    };
+
+    const childExecution = await this.trigger(
+      params.ownerUserId,
+      {
+        workflowDefinitionId,
+        workflowVersionId: workflowVersionId || undefined,
+        triggerType: 'ON_DEMAND',
+        paramSnapshot: childParamSnapshot,
+      },
+      {
+        sourceExecutionId: params.sourceExecutionId,
+        subflowDepth: params.subflowDepth + 1,
+      },
+    );
+    if (!childExecution) {
+      throw new BadRequestException(`subflow-call 节点 ${params.node.name} 执行返回空结果`);
+    }
+
+    const childOutput = this.toRecord(childExecution.outputSnapshot) ?? {};
+    const prefixOutput =
+      outputKeyPrefix.length > 0 ? { [outputKeyPrefix]: childOutput } : {};
+
+    return {
+      status: 'SUCCESS',
+      output: {
+        ...params.input,
+        ...prefixOutput,
+        subflowExecutionId: childExecution.id,
+        subflowWorkflowDefinitionId: workflowDefinitionId,
+        subflowWorkflowVersionId: childExecution.workflowVersionId,
+        subflowStatus: childExecution.status,
+        subflowOutput: childOutput,
+      },
+    };
   }
 
   private buildOutgoingEdgeMap(edges: WorkflowEdge[]): Map<string, WorkflowEdge[]> {

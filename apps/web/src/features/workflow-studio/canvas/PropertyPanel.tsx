@@ -1,10 +1,11 @@
 import React from 'react';
-import { Card, Divider, Form, Input, InputNumber, Select, Space, Switch, Tag, theme, Typography } from 'antd';
+import { Card, Divider, Form, Input, InputNumber, Select, Space, Switch, Tag, theme, Typography, Segmented } from 'antd';
 import { CloseOutlined, SettingOutlined } from '@ant-design/icons';
 import type { Edge, Node } from '@xyflow/react';
 import type { NodeTypeConfig } from './nodeTypeRegistry';
 import { getNodeTypeConfig } from './nodeTypeRegistry';
 import { VariableSelector } from './VariableSelector';
+import { NODE_FORM_REGISTRY } from './node-forms/formRegistry';
 
 const { Text, Title } = Typography;
 
@@ -54,9 +55,14 @@ export const PropertyPanel: React.FC<PropertyPanelProps> = ({
     const runtimePolicy = (nodeData.runtimePolicy as Record<string, unknown>) ?? {};
     const isEnabled = (nodeData.enabled as boolean) ?? true;
 
+    const [viewMode, setViewMode] = React.useState<'ui' | 'json'>('ui');
+
     const handleFieldChange = (field: string, value: unknown) => {
         onUpdateNode?.(selectedNode.id, { [field]: value });
     };
+
+    // Helper for tags handling
+    const nodeTags = (nodeData.tags as string[]) || [];
 
     const handleConfigChange = (key: string, value: unknown) => {
         onUpdateNode?.(selectedNode.id, {
@@ -120,6 +126,19 @@ export const PropertyPanel: React.FC<PropertyPanelProps> = ({
                 />
             </div>
 
+            {/* View Toggle */}
+            <div style={{ padding: '8px 16px', borderBottom: `1px solid ${token.colorBorderSecondary}`, display: 'flex', justifyContent: 'flex-end' }}>
+                <Segmented
+                    size="small"
+                    options={[
+                        { label: '表单', value: 'ui' },
+                        { label: '源码', value: 'json' },
+                    ]}
+                    value={viewMode}
+                    onChange={(v) => setViewMode(v as 'ui' | 'json')}
+                />
+            </div>
+
             {/* Body */}
             <div style={{ flex: 1, overflow: 'auto', padding: 16 }}>
                 {/* 基础信息 */}
@@ -142,6 +161,26 @@ export const PropertyPanel: React.FC<PropertyPanelProps> = ({
                         <Switch
                             checked={isEnabled}
                             onChange={(v) => handleFieldChange('enabled', v)}
+                            size="small"
+                        />
+                    </Form.Item>
+
+                    <Form.Item label="描述" style={{ marginBottom: 12 }}>
+                        <Input.TextArea
+                            value={nodeData.description as string}
+                            onChange={(e) => handleFieldChange('description', e.target.value)}
+                            rows={2}
+                            placeholder="节点描述..."
+                        />
+                    </Form.Item>
+
+                    <Form.Item label="标签 (Tags)" style={{ marginBottom: 12 }}>
+                        <Select
+                            mode="tags"
+                            value={nodeTags}
+                            onChange={(v) => handleFieldChange('tags', v)}
+                            tokenSeparators={[',']}
+                            placeholder="添加标签..."
                             size="small"
                         />
                     </Form.Item>
@@ -213,15 +252,42 @@ export const PropertyPanel: React.FC<PropertyPanelProps> = ({
                 </Divider>
 
                 {/* 动态配置 — 渲染 config 中的所有字段 */}
-                <Form layout="vertical" size="small">
-                    {Object.entries(config)
-                        .filter(([key]) => !key.startsWith('_'))
-                        .map(([key, value]) => (
-                            <Form.Item key={key} label={key} style={{ marginBottom: 12 }}>
-                                {renderConfigField(key, value, (v) => handleConfigChange(key, v), selectedNode.id)}
-                            </Form.Item>
-                        ))}
-                </Form>
+                {/* 动态配置 */}
+                {viewMode === 'json' ? (
+                    <Input.TextArea
+                        value={JSON.stringify(config, null, 2)}
+                        onChange={(e) => {
+                            try {
+                                const newConfig = JSON.parse(e.target.value);
+                                onUpdateNode?.(selectedNode.id, { config: newConfig });
+                            } catch {
+                                // Ignore parse error while typing
+                            }
+                        }}
+                        autoSize={{ minRows: 10, maxRows: 30 }}
+                        style={{ fontFamily: 'monospace', fontSize: 12 }}
+                    />
+                ) : (
+                    <>
+                        {/* 优先使用专用表单，否则渲染通用 Key-Value */}
+                        {NODE_FORM_REGISTRY[nodeType] ? (
+                            React.createElement(NODE_FORM_REGISTRY[nodeType], {
+                                config: config,
+                                onChange: handleConfigChange,
+                            })
+                        ) : (
+                            <Form layout="vertical" size="small">
+                                {Object.entries(config)
+                                    .filter(([key]) => !key.startsWith('_'))
+                                    .map(([key, value]) => (
+                                        <Form.Item key={key} label={key} style={{ marginBottom: 12 }}>
+                                            {renderConfigField(key, value, (v) => handleConfigChange(key, v), selectedNode.id)}
+                                        </Form.Item>
+                                    ))}
+                            </Form>
+                        )}
+                    </>
+                )}
             </div>
         </div>
     );

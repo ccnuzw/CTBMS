@@ -922,7 +922,7 @@ export const WorkflowDefinitionPage: React.FC = () => {
     }
   };
 
-  const handleSaveStudioDsl = async (dsl: { nodes: WorkflowDsl['nodes']; edges: WorkflowDsl['edges'] }) => {
+  const handleSaveStudioDsl = async (dsl: WorkflowDsl) => {
     if (!selectedDefinition?.id || !studioVersion) {
       return;
     }
@@ -933,8 +933,7 @@ export const WorkflowDefinitionPage: React.FC = () => {
         payload: {
           dslSnapshot: {
             ...studioVersion.dslSnapshot,
-            nodes: dsl.nodes,
-            edges: dsl.edges,
+            ...dsl,
           },
           changelog: `Studio 编辑保存（基于 ${studioVersion.versionCode}）`,
         },
@@ -1000,8 +999,7 @@ export const WorkflowDefinitionPage: React.FC = () => {
         payload: {
           dslSnapshot: {
             ...studioVersion.dslSnapshot,
-            nodes: dsl.nodes,
-            edges: dsl.edges,
+            ...dsl,
           },
           changelog: `Studio 调试运行快照（基于 ${studioVersion.versionCode}）`,
         },
@@ -1022,6 +1020,13 @@ export const WorkflowDefinitionPage: React.FC = () => {
       message.error(getErrorMessage(error));
       return undefined;
     }
+  };
+
+  const handleStudioValidate = async (dsl: WorkflowDsl) => {
+    return validateDslMutation.mutateAsync({
+      dslSnapshot: dsl,
+      stage: 'SAVE',
+    });
   };
 
   const latestDraftVersion = useMemo(
@@ -1470,6 +1475,7 @@ export const WorkflowDefinitionPage: React.FC = () => {
               initialDsl={studioVersion.dslSnapshot}
               onSave={handleSaveStudioDsl}
               onRun={handleStudioRun}
+              onValidate={handleStudioValidate}
             />
           </div>
         ) : null}

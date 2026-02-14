@@ -1,7 +1,7 @@
 import React, { useMemo } from 'react';
 import { Cascader, Space, Typography } from 'antd';
 import type { DefaultOptionType } from 'antd/es/cascader';
-import { useReactFlow, type Node, type Edge } from '@xyflow/react';
+import { useReactFlow } from '@xyflow/react';
 import { getNodeTypeConfig } from './nodeTypeRegistry';
 
 const { Text } = Typography;
@@ -19,20 +19,55 @@ export const VariableSelector: React.FC<VariableSelectorProps> = ({
 }) => {
     const { getNodes, getEdges } = useReactFlow();
 
-    // 计算上游节点及其输出字段
     const options = useMemo(() => {
         const nodes = getNodes();
         const edges = getEdges();
+        const nodeMap = new Map(nodes.map((node) => [node.id, node]));
+        const incomingMap = new Map<string, string[]>();
+        edges.forEach((edge) => {
+            const sources = incomingMap.get(edge.target) ?? [];
+            sources.push(edge.source);
+            incomingMap.set(edge.target, sources);
+        });
 
-        // 简单的 BFS/DFS 查找所有上游节点（这里简化为查找直接和间接上游）
-        // 实际场景可能需要更严谨的图遍历，这里先从边关系中查找所有指向当前路经的节点
-        // 暂简化为：列出所有非当前节点（TODO: 仅列出拓扑排序在上游的节点）
+        // 从当前节点逆向遍历，仅收集可达上游节点
+        const queue: Array<{ id: string; depth: number }> = [{ id: currentNodeId, depth: 0 }];
+        const visited = new Set<string>();
+        const upstreamDepth = new Map<string, number>();
+        while (queue.length > 0) {
+            const current = queue.shift();
+            if (!current) break;
+            const sources = incomingMap.get(current.id) ?? [];
+            for (const sourceId of sources) {
+                if (sourceId === currentNodeId) {
+                    continue;
+                }
+                const nextDepth = current.depth + 1;
+                const prevDepth = upstreamDepth.get(sourceId);
+                if (prevDepth === undefined || nextDepth < prevDepth) {
+                    upstreamDepth.set(sourceId, nextDepth);
+                }
+                if (!visited.has(sourceId)) {
+                    visited.add(sourceId);
+                    queue.push({ id: sourceId, depth: nextDepth });
+                }
+            }
+        }
 
-        const upstreamNodes = nodes.filter(n => n.id !== currentNodeId);
+        const upstreamNodes = [...visited]
+            .map((id) => nodeMap.get(id))
+            .filter((node): node is NonNullable<typeof node> => Boolean(node))
+            .sort((a, b) => (upstreamDepth.get(a.id) ?? 99) - (upstreamDepth.get(b.id) ?? 99));
 
         return upstreamNodes.map((node): DefaultOptionType | null => {
             const nodeConfig = getNodeTypeConfig(node.data.type as string);
-            const outputFields = nodeConfig?.outputFields ?? [];
+            const outputFields = nodeConfig?.outputFields
+                ?? nodeConfig?.outputsSchema?.map((schemaField) => ({
+                    name: schemaField.name,
+                    label: schemaField.name,
+                    type: schemaField.type,
+                }))
+                ?? [];
 
             if (outputFields.length === 0) return null;
 
@@ -57,7 +92,7 @@ export const VariableSelector: React.FC<VariableSelectorProps> = ({
                 })),
             };
         }).filter((item): item is DefaultOptionType => item !== null);
-    }, [getNodes, currentNodeId]);
+    }, [getNodes, getEdges, currentNodeId]);
 
     const displayValue = useMemo(() => {
         if (!value) return [];
