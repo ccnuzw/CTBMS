@@ -11,7 +11,10 @@ import {
   ParameterChangeLogPageDto,
   ParameterOverrideDiffDto,
   BatchResetParameterItemsDto,
+
   ParameterImpactPreviewDto,
+  ResolveParameterSetDto,
+  ResolveParameterSetResultDto,
 } from '@packages/types';
 import { apiClient } from '../../../api/client';
 
@@ -192,6 +195,18 @@ export const useBatchResetParameterItems = () => {
       queryClient.invalidateQueries({ queryKey: ['parameter-set', variables.setId] });
       queryClient.invalidateQueries({ queryKey: ['parameter-override-diff', variables.setId] });
       queryClient.invalidateQueries({ queryKey: ['parameter-change-logs', variables.setId] });
+    },
+  });
+};
+
+export const useResolveParameterSet = () => {
+  return useMutation({
+    mutationFn: async ({ setId, dto }: { setId: string; dto: ResolveParameterSetDto }) => {
+      const res = await apiClient.post<ResolveParameterSetResultDto>(
+        `${API_BASE}/${setId}/resolve`,
+        dto,
+      );
+      return res.data;
     },
   });
 };

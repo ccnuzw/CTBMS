@@ -1,9 +1,16 @@
 import { Node, Edge } from '@xyflow/react';
 import { getNodeTypeConfig } from './nodeTypeRegistry';
 
+export interface ValidationError {
+    message: string;
+    nodeId?: string;
+    edgeId?: string;
+    severity?: 'ERROR' | 'WARNING';
+}
+
 export interface ValidationResult {
     isValid: boolean;
-    errors: string[];
+    errors: ValidationError[];
 }
 
 export type WorkflowMode = 'linear' | 'dag' | 'debate';
@@ -13,20 +20,18 @@ export const validateGraph = (
     edges: Edge[],
     mode: WorkflowMode
 ): ValidationResult => {
-    const errors: string[] = [];
+    const errors: ValidationError[] = [];
 
     // ── Common Checks (WF001 - WF004) ──
 
     // WF001: Required Metadata
-    // Ideally this checks dsl.name/mode fields, but here we validate graph structure primarily.
-    // We can check if nodes have required data.
     nodes.forEach(n => {
         if (!n.data.label) {
-            // errors.push(`节点 ${n.id} 缺少标签 (WF001)`); // Optional strictness
+            // errors.push({ message: `节点 ${n.id} 缺少标签 (WF001)`, nodeId: n.id });
         }
     });
 
-    // WF002: Unique ID Check (React Flow handles this internally usually, but good to verify)
+    // WF002: Unique ID Check
     const idSet = new Set<string>();
     const duplicates = new Set<string>();
     nodes.forEach(n => {
@@ -34,14 +39,16 @@ export const validateGraph = (
         idSet.add(n.id);
     });
     if (duplicates.size > 0) {
-        errors.push(`存在重复节点 ID: ${Array.from(duplicates).join(', ')} (WF002)`);
+        duplicates.forEach(id => {
+            errors.push({ message: `存在重复节点 ID: ${id} (WF002)`, nodeId: id });
+        });
     }
 
     // WF003: Edge validity
     const nodeIds = new Set(nodes.map((n) => n.id));
     edges.forEach((edge) => {
         if (!nodeIds.has(edge.source) || !nodeIds.has(edge.target)) {
-            errors.push(`连线 ${edge.id} 的端点不存在 (WF003)`);
+            errors.push({ message: `连线端点不存在 (WF003)`, edgeId: edge.id });
         }
     });
 
@@ -56,27 +63,18 @@ export const validateGraph = (
 
         nodes.forEach((n) => {
             const config = getNodeTypeConfig(n.data.type as string);
-            // Groups and Comments might be isolated
             if (config?.category === 'GROUP') return;
 
             const isTrigger = config?.category === 'TRIGGER';
-            const isOutput = config?.category === 'OUTPUT'; // OR n.type === 'end' if strictly defined
+            // const isOutput = config?.category === 'OUTPUT';
 
-            // Triggers generally start flows, so they might not have incoming (unless looped)
-            // But they MUST have outgoing to be useful (WF004) -> "Effective Reachability"
             if (isTrigger && !outgoingEdges.has(n.id)) {
-                errors.push(`触发节点 "${n.data.label || n.id}" 未连接后续流程 (WF004)`);
+                errors.push({ message: `触发节点未连接后续流程 (WF004)`, nodeId: n.id });
             }
 
-            // Middle nodes must have both
             if (!isTrigger && !incomingEdges.has(n.id)) {
-                errors.push(`节点 "${n.data.label || n.id}" 缺少输入连线 (WF004)`);
+                errors.push({ message: `节点缺少输入连线 (WF004)`, nodeId: n.id });
             }
-            // Strict: Non-output/End nodes should have outgoing, but maybe legitimate dead-ends exist (e.g. fire-and-forget notify)
-            // We can loosen this for now or keep it strict.
-            // if (!isOutput && !outgoingEdges.has(n.id) && !['notify'].includes(n.data.type as string)) {
-            //    errors.push(`节点 "${n.data.label || n.id}" 缺少输出连线 (WF004)`);
-            // }
         });
     }
 
@@ -98,69 +96,58 @@ export const validateGraph = (
 };
 
 const validateDebate = (nodes: Node[], edges: Edge[]): ValidationResult => {
-    const errors: string[] = [];
+    const errors: ValidationError[] = [];
 
-    // WF101: Debate Topology
-    const contextBuilderNodes = nodes.filter((n) => n.data.type === 'context-builder'); // Fixed: debate-topic -> context-builder
+    const contextBuilderNodes = nodes.filter((n) => n.data.type === 'context-builder');
     const agentNodes = nodes.filter(
         (n) =>
             n.data.type === 'agent-call' ||
             n.data.type === 'single-agent' ||
             n.data.type === 'agent-group' ||
-            n.data.type === 'debate-round' // debate-round also considered part of debate flow
+            n.data.type === 'debate-round'
     );
     const judgeNodes = nodes.filter(
         (n) => n.data.type === 'judge-agent'
     );
 
     if (contextBuilderNodes.length !== 1) {
-        errors.push('辩论模式需要恰好 1 个 "上下文构建 (Context Builder)" 节点');
+        errors.push({ message: '辩论模式需要恰好 1 个 "上下文构建 (Context Builder)" 节点' });
     }
-    // Debate round needs at least participants config, but structurally we check for agent/debate nodes
     if (agentNodes.length < 1) {
-        errors.push('辩论模式至少需要 1 个 "辩论轮次" 或 "智能体" 节点');
+        errors.push({ message: '辩论模式至少需要 1 个 "辩论轮次" 或 "智能体" 节点' });
     }
     if (judgeNodes.length !== 1) {
-        errors.push('辩论模式需要恰好 1 个 "裁判 (Judge)" 节点');
+        errors.push({ message: '辩论模式需要恰好 1 个 "裁判 (Judge)" 节点' });
     }
 
     return { isValid: errors.length === 0, errors };
 };
 
 const validateDAG = (nodes: Node[], edges: Edge[]): ValidationResult => {
-    const errors: string[] = [];
+    const errors: ValidationError[] = [];
     if (hasCycle(nodes, edges)) {
-        errors.push('检测到循环依赖 (Cycle Detected)');
+        errors.push({ message: '检测到循环依赖 (Cycle Detected)' });
     }
 
-    // WF102: DAG should imply complexity that often needs a Join, but strictly:
-    // Any node with >1 incoming edge usually implies a Join or Merge needed upstream if they split.
-    // Here we just check if ParallelSplit exists, there should be a Join.
     const splitNodes = nodes.filter(n => n.data.type === 'parallel-split');
     const joinNodes = nodes.filter(n => n.data.type === 'join' || n.data.type === 'control-join');
 
     if (splitNodes.length > 0 && joinNodes.length === 0) {
-        errors.push('DAG 模式下使用 "并行拆分" 时，通常需要配对 "汇聚等待 (Join)" 节点');
-    }
-
-    // WF104: High value scenarios should have Risk Gate
-    const riskNodes = nodes.filter(n => n.data.type === 'risk-gate');
-    if (riskNodes.length === 0) {
-        // This might be a warning rather than error, but per design it's a "Standard Link" component
-        // errors.push('建议在 DAG 模式决策流中添加 "风控闸门 (Risk Gate)" 节点 (WF104)');
+        splitNodes.forEach(n => {
+            errors.push({ message: '使用 "并行拆分" 时，通常需要配对 "汇聚等待" 节点', nodeId: n.id, severity: 'WARNING' });
+        });
     }
 
     return { isValid: errors.length === 0, errors };
 };
 
 const validateLinear = (nodes: Node[], edges: Edge[]): ValidationResult => {
-    const errors: string[] = [];
+    const errors: ValidationError[] = [];
 
     if (hasCycle(nodes, edges)) {
-        errors.push('线性模式不支持循环 (Cycle Detected)');
+        errors.push({ message: '线性模式不支持循环 (Cycle Detected)' });
     }
 
-    // WF005: Max 1 outgoing edge per node (Linear Chain)
     const sourceCounts = new Map<string, number>();
     edges.forEach((e) => {
         sourceCounts.set(e.source, (sourceCounts.get(e.source) || 0) + 1);
@@ -168,9 +155,7 @@ const validateLinear = (nodes: Node[], edges: Edge[]): ValidationResult => {
 
     sourceCounts.forEach((count, nodeId) => {
         if (count > 1) {
-            const node = nodes.find((n) => n.id === nodeId);
-            const label = node?.data?.label || nodeId;
-            errors.push(`线性模式下节点 "${label}" 不允许有多个后续分支`);
+            errors.push({ message: `线性模式下节点不允许有多个后续分支`, nodeId });
         }
     });
 

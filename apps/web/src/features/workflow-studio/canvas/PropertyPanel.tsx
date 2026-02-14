@@ -482,6 +482,7 @@ export const PropertyPanel: React.FC<PropertyPanelProps> = ({
                             React.createElement(NODE_FORM_REGISTRY[nodeType], {
                                 config: config,
                                 onChange: handleConfigChange,
+                                currentNodeId: selectedNode.id,
                             })
                         ) : (
                             <Form layout="vertical" size="small">

@@ -57,6 +57,7 @@ export interface NodeTypeConfig {
     inputsSchema?: { name: string; type: string; required?: boolean }[];
     outputsSchema?: { name: string; type: string }[];
     aliases?: string[];
+    recommendedNextNodes?: string[];
 }
 
 interface NodeUiMeta {
@@ -65,6 +66,7 @@ interface NodeUiMeta {
     icon: React.ComponentType;
     description: string;
     aliases?: string[];
+    recommendedNextNodes?: string[];
 }
 
 export const NODE_CATEGORIES: Record<NodeCategory, { label: string; color: string; icon: React.ComponentType }> = {
@@ -86,12 +88,14 @@ const NODE_UI_META: Record<WorkflowCanonicalNodeType, NodeUiMeta> = {
         icon: PlayCircleOutlined,
         description: '手动点击触发流程',
         aliases: ['trigger'],
+        recommendedNextNodes: ['data-fetch', 'agent-call', 'rule-pack-eval'],
     },
     'cron-trigger': {
         label: '定时触发',
         category: 'TRIGGER',
         icon: ClockCircleOutlined,
         description: '按 cron 表达式定时触发',
+        recommendedNextNodes: ['data-fetch', 'market-data-fetch', 'report-fetch'],
     },
     'api-trigger': {
         label: 'API 触发',
@@ -99,12 +103,14 @@ const NODE_UI_META: Record<WorkflowCanonicalNodeType, NodeUiMeta> = {
         icon: ApiOutlined,
         description: '外部 API 调用触发',
         aliases: ['on-demand-trigger'],
+        recommendedNextNodes: ['data-fetch', 'rule-pack-eval'],
     },
     'event-trigger': {
         label: '事件触发',
         category: 'TRIGGER',
         icon: ThunderboltOutlined,
         description: '基于事件总线的消息触发',
+        recommendedNextNodes: ['data-fetch', 'feature-calc'],
     },
     'data-fetch': {
         label: '数据采集',
@@ -112,6 +118,7 @@ const NODE_UI_META: Record<WorkflowCanonicalNodeType, NodeUiMeta> = {
         icon: DatabaseOutlined,
         description: '从数据连接器获取数据',
         aliases: ['market-data-fetch', 'mock-fetch'],
+        recommendedNextNodes: ['formula-calc', 'rule-pack-eval', 'agent-call'],
     },
     'futures-data-fetch': {
         label: '期货数据采集',
@@ -143,6 +150,7 @@ const NODE_UI_META: Record<WorkflowCanonicalNodeType, NodeUiMeta> = {
         icon: CalculatorOutlined,
         description: '自定义公式或引用公式库',
         aliases: ['compute'],
+        recommendedNextNodes: ['rule-eval', 'decision-merge', 'agent-call'],
     },
     'feature-calc': {
         label: '特征工程',
@@ -167,6 +175,7 @@ const NODE_UI_META: Record<WorkflowCanonicalNodeType, NodeUiMeta> = {
         category: 'RULE',
         icon: SafetyOutlined,
         description: '执行规则包评分',
+        recommendedNextNodes: ['decision-merge', 'risk-gate', 'agent-call'],
     },
     'alert-check': {
         label: '告警检查',
@@ -180,6 +189,7 @@ const NODE_UI_META: Record<WorkflowCanonicalNodeType, NodeUiMeta> = {
         icon: RobotOutlined,
         description: '调用 AI 智能体执行分析',
         aliases: ['single-agent'],
+        recommendedNextNodes: ['decision-merge', 'risk-gate', 'notify'],
     },
     'agent-group': {
         label: '智能体组',
@@ -346,6 +356,7 @@ const buildNodeTypeConfig = (nodeType: WorkflowCanonicalNodeType): NodeTypeConfi
         icon: ui.icon,
         description: ui.description,
         aliases: ui.aliases,
+        recommendedNextNodes: ui.recommendedNextNodes,
         defaultConfig: { ...(contract?.defaultConfig ?? {}) },
         inputsSchema: contract?.inputsSchema ?? [],
         outputsSchema: contract?.outputsSchema ?? [],

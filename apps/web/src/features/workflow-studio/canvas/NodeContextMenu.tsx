@@ -1,6 +1,6 @@
 import React from 'react';
 import { Menu, theme } from 'antd';
-import { CopyOutlined, DeleteOutlined, SaveOutlined } from '@ant-design/icons';
+import { CopyOutlined, DeleteOutlined, SaveOutlined, PlayCircleOutlined, CheckCircleOutlined, StopOutlined } from '@ant-design/icons';
 
 interface NodeContextMenuProps {
     id: string;
@@ -9,6 +9,11 @@ interface NodeContextMenuProps {
     onCopy: () => void;
     onDelete: () => void;
     onSaveTemplate: () => void;
+    onToggleEnable: () => void;
+    isEnabled: boolean;
+    onRunFromHere?: () => void;
+    onToggleBreakpoint?: () => void;
+    hasBreakpoint?: boolean;
     onClose: () => void;
 }
 
@@ -19,6 +24,11 @@ export const NodeContextMenu: React.FC<NodeContextMenuProps> = ({
     onCopy,
     onDelete,
     onSaveTemplate,
+    onToggleEnable,
+    isEnabled,
+    onRunFromHere,
+    onToggleBreakpoint,
+    hasBreakpoint,
     onClose,
 }) => {
     const { token } = theme.useToken();
@@ -50,6 +60,42 @@ export const NodeContextMenu: React.FC<NodeContextMenuProps> = ({
                 onClose();
             },
         },
+
+        {
+            key: 'toggle-enable',
+            label: isEnabled ? '禁用节点 (Disable)' : '启用节点 (Enable)',
+            icon: isEnabled ? <StopOutlined /> : <CheckCircleOutlined />,
+            onClick: () => {
+                onToggleEnable();
+                onClose();
+            },
+        },
+        ...(onToggleBreakpoint
+            ? [
+                {
+                    key: 'toggle-breakpoint',
+                    label: hasBreakpoint ? '移除断点 (Remove Breakpoint)' : '设置断点 (Set Breakpoint)',
+                    icon: <div style={{ width: 14, height: 14, background: hasBreakpoint ? 'transparent' : 'red', borderRadius: '50%', border: '2px solid red', display: 'inline-block' }} />,
+                    onClick: () => {
+                        onToggleBreakpoint();
+                        onClose();
+                    },
+                },
+            ]
+            : []),
+        ...(onRunFromHere
+            ? [
+                {
+                    key: 'run-from-here',
+                    label: '从此处运行 (Run from here)',
+                    icon: <PlayCircleOutlined />,
+                    onClick: () => {
+                        onRunFromHere();
+                        onClose();
+                    },
+                },
+            ]
+            : []),
         {
             type: 'divider',
         },

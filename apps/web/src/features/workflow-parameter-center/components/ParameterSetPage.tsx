@@ -61,7 +61,7 @@ import {
   useResetParameterItemToDefault,
   useUpdateParameterItem,
 } from '../api';
-import { ParameterDiffView, ParameterInheritanceStatus } from './index';
+import { ParameterDiffView, ParameterInheritanceStatus, ParameterResolutionPreview } from './index';
 
 const { Title } = Typography;
 
@@ -975,6 +975,13 @@ export const ParameterSetPage: React.FC = () => {
                     </Card>
                   </Space>
                 ),
+              },
+              {
+                key: 'simulator',
+                label: '继承模拟',
+                children: selectedSetId ? (
+                  <ParameterResolutionPreview parameterSetId={selectedSetId} />
+                ) : null,
               },
               {
                 key: 'audit',

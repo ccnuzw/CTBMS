@@ -5,6 +5,7 @@ import { ApiTriggerForm } from './ApiTriggerForm';
 import { EventTriggerForm } from './EventTriggerForm'; // New
 import { MarketDataFetchForm } from './MarketDataFetchForm';
 import { RulePackEvalForm } from './RulePackEvalForm';
+import { RuleEvalForm } from './RuleEvalForm'; // New
 import { SingleAgentForm } from './SingleAgentForm';
 import { DebateRoundForm } from './DebateRoundForm';
 import { DecisionMergeForm } from './DecisionMergeForm';
@@ -21,6 +22,7 @@ import { JudgeAgentForm } from './JudgeAgentForm'; // New
 interface FormProps {
     config: Record<string, unknown>;
     onChange: (key: string, value: unknown) => void;
+    currentNodeId?: string;
 }
 
 export const NODE_FORM_REGISTRY: Record<string, React.FC<FormProps>> = {
@@ -31,6 +33,7 @@ export const NODE_FORM_REGISTRY: Record<string, React.FC<FormProps>> = {
     'data-fetch': MarketDataFetchForm,
     'market-data-fetch': MarketDataFetchForm,
     'rule-pack-eval': RulePackEvalForm,
+    'rule-eval': RuleEvalForm,
     'agent-call': SingleAgentForm,
     'single-agent': SingleAgentForm,
     'debate-round': DebateRoundForm,

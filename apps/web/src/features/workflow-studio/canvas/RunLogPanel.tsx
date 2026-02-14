@@ -20,6 +20,7 @@ interface RunLogPanelProps {
     height?: number;
     onHeightChange?: (height: number) => void;
     onClose?: () => void;
+    onLogClick?: (nodeId: string) => void;
 }
 
 const LEVEL_COLORS: Record<WorkflowRuntimeEventLevel, string> = {
@@ -33,6 +34,7 @@ export const RunLogPanel: React.FC<RunLogPanelProps> = ({
     height = 300,
     onHeightChange,
     onClose,
+    onLogClick,
 }) => {
     const { token } = theme.useToken();
     const listRef = useRef<HTMLDivElement>(null);
@@ -131,7 +133,13 @@ export const RunLogPanel: React.FC<RunLogPanelProps> = ({
                                             dataSource={events}
                                             loading={isLoading}
                                             renderItem={(item: WorkflowRuntimeEventDto) => (
-                                                <List.Item style={{ padding: '8px 0', border: 'none' }}>
+                                                <List.Item
+                                                    style={{ padding: '8px 0', border: 'none', cursor: item.detail?.nodeId ? 'pointer' : 'default' }}
+                                                    onClick={() => {
+                                                        const nodeId = item.detail?.nodeId as string;
+                                                        if (nodeId) onLogClick?.(nodeId);
+                                                    }}
+                                                >
                                                     <Space align="start" style={{ width: '100%' }}>
                                                         <Text type="secondary" style={{ fontSize: 12, minWidth: 140 }}>
                                                             {dayjs(item.occurredAt).format('YYYY-MM-DD HH:mm:ss.SSS')}

@@ -3,6 +3,7 @@ import { Handle, Position, type NodeProps } from '@xyflow/react';
 import { Badge, theme, Typography } from 'antd';
 import type { NodeTypeConfig } from './nodeTypeRegistry';
 import { getNodeTypeConfig } from './nodeTypeRegistry';
+import { NodeConfigSummary } from './NodeConfigSummary';
 
 const { Text } = Typography;
 
@@ -44,7 +45,7 @@ export const WorkflowNodeComponent = memo(({ data, selected }: NodeProps) => {
                 maxWidth: 240,
                 boxShadow: selected ? `0 0 0 3px ${token.colorPrimaryBg}` : token.boxShadowTertiary,
                 opacity: isEnabled ? (diffStatus === 'unchanged' ? 0.5 : 1) : 0.5,
-
+                position: 'relative',
                 transition: 'all 0.2s ease',
 
                 cursor: 'pointer',
@@ -140,7 +141,28 @@ export const WorkflowNodeComponent = memo(({ data, selected }: NodeProps) => {
                         style={{ fontSize: 10, backgroundColor: token.colorTextQuaternary }}
                     />
                 )}
+
             </div>
+
+            {/* Breakpoint Indicator */}
+            {(data.isBreakpoint as boolean) && (
+                <div
+                    style={{
+                        position: 'absolute',
+                        top: -6,
+                        right: -6,
+                        width: 12,
+                        height: 12,
+                        borderRadius: '50%',
+                        background: '#ff4d4f',
+                        border: '2px solid white',
+                        boxShadow: '0 2px 4px rgba(0,0,0,0.2)',
+                        zIndex: 10,
+                    }}
+                />
+            )}
+
+            <NodeConfigSummary nodeType={nodeType} config={(data.config as Record<string, unknown>) ?? {}} />
 
             {/* Output Handles */}
             {outputsSchema ? (

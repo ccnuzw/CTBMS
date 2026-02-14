@@ -35,6 +35,8 @@ import { useCanvasAlignment } from './useCanvasAlignment';
 import { NodeContextMenu } from './NodeContextMenu';
 import { SaveTemplateModal } from './SaveTemplateModal';
 import { listNodeTemplates, saveNodeTemplate } from './nodeTemplateStore';
+import { SmartLinkMenu } from './SmartLinkMenu';
+import { CanvasErrorList, type ValidationError } from './CanvasErrorList';
 
 interface WorkflowCanvasProps {
     initialDsl?: WorkflowDsl;
@@ -72,12 +74,21 @@ const WorkflowCanvasInner: React.FC<WorkflowCanvasProps> = ({
     const [executionId, setExecutionId] = useState<string | undefined>();
     const [selectionMode, setSelectionMode] = useState<'hand' | 'pointer'>('hand');
     const [snapToGrid, setSnapToGrid] = useState(true);
-    const [validationErrors, setValidationErrors] = useState<string[]>([]);
+    const [validationErrors, setValidationErrors] = useState<ValidationError[]>([]);
     const [workflowMode, setWorkflowMode] = useState<'linear' | 'dag' | 'debate'>(
         toWorkflowModeUi(initialDsl?.mode ?? 'DAG'),
     );
     const [menuState, setMenuState] = useState<{ id: string; top: number; left: number } | null>(null);
+    const [smartLinkMenu, setSmartLinkMenu] = useState<{
+        top: number;
+        left: number;
+        sourceNodeId: string;
+        sourceHandleId?: string | null;
+    } | null>(null);
     const [isTemplateModalOpen, setIsTemplateModalOpen] = useState(false);
+    const [breakpoints, setBreakpoints] = useState<Set<string>>(new Set());
+    const connectingNodeId = useRef<string | null>(null);
+    const connectingHandleId = useRef<string | null>(null);
 
     const { takeSnapshot, undo, redo, canUndo, canRedo } = useUndoRedo();
 
@@ -158,17 +169,18 @@ const WorkflowCanvasInner: React.FC<WorkflowCanvasProps> = ({
     }, [exportDsl, reactFlow, workflowMode]);
 
     const runValidation = useCallback(
-        async (dsl: WorkflowDsl): Promise<string[]> => {
+        async (dsl: WorkflowDsl): Promise<ValidationError[]> => {
             if (onValidate) {
                 const remoteResult = await onValidate(dsl, 'SAVE');
                 if (remoteResult) {
                     return remoteResult.issues
                         .filter((issue) => issue.severity === 'ERROR')
-                        .map((issue) =>
-                            issue.nodeId || issue.edgeId
-                                ? `${issue.code}: ${issue.message} (${issue.nodeId ?? issue.edgeId})`
-                                : `${issue.code}: ${issue.message}`,
-                        );
+                        .map((issue) => ({
+                            message: `${issue.code}: ${issue.message}`,
+                            nodeId: issue.nodeId,
+                            edgeId: issue.edgeId,
+                            severity: 'ERROR',
+                        }));
                 }
             }
 
@@ -189,7 +201,7 @@ const WorkflowCanvasInner: React.FC<WorkflowCanvasProps> = ({
                 }
             } catch {
                 if (active) {
-                    setValidationErrors(['校验服务异常，请稍后重试']);
+                    setValidationErrors([{ message: '校验服务异常，请稍后重试', severity: 'ERROR' }]);
                 }
             }
         }, 300);
@@ -260,6 +272,7 @@ const WorkflowCanvasInner: React.FC<WorkflowCanvasProps> = ({
         setSelectedNodeId(null);
         setSelectedEdgeId(null);
         setMenuState(null);
+        setSmartLinkMenu(null);
     }, []);
 
     const onNodeContextMenu = useCallback((event: React.MouseEvent, node: Node) => {
@@ -315,6 +328,18 @@ const WorkflowCanvasInner: React.FC<WorkflowCanvasProps> = ({
         setSelectedEdgeId(null);
     }, [takeSnapshot, nodes, edges, setNodes, setEdges]);
 
+    // Keyboard shortcuts
+    React.useEffect(() => {
+        const handleKeyDown = (e: KeyboardEvent) => {
+            if ((e.metaKey || e.ctrlKey) && e.key === 's') {
+                e.preventDefault();
+                handleSave();
+            }
+        };
+        window.addEventListener('keydown', handleKeyDown);
+        return () => window.removeEventListener('keydown', handleKeyDown);
+    }, [handleSave]);
+
     const handleRun = useCallback(async () => {
         if (!onRun) {
             setShowLogPanel(true);
@@ -341,6 +366,80 @@ const WorkflowCanvasInner: React.FC<WorkflowCanvasProps> = ({
             message.error('运行失败');
         }
     }, [onRun, buildCurrentDsl, runValidation, workflowMode]);
+
+
+
+    const onConnectStart = useCallback(
+        (_: any, { nodeId, handleId }: { nodeId: string | null; handleId: string | null }) => {
+            connectingNodeId.current = nodeId;
+            connectingHandleId.current = handleId;
+        },
+        [],
+    );
+
+    const onConnectEnd = useCallback(
+        (event: any) => {
+            if (!connectingNodeId.current) {
+                return;
+            }
+
+            const targetIsPane = event.target.classList.contains('react-flow__pane');
+            if (targetIsPane) {
+                const { top, left } = canvasRef.current?.getBoundingClientRect() ?? { top: 0, left: 0 };
+                const clientX = event.clientX ?? event.changedTouches?.[0]?.clientX;
+                const clientY = event.clientY ?? event.changedTouches?.[0]?.clientY;
+
+                setSmartLinkMenu({
+                    top: clientY - top,
+                    left: clientX - left,
+                    sourceNodeId: connectingNodeId.current,
+                    sourceHandleId: connectingHandleId.current,
+                });
+            }
+            connectingNodeId.current = null;
+            connectingHandleId.current = null;
+        },
+        [],
+    );
+
+    const handleSmartLinkSelect = useCallback(
+        (nodeType: string) => {
+            if (!smartLinkMenu) {
+                return;
+            }
+
+            const { top, left, sourceNodeId, sourceHandleId } = smartLinkMenu;
+            const position = reactFlow.screenToFlowPosition({
+                x: left + (canvasRef.current?.getBoundingClientRect().left ?? 0),
+                y: top + (canvasRef.current?.getBoundingClientRect().top ?? 0),
+            });
+
+            // Add new node
+            const newNodeId = addNode(nodeType, position);
+
+            // Connect source to new node
+            // Assuming default handles for now, or letting onConnect handle logic if we triggered it
+            // But here we manually create edge
+            const sourceNode = nodes.find((n) => n.id === sourceNodeId);
+            if (sourceNode && newNodeId) {
+                const newEdge = {
+                    id: `e_${sourceNodeId}_${newNodeId}_${Date.now()}`,
+                    source: sourceNodeId,
+                    target: newNodeId,
+                    sourceHandle: sourceHandleId,
+                    type: 'default', // or smoothstep based on preference
+                };
+                // We need to use onConnect or setEdges to add the edge.
+                // onConnect is usually for Connection object.
+                // Let's manually add edge
+                setEdges((eds) => [...eds, newEdge]);
+            }
+
+            setSmartLinkMenu(null);
+            setSelectedNodeId(newNodeId);
+        },
+        [smartLinkMenu, reactFlow, addNode, nodes, setEdges],
+    );
 
     const handleNodeDragStop = useCallback(
         (_: React.MouseEvent, node: Node) => {
@@ -464,6 +563,17 @@ const WorkflowCanvasInner: React.FC<WorkflowCanvasProps> = ({
         message.success('节点模板已保存到本地模板库');
     }, [menuState, nodes]);
 
+    const handleContextToggleEnable = useCallback(() => {
+        if (!menuState) return;
+        const node = nodes.find((n) => n.id === menuState.id);
+        if (!node) return;
+
+        const isEnabled = (node.data.enabled as boolean) ?? true;
+        updateNodeData(node.id, { enabled: !isEnabled });
+        message.success(isEnabled ? '节点已禁用' : '节点已启用');
+        setMenuState(null);
+    }, [menuState, nodes, updateNodeData]);
+
     return (
         <div style={{ display: 'flex', width: '100%', height: '100%' }}>
             {!isReadOnly && <NodePalette />}
@@ -508,23 +618,30 @@ const WorkflowCanvasInner: React.FC<WorkflowCanvasProps> = ({
                     onDragOver={handleDragOver}
                     onDrop={handleDrop}
                 >
-                    {validationErrors.length > 0 ? (
-                        <div style={{ position: 'absolute', top: 16, right: 16, zIndex: 10, maxWidth: 320 }}>
-                            <Alert
-                                message="工作流校验未通过"
-                                description={
-                                    <ul style={{ paddingLeft: 20, margin: 0 }}>
-                                        {validationErrors.map((error, index) => (
-                                            <li key={index}>{error}</li>
-                                        ))}
-                                    </ul>
+                    {validationErrors.length > 0 && (
+                        <CanvasErrorList
+                            errors={validationErrors}
+                            onFocusNode={(nodeId) => {
+                                const node = nodes.find(n => n.id === nodeId);
+                                if (node) {
+                                    setSelectedNodeId(nodeId);
+                                    reactFlow.fitView({ nodes: [{ id: nodeId }], duration: 800, padding: 0.5 });
                                 }
-                                type="warning"
-                                showIcon
-                                closable
-                            />
-                        </div>
-                    ) : null}
+                            }}
+                            onFocusEdge={(edgeId) => {
+                                const edge = edges.find(e => e.id === edgeId);
+                                if (edge) {
+                                    setSelectedEdgeId(edgeId);
+                                    // ReactFlow doesn't support fitView for edges directly but we can fit the source/target
+                                    const source = nodes.find(n => n.id === edge.source);
+                                    const target = nodes.find(n => n.id === edge.target);
+                                    if (source && target) {
+                                        reactFlow.fitView({ nodes: [{ id: source.id }, { id: target.id }], duration: 800, padding: 0.5 });
+                                    }
+                                }
+                            }}
+                        />
+                    )}
 
                     <ReactFlow
                         nodes={nodes}
@@ -537,6 +654,8 @@ const WorkflowCanvasInner: React.FC<WorkflowCanvasProps> = ({
                         onPaneClick={handlePaneClick}
                         onNodeContextMenu={isReadOnly ? undefined : onNodeContextMenu}
                         onNodeDragStop={isReadOnly ? undefined : handleNodeDragStop}
+                        onConnectStart={isReadOnly ? undefined : onConnectStart}
+                        onConnectEnd={isReadOnly ? undefined : onConnectEnd}
                         nodeTypes={nodeTypes}
                         fitView
                         snapToGrid={snapToGrid}
@@ -571,6 +690,10 @@ const WorkflowCanvasInner: React.FC<WorkflowCanvasProps> = ({
                         height={logPanelHeight}
                         onHeightChange={setLogPanelHeight}
                         onClose={() => setShowLogPanel(false)}
+                        onLogClick={(nodeId) => {
+                            setSelectedNodeId(nodeId);
+                            reactFlow.fitView({ nodes: [{ id: nodeId }], duration: 800, padding: 0.5 });
+                        }}
                     />
                 ) : null}
 
@@ -617,6 +740,22 @@ const WorkflowCanvasInner: React.FC<WorkflowCanvasProps> = ({
                     onCopy={handleContextCopy}
                     onDelete={handleContextDelete}
                     onSaveTemplate={handleContextSaveTemplate}
+                    onToggleEnable={handleContextToggleEnable}
+                    isEnabled={(nodes.find((n) => n.id === menuState.id)?.data.enabled as boolean) ?? true}
+                    onToggleBreakpoint={() => {
+                        if (!menuState) return;
+                        const newBreakpoints = new Set(breakpoints);
+                        if (newBreakpoints.has(menuState.id)) {
+                            newBreakpoints.delete(menuState.id);
+                        } else {
+                            newBreakpoints.add(menuState.id);
+                        }
+                        setBreakpoints(newBreakpoints);
+                        updateNodeData(menuState.id, { isBreakpoint: !breakpoints.has(menuState.id) });
+                        message.success(newBreakpoints.has(menuState.id) ? '断点已启用' : '断点已移除');
+                        setMenuState(null);
+                    }}
+                    hasBreakpoint={menuState ? breakpoints.has(menuState.id) : false}
                     onClose={() => setMenuState(null)}
                 />
             ) : null}
@@ -629,6 +768,16 @@ const WorkflowCanvasInner: React.FC<WorkflowCanvasProps> = ({
                     sourceWorkflowDefinitionId={currentDefinitionId}
                     initialName={initialDsl?.name}
                     initialCode={initialDsl?.workflowId !== 'new' ? initialDsl?.workflowId : undefined}
+                />
+            ) : null}
+
+            {smartLinkMenu && !isReadOnly ? (
+                <SmartLinkMenu
+                    top={smartLinkMenu.top}
+                    left={smartLinkMenu.left}
+                    sourceNodeType={nodes.find((n) => n.id === smartLinkMenu.sourceNodeId)?.type ?? ''}
+                    onSelect={handleSmartLinkSelect}
+                    onClose={() => setSmartLinkMenu(null)}
                 />
             ) : null}
         </div>
