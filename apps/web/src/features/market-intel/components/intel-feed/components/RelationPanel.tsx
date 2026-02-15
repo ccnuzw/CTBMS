@@ -54,14 +54,12 @@ const RELATION_TYPE_META_FALLBACK: Record<string, { label: string; color: string
 const CONTENT_TYPE_ICONS: Record<string, React.ReactNode> = {
     [ContentType.DAILY_REPORT]: <FileTextOutlined style={{ color: '#1890ff' }} />,
     [ContentType.RESEARCH_REPORT]: <FileTextOutlined style={{ color: '#52c41a' }} />,
-    [ContentType.POLICY_DOC]: <FileTextOutlined style={{ color: '#722ed1' }} />,
     'PRICE_DATA': <RiseOutlined style={{ color: '#f5222d' }} />,
 };
 
 const CONTENT_TYPE_META_FALLBACK: Record<string, { label: string; color: string }> = {
     [ContentType.DAILY_REPORT]: { label: '市场信息', color: 'blue' },
     [ContentType.RESEARCH_REPORT]: { label: '研究报告', color: 'green' },
-    [ContentType.POLICY_DOC]: { label: '政策文件', color: 'purple' },
     PRICE_DATA: { label: '价格', color: 'volcano' },
 };
 
@@ -73,6 +71,33 @@ const SOURCE_TYPE_META_FALLBACK: Record<string, { label: string; color: string }
     RESEARCH_INST: { label: '研究机构', color: 'purple' },
     MEDIA: { label: '媒体报道', color: 'orange' },
     INTERNAL_REPORT: { label: '内部研报', color: 'geekblue' },
+};
+
+const SENTIMENT_LABEL_FALLBACK: Record<string, string> = {
+    BULLISH: '看涨/积极',
+    BEARISH: '看跌/消极',
+    NEUTRAL: '中性/震荡',
+    MIXED: '混合/波动',
+    POSITIVE: '看涨/积极',
+    NEGATIVE: '看跌/消极',
+};
+
+const TIMEFRAME_LABEL_FALLBACK: Record<string, string> = {
+    SHORT: '短期',
+    MEDIUM: '中期',
+    LONG: '长期',
+    SHORT_TERM: '短期',
+    MEDIUM_TERM: '中期',
+    LONG_TERM: '长期',
+};
+
+const COMMODITY_LABEL_FALLBACK: Record<string, string> = {
+    SOYBEAN_MEAL: '豆粕',
+    SOYBEAN_OIL: '豆油',
+    SUGAR: '白糖',
+    COTTON: '棉花',
+    HOG: '生猪',
+    UREA: '尿素',
 };
 
 export const RelationPanel: React.FC<RelationPanelProps> = ({
@@ -88,7 +113,14 @@ export const RelationPanel: React.FC<RelationPanelProps> = ({
     const [detailId, setDetailId] = useState<string | null>(null);
     const [detailOpen, setDetailOpen] = useState(false);
     const { data: detailData, isLoading: detailLoading } = useMarketIntel(detailId || '');
-    const { data: dictionaries } = useDictionaries(['RELATION_TYPE', 'CONTENT_TYPE', 'INTEL_SOURCE_TYPE']);
+    const { data: dictionaries } = useDictionaries([
+        'RELATION_TYPE',
+        'CONTENT_TYPE',
+        'INTEL_SOURCE_TYPE',
+        'MARKET_SENTIMENT',
+        'PREDICTION_TIMEFRAME',
+        'COMMODITY',
+    ]);
     const { containerRef, focusRef, modalProps } = useModalAutoFocus();
 
     const relationTypeMeta = useMemo(() => {
@@ -126,6 +158,53 @@ export const RelationPanel: React.FC<RelationPanelProps> = ({
             return acc;
         }, { ...SOURCE_TYPE_META_FALLBACK });
     }, [dictionaries]);
+
+    const sentimentLabelMap = useMemo(() => {
+        const map: Record<string, string> = { ...SENTIMENT_LABEL_FALLBACK };
+        const items = dictionaries?.MARKET_SENTIMENT?.filter((item) => item.isActive) || [];
+        items.forEach((item) => {
+            map[item.code] = item.label;
+            const aliases = ((item.meta as { aliases?: string[] } | null)?.aliases || [])
+                .filter((alias): alias is string => Boolean(alias));
+            aliases.forEach((alias) => {
+                map[alias.toUpperCase()] = item.label;
+            });
+        });
+        return map;
+    }, [dictionaries]);
+
+    const timeframeLabelMap = useMemo(() => {
+        const map: Record<string, string> = { ...TIMEFRAME_LABEL_FALLBACK };
+        const items = dictionaries?.PREDICTION_TIMEFRAME?.filter((item) => item.isActive) || [];
+        items.forEach((item) => {
+            map[item.code] = item.label;
+        });
+        return map;
+    }, [dictionaries]);
+
+    const commodityLabelMap = useMemo(() => {
+        const map: Record<string, string> = { ...COMMODITY_LABEL_FALLBACK };
+        const items = dictionaries?.COMMODITY?.filter((item) => item.isActive) || [];
+        items.forEach((item) => {
+            map[item.code] = item.label;
+        });
+        return map;
+    }, [dictionaries]);
+
+    const normalizeRelationType = (value?: string) => (value || '').trim().toUpperCase();
+    const normalizeDictCode = (value?: string) => (value || '').trim().toUpperCase();
+
+    const getSentimentLabel = (value?: string) => {
+        if (!value) return '-';
+        const normalized = normalizeDictCode(value);
+        return sentimentLabelMap[normalized] || value;
+    };
+
+    const getTimeframeLabel = (value?: string) => {
+        if (!value) return '-';
+        const normalized = normalizeDictCode(value);
+        return timeframeLabelMap[normalized] || value;
+    };
 
     const handleOpenDetail = (intelId: string) => {
         setDetailId(intelId);
@@ -241,7 +320,7 @@ export const RelationPanel: React.FC<RelationPanelProps> = ({
                             <Timeline
                                 pending={isLoading ? '分析中...' : false}
                                 items={relatedItems.map((related: any, idx: number) => ({
-                                    color: relationTypeMeta[related.relationType]?.color || 'blue',
+                                    color: relationTypeMeta[normalizeRelationType(related.relationType)]?.color || 'blue',
                                     children: (
                                         <Card
                                             size="small"
@@ -266,10 +345,10 @@ export const RelationPanel: React.FC<RelationPanelProps> = ({
                                                     </Flex>
                                                     <Flex gap={4}>
                                                         <Tag
-                                                            color={relationTypeMeta[related.relationType]?.color}
+                                                            color={relationTypeMeta[normalizeRelationType(related.relationType)]?.color}
                                                             style={{ fontSize: 10 }}
                                                         >
-                                                            {relationTypeMeta[related.relationType]?.label || related.relationType}
+                                                            {relationTypeMeta[normalizeRelationType(related.relationType)]?.label || related.relationType}
                                                         </Tag>
                                                         {related.similarity && (
                                                             <Tag style={{ fontSize: 10 }}>
@@ -313,7 +392,7 @@ export const RelationPanel: React.FC<RelationPanelProps> = ({
                                         <div style={{ marginBottom: 12 }}>
                                             <Tag color="orange" style={{ marginBottom: 4 }}>后市预判</Tag>
                                             <Paragraph style={{ fontSize: 12, margin: 0 }}>
-                                                {selectedIntel.researchReport.prediction.direction} ({selectedIntel.researchReport.prediction.timeframe})
+                                                {getSentimentLabel(selectedIntel.researchReport.prediction.direction)} ({getTimeframeLabel(selectedIntel.researchReport.prediction.timeframe)})
                                                 <br />
                                                 {selectedIntel.researchReport.prediction.reasoning}
                                             </Paragraph>
@@ -330,6 +409,18 @@ export const RelationPanel: React.FC<RelationPanelProps> = ({
                                                     ))}
                                             </ul>
                                         </>
+                                    )}
+                                    {Array.isArray(selectedIntel.researchReport.commodities) && selectedIntel.researchReport.commodities.length > 0 && (
+                                        <div style={{ marginTop: 8 }}>
+                                            <Text strong style={{ fontSize: 12 }}>关联品种：</Text>
+                                            <Flex wrap="wrap" gap={6} style={{ marginTop: 6 }}>
+                                                {selectedIntel.researchReport.commodities.map((commodity: string) => (
+                                                    <Tag key={commodity} style={{ fontSize: 11, margin: 0 }}>
+                                                        {commodityLabelMap[normalizeDictCode(commodity)] || commodity}
+                                                    </Tag>
+                                                ))}
+                                            </Flex>
+                                        </div>
                                     )}
                                 </Card>
                                 <Divider style={{ margin: '16px 0' }} />

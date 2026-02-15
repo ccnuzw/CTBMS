@@ -11,10 +11,10 @@ generator client {
 // 用户状态枚举（原 EmployeeStatus）
 // =============================================
 enum UserStatus {
-  ACTIVE      // 在职
-  PROBATION   // 试用期
-  RESIGNED    // 离职
-  SUSPENDED   // 停职
+  ACTIVE // 在职
+  PROBATION // 试用期
+  RESIGNED // 离职
+  SUSPENDED // 停职
 }
 
 // 性别枚举
@@ -28,40 +28,41 @@ enum Gender {
 // 用户模型 (合并原 User + Employee)
 // =============================================
 model User {
-  id             String       @id @default(uuid())
-  
+  id String @id @default(uuid())
+
   // 登录凭证
-  username       String       @unique   // 登录用户名
-  email          String       @unique
-  
+  username String @unique // 登录用户名
+  email    String @unique
+
   // 基本信息
-  name           String                 // 姓名（显示名称）
-  gender         Gender?                // 性别
-  birthday       DateTime?              // 生日
-  employeeNo     String?      @unique   // 工号（可选）
-  phone          String?                // 电话
-  avatar         String?                // 头像 URL
-  
+  name       String // 姓名（显示名称）
+  gender     Gender? // 性别
+  birthday   DateTime? // 生日
+  employeeNo String?   @unique // 工号（可选）
+  phone      String? // 电话
+  avatar     String? // 头像 URL
+
   // 归属组织/部门（可选，有归属即为员工）
   organizationId String?
   organization   Organization? @relation(fields: [organizationId], references: [id])
   departmentId   String?
   department     Department?   @relation(fields: [departmentId], references: [id])
-  
+
   // 职位信息
-  position       String?      // 职位名称
-  hireDate       DateTime?    // 入职日期
-  
+  position String? // 职位名称
+  hireDate DateTime? // 入职日期
+
   // 员工状态
-  status         UserStatus   @default(ACTIVE)
-  
+  status UserStatus @default(ACTIVE)
+
   // 角色（通过 UserRole 关联）
-  roles          UserRole[]
-  
+  roles UserRole[]
+  userConfigBindings UserConfigBinding[]
+
   // 商情情报关联
-  marketIntels   MarketIntel[]
-  intelStats     UserIntelStats?
-  intelTasks     IntelTask[]       // 分配的采集任务
+  marketIntels MarketIntel[]
+  intelStats   UserIntelStats?
+  intelTasks   IntelTask[] // 分配的采集任务
 
   // [NEW] 采集点分配关系
   collectionPointAllocations CollectionPointAllocation[]
@@ -70,40 +71,47 @@ model User {
   priceSubmissions PriceSubmission[]
 
   // [NEW] 任务操作历史
-  taskHistory    IntelTaskHistory[]
+  taskHistory IntelTaskHistory[]
 
-  createdAt      DateTime     @default(now())
-  updatedAt      DateTime     @updatedAt
+  // [NEW] 工作流发布审计
+  workflowPublishAudits WorkflowPublishAudit[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([organizationId])
+  @@index([departmentId])
+  @@index([organizationId, departmentId])
 }
 
 // =============================================
 // 角色模型
 // =============================================
 model Role {
-  id          String       @id @default(uuid())
+  id          String  @id @default(uuid())
   name        String
-  code        String       @unique   // 角色代码，如 "MANAGER", "STAFF"
+  code        String  @unique // 角色代码，如 "MANAGER", "STAFF"
   description String?
-  isSystem    Boolean      @default(false) // 系统内置角色不可删除
-  
-  sortOrder   Int          @default(0)
-  status      EntityStatus @default(ACTIVE)
-  createdAt   DateTime     @default(now())
-  updatedAt   DateTime     @updatedAt
-  
-  users       UserRole[]
+  isSystem    Boolean @default(false) // 系统内置角色不可删除
+
+  sortOrder Int          @default(0)
+  status    EntityStatus @default(ACTIVE)
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+
+  users UserRole[]
 }
 
 // 用户-角色关联表 (多对多)
 model UserRole {
-  id        String   @id @default(uuid())
-  userId    String
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  roleId    String
-  role      Role     @relation(fields: [roleId], references: [id], onDelete: Cascade)
-  
+  id     String @id @default(uuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  roleId String
+  role   Role   @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
   createdAt DateTime @default(now())
-  
+
   @@unique([userId, roleId])
 }
 
@@ -113,12 +121,12 @@ model UserRole {
 
 // 标签作用域枚举
 enum TagScope {
-  GLOBAL       // 全局可用
-  CUSTOMER     // 客户
-  SUPPLIER     // 供应商
-  LOGISTICS    // 物流供应商
-  CONTRACT     // 合同单据
-  MARKET_INFO  // 信息采集（兼容旧数据）
+  GLOBAL // 全局可用
+  CUSTOMER // 客户
+  SUPPLIER // 供应商
+  LOGISTICS // 物流供应商
+  CONTRACT // 合同单据
+  MARKET_INFO // 信息采集（兼容旧数据）
 }
 
 // 可挂载标签的实体类型
@@ -132,58 +140,58 @@ enum TaggableEntityType {
 
 // 标签组模型 (用于互斥逻辑)
 model TagGroup {
-  id           String       @id @default(uuid())
-  name         String       @unique
-  description  String?
-  isExclusive  Boolean      @default(true)  // 组内互斥
-  sortOrder    Int          @default(0)
-  status       EntityStatus @default(ACTIVE)
-  createdAt    DateTime     @default(now())
-  updatedAt    DateTime     @updatedAt
-  
-  tags         Tag[]
-}
-
-// 全局标签模型
-model Tag {
   id          String       @id @default(uuid())
-  name        String
-  color       String?      // HEX 颜色
-  icon        String?      // 图标标识符
+  name        String       @unique
   description String?
-  
-  // 作用域 (决定该标签可挂载到哪些实体)
-  scopes      TagScope[]   @default([GLOBAL])
-  
-  // 所属标签组 (可选)
-  groupId     String?
-  group       TagGroup?    @relation(fields: [groupId], references: [id])
-  
+  isExclusive Boolean      @default(true) // 组内互斥
   sortOrder   Int          @default(0)
   status      EntityStatus @default(ACTIVE)
   createdAt   DateTime     @default(now())
   updatedAt   DateTime     @updatedAt
-  
+
+  tags Tag[]
+}
+
+// 全局标签模型
+model Tag {
+  id          String  @id @default(uuid())
+  name        String
+  color       String? // HEX 颜色
+  icon        String? // 图标标识符
+  description String?
+
+  // 作用域 (决定该标签可挂载到哪些实体)
+  scopes TagScope[] @default([GLOBAL])
+
+  // 所属标签组 (可选)
+  groupId String?
+  group   TagGroup? @relation(fields: [groupId], references: [id])
+
+  sortOrder Int          @default(0)
+  status    EntityStatus @default(ACTIVE)
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+
   // 关联实体
-  entityTags  EntityTag[]
-  
+  entityTags EntityTag[]
+
   @@unique([name, groupId]) // 同组内标签名唯一
 }
 
 // 多态关联表 (标签 <-> 业务实体)
 model EntityTag {
-  id         String             @id @default(uuid())
-  tagId      String
-  tag        Tag                @relation(fields: [tagId], references: [id], onDelete: Cascade)
-  
+  id    String @id @default(uuid())
+  tagId String
+  tag   Tag    @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
   // 多态字段
   entityType TaggableEntityType
-  entityId   String             // 目标实体ID
-  
-  createdAt  DateTime           @default(now())
-  
+  entityId   String // 目标实体ID
+
+  createdAt DateTime @default(now())
+
   @@unique([tagId, entityType, entityId]) // 防止重复关联
-  @@index([entityType, entityId])         // 按实体查询优化
+  @@index([entityType, entityId]) // 按实体查询优化
 }
 
 // =============================================
@@ -197,29 +205,29 @@ model MarketCategory {
   sortOrder   Int      @default(0)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
-  
-  infos       MarketInfo[]
+
+  infos MarketInfo[]
 }
 
 // MarketTag 已迁移到全局 Tag 系统，通过 EntityTag 关联
 
 model MarketInfo {
-  id          String   @id @default(uuid())
+  id          String     @id @default(uuid())
   title       String
-  content     String   @db.Text
+  content     String     @db.Text
   summary     String?
   status      InfoStatus @default(DRAFT)
   publishedAt DateTime?
-  
-  categoryId  String
-  category    MarketCategory @relation(fields: [categoryId], references: [id])
+
+  categoryId String
+  category   MarketCategory @relation(fields: [categoryId], references: [id])
   // 标签关联已迁移到 EntityTag 表
-  
-  attachments Json?      
-  
-  authorId    String     
-  createdAt   DateTime   @default(now())
-  updatedAt   DateTime   @updatedAt
+
+  attachments Json?
+
+  authorId  String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 enum InfoStatus {
@@ -234,10 +242,10 @@ enum InfoStatus {
 
 // 组织类型枚举
 enum OrganizationType {
-  HEADQUARTERS  // 总部
-  REGION        // 大区/分公司
-  BRANCH        // 经营部/办事处
-  SUBSIDIARY    // 子公司
+  HEADQUARTERS // 总部
+  REGION // 大区/分公司
+  BRANCH // 经营部/办事处
+  SUBSIDIARY // 子公司
 }
 
 // 通用状态枚举
@@ -250,52 +258,56 @@ enum EntityStatus {
 model Organization {
   id          String           @id @default(uuid())
   name        String
-  code        String           @unique   // 组织代码，如 "HQ", "REGION_EAST"
+  code        String           @unique // 组织代码，如 "HQ", "REGION_EAST"
   type        OrganizationType @default(BRANCH)
   description String?
-  
+
   // 自引用关系 (实现无限层级)
-  parentId    String?
-  parent      Organization?    @relation("OrgHierarchy", fields: [parentId], references: [id])
-  children    Organization[]   @relation("OrgHierarchy")
-  
+  parentId String?
+  parent   Organization?  @relation("OrgHierarchy", fields: [parentId], references: [id])
+  children Organization[] @relation("OrgHierarchy")
+
   // 关联部门
   departments Department[]
-  
+
   // 关联用户（员工）
-  users       User[]
-  
-  sortOrder   Int              @default(0)
-  status      EntityStatus     @default(ACTIVE)
-  createdAt   DateTime         @default(now())
-  updatedAt   DateTime         @updatedAt
+  users User[]
+
+  sortOrder Int          @default(0)
+  status    EntityStatus @default(ACTIVE)
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+
+  @@index([parentId])
 }
 
 // 部门模型 (支持多层级自引用)
 model Department {
-  id             String        @id @default(uuid())
-  name           String
-  code           String
-  description    String?
-  
+  id          String  @id @default(uuid())
+  name        String
+  code        String
+  description String?
+
   // 所属组织
   organizationId String
-  organization   Organization  @relation(fields: [organizationId], references: [id])
-  
+  organization   Organization @relation(fields: [organizationId], references: [id])
+
   // 自引用关系 (实现无限层级部门)
-  parentId       String?
-  parent         Department?   @relation("DeptHierarchy", fields: [parentId], references: [id])
-  children       Department[]  @relation("DeptHierarchy")
-  
+  parentId String?
+  parent   Department?  @relation("DeptHierarchy", fields: [parentId], references: [id])
+  children Department[] @relation("DeptHierarchy")
+
   // 关联用户（员工）
-  users          User[]
-  
-  sortOrder      Int           @default(0)
-  status         EntityStatus  @default(ACTIVE)
-  createdAt      DateTime      @default(now())
-  updatedAt      DateTime      @updatedAt
-  
+  users User[]
+
+  sortOrder Int          @default(0)
+  status    EntityStatus @default(ACTIVE)
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+
   @@unique([organizationId, code]) // 同一组织内部门代码唯一
+  @@index([organizationId])
+  @@index([parentId])
 }
 
 // =============================================
@@ -304,38 +316,38 @@ model Department {
 
 // 行政区划层级
 enum RegionLevel {
-  COUNTRY       // 国家
-  PROVINCE      // 省级（省/直辖市/自治区）
-  CITY          // 地级市
-  DISTRICT      // 区/县
-  TOWN          // 乡镇/街道（可选）
+  COUNTRY // 国家
+  PROVINCE // 省级（省/直辖市/自治区）
+  CITY // 地级市
+  DISTRICT // 区/县
+  TOWN // 乡镇/街道（可选）
 }
 
 // 行政区划表（采用国家统计局标准编码）
 model AdministrativeRegion {
-  id            String       @id @default(uuid())
-  
-  code          String       @unique  // 国标行政区划代码（如 110000 北京市）
-  name          String                // 名称
-  shortName     String?               // 简称（如 京、沪）
-  level         RegionLevel           // 层级
-  
+  id String @id @default(uuid())
+
+  code      String      @unique // 国标行政区划代码（如 110000 北京市）
+  name      String // 名称
+  shortName String? // 简称（如 京、沪）
+  level     RegionLevel // 层级
+
   // 层级关系
-  parentCode    String?               // 上级区划代码
-  parent        AdministrativeRegion?  @relation("RegionHierarchy", fields: [parentCode], references: [code])
-  children      AdministrativeRegion[] @relation("RegionHierarchy")
-  
+  parentCode String? // 上级区划代码
+  parent     AdministrativeRegion?  @relation("RegionHierarchy", fields: [parentCode], references: [code])
+  children   AdministrativeRegion[] @relation("RegionHierarchy")
+
   // 地理信息
-  longitude     Float?                // 中心经度
-  latitude      Float?                // 中心纬度
-  
+  longitude Float? // 中心经度
+  latitude  Float? // 中心纬度
+
   // 排序与状态
-  sortOrder     Int          @default(0)
-  isActive      Boolean      @default(true)
-  
+  sortOrder Int     @default(0)
+  isActive  Boolean @default(true)
+
   // 关联
   collectionPoints CollectionPoint[]
-  
+
   @@index([level])
   @@index([parentCode])
 }
@@ -346,11 +358,11 @@ model AdministrativeRegion {
 
 // 采集点类型
 enum CollectionPointType {
-  ENTERPRISE    // 企业（深加工、贸易商等）
-  PORT          // 港口
-  STATION       // 站台
-  REGION        // 地域（大区级别，如"东北"）
-  MARKET        // 批发市场
+  ENTERPRISE // 企业（深加工、贸易商等）
+  PORT // 港口
+  STATION // 站台
+  REGION // 地域（大区级别，如"东北"）
+  MARKET // 批发市场
 }
 
 // 采集点频率类型
@@ -363,49 +375,48 @@ enum CollectionPointFrequencyType {
 
 // 采集点配置表
 model CollectionPoint {
-  id            String               @id @default(uuid())
-  
+  id String @id @default(uuid())
+
   // 基本信息
-  code          String               @unique  // 唯一编码（如 JINZHOU_PORT）
-  name          String                        // 显示名称
-  shortName     String?                       // 简称
-  aliases       String[]                      // 别名列表（用于 AI 模糊匹配）
-  type          CollectionPointType           // 采集点类型
-  
+  code      String              @unique // 唯一编码（如 JINZHOU_PORT）
+  name      String // 显示名称
+  shortName String? // 简称
+  aliases   String[] // 别名列表（用于 AI 模糊匹配）
+  type      CollectionPointType // 采集点类型
+
   // ===== 增强：地域匹配（松耦合） =====
-  matchRegionCodes  String[]                  // 匹配的行政区划列表
-  
+  matchRegionCodes String[] // 匹配的行政区划列表
+
   // 行政区划关联
-  regionCode    String?                       // 关联的行政区划代码
-  region        AdministrativeRegion? @relation(fields: [regionCode], references: [code])
-  
+  regionCode String? // 关联的行政区划代码
+  region     AdministrativeRegion? @relation(fields: [regionCode], references: [code])
+
   // 详细地理信息（可覆盖行政区划的坐标）
-  address       String?                       // 详细地址
-  longitude     Float?                        // 经度
-  latitude      Float?                        // 纬度
-  
+  address   String? // 详细地址
+  longitude Float? // 经度
+  latitude  Float? // 纬度
+
   // 业务属性
-  commodities   String[]                      // 主营品种
-  priceSubTypes String[]                      // 支持的价格类型列表
-  defaultSubType String?                      // 默认价格子类型（如 FOB、LISTED）
-  isDataSource  Boolean              @default(true) // 是否作为数据来源点
+  commodities    String[] // 主营品种
+  priceSubTypes  String[] // 支持的价格类型列表
+  defaultSubType String? // 默认价格子类型（如 FOB、LISTED）
+  isDataSource   Boolean  @default(true) // 是否作为数据来源点
 
   // ===== 采集频率配置（内置）=====
-  frequencyType   CollectionPointFrequencyType @default(DAILY)
-  weekdays        Int[]              @default([]) // 1-7（周一~周日），仅 WEEKLY
-  monthDays       Int[]              @default([]) // 1-31，0=月末，仅 MONTHLY
-  dispatchAtMinute Int               @default(540) // 默认 09:00
-  shiftConfig     Json?                           // 班次/时段配置（可扩展）
+  frequencyType    CollectionPointFrequencyType @default(DAILY)
+  weekdays         Int[]                        @default([]) // 1-7（周一~周日），仅 WEEKLY
+  monthDays        Int[]                        @default([]) // 1-31，0=月末，仅 MONTHLY
+  dispatchAtMinute Int                          @default(540) // 默认 09:00
+  shiftConfig      Json? // 班次/时段配置（可扩展）
 
   // [NEW] 品种-价格类型映射配置 (JSON format)
   // Structure: { name: string, allowedSubTypes: string[], defaultSubType?: string }[]
   commodityConfigs Json?
 
-
   // [NEW] 市场经营主体属性 (替代原企业关联)
-  isMarketEntity Boolean             @default(false)
-  contactInfo    Json?               // 简易联系人信息 {name, phone, role}
-  capacity       Int?                // 产能/规模
+  isMarketEntity Boolean @default(false)
+  contactInfo    Json? // 简易联系人信息 {name, phone, role}
+  capacity       Int? // 产能/规模
 
   // 关联企业（如果是企业类型）- [REMOVED for Decoupling]
   // enterpriseId  String?
@@ -415,8 +426,8 @@ model CollectionPoint {
   // But CollectionPoint might still link to Enterprise for "which enterprise owns this point".
   // However, the prompt said "intelligence mainly relates to CollectionPoint... Enterprise module I don't want it (in this context)".
   // For safety and clean separation, I will remove the relation here to enforce the split.]
-  enterpriseId  String?
-  enterprise    Enterprise?          @relation(fields: [enterpriseId], references: [id]) 
+  enterpriseId String?
+  enterprise   Enterprise? @relation(fields: [enterpriseId], references: [id])
   // Wait, I should probably keep this link for the "Trading Side" to know which point belongs to which enterprise, 
   // BUT the PriceData/MarketEvent will NOT link to Enterprise directly.
   // The user said "Enterprise module I don't want...". 
@@ -428,37 +439,37 @@ model CollectionPoint {
   // It says "Intel/Price/Event only link to CollectionPoint". It does NOT say CollectionPoint cannot link to Enterprise.
   // But logically, if we decouple, we might want CollectionPoint to stand alone.
   // Let's keep it for now as it doesn't hurt the "Intel Pivot", but enables "Trading Pivot".
-  
+
   // 优先级与状态
-  priority      Int                  @default(0)  // 匹配优先级（高优先匹配）
-  isActive      Boolean              @default(true)
-  
+  priority Int     @default(0) // 匹配优先级（高优先匹配）
+  isActive Boolean @default(true)
+
   // 元数据
-  description   String?
-  createdAt     DateTime             @default(now())
-  updatedAt     DateTime             @updatedAt
-  createdById   String?              // 创建人
-  
+  description String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  createdById String? // 创建人
+
   // 关联的价格数据（反向关联）
-  priceData     PriceData[]
+  priceData    PriceData[]
   // 关联的市场事件
-  marketEvents  MarketEvent[]
+  marketEvents MarketEvent[]
 
   // [NEW] 关联的情报点链接
-  intelLinks    IntelPointLink[]
+  intelLinks IntelPointLink[]
 
   // [NEW] 采集点分配关系
-  allocations   CollectionPointAllocation[]
+  allocations CollectionPointAllocation[]
 
   // [NEW] 价格填报批次
   priceSubmissions PriceSubmission[]
 
   // [NEW] 关联的任务
-  intelTasks    IntelTask[]
+  intelTasks IntelTask[]
 
   // [NEW] 关联的任务模板
   taskTemplates IntelTaskTemplate[]
-  
+
   @@index([type])
   @@index([regionCode])
   @@index([isActive, priority])
@@ -470,92 +481,92 @@ model CollectionPoint {
 
 // 企业/客商类型枚举
 enum EnterpriseType {
-  SUPPLIER         // 供应商
-  CUSTOMER         // 客户
-  LOGISTICS        // 物流商
-  GROUP            // 集团
+  SUPPLIER // 供应商
+  CUSTOMER // 客户
+  LOGISTICS // 物流商
+  GROUP // 集团
 }
 
 // 联系人角色枚举
 enum ContactRole {
-  PROCUREMENT      // 采购决策线
-  EXECUTION        // 执行运营线
-  FINANCE          // 财务结算线
-  MANAGEMENT       // 高层管理线
+  PROCUREMENT // 采购决策线
+  EXECUTION // 执行运营线
+  FINANCE // 财务结算线
+  MANAGEMENT // 高层管理线
 }
 
 // 企业/客商模型
 model Enterprise {
-  id          String           @id @default(uuid())
-  name        String           // 企业全称
-  shortName   String?          // 简称
-  taxId       String           @unique  // 统一社会信用代码
-  types       EnterpriseType[] // 业务身份（可多选）
-  
+  id        String           @id @default(uuid())
+  name      String // 企业全称
+  shortName String? // 简称
+  taxId     String           @unique // 统一社会信用代码
+  types     EnterpriseType[] // 业务身份（可多选）
+
   // 集团层级关系 (自引用)
-  parentId    String?
-  parent      Enterprise?      @relation("EnterpriseHierarchy", fields: [parentId], references: [id])
-  children    Enterprise[]     @relation("EnterpriseHierarchy")
-  
+  parentId String?
+  parent   Enterprise?  @relation("EnterpriseHierarchy", fields: [parentId], references: [id])
+  children Enterprise[] @relation("EnterpriseHierarchy")
+
   // 地址信息
-  province    String?
-  city        String?
-  address     String?
-  longitude   Float?           // 经度
-  latitude    Float?           // 纬度
-  
-  description String?          @db.Text  // 企业描述
-  riskScore   Int              @default(80)  // 信用评分 0-100
-  
+  province  String?
+  city      String?
+  address   String?
+  longitude Float? // 经度
+  latitude  Float? // 纬度
+
+  description String? @db.Text // 企业描述
+  riskScore   Int     @default(80) // 信用评分 0-100
+
   // 关联
   contacts     Contact[]
   bankAccounts BankAccount[]
-  
+
   // 移除直接关联的情报/价格/事件
   // intelLinks   IntelEntityLink[] 
   // priceData    PriceData[]        
   // marketEvents MarketEvent[]      
-  
+
   // 保留与采集点的关联（作为资产归属关系）
-  collectionPoints CollectionPoint[] 
-  
-  status      EntityStatus     @default(ACTIVE)
-  createdAt   DateTime         @default(now())
-  updatedAt   DateTime         @updatedAt
+  collectionPoints CollectionPoint[]
+
+  status    EntityStatus @default(ACTIVE)
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
 }
 
 // 联系人模型
 model Contact {
-  id           String       @id @default(uuid())
-  name         String       // 姓名
-  title        String?      // 职位
-  role         ContactRole  // 职能角色
-  phone        String       // 电话
-  email        String?      // 邮箱
-  notes        String?      // 备注（如：决策人、响应快等）
-  
+  id    String      @id @default(uuid())
+  name  String // 姓名
+  title String? // 职位
+  role  ContactRole // 职能角色
+  phone String // 电话
+  email String? // 邮箱
+  notes String? // 备注（如：决策人、响应快等）
+
   enterpriseId String
-  enterprise   Enterprise   @relation(fields: [enterpriseId], references: [id], onDelete: Cascade)
-  
-  createdAt    DateTime     @default(now())
-  updatedAt    DateTime     @updatedAt
+  enterprise   Enterprise @relation(fields: [enterpriseId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 // 银行账户模型
 model BankAccount {
-  id            String     @id @default(uuid())
-  bankName      String     // 开户行
-  accountNumber String     // 账号
-  accountName   String     // 户名
-  branch        String?    // 支行
-  isDefault     Boolean    @default(false)  // 默认账户
-  isWhitelisted Boolean    @default(false)  // 是否白名单验证
-  
-  enterpriseId  String
-  enterprise    Enterprise @relation(fields: [enterpriseId], references: [id], onDelete: Cascade)
-  
-  createdAt     DateTime   @default(now())
-  updatedAt     DateTime   @updatedAt
+  id            String  @id @default(uuid())
+  bankName      String // 开户行
+  accountNumber String // 账号
+  accountName   String // 户名
+  branch        String? // 支行
+  isDefault     Boolean @default(false) // 默认账户
+  isWhitelisted Boolean @default(false) // 是否白名单验证
+
+  enterpriseId String
+  enterprise   Enterprise @relation(fields: [enterpriseId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 // =============================================
@@ -564,108 +575,159 @@ model BankAccount {
 
 // 情报分类枚举
 enum IntelCategory {
-  A_STRUCTURED      // 标准化硬数据 (价格/库存)
+  A_STRUCTURED // 标准化硬数据 (价格/库存)
   B_SEMI_STRUCTURED // 半结构化情报 (心态/事件)
-  C_DOCUMENT        // 文档与图表 (研报/政策)
-
+  C_DOCUMENT // 文档与图表 (研报/政策)
 }
 
 // 信源类型枚举
 enum IntelSourceType {
-  FIRST_LINE    // 市场信息
-  COMPETITOR    // 竞对情报
-  OFFICIAL      // 官方发布
+  FIRST_LINE // 市场信息
+  COMPETITOR // 竞对情报
+  OFFICIAL // 官方发布
   RESEARCH_INST // 第三方研究机构
-  MEDIA         // 媒体报道
+  MEDIA // 媒体报道
   INTERNAL_REPORT // 内部研报
 }
 
 // 内容类型（统一入口）
 enum ContentType {
-  DAILY_REPORT     // 市场日报
-  RESEARCH_REPORT  // 研究报告
-  POLICY_DOC       // 政策文件
+  DAILY_REPORT // 市场日报
+  RESEARCH_REPORT // 研究报告
 }
 
 // 研报类型
 // 报告内容类型
 enum ReportType {
-  POLICY     // 政策解读、政策影响分析
-  MARKET     // 市场行情、价格走势分析
-  RESEARCH   // 深度研究、专题报告
-  INDUSTRY   // 产业链分析、行业报告
+  POLICY // 政策解读、政策影响分析
+  MARKET // 市场行情、价格走势分析
+  RESEARCH // 深度研究、专题报告
+  INDUSTRY // 产业链分析、行业报告
 }
 
 // 报告发布周期
 enum ReportPeriod {
-  DAILY      // 日报
-  WEEKLY     // 周报
-  MONTHLY    // 月报
-  QUARTERLY  // 季报
-  ANNUAL     // 年报
-  ADHOC      // 不定期/专题
+  DAILY // 日报
+  WEEKLY // 周报
+  MONTHLY // 月报
+  QUARTERLY // 季报
+  ANNUAL // 年报
+  ADHOC // 不定期/专题
 }
 
 // 研报审核状态
 enum ReviewStatus {
-  PENDING    // 待审核
-  APPROVED   // 已通过
-  REJECTED   // 已拒绝
-  ARCHIVED   // 已归档
+  PENDING // 待审核
+  APPROVED // 已通过
+  REJECTED // 已拒绝
+  ARCHIVED // 已归档
+}
+
+// =============================================
+// Knowledge V2: 统一知识库
+// =============================================
+
+enum KnowledgeType {
+  DAILY
+  WEEKLY
+  MONTHLY
+  RESEARCH
+  FLASH
+  THIRD_PARTY
+  AI_REPORT
+}
+
+enum KnowledgePeriodType {
+  DAY
+  WEEK
+  MONTH
+  QUARTER
+  YEAR
+  ADHOC
+}
+
+enum KnowledgeStatus {
+  DRAFT
+  PENDING_REVIEW
+  APPROVED
+  REJECTED
+  PUBLISHED
+  ARCHIVED
+}
+
+enum KnowledgeContentFormat {
+  PLAIN
+  MARKDOWN
+  HTML
+}
+
+enum KnowledgeRelationType {
+  DERIVED_FROM
+  CITES
+  SAME_TOPIC
+  FOLLOW_UP
+  CONTRADICTS
+  WEEKLY_ROLLUP_OF
+}
+
+enum KnowledgeTagSource {
+  AI
+  RULE
+  MANUAL
 }
 
 // 商情情报主表
 model MarketIntel {
-  id            String          @id @default(uuid())
-  category      IntelCategory
-  sourceType    IntelSourceType
-  
-  // 元数据
-  effectiveTime DateTime        // 业务生效时间
-  location      String          // 地理位置
-  region        String[]        // 行政区划层级
-  gpsLat        Float?          // GPS 纬度
-  gpsLng        Float?          // GPS 经度
-  gpsVerified   Boolean         @default(false)  // 地理围栏验证
-  
-  // 内容
-  rawContent    String          @db.Text
-  summary       String?         @db.Text
-  
-  // AI 分析结果 (JSON)
-  aiAnalysis    Json?
-  
-  // 质量评分
-  completenessScore Int         @default(0)  // 完整度
-  scarcityScore     Int         @default(0)  // 稀缺度
-  validationScore   Int         @default(0)  // 验证分
-  totalScore        Int         @default(0)  // 总分
-  
-  // 标记
-  isFlagged     Boolean         @default(false)  // 风控标记
-  
-  // 关联
-  authorId      String
-  author        User            @relation(fields: [authorId], references: [id])
-  
-  // 扩展关联
-  priceData       PriceData[]       // A类：提取的价格数据
-  attachments     IntelAttachment[] // C类：附件
-  
-  // [NEW] 关联采集点 (D类替代品)
-  intelLinks      IntelPointLink[]  
+  id         String          @id @default(uuid())
+  category   IntelCategory
+  sourceType IntelSourceType
 
-  tasks           IntelTask[]       // 关联任务
-  marketEvents    MarketEvent[]     // B类：提取的市场事件
-  marketInsights  MarketInsight[]   // C类：提取的市场洞察
-  researchReport  ResearchReport?   // 研报档案（一对一）
-  
+  // 元数据
+  effectiveTime DateTime // 业务生效时间
+  location      String // 地理位置
+  region        String[] // 行政区划层级
+  gpsLat        Float? // GPS 纬度
+  gpsLng        Float? // GPS 经度
+  gpsVerified   Boolean  @default(false) // 地理围栏验证
+
+  // 内容
+  rawContent String  @db.Text
+  summary    String? @db.Text
+
+  // AI 分析结果 (JSON)
+  aiAnalysis Json?
+
+  // 质量评分
+  completenessScore Int @default(0) // 完整度
+  scarcityScore     Int @default(0) // 稀缺度
+  validationScore   Int @default(0) // 验证分
+  totalScore        Int @default(0) // 总分
+
+  // 标记
+  isFlagged Boolean @default(false) // 风控标记
+
+  // 关联
+  authorId String
+  author   User   @relation(fields: [authorId], references: [id])
+
+  // 扩展关联
+  priceData   PriceData[] // A类：提取的价格数据
+  attachments IntelAttachment[] // C类：附件
+
+  // [NEW] 关联采集点 (D类替代品)
+  intelLinks IntelPointLink[]
+
+  tasks          IntelTask[] // 关联任务
+  marketEvents   MarketEvent[] // B类：提取的市场事件
+  marketInsights MarketInsight[] // C类：提取的市场洞察
+  researchReport ResearchReport? // 研报档案（一对一）
+
   // 统一入口：内容类型
-  contentType     ContentType?      // 内容类型（日报/研报/政策）
-  
-  createdAt     DateTime        @default(now())
-  updatedAt     DateTime        @updatedAt
-  
+  contentType ContentType? // 内容类型（日报/研报/政策）
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
   @@index([category])
   @@index([sourceType])
   @@index([effectiveTime])
@@ -677,66 +739,179 @@ model MarketIntel {
 // C类增强：研究报告档案
 // =============================================
 model ResearchReport {
-  id            String     @id @default(uuid())
-  
+  id String @id @default(uuid())
+
   // 基础信息
-  title         String                       // 报告标题
-  reportType    ReportType                   // 报告内容类型
-  reportPeriod  ReportPeriod?                // 报告发布周期
-  publishDate   DateTime?                    // 发布日期
-  source        String?                      // 来源机构
-  
+  title        String // 报告标题
+  reportType   ReportType // 报告内容类型
+  reportPeriod ReportPeriod? // 报告发布周期
+  publishDate  DateTime? // 发布日期
+  source       String? // 来源机构
+
   // AI 生成内容
-  summary       String     @db.Text          // AI 生成摘要
-  keyPoints     Json?                        // 核心观点 List<Point>
-  prediction    Json?                        // 预测信息
-  dataPoints    Json?                        // 数据点 List<Point>
-  
+  summary    String @db.Text // AI 生成摘要
+  keyPoints  Json? // 核心观点 List<Point>
+  prediction Json? // 预测信息
+  dataPoints Json? // 数据点 List<Point>
+
   // 维度索引
-  commodities   String[]                     // 涉及品种
-  regions       String[]                     // 涉及区域
-  timeframe     String?                      // 时间周期 (e.g. 2023-W45)
+  commodities String[] // 涉及品种
+  regions     String[] // 涉及区域
+  timeframe   String? // 时间周期 (e.g. 2023-W45)
 
   // 版本管理
-  version           Int      @default(1)
+  version           Int     @default(1)
   previousVersionId String?
 
   // 审核状态
-  reviewStatus      ReviewStatus @default(PENDING)
-  reviewedById      String?
-  reviewedAt        DateTime?
+  reviewStatus ReviewStatus @default(PENDING)
+  reviewedById String?
+  reviewedAt   DateTime?
 
   // 阅读统计
-  viewCount         Int        @default(0)   // 阅读次数
-  downloadCount     Int        @default(0)   // 下载次数
-  
+  viewCount     Int @default(0) // 阅读次数
+  downloadCount Int @default(0) // 下载次数
+
   // 关联
-  intelId       String     @unique           // 关联 MarketIntel
-  intel         MarketIntel @relation(fields: [intelId], references: [id], onDelete: Cascade)
-  
-  createdAt     DateTime   @default(now())
-  updatedAt     DateTime   @updatedAt
-  
+  intelId String      @unique // 关联 MarketIntel
+  intel   MarketIntel @relation(fields: [intelId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
   @@index([reportType])
   @@index([reportPeriod])
   @@index([publishDate])
   @@index([reviewStatus])
 }
 
+model KnowledgeItem {
+  id               String                 @id @default(uuid())
+  type             KnowledgeType
+  title            String
+  contentFormat    KnowledgeContentFormat @default(HTML)
+  contentPlain     String                 @db.Text
+  contentRich      String?                @db.Text
+  sourceType       String?
+  publishAt        DateTime?
+  effectiveAt      DateTime?
+  periodType       KnowledgePeriodType    @default(ADHOC)
+  periodKey        String?
+  location         String?
+  region           String[]               @default([])
+  commodities      String[]               @default([])
+  status           KnowledgeStatus        @default(DRAFT)
+  authorId         String
+  reviewerId       String?
+  reviewedAt       DateTime?
+  rejectReason     String?
+  version          Int                    @default(1)
+  parentVersionId  String?
+  parentVersion    KnowledgeItem?         @relation("KnowledgeVersion", fields: [parentVersionId], references: [id])
+  childVersions    KnowledgeItem[]        @relation("KnowledgeVersion")
+  originLegacyType String?
+  originLegacyId   String?
+  qualityScore     Int                    @default(0)
+  createdAt        DateTime               @default(now())
+  updatedAt        DateTime               @updatedAt
+
+  analysis      KnowledgeAnalysis?
+  attachments   KnowledgeAttachment[]
+  relationsFrom KnowledgeRelation[]   @relation("KnowledgeRelationFrom")
+  relationsTo   KnowledgeRelation[]   @relation("KnowledgeRelationTo")
+  tagMaps       KnowledgeTagMap[]
+
+  @@index([type, publishAt])
+  @@index([periodType, periodKey])
+  @@index([status, publishAt])
+  @@index([sourceType, status])
+  @@index([authorId])
+  @@index([originLegacyType, originLegacyId])
+}
+
+model KnowledgeAnalysis {
+  id              String        @id @default(uuid())
+  knowledgeId     String        @unique
+  knowledge       KnowledgeItem @relation(fields: [knowledgeId], references: [id], onDelete: Cascade)
+  summary         String?       @db.Text
+  sentiment       String?
+  confidenceScore Int?
+  reportType      String?
+  reportPeriod    String?
+  keyPoints       Json?
+  prediction      Json?
+  dataPoints      Json?
+  events          Json?
+  insights        Json?
+  marketSentiment Json?
+  tags            String[]      @default([])
+  traceLogs       Json?
+  modelName       String?
+  provider        String?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+}
+
+model KnowledgeAttachment {
+  id          String        @id @default(uuid())
+  knowledgeId String
+  knowledge   KnowledgeItem @relation(fields: [knowledgeId], references: [id], onDelete: Cascade)
+  filename    String
+  mimeType    String
+  fileSize    Int
+  storagePath String
+  ocrText     String?       @db.Text
+  sha256      String?
+  createdAt   DateTime      @default(now())
+
+  @@index([knowledgeId])
+}
+
+model KnowledgeRelation {
+  id              String                @id @default(uuid())
+  fromKnowledgeId String
+  toKnowledgeId   String
+  relationType    KnowledgeRelationType
+  weight          Int                   @default(50)
+  evidence        String?               @db.Text
+  createdAt       DateTime              @default(now())
+
+  fromKnowledge KnowledgeItem @relation("KnowledgeRelationFrom", fields: [fromKnowledgeId], references: [id], onDelete: Cascade)
+  toKnowledge   KnowledgeItem @relation("KnowledgeRelationTo", fields: [toKnowledgeId], references: [id], onDelete: Cascade)
+
+  @@unique([fromKnowledgeId, toKnowledgeId, relationType])
+  @@index([fromKnowledgeId])
+  @@index([toKnowledgeId])
+}
+
+model KnowledgeTagMap {
+  id          String             @id @default(uuid())
+  knowledgeId String
+  knowledge   KnowledgeItem      @relation(fields: [knowledgeId], references: [id], onDelete: Cascade)
+  tagCode     String
+  tagSource   KnowledgeTagSource @default(AI)
+  score       Int                @default(50)
+  createdAt   DateTime           @default(now())
+
+  @@unique([knowledgeId, tagCode, tagSource])
+  @@index([knowledgeId])
+  @@index([tagCode])
+}
+
 // 情报员统计表
 model UserIntelStats {
-  id                String   @id @default(uuid())
-  userId            String   @unique
-  user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  
-  creditCoefficient Float    @default(3.0)   // 信用系数 0-5
-  monthlyPoints     Int      @default(0)     // 月度积分
-  submissionCount   Int      @default(0)     // 提交数量
-  accuracyRate      Float    @default(0)     // 准确率 %
-  highValueCount    Int      @default(0)     // 高价值引用数
-  
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
+  id     String @id @default(uuid())
+  userId String @unique
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  creditCoefficient Float @default(3.0) // 信用系数 0-5
+  monthlyPoints     Int   @default(0) // 月度积分
+  submissionCount   Int   @default(0) // 提交数量
+  accuracyRate      Float @default(0) // 准确率 %
+  highValueCount    Int   @default(0) // 高价值引用数
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 // =============================================
@@ -745,147 +920,265 @@ model UserIntelStats {
 
 // 价格主体类型（谁的价格）
 enum PriceSourceType {
-  ENTERPRISE    // 企业收购价（具体企业的挂牌/成交价）
-  REGIONAL      // 地域市场价（区域综合价格）
-  PORT          // 港口价格（港口到港/平舱价）
+  ENTERPRISE // 企业收购价（具体企业的挂牌/成交价）
+  REGIONAL // 地域市场价（区域综合价格）
+  PORT // 港口价格（港口到港/平舱价）
 }
 
 // 价格子类型（什么性质的价格）
 enum PriceSubType {
-  LISTED        // 挂牌价（企业对外公布）
-  TRANSACTION   // 成交价（实际成交）
-  ARRIVAL       // 到港价（到达港口的价格）
-  FOB           // 平舱价（船舱交货价）
-  STATION       // 站台价
-  PURCHASE      // 收购价（向农户/贸易商收购）
-  WHOLESALE     // 批发价（批发市场价格）
-  OTHER         // 其他
+  LISTED // 挂牌价（企业对外公布）
+  TRANSACTION // 成交价（实际成交）
+  ARRIVAL // 到港价（到达港口的价格）
+  FOB // 平舱价（船舱交货价）
+  STATION // 站台价
+  PURCHASE // 收购价（向农户/贸易商收购）
+  WHOLESALE // 批发价（批发市场价格）
+  OTHER // 其他
 }
 
 // 地理层级
 enum GeoLevel {
-  COUNTRY       // 国家级
-  REGION        // 大区（东北/华北等）
-  PROVINCE      // 省级
-  CITY          // 市级
-  DISTRICT      // 区县级
-  PORT          // 港口
-  STATION       // 站台
-  ENTERPRISE    // 企业点位
+  COUNTRY // 国家级
+  REGION // 大区（东北/华北等）
+  PROVINCE // 省级
+  CITY // 市级
+  DISTRICT // 区县级
+  PORT // 港口
+  STATION // 站台
+  ENTERPRISE // 企业点位
+}
+
+enum PriceQualityTag {
+  RAW
+  IMPUTED
+  CORRECTED
+  LATE
+}
+
+// 预警规则类型
+enum MarketAlertRuleType {
+  DAY_CHANGE_ABS
+  DAY_CHANGE_PCT
+  DEVIATION_FROM_MEAN_PCT
+  CONTINUOUS_DAYS
+}
+
+// 预警等级
+enum MarketAlertSeverity {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+// 预警状态
+enum MarketAlertStatus {
+  OPEN
+  ACKNOWLEDGED
+  CLOSED
+}
+
+// 预警动作日志类型
+enum MarketAlertAction {
+  CREATE
+  UPDATE_HIT
+  ACK
+  CLOSE
+  REOPEN
+  AUTO_CLOSE
 }
 
 model PriceData {
-  id            String   @id @default(uuid())
-  
+  id String @id @default(uuid())
+
   // ===== 价格分类 =====
-  sourceType    PriceSourceType @default(REGIONAL)  // 价格主体类型
-  subType       PriceSubType    @default(LISTED)    // 价格子类型
-  
+  sourceType PriceSourceType @default(REGIONAL) // 价格主体类型
+  subType    PriceSubType    @default(LISTED) // 价格子类型
+
   // ===== 地理维度 =====
-  geoLevel      GeoLevel        @default(CITY)      // 地理层级
-  location      String                              // 采集点名称（锦州港/梅花味精）
-  province      String?                             // 省份
-  city          String?                             // 城市
-  district      String?                             // 区县
-  region        String[]                            // 行政区划数组（向后兼容）
-  longitude     Float?                              // 经度（用于地图展示）
-  latitude      Float?                              // 纬度（用于地图展示）
-  
+  geoLevel  GeoLevel @default(CITY) // 地理层级
+  location  String // 采集点名称（锦州港/梅花味精）
+  province  String? // 省份
+  city      String? // 城市
+  district  String? // 区县
+  region    String[] // 行政区划数组（向后兼容）
+  longitude Float? // 经度（用于地图展示）
+  latitude  Float? // 纬度（用于地图展示）
+
   // ===== 企业关联（仅企业价格有值）=====
   // [REMOVED] enterpriseId  String?
   // [REMOVED] enterprise    Enterprise? @relation(fields: [enterpriseId], references: [id])
   // [REMOVED] enterpriseName String?                            // 冗余存储企业名称（便于查询）
-  
+
   // ===== 采集点关联（支持连续性数据分析）=====
-  collectionPointId  String?
-  collectionPoint    CollectionPoint? @relation(fields: [collectionPointId], references: [id])
-  
+  collectionPointId String?
+  collectionPoint   CollectionPoint? @relation(fields: [collectionPointId], references: [id])
+
   // ===== 标准化行政区划代码（松耦合）=====
-  regionCode         String?                        // 关联的行政区划代码（如 210700 锦州市）
-  
+  regionCode String? // 关联的行政区划代码（如 210700 锦州市）
+
   // ===== 品种维度 =====
-  effectiveDate DateTime @db.Date                   // 价格日期
-  commodity     String                              // 品种（玉米/大豆等）
-  grade         String?                             // 等级（二等/三等）
-  
+  effectiveDate DateTime @db.Date // 价格日期
+  commodity     String // 品种（玉米/大豆等）
+  grade         String? // 等级（二等/三等）
+
   // ===== 价格指标 =====
-  price         Decimal  @db.Decimal(10, 2)         // 价格（元/吨）
-  moisture      Decimal? @db.Decimal(5, 2)          // 水分 %
-  bulkDensity   Int?                                // 容重 g/L
-  toxin         Decimal? @db.Decimal(5, 2)          // 毒素
-  freight       Decimal? @db.Decimal(10, 2)         // 运费
-  inventory     Int?                                // 库存量（吨）
-  
+  price       Decimal  @db.Decimal(10, 2) // 价格（元/吨）
+  moisture    Decimal? @db.Decimal(5, 2) // 水分 %
+  bulkDensity Int? // 容重 g/L
+  toxin       Decimal? @db.Decimal(5, 2) // 毒素
+  freight     Decimal? @db.Decimal(10, 2) // 运费
+  inventory   Int? // 库存量（吨）
+
   // ===== 计算列 =====
-  foldPrice     Decimal? @db.Decimal(10, 2)         // 折标价格
-  dayChange     Decimal? @db.Decimal(10, 2)         // 较昨日涨跌
-  yearChange    Decimal? @db.Decimal(10, 2)         // 较去年同期涨跌
-  
+  foldPrice  Decimal? @db.Decimal(10, 2) // 折标价格
+  dayChange  Decimal? @db.Decimal(10, 2) // 较昨日涨跌
+  yearChange Decimal? @db.Decimal(10, 2) // 较去年同期涨跌
+
   // ===== 备注 =====
-  note          String?                             // 附加说明
-  
+  note       String? // 附加说明
+  qualityTag PriceQualityTag @default(RAW) // 数据质量标签
+
   // ===== 关联 =====
-  intelId       String?
-  intel         MarketIntel? @relation(fields: [intelId], references: [id])
-  authorId      String
+  intelId  String?
+  intel    MarketIntel? @relation(fields: [intelId], references: [id])
+  authorId String
 
   // ===== [NEW] 填报来源追踪 =====
-  inputMethod   PriceInputMethod  @default(AI_EXTRACTED)  // 录入方式
+  inputMethod PriceInputMethod @default(AI_EXTRACTED) // 录入方式
 
   // ===== [NEW] 关联填报批次 =====
-  submissionId  String?
-  submission    PriceSubmission?  @relation(fields: [submissionId], references: [id])
+  submissionId String?
+  submission   PriceSubmission? @relation(fields: [submissionId], references: [id])
 
   // ===== [NEW] 审核流程 =====
-  reviewStatus  PriceReviewStatus @default(PENDING)       // 审核状态
-  reviewedById  String?                                    // 审核人ID
-  reviewedAt    DateTime?                                  // 审核时间
-  reviewNote    String?                                    // 审核备注
+  reviewStatus PriceReviewStatus @default(PENDING) // 审核状态
+  reviewedById String? // 审核人ID
+  reviewedAt   DateTime? // 审核时间
+  reviewNote   String? // 审核备注
 
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
-  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
   // 唯一约束：同一天同一地点同一品种同一来源类型同一子类型
   // [MODIFIED] 使用 collectionPointId 替代 location 进行约束，提高严谨性
   // 注意：PostgreSQL 中唯一索引允许多个 NULL 值，这符合"未关联采集点的数据不强制唯一"的特性（或者需业务层处理）
   @@unique([effectiveDate, collectionPointId, commodity, sourceType, subType], map: "price_data_collection_point_unique")
   // 保留旧索引用于非采集点数据的查询优化
   @@unique([effectiveDate, commodity, location, sourceType, subType], map: "price_data_location_unique")
-
   @@index([sourceType, commodity, effectiveDate])
   @@index([geoLevel, effectiveDate])
   // @@index([enterpriseId, effectiveDate])
   @@index([commodity, effectiveDate])
   @@index([location, effectiveDate])
   @@index([province, city, effectiveDate])
-  @@index([collectionPointId, effectiveDate])       // 按采集点查询连续性数据
-  @@index([regionCode, effectiveDate])              // 按行政区划聚合查询
-  @@index([inputMethod, effectiveDate])             // 按录入方式查询
-  @@index([reviewStatus])                           // 按审核状态查询
-  @@index([submissionId])                           // 按填报批次查询
+  @@index([collectionPointId, effectiveDate]) // 按采集点查询连续性数据
+  @@index([regionCode, effectiveDate]) // 按行政区划聚合查询
+  @@index([inputMethod, effectiveDate]) // 按录入方式查询
+  @@index([reviewStatus]) // 按审核状态查询
+  @@index([qualityTag, effectiveDate]) // 按质量标签查询
+  @@index([submissionId]) // 按填报批次查询
+  @@index([collectionPointId, commodity, effectiveDate, reviewStatus, inputMethod, subType], map: "price_data_point_analytics_idx")
+  @@index([regionCode, commodity, effectiveDate, reviewStatus, inputMethod, subType], map: "price_data_region_analytics_idx")
+}
+
+// =============================================
+// A类：预警规则与实例
+// =============================================
+
+model MarketAlertRule {
+  id           String              @id @default(uuid())
+  name         String
+  type         MarketAlertRuleType
+  threshold    Decimal?            @db.Decimal(10, 2)
+  days         Int?
+  direction    String?
+  severity     MarketAlertSeverity @default(MEDIUM)
+  priority     Int                 @default(0)
+  isActive     Boolean             @default(true)
+  legacyRuleId String?             @unique
+
+  instances MarketAlertInstance[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([isActive, priority])
+  @@index([type])
+}
+
+model MarketAlertInstance {
+  id               String              @id @default(uuid())
+  ruleId           String
+  rule             MarketAlertRule     @relation(fields: [ruleId], references: [id])
+  status           MarketAlertStatus   @default(OPEN)
+  severity         MarketAlertSeverity
+  dedupeKey        String
+  pointId          String
+  pointName        String
+  pointType        String
+  regionLabel      String?
+  commodity        String
+  triggerDate      DateTime
+  firstTriggeredAt DateTime
+  lastTriggeredAt  DateTime
+  triggerValue     Decimal             @db.Decimal(10, 2)
+  thresholdValue   Decimal             @db.Decimal(10, 2)
+  message          String
+  note             String?
+  closedReason     String?
+
+  logs MarketAlertStatusLog[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([ruleId, createdAt])
+  @@index([status, severity, triggerDate])
+  @@index([commodity, triggerDate])
+  @@index([dedupeKey])
+}
+
+model MarketAlertStatusLog {
+  id         String              @id @default(uuid())
+  instanceId String
+  instance   MarketAlertInstance @relation(fields: [instanceId], references: [id], onDelete: Cascade)
+  action     MarketAlertAction
+  fromStatus MarketAlertStatus?
+  toStatus   MarketAlertStatus
+  operator   String
+  note       String?
+  reason     String?
+  meta       Json?
+
+  createdAt DateTime @default(now())
+
+  @@index([instanceId, createdAt])
+  @@index([action, createdAt])
 }
 
 // =============================================
 // C类：文档附件存储
 // =============================================
 model IntelAttachment {
-  id          String   @id @default(uuid())
-  
+  id String @id @default(uuid())
+
   // 文件信息
   filename    String
   mimeType    String
   fileSize    Int
-  storagePath String               // 存储路径（OSS/本地）
-  
+  storagePath String // 存储路径（OSS/本地）
+
   // 索引内容
-  ocrText     String?  @db.Text    // OCR 提取的全文
-  
+  ocrText String? @db.Text // OCR 提取的全文
+
   // 关联
-  intelId     String
-  intel       MarketIntel @relation(fields: [intelId], references: [id], onDelete: Cascade)
-  
-  createdAt   DateTime @default(now())
-  
+  intelId String
+  intel   MarketIntel @relation(fields: [intelId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
   @@index([intelId])
 }
 
@@ -895,26 +1188,26 @@ model IntelAttachment {
 
 // 关联类型枚举
 enum IntelPointLinkType {
-  MENTIONED   // 在情报中被提及
-  SUBJECT     // 情报主体
-  SOURCE      // 情报来源
+  MENTIONED // 在情报中被提及
+  SUBJECT // 情报主体
+  SOURCE // 情报来源
 }
 
 // [RENAMED] IntelEntityLink -> IntelPointLink
 model IntelPointLink {
-  id           String              @id @default(uuid())
-  
-  intelId      String
-  intel        MarketIntel         @relation(fields: [intelId], references: [id], onDelete: Cascade)
-  
+  id String @id @default(uuid())
+
+  intelId String
+  intel   MarketIntel @relation(fields: [intelId], references: [id], onDelete: Cascade)
+
   collectionPointId String
   collectionPoint   CollectionPoint @relation(fields: [collectionPointId], references: [id], onDelete: Cascade)
-  
+
   // 关联类型
-  linkType     IntelPointLinkType @default(MENTIONED)
-  
-  createdAt    DateTime            @default(now())
-  
+  linkType IntelPointLinkType @default(MENTIONED)
+
+  createdAt DateTime @default(now())
+
   @@unique([intelId, collectionPointId])
   @@index([collectionPointId])
 }
@@ -923,11 +1216,11 @@ model IntelPointLink {
 // 采集点-员工分配关系表
 // =============================================
 model CollectionPointAllocation {
-  id                String          @id @default(uuid())
+  id String @id @default(uuid())
 
   // 关联用户
-  userId            String
-  user              User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   // 关联采集点
   collectionPointId String
@@ -936,16 +1229,16 @@ model CollectionPointAllocation {
   // 注：角色字段已移除，简化为统一"负责人"
 
   // 分配信息
-  assignedById      String?         // 分配人
-  assignedAt        DateTime        @default(now())
-  commodity         String?         // [NEW] 负责品种，空表示负责该点所有品种
-  remark            String?         // 备注
+  assignedById String? // 分配人
+  assignedAt   DateTime @default(now())
+  commodity    String? // [NEW] 负责品种，空表示负责该点所有品种
+  remark       String? // 备注
 
   // 状态
-  isActive          Boolean         @default(true)
+  isActive Boolean @default(true)
 
-  createdAt         DateTime        @default(now())
-  updatedAt         DateTime        @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@unique([userId, collectionPointId, commodity])
   @@index([userId, isActive])
@@ -956,35 +1249,35 @@ model CollectionPointAllocation {
 // 价格填报批次
 // =============================================
 model PriceSubmission {
-  id                 String            @id @default(uuid())
-  batchCode          String            @unique  // 批次编号 PS-20260201-001
+  id        String @id @default(uuid())
+  batchCode String @unique // 批次编号 PS-20260201-001
 
   // 填报人
-  submittedById      String
-  submittedBy        User              @relation(fields: [submittedById], references: [id])
+  submittedById String
+  submittedBy   User   @relation(fields: [submittedById], references: [id])
 
   // 采集点
-  collectionPointId  String
-  collectionPoint    CollectionPoint   @relation(fields: [collectionPointId], references: [id])
+  collectionPointId String
+  collectionPoint   CollectionPoint @relation(fields: [collectionPointId], references: [id])
 
   // 时间
-  effectiveDate      DateTime          @db.Date
-  submittedAt        DateTime?
+  effectiveDate DateTime  @db.Date
+  submittedAt   DateTime?
 
   // 状态
-  status             SubmissionStatus  @default(DRAFT)
-  itemCount          Int               @default(0)
-  approvedCount      Int               @default(0)
+  status        SubmissionStatus @default(DRAFT)
+  itemCount     Int              @default(0)
+  approvedCount Int              @default(0)
 
   // 关联任务（从任务入口创建时填充）
-  taskId             String?           @unique
-  task               IntelTask?
+  taskId String?    @unique
+  task   IntelTask?
 
   // 价格条目
-  priceData          PriceData[]
+  priceData PriceData[]
 
-  createdAt          DateTime          @default(now())
-  updatedAt          DateTime          @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([collectionPointId, effectiveDate])
   @@index([submittedById, status])
@@ -996,11 +1289,11 @@ model PriceSubmission {
 
 // 任务类型枚举（简化，全局复用）
 enum IntelTaskType {
-  COLLECTION    // 采集任务
-  REPORT        // 报告任务
-  RESEARCH      // 调研任务
-  VERIFICATION  // 核实任务
-  OTHER         // 其他
+  COLLECTION // 采集任务
+  REPORT // 报告任务
+  RESEARCH // 调研任务
+  VERIFICATION // 核实任务
+  OTHER // 其他
 }
 
 // 任务优先级枚举
@@ -1028,9 +1321,10 @@ enum TaskScheduleMode {
 enum IntelTaskStatus {
   PENDING
   SUBMITTED // 已提交待审核
-  RETURNED  // 已驳回需修改
+  RETURNED // 已驳回需修改
   COMPLETED
   OVERDUE
+  CANCELLED // 已取消
 }
 
 // =============================================
@@ -1041,61 +1335,61 @@ enum IntelTaskStatus {
 
 // 价格录入方式
 enum PriceInputMethod {
-  AI_EXTRACTED      // 智能采集（AI从日报提取）
-  MANUAL_ENTRY      // 手动填报（业务人员录入）
-  BULK_IMPORT       // 批量导入（Excel/CSV）
+  AI_EXTRACTED // 智能采集（AI从日报提取）
+  MANUAL_ENTRY // 手动填报（业务人员录入）
+  BULK_IMPORT // 批量导入（Excel/CSV）
 }
 
 // 价格审核状态
 enum PriceReviewStatus {
-  PENDING           // 待审核
-  APPROVED          // 已通过
-  REJECTED          // 已拒绝
-  AUTO_APPROVED     // 自动通过
+  PENDING // 待审核
+  APPROVED // 已通过
+  REJECTED // 已拒绝
+  AUTO_APPROVED // 自动通过
 }
 
 // 填报批次状态
 enum SubmissionStatus {
-  DRAFT             // 草稿
-  SUBMITTED         // 已提交待审核
-  PARTIAL_APPROVED  // 部分通过
-  APPROVED          // 全部通过
-  REJECTED          // 已拒绝
+  DRAFT // 草稿
+  SUBMITTED // 已提交待审核
+  PARTIAL_APPROVED // 部分通过
+  APPROVED // 全部通过
+  REJECTED // 已拒绝
 }
 
 model IntelTask {
-  id          String          @id @default(uuid())
-  
+  id String @id @default(uuid())
+
   // 基本信息
-  title       String
-  description String?             // 任务描述
-  requirements String?            // 任务要求
-  attachmentUrls String[]         // 附件链接
-  notifyConfig Json?              // 通知配置 { methods: [], userIds: [] }
-  type        IntelTaskType
-  priority    IntelTaskPriority   @default(MEDIUM)
-  deadline    DateTime
+  title          String
+  description    String? // 任务描述
+  requirements   String? // 任务要求
+  attachmentUrls String[] // 附件链接
+  notifyConfig   Json? // 通知配置 { methods: [], userIds: [] }
+  type           IntelTaskType
+  priority       IntelTaskPriority @default(MEDIUM)
+  deadline       DateTime
 
   // 周期信息
   periodStart DateTime?
   periodEnd   DateTime?
   dueAt       DateTime?
   periodKey   String?
-  
+
   // 分配对象
-  assigneeId  String
-  assignee    User            @relation(fields: [assigneeId], references: [id])
+  assigneeId     String
+  assignee       User    @relation(fields: [assigneeId], references: [id])
   assigneeOrgId  String?
   assigneeDeptId String?
-  createdById String?             // 创建人
-  
+  createdById    String? // 创建人
+
   // 关联模板
-  templateId  String?
-  template    IntelTaskTemplate?  @relation(fields: [templateId], references: [id])
+  templateId String?
+  template   IntelTaskTemplate? @relation(fields: [templateId], references: [id])
 
   // [NEW] 关联规则（用于规则分发监控）
-  ruleId      String?
-  rule        IntelTaskRule? @relation(fields: [ruleId], references: [id])
+  ruleId String?
+  rule   IntelTaskRule? @relation(fields: [ruleId], references: [id])
 
   // [NEW] 任务组（协作/合并完成）
   taskGroupId String?
@@ -1106,113 +1400,114 @@ model IntelTask {
   collectionPoint   CollectionPoint? @relation(fields: [collectionPointId], references: [id])
 
   // [NEW] 关联具体品种（明确任务标的）
-  commodity         String?
+  commodity String?
 
   // [NEW] 关联填报批次（任务完成时自动关联）
-  priceSubmissionId String?           @unique
-  priceSubmission   PriceSubmission?  @relation(fields: [priceSubmissionId], references: [id])
-  
+  priceSubmissionId String?          @unique
+  priceSubmission   PriceSubmission? @relation(fields: [priceSubmissionId], references: [id])
+
   // 状态
-  status      IntelTaskStatus @default(PENDING)
-  completedAt DateTime?
-  isLate      Boolean         @default(false)
-  
+  status       IntelTaskStatus @default(PENDING)
+  returnReason String? // 驳回原因
+  completedAt  DateTime?
+  isLate       Boolean         @default(false)
+
   // 关联完成的情报
-  intelId     String?
-  intel       MarketIntel?    @relation(fields: [intelId], references: [id])
+  intelId String?
+  intel   MarketIntel? @relation(fields: [intelId], references: [id])
 
   // [NEW] 任务操作历史
-  history     IntelTaskHistory[]
+  history IntelTaskHistory[]
 
   // [NEW] 表单/审核流程绑定
-  formId      String?
-  workflowId  String?
+  formId     String?
+  workflowId String?
 
-  createdAt   DateTime        @default(now())
-  updatedAt   DateTime        @updatedAt
-  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([templateId, assigneeId, periodStart, collectionPointId, commodity])
   @@index([assigneeId, status])
   @@index([deadline])
   @@index([templateId])
   @@index([ruleId])
   @@index([taskGroupId])
   @@index([periodKey])
-  @@unique([templateId, assigneeId, periodStart, collectionPointId, commodity])
 }
 
 // 任务模板模型
 model IntelTaskTemplate {
-  id              String           @id @default(uuid())
-  
+  id String @id @default(uuid())
+
   // 基本信息
-  name            String           // 模板名称
-  description     String?          // 任务描述模板
-  taskType        IntelTaskType    // 生成的任务类型
-  priority        IntelTaskPriority @default(MEDIUM)
-  domain          String?          // 业务域（全局复用）
-  scheduleMode    TaskScheduleMode @default(TEMPLATE_OVERRIDE) // 采集任务的频率来源
+  name         String // 模板名称
+  description  String? // 任务描述模板
+  taskType     IntelTaskType // 生成的任务类型
+  priority     IntelTaskPriority @default(MEDIUM)
+  domain       String? // 业务域（全局复用）
+  scheduleMode TaskScheduleMode  @default(TEMPLATE_OVERRIDE) // 采集任务的频率来源
 
   // 周期配置
-  cycleType       TaskCycleType    @default(ONE_TIME)
-  cycleConfig     Json?            // 兼容旧周期配置（逐步弃用）
-  deadlineOffset  Int              @default(24)  // 截止时间偏移（小时）
+  cycleType      TaskCycleType @default(ONE_TIME)
+  cycleConfig    Json? // 兼容旧周期配置（逐步弃用）
+  deadlineOffset Int           @default(24) // 截止时间偏移（小时）
 
   // 周期调度配置
-  activeFrom      DateTime         @default(now())
-  activeUntil     DateTime?
-  timezone        String           @default("Asia/Shanghai")
-  runAtMinute     Int              @default(540)   // 分发时间 (09:00)
-  runDayOfWeek    Int?             // 分发日：1-7 (仅 WEEKLY)
-  runDayOfMonth   Int?             // 分发日：1-31, 0=月末 (仅 MONTHLY)
-  dueAtMinute     Int              @default(1080)  // 截止时间 (18:00)
-  dueDayOfWeek    Int?             // 周期截止日：1-7 (仅 WEEKLY)
-  dueDayOfMonth   Int?             // 周期截止日：1-31, 0=月末 (仅 MONTHLY)
-  allowLate       Boolean          @default(true)
-  maxBackfillPeriods Int           @default(3)
-  
+  activeFrom         DateTime  @default(now())
+  activeUntil        DateTime?
+  timezone           String    @default("Asia/Shanghai")
+  runAtMinute        Int       @default(540) // 分发时间 (09:00)
+  runDayOfWeek       Int? // 分发日：1-7 (仅 WEEKLY)
+  runDayOfMonth      Int? // 分发日：1-31, 0=月末 (仅 MONTHLY)
+  dueAtMinute        Int       @default(1080) // 截止时间 (18:00)
+  dueDayOfWeek       Int? // 周期截止日：1-7 (仅 WEEKLY)
+  dueDayOfMonth      Int? // 周期截止日：1-31, 0=月末 (仅 MONTHLY)
+  allowLate          Boolean   @default(true)
+  maxBackfillPeriods Int       @default(3)
+
   // 分配规则
-  assigneeMode    String           @default("MANUAL")  // MANUAL | ALL_ACTIVE | BY_DEPARTMENT | BY_ORGANIZATION | BY_COLLECTION_POINT
-  assigneeIds     String[]         // 手动指定的分配人列表
-  departmentIds   String[]         // 按部门分配
-  organizationIds String[]         // 按组织分配
+  assigneeMode    String   @default("MANUAL") // MANUAL | ALL_ACTIVE | BY_DEPARTMENT | BY_ORGANIZATION | BY_COLLECTION_POINT
+  assigneeIds     String[] // 手动指定的分配人列表
+  departmentIds   String[] // 按部门分配
+  organizationIds String[] // 按组织分配
 
   // [NEW] 采集点分配规则
-  collectionPointIds    String[]                 // 绑定的采集点列表
-  targetPointType       CollectionPointType?     // 按采集点类型批量生成（兼容旧字段）
-  targetPointTypes      CollectionPointType[]    @default([]) // 按采集点类型批量生成（多选）
-  collectionPointId     String?                  // 单个采集点关联
-  collectionPoint       CollectionPoint?         @relation(fields: [collectionPointId], references: [id])
-  
+  collectionPointIds String[] // 绑定的采集点列表
+  targetPointType    CollectionPointType? // 按采集点类型批量生成（兼容旧字段）
+  targetPointTypes   CollectionPointType[] @default([]) // 按采集点类型批量生成（多选）
+  collectionPointId  String? // 单个采集点关联
+  collectionPoint    CollectionPoint?      @relation(fields: [collectionPointId], references: [id])
+
   // 状态
-  isActive        Boolean          @default(true)
-  lastRunAt       DateTime?
-  nextRunAt       DateTime?
-  
+  isActive  Boolean   @default(true)
+  lastRunAt DateTime?
+  nextRunAt DateTime?
+
   // 关联
-  tasks           IntelTask[]
-  rules           IntelTaskRule[]
-  createdById     String
-  
-  createdAt       DateTime         @default(now())
-  updatedAt       DateTime         @updatedAt
-  
+  tasks       IntelTask[]
+  rules       IntelTaskRule[]
+  createdById String
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
   @@index([isActive, nextRunAt])
 }
 
 // 任务分配规则（模板下多规则）
 model IntelTaskRule {
-  id               String   @id @default(uuid())
-  templateId       String
-  template         IntelTaskTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
-  tasks            IntelTask[]
+  id         String            @id @default(uuid())
+  templateId String
+  template   IntelTaskTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  tasks      IntelTask[]
 
-  scopeType        String   // POINT/USER/DEPARTMENT/ORGANIZATION/ROLE/QUERY
-  scopeQuery       Json?
+  scopeType  String // POINT/USER/DEPARTMENT/ORGANIZATION/ROLE/QUERY
+  scopeQuery Json?
 
   frequencyType    TaskCycleType @default(DAILY)
-  weekdays         Int[]   @default([])
-  monthDays        Int[]   @default([])
-  dispatchAtMinute Int    @default(540)
+  weekdays         Int[]         @default([])
+  monthDays        Int[]         @default([])
+  dispatchAtMinute Int           @default(540)
   duePolicy        Json?
 
   assigneeStrategy String  @default("POINT_OWNER")
@@ -1220,24 +1515,24 @@ model IntelTaskRule {
   grouping         Boolean @default(false)
   isActive         Boolean @default(true)
 
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([templateId])
 }
 
 // 协作任务组（用于 ANY_ONE/QUORUM/ALL 等策略）
 model IntelTaskGroup {
-  id          String   @id @default(uuid())
-  templateId  String?
-  ruleId      String?
-  status      String   @default("PENDING")
-  groupKey    String?
+  id         String  @id @default(uuid())
+  templateId String?
+  ruleId     String?
+  status     String  @default("PENDING")
+  groupKey   String?
 
-  tasks       IntelTask[]
+  tasks IntelTask[]
 
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 // =============================================
@@ -1246,76 +1541,76 @@ model IntelTaskGroup {
 
 // 事件类型配置表
 model EventTypeConfig {
-  id          String   @id @default(uuid())
-  code        String   @unique    // ENTERPRISE_ACTION
-  name        String              // 企业动态
+  id          String  @id @default(uuid())
+  code        String  @unique // ENTERPRISE_ACTION
+  name        String // 企业动态
   description String?
-  category    String              // supply | demand | policy | weather | sentiment
+  category    String // supply | demand | policy | weather | sentiment
   icon        String?
   color       String?
-  isActive    Boolean  @default(true)
-  sortOrder   Int      @default(0)
-  
+  isActive    Boolean @default(true)
+  sortOrder   Int     @default(0)
+
   // 关联
   events          MarketEvent[]
   extractionRules ExtractionRule[]
-  
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-  
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
   @@index([isActive, sortOrder])
 }
 
 // 洞察类型配置表
 model InsightTypeConfig {
-  id          String   @id @default(uuid())
-  code        String   @unique    // FORECAST
-  name        String              // 后市预判
+  id          String  @id @default(uuid())
+  code        String  @unique // FORECAST
+  name        String // 后市预判
   description String?
-  category    String              // forecast | analysis | data | logic
+  category    String // forecast | analysis | data | logic
   icon        String?
   color       String?
-  isActive    Boolean  @default(true)
-  sortOrder   Int      @default(0)
-  
+  isActive    Boolean @default(true)
+  sortOrder   Int     @default(0)
+
   // 关联
   insights        MarketInsight[]
   extractionRules ExtractionRule[]
-  
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-  
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
   @@index([isActive, sortOrder])
 }
 
 // 提取规则配置表（可视化编辑器存储）
 model ExtractionRule {
-  id          String   @id @default(uuid())
-  name        String              // 规则名称
+  id          String  @id @default(uuid())
+  name        String // 规则名称
   description String?
-  isActive    Boolean  @default(true)
-  priority    Int      @default(0)
-  
+  isActive    Boolean @default(true)
+  priority    Int     @default(0)
+
   // 规则类型
-  targetType  String              // EVENT | INSIGHT
-  
+  targetType String // EVENT | INSIGHT
+
   // 关联类型
   eventTypeId   String?
-  eventType     EventTypeConfig?    @relation(fields: [eventTypeId], references: [id])
+  eventType     EventTypeConfig?   @relation(fields: [eventTypeId], references: [id])
   insightTypeId String?
-  insightType   InsightTypeConfig?  @relation(fields: [insightTypeId], references: [id])
-  
+  insightType   InsightTypeConfig? @relation(fields: [insightTypeId], references: [id])
+
   // 可视化规则配置（JSON）
-  conditions    Json              // RuleCondition[] 结构
-  outputConfig  Json?             // 输出配置
-  
+  conditions   Json // RuleCondition[] 结构
+  outputConfig Json? // 输出配置
+
   // 适用范围
-  commodities   String[]  @default([])
-  regions       String[]  @default([])
-  
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-  
+  commodities String[] @default([])
+  regions     String[] @default([])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
   @@index([targetType, isActive])
 }
 
@@ -1324,43 +1619,43 @@ model ExtractionRule {
 // =============================================
 
 model MarketEvent {
-  id            String   @id @default(uuid())
-  
+  id String @id @default(uuid())
+
   // 来源关联
-  intelId       String
-  intel         MarketIntel @relation(fields: [intelId], references: [id], onDelete: Cascade)
-  
+  intelId String
+  intel   MarketIntel @relation(fields: [intelId], references: [id], onDelete: Cascade)
+
   // 原文追溯
-  sourceText    String   @db.Text    // 提取的原文片段
-  sourceStart   Int?                 // 原文起始位置
-  sourceEnd     Int?                 // 原文结束位置
-  sectionIndex  Int?                 // 段落索引
-  
+  sourceText   String @db.Text // 提取的原文片段
+  sourceStart  Int? // 原文起始位置
+  sourceEnd    Int? // 原文结束位置
+  sectionIndex Int? // 段落索引
+
   // 事件类型
-  eventTypeId   String
-  eventType     EventTypeConfig   @relation(fields: [eventTypeId], references: [id])
-  
+  eventTypeId String
+  eventType   EventTypeConfig @relation(fields: [eventTypeId], references: [id])
+
   // 事件内容
-  subject       String            // 主体（企业/港口）
-  action        String            // 动作
-  content       String  @db.Text  // 完整描述
-  
+  subject String // 主体（企业/港口）
+  action  String // 动作
+  content String @db.Text // 完整描述
+
   // 影响评估
-  impact        String?           // 影响描述
-  impactLevel   String?           // HIGH/MEDIUM/LOW
-  sentiment     String?           // bullish/bearish/neutral
-  
+  impact      String? // 影响描述
+  impactLevel String? // HIGH/MEDIUM/LOW
+  sentiment   String? // bullish/bearish/neutral
+
   // 关联
   collectionPointId String?
   collectionPoint   CollectionPoint? @relation(fields: [collectionPointId], references: [id])
   // [REMOVED] enterpriseId  String?
   // [REMOVED] enterprise    Enterprise?       @relation(fields: [enterpriseId], references: [id])
-  regionCode    String?
-  commodity     String?
-  
-  eventDate     DateTime?
-  createdAt     DateTime @default(now())
-  
+  regionCode        String?
+  commodity         String?
+
+  eventDate DateTime?
+  createdAt DateTime  @default(now())
+
   @@index([eventTypeId, eventDate])
   @@index([intelId])
   // @@index([enterpriseId])
@@ -1372,64 +1667,66 @@ model MarketEvent {
 // =============================================
 
 model MarketInsight {
-  id            String   @id @default(uuid())
-  
+  id String @id @default(uuid())
+
   // 来源关联
-  intelId       String
-  intel         MarketIntel @relation(fields: [intelId], references: [id], onDelete: Cascade)
-  
+  intelId String
+  intel   MarketIntel @relation(fields: [intelId], references: [id], onDelete: Cascade)
+
   // 原文追溯
-  sourceText    String   @db.Text    // 提取的原文片段
-  sourceStart   Int?                 // 原文起始位置
-  sourceEnd     Int?                 // 原文结束位置
-  sectionTitle  String?              // 段落标题
-  sectionIndex  Int?                 // 段落索引
-  
+  sourceText   String  @db.Text // 提取的原文片段
+  sourceStart  Int? // 原文起始位置
+  sourceEnd    Int? // 原文结束位置
+  sectionTitle String? // 段落标题
+  sectionIndex Int? // 段落索引
+
   // 洞察类型
   insightTypeId String
   insightType   InsightTypeConfig @relation(fields: [insightTypeId], references: [id])
-  
+
   // 内容
-  title         String
-  content       String  @db.Text
-  
+  title   String
+  content String @db.Text
+
   // 预判属性
-  direction     String?           // up/down/stable
-  timeframe     String?           // short/medium/long
-  confidence    Int?              // 0-100
-  factors       String[]          // 关键因素
-  
-  commodity     String?
-  regionCode    String?
-  
-  createdAt     DateTime @default(now())
-  
+  direction  String? // up/down/stable
+  timeframe  String? // short/medium/long
+  confidence Int? // 0-100
+  factors    String[] // 关键因素
+
+  commodity  String?
+  regionCode String?
+
+  createdAt DateTime @default(now())
+
   @@index([insightTypeId])
   @@index([intelId])
   @@index([commodity])
 }
+
 // =============================================
 // AI 提示词模板 (Prompt Templates)
 // =============================================
 model PromptTemplate {
-  id           String        @id @default(uuid())
-  code         String        @unique // e.g., "MARKET_INTEL_DAILY_REPORT"
-  name         String
-  category     IntelCategory // 关联的情报分类
-  
-  systemPrompt String        @db.Text
-  userPrompt   String        @db.Text
-  
-  variables    Json?         // 定义可用的变量说明
-  version      Int           @default(1)
-  isActive     Boolean       @default(true)
-  
-  createdAt    DateTime      @default(now())
-  updatedAt    DateTime      @updatedAt
-  
+  id       String        @id @default(uuid())
+  code     String        @unique // e.g., "MARKET_INTEL_DAILY_REPORT"
+  name     String
+  category IntelCategory // 关联的情报分类
+
+  systemPrompt String @db.Text
+  userPrompt   String @db.Text
+
+  variables Json? // 定义可用的变量说明
+  version   Int     @default(1)
+  isActive  Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
   @@index([category])
   @@index([isActive])
 }
+
 // =============================================
 // 系统配置子系统 (System Configuration)
 // =============================================
@@ -1437,19 +1734,19 @@ model PromptTemplate {
 // 业务映射规则 (Generic Mapping Rules)
 // 用于替代代码中的 hardcoded mapLogic
 model BusinessMappingRule {
-  id          String   @id @default(uuid())
-  domain      String   // 业务域 (e.g. "PRICE_SOURCE", "PRICE_SUB_TYPE", "SENTIMENT")
-  
-  matchMode   String   @default("CONTAINS") // 匹配模式: CONTAINS, EXACT, REGEX
-  pattern     String   // 匹配范式 (e.g. "平舱", "Positive")
-  targetValue String   // 目标值 (e.g. "FOB", "positive")
-  
-  priority    Int      @default(0) // 优先级 (高优先)
+  id     String @id @default(uuid())
+  domain String // 业务域 (e.g. "PRICE_SOURCE", "PRICE_SUB_TYPE", "SENTIMENT")
+
+  matchMode   String @default("CONTAINS") // 匹配模式: CONTAINS, EXACT, REGEX
+  pattern     String // 匹配范式 (e.g. "平舱", "Positive")
+  targetValue String // 目标值 (e.g. "FOB", "positive")
+
+  priority    Int     @default(0) // 优先级 (高优先)
   description String?
-  isActive    Boolean  @default(true)
-  
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  isActive    Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([domain, priority])
 }
@@ -1458,39 +1755,38 @@ model BusinessMappingRule {
 // 统一数据字典 (Dictionary)
 // =============================================
 model DictionaryDomain {
-  id          String   @id @default(uuid())
-  code        String   @unique // 业务域编码 (e.g. "PRICE_SUB_TYPE", "USER_STATUS")
+  id          String  @id @default(uuid())
+  code        String  @unique // 业务域编码 (e.g. "PRICE_SUB_TYPE", "USER_STATUS")
   name        String
   description String?
-  isActive    Boolean  @default(true)
+  isActive    Boolean @default(true)
 
   // 元数据字段（界面展示增强）
-  category       String?   // 分类：USER_ORG, TAG_ENTERPRISE, REGION, PRICE, INTEL, MARKET
-  usageHint      String?   // 用途说明（简短）
-  usageLocations String[]  // 使用位置（组件/页面名称数组）
-  isSystemDomain Boolean   @default(true) // 是否系统域（不可删除）
+  category       String? // 分类：USER_ORG, TAG_ENTERPRISE, REGION, PRICE, INTEL, MARKET
+  usageHint      String? // 用途说明（简短）
+  usageLocations String[] // 使用位置（组件/页面名称数组）
+  isSystemDomain Boolean  @default(true) // 是否系统域（不可删除）
 
-  items       DictionaryItem[]
+  items DictionaryItem[]
 
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
-
 model DictionaryItem {
-  id         String            @id @default(uuid())
+  id         String           @id @default(uuid())
   domainCode String
-  domain     DictionaryDomain  @relation(fields: [domainCode], references: [code], onDelete: Cascade)
+  domain     DictionaryDomain @relation(fields: [domainCode], references: [code], onDelete: Cascade)
 
   code       String
   label      String
-  sortOrder  Int               @default(0)
-  isActive   Boolean           @default(true)
+  sortOrder  Int     @default(0)
+  isActive   Boolean @default(true)
   parentCode String?
   meta       Json?
 
-  createdAt  DateTime          @default(now())
-  updatedAt  DateTime          @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@unique([domainCode, code])
   @@index([domainCode])
@@ -1498,58 +1794,926 @@ model DictionaryItem {
 
 // AI 模型配置 (AI Model Configuration)
 model AIModelConfig {
-  id           String   @id @default(uuid())
-  configKey    String   @unique // 配置键 (e.g. "DEFAULT", "GEMINI_PRO")
-  
-  provider     String   // "google", "openai"
-  modelName    String   // "gemini-1.5-pro"
-  apiUrl       String?  // [NEW] Custom API Endpoint
-  
-  apiKeyEnvVar String?  // 环境变量名 (推荐)
-  apiKey       String?  // 直接存储 (仅供测试或私有部署，需加密)
+  id        String @id @default(uuid())
+  configKey String @unique // 配置键 (e.g. "DEFAULT", "GEMINI_PRO")
 
-  authType      String? // bearer | api-key | custom | none
-  headers       Json?
-  queryParams   Json?
-  pathOverrides Json?
-  modelFetchMode String? // official | manual | custom
-  allowUrlProbe Boolean? @default(true)
+  provider  String // "google", "openai"
+  modelName String // "gemini-1.5-pro"
+  apiUrl    String? // [NEW] Custom API Endpoint
+
+  apiKeyEnvVar String? // 环境变量名 (推荐)
+  apiKey       String? // 直接存储 (仅供测试或私有部署，需加密)
+
+  authType                String? // bearer | api-key | custom | none
+  headers                 Json?
+  queryParams             Json?
+  pathOverrides           Json?
+  modelFetchMode          String? // official | manual | custom
+  allowUrlProbe           Boolean? @default(true)
   allowCompatPathFallback Boolean? @default(true)
-  
-  temperature  Float    @default(0.3)
-  maxTokens    Int      @default(8192)
-  topP         Float?
-  topK         Int?
-  
-  maxRetries   Int      @default(3)
-  timeoutMs    Int      @default(30000)
-  
-  isActive     Boolean  @default(true)
-  isDefault    Boolean  @default(false)
+
+  temperature Float  @default(0.3)
+  maxTokens   Int    @default(8192)
+  topP        Float?
+  topK        Int?
+
+  maxRetries Int @default(3)
+  timeoutMs  Int @default(30000)
+
+  isActive  Boolean @default(true)
+  isDefault Boolean @default(false)
 
   availableModels String[] @default([])
 
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 // =============================================
 // 任务操作历史记录
 // =============================================
 model IntelTaskHistory {
-  id          String    @id @default(uuid())
+  id String @id @default(uuid())
 
-  taskId      String
-  task        IntelTask @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  taskId String
+  task   IntelTask @relation(fields: [taskId], references: [id], onDelete: Cascade)
 
-  operatorId  String
-  operator    User      @relation(fields: [operatorId], references: [id])
+  operatorId String
+  operator   User   @relation(fields: [operatorId], references: [id])
 
-  action      String    // STATUS_CHANGE, COMMENT, ASSIGN, etc.
-  details     Json?     // { from: "PENDING", to: "SUBMITTED", reason: "..." }
+  action  String // STATUS_CHANGE, COMMENT, ASSIGN, etc.
+  details Json? // { from: "PENDING", to: "SUBMITTED", reason: "..." }
 
-  createdAt   DateTime  @default(now())
+  createdAt DateTime @default(now())
 
   @@index([taskId])
   @@index([operatorId])
+}
+
+// =============================================
+// 智能体工作流编排（Workflow Orchestration）
+// =============================================
+
+enum WorkflowMode {
+  LINEAR
+  DAG
+  DEBATE
+}
+
+enum WorkflowUsageMethod {
+  HEADLESS
+  COPILOT
+  ON_DEMAND
+}
+
+enum WorkflowDefinitionStatus {
+  DRAFT
+  ACTIVE
+  ARCHIVED
+}
+
+enum WorkflowVersionStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+}
+
+enum WorkflowTemplateSource {
+  PUBLIC
+  PRIVATE
+  COPIED
+}
+
+enum WorkflowTriggerType {
+  MANUAL
+  API
+  SCHEDULE
+  EVENT
+  ON_DEMAND
+}
+
+enum WorkflowExecutionStatus {
+  PENDING
+  RUNNING
+  SUCCESS
+  FAILED
+  CANCELED
+}
+
+enum NodeExecutionStatus {
+  PENDING
+  RUNNING
+  SUCCESS
+  FAILED
+  SKIPPED
+}
+
+enum WorkflowFailureCategory {
+  VALIDATION
+  EXECUTOR
+  TIMEOUT
+  CANCELED
+  INTERNAL
+}
+
+enum WorkflowRuntimeEventLevel {
+  INFO
+  WARN
+  ERROR
+}
+
+enum WorkflowPublishOperation {
+  PUBLISH
+}
+
+enum WorkflowBackfillTaskType {
+  RISK_GATE_SUMMARY
+}
+
+enum WorkflowBackfillStatus {
+  SUCCESS
+  FAILED
+}
+
+model WorkflowDefinition {
+  id                String                   @id @default(uuid())
+  workflowId        String                   @unique
+  name              String
+  description       String?
+  mode              WorkflowMode
+  usageMethod       WorkflowUsageMethod
+  status            WorkflowDefinitionStatus @default(DRAFT)
+  ownerUserId       String
+  templateSource    WorkflowTemplateSource   @default(PRIVATE)
+  isActive          Boolean                  @default(true)
+  latestVersionCode String?
+
+  versions      WorkflowVersion[]
+  publishAudits WorkflowPublishAudit[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([ownerUserId, status])
+  @@index([mode, usageMethod])
+  @@index([templateSource, isActive])
+}
+
+model WorkflowVersion {
+  id                   String             @id @default(uuid())
+  workflowDefinitionId String
+  workflowDefinition   WorkflowDefinition @relation(fields: [workflowDefinitionId], references: [id], onDelete: Cascade)
+
+  versionCode     String
+  status          WorkflowVersionStatus @default(DRAFT)
+  dslSnapshot     Json
+  changelog       String?
+  createdByUserId String
+  publishedAt     DateTime?
+
+  createdAt DateTime @default(now())
+
+  executions    WorkflowExecution[]
+  publishAudits WorkflowPublishAudit[]
+
+  @@unique([workflowDefinitionId, versionCode])
+  @@index([workflowDefinitionId, status])
+  @@index([createdByUserId, createdAt])
+}
+
+model WorkflowExecution {
+  id                String              @id @default(uuid())
+  workflowVersionId String
+  workflowVersion   WorkflowVersion     @relation(fields: [workflowVersionId], references: [id], onDelete: Cascade)
+  sourceExecutionId String?
+  sourceExecution   WorkflowExecution?  @relation("WorkflowExecutionRerun", fields: [sourceExecutionId], references: [id], onDelete: SetNull)
+  reruns            WorkflowExecution[] @relation("WorkflowExecutionRerun")
+
+  triggerType     WorkflowTriggerType
+  triggerUserId   String
+  idempotencyKey  String?
+  status          WorkflowExecutionStatus  @default(PENDING)
+  startedAt       DateTime?
+  completedAt     DateTime?
+  errorMessage    String?
+  failureCategory WorkflowFailureCategory?
+  failureCode     String?
+  paramSnapshot   Json?
+  outputSnapshot  Json?
+
+  nodeExecutions  NodeExecution[]
+  runtimeEvents   WorkflowRuntimeEvent[]
+  decisionRecords DecisionRecord[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([workflowVersionId, triggerUserId, idempotencyKey])
+  @@index([workflowVersionId, status])
+  @@index([triggerUserId, createdAt])
+  @@index([sourceExecutionId])
+}
+
+model NodeExecution {
+  id                  String            @id @default(uuid())
+  workflowExecutionId String
+  workflowExecution   WorkflowExecution @relation(fields: [workflowExecutionId], references: [id], onDelete: Cascade)
+
+  nodeId          String
+  nodeType        String
+  status          NodeExecutionStatus      @default(PENDING)
+  startedAt       DateTime?
+  completedAt     DateTime?
+  durationMs      Int?
+  errorMessage    String?
+  failureCategory WorkflowFailureCategory?
+  failureCode     String?
+  inputSnapshot   Json?
+  outputSnapshot  Json?
+
+  createdAt     DateTime               @default(now())
+  runtimeEvents WorkflowRuntimeEvent[]
+
+  @@index([workflowExecutionId, status])
+  @@index([nodeId])
+}
+
+model WorkflowRuntimeEvent {
+  id String @id @default(uuid())
+
+  workflowExecutionId String
+  workflowExecution   WorkflowExecution @relation(fields: [workflowExecutionId], references: [id], onDelete: Cascade)
+
+  nodeExecutionId String?
+  nodeExecution   NodeExecution? @relation(fields: [nodeExecutionId], references: [id], onDelete: SetNull)
+
+  eventType  String
+  level      WorkflowRuntimeEventLevel @default(INFO)
+  message    String
+  detail     Json?
+  occurredAt DateTime                  @default(now())
+  createdAt  DateTime                  @default(now())
+
+  @@index([workflowExecutionId, occurredAt])
+  @@index([nodeExecutionId])
+}
+
+model WorkflowPublishAudit {
+  id String @id @default(uuid())
+
+  workflowDefinitionId String
+  workflowDefinition   WorkflowDefinition @relation(fields: [workflowDefinitionId], references: [id], onDelete: Cascade)
+
+  workflowVersionId String
+  workflowVersion   WorkflowVersion @relation(fields: [workflowVersionId], references: [id], onDelete: Cascade)
+
+  operation         WorkflowPublishOperation @default(PUBLISH)
+  publishedByUserId String
+  publishedByUser   User                     @relation(fields: [publishedByUserId], references: [id])
+  comment           String?
+  snapshot          Json?
+  publishedAt       DateTime                 @default(now())
+  createdAt         DateTime                 @default(now())
+
+  @@index([workflowDefinitionId, publishedAt])
+  @@index([workflowVersionId])
+  @@index([publishedByUserId, publishedAt])
+}
+
+model WorkflowBackfillAudit {
+  id                  String                   @id @default(uuid())
+  runId               String                   @unique
+  taskType            WorkflowBackfillTaskType
+  status              WorkflowBackfillStatus
+  mode                String
+  dryRun              Boolean                  @default(false)
+  ownerUserId         String?
+  maxScanLimit        Int
+  batchSize           Int
+  scanned             Int                      @default(0)
+  eligible            Int                      @default(0)
+  updated             Int                      @default(0)
+  skippedNoNodeOutput Int                      @default(0)
+  skippedNoSummary    Int                      @default(0)
+  failed              Int                      @default(0)
+  batchCount          Int                      @default(0)
+  optionsSnapshot     Json?
+  statsSnapshot       Json?
+  samplesSnapshot     Json?
+  failuresTruncated   Boolean                  @default(false)
+  errorMessage        String?
+  startedAt           DateTime
+  finishedAt          DateTime
+  durationMs          Int
+  createdAt           DateTime                 @default(now())
+  updatedAt           DateTime                 @updatedAt
+
+  @@index([taskType, createdAt])
+  @@index([status, createdAt])
+  @@index([ownerUserId, createdAt])
+}
+
+model DecisionRulePack {
+  id             String                 @id @default(uuid())
+  rulePackCode   String                 @unique
+  name           String
+  description    String?
+  applicableScopes String[]             @default([])
+  ruleLayer      String                 @default("DEFAULT")
+  ownerType      String                 @default("USER")
+  ownerUserId    String?
+  templateSource WorkflowTemplateSource @default(PRIVATE)
+  isActive       Boolean                @default(true)
+  version        Int                    @default(1)
+  priority       Int                    @default(0)
+  publishedByUserId String?
+  publishedAt    DateTime?
+  lastPublishComment String?
+
+  rules DecisionRule[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([isActive, priority])
+  @@index([ownerUserId, isActive])
+  @@index([ruleLayer, isActive, priority])
+  @@index([publishedAt])
+}
+
+model DecisionRule {
+  id         String           @id @default(uuid())
+  rulePackId String
+  rulePack   DecisionRulePack @relation(fields: [rulePackId], references: [id], onDelete: Cascade)
+
+  ruleCode      String
+  name          String
+  description   String?
+  fieldPath     String
+  operator      String
+  expectedValue Json?
+  weight        Int     @default(1)
+  isActive      Boolean @default(true)
+  priority      Int     @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([rulePackId, ruleCode])
+  @@index([rulePackId, isActive, priority])
+}
+
+model AgentPromptTemplate {
+  id String @id @default(uuid())
+
+  promptCode String @unique
+  name       String
+  roleType   String
+
+  systemPrompt       String @db.Text
+  userPromptTemplate String @db.Text
+  fewShotExamples    Json?
+  outputFormat       String @default("json")
+  variables          Json?
+  guardrails         Json?
+  outputSchemaCode   String? // Optional initially as we migrate or create new ones
+
+  version           Int                    @default(1)
+  previousVersionId String?
+
+  ownerUserId    String?
+  templateSource WorkflowTemplateSource @default(PRIVATE)
+  isActive       Boolean                @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([ownerUserId, isActive])
+  @@index([templateSource, isActive])
+  @@index([roleType])
+}
+
+model AgentProfile {
+  id String @id @default(uuid())
+
+  agentCode        String  @unique
+  agentName        String
+  roleType         String
+  objective        String?
+  modelConfigKey   String
+  agentPromptCode  String
+  memoryPolicy     String  @default("none")
+  toolPolicy       Json?
+  guardrails       Json?
+  outputSchemaCode String
+  timeoutMs        Int     @default(30000)
+  retryPolicy      Json?
+  isActive         Boolean @default(true)
+  version          Int     @default(1)
+
+  ownerUserId    String?
+  templateSource WorkflowTemplateSource @default(PRIVATE)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([ownerUserId, isActive])
+  @@index([templateSource, isActive])
+  @@index([roleType])
+}
+
+model ParameterSet {
+  id String @id @default(uuid())
+
+  setCode        String                 @unique
+  name           String
+  description    String?
+  ownerUserId    String?
+  templateSource WorkflowTemplateSource @default(PRIVATE)
+  isActive       Boolean                @default(true)
+  version        Int                    @default(1)
+
+  items ParameterItem[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([ownerUserId, isActive])
+  @@index([templateSource, isActive])
+}
+
+model ParameterItem {
+  id String @id @default(uuid())
+
+  parameterSetId String
+  parameterSet   ParameterSet @relation(fields: [parameterSetId], references: [id], onDelete: Cascade)
+
+  paramCode    String
+  paramName    String
+  paramType    String
+  unit         String?
+  value        Json?
+  defaultValue Json?
+  minValue     Json?
+  maxValue     Json?
+
+  scopeLevel    String
+  scopeValue    String?
+  inheritedFrom String? // Tracks inheritance source (e.g. "TEMPLATE:BASELINE_SET")
+  source        String?
+  changeReason  String?
+
+  ownerType    String                 @default("USER")
+  ownerUserId  String?
+  itemSource   WorkflowTemplateSource @default(PRIVATE)
+  version      Int                    @default(1)
+
+  effectiveFrom DateTime?
+  effectiveTo   DateTime?
+  isActive      Boolean   @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([parameterSetId, paramCode, scopeLevel, scopeValue])
+  @@index([parameterSetId, scopeLevel, isActive])
+  @@index([paramCode, scopeLevel, scopeValue])
+  @@index([ownerUserId, isActive])
+}
+
+model AgentPromptTemplateSnapshot {
+  id String @id @default(uuid())
+  templateId String
+  promptCode String
+  version Int
+  data Json // Full snapshot of the template
+  createdAt DateTime @default(now())
+  createdByUserId String?
+
+  @@index([templateId, version])
+}
+
+model AgentProfileSnapshot {
+  id String @id @default(uuid())
+  profileId String
+  agentCode String
+  version Int
+  data Json // Full snapshot
+  createdAt DateTime @default(now())
+  createdByUserId String?
+
+  @@index([profileId, version])
+}
+
+model DataConnector {
+  id String @id @default(uuid())
+
+  connectorCode String @unique
+  connectorName String
+  connectorType String
+  category      String
+
+  endpointConfig        Json?
+  queryTemplates        Json?
+  responseMapping       Json?
+  freshnessPolicy       Json?
+  rateLimitConfig       Json?
+  healthCheckConfig     Json?
+  fallbackConnectorCode String?
+
+  ownerType String  @default("SYSTEM")
+  isActive  Boolean @default(true)
+  version   Int     @default(1)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([category, isActive])
+  @@index([connectorType, isActive])
+}
+
+// ─────────────── DecisionRecord ───────────────
+
+enum DecisionAction {
+  BUY
+  SELL
+  HOLD
+  REDUCE
+  REVIEW_ONLY
+}
+
+model DecisionRecord {
+  id                    String              @id @default(uuid())
+  workflowExecutionId   String
+  workflowExecution     WorkflowExecution   @relation(fields: [workflowExecutionId], references: [id], onDelete: Cascade)
+  workflowDefinitionId  String?
+
+  action              DecisionAction
+  confidence          Float?
+  riskLevel           String?
+  targetWindow        String?
+  reasoningSummary    String?             @db.Text
+  evidenceSummary     Json?
+  paramSnapshot       Json?
+  outputSnapshot      Json?
+  traceId             String?             @unique
+
+  isPublished         Boolean             @default(false)
+  publishedAt         DateTime?
+  reviewedByUserId    String?
+  reviewComment       String?             @db.Text
+
+  createdByUserId     String
+  createdAt           DateTime            @default(now())
+  updatedAt           DateTime            @updatedAt
+
+  @@index([workflowExecutionId])
+  @@index([workflowDefinitionId, createdAt])
+  @@index([createdByUserId, createdAt])
+  @@index([action, riskLevel])
+  @@index([isPublished, createdAt])
+}
+
+// ─────────────── WorkflowExperiment (A/B 灰度实验) ───────────────
+
+enum ExperimentStatus {
+  DRAFT
+  RUNNING
+  PAUSED
+  COMPLETED
+  ABORTED
+}
+
+model WorkflowExperiment {
+  id                      String           @id @default(uuid())
+  experimentCode          String           @unique
+  name                    String
+  description             String?          @db.Text
+
+  workflowDefinitionId    String
+  variantAVersionId       String
+  variantBVersionId       String
+
+  trafficSplitPercent     Int              @default(50)
+  status                  ExperimentStatus @default(DRAFT)
+
+  startedAt               DateTime?
+  endedAt                 DateTime?
+  maxExecutions           Int?
+  currentExecutionsA      Int              @default(0)
+  currentExecutionsB      Int              @default(0)
+
+  winnerVariant           String?
+  conclusionSummary       String?          @db.Text
+  metricsSnapshot         Json?
+
+  autoStopEnabled         Boolean          @default(true)
+  badCaseThreshold        Float            @default(0.2)
+
+  createdByUserId         String
+  createdAt               DateTime         @default(now())
+  updatedAt               DateTime         @updatedAt
+
+  runs                    WorkflowExperimentRun[]
+
+  @@index([workflowDefinitionId, status])
+  @@index([status, createdAt])
+  @@index([createdByUserId, createdAt])
+}
+
+// ─────────────── DebateRoundTrace (辩论轮次轨迹) ───────────────
+
+model DebateRoundTrace {
+  id                    String   @id @default(uuid())
+  workflowExecutionId   String
+  nodeExecutionId       String?
+  roundNumber           Int
+  participantCode       String
+  participantRole       String
+  stance                String?
+  confidence            Float?
+  previousConfidence    Float?
+  statementText         String   @db.Text
+  evidenceRefs          Json?
+  challengeTargetCode   String?
+  challengeText         String?  @db.Text
+  responseText          String?  @db.Text
+  keyPoints             Json?
+  isJudgement           Boolean  @default(false)
+  judgementVerdict       String?
+  judgementReasoning     String?  @db.Text
+  durationMs            Int?
+  createdAt             DateTime @default(now())
+
+  @@index([workflowExecutionId, roundNumber])
+  @@index([workflowExecutionId, participantCode])
+  @@index([nodeExecutionId])
+}
+
+// ─────────────── TriggerConfig (触发器配置) ───────────────
+
+model TriggerConfig {
+  id                    String    @id @default(uuid())
+  workflowDefinitionId  String
+  triggerType           String    // MANUAL | API | SCHEDULE | EVENT | ON_DEMAND
+  name                  String
+  description           String?   @db.Text
+  status                String    @default("ACTIVE") // ACTIVE | INACTIVE | ERROR
+  cronConfig            Json?
+  apiConfig             Json?
+  eventConfig           Json?
+  paramOverrides        Json?
+  lastTriggeredAt       DateTime?
+  nextFireAt            DateTime?
+  cronState             String?   // IDLE | SCHEDULED | RUNNING | PAUSED
+  createdByUserId       String
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  triggerLogs           TriggerLog[]
+
+  @@index([workflowDefinitionId, triggerType])
+  @@index([status])
+  @@index([createdByUserId])
+}
+
+// ─────────────── TriggerLog (触发日志) ───────────────
+
+model TriggerLog {
+  id                    String    @id @default(uuid())
+  triggerConfigId       String
+  workflowExecutionId   String?
+  triggerType           String
+  status                String    // SUCCESS | FAILED | SKIPPED | TIMEOUT
+  payload               Json?
+  errorMessage          String?   @db.Text
+  durationMs            Int?
+  triggeredAt           DateTime
+  createdAt             DateTime  @default(now())
+
+  triggerConfig         TriggerConfig @relation(fields: [triggerConfigId], references: [id])
+
+  @@index([triggerConfigId, triggeredAt])
+  @@index([workflowExecutionId])
+  @@index([status])
+}
+
+// ─────────────── ParameterChangeLog (参数变更审计) ───────────────
+
+model ParameterChangeLog {
+  id                String    @id @default(uuid())
+  parameterSetId    String
+  parameterItemId   String?
+  operation         String    // CREATE | UPDATE | DELETE | RESET_TO_DEFAULT | BATCH_RESET | PUBLISH
+  fieldPath         String?
+  oldValue          Json?
+  newValue          Json?
+  changeReason      String?   @db.Text
+  changedByUserId   String
+  createdAt         DateTime  @default(now())
+
+  @@index([parameterSetId, createdAt])
+  @@index([parameterItemId])
+  @@index([changedByUserId])
+}
+
+// ─────────────── ExportTask (报告导出任务) ───────────────
+
+model ExportTask {
+  id                    String    @id @default(uuid())
+  workflowExecutionId   String
+  format                String    // PDF | WORD | JSON
+  status                String    @default("PENDING") // PENDING | PROCESSING | COMPLETED | FAILED
+  sections              Json      // string[]
+  reportData            Json?
+  downloadUrl           String?
+  errorMessage          String?   @db.Text
+  title                 String?   @db.VarChar(200)
+  includeRawData        Boolean   @default(false)
+  createdByUserId       String
+  createdAt             DateTime  @default(now())
+  completedAt           DateTime?
+
+  @@index([workflowExecutionId, createdAt])
+  @@index([status])
+  @@index([createdByUserId, createdAt])
+}
+
+// ─────────────── WorkflowExperimentRun (实验运行明细) ───────────────
+
+model WorkflowExperimentRun {
+  id                    String    @id @default(uuid())
+  experimentId          String
+  workflowExecutionId   String
+  variant               String    // A | B
+  success               Boolean
+  durationMs            Int
+  nodeCount             Int?
+  failureCategory       String?   @db.VarChar(100)
+  action                String?   @db.VarChar(60)
+  confidence            Float?
+  riskLevel             String?   @db.VarChar(60)
+  metricsPayload        Json?
+  createdAt             DateTime  @default(now())
+
+  experiment            WorkflowExperiment @relation(fields: [experimentId], references: [id])
+
+  @@index([experimentId, variant, createdAt])
+  @@index([workflowExecutionId])
+  @@index([variant, success])
+}
+
+// ─────────────── TemplateCatalog (流程模板市场) ───────────────
+
+model TemplateCatalog {
+  id                    String    @id @default(uuid())
+  templateCode          String    @unique
+  name                  String
+  description           String?   @db.Text
+  category              String    // TRADING | RISK_MANAGEMENT | ANALYSIS | MONITORING | REPORTING | CUSTOM
+  status                String    @default("DRAFT") // DRAFT | PUBLISHED | ARCHIVED
+  tags                  Json?     // string[]
+  coverImageUrl         String?
+  dslSnapshot           Json
+  nodeCount             Int       @default(0)
+  edgeCount             Int       @default(0)
+  usageCount            Int       @default(0)
+  rating                Float?
+  authorUserId          String
+  authorName            String?
+  isOfficial            Boolean   @default(false)
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  @@index([category, status])
+  @@index([status, createdAt])
+  @@index([authorUserId])
+  @@index([isOfficial, status])
+}
+
+// ─────────────── UserConfigBinding (用户配置绑定) ───────────────
+
+model UserConfigBinding {
+  id                String    @id @default(uuid())
+  userId            String
+  bindingType       String    @db.VarChar(50)
+  targetId          String
+  targetCode        String?   @db.VarChar(100)
+  metadata          Json?
+  isActive          Boolean   @default(true)
+  priority          Int       @default(100)
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  user              User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, bindingType, targetId])
+  @@index([userId, bindingType, isActive])
+  @@index([bindingType, targetId])
+}
+
+// ─────────────── FuturesQuoteSnapshot (期货行情快照) ───────────────
+
+model FuturesQuoteSnapshot {
+  id                String    @id @default(uuid())
+  contractCode      String    @db.VarChar(30)
+  exchange          String    @db.VarChar(10)
+  lastPrice         Float
+  openPrice         Float?
+  highPrice         Float?
+  lowPrice          Float?
+  closePrice        Float?
+  settlementPrice   Float?
+  volume            Int?
+  openInterest      Int?
+  bidPrice1         Float?
+  askPrice1         Float?
+  bidVolume1        Int?
+  askVolume1        Int?
+  tradingDay        String    @db.VarChar(10)
+  snapshotAt        DateTime
+  createdAt         DateTime  @default(now())
+
+  @@index([contractCode, tradingDay])
+  @@index([exchange, tradingDay])
+  @@index([snapshotAt])
+}
+
+// ─────────────── FuturesDerivedFeature (期货衍生特征) ───────────────
+
+model FuturesDerivedFeature {
+  id                String    @id @default(uuid())
+  contractCode      String    @db.VarChar(30)
+  featureType       String    @db.VarChar(60)
+  featureValue      Float
+  parameters        Json?
+  calculatedAt      DateTime
+  tradingDay        String    @db.VarChar(10)
+  createdAt         DateTime  @default(now())
+
+  @@index([contractCode, featureType, tradingDay])
+  @@index([tradingDay])
+}
+
+// ─────────────── VirtualFuturesPosition (虚拟期货持仓) ───────────────
+
+model VirtualFuturesPosition {
+  id                      String    @id @default(uuid())
+  accountId               String    @db.VarChar(60)
+  contractCode            String    @db.VarChar(30)
+  exchange                String    @db.VarChar(10)
+  direction               String    // LONG | SHORT
+  status                  String    @default("OPEN") // OPEN | CLOSED | PARTIALLY_CLOSED | LIQUIDATED
+  openPrice               Float
+  currentPrice            Float?
+  quantity                Int
+  remainingQty            Int
+  marginRate              Float     @default(0.1)
+  marginAmount            Float
+  floatingPnl             Float?
+  realizedPnl             Float?
+  stopLossPrice           Float?
+  takeProfitPrice         Float?
+  openedAt                DateTime
+  closedAt                DateTime?
+  ownerUserId             String
+  workflowExecutionId     String?
+  createdAt               DateTime  @default(now())
+  updatedAt               DateTime  @updatedAt
+
+  trades                  VirtualTradeLedger[]
+
+  @@index([accountId, status])
+  @@index([ownerUserId, accountId])
+  @@index([contractCode, status])
+  @@index([workflowExecutionId])
+}
+
+// ─────────────── VirtualTradeLedger (虚拟成交流水) ───────────────
+
+model VirtualTradeLedger {
+  id                      String    @id @default(uuid())
+  accountId               String    @db.VarChar(60)
+  positionId              String?
+  contractCode            String    @db.VarChar(30)
+  exchange                String    @db.VarChar(10)
+  action                  String    // OPEN_LONG | OPEN_SHORT | CLOSE_LONG | CLOSE_SHORT | FORCED_LIQUIDATION
+  status                  String    @default("FILLED") // PENDING | FILLED | REJECTED | CANCELED
+  price                   Float
+  quantity                Int
+  amount                  Float
+  commission              Float     @default(0)
+  realizedPnl             Float?
+  reason                  String?   @db.Text
+  workflowExecutionId     String?
+  ownerUserId             String
+  tradedAt                DateTime
+  createdAt               DateTime  @default(now())
+
+  position                VirtualFuturesPosition? @relation(fields: [positionId], references: [id])
+
+  @@index([accountId, tradedAt])
+  @@index([positionId])
+  @@index([ownerUserId, tradedAt])
+  @@index([contractCode, tradedAt])
 }

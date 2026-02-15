@@ -26,6 +26,7 @@ import {
 } from '@ant-design/icons';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useMarketIntels, useBatchDeleteMarketIntel, useResearchReports, useBatchUpdateTags, useBatchDeleteResearchReports } from '../api/hooks';
+import { useGenerateWeeklyRollup } from '../api/knowledge-hooks';
 import { IntelCategory, IntelSourceType } from '@packages/types';
 import { FilterPanel, TimeRange } from './knowledge-base/FilterPanel';
 import { DocumentCardView, DocItem } from './knowledge-base/DocumentCardView';
@@ -37,6 +38,8 @@ import { useFavoritesStore } from '../stores/useFavoritesStore';
 const { Title, Text } = Typography;
 
 type ContentType = 'all' | 'documents' | 'reports' | 'favorites';
+
+const normalizeTag = (tag: string) => tag.replace(/^#/, '').trim();
 
 export const UnifiedKnowledgeBase: React.FC = () => {
     const { token } = theme.useToken();
@@ -73,6 +76,7 @@ export const UnifiedKnowledgeBase: React.FC = () => {
     const batchDeleteMutation = useBatchDeleteMarketIntel();
     const batchDeleteReportsMutation = useBatchDeleteResearchReports();
     const batchUpdateTagsMutation = useBatchUpdateTags();
+    const weeklyRollupMutation = useGenerateWeeklyRollup();
 
     // Calculate time range
     const dateRange = useMemo(() => {
@@ -202,7 +206,9 @@ export const UnifiedKnowledgeBase: React.FC = () => {
         allItems.forEach((doc) => {
             const tags = doc.aiAnalysis?.tags || [];
             tags.forEach((tag: string) => {
-                counts[tag] = (counts[tag] || 0) + 1;
+                const normalizedTag = normalizeTag(tag);
+                if (!normalizedTag) return;
+                counts[normalizedTag] = (counts[normalizedTag] || 0) + 1;
             });
         });
         return Object.entries(counts).sort((a, b) => b[1] - a[1]);
@@ -215,7 +221,7 @@ export const UnifiedKnowledgeBase: React.FC = () => {
                 return false;
             }
             if (selectedTags.size > 0) {
-                const hasTag = (doc.aiAnalysis?.tags || []).some((t: string) => selectedTags.has(t));
+                const hasTag = (doc.aiAnalysis?.tags || []).some((t: string) => selectedTags.has(normalizeTag(t)));
                 if (!hasTag) return false;
             }
             return true;
@@ -384,6 +390,18 @@ export const UnifiedKnowledgeBase: React.FC = () => {
                                     {filteredItems.length} 条内容（共 {totalCount}）
                                 </Text>
                             </div>
+                            <Button
+                                icon={<ThunderboltOutlined />}
+                                onClick={() => {
+                                    weeklyRollupMutation.mutate({ triggerAnalysis: true }, {
+                                        onSuccess: () => message.success('周报生成任务已提交'),
+                                        onError: () => message.error('提交失败')
+                                    });
+                                }}
+                                loading={weeklyRollupMutation.isPending}
+                            >
+                                生成本周周报
+                            </Button>
                             {selectedDocIds.size > 0 && (
                                 <Space>
                                     <Button

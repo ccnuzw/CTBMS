@@ -3,7 +3,6 @@ import { Space, Empty, Spin, Flex, theme } from 'antd';
 import { IntelFilterState, IntelItem } from '../../types';
 import { DailyReportCard } from '../cards/DailyReportCard';
 import { ResearchReportCard } from '../cards/ResearchReportCard';
-import { PolicyDocCard } from '../cards/PolicyDocCard';
 import { MarketInsightCard } from '../cards/MarketInsightCard';
 import { PriceAlertCard } from '../cards/PriceAlertCard';
 import { SmartBriefingCard } from '../SmartBriefingCard';
@@ -98,15 +97,6 @@ export const FeedView: React.FC<FeedViewProps> = ({
                 case ContentType.RESEARCH_REPORT:
                     cardNode = (
                         <ResearchReportCard
-                            intel={item}
-                            style={cardStyle}
-                            onClick={() => onIntelSelect(item)}
-                        />
-                    );
-                    break;
-                case ContentType.POLICY_DOC:
-                    cardNode = (
-                        <PolicyDocCard
                             intel={item}
                             style={cardStyle}
                             onClick={() => onIntelSelect(item)}

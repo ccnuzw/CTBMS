@@ -31,6 +31,8 @@ import { useModalAutoFocus } from '../../../../../hooks/useModalAutoFocus';
 import { useDictionaries } from '@/hooks/useDictionaries';
 import { TemplateFormCards } from './TemplateFormCards';
 import { OrgDeptTreeSelect } from '../../../../organization/components/OrgDeptTreeSelect';
+import { RuleConfigHelp } from './RuleConfigHelp';
+import { TemplateConfigHelp } from './TemplateConfigHelp';
 
 // 简化的调度预览逻辑
 const computeNextRuns = (template: IntelTaskTemplateResponse, count = 5) => {
@@ -100,6 +102,7 @@ const normalizeTemplateForForm = (template: any) => {
 
     return {
         ...template,
+        description: template.description ?? undefined,
         scheduleMode,
         assigneeIds,
         departmentIds,
@@ -498,7 +501,7 @@ export const TaskTemplateList: React.FC = () => {
             scopeOrganizationIds: parsedScope?.organizationIds || [],
             scopeRoleIds: parsedScope?.roleIds || [],
             scopePointIds: parsedScope?.collectionPointIds || (parsedScope?.collectionPointId ? [parsedScope.collectionPointId] : []),
-            scopeTargetPointType: parsedScope?.targetPointType,
+            scopeTargetPointType: Array.isArray(parsedScope?.targetPointType) ? parsedScope.targetPointType : (parsedScope?.targetPointType ? [parsedScope.targetPointType] : []),
             frequencyType: rule?.frequencyType || TaskCycleType.DAILY,
             weekdays: rule?.weekdays || [],
             monthDays: rule?.monthDays || [],
@@ -543,7 +546,7 @@ export const TaskTemplateList: React.FC = () => {
             const scopeType = rest.scopeType;
             if (scopeType === IntelTaskRuleScopeType.POINT) {
                 parsedScopeQuery = {};
-                if (rulePointScope === 'TYPE' && scopeTargetPointType) {
+                if (rulePointScope === 'TYPE' && scopeTargetPointType?.length) {
                     parsedScopeQuery.targetPointType = scopeTargetPointType;
                 }
                 if (rulePointScope === 'POINTS' && scopePointIds?.length) {
@@ -563,7 +566,7 @@ export const TaskTemplateList: React.FC = () => {
                 if (scopeDepartmentIds?.length) parsedScopeQuery.departmentIds = scopeDepartmentIds;
                 if (scopeOrganizationIds?.length) parsedScopeQuery.organizationIds = scopeOrganizationIds;
                 if (scopeRoleIds?.length) parsedScopeQuery.roleIds = scopeRoleIds;
-                if (rulePointScope === 'TYPE' && scopeTargetPointType) {
+                if (rulePointScope === 'TYPE' && scopeTargetPointType?.length) {
                     parsedScopeQuery.targetPointType = scopeTargetPointType;
                 }
                 if (rulePointScope === 'POINTS' && scopePointIds?.length) {
@@ -635,6 +638,7 @@ export const TaskTemplateList: React.FC = () => {
 
         return {
             ...rest,
+            description: rest.description ?? undefined,
             scheduleMode,
             targetPointTypes: finalTargetPointTypes,
             collectionPointIds: finalCollectionPointIds,
@@ -911,7 +915,8 @@ export const TaskTemplateList: React.FC = () => {
                         }}
                     >
                         新建模板
-                    </Button>
+                    </Button>,
+                    <TemplateConfigHelp key="help" />,
                 ]}
             />
 
@@ -1012,27 +1017,27 @@ export const TaskTemplateList: React.FC = () => {
                     <>
                         {currentTemplate.taskType === IntelTaskType.COLLECTION
                             && currentTemplate.scheduleMode === TaskScheduleMode.POINT_DEFAULT ? (
-                                <Alert
-                                    type="info"
-                                    showIcon
-                                    message="该模板按采集点频率下发，调度预览请以采集点配置为准。"
+                            <Alert
+                                type="info"
+                                showIcon
+                                message="该模板按采集点频率下发，调度预览请以采集点配置为准。"
+                            />
+                        ) : (
+                            <>
+                                <Timeline
+                                    items={computeNextRuns(currentTemplate).map((time, idx) => ({
+                                        color: idx === 0 ? 'green' : 'blue',
+                                        children: (
+                                            <>
+                                                {time} {idx === 0 && <Tag color="green">下次运行</Tag>}
+                                            </>
+                                        ),
+                                    }))}
                                 />
-                            ) : (
-                                <>
-                                    <Timeline
-                                        items={computeNextRuns(currentTemplate).map((time, idx) => ({
-                                            color: idx === 0 ? 'green' : 'blue',
-                                            children: (
-                                                <>
-                                                    {time} {idx === 0 && <Tag color="green">下次运行</Tag>}
-                                                </>
-                                            ),
-                                        }))}
-                                    />
-                                    <Divider />
-                                    <TemplateScheduleGrid template={currentTemplate} weeks={4} />
-                                </>
-                            )}
+                                <Divider />
+                                <TemplateScheduleGrid template={currentTemplate} weeks={4} />
+                            </>
+                        )}
                     </>
                 )}
             </Drawer>
@@ -1063,6 +1068,7 @@ export const TaskTemplateList: React.FC = () => {
             >
                 <Space style={{ marginBottom: 16 }}>
                     <Button type="primary" onClick={() => openRuleModal()}>新增规则</Button>
+                    <RuleConfigHelp />
                 </Space>
                 {ruleMetrics && (
                     <Alert
@@ -1095,130 +1101,76 @@ export const TaskTemplateList: React.FC = () => {
             >
                 <div ref={ruleContainerRef}>
                     <Form form={ruleForm} layout="vertical">
-                    <Form.Item name="templateId" hidden>
-                        <Input />
-                    </Form.Item>
-                    <Form.Item
-                        name="scopeType"
-                        label="范围"
-                        rules={[{ required: true, message: '请选择范围' }]}
-                    >
-                        <Select
-                            ref={ruleScopeSelectRef}
-                            options={Object.entries(ruleScopeLabels).map(([value, label]) => ({ value, label }))}
-                        />
-                    </Form.Item>
-                    <Form.Item label="范围配置">
-                        <Space>
-                            <Switch checked={useAdvancedScope} onChange={setUseAdvancedScope} />
-                            <span>高级 JSON</span>
-                        </Space>
-                    </Form.Item>
-
-                    {useAdvancedScope ? (
-                        <Form.Item name="scopeQueryJson" label="范围条件（JSON）">
-                            <Input.TextArea rows={3} placeholder='例如：{"collectionPointIds":["..."]}' />
+                        <Form.Item name="templateId" hidden>
+                            <Input />
                         </Form.Item>
-                    ) : (
-                        <>
-                            {ruleScopeType === IntelTaskRuleScopeType.POINT && (
-                                <>
-                                    <Form.Item label="采集点范围">
-                                        <Segmented
-                                            value={rulePointScope}
-                                            onChange={(value) => handleRulePointScopeChange(value as 'TYPE' | 'POINTS')}
-                                            options={[
-                                                { label: '按类型', value: 'TYPE' },
-                                                { label: '按采集点', value: 'POINTS' },
-                                            ]}
-                                        />
-                                    </Form.Item>
-                                    {rulePointScope === 'TYPE' && (
-                                        <Form.Item name="scopeTargetPointType" label="采集点类型">
-                                            <Select
-                                                allowClear
-                                                placeholder="选择采集点类型"
+                        <Form.Item
+                            name="scopeType"
+                            label="范围"
+                            rules={[{ required: true, message: '请选择范围' }]}
+                        >
+                            <Select
+                                ref={ruleScopeSelectRef}
+                                options={Object.entries(ruleScopeLabels).map(([value, label]) => ({ value, label }))}
+                            />
+                        </Form.Item>
+                        <Form.Item label="范围配置">
+                            <Space>
+                                <Switch checked={useAdvancedScope} onChange={setUseAdvancedScope} />
+                                <span>高级 JSON</span>
+                            </Space>
+                        </Form.Item>
+
+                        {useAdvancedScope ? (
+                            <Form.Item name="scopeQueryJson" label="范围条件（JSON）">
+                                <Input.TextArea rows={3} placeholder='例如：{"collectionPointIds":["..."]}' />
+                            </Form.Item>
+                        ) : (
+                            <>
+                                {ruleScopeType === IntelTaskRuleScopeType.POINT && (
+                                    <>
+                                        <Form.Item label="采集点范围">
+                                            <Segmented
+                                                value={rulePointScope}
+                                                onChange={(value) => handleRulePointScopeChange(value as 'TYPE' | 'POINTS')}
+                                                options={[
+                                                    { label: '按类型', value: 'TYPE' },
+                                                    { label: '按采集点', value: 'POINTS' },
+                                                ]}
+                                            />
+                                        </Form.Item>
+                                        {rulePointScope === 'TYPE' && (
+                                            <Form.Item name="scopeTargetPointType" label="采集点类型">
+                                                <Select
+                                                    mode="multiple"
+                                                    allowClear
+                                                    placeholder="选择采集点类型（可多选）"
                                                 options={Object.entries(collectionPointTypeLabels).map(([value, label]) => ({
                                                     value,
                                                     label,
                                                 }))}
-                                            />
-                                        </Form.Item>
-                                    )}
-                                    {rulePointScope === 'POINTS' && (
-                                        <Form.Item name="scopePointIds" label="指定采集点">
-                                            <Select
-                                                mode="multiple"
-                                                placeholder="搜索并选择采集点"
-                                                showSearch
-                                                optionFilterProp="label"
-                                                maxTagCount={5}
-                                                options={collectionPoints.map((point) => ({
-                                                    value: point.id,
-                                                    label: `${point.name}${point.code ? ` (${point.code})` : ''}`,
-                                                }))}
-                                            />
-                                        </Form.Item>
-                                    )}
-                                </>
-                            )}
+                                                />
+                                            </Form.Item>
+                                        )}
+                                        {rulePointScope === 'POINTS' && (
+                                            <Form.Item name="scopePointIds" label="指定采集点">
+                                                <Select
+                                                    mode="multiple"
+                                                    placeholder="搜索并选择采集点"
+                                                    showSearch
+                                                    optionFilterProp="label"
+                                                    maxTagCount={5}
+                                                    options={collectionPoints.map((point) => ({
+                                                        value: point.id,
+                                                        label: `${point.name}${point.code ? ` (${point.code})` : ''}`,
+                                                    }))}
+                                                />
+                                            </Form.Item>
+                                        )}
+                                    </>
+                                )}
 
-                            {ruleScopeType === IntelTaskRuleScopeType.USER && (
-                                <Form.Item name="scopeUserIds" label="指定人员">
-                                    <Select
-                                        mode="multiple"
-                                        placeholder="搜索并选择人员"
-                                        showSearch
-                                        optionFilterProp="label"
-                                        maxTagCount={5}
-                                        options={users.map((user) => ({
-                                            value: user.id,
-                                            label: `${user.name}${user.department?.name ? ` (${user.department?.name})` : ''}`,
-                                        }))}
-                                    />
-                                </Form.Item>
-                            )}
-
-                            {ruleScopeType === IntelTaskRuleScopeType.DEPARTMENT && (
-                                <Form.Item name="scopeDepartmentIds" label="选择部门">
-                                    <OrgDeptTreeSelect
-                                        mode="dept"
-                                        multiple
-                                        showUserCount
-                                        placeholder="选择目标部门"
-                                    />
-                                </Form.Item>
-                            )}
-
-                            {ruleScopeType === IntelTaskRuleScopeType.ORGANIZATION && (
-                                <Form.Item name="scopeOrganizationIds" label="选择组织">
-                                    <OrgDeptTreeSelect
-                                        mode="org"
-                                        multiple
-                                        placeholder="选择目标组织"
-                                    />
-                                </Form.Item>
-                            )}
-
-                            {ruleScopeType === IntelTaskRuleScopeType.ROLE && (
-                                <Form.Item name="scopeRoleIds" label="选择角色">
-                                    <Select
-                                        mode="multiple"
-                                        placeholder="选择角色"
-                                        showSearch
-                                        optionFilterProp="label"
-                                        maxTagCount={5}
-                                        options={roles.map((role) => ({
-                                            value: role.id,
-                                            label: `${role.name}${role.code ? ` (${role.code})` : ''}`,
-                                        }))}
-                                    />
-                                </Form.Item>
-                            )}
-
-                            {ruleScopeType === IntelTaskRuleScopeType.QUERY && (
-                                <>
-                                    <Divider orientation="left">人员范围</Divider>
+                                {ruleScopeType === IntelTaskRuleScopeType.USER && (
                                     <Form.Item name="scopeUserIds" label="指定人员">
                                         <Select
                                             mode="multiple"
@@ -1232,7 +1184,10 @@ export const TaskTemplateList: React.FC = () => {
                                             }))}
                                         />
                                     </Form.Item>
-                                    <Form.Item name="scopeDepartmentIds" label="部门条件">
+                                )}
+
+                                {ruleScopeType === IntelTaskRuleScopeType.DEPARTMENT && (
+                                    <Form.Item name="scopeDepartmentIds" label="选择部门">
                                         <OrgDeptTreeSelect
                                             mode="dept"
                                             multiple
@@ -1240,14 +1195,20 @@ export const TaskTemplateList: React.FC = () => {
                                             placeholder="选择目标部门"
                                         />
                                     </Form.Item>
-                                    <Form.Item name="scopeOrganizationIds" label="组织条件">
+                                )}
+
+                                {ruleScopeType === IntelTaskRuleScopeType.ORGANIZATION && (
+                                    <Form.Item name="scopeOrganizationIds" label="选择组织">
                                         <OrgDeptTreeSelect
                                             mode="org"
                                             multiple
                                             placeholder="选择目标组织"
                                         />
                                     </Form.Item>
-                                    <Form.Item name="scopeRoleIds" label="角色条件">
+                                )}
+
+                                {ruleScopeType === IntelTaskRuleScopeType.ROLE && (
+                                    <Form.Item name="scopeRoleIds" label="选择角色">
                                         <Select
                                             mode="multiple"
                                             placeholder="选择角色"
@@ -1260,94 +1221,141 @@ export const TaskTemplateList: React.FC = () => {
                                             }))}
                                         />
                                     </Form.Item>
+                                )}
 
-                                    <Divider orientation="left">采集点范围</Divider>
-                                    <Form.Item label="采集点范围">
-                                        <Segmented
-                                            value={rulePointScope}
-                                            onChange={(value) => handleRulePointScopeChange(value as 'TYPE' | 'POINTS')}
-                                            options={[
-                                                { label: '按类型', value: 'TYPE' },
-                                                { label: '按采集点', value: 'POINTS' },
-                                            ]}
-                                        />
-                                    </Form.Item>
-                                    {rulePointScope === 'TYPE' && (
-                                        <Form.Item name="scopeTargetPointType" label="采集点类型">
+                                {ruleScopeType === IntelTaskRuleScopeType.QUERY && (
+                                    <>
+                                        <Divider orientation="left">人员范围</Divider>
+                                        <Form.Item name="scopeUserIds" label="指定人员">
                                             <Select
-                                                allowClear
-                                                placeholder="选择采集点类型"
+                                                mode="multiple"
+                                                placeholder="搜索并选择人员"
+                                                showSearch
+                                                optionFilterProp="label"
+                                                maxTagCount={5}
+                                                options={users.map((user) => ({
+                                                    value: user.id,
+                                                    label: `${user.name}${user.department?.name ? ` (${user.department?.name})` : ''}`,
+                                                }))}
+                                            />
+                                        </Form.Item>
+                                        <Form.Item name="scopeDepartmentIds" label="部门条件">
+                                            <OrgDeptTreeSelect
+                                                mode="dept"
+                                                multiple
+                                                showUserCount
+                                                placeholder="选择目标部门"
+                                            />
+                                        </Form.Item>
+                                        <Form.Item name="scopeOrganizationIds" label="组织条件">
+                                            <OrgDeptTreeSelect
+                                                mode="org"
+                                                multiple
+                                                placeholder="选择目标组织"
+                                            />
+                                        </Form.Item>
+                                        <Form.Item name="scopeRoleIds" label="角色条件">
+                                            <Select
+                                                mode="multiple"
+                                                placeholder="选择角色"
+                                                showSearch
+                                                optionFilterProp="label"
+                                                maxTagCount={5}
+                                                options={roles.map((role) => ({
+                                                    value: role.id,
+                                                    label: `${role.name}${role.code ? ` (${role.code})` : ''}`,
+                                                }))}
+                                            />
+                                        </Form.Item>
+
+                                        <Divider orientation="left">采集点范围</Divider>
+                                        <Form.Item label="采集点范围">
+                                            <Segmented
+                                                value={rulePointScope}
+                                                onChange={(value) => handleRulePointScopeChange(value as 'TYPE' | 'POINTS')}
+                                                options={[
+                                                    { label: '按类型', value: 'TYPE' },
+                                                    { label: '按采集点', value: 'POINTS' },
+                                                ]}
+                                            />
+                                        </Form.Item>
+                                        {rulePointScope === 'TYPE' && (
+                                            <Form.Item name="scopeTargetPointType" label="采集点类型">
+                                                <Select
+                                                    mode="multiple"
+                                                    allowClear
+                                                    placeholder="选择采集点类型（可多选）"
                                                 options={Object.entries(collectionPointTypeLabels).map(([value, label]) => ({
                                                     value,
                                                     label,
                                                 }))}
-                                            />
-                                        </Form.Item>
-                                    )}
-                                    {rulePointScope === 'POINTS' && (
-                                        <Form.Item name="scopePointIds" label="指定采集点">
-                                            <Select
-                                                mode="multiple"
-                                                placeholder="搜索并选择采集点"
-                                                showSearch
-                                                optionFilterProp="label"
-                                                maxTagCount={5}
-                                                options={collectionPoints.map((point) => ({
-                                                    value: point.id,
-                                                    label: `${point.name}${point.code ? ` (${point.code})` : ''}`,
-                                                }))}
-                                            />
-                                        </Form.Item>
-                                    )}
-                                </>
-                            )}
-                        </>
-                    )}
-                    <Form.Item
-                        name="frequencyType"
-                        label="频率"
-                        rules={[{ required: true, message: '请选择频率' }]}
-                    >
-                        <Select options={cycleTypeOptions} />
-                    </Form.Item>
-                    <Form.Item name="dispatchTime" label="下发时间">
-                        <TimePicker format="HH:mm" />
-                    </Form.Item>
-
-                    {ruleFrequencyType === TaskCycleType.WEEKLY && (
-                        <Form.Item name="weekdays" label="每周">
-                            <Select mode="multiple" options={weekDayOptions} />
+                                                />
+                                            </Form.Item>
+                                        )}
+                                        {rulePointScope === 'POINTS' && (
+                                            <Form.Item name="scopePointIds" label="指定采集点">
+                                                <Select
+                                                    mode="multiple"
+                                                    placeholder="搜索并选择采集点"
+                                                    showSearch
+                                                    optionFilterProp="label"
+                                                    maxTagCount={5}
+                                                    options={collectionPoints.map((point) => ({
+                                                        value: point.id,
+                                                        label: `${point.name}${point.code ? ` (${point.code})` : ''}`,
+                                                    }))}
+                                                />
+                                            </Form.Item>
+                                        )}
+                                    </>
+                                )}
+                            </>
+                        )}
+                        <Form.Item
+                            name="frequencyType"
+                            label="频率"
+                            rules={[{ required: true, message: '请选择频率' }]}
+                        >
+                            <Select options={cycleTypeOptions} />
                         </Form.Item>
-                    )}
-
-                    {ruleFrequencyType === TaskCycleType.MONTHLY && (
-                        <Form.Item name="monthDays" label="每月">
-                            <Select mode="multiple" options={monthDayOptions} />
+                        <Form.Item name="dispatchTime" label="下发时间">
+                            <TimePicker format="HH:mm" />
                         </Form.Item>
-                    )}
 
-                    <Form.Item name="assigneeStrategy" label="分配策略">
-                        <Select options={Object.entries(ruleAssigneeLabels).map(([value, label]) => ({ value, label }))} />
-                    </Form.Item>
-                    <Form.Item name="completionPolicy" label="完成策略">
-                        <Select options={Object.entries(ruleCompletionLabels).map(([value, label]) => ({ value, label }))} />
-                    </Form.Item>
-                    {ruleCompletionPolicy === IntelTaskCompletionPolicy.QUORUM && (
-                        <Space style={{ display: 'flex', marginBottom: 16 }} size="large" align="start">
-                            <Form.Item name="quorumCount" label="达标数" style={{ marginBottom: 0 }}>
-                                <InputNumber min={1} placeholder="如 3" />
+                        {ruleFrequencyType === TaskCycleType.WEEKLY && (
+                            <Form.Item name="weekdays" label="每周">
+                                <Select mode="multiple" options={weekDayOptions} />
                             </Form.Item>
-                            <Form.Item name="quorumRatio" label="达标比例" style={{ marginBottom: 0 }}>
-                                <InputNumber min={0.1} max={1} step={0.1} placeholder="如 0.6" />
+                        )}
+
+                        {ruleFrequencyType === TaskCycleType.MONTHLY && (
+                            <Form.Item name="monthDays" label="每月">
+                                <Select mode="multiple" options={monthDayOptions} />
                             </Form.Item>
-                        </Space>
-                    )}
-                    <Form.Item name="grouping" label="生成任务组" valuePropName="checked">
-                        <Switch />
-                    </Form.Item>
-                    <Form.Item name="isActive" label="启用" valuePropName="checked">
-                        <Switch />
-                    </Form.Item>
+                        )}
+
+                        <Form.Item name="assigneeStrategy" label="分配策略">
+                            <Select options={Object.entries(ruleAssigneeLabels).map(([value, label]) => ({ value, label }))} />
+                        </Form.Item>
+                        <Form.Item name="completionPolicy" label="完成策略">
+                            <Select options={Object.entries(ruleCompletionLabels).map(([value, label]) => ({ value, label }))} />
+                        </Form.Item>
+                        {ruleCompletionPolicy === IntelTaskCompletionPolicy.QUORUM && (
+                            <Space style={{ display: 'flex', marginBottom: 16 }} size="large" align="start">
+                                <Form.Item name="quorumCount" label="达标数" style={{ marginBottom: 0 }}>
+                                    <InputNumber min={1} placeholder="如 3" />
+                                </Form.Item>
+                                <Form.Item name="quorumRatio" label="达标比例" style={{ marginBottom: 0 }}>
+                                    <InputNumber min={0.1} max={1} step={0.1} placeholder="如 0.6" />
+                                </Form.Item>
+                            </Space>
+                        )}
+                        <Form.Item name="grouping" label="生成任务组" valuePropName="checked">
+                            <Switch />
+                        </Form.Item>
+                        <Form.Item name="isActive" label="启用" valuePropName="checked">
+                            <Switch />
+                        </Form.Item>
                     </Form>
                 </div>
             </Modal>

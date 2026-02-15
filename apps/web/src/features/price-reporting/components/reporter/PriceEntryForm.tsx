@@ -15,10 +15,13 @@ import {
   useMyAssignedPoints,
 } from '../../api/hooks';
 import { useCollectionPoints } from '../../../market-intel/api/collection-point';
+import { useTask } from '../../../market-intel/api/tasks';
 import { getErrorMessage } from '../../../../api/client';
 import { useVirtualUser } from '@/features/auth/virtual-user';
 import { useDictionary } from '@/hooks/useDictionaries';
 import { usePriceSubTypeLabels, usePriceSubTypeOptions } from '@/utils/priceSubType';
+import { TaskContextBanner } from './TaskContextBanner';
+import { SubmissionStatus } from '@packages/types';
 
 const { Title, Text } = Typography;
 const { TextArea } = Input;
@@ -73,6 +76,9 @@ export const PriceEntryForm: React.FC = () => {
 
   const { data: pointsData } = useCollectionPoints({ page: 1, pageSize: 100, isActive: true });
   const currentPoint = pointsData?.data?.find((p: any) => p.id === pointId);
+
+  // 查询任务详情（用于显示任务状态横幅）
+  const { data: currentTask } = useTask(taskId || '');
 
   // [NEW] 获取当前用户的分配信息以确定品种权限
   const { data: myAssignedPoints } = useMyAssignedPoints(undefined, currentUser?.id);
@@ -242,19 +248,19 @@ export const PriceEntryForm: React.FC = () => {
     }
 
     const copiedGrade = normalizeGrade(latestEntry.grade);
-     // 确保 subType 值在允许的选项中，如果不在则使用默认值
-     const validSubType = allowedPriceTypes.some(opt => opt.value === latestEntry.subType) 
-       ? latestEntry.subType 
-       : (allowedPriceTypes[0]?.value || 'LISTED');
+    // 确保 subType 值在允许的选项中，如果不在则使用默认值
+    const validSubType = allowedPriceTypes.some(opt => opt.value === latestEntry.subType)
+      ? latestEntry.subType
+      : (allowedPriceTypes[0]?.value || 'LISTED');
 
-     const nextValues: Record<string, unknown> = {
-       price: latestEntry.price !== undefined && latestEntry.price !== null ? Number(latestEntry.price) : undefined,
-       subType: validSubType,
-       moisture: latestEntry.moisture !== undefined && latestEntry.moisture !== null ? Number(latestEntry.moisture) : undefined,
-       bulkDensity: latestEntry.bulkDensity !== undefined && latestEntry.bulkDensity !== null ? Number(latestEntry.bulkDensity) : undefined,
-       inventory: latestEntry.inventory !== undefined && latestEntry.inventory !== null ? Number(latestEntry.inventory) : undefined,
-       note: latestEntry.note || '复制自近期数据',
-     };
+    const nextValues: Record<string, unknown> = {
+      price: latestEntry.price !== undefined && latestEntry.price !== null ? Number(latestEntry.price) : undefined,
+      subType: validSubType,
+      moisture: latestEntry.moisture !== undefined && latestEntry.moisture !== null ? Number(latestEntry.moisture) : undefined,
+      bulkDensity: latestEntry.bulkDensity !== undefined && latestEntry.bulkDensity !== null ? Number(latestEntry.bulkDensity) : undefined,
+      inventory: latestEntry.inventory !== undefined && latestEntry.inventory !== null ? Number(latestEntry.inventory) : undefined,
+      note: latestEntry.note || '复制自近期数据',
+    };
     nextValues.grade = copiedGrade ?? undefined;
 
     form.setFieldsValue(nextValues);
@@ -267,7 +273,7 @@ export const PriceEntryForm: React.FC = () => {
 
   const handleAddEntry = async (values: any) => {
     if (!submissionId) return;
-    
+
     try {
       const bulkDensity = typeof values.bulkDensity === 'number' && values.bulkDensity > 0 ? values.bulkDensity : undefined;
       const entryDto = {
@@ -286,8 +292,8 @@ export const PriceEntryForm: React.FC = () => {
       // 对于驳回的任务，我们检查是否在更新现有数据
       if (taskId && priceDataList.length > 0) {
         // 查找匹配的现有条目（相同品种和价格类型）
-        const existingEntry = priceDataList.find((item: any) => 
-          item.commodity === values.commodity && 
+        const existingEntry = priceDataList.find((item: any) =>
+          item.commodity === values.commodity &&
           item.subType === (values.subType || 'LISTED')
         );
 
@@ -370,11 +376,11 @@ export const PriceEntryForm: React.FC = () => {
       if (currentUser?.id) {
         queryClient.invalidateQueries({ queryKey: ['my-intel-tasks', currentUser.id] });
       }
-      
+
       // 同时也刷新分配点缓存，以防任务状态影响分配显示
       // 使用模糊匹配，因为我们不知道确切的 effectiveDate 参数
       queryClient.invalidateQueries({ queryKey: ['my-assigned-points'] });
-      
+
       // 刷新提交统计数据缓存
       if (currentUser?.id) {
         queryClient.invalidateQueries({ queryKey: ['submission-statistics', currentUser.id] });
@@ -403,6 +409,13 @@ export const PriceEntryForm: React.FC = () => {
         </Title>
       </Space>
 
+      {/* 任务状态横幅 */}
+      <TaskContextBanner
+        task={currentTask as any}
+        entriesCount={priceDataList.length}
+        isSubmitted={submission?.status === SubmissionStatus.SUBMITTED}
+      />
+
       <Row gutter={24}>
         <Col xs={24} lg={16}>
           <Card
@@ -422,7 +435,7 @@ export const PriceEntryForm: React.FC = () => {
               layout="vertical"
               onFinish={handleAddEntry}
               data-testid="price-form"
-              // 初始值将在 useEffect 中动态设置
+            // 初始值将在 useEffect 中动态设置
             >
               <Row gutter={16}>
                 <Col xs={12} md={8}>
@@ -432,7 +445,7 @@ export const PriceEntryForm: React.FC = () => {
                 </Col>
                 <Col xs={12} md={8}>
                   <Form.Item name="subType" label="价格类型" rules={[{ required: true }]}>
-                    <Select 
+                    <Select
                       options={allowedPriceTypes}
                       loading={!allowedPriceTypes.length}
                       placeholder={allowedPriceTypes.length ? "请选择价格类型" : "加载中..."}
@@ -492,10 +505,10 @@ export const PriceEntryForm: React.FC = () => {
               </Form.Item>
 
               <Form.Item>
-                <Button 
-                  type="primary" 
-                  htmlType="submit" 
-                  loading={addEntry.isPending || updateEntry.isPending} 
+                <Button
+                  type="primary"
+                  htmlType="submit"
+                  loading={addEntry.isPending || updateEntry.isPending}
                   disabled={!submissionId}
                 >
                   {taskId && priceDataList.length > 0 ? '更新价格' : '添加价格'}
@@ -538,21 +551,21 @@ export const PriceEntryForm: React.FC = () => {
           </Card>
 
           {/* 已添加的价格列表 */}
-          <Card 
+          <Card
             id="price-data-list"
             title={
               <Space>
                 <span>已添加 ({priceDataList.length} 条)</span>
-                {priceDataList.length > 0 && taskId && (
+                {priceDataList.length > 0 && currentTask?.status === 'RETURNED' && (
                   <Text type="warning" style={{ fontSize: 12 }}>
                     ⚠️ 驳回任务：请点击"编辑"按钮修改数据
                   </Text>
                 )}
               </Space>
-            } 
+            }
             style={{ marginTop: 16 }}
           >
-            {taskId && priceDataList.length > 0 && (
+            {currentTask?.status === 'RETURNED' && priceDataList.length > 0 && (
               <Alert
                 type="info"
                 showIcon
@@ -582,7 +595,7 @@ export const PriceEntryForm: React.FC = () => {
                       display: 'flex',
                       justifyContent: 'space-between',
                       alignItems: 'center',
-                      backgroundColor: taskId ? '#f6ffed' : 'transparent',
+                      backgroundColor: currentTask?.status === 'RETURNED' ? '#f6ffed' : 'transparent',
                       borderRadius: 4,
                       marginBottom: index < priceDataList.length - 1 ? 4 : 0,
                       border: taskId ? '1px solid #b7eb8f' : 'none',
@@ -598,9 +611,9 @@ export const PriceEntryForm: React.FC = () => {
                       {item.note && <Text type="secondary">({item.note})</Text>}
                     </Space>
                     <Space>
-                      <Button 
-                        type="primary" 
-                        size="small" 
+                      <Button
+                        type="primary"
+                        size="small"
                         icon={<EditOutlined />}
                         onClick={() => {
                           // 将数据加载到表单进行编辑
@@ -614,16 +627,16 @@ export const PriceEntryForm: React.FC = () => {
                             inventory: item.inventory,
                             note: item.note,
                           });
-                          
+
                           // 滚动到表单区域
                           document.querySelector('[data-testid="price-form"]')?.scrollIntoView({ behavior: 'smooth' });
                         }}
                       >
                         编辑
                       </Button>
-                      <Button 
-                        size="small" 
-                        danger 
+                      <Button
+                        size="small"
+                        danger
                         icon={<DeleteOutlined />}
                         onClick={() => {
                           modal.confirm({
@@ -632,8 +645,8 @@ export const PriceEntryForm: React.FC = () => {
                               <div>
                                 <p>确定要删除这条价格数据吗？</p>
                                 <p style={{ fontWeight: 'bold' }}>
-                                  {commodityLabels[item.commodity] || item.commodity} - 
-                                  {priceSubTypeLabels[item.subType] || item.subType} - 
+                                  {commodityLabels[item.commodity] || item.commodity} -
+                                  {priceSubTypeLabels[item.subType] || item.subType} -
                                   ¥{Number(item.price).toLocaleString()}/吨
                                 </p>
                               </div>
@@ -649,38 +662,38 @@ export const PriceEntryForm: React.FC = () => {
                                     entryId: item.id,
                                   });
                                   message.success('删除成功');
-    } catch (err: any) {
-      const errorMessage = getErrorMessage(err);
-      
-      // 检查是否是重复填报的错误，提供更友好的提示
-      if (errorMessage.includes('已有') && errorMessage.includes('请勿重复填报')) {
-        const match = errorMessage.match(/该品种\((.+?)\)在当日\(.+?\)已有(.+?)数据/);
-        if (match) {
-          const [, commodity, date, priceType] = match;
-          modal.confirm({
-            title: '重复数据提示',
-            content: (
-              <div>
-                <p>检测到重复数据：</p>
-                <p style={{ fontWeight: 'bold', color: '#ff4d4f' }}>
-                  {commodityLabels[commodity] || commodity} 在 {date} 已有 {priceSubTypeLabels[priceType] || priceType} 数据
-                </p>
-                <p>请选择以下操作：</p>
-              </div>
-            ),
-            okText: '查看已添加数据',
-            cancelText: '取消',
-            onOk: () => {
-              // 滚动到已添加数据区域
-              document.getElementById('price-data-list')?.scrollIntoView({ behavior: 'smooth' });
-            },
-          });
-          return;
-        }
-      }
-      
-      message.error(errorMessage);
-    }
+                                } catch (err: any) {
+                                  const errorMessage = getErrorMessage(err);
+
+                                  // 检查是否是重复填报的错误，提供更友好的提示
+                                  if (errorMessage.includes('已有') && errorMessage.includes('请勿重复填报')) {
+                                    const match = errorMessage.match(/该品种\((.+?)\)在当日\(.+?\)已有(.+?)数据/);
+                                    if (match) {
+                                      const [, commodity, date, priceType] = match;
+                                      modal.confirm({
+                                        title: '重复数据提示',
+                                        content: (
+                                          <div>
+                                            <p>检测到重复数据：</p>
+                                            <p style={{ fontWeight: 'bold', color: '#ff4d4f' }}>
+                                              {commodityLabels[commodity] || commodity} 在 {date} 已有 {priceSubTypeLabels[priceType] || priceType} 数据
+                                            </p>
+                                            <p>请选择以下操作：</p>
+                                          </div>
+                                        ),
+                                        okText: '查看已添加数据',
+                                        cancelText: '取消',
+                                        onOk: () => {
+                                          // 滚动到已添加数据区域
+                                          document.getElementById('price-data-list')?.scrollIntoView({ behavior: 'smooth' });
+                                        },
+                                      });
+                                      return;
+                                    }
+                                  }
+
+                                  message.error(errorMessage);
+                                }
                               }
                             },
                           });

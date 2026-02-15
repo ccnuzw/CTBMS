@@ -42,6 +42,7 @@ import {
     IntelTaskPriority,
     IntelTaskStatus,
     IntelTaskType,
+    CalendarSummaryItem,
     INTEL_TASK_PRIORITY_LABELS,
     INTEL_TASK_TYPE_LABELS,
 } from '@packages/types';
@@ -347,6 +348,27 @@ export const TaskCalendarView: React.FC = () => {
         return summaryMap.get(selectedDate.format('YYYY-MM-DD'));
     }, [selectedDate, summaryMap]);
 
+    const getSummaryCounts = (summary: CalendarSummaryItem) => {
+        const total = summary.total || 0;
+        const completed = summary.completed || 0;
+        const overdue = summary.overdue || 0;
+        const pending = Math.max(total - completed - overdue, 0);
+        const urgent = summary.urgent || 0;
+        const preview = summary.preview || 0;
+        const completionRate = total > 0 ? Math.round((completed / total) * 100) : 0;
+
+        return {
+            total,
+            completed,
+            overdue,
+            pending,
+            urgent,
+            preview,
+            completionRate,
+        };
+    };
+    const daySummaryCounts = daySummary ? getSummaryCounts(daySummary) : undefined;
+
     const getHeatColor = (count: number) => {
         if (count >= 15) return token.colorErrorBg;
         if (count >= 8) return token.colorWarningBg;
@@ -360,13 +382,62 @@ export const TaskCalendarView: React.FC = () => {
         const summary = summaryMap.get(dateStr);
         if (!summary) return null;
 
-        const total = summary.total || 0;
-        const preview = summary.preview || 0;
+        const {
+            total,
+            completed,
+            overdue,
+            pending,
+            urgent,
+            preview,
+            completionRate,
+        } = getSummaryCounts(summary);
         const countForHeat = total + preview;
         const content = (
-            <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-                <Text style={{ fontSize: 12 }}>{total}</Text>
-                {preview > 0 && <Tag color="cyan" style={{ marginInlineEnd: 0 }}>+{preview}</Tag>}
+            <div
+                style={{
+                    background: getHeatColor(countForHeat),
+                    borderRadius: 8,
+                    padding: '4px 6px',
+                    border: `1px solid ${token.colorBorderSecondary}`,
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: 4,
+                }}
+            >
+                <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 6 }}>
+                    <Text style={{ fontSize: 11, color: token.colorTextSecondary }}>完成/总数</Text>
+                    <Text strong style={{ fontSize: 12, lineHeight: 1 }}>{completed}/{total}</Text>
+                </div>
+                <div
+                    style={{
+                        height: 4,
+                        borderRadius: 999,
+                        background: token.colorFillSecondary,
+                        overflow: 'hidden',
+                    }}
+                >
+                    <div
+                        style={{
+                            width: `${completionRate}%`,
+                            height: '100%',
+                            background: token.colorSuccess,
+                            transition: 'width 0.2s ease',
+                        }}
+                    />
+                </div>
+                <div style={{ display: 'flex', gap: 4 }}>
+                    <Tag color="default" style={{ marginInlineEnd: 0, lineHeight: '16px', paddingInline: 6 }}>
+                        待 {pending}
+                    </Tag>
+                    <Tag color={overdue > 0 ? 'red' : 'default'} style={{ marginInlineEnd: 0, lineHeight: '16px', paddingInline: 6 }}>
+                        逾 {overdue}
+                    </Tag>
+                    {preview > 0 && (
+                        <Tag color="cyan" style={{ marginInlineEnd: 0, lineHeight: '16px', paddingInline: 6 }}>
+                            预 {preview}
+                        </Tag>
+                    )}
+                </div>
             </div>
         );
 
@@ -376,21 +447,16 @@ export const TaskCalendarView: React.FC = () => {
                 content={
                     <div style={{ minWidth: 160 }}>
                         <div>总数: {total}</div>
-                        <div>完成: {summary.completed || 0}</div>
-                        <div>逾期: {summary.overdue || 0}</div>
-                        <div>紧急: {summary.urgent || 0}</div>
+                        <div>完成: {completed}</div>
+                        <div>待完成: {pending}</div>
+                        <div>逾期: {overdue}</div>
+                        <div>完成率: {completionRate}%</div>
+                        <div>紧急: {urgent}</div>
                         {preview > 0 && <div>预览: {preview}</div>}
                     </div>
                 }
             >
-                <div
-                    style={{
-                        background: getHeatColor(countForHeat),
-                        borderRadius: 6,
-                        padding: '2px 4px',
-                        display: 'inline-flex',
-                    }}
-                >
+                <div style={{ display: 'inline-flex', width: '100%' }}>
                     {content}
                 </div>
             </Popover>
@@ -1296,13 +1362,14 @@ export const TaskCalendarView: React.FC = () => {
                         {selectedDate && <Text type="secondary">{selectedDate.format('YYYY-MM-DD')}</Text>}
                     </Space>
 
-                    {daySummary && (
+                    {daySummaryCounts && (
                         <Space wrap size={[6, 6]}>
-                            <Tag>总数 {daySummary.total || 0}</Tag>
-                            <Tag color="green">完成 {daySummary.completed || 0}</Tag>
-                            <Tag color="red">逾期 {daySummary.overdue || 0}</Tag>
-                            <Tag color="orange">紧急 {daySummary.urgent || 0}</Tag>
-                            {daySummary.preview ? <Tag color="cyan">预览 {daySummary.preview}</Tag> : null}
+                            <Tag>总数 {daySummaryCounts.total}</Tag>
+                            <Tag color="green">完成 {daySummaryCounts.completed}</Tag>
+                            <Tag color="gold">待完成 {daySummaryCounts.pending}</Tag>
+                            <Tag color="red">逾期 {daySummaryCounts.overdue}</Tag>
+                            <Tag color="orange">紧急 {daySummaryCounts.urgent}</Tag>
+                            {daySummaryCounts.preview ? <Tag color="cyan">预览 {daySummaryCounts.preview}</Tag> : null}
                         </Space>
                     )}
 

@@ -23,38 +23,75 @@ import { IntelTaskModule } from './modules/intel-task';
 import { ConfigModule } from './modules/config/config.module';
 import { CollectionPointAllocationModule } from './modules/collection-point-allocation';
 import { PriceSubmissionModule } from './modules/price-submission';
+import { KnowledgeModule } from './modules/knowledge/knowledge.module';
+import { WorkflowDefinitionModule } from './modules/workflow-definition';
+import { WorkflowExecutionModule } from './modules/workflow-execution';
+import { WorkflowValidationModule } from './modules/workflow-validation';
+import { WorkflowReplayModule } from './modules/workflow-replay';
+import { DecisionRuleModule } from './modules/decision-rule';
+import { AgentProfileModule } from './modules/agent-profile';
+import { AgentPromptTemplateModule } from './modules/agent-prompt-template';
+import { ParameterCenterModule } from './modules/parameter-center';
+import { DataConnectorModule } from './modules/data-connector';
+import { DecisionRecordModule } from './modules/decision-record';
+import { WorkflowExperimentModule } from './modules/workflow-experiment';
+import { DebateTraceModule } from './modules/debate-trace';
+import { TriggerGatewayModule } from './modules/trigger-gateway';
+import { ReportExportModule } from './modules/report-export';
+import { ExecutionAnalyticsModule } from './modules/execution-analytics';
+import { TemplateCatalogModule } from './modules/template-catalog';
+import { FuturesSimModule } from './modules/futures-sim';
+import { UserConfigBindingModule } from './modules/user-config-binding';
 
 @Module({
-    imports: [
-        ScheduleModule.forRoot(),
-        PrismaModule,
-        AIModule,
-        UsersModule,
-        MarketCategoryModule,
-        MarketInfoModule,
-        OrganizationModule,
-        DepartmentModule,
-        RoleModule,
-        InitModule,
-        TagsModule,
-        TagGroupsModule,
-        EnterpriseModule,
-        MarketIntelModule, // Keep this, even if we removed Task from it, it has other providers (though we might have removed too much from it? No, we kept services)
-        CollectionPointModule,
-        RegionModule,
-        ExtractionConfigModule,
-        IntelTaskModule,
-        ConfigModule,
-        CollectionPointAllocationModule,
-        PriceSubmissionModule,
-    ],
-    controllers: [AppController],
-    providers: [],
+  imports: [
+    ScheduleModule.forRoot(),
+    PrismaModule,
+    AIModule,
+    UsersModule,
+    MarketCategoryModule,
+    MarketInfoModule,
+    OrganizationModule,
+    DepartmentModule,
+    RoleModule,
+    InitModule,
+    TagsModule,
+    TagGroupsModule,
+    EnterpriseModule,
+    MarketIntelModule, // Keep this, even if we removed Task from it, it has other providers (though we might have removed too much from it? No, we kept services)
+    CollectionPointModule,
+    RegionModule,
+    ExtractionConfigModule,
+    IntelTaskModule,
+    ConfigModule,
+    CollectionPointAllocationModule,
+    PriceSubmissionModule,
+    KnowledgeModule,
+    WorkflowDefinitionModule,
+    WorkflowExecutionModule,
+    WorkflowValidationModule,
+    WorkflowReplayModule,
+    DecisionRuleModule,
+    AgentProfileModule,
+    AgentPromptTemplateModule,
+    ParameterCenterModule,
+    DataConnectorModule,
+    DecisionRecordModule,
+    WorkflowExperimentModule,
+    DebateTraceModule,
+    TriggerGatewayModule,
+    ReportExportModule,
+    ExecutionAnalyticsModule,
+    TemplateCatalogModule,
+    FuturesSimModule,
+    UserConfigBindingModule,
+  ],
+  controllers: [AppController],
+  providers: [],
 })
 export class AppModule implements NestModule {
-    configure(consumer: MiddlewareConsumer) {
-        consumer.apply(LoggerMiddleware).forRoutes('*');
-        consumer.apply(MockAuthMiddleware).forRoutes('*');
-    }
+  configure(consumer: MiddlewareConsumer) {
+    consumer.apply(LoggerMiddleware).forRoutes('*');
+    consumer.apply(MockAuthMiddleware).forRoutes('*');
+  }
 }
-

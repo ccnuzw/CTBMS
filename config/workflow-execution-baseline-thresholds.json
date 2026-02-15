@@ -1,0 +1,9 @@
+{
+  "schemaVersion": "1.0",
+  "trend": {
+    "maxSuccessRateDrop": 0.05,
+    "maxFailedRateIncrease": 0.05,
+    "maxTimeoutRateIncrease": 0.02,
+    "maxP95DurationIncreaseMs": 10000
+  }
+}

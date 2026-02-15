@@ -13,6 +13,7 @@ import {
     UpdateDictionaryItemDTO,
     DictionaryDomainModel,
     DictionaryItemModel,
+    WorkflowAgentStrictModeSetting,
 } from '../types';
 
 // Prompt Hooks
@@ -219,6 +220,35 @@ export const useDeleteAIConfig = () => {
         },
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ['ai-configs'] });
+        },
+    });
+};
+
+export const useWorkflowAgentStrictMode = () => {
+    return useQuery({
+        queryKey: ['workflow-agent-strict-mode'],
+        queryFn: async () => {
+            const res = await fetch(`${API_BASE}/workflow-agent-strict-mode`);
+            if (!res.ok) throw new Error('Failed to fetch workflow agent strict mode');
+            return res.json() as Promise<WorkflowAgentStrictModeSetting>;
+        },
+    });
+};
+
+export const useUpdateWorkflowAgentStrictMode = () => {
+    const queryClient = useQueryClient();
+    return useMutation({
+        mutationFn: async (enabled: boolean) => {
+            const res = await fetch(`${API_BASE}/workflow-agent-strict-mode`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ enabled }),
+            });
+            if (!res.ok) throw new Error('Failed to update workflow agent strict mode');
+            return res.json() as Promise<WorkflowAgentStrictModeSetting>;
+        },
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['workflow-agent-strict-mode'] });
         },
     });
 };

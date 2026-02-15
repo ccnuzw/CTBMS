@@ -22,7 +22,7 @@ import {
     ApartmentOutlined,
     BankOutlined,
 } from '@ant-design/icons';
-import { useUsersPaged } from '../../../../users/api/users';
+import { useUsersPaged, useUsers } from '../../../../users/api/users';
 import { useCollectionPoints } from '../../../api/collection-point';
 import { useDictionaries } from '@/hooks/useDictionaries';
 import { OrgDeptTreeSelect } from '../../../../organization/components/OrgDeptTreeSelect';
@@ -315,8 +315,33 @@ const UserPicker: React.FC<UserPickerProps> = ({ value = [], onChange }) => {
         status: 'ACTIVE',
         organizationIds: orgIds.length ? orgIds : undefined,
         departmentIds: deptIds.length ? deptIds : undefined,
-        keyword: keyword || undefined,
+
     }, { enabled: open && shouldQuery });
+
+    // [FIX] ID回显问题：当组件挂载且有初始值时，请求这些用户的详情
+    const { data: initialUsers } = useUsers({ ids: value }, {
+        enabled: value.length > 0 && Array.from(value).some(id => !cache.has(id))
+    });
+
+    // 将初始用户数据写入缓存
+    React.useEffect(() => {
+        if (!initialUsers?.length) return;
+        setCache((prev) => {
+            const next = new Map(prev);
+            initialUsers.forEach((user) => {
+                if (!next.has(user.id)) {
+                    next.set(user.id, {
+                        id: user.id,
+                        name: user.name,
+                        username: user.username,
+                        departmentName: user.department?.name,
+                        organizationName: user.organization?.name,
+                    });
+                }
+            });
+            return next;
+        });
+    }, [initialUsers]);
 
     React.useEffect(() => {
         if (!data?.data?.length) return;
@@ -697,7 +722,7 @@ export const TemplateFormCards: React.FC<TemplateFormCardsProps> = ({ form, cont
                                                 </Col>
                                             )}
                                             <Col span={showTemplateSchedule ? 12 : 24}>
-                                                <Form.Item name="deadlineOffset" label="截止偏移（小时）">
+                                                <Form.Item name="deadlineOffset" label="完成时限（小时）" tooltip="任务分发后多少小时内需完成">
                                                     <InputNumber min={1} max={72} style={{ width: '100%' }} />
                                                 </Form.Item>
                                             </Col>

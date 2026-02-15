@@ -1,6 +1,13 @@
 import React, { useMemo } from 'react';
 import { TreeSelect, theme, Space, Tag } from 'antd';
-import { BankOutlined, TeamOutlined, GlobalOutlined, ClusterOutlined, ShopOutlined, HomeOutlined } from '@ant-design/icons';
+import {
+  BankOutlined,
+  TeamOutlined,
+  GlobalOutlined,
+  ClusterOutlined,
+  ShopOutlined,
+  HomeOutlined,
+} from '@ant-design/icons';
 import type { DefaultOptionType } from 'antd/es/select';
 import { OrganizationTreeNode, OrganizationType } from '@packages/types';
 import { useOrganizationTree } from '../api/organizations';
@@ -66,18 +73,32 @@ export const OrgDeptTreeSelect: React.FC<OrgDeptTreeSelectProps> = ({
     return { orgs, depts };
   }, [allDepartments]);
 
-  // 按组织分组的部门
-  const deptsByOrg = useMemo(() => {
-    if (!allDepartments) return new Map<string, any[]>();
-    const map = new Map<string, any[]>();
-    allDepartments.forEach((dept) => {
-      const orgId = dept.organizationId;
-      if (!map.has(orgId)) {
-        map.set(orgId, []);
+  // 按组织预计算部门层级，避免构树时重复 filter
+  const deptTreeMetaByOrg = useMemo(() => {
+    const byOrg = new Map<string, { roots: any[]; childrenByParent: Map<string, any[]> }>();
+    if (!allDepartments) return byOrg;
+
+    for (const dept of allDepartments) {
+      if (!byOrg.has(dept.organizationId)) {
+        byOrg.set(dept.organizationId, {
+          roots: [],
+          childrenByParent: new Map<string, any[]>(),
+        });
       }
-      map.get(orgId)!.push(dept);
-    });
-    return map;
+
+      const orgMeta = byOrg.get(dept.organizationId)!;
+      if (!dept.parentId) {
+        orgMeta.roots.push(dept);
+        continue;
+      }
+
+      if (!orgMeta.childrenByParent.has(dept.parentId)) {
+        orgMeta.childrenByParent.set(dept.parentId, []);
+      }
+      orgMeta.childrenByParent.get(dept.parentId)!.push(dept);
+    }
+
+    return byOrg;
   }, [allDepartments]);
 
   // 获取组织类型图标
@@ -104,11 +125,11 @@ export const OrgDeptTreeSelect: React.FC<OrgDeptTreeSelectProps> = ({
     const buildDeptNodes = (orgId: string): DefaultOptionType[] => {
       if (mode === 'org') return [];
 
-      const depts = deptsByOrg.get(orgId) || [];
-      const topDepts = depts.filter((d) => !d.parentId);
+      const orgMeta = deptTreeMetaByOrg.get(orgId);
+      if (!orgMeta) return [];
 
       const buildDeptTree = (dept: any): DefaultOptionType => {
-        const childDepts = depts.filter((d) => d.parentId === dept.id);
+        const childDepts = orgMeta.childrenByParent.get(dept.id) || [];
         const userCount = userCountMap.depts.get(dept.id) || 0;
         const title = (
           <Space size={4}>
@@ -131,7 +152,7 @@ export const OrgDeptTreeSelect: React.FC<OrgDeptTreeSelectProps> = ({
         };
       };
 
-      return topDepts.map(buildDeptTree);
+      return orgMeta.roots.map(buildDeptTree);
     };
 
     const buildOrgNode = (org: OrganizationTreeNode): DefaultOptionType => {
@@ -173,7 +194,7 @@ export const OrgDeptTreeSelect: React.FC<OrgDeptTreeSelectProps> = ({
     };
 
     return orgTree.map(buildOrgNode);
-  }, [orgTree, deptsByOrg, userCountMap, mode, showUserCount, token]);
+  }, [orgTree, deptTreeMetaByOrg, userCountMap, mode, showUserCount, token]);
 
   // 处理值变化
   const handleChange = (newValue: string | string[]) => {
@@ -200,29 +221,33 @@ export const OrgDeptTreeSelect: React.FC<OrgDeptTreeSelectProps> = ({
   const internalValue = useMemo(() => {
     if (!value || value.length === 0) return undefined;
 
+    const orgIdSet = new Set<string>();
+    const collectOrgIds = (nodes: OrganizationTreeNode[]) => {
+      for (const node of nodes) {
+        orgIdSet.add(node.id);
+        if (node.children?.length) {
+          collectOrgIds(node.children);
+        }
+      }
+    };
+    if (orgTree?.length) {
+      collectOrgIds(orgTree);
+    }
+
+    const deptIdSet = new Set((allDepartments || []).map((d) => d.id));
+
     return value.map((id) => {
       // 如果已经是原始格式（带前缀），直接返回
       if (returnRawValue && (id.startsWith('org-') || id.startsWith('dept-'))) {
         return id;
       }
 
-      // 检查是组织还是部门
-      const isOrg = orgTree?.some((org) => {
-        const findOrg = (node: OrganizationTreeNode): boolean => {
-          if (node.id === id) return true;
-          return node.children?.some(findOrg) || false;
-        };
-        return findOrg(org);
-      });
-
-      if (isOrg) return `org-${id}`;
-
-      const isDept = allDepartments?.some((d) => d.id === id);
-      if (isDept) return `dept-${id}`;
+      if (orgIdSet.has(id)) return `org-${id}`;
+      if (deptIdSet.has(id)) return `dept-${id}`;
 
       return id;
     });
-  }, [value, orgTree, allDepartments]);
+  }, [value, orgTree, allDepartments, returnRawValue]);
 
   const defaultPlaceholder = useMemo(() => {
     if (placeholder) return placeholder;

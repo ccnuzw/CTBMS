@@ -139,6 +139,19 @@ const domains: DictionaryDomainSeed[] = [
             { code: 'MANAGEMENT', label: '高层管理线', sortOrder: 40, meta: { color: 'purple' } },
         ],
     },
+    {
+        code: 'TASK_CYCLE_TYPE',
+        name: '任务周期类型',
+        category: 'USER_ORG',
+        usageHint: '任务执行周期',
+        usageLocations: ['任务模板管理 - TaskTemplateList', '任务分发 - TaskDistribution'],
+        items: [
+            { code: 'DAILY', label: '每日', sortOrder: 10, meta: { color: 'blue' } },
+            { code: 'WEEKLY', label: '每周', sortOrder: 20, meta: { color: 'geekblue' } },
+            { code: 'MONTHLY', label: '每月', sortOrder: 30, meta: { color: 'purple' } },
+            { code: 'ONE_TIME', label: '一次性', sortOrder: 40, meta: { color: 'default' } },
+        ],
+    },
 
     // =============================================
     // 采集点/地理 (3)
@@ -311,7 +324,6 @@ const domains: DictionaryDomainSeed[] = [
         items: [
             { code: 'DAILY_REPORT', label: '市场信息', sortOrder: 10, meta: { color: 'blue' } },
             { code: 'RESEARCH_REPORT', label: '研究报告', sortOrder: 20, meta: { color: 'green' } },
-            { code: 'POLICY_DOC', label: '政策文件', sortOrder: 30, meta: { color: 'purple' } },
         ],
     },
     {

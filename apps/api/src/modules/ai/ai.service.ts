@@ -671,7 +671,7 @@ export class AIService implements OnModuleInit {
                 if (resolvedConfig?.apiUrl) {
                     finalApiUrl = resolvedConfig.apiUrl;
                 } else if (providerType === 'google' && this.apiUrl) {
-                     finalApiUrl = this.apiUrl;
+                    finalApiUrl = this.apiUrl;
                 }
             }
 
@@ -694,16 +694,16 @@ export class AIService implements OnModuleInit {
                     modelName: 'model-listing-placeholder',
                     apiKey: finalApiKey,
                     apiUrl: finalApiUrl || undefined,
-                authType: resolvedConfig?.authType as AIRequestOptions['authType'],
-                headers: this.resolveRecord(resolvedConfig?.headers),
-                queryParams: this.resolveRecord(resolvedConfig?.queryParams),
-                pathOverrides: this.resolveRecord(resolvedConfig?.pathOverrides),
-                modelFetchMode: resolvedConfig?.modelFetchMode as AIRequestOptions['modelFetchMode'],
-                allowUrlProbe: resolvedConfig?.allowUrlProbe ?? undefined,
-                allowCompatPathFallback: resolvedConfig?.allowCompatPathFallback ?? undefined,
-                timeoutMs: resolvedConfig?.timeoutMs ?? undefined,
-                maxRetries: resolvedConfig?.maxRetries ?? undefined,
-            };
+                    authType: resolvedConfig?.authType as AIRequestOptions['authType'],
+                    headers: this.resolveRecord(resolvedConfig?.headers),
+                    queryParams: this.resolveRecord(resolvedConfig?.queryParams),
+                    pathOverrides: this.resolveRecord(resolvedConfig?.pathOverrides),
+                    modelFetchMode: resolvedConfig?.modelFetchMode as AIRequestOptions['modelFetchMode'],
+                    allowUrlProbe: resolvedConfig?.allowUrlProbe ?? undefined,
+                    allowCompatPathFallback: resolvedConfig?.allowCompatPathFallback ?? undefined,
+                    timeoutMs: resolvedConfig?.timeoutMs ?? undefined,
+                    maxRetries: resolvedConfig?.maxRetries ?? undefined,
+                };
 
                 try {
                     const result = await provider.getModels(options);
@@ -945,24 +945,24 @@ export class AIService implements OnModuleInit {
         // 3. 获取 Provider 实例
         const provider = this.aiProviderFactory.getProvider(providerType);
 
-            const options: AIRequestOptions = {
-                modelName: targetModel,
-                apiKey: targetApiKey,
-                apiUrl: currentApiUrl || aiConfig?.apiUrl || undefined,
-                authType: aiConfig?.authType as AIRequestOptions['authType'],
-                headers: this.resolveRecord(aiConfig?.headers),
-                queryParams: this.resolveRecord(aiConfig?.queryParams),
-                pathOverrides: this.resolveRecord(aiConfig?.pathOverrides),
-                modelFetchMode: aiConfig?.modelFetchMode as AIRequestOptions['modelFetchMode'],
-                allowUrlProbe: aiConfig?.allowUrlProbe ?? undefined,
-                allowCompatPathFallback: aiConfig?.allowCompatPathFallback ?? undefined,
-                temperature: aiConfig?.temperature ?? 0.3,
-                maxTokens: aiConfig?.maxTokens ?? 8192,
-                topP: aiConfig?.topP ?? undefined,
-                timeoutMs: aiConfig?.timeoutMs ?? undefined,
-                maxRetries: aiConfig?.maxRetries ?? undefined,
-                images: base64Image && mimeType ? [{ base64: base64Image, mimeType }] : undefined
-            };
+        const options: AIRequestOptions = {
+            modelName: targetModel,
+            apiKey: targetApiKey,
+            apiUrl: currentApiUrl || aiConfig?.apiUrl || undefined,
+            authType: aiConfig?.authType as AIRequestOptions['authType'],
+            headers: this.resolveRecord(aiConfig?.headers),
+            queryParams: this.resolveRecord(aiConfig?.queryParams),
+            pathOverrides: this.resolveRecord(aiConfig?.pathOverrides),
+            modelFetchMode: aiConfig?.modelFetchMode as AIRequestOptions['modelFetchMode'],
+            allowUrlProbe: aiConfig?.allowUrlProbe ?? undefined,
+            allowCompatPathFallback: aiConfig?.allowCompatPathFallback ?? undefined,
+            temperature: aiConfig?.temperature ?? 0.3,
+            maxTokens: aiConfig?.maxTokens ?? 8192,
+            topP: aiConfig?.topP ?? undefined,
+            timeoutMs: aiConfig?.timeoutMs ?? undefined,
+            maxRetries: aiConfig?.maxRetries ?? undefined,
+            images: base64Image && mimeType ? [{ base64: base64Image, mimeType }] : undefined
+        };
 
         // 4. 执行调用
         try {
@@ -985,7 +985,7 @@ export class AIService implements OnModuleInit {
     /**
      * [NEW] 生成智能简报
      */
-    async generateBriefing(context: string): Promise<string> {
+    async generateBriefing(context: string, promptCode: string = 'MARKET_INTEL_BRIEFING'): Promise<string> {
         // [NEW] Get Configuration from DB
         const aiConfig = await this.configService.getDefaultAIConfig();
 
@@ -1007,9 +1007,9 @@ export class AIService implements OnModuleInit {
         }
 
         try {
-            const prompt = await this.promptService.getRenderedPrompt('MARKET_INTEL_BRIEFING', { content: context });
+            const prompt = await this.promptService.getRenderedPrompt(promptCode, { content: context });
             if (!prompt) {
-                throw new Error('简报模板 MARKET_INTEL_BRIEFING 未找到');
+                throw new Error(`简报模板 ${promptCode} 未找到`);
             }
 
             const provider = this.aiProviderFactory.getProvider(providerType);

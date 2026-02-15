@@ -93,8 +93,7 @@ export const CollectionConsole: React.FC<CollectionConsoleProps> = ({
 
     // 快捷填入 Prompt placeholder
     const getPlaceholder = () => {
-        if (contentType === ContentType.RESEARCH_REPORT) return '请输入研报摘要，或切换到“文档上传”Tab直接上传 PDF...';
-        if (contentType === ContentType.POLICY_DOC) return '请输入政策文件正文，或上传文件...';
+        if (contentType === ContentType.RESEARCH_REPORT) return '请输入研报摘要，或切换到"文档上传"Tab直接上传 PDF...';
         return "请拍摄黑板价格信息，或直接描述：'锦州港 玉米 收购价 2280元/吨，较昨日持平'...";
     };
 
@@ -253,7 +252,7 @@ export const CollectionConsole: React.FC<CollectionConsoleProps> = ({
                     style={{ marginTop: 8, padding: '6px 12px' }}
                     message={
                         <Text type="secondary" style={{ fontSize: 12 }}>
-                            💡 研究报告、政策文件请前往「商情知识库」上传或创建
+                            💡 研究报告请前往「商情知识库」上传或创建
                         </Text>
                     }
                 />

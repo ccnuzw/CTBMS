@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { Modal, Tag, Flex, theme, Empty, Button, Space, Checkbox, Input, Divider, Badge, Collapse, Spin } from 'antd';
+import { Modal, Tag, Flex, theme, Empty, Button, Space, Checkbox, Input, Divider, Badge, Collapse, Spin, Pagination } from 'antd';
 import {
     FilterOutlined,
     AimOutlined,
@@ -13,7 +13,6 @@ import {
     PlusOutlined,
     MinusOutlined,
 } from '@ant-design/icons';
-import PinyinMatch from 'pinyin-match';
 import { useCollectionPoints } from '../../api/hooks';
 import { useDictionary } from '@/hooks/useDictionaries';
 import { useModalAutoFocus } from '@/hooks/useModalAutoFocus';
@@ -52,6 +51,7 @@ const POINT_TYPE_COLORS: Record<string, string> = {
 };
 
 const POINT_TYPE_ORDER_FALLBACK = ['PORT', 'ENTERPRISE', 'MARKET', 'REGION', 'STATION'];
+const POINT_PAGE_SIZE = 30;
 
 interface PointItem {
     id: string;
@@ -72,7 +72,10 @@ export const AdvancedPointSelector: React.FC<AdvancedPointSelectorProps> = ({
     const { token } = theme.useToken();
     const [targetKeys, setTargetKeys] = useState<string[]>(selectedIds);
     const [searchKeyword, setSearchKeyword] = useState('');
+    const [debouncedKeyword, setDebouncedKeyword] = useState('');
     const [internalTypeFilter, setInternalTypeFilter] = useState<string[]>(currentPointTypeFilter);
+    const [page, setPage] = useState(1);
+    const [cache, setCache] = useState<Map<string, PointItem>>(new Map());
     const { data: pointTypeDict } = useDictionary('COLLECTION_POINT_TYPE');
     const { containerRef, autoFocusFieldProps, modalProps } = useModalAutoFocus();
 
@@ -100,12 +103,31 @@ export const AdvancedPointSelector: React.FC<AdvancedPointSelectorProps> = ({
             setTargetKeys(selectedIds);
             setInternalTypeFilter(currentPointTypeFilter);
             setSearchKeyword('');
+            setDebouncedKeyword('');
+            setPage(1);
         }
     }, [open, selectedIds, currentPointTypeFilter]);
 
-    // 获取所有采集点数据
+    React.useEffect(() => {
+        const timer = setTimeout(() => {
+            setDebouncedKeyword(searchKeyword.trim());
+        }, 350);
+        return () => clearTimeout(timer);
+    }, [searchKeyword]);
+
+    React.useEffect(() => {
+        setPage(1);
+    }, [internalTypeFilter, debouncedKeyword]);
+
+    // 获取分页采集点数据（服务端过滤）
     const { data: allPointsData, isLoading } = useCollectionPoints(
-        undefined,
+        {
+            page,
+            pageSize: POINT_PAGE_SIZE,
+            keyword: debouncedKeyword || undefined,
+            types: internalTypeFilter.length > 0 ? internalTypeFilter : undefined,
+            isActive: true,
+        },
         undefined,
         { enabled: open }
     );
@@ -122,23 +144,22 @@ export const AdvancedPointSelector: React.FC<AdvancedPointSelectorProps> = ({
         }));
     }, [allPointsData]);
 
-    // 按类型分组的可用采集点（应用筛选）
+    React.useEffect(() => {
+        if (!allPoints.length) return;
+        setCache((prev) => {
+            const next = new Map(prev);
+            allPoints.forEach((point) => {
+                next.set(point.id, point);
+            });
+            return next;
+        });
+    }, [allPoints]);
+
+    // 按类型分组的可用采集点（当前页）
     const groupedAvailablePoints = useMemo(() => {
         const groups: Record<string, PointItem[]> = {};
 
         allPoints.forEach(point => {
-            // 类型过滤
-            if (internalTypeFilter.length > 0 && !internalTypeFilter.includes(point.type)) {
-                return;
-            }
-            // 搜索过滤
-            if (searchKeyword) {
-                const displayName = point.name;
-                const titleMatch = PinyinMatch.match(displayName, searchKeyword);
-                if (!Array.isArray(titleMatch) || titleMatch[0] !== 0) {
-                    return;
-                }
-            }
             // 排除已选中的
             if (targetKeys.includes(point.id)) {
                 return;
@@ -151,12 +172,20 @@ export const AdvancedPointSelector: React.FC<AdvancedPointSelectorProps> = ({
         });
 
         return groups;
-    }, [allPoints, internalTypeFilter, searchKeyword, targetKeys]);
+    }, [allPoints, targetKeys]);
 
     // 已选中的采集点列表
     const selectedPoints = useMemo(() => {
-        return allPoints.filter(p => targetKeys.includes(p.id));
-    }, [allPoints, targetKeys]);
+        return targetKeys.map((id) => {
+            const cached = cache.get(id);
+            if (cached) return cached;
+            return {
+                id,
+                name: id.slice(0, 8),
+                type: 'UNKNOWN',
+            };
+        });
+    }, [targetKeys, cache]);
 
     // 已选统计（按类型）
     const selectedStats = useMemo(() => {
@@ -191,7 +220,7 @@ export const AdvancedPointSelector: React.FC<AdvancedPointSelectorProps> = ({
 
     // 取消某类型全选
     const handleDeselectAllOfType = (type: string) => {
-        const typePointIds = allPoints.filter(p => p.type === type).map(p => p.id);
+        const typePointIds = selectedPoints.filter(p => p.type === type).map(p => p.id);
         setTargetKeys(targetKeys.filter(k => !typePointIds.includes(k)));
     };
 
@@ -250,7 +279,7 @@ export const AdvancedPointSelector: React.FC<AdvancedPointSelectorProps> = ({
                     ),
                     children: (
                         <Space direction="vertical" size={2} style={{ width: '100%' }}>
-                            {groupedAvailablePoints[type]?.slice(0, 50).map(point => (
+                            {groupedAvailablePoints[type]?.map(point => (
                                 <Flex
                                     key={point.id}
                                     align="center"
@@ -272,11 +301,6 @@ export const AdvancedPointSelector: React.FC<AdvancedPointSelectorProps> = ({
                                     </Tag>
                                 </Flex>
                             ))}
-                            {(groupedAvailablePoints[type]?.length || 0) > 50 && (
-                                <Flex justify="center">
-                                    <Tag>还有 {(groupedAvailablePoints[type]?.length || 0) - 50} 个未显示</Tag>
-                                </Flex>
-                            )}
                         </Space>
                     ),
                 }))}
@@ -296,10 +320,14 @@ export const AdvancedPointSelector: React.FC<AdvancedPointSelectorProps> = ({
             if (!groupedSelected[p.type]) groupedSelected[p.type] = [];
             groupedSelected[p.type].push(p);
         });
+        const orderedSelectedTypes = [
+            ...pointTypeOrder.filter((type) => groupedSelected[type]?.length > 0),
+            ...Object.keys(groupedSelected).filter((type) => !pointTypeOrder.includes(type)),
+        ];
 
         return (
             <Space direction="vertical" size={8} style={{ width: '100%' }}>
-                {pointTypeOrder.filter(t => groupedSelected[t]?.length > 0).map(type => (
+                {orderedSelectedTypes.map(type => (
                     <div key={type}>
                         <Flex justify="space-between" align="center" style={{ marginBottom: 4 }}>
                             <Space size={4}>
@@ -323,7 +351,7 @@ export const AdvancedPointSelector: React.FC<AdvancedPointSelectorProps> = ({
                                 <Tag
                                     key={point.id}
                                     closable
-                                    color={POINT_TYPE_COLORS[type]}
+                                    color={POINT_TYPE_COLORS[type] || 'default'}
                                     onClose={() => handleDeselect(point.id)}
                                     style={{ fontSize: 11, margin: 0 }}
                                 >
@@ -343,7 +371,7 @@ export const AdvancedPointSelector: React.FC<AdvancedPointSelectorProps> = ({
                 <Flex align="center" gap={8}>
                     <FilterOutlined style={{ color: token.colorPrimary }} />
                     <span>选择分析采集点</span>
-                    <Tag>{allPoints.length} 个可用</Tag>
+                    <Tag>{allPointsData?.total || 0} 个可用</Tag>
                 </Flex>
             }
             open={open}
@@ -391,7 +419,7 @@ export const AdvancedPointSelector: React.FC<AdvancedPointSelectorProps> = ({
                     <div style={{ padding: '8px 12px', borderBottom: `1px solid ${token.colorBorderSecondary}` }}>
                         <Input
                             prefix={<SearchOutlined />}
-                            placeholder="搜索采集点名称或首字母..."
+                            placeholder="搜索采集点名称/编码..."
                             value={searchKeyword}
                             onChange={(e) => setSearchKeyword(e.target.value)}
                             size="small"
@@ -402,8 +430,17 @@ export const AdvancedPointSelector: React.FC<AdvancedPointSelectorProps> = ({
                     <div style={{ flex: 1, overflow: 'auto', padding: '8px 12px' }}>
                         {renderAvailableList()}
                     </div>
-                    <Flex justify="center" style={{ padding: 8, borderTop: `1px solid ${token.colorBorderSecondary}` }}>
+                    <Flex justify="space-between" align="center" style={{ padding: 8, borderTop: `1px solid ${token.colorBorderSecondary}` }}>
                         <Tag>{availableCount} 项待选</Tag>
+                        <Pagination
+                            size="small"
+                            simple
+                            current={allPointsData?.page || page}
+                            pageSize={allPointsData?.pageSize || POINT_PAGE_SIZE}
+                            total={allPointsData?.total || 0}
+                            showSizeChanger={false}
+                            onChange={(nextPage) => setPage(nextPage)}
+                        />
                     </Flex>
                 </div>
 

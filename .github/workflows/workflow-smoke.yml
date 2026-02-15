@@ -1,0 +1,258 @@
+name: Workflow Smoke
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'apps/api/src/modules/workflow-execution/**'
+      - 'apps/api/src/modules/workflow-validation/**'
+      - 'apps/api/src/modules/workflow-replay/**'
+      - 'apps/api/src/scripts/**'
+      - 'apps/api/src/scripts/workflow-execution-baseline.ts'
+      - 'apps/api/test/**'
+      - 'scripts/workflow-smoke-runner.mjs'
+      - 'scripts/workflow-report-validate.mjs'
+      - 'scripts/workflow-report-validate-self-check.mjs'
+      - 'scripts/workflow-report-summary.mjs'
+      - 'scripts/workflow-report-summary-self-check.mjs'
+      - 'scripts/workflow-summary-renderers.mjs'
+      - 'scripts/workflow-summary-renderers-self-check.mjs'
+      - 'scripts/workflow-summary-self-check-all.mjs'
+      - 'scripts/workflow-summary-self-check-all-self-check.mjs'
+      - 'scripts/workflow-summary-self-check-report-validate.mjs'
+      - 'scripts/workflow-summary-self-check-report-validate-self-check.mjs'
+      - 'scripts/workflow-ci-step-summary.mjs'
+      - 'scripts/workflow-ci-step-summary-self-check.mjs'
+      - 'scripts/workflow-ci-step-summary-validate.mjs'
+      - 'scripts/workflow-ci-step-summary-validate-self-check.mjs'
+      - 'scripts/workflow-execution-baseline-report-validate.mjs'
+      - 'scripts/workflow-execution-baseline-report-validate-self-check.mjs'
+      - 'scripts/workflow-execution-baseline-reference.mjs'
+      - 'scripts/workflow-execution-baseline-reference-self-check.mjs'
+      - 'scripts/workflow-execution-baseline-reference-ci-state.mjs'
+      - 'scripts/workflow-execution-baseline-reference-ci-state-self-check.mjs'
+      - 'scripts/workflow-execution-baseline-trend.mjs'
+      - 'scripts/workflow-execution-baseline-trend-self-check.mjs'
+      - 'scripts/workflow-staging-precheck-summary.mjs'
+      - 'scripts/workflow-staging-precheck-summary-self-check.mjs'
+      - 'scripts/workflow-staging-full-summary.mjs'
+      - 'scripts/workflow-staging-full-summary-self-check.mjs'
+      - 'scripts/workflow-staging-drill-closeout.mjs'
+      - 'scripts/workflow-staging-drill-closeout-self-check.mjs'
+      - 'config/workflow-execution-baseline-thresholds.json'
+      - 'scripts/workflow-quality-gate-runner.mjs'
+      - 'scripts/workflow-quality-gate-self-check.mjs'
+      - 'scripts/workflow-quality-gate-report-validate.mjs'
+      - 'scripts/workflow-quality-gate-report-validate-self-check.mjs'
+      - 'scripts/workflow-quality-gate-validation-guidance.mjs'
+      - 'scripts/workflow-quality-gate-validation-guidance-self-check.mjs'
+      - 'scripts/workflow-quality-gate-report-summary.mjs'
+      - 'packages/types/src/modules/workflow.ts'
+      - 'apps/api/package.json'
+      - 'package.json'
+      - 'pnpm-lock.yaml'
+      - '.github/workflows/workflow-smoke.yml'
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:16
+        ports:
+          - 5433:5432
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: ctbms_test
+        options: >-
+          --health-cmd "pg_isready -U postgres -d ctbms_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5433/ctbms_test?schema=public
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Restore workflow execution baseline reference cache
+        id: execution_baseline_reference_cache_restore
+        uses: actions/cache/restore@v4
+        with:
+          path: logs/workflow-execution-baseline-reference.json
+          key: workflow-execution-baseline-reference-${{ runner.os }}-${{ github.repository }}-${{ github.ref_name }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            workflow-execution-baseline-reference-${{ runner.os }}-${{ github.repository }}-${{ github.ref_name }}-
+
+      - name: Run workflow summary aggregate self-check
+        run: pnpm workflow:summary:self-check:all:self-check
+
+      - name: Run workflow summary report validate self-check
+        run: pnpm workflow:summary:self-check:report:validate:self-check
+
+      - name: Run workflow quality gate report validate self-check
+        run: pnpm workflow:quality:report:validate:self-check
+
+      - name: Run workflow summary self-check suite
+        run: pnpm workflow:summary:self-check:all -- --report-file=logs/workflow-summary-self-check-report.json
+
+      - name: Validate workflow summary self-check report
+        run: pnpm workflow:summary:self-check:report:validate -- --report-file=logs/workflow-summary-self-check-report.json --summary-json-file=logs/workflow-summary-self-check-validation.json --expected-report-schema-version=1.0
+
+      - name: Apply migrations
+        run: pnpm --filter api exec prisma migrate deploy
+
+      - name: Run workflow quality gate
+        id: quality_gate
+        continue-on-error: true
+        run: pnpm workflow:quality:gate -- --summary-markdown-file=logs/workflow-reports-summary.md --summary-json-file=logs/workflow-reports-summary.json --report-file=logs/workflow-quality-gate-report.json --require-summary-json-success --validate-summary-json-schema-version=1.0
+
+      - name: Validate workflow quality gate report
+        if: always()
+        id: quality_gate_report_validate
+        continue-on-error: true
+        run: pnpm workflow:quality:report:validate -- --report-file=logs/workflow-quality-gate-report.json --summary-json-file=logs/workflow-quality-gate-report-validation.json --expected-report-schema-version=1.0 --require-summary-json-assert
+
+      - name: Run workflow execution baseline gate
+        if: always()
+        id: execution_baseline_gate
+        continue-on-error: true
+        run: pnpm workflow:execution:baseline:gate -- --days=7 --report-file=../../logs/workflow-execution-baseline-report.json
+
+      - name: Validate workflow execution baseline report
+        if: always()
+        id: execution_baseline_report_validate
+        continue-on-error: true
+        run: pnpm workflow:execution:baseline:report:validate -- --report-file=logs/workflow-execution-baseline-report.json --summary-json-file=logs/workflow-execution-baseline-validation.json --expected-report-schema-version=1.0 --require-gate-pass --require-gate-evaluated
+
+      - name: Ensure workflow execution baseline reference
+        if: always()
+        id: execution_baseline_reference_ensure
+        continue-on-error: true
+        run: pnpm workflow:execution:baseline:reference -- --mode=ensure --current-report=logs/workflow-execution-baseline-report.json --reference-report=logs/workflow-execution-baseline-reference.json --summary-json-file=logs/workflow-execution-baseline-reference-operation.json
+
+      - name: Compare workflow execution baseline trend
+        if: always()
+        id: execution_baseline_trend
+        continue-on-error: true
+        run: pnpm workflow:execution:baseline:trend -- --current-report=logs/workflow-execution-baseline-report.json --reference-report=logs/workflow-execution-baseline-reference.json --summary-json-file=logs/workflow-execution-baseline-trend.json --require-reference
+
+      - name: Promote workflow execution baseline reference
+        if: always() && steps.execution_baseline_gate.outcome == 'success' && steps.execution_baseline_report_validate.outcome == 'success' && steps.execution_baseline_reference_ensure.outcome == 'success' && steps.execution_baseline_trend.outcome == 'success'
+        id: execution_baseline_reference_promote
+        continue-on-error: true
+        run: pnpm workflow:execution:baseline:reference -- --mode=promote --current-report=logs/workflow-execution-baseline-report.json --reference-report=logs/workflow-execution-baseline-reference.json --summary-json-file=logs/workflow-execution-baseline-reference-operation.json
+
+      - name: Save workflow execution baseline reference cache
+        if: always() && hashFiles('logs/workflow-execution-baseline-reference.json') != ''
+        id: execution_baseline_reference_cache_save
+        uses: actions/cache/save@v4
+        with:
+          path: logs/workflow-execution-baseline-reference.json
+          key: workflow-execution-baseline-reference-${{ runner.os }}-${{ github.repository }}-${{ github.ref_name }}-${{ github.run_id }}-${{ github.run_attempt }}
+
+      - name: Build workflow execution baseline reference CI state
+        if: always()
+        id: execution_baseline_reference_ci_state
+        continue-on-error: true
+        run: pnpm workflow:execution:baseline:reference:ci-state -- --summary-json-file=logs/workflow-execution-baseline-reference-ci-state.json --workflow-run-id=${{ github.run_id }} --workflow-run-attempt=${{ github.run_attempt }} --repository=${{ github.repository }} --ref-name=${{ github.ref_name }} --sha=${{ github.sha }} --cache-restore-outcome=${{ steps.execution_baseline_reference_cache_restore.outcome }} --cache-save-outcome=${{ steps.execution_baseline_reference_cache_save.outcome }} --cache-hit=${{ steps.execution_baseline_reference_cache_restore.outputs.cache-hit }} --execution-baseline-gate-outcome=${{ steps.execution_baseline_gate.outcome }} --execution-baseline-report-validate-outcome=${{ steps.execution_baseline_report_validate.outcome }} --reference-ensure-outcome=${{ steps.execution_baseline_reference_ensure.outcome }} --trend-outcome=${{ steps.execution_baseline_trend.outcome }} --reference-promote-outcome=${{ steps.execution_baseline_reference_promote.outcome }}
+
+      - name: Publish workflow report summary
+        if: always()
+        run: |
+          node scripts/workflow-ci-step-summary.mjs --quality-report-file=logs/workflow-quality-gate-report.json --quality-report-validation-file=logs/workflow-quality-gate-report-validation.json --execution-baseline-report-file=logs/workflow-execution-baseline-report.json --execution-baseline-validation-file=logs/workflow-execution-baseline-validation.json --execution-baseline-reference-operation-file=logs/workflow-execution-baseline-reference-operation.json --execution-baseline-reference-ci-state-file=logs/workflow-execution-baseline-reference-ci-state.json --execution-baseline-trend-file=logs/workflow-execution-baseline-trend.json --summary-markdown-file=logs/workflow-reports-summary.md --summary-json-file=logs/workflow-reports-summary.json --self-check-report-file=logs/workflow-summary-self-check-report.json --self-check-validation-file=logs/workflow-summary-self-check-validation.json --failure-index-snapshot-max-chars=200 > logs/workflow-ci-step-summary.md
+          cat logs/workflow-ci-step-summary.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Validate workflow CI step summary sections
+        if: always()
+        id: ci_step_summary_validate
+        continue-on-error: true
+        run: pnpm workflow:ci:step-summary:validate -- --summary-file=logs/workflow-ci-step-summary.md --summary-json-file=logs/workflow-ci-step-summary-validation.json
+
+      - name: Upload workflow reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: workflow-reports
+          if-no-files-found: warn
+          retention-days: 14
+          path: |
+            logs/workflow-smoke-gate-report*.json
+            logs/workflow-quality-gate-report*.json
+            logs/workflow-quality-gate-report-validation*.json
+            logs/workflow-execution-baseline-report*.json
+            logs/workflow-execution-baseline-reference*.json
+            logs/workflow-execution-baseline-reference-ci-state*.json
+            logs/workflow-execution-baseline-validation*.json
+            logs/workflow-execution-baseline-trend*.json
+            logs/workflow-drill-staging-precheck-summary*.md
+            logs/workflow-drill-staging-precheck-summary*.json
+            logs/workflow-drill-staging-full-summary*.md
+            logs/workflow-drill-staging-full-summary*.json
+            logs/workflow-drill-staging-closeout*.md
+            logs/workflow-drill-staging-closeout*.json
+            logs/workflow-summary-self-check-report*.json
+            logs/workflow-summary-self-check-validation*.json
+            logs/workflow-ci-step-summary*.md
+            logs/workflow-ci-step-summary*.json
+            logs/workflow-reports-summary*.md
+            logs/workflow-reports-summary*.json
+            apps/api/logs/workflow-perf-risk-gate-baseline*.json
+
+      - name: Enforce workflow gate result
+        if: always()
+        run: |
+          if [ "${{ steps.quality_gate.outcome }}" != "success" ]; then
+            echo "workflow quality gate failed"
+            exit 1
+          fi
+          if [ "${{ steps.quality_gate_report_validate.outcome }}" != "success" ]; then
+            echo "workflow quality gate report validation failed"
+            exit 1
+          fi
+          if [ "${{ steps.execution_baseline_gate.outcome }}" != "success" ]; then
+            echo "workflow execution baseline gate failed"
+            exit 1
+          fi
+          if [ "${{ steps.execution_baseline_report_validate.outcome }}" != "success" ]; then
+            echo "workflow execution baseline report validation failed"
+            exit 1
+          fi
+          if [ "${{ steps.execution_baseline_reference_ensure.outcome }}" != "success" ]; then
+            echo "workflow execution baseline reference ensure failed"
+            exit 1
+          fi
+          if [ "${{ steps.execution_baseline_trend.outcome }}" != "success" ]; then
+            echo "workflow execution baseline trend compare failed"
+            exit 1
+          fi
+          if [ "${{ steps.execution_baseline_reference_promote.outcome }}" = "failure" ]; then
+            echo "workflow execution baseline reference promote failed"
+            exit 1
+          fi
+          if [ "${{ steps.execution_baseline_reference_ci_state.outcome }}" != "success" ]; then
+            echo "workflow execution baseline reference ci state failed"
+            exit 1
+          fi
+          if [ "${{ steps.ci_step_summary_validate.outcome }}" != "success" ]; then
+            echo "workflow ci step summary validation failed"
+            exit 1
+          fi

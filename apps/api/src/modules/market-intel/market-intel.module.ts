@@ -7,26 +7,28 @@ import { IntelAttachmentService } from './intel-attachment.service';
 
 import { DocumentParserService } from './document-parser.service';
 import { ResearchReportService } from './research-report.service';
+import { KnowledgeModule } from '../knowledge/knowledge.module';
 
 @Module({
-    controllers: [MarketIntelController],
-    providers: [
-        MarketIntelService,
-        PriceDataService,
+  imports: [KnowledgeModule],
+  controllers: [MarketIntelController],
+  providers: [
+    MarketIntelService,
+    PriceDataService,
 
-        IntelAttachmentService,
+    IntelAttachmentService,
 
-        DocumentParserService,
-        ResearchReportService,
-    ],
-    exports: [
-        MarketIntelService,
-        PriceDataService,
+    DocumentParserService,
+    ResearchReportService,
+  ],
+  exports: [
+    MarketIntelService,
+    PriceDataService,
 
-        IntelAttachmentService,
+    IntelAttachmentService,
 
-        DocumentParserService,
-        ResearchReportService,
-    ],
+    DocumentParserService,
+    ResearchReportService,
+  ],
 })
-export class MarketIntelModule { }
+export class MarketIntelModule {}

@@ -23,10 +23,19 @@ import {
     FilterOutlined,
 } from '@ant-design/icons';
 import { useQueryClient } from '@tanstack/react-query';
-import { FilterPanel, TrendChart, ComparisonPanel, DataGrid, InsightCards } from './market-data';
+import {
+    FilterPanel,
+    TrendChart,
+    ComparisonPanel,
+    DataGrid,
+    InsightCards,
+    ContinuityHealthPanel,
+} from './market-data';
 import { useModalAutoFocus } from '@/hooks/useModalAutoFocus';
 import { useDictionary } from '@/hooks/useDictionaries';
-import type { PriceSubType } from '@packages/types';
+import { useProvinces } from '../api/hooks';
+import { PriceReviewScope, PriceSourceScope, type PriceSubType } from '@packages/types';
+import type { PriceQualityTag } from './market-data/quality';
 
 const { Title, Text, Paragraph } = Typography;
 
@@ -45,6 +54,7 @@ export const MarketData: React.FC = () => {
     const { token } = theme.useToken();
     const queryClient = useQueryClient();
     const { data: commodityDict } = useDictionary('COMMODITY');
+    const { data: provinces } = useProvinces();
 
     // 筛选状态 - 存储 code (如 CORN)
     const [commodity, setCommodity] = useState('CORN');
@@ -56,6 +66,9 @@ export const MarketData: React.FC = () => {
     const [selectedProvince, setSelectedProvince] = useState<string | undefined>();
     const [pointTypeFilter, setPointTypeFilter] = useState<string[]>([]);
     const [selectedSubTypes, setSelectedSubTypes] = useState<PriceSubType[]>([]);
+    const [selectedQualityTags, setSelectedQualityTags] = useState<PriceQualityTag[]>([]);
+    const [reviewScope, setReviewScope] = useState<PriceReviewScope>(PriceReviewScope.APPROVED_AND_PENDING);
+    const [sourceScope, setSourceScope] = useState<PriceSourceScope>(PriceSourceScope.ALL);
     const [activeTab, setActiveTab] = useState<TabKey>('trend');
     const [focusedPointId, setFocusedPointId] = useState<string | null>(null);
     const [helpVisible, setHelpVisible] = useState(false);
@@ -86,6 +99,7 @@ export const MarketData: React.FC = () => {
         queryClient.invalidateQueries({ queryKey: ['multi-point-compare'] });
         queryClient.invalidateQueries({ queryKey: ['price-by-collection-point'] });
         queryClient.invalidateQueries({ queryKey: ['price-by-region'] });
+        queryClient.invalidateQueries({ queryKey: ['price-continuity-health'] });
     };
 
     const tabItems = [
@@ -99,6 +113,17 @@ export const MarketData: React.FC = () => {
             ),
             children: (
                 <Space direction="vertical" size={16} style={{ width: '100%' }}>
+                    <ContinuityHealthPanel
+                        commodity={commodity}
+                        startDate={startDate}
+                        endDate={endDate}
+                        selectedRegionCode={selectedProvince}
+                        pointTypes={pointTypeFilter}
+                        subTypes={selectedSubTypes}
+                        reviewScope={reviewScope}
+                        sourceScope={sourceScope}
+                        selectedPointIds={selectedPointIds}
+                    />
                     {/* 智能洞察 */}
                     <InsightCards
                         commodity={commodity}
@@ -106,6 +131,8 @@ export const MarketData: React.FC = () => {
                         endDate={endDate}
                         selectedPointIds={selectedPointIds}
                         subTypes={selectedSubTypes}
+                        reviewScope={reviewScope}
+                        sourceScope={sourceScope}
                     />
                     {/* 趋势图表 */}
                     <TrendChart
@@ -116,6 +143,8 @@ export const MarketData: React.FC = () => {
                         selectedPointIds={selectedPointIds}
                         selectedRegionCode={selectedProvince}
                         subTypes={selectedSubTypes}
+                        reviewScope={reviewScope}
+                        sourceScope={sourceScope}
                         highlightPointId={focusedPointId}
                     />
                 </Space>
@@ -138,9 +167,27 @@ export const MarketData: React.FC = () => {
                     selectedProvince={selectedProvince}
                     pointTypeFilter={pointTypeFilter}
                     subTypes={selectedSubTypes}
+                    reviewScope={reviewScope}
+                    sourceScope={sourceScope}
                     onFocusPoint={(id) => {
                         setFocusedPointId(id);
                         setActiveTab('trend');
+                    }}
+                    onDrilldownPoint={(id) => {
+                        setSelectedPointIds([id]);
+                        setFocusedPointId(id);
+                        setActiveTab('data');
+                    }}
+                    onDrilldownRegion={(regionName, level) => {
+                        if (level === 'province') {
+                            const match = (provinces || []).find(
+                                (item) => item.name === regionName || item.shortName === regionName,
+                            );
+                            if (match) {
+                                setSelectedProvince(match.code);
+                            }
+                        }
+                        setActiveTab('data');
                     }}
                 />
             ),
@@ -162,6 +209,9 @@ export const MarketData: React.FC = () => {
                     selectedProvince={selectedProvince}
                     pointTypeFilter={pointTypeFilter}
                     subTypes={selectedSubTypes}
+                    selectedQualityTags={selectedQualityTags}
+                    reviewScope={reviewScope}
+                    sourceScope={sourceScope}
                 />
             ),
         },
@@ -218,6 +268,12 @@ export const MarketData: React.FC = () => {
                 onPointTypeFilterChange={setPointTypeFilter}
                 selectedSubTypes={selectedSubTypes}
                 onSelectedSubTypesChange={setSelectedSubTypes}
+                selectedQualityTags={selectedQualityTags}
+                onSelectedQualityTagsChange={setSelectedQualityTags}
+                reviewScope={reviewScope}
+                onReviewScopeChange={setReviewScope}
+                sourceScope={sourceScope}
+                onSourceScopeChange={setSourceScope}
             />
 
             {/* 主内容区 */}

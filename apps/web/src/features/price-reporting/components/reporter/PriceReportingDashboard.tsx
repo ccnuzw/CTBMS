@@ -1,23 +1,28 @@
 import React from 'react';
-import { Card, List, Button, Tag, Typography, Spin, Empty, Progress, Divider, Badge, Alert, theme, Space } from 'antd';
+import { Card, List, Button, Tag, Typography, Spin, Empty, Progress, Divider, Alert, theme, Space, Statistic, Row, Col, Collapse } from 'antd';
 import { useNavigate } from 'react-router-dom';
 import {
   CheckCircleOutlined,
   ClockCircleOutlined,
-  FileTextOutlined,
   EnvironmentOutlined,
   RightOutlined,
   FireOutlined,
   CalendarOutlined,
   TableOutlined,
+  ExclamationCircleOutlined,
+  WarningOutlined,
+  EditOutlined,
+  FileTextOutlined,
 } from '@ant-design/icons';
 import { useMyAssignedPoints, useSubmissionStatistics } from '../../api/hooks';
 import { useMyTasks } from '../../../market-intel/api/tasks';
+import { useMyReports, KnowledgeItem } from '@/features/market-intel/api/knowledge-hooks';
 import { useVirtualUser } from '@/features/auth/virtual-user';
 import { useDictionary } from '@/hooks/useDictionaries';
-import { IntelTaskStatus, IntelTaskType, INTEL_TASK_TYPE_LABELS } from '@packages/types';
+import { IntelTaskStatus, IntelTaskType } from '@packages/types';
 import dayjs from 'dayjs';
 import styles from './PriceReportingDashboard.module.css';
+import { TaskCard } from './TaskCard';
 
 const { Text, Title } = Typography;
 
@@ -38,19 +43,45 @@ export const PriceReportingDashboard: React.FC = () => {
   const { data: assignedPoints, isLoading: loadingPoints } = useMyAssignedPoints(today, currentUser?.id);
   const { data: myTasks, isLoading: loadingTasks } = useMyTasks(currentUser?.id || '');
   const { data: stats } = useSubmissionStatistics(currentUser?.id);
+  const { data: myReports, isLoading: loadingReports } = useMyReports(currentUser?.id);
 
-  // 预加载关键字典数据，确保进入填报页面时字典已可用
+  // 预加载关键字典数据
   useDictionary('PRICE_SUB_TYPE');
   useDictionary('COMMODITY');
 
-  // Filter tasks
-  const pendingTasks = myTasks?.filter(t => t.status === IntelTaskStatus.PENDING || t.status === IntelTaskStatus.RETURNED) || [];
-  const returnedTasks = myTasks?.filter(t => t.status === IntelTaskStatus.RETURNED) || [];
+  // 任务分类
+  const allPendingTasks = myTasks?.filter(t =>
+    t.status === IntelTaskStatus.PENDING ||
+    t.status === IntelTaskStatus.RETURNED ||
+    t.status === IntelTaskStatus.OVERDUE
+  ) || [];
 
-  // Combine points with tasks if possible, or treat them separately.
-  // The plan says: "Section 1: My Tasks (Priority) - List active tasks. Section 2: My Points (Routine)"
+  // 紧急任务：驳回 + 超期
+  const returnedTasks = allPendingTasks.filter(t => t.status === IntelTaskStatus.RETURNED);
+  const overdueTasks = allPendingTasks.filter(t => {
+    if (t.status === IntelTaskStatus.OVERDUE) return true;
+    // 前端实时判断超期
+    return t.status === IntelTaskStatus.PENDING && dayjs().isAfter(dayjs(t.deadline));
+  });
+  const urgentTasks = [...returnedTasks, ...overdueTasks.filter(t => t.status !== IntelTaskStatus.RETURNED)];
 
-  // Calculate total tasks (completed + pending)
+  // 今日待办：PENDING且未超期且是今天的任务
+  const todayTasks = allPendingTasks.filter(t => {
+    if (t.status === IntelTaskStatus.RETURNED) return false;
+    if (dayjs().isAfter(dayjs(t.deadline))) return false; // 超期的不在这里显示
+    const taskDate = t.periodStart || t.deadline;
+    return dayjs(taskDate).isSame(dayjs(), 'day');
+  });
+
+  // 历史待办：PENDING但不是今天的任务（且未超期）
+  const historicalTasks = allPendingTasks.filter(t => {
+    if (t.status === IntelTaskStatus.RETURNED) return false;
+    if (dayjs().isAfter(dayjs(t.deadline))) return false;
+    const taskDate = t.periodStart || t.deadline;
+    return !dayjs(taskDate).isSame(dayjs(), 'day');
+  });
+
+  // 统计
   const todayTotal = (stats?.todayCompleted || 0) + (stats?.todayPending || 0);
   const completionRate = todayTotal > 0 ? Math.round(((stats?.todayCompleted || 0) / todayTotal) * 100) : 0;
   const safeRate = isNaN(completionRate) ? 0 : completionRate;
@@ -81,130 +112,36 @@ export const PriceReportingDashboard: React.FC = () => {
     const params = new URLSearchParams();
     if (taskId) params.set('taskId', taskId);
     if (commodity) params.set('commodity', commodity);
-    navigate(`/price-reporting/submit/${pointId}?${params.toString()}`);
+    navigate(`/workstation/submit/${pointId}?${params.toString()}`);
   };
 
   const handleViewSubmission = (submissionId: string) => {
-    navigate(`/price-reporting/submissions/${submissionId}`);
+    navigate(`/workstation/submissions/${submissionId}`);
   };
 
-  const renderTaskCard = (task: any) => {
-    // Determine the effective point name and ID
-    // Backend might return it in top-level `collectionPoint` object or `metadata` json field
-    const pointName = task.collectionPoint?.name || task.metadata?.collectionPointName;
-    const pointId = task.collectionPointId || task.metadata?.collectionPointId;
-    const pointType = task.collectionPoint?.type || task.metadata?.collectionPointType;
-
-    // Logic to determine which commodities to show for YOU
-    let displayCommodities: string[] = [];
-
-    // 0. Specific Commodity Task (Granular)
-    if ((task as any).commodity) {
-      displayCommodities = [(task as any).commodity];
+  const handleNavigateTask = (taskId: string) => {
+    // 查找任务，如果是 REPORT 类型则跳转到报告填写页面
+    const allTasks = allPendingTasks || [];
+    const task = allTasks.find((t: any) => t.id === taskId);
+    if (task && task.type === IntelTaskType.REPORT) {
+      // 根据 periodKey 格式推断报告类型，默认 daily
+      let reportType = 'daily';
+      const pk = task.periodKey || '';
+      if (pk.includes('_W')) reportType = 'weekly';
+      else if (/^\d{4}-\d{2}$/.test(pk)) reportType = 'monthly';
+      navigate(`/workstation/report/${reportType}?taskId=${taskId}`);
+      return;
     }
-    // 1. Try to use allocations (Targeted Assignment)
-    else if (task.collectionPoint?.allocations && task.collectionPoint.allocations.length > 0) {
-      const allocated = task.collectionPoint.allocations;
-      const hasAllAccess = allocated.some((a: any) => !a.commodity); // If any allocation is null, it means ALL
-
-      if (hasAllAccess) {
-        displayCommodities = task.collectionPoint?.commodities || [];
-      } else {
-        displayCommodities = allocated
-          .map((a: any) => a.commodity)
-          .filter((c: any) => !!c);
-      }
-    }
-    // 2. Fallback to point defaults (Generic Assignment)
-    else {
-      displayCommodities = task.collectionPoint?.commodities || task.metadata?.commodities || [];
-    }
-
-    // Use point name as title if this is a price collection task, otherwise generic title
-    const displayTitle = (task.type === IntelTaskType.COLLECTION && pointName) ? pointName : task.title;
-    const displaySubtitle = (task.type === IntelTaskType.COLLECTION && pointName) ? task.title : null;
-
-    return (
-      <List.Item>
-        <Badge.Ribbon
-          text={task.status === IntelTaskStatus.RETURNED ? "已驳回" : "待办"}
-          color={task.status === IntelTaskStatus.RETURNED ? token.colorError : token.colorPrimary}
-        >
-          <Card
-            hoverable
-            size="small"
-            className={styles.taskCard}
-            title={
-              <div className={styles.taskTitle}>
-                {pointType && POINT_TYPE_ICONS[pointType] ? <span style={{ marginRight: 8, fontSize: 16 }}>{POINT_TYPE_ICONS[pointType]}</span> : <FileTextOutlined style={{ marginRight: 8 }} />}
-                <span style={{ fontWeight: pointName ? 'bold' : 'normal', fontSize: 15 }}>
-                  {/* Simplification: Use template name if available, otherwise strip redundant info */}
-                  {(task as any).template?.name || displayTitle.replace(/\[(港口|站台|企业|地域|批发市场)\].*?\[/g, '[').replace(/\[.*?\]\s*$/, '')}
-                </span>
-              </div>
-            }
-            extra={<Tag>{INTEL_TASK_TYPE_LABELS[task.type as IntelTaskType]}</Tag>}
-          >
-            {displaySubtitle && (
-              <div style={{ marginBottom: 8, color: token.colorTextSecondary, fontSize: 12 }}>
-                {displaySubtitle}
-              </div>
-            )}
-
-            {/* Commodities Tags */}
-            {displayCommodities && displayCommodities.length > 0 && (
-              <div style={{ marginBottom: 8 }}>
-                {displayCommodities.map((c: string) => (
-                  <Tag key={c} color="blue" bordered={false} style={{ marginRight: 4 }}>{c}</Tag>
-                ))}
-              </div>
-            )}
-
-            <div className={styles.taskMeta}>
-              <ClockCircleOutlined />
-              <span>截止: {dayjs(task.deadline).format('MM-DD HH:mm')}</span>
-            </div>
-
-            {/* Show point tag only if we didn't promote it to title */}
-            {!pointName && task.collectionPoint && (
-              <div className={styles.taskTags}>
-                <Tag icon={<EnvironmentOutlined />}>{task.collectionPoint.name}</Tag>
-              </div>
-            )}
-
-            {task.description && <div className={styles.taskDescription}>{task.description}</div>}
-
-            <Button
-              type="primary"
-              danger={task.status === IntelTaskStatus.RETURNED}
-              block
-              className={styles.taskButton}
-              onClick={() => {
-                if (pointId) {
-                  handleReport(pointId, task.id, (task as any).commodity);
-                } else {
-                  // Generic task handling (not point-based)
-                  // For now, if no point ID but it's price collection, we might have a problem.
-                  // But usually Price Collection tasks MUST have a point ID.
-                  navigate(`/market-intel/tasks/${task.id}`);
-                }
-              }}
-            >
-              {task.status === IntelTaskStatus.RETURNED ? "修改重报" : "立即执行"}
-            </Button>
-          </Card>
-        </Badge.Ribbon>
-      </List.Item>
-    );
+    navigate(`/market-intel/tasks/${taskId}`);
   };
 
   return (
     <div className={styles.dashboard} style={dashboardVars}>
-      {/* 顶部概览 */}
+      {/* 顶部概览统计 */}
       <div className={styles.heroCompact}>
         <div className={styles.heroMain}>
           <div className={styles.heroTitleRow}>
-            <Title level={5} className={styles.heroTitle}>填报工作台</Title>
+            <Title level={5} className={styles.heroTitle}>我的工作台</Title>
             <span className={styles.heroSubtitle}>今日 {dayjs().format('YYYY-MM-DD')}</span>
           </div>
           <div className={styles.heroProgressRow}>
@@ -228,71 +165,258 @@ export const PriceReportingDashboard: React.FC = () => {
               <span>待办</span>
             </div>
             <div className={styles.statValue}>
-              {pendingTasks.length}
+              {todayTasks.length}
               <span>个</span>
             </div>
           </div>
-          <div className={styles.statItem}>
+          <div className={styles.statItem} style={{ color: returnedTasks.length > 0 ? token.colorError : undefined }}>
             <div className={styles.statLabel}>
-              <CheckCircleOutlined />
-              <span>本周</span>
+              <ExclamationCircleOutlined />
+              <span>驳回</span>
             </div>
-            <div className={styles.statValue}>{stats?.weekCompleted || 0}</div>
+            <div className={styles.statValue}>{returnedTasks.length}</div>
+          </div>
+          <div className={styles.statItem} style={{ color: overdueTasks.length > 0 ? token.colorWarning : undefined }}>
+            <div className={styles.statLabel}>
+              <WarningOutlined />
+              <span>超期</span>
+            </div>
+            <div className={styles.statValue}>{overdueTasks.length}</div>
           </div>
           <div className={styles.statItem}>
             <div className={styles.statLabel}>
               <CalendarOutlined />
-              <span>本月</span>
+              <span>本周</span>
             </div>
-            <div className={styles.statValue}>{stats?.monthCompleted || 0}</div>
+            <div className={styles.statValue}>{stats?.weekCompleted || 0}</div>
           </div>
         </div>
       </div>
 
-      {/* 🚨 被驳回的任务 (Warning) */}
-      {returnedTasks.length > 0 && (
-        <Alert
-          message="您有被驳回的任务需要处理"
-          description="请查看待办列表中的红色标记任务，根据反馈进行修改并重新提交。"
-          type="error"
-          showIcon
-          className={styles.alertBlock}
-        />
+      {/* 🚨 紧急区：驳回 + 超期 */}
+      {urgentTasks.length > 0 && (
+        <Card
+          title={
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <ExclamationCircleOutlined style={{ color: token.colorError }} />
+              <span style={{ color: token.colorError, fontWeight: 600 }}>需要紧急处理</span>
+              <Tag color="error">{returnedTasks.length} 驳回</Tag>
+              {overdueTasks.length > 0 && <Tag color="warning">{overdueTasks.length} 超期</Tag>}
+            </div>
+          }
+          className={styles.sectionCard}
+          style={{
+            borderColor: token.colorError,
+            background: `linear-gradient(to bottom, ${token.colorErrorBg}, ${token.colorBgContainer})`,
+          }}
+        >
+          {loadingTasks ? <Spin /> : (
+            <List
+              grid={{ gutter: 16, xs: 1, sm: 2, md: 2, lg: 3 }}
+              dataSource={urgentTasks}
+              renderItem={(task: any) => (
+                <List.Item>
+                  <TaskCard
+                    task={task}
+                    onExecute={handleReport}
+                    onNavigate={handleNavigateTask}
+                  />
+                </List.Item>
+              )}
+            />
+          )}
+        </Card>
       )}
 
-      {/* 📋 任务列表 (Priority) */}
+      {/* 📋 今日待办任务 */}
       <Card
-        title={(
+        title={
           <div className={styles.sectionHeader}>
             <div className={styles.sectionTitle}>
               <FireOutlined />
-              <span>我的任务 (Priority)</span>
+              <span>今日待办任务</span>
             </div>
             <div className={styles.sectionMeta}>
-              <Tag color="processing">待办 {pendingTasks.length}</Tag>
-              {returnedTasks.length > 0 && <Tag color="error">驳回 {returnedTasks.length}</Tag>}
+              <Tag color="processing">待办 {todayTasks.length}</Tag>
             </div>
           </div>
-        )}
+        }
         className={styles.sectionCard}
       >
-        {loadingTasks ? <Spin /> : pendingTasks.length === 0 ? <Empty description="暂无待办任务" image={Empty.PRESENTED_IMAGE_SIMPLE} /> : (
+        {loadingTasks ? <Spin /> : todayTasks.length === 0 ? (
+          <Empty
+            description={
+              <Space direction="vertical" align="center">
+                <CheckCircleOutlined style={{ fontSize: 32, color: token.colorSuccess }} />
+                <Text type="success">今日任务已完成</Text>
+              </Space>
+            }
+            image={Empty.PRESENTED_IMAGE_SIMPLE}
+          />
+        ) : (
           <List
             grid={{ gutter: 16, xs: 1, sm: 2, md: 3, lg: 4 }}
-            dataSource={pendingTasks}
-            renderItem={renderTaskCard}
+            dataSource={todayTasks}
+            renderItem={(task: any) => (
+              <List.Item>
+                <TaskCard
+                  task={task}
+                  onExecute={handleReport}
+                  onNavigate={handleNavigateTask}
+                />
+              </List.Item>
+            )}
             className={styles.taskList}
           />
         )}
       </Card>
 
-      {/* 📍 常态采集点 (Routine) */}
+      {/* 📅 历史未完成任务 */}
+      {historicalTasks.length > 0 && (
+        <Collapse
+          ghost
+          items={[{
+            key: 'historical',
+            label: (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <ClockCircleOutlined style={{ color: token.colorTextSecondary }} />
+                <Text type="secondary">历史未完成任务</Text>
+                <Tag>{historicalTasks.length}</Tag>
+              </div>
+            ),
+            children: (
+              <List
+                grid={{ gutter: 16, xs: 1, sm: 2, md: 3, lg: 4 }}
+                dataSource={historicalTasks}
+                renderItem={(task: any) => (
+                  <List.Item>
+                    <TaskCard
+                      task={task}
+                      onExecute={handleReport}
+                      onNavigate={handleNavigateTask}
+                      compact
+                    />
+                  </List.Item>
+                )}
+              />
+            ),
+          }]}
+          style={{ marginBottom: 16 }}
+        />
+      )}
+
+      {/* ✏️ 报告填写快捷入口 */}
+      <Card
+        title={
+          <div className={styles.sectionHeader}>
+            <div className={styles.sectionTitle}>
+              <EditOutlined />
+              <span>报告填写</span>
+            </div>
+          </div>
+        }
+        className={styles.sectionCard}
+      >
+        <Space size="middle" wrap>
+          <Button
+            type="primary"
+            ghost
+            onClick={() => navigate('/workstation/report/daily')}
+          >
+            📋 撰写日报
+          </Button>
+          <Button
+            type="primary"
+            ghost
+            onClick={() => navigate('/workstation/report/weekly')}
+          >
+            📊 撰写周报
+          </Button>
+          <Button
+            type="primary"
+            ghost
+            onClick={() => navigate('/workstation/report/monthly')}
+          >
+            📑 撰写月报
+          </Button>
+        </Space>
+      </Card>
+
+      <Card
+        title={
+          <div className={styles.sectionHeader}>
+            <div className={styles.sectionTitle}>
+              <FileTextOutlined />
+              <span>我的报告</span>
+            </div>
+          </div>
+        }
+        className={styles.sectionCard}
+        style={{ marginBottom: 16 }}
+      >
+        <List
+          loading={loadingReports}
+          dataSource={myReports?.data || []}
+          renderItem={(item) => (
+            <List.Item
+              key={item.id}
+              actions={[
+                item.status === 'PUBLISHED' || item.status === 'APPROVED' ? (
+                  <Button type="link" size="small" onClick={() => navigate(`/intel/knowledge/items/${item.id}`)}>
+                    查看
+                  </Button>
+                ) : (
+                  <Button type="link" size="small" onClick={() => navigate(`/workstation/report/${item.periodType}?reportId=${item.id}`)}>
+                    编辑
+                  </Button>
+                ),
+              ]}
+            >
+              <List.Item.Meta
+                title={
+                  <Space>
+                    <Tag color={
+                      item.type === 'DAILY' ? 'blue' :
+                        item.type === 'WEEKLY' ? 'cyan' :
+                          item.type === 'MONTHLY' ? 'purple' : 'default'
+                    }>
+                      {item.type === 'DAILY' ? '日报' :
+                        item.type === 'WEEKLY' ? '周报' :
+                          item.type === 'MONTHLY' ? '月报' : item.type}
+                    </Tag>
+                    <span>{item.title}</span>
+                  </Space>
+                }
+                description={
+                  <Space split={<Divider type="vertical" />}>
+                    <Text type="secondary" style={{ fontSize: 12 }}>
+                      {dayjs(item.publishAt).format('YYYY-MM-DD HH:mm')}
+                    </Text>
+                    <Tag bordered={false} color={
+                      item.status === 'PENDING_REVIEW' ? 'processing' :
+                        item.status === 'PUBLISHED' || item.status === 'APPROVED' ? 'success' :
+                          item.status === 'REJECTED' ? 'error' : 'default'
+                    }>
+                      {item.status === 'PENDING_REVIEW' ? '待审核' :
+                        item.status === 'PUBLISHED' || item.status === 'APPROVED' ? '已发布' :
+                          item.status === 'REJECTED' ? '已驳回' : item.status}
+                    </Tag>
+                  </Space>
+                }
+              />
+            </List.Item>
+          )}
+          locale={{ emptyText: '暂无历史报告' }}
+        />
+      </Card>
+
+      {/* 📍 日常采集点维护 */}
       <Card
         title={
           <div className={styles.sectionHeader}>
             <div className={styles.sectionTitle}>
               <EnvironmentOutlined />
-              <span>日常采集点维护 (Routine)</span>
+              <span>日常采集点维护</span>
             </div>
             <div className={styles.sectionMeta}>
               <Tag>{assignedPoints?.length || 0}</Tag>
@@ -305,11 +429,11 @@ export const PriceReportingDashboard: React.FC = () => {
               type="primary"
               ghost
               icon={<TableOutlined />}
-              onClick={() => navigate('/price-reporting/bulk')}
+              onClick={() => navigate('/workstation/bulk')}
             >
               批量填报
             </Button>
-            <Button type="link" className={styles.manageLink} onClick={() => navigate('/price-reporting/my-points')}>
+            <Button type="link" className={styles.manageLink} onClick={() => navigate('/workstation/my-points')}>
               管理全部 <RightOutlined />
             </Button>
           </Space>
@@ -340,6 +464,9 @@ export const PriceReportingDashboard: React.FC = () => {
                       <div className={styles.pointMeta}>
                         <Tag color={item.commodity ? 'blue' : 'default'}>{item.commodity || '综合'}</Tag>
                         {item.todayReported && <Tag color="success">今日已报</Tag>}
+                        {item.hasPendingTask && !item.todayReported && (
+                          <Tag color="processing">有任务</Tag>
+                        )}
                       </div>
                     </div>
                     <div className={styles.pointStatus}>
@@ -353,6 +480,13 @@ export const PriceReportingDashboard: React.FC = () => {
                     {item.todayReported ? (
                       <Button type="link" onClick={() => handleViewSubmission(item.submissionId)}>
                         查看已报
+                      </Button>
+                    ) : item.hasPendingTask && item.pendingTask ? (
+                      <Button
+                        type="primary"
+                        onClick={() => handleReport(item.collectionPointId, item.pendingTask.id, item.commodity)}
+                      >
+                        执行任务
                       </Button>
                     ) : (
                       <Button type="primary" onClick={() => handleReport(item.collectionPointId, undefined, item.commodity)}>

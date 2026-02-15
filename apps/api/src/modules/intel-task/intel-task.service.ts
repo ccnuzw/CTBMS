@@ -1,7 +1,7 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../../prisma';
 import { ConfigService } from '../config/config.service';
-import { Prisma } from '@prisma/client';
+import { Prisma, IntelTask } from '@prisma/client';
 import {
     CreateIntelTaskDto,
     UpdateIntelTaskDto,
@@ -22,6 +22,16 @@ export class IntelTaskService {
         private prisma: PrismaService,
         private configService: ConfigService,
     ) { }
+
+    private isMissingReturnReasonColumnError(error: unknown) {
+        if (!(error instanceof Prisma.PrismaClientKnownRequestError)) return false;
+        if (error.code !== 'P2022') return false;
+        const column = String((error.meta as { column?: unknown } | undefined)?.column || '');
+        const message = String(error.message || '');
+        const normalize = (value: string) => value.toLowerCase().replace(/[^a-z0-9]/g, '');
+
+        return normalize(column).includes('returnreason') || normalize(message).includes('returnreason');
+    }
 
     private async resolveTaskTypeBinding(taskType: IntelTaskType) {
         const items = await this.configService.getDictionary('INTEL_TASK_TYPE');
@@ -143,23 +153,81 @@ export class IntelTaskService {
             if (endDate) where.deadline.lte = endDate;
         }
 
-        const [data, total] = await Promise.all([
-            this.prisma.intelTask.findMany({
-                where,
-                skip: (page - 1) * pageSize,
-                take: pageSize,
-                orderBy: { deadline: 'asc' },
-                include: {
-                    assignee: {
-                        select: { id: true, name: true, avatar: true },
+        let data: Record<string, unknown>[] = [];
+        let total = 0;
+
+        try {
+            [data, total] = await Promise.all([
+                this.prisma.intelTask.findMany({
+                    where,
+                    skip: (page - 1) * pageSize,
+                    take: pageSize,
+                    orderBy: { deadline: 'asc' },
+                    include: {
+                        assignee: {
+                            select: { id: true, name: true, avatar: true },
+                        },
+                        template: {
+                            select: { name: true }, // 显示关联模板名称
+                        }
                     },
-                    template: {
-                        select: { name: true }, // 显示关联模板名称
-                    }
-                },
-            }),
-            this.prisma.intelTask.count({ where }),
-        ]);
+                }),
+                this.prisma.intelTask.count({ where }),
+            ]);
+        } catch (error) {
+            if (!this.isMissingReturnReasonColumnError(error)) {
+                throw error;
+            }
+
+            [data, total] = await Promise.all([
+                this.prisma.intelTask.findMany({
+                    where,
+                    skip: (page - 1) * pageSize,
+                    take: pageSize,
+                    orderBy: { deadline: 'asc' },
+                    select: {
+                        id: true,
+                        title: true,
+                        description: true,
+                        requirements: true,
+                        attachmentUrls: true,
+                        notifyConfig: true,
+                        type: true,
+                        priority: true,
+                        deadline: true,
+                        periodStart: true,
+                        periodEnd: true,
+                        dueAt: true,
+                        periodKey: true,
+                        assigneeId: true,
+                        assigneeOrgId: true,
+                        assigneeDeptId: true,
+                        createdById: true,
+                        templateId: true,
+                        ruleId: true,
+                        taskGroupId: true,
+                        collectionPointId: true,
+                        commodity: true,
+                        priceSubmissionId: true,
+                        status: true,
+                        completedAt: true,
+                        isLate: true,
+                        intelId: true,
+                        formId: true,
+                        workflowId: true,
+                        createdAt: true,
+                        updatedAt: true,
+                        assignee: {
+                            select: { id: true, name: true, avatar: true },
+                        },
+                        template: {
+                            select: { name: true },
+                        },
+                    },
+                }),
+                this.prisma.intelTask.count({ where }),
+            ]);
+        }
 
         return {
             data,
@@ -168,6 +236,33 @@ export class IntelTaskService {
             pageSize,
             totalPages: Math.ceil(total / pageSize),
         };
+    }
+
+    /**
+     * 获取单个任务详情
+     */
+    async findOne(id: string) {
+        const task = await this.prisma.intelTask.findUnique({
+            where: { id },
+            include: {
+                assignee: { select: { id: true, name: true, avatar: true } },
+                template: { select: { name: true } },
+                collectionPoint: {
+                    select: {
+                        id: true,
+                        name: true,
+                        type: true,
+                        commodities: true,
+                    }
+                }
+            },
+        });
+
+        if (!task) {
+            throw new NotFoundException(`任务 ID ${id} 不存在`);
+        }
+
+        return task;
     }
 
     async getMetrics(query: IntelTaskQuery) {
@@ -766,30 +861,92 @@ export class IntelTaskService {
      * 获取用户待办任务 (Pending & Overdue)
      */
     async getMyTasks(userId: string) {
-        return this.prisma.intelTask.findMany({
-            where: {
-                assigneeId: userId,
-                status: {
-                    in: [IntelTaskStatus.PENDING, IntelTaskStatus.OVERDUE, IntelTaskStatus.RETURNED],
+        try {
+            return await this.prisma.intelTask.findMany({
+                where: {
+                    assigneeId: userId,
+                    status: {
+                        in: [IntelTaskStatus.PENDING, IntelTaskStatus.OVERDUE, IntelTaskStatus.RETURNED],
+                    },
                 },
-            },
-            orderBy: { deadline: 'asc' },
-            include: {
-                template: { select: { name: true } },
-                collectionPoint: {
-                    select: {
-                        id: true,
-                        name: true,
-                        type: true,
-                        commodities: true,
-                        allocations: {
-                            where: { userId, isActive: true },
-                            select: { commodity: true }
+                orderBy: { deadline: 'asc' },
+                include: {
+                    template: { select: { name: true } },
+                    collectionPoint: {
+                        select: {
+                            id: true,
+                            name: true,
+                            type: true,
+                            commodities: true,
+                            allocations: {
+                                where: { userId, isActive: true },
+                                select: { commodity: true }
+                            }
                         }
                     }
                 }
+            });
+        } catch (error) {
+            if (!this.isMissingReturnReasonColumnError(error)) {
+                throw error;
             }
-        });
+
+            return this.prisma.intelTask.findMany({
+                where: {
+                    assigneeId: userId,
+                    status: {
+                        in: [IntelTaskStatus.PENDING, IntelTaskStatus.OVERDUE, IntelTaskStatus.RETURNED],
+                    },
+                },
+                orderBy: { deadline: 'asc' },
+                select: {
+                    id: true,
+                    title: true,
+                    description: true,
+                    requirements: true,
+                    attachmentUrls: true,
+                    notifyConfig: true,
+                    type: true,
+                    priority: true,
+                    deadline: true,
+                    periodStart: true,
+                    periodEnd: true,
+                    dueAt: true,
+                    periodKey: true,
+                    assigneeId: true,
+                    assigneeOrgId: true,
+                    assigneeDeptId: true,
+                    createdById: true,
+                    templateId: true,
+                    ruleId: true,
+                    taskGroupId: true,
+                    collectionPointId: true,
+                    commodity: true,
+                    priceSubmissionId: true,
+                    status: true,
+                    completedAt: true,
+                    isLate: true,
+                    intelId: true,
+                    formId: true,
+                    workflowId: true,
+                    createdAt: true,
+                    updatedAt: true,
+                    template: { select: { name: true } },
+                    collectionPoint: {
+                        select: {
+                            id: true,
+                            name: true,
+                            type: true,
+                            commodities: true,
+                            allocations: {
+                                where: { userId, isActive: true },
+                                select: { commodity: true }
+                            }
+                        }
+                    }
+                }
+            });
+        }
     }
 
     /**
@@ -890,14 +1047,30 @@ export class IntelTaskService {
             }
         }
 
-        const updated = await this.prisma.intelTask.update({
-            where: { id },
-            data: {
-                status: newStatus,
-                completedAt,
-                isLate,
+        let updated: IntelTask;
+        try {
+            updated = await this.prisma.intelTask.update({
+                where: { id },
+                data: {
+                    status: newStatus,
+                    completedAt,
+                    isLate,
+                    returnReason: approved ? null : reason,
+                }
+            });
+        } catch (error) {
+            if (!this.isMissingReturnReasonColumnError(error)) {
+                throw error;
             }
-        });
+            updated = await this.prisma.intelTask.update({
+                where: { id },
+                data: {
+                    status: newStatus,
+                    completedAt,
+                    isLate,
+                }
+            });
+        }
 
         await this.logHistory(id, operatorId, approved ? 'APPROVE' : 'REJECT', {
             from: task.status,
@@ -1101,6 +1274,42 @@ export class IntelTaskService {
         });
 
         return { count: overdueTasks.count };
+    }
+
+    /**
+     * 取消任务 (用于无法完成的任务，如重复数据冲突)
+     */
+    async cancelTask(id: string, operatorId?: string, reason?: string) {
+        const task = await this.prisma.intelTask.findUnique({ where: { id } });
+        if (!task) {
+            throw new NotFoundException(`任务 ID ${id} 不存在`);
+        }
+
+        // 只允许取消待办、逾期、已驳回状态的任务
+        const allowedStatuses = [IntelTaskStatus.PENDING, IntelTaskStatus.OVERDUE, IntelTaskStatus.RETURNED];
+        if (!allowedStatuses.includes(task.status as IntelTaskStatus)) {
+            throw new BadRequestException(`任务当前状态 ${task.status} 不允许取消`);
+        }
+
+        const updated = await this.prisma.intelTask.update({
+            where: { id },
+            data: {
+                status: IntelTaskStatus.CANCELLED,
+            },
+            include: {
+                assignee: { select: { id: true, name: true, avatar: true } },
+            },
+        });
+
+        if (operatorId) {
+            await this.logHistory(id, operatorId, 'CANCEL', {
+                from: task.status,
+                to: IntelTaskStatus.CANCELLED,
+                reason: reason || '用户主动取消',
+            });
+        }
+
+        return updated;
     }
 
     /**

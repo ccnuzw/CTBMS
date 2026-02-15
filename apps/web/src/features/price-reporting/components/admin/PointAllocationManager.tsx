@@ -20,6 +20,7 @@ import {
   Typography,
   Layout,
   Segmented,
+  theme,
 } from 'antd';
 import {
   PlusOutlined,
@@ -70,7 +71,9 @@ export const PointAllocationManager: React.FC<PointAllocationManagerProps> = ({
   defaultAllocationStatus = 'ALL',
 }) => {
   const { message, modal } = App.useApp();
-  const initialAllocationStatus = defaultAllocationStatus === 'ALL' ? undefined : defaultAllocationStatus;
+  const { token } = theme.useToken();
+  const initialAllocationStatus =
+    defaultAllocationStatus === 'ALL' ? undefined : defaultAllocationStatus;
   // 查询状态
   const [pointQuery, setPointQuery] = useState<{
     page: number;
@@ -107,7 +110,11 @@ export const PointAllocationManager: React.FC<PointAllocationManagerProps> = ({
 
   // 用户筛选状态
   const [searchUserKeyword, setSearchUserKeyword] = useState('');
-  const [selectedOrgNode, setSelectedOrgNode] = useState<{ id: string; type: 'org' | 'dept'; name: string } | null>(null);
+  const [selectedOrgNode, setSelectedOrgNode] = useState<{
+    id: string;
+    type: 'org' | 'dept';
+    name: string;
+  } | null>(null);
 
   // 数据查询
   const { data: pointsData, isLoading: loadingPoints } = useCollectionPoints(pointQuery);
@@ -116,7 +123,7 @@ export const PointAllocationManager: React.FC<PointAllocationManagerProps> = ({
 
   // 当前选中采集点的分配列表
   const { data: pointAssignees, isLoading: loadingAssignees } = usePointAssignees(
-    selectedPoint?.id || ''
+    selectedPoint?.id || '',
   );
 
   const createAllocation = useCreateAllocation();
@@ -136,7 +143,7 @@ export const PointAllocationManager: React.FC<PointAllocationManagerProps> = ({
 
       const res = await fetch(`/api/collection-points?${params}`);
       if (!res.ok) throw new Error('导出失败');
-      const data = await res.json() as { data: any[] };
+      const data = (await res.json()) as { data: any[] };
       const rows = data.data || [];
 
       const header = ['采集点名称', '编码', '类型', '区域'];
@@ -147,9 +154,11 @@ export const PointAllocationManager: React.FC<PointAllocationManagerProps> = ({
         item.region?.name || item.regionCode || '',
       ]);
 
-      const csvContent = '\ufeff' + [header, ...lines]
-        .map((row) => row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(','))
-        .join('\n');
+      const csvContent =
+        '\ufeff' +
+        [header, ...lines]
+          .map((row) => row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(','))
+          .join('\n');
 
       const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
       const url = URL.createObjectURL(blob);
@@ -197,7 +206,7 @@ export const PointAllocationManager: React.FC<PointAllocationManagerProps> = ({
       result = result.filter(
         (u: any) =>
           u.name?.toLowerCase().includes(lowerKeyword) ||
-          u.username?.toLowerCase().includes(lowerKeyword)
+          u.username?.toLowerCase().includes(lowerKeyword),
       );
     }
 
@@ -217,7 +226,6 @@ export const PointAllocationManager: React.FC<PointAllocationManagerProps> = ({
     setSelectedOrgNode(null);
     setAssignCommodity(undefined); // 重置品种选择
   };
-
 
   // 分配人员
   const handleAssign = async (userId: string) => {
@@ -382,7 +390,7 @@ export const PointAllocationManager: React.FC<PointAllocationManagerProps> = ({
             <Avatar.Group maxCount={5} size="small">
               {activeAllocations.map((a: any) => (
                 <Tooltip key={a.id} title={a.user?.name}>
-                  <Avatar src={a.user?.avatar} style={{ backgroundColor: '#1890ff' }}>
+                  <Avatar src={a.user?.avatar} style={{ backgroundColor: token.colorPrimary }}>
                     {a.user?.name?.[0]}
                   </Avatar>
                 </Tooltip>
@@ -453,10 +461,7 @@ export const PointAllocationManager: React.FC<PointAllocationManagerProps> = ({
               label: `${t.icon} ${t.label}`,
             }))}
           />
-          <Button
-            icon={<DownloadOutlined />}
-            onClick={() => handleExport()}
-          >
+          <Button icon={<DownloadOutlined />} onClick={() => handleExport()}>
             导出当前筛选
           </Button>
         </Space>
@@ -536,10 +541,12 @@ export const PointAllocationManager: React.FC<PointAllocationManagerProps> = ({
                             description={
                               <div style={{ fontSize: 12 }}>
                                 <div>{item.user?.username}</div>
-                                <div style={{ color: '#888', marginTop: 4 }}>
+                                <div style={{ color: token.colorTextSecondary, marginTop: 4 }}>
                                   <ApartmentOutlined style={{ marginRight: 4 }} />
                                   {item.user?.organization?.name}
-                                  {item.user?.department?.name ? ` - ${item.user?.department?.name}` : ''}
+                                  {item.user?.department?.name
+                                    ? ` - ${item.user?.department?.name}`
+                                    : ''}
                                 </div>
                               </div>
                             }
@@ -562,10 +569,15 @@ export const PointAllocationManager: React.FC<PointAllocationManagerProps> = ({
 
                 <div style={{ display: 'flex', gap: 16, height: '100%' }}>
                   {/* 左侧：组织架构树 */}
-                  <div style={{ width: 280, borderRight: '1px solid #f0f0f0', paddingRight: 16, overflowY: 'auto' }}>
-                    <OrgDeptTree
-                      onSelect={(node) => setSelectedOrgNode(node)}
-                    />
+                  <div
+                    style={{
+                      width: 280,
+                      borderRight: `1px solid ${token.colorBorderSecondary}`,
+                      paddingRight: 16,
+                      overflowY: 'auto',
+                    }}
+                  >
+                    <OrgDeptTree onSelect={(node) => setSelectedOrgNode(node)} />
                   </div>
 
                   {/* 右侧：用户列表 */}
@@ -588,7 +600,10 @@ export const PointAllocationManager: React.FC<PointAllocationManagerProps> = ({
                           allowClear
                           options={[
                             { value: undefined, label: '全部品种 (默认)' },
-                            ...selectedPoint.commodities.map((c: string) => ({ value: c, label: c }))
+                            ...selectedPoint.commodities.map((c: string) => ({
+                              value: c,
+                              label: c,
+                            })),
                           ]}
                         />
                       )}
@@ -612,7 +627,12 @@ export const PointAllocationManager: React.FC<PointAllocationManagerProps> = ({
                         <List
                           grid={{ gutter: 12, column: 2 }}
                           dataSource={filteredUsers.slice(0, 50)}
-                          locale={{ emptyText: searchUserKeyword || selectedOrgNode ? '未找到匹配用户' : '请搜索或选择部门' }}
+                          locale={{
+                            emptyText:
+                              searchUserKeyword || selectedOrgNode
+                                ? '未找到匹配用户'
+                                : '请搜索或选择部门',
+                          }}
                           renderItem={(user: any) => (
                             <List.Item>
                               <Card size="small" hoverable onClick={() => handleAssign(user.id)}>
@@ -621,14 +641,15 @@ export const PointAllocationManager: React.FC<PointAllocationManagerProps> = ({
                                   title={
                                     <Space>
                                       <span>{user.name}</span>
-                                      <PlusOutlined style={{ color: '#1890ff' }} />
+                                      <PlusOutlined style={{ color: token.colorPrimary }} />
                                     </Space>
                                   }
                                   description={
                                     <div style={{ fontSize: 12 }}>
                                       <div>{user.username}</div>
-                                      <div style={{ color: '#888' }}>
-                                        {user.organization?.name} {user.department?.name ? `- ${user.department?.name}` : ''}
+                                      <div style={{ color: token.colorTextSecondary }}>
+                                        {user.organization?.name}{' '}
+                                        {user.department?.name ? `- ${user.department?.name}` : ''}
                                       </div>
                                     </div>
                                   }
@@ -639,7 +660,15 @@ export const PointAllocationManager: React.FC<PointAllocationManagerProps> = ({
                         />
                       )}
                       {filteredUsers.length > 50 && (
-                        <Text type="secondary" style={{ fontSize: 12, display: 'block', marginTop: 8, textAlign: 'center' }}>
+                        <Text
+                          type="secondary"
+                          style={{
+                            fontSize: 12,
+                            display: 'block',
+                            marginTop: 8,
+                            textAlign: 'center',
+                          }}
+                        >
                           还有 {filteredUsers.length - 50} 个用户，请使用搜索或选择部门缩小范围
                         </Text>
                       )}

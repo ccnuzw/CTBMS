@@ -116,6 +116,15 @@ export class IntelTaskController {
         return this.itemTaskService.complete(id, intelId);
     }
 
+    @Post(':id/cancel')
+    async cancel(
+        @Param('id') id: string,
+        @Body() body: { operatorId?: string; reason?: string }
+    ) {
+        const operatorId = body.operatorId || 'system-user-placeholder';
+        return this.itemTaskService.cancelTask(id, operatorId, body.reason);
+    }
+
     @Delete(':id')
     async remove(@Param('id') id: string) {
         return this.itemTaskService.remove(id);
@@ -199,6 +208,12 @@ export class IntelTaskController {
     @Get('templates/:id/rules')
     async listRules(@Param('id') id: string) {
         return this.templateService.listRules(id);
+    }
+
+    // 注意：:id 参数路由必须放在所有 GET 静态路由之后，避免 "calendar-summary"、"templates" 等被当作 ID
+    @Get(':id')
+    async findOne(@Param('id') id: string) {
+        return this.itemTaskService.findOne(id);
     }
 
     @Post('templates/:id/rules')
