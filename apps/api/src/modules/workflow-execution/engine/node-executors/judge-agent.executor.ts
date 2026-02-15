@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { WorkflowNodeExecutor, NodeExecutionContext, NodeExecutionResult } from '../node-executor.interface';
-import { AIModelConfig } from '@prisma/client';
+import { AIModelConfig, DecisionAction } from '@prisma/client';
 import { PrismaService } from '../../../../prisma';
 import { AIProviderFactory } from '../../../ai/providers/provider.factory';
 import { AIRequestOptions } from '../../../ai/providers/base.provider';
@@ -336,14 +336,14 @@ export class JudgeAgentNodeExecutor implements WorkflowNodeExecutor {
         try {
             return await this.decisionRecordService.create(context.triggerUserId, {
                 workflowExecutionId: context.executionId,
-                action: verdict.action as any,
+                action: verdict.action as DecisionAction,
                 confidence: confidence,
                 riskLevel: (verdict.riskLevel as string) || 'MEDIUM',
                 reasoningSummary: (verdict.conclusion as string) || (verdict.actionRationale as string) || '',
                 evidenceSummary: {
                     debateSummary: {
                         topic: debateData.topic ?? '',
-                        rounds: (debateData.rounds as any[])?.length || 0,
+                        rounds: (debateData.rounds as Array<unknown>)?.length || 0,
                     },
                     keyFindings: verdict.keyFindings,
                     nodeId: node.id,

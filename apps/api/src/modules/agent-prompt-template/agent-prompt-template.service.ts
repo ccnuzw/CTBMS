@@ -172,7 +172,7 @@ export class AgentPromptTemplateService {
             throw new NotFoundException(`Snapshot for version ${targetVersion} not found`);
         }
 
-        const snapshotData = snapshot.data as any;
+        const snapshotData = snapshot.data as unknown as Prisma.AgentPromptTemplateGetPayload<object>;
         if (snapshotData.outputSchemaCode) {
             this.ensureOutputSchemaKnown(String(snapshotData.outputSchemaCode));
         }
@@ -190,10 +190,10 @@ export class AgentPromptTemplateService {
                 roleType: snapshotData.roleType,
                 systemPrompt: snapshotData.systemPrompt,
                 userPromptTemplate: snapshotData.userPromptTemplate,
-                fewShotExamples: snapshotData.fewShotExamples,
+                fewShotExamples: this.toNullableJsonValue(snapshotData.fewShotExamples),
                 outputFormat: snapshotData.outputFormat,
-                variables: snapshotData.variables,
-                guardrails: snapshotData.guardrails,
+                variables: this.toNullableJsonValue(snapshotData.variables),
+                guardrails: this.toNullableJsonValue(snapshotData.guardrails),
                 outputSchemaCode: snapshotData.outputSchemaCode,
                 version: { increment: 1 },
                 previousVersionId: previousSnapshot?.id ?? current.previousVersionId ?? null,
