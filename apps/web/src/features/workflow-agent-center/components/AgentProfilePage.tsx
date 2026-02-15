@@ -18,7 +18,9 @@ import {
   Table,
   Tag,
   Typography,
+  Tooltip,
 } from 'antd';
+import { PlusOutlined } from '@ant-design/icons';
 import {
   AgentMemoryPolicy,
   AgentProfileDto,
@@ -45,6 +47,8 @@ import {
   getTemplateSourceLabel,
 } from '../constants';
 import { GuardrailsForm, RetryPolicyForm, ToolPolicyForm } from './index';
+import { AgentPromptTemplateCreateDrawer } from './AgentPromptTemplateCreateDrawer';
+
 
 const { Title } = Typography;
 
@@ -97,6 +101,7 @@ export const AgentProfilePage: React.FC = () => {
   );
   const [visible, setVisible] = useState(false);
   const [editVisible, setEditVisible] = useState(false);
+  const [promptCreateVisible, setPromptCreateVisible] = useState(false);
   const [editingAgent, setEditingAgent] = useState<AgentProfileDto | null>(null);
   const [selectedAgent, setSelectedAgent] = useState<AgentProfileDto | null>(null);
   const [page, setPage] = useState(parsePositiveInt(searchParams.get('page'), 1));
@@ -117,6 +122,19 @@ export const AgentProfilePage: React.FC = () => {
       value: t.promptCode,
     }));
   }, [promptTemplates]);
+
+  // Handle successful prompt creation
+  const handlePromptCreated = (newPromptCode: string) => {
+    // If we are in create mode
+    if (visible) {
+      form.setFieldsValue({ agentPromptCode: newPromptCode });
+    }
+    // If we are in edit mode
+    if (editVisible) {
+      editForm.setFieldsValue({ agentPromptCode: newPromptCode });
+    }
+  };
+
 
   const { data, isLoading } = useAgentProfiles({
     includePublic: true,
@@ -465,16 +483,31 @@ export const AgentProfilePage: React.FC = () => {
               showSearch
             />
           </Form.Item>
-          <Form.Item name="agentPromptCode" label="提示词编码" rules={[{ required: true }]}>
-            <Select
-              showSearch
-              placeholder="选择提示词模板"
-              options={promptOptions}
-              filterOption={(input, option) =>
-                (option?.label ?? '').toLowerCase().includes(input.toLowerCase()) ||
-                (option?.value ?? '').toLowerCase().includes(input.toLowerCase())
-              }
-            />
+          <Form.Item label="提示词编码" required>
+            <Space style={{ display: 'flex' }} align="start">
+              <Form.Item
+                name="agentPromptCode"
+                rules={[{ required: true }]}
+                noStyle
+              >
+                <Select
+                  showSearch
+                  placeholder="选择提示词模板"
+                  options={promptOptions}
+                  filterOption={(input, option) =>
+                    (option?.label ?? '').toLowerCase().includes(input.toLowerCase()) ||
+                    (option?.value ?? '').toLowerCase().includes(input.toLowerCase())
+                  }
+                  style={{ width: 440 }}
+                />
+              </Form.Item>
+              <Tooltip title="新建提示词模板">
+                <Button
+                  icon={<PlusOutlined />}
+                  onClick={() => setPromptCreateVisible(true)}
+                />
+              </Tooltip>
+            </Space>
           </Form.Item>
           <Form.Item name="outputSchemaCode" label="输出 Schema 编码" rules={[{ required: true }]}>
             <Input />
@@ -520,16 +553,31 @@ export const AgentProfilePage: React.FC = () => {
               showSearch
             />
           </Form.Item>
-          <Form.Item name="agentPromptCode" label="提示词编码" rules={[{ required: true }]}>
-            <Select
-              showSearch
-              placeholder="选择提示词模板"
-              options={promptOptions}
-              filterOption={(input, option) =>
-                (option?.label ?? '').toLowerCase().includes(input.toLowerCase()) ||
-                (option?.value ?? '').toLowerCase().includes(input.toLowerCase())
-              }
-            />
+          <Form.Item label="提示词编码" required>
+            <Space style={{ display: 'flex' }} align="start">
+              <Form.Item
+                name="agentPromptCode"
+                rules={[{ required: true }]}
+                noStyle
+              >
+                <Select
+                  showSearch
+                  placeholder="选择提示词模板"
+                  options={promptOptions}
+                  filterOption={(input, option) =>
+                    (option?.label ?? '').toLowerCase().includes(input.toLowerCase()) ||
+                    (option?.value ?? '').toLowerCase().includes(input.toLowerCase())
+                  }
+                  style={{ width: 440 }}
+                />
+              </Form.Item>
+              <Tooltip title="新建提示词模板">
+                <Button
+                  icon={<PlusOutlined />}
+                  onClick={() => setPromptCreateVisible(true)}
+                />
+              </Tooltip>
+            </Space>
           </Form.Item>
           <Form.Item name="timeoutMs" label="超时(ms)" rules={[{ required: true }]}>
             <InputNumber min={1000} max={120000} style={{ width: '100%' }} />
@@ -633,6 +681,13 @@ export const AgentProfilePage: React.FC = () => {
           ]}
         />
       </Drawer>
-    </Card>
+
+
+      <AgentPromptTemplateCreateDrawer
+        open={promptCreateVisible}
+        onClose={() => setPromptCreateVisible(false)}
+        onSuccess={handlePromptCreated}
+      />
+    </Card >
   );
 };
