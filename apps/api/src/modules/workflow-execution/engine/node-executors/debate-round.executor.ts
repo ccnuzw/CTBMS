@@ -245,7 +245,7 @@ export class DebateRoundNodeExecutor implements WorkflowNodeExecutor {
         executionId: string,
         roundNumber: number,
         roundArguments: DebateRoundRecord['arguments'],
-        consensusScore: number,
+        _consensusScore: number,
     ): Promise<void> {
         const traces = roundArguments.map((arg) => ({
             workflowExecutionId: executionId,

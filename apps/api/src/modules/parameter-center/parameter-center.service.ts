@@ -470,7 +470,7 @@ export class ParameterCenterService {
     }
   }
 
-  private validateValueRange(value: any, min: any, max: any, type: string) {
+  private validateValueRange(value: unknown, min: unknown, max: unknown, type: string) {
     if (value === undefined || value === null) return;
     if (type !== 'number') return; // Only validate range for numbers for now
 
@@ -815,19 +815,19 @@ export class ParameterCenterService {
 
     const agents = agentCodes.size > 0
       ? await this.prisma.agentProfile.findMany({
-          where: {
-            agentCode: { in: [...agentCodes] },
-            isActive: true,
-            OR: [{ ownerUserId }, { templateSource: 'PUBLIC' }],
-          },
-          select: {
-            id: true,
-            agentCode: true,
-            agentName: true,
-            roleType: true,
-          },
-          orderBy: [{ agentCode: 'asc' }],
-        })
+        where: {
+          agentCode: { in: [...agentCodes] },
+          isActive: true,
+          OR: [{ ownerUserId }, { templateSource: 'PUBLIC' }],
+        },
+        select: {
+          id: true,
+          agentCode: true,
+          agentName: true,
+          roleType: true,
+        },
+        orderBy: [{ agentCode: 'asc' }],
+      })
       : [];
 
     return {
