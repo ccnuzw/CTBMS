@@ -5,6 +5,7 @@ import {
   App,
   Button,
   Card,
+  Collapse,
   Drawer,
   Descriptions,
   Form,
@@ -65,6 +66,25 @@ const parsePositiveInt = (value: string | null, fallback: number): number => {
   return Math.floor(parsed);
 };
 
+const slugifyAgentCode = (name?: string): string => {
+  const normalized = (name || '')
+    .trim()
+    .toUpperCase()
+    .replace(/[\s/\\]+/g, '_')
+    .replace(/[^\w-]+/g, '')
+    .replace(/_+/g, '_')
+    .replace(/^_+|_+$/g, '');
+  if (!normalized) {
+    return '';
+  }
+  return normalized.endsWith('_V1') ? normalized : `${normalized}_V1`;
+};
+
+const defaultOutputSchemaByRole = (role?: AgentRoleType): string => {
+  const normalized = (role || 'ANALYST').toLowerCase().replace(/[^a-z0-9]+/g, '_');
+  return `${normalized}_output_v1`;
+};
+
 type CreateAgentProfileFormValues = Omit<
   CreateAgentProfileDto,
   'toolPolicy' | 'guardrails' | 'retryPolicy'
@@ -102,6 +122,7 @@ export const AgentProfilePage: React.FC = () => {
   const [visible, setVisible] = useState(false);
   const [editVisible, setEditVisible] = useState(false);
   const [promptCreateVisible, setPromptCreateVisible] = useState(false);
+  const [isAgentCodeCustomized, setIsAgentCodeCustomized] = useState(false);
   const [editingAgent, setEditingAgent] = useState<AgentProfileDto | null>(null);
   const [selectedAgent, setSelectedAgent] = useState<AgentProfileDto | null>(null);
   const [page, setPage] = useState(parsePositiveInt(searchParams.get('page'), 1));
@@ -199,6 +220,12 @@ export const AgentProfilePage: React.FC = () => {
     }, 0);
     return () => window.clearTimeout(timer);
   }, [highlightedAgentId]);
+
+  React.useEffect(() => {
+    if (!visible) {
+      setIsAgentCodeCustomized(false);
+    }
+  }, [visible]);
 
   const columns = useMemo<ColumnsType<AgentProfileDto>>(
     () => [
@@ -405,7 +432,13 @@ export const AgentProfilePage: React.FC = () => {
                 setPage(1);
               }}
             />
-            <Button type="primary" onClick={() => setVisible(true)}>
+            <Button
+              type="primary"
+              onClick={() => {
+                setVisible(true);
+                setIsAgentCodeCustomized(false);
+              }}
+            >
               新建智能体
             </Button>
           </Space>
@@ -444,7 +477,10 @@ export const AgentProfilePage: React.FC = () => {
       <Modal
         title="新建智能体"
         open={visible}
-        onCancel={() => setVisible(false)}
+        onCancel={() => {
+          setVisible(false);
+          setIsAgentCodeCustomized(false);
+        }}
         onOk={handleCreate}
         confirmLoading={createMutation.isPending}
         width={760}
@@ -454,6 +490,7 @@ export const AgentProfilePage: React.FC = () => {
           form={form}
           initialValues={{
             roleType: 'ANALYST',
+            outputSchemaCode: defaultOutputSchemaByRole('ANALYST'),
             memoryPolicy: 'none',
             timeoutMs: 30000,
             templateSource: 'PRIVATE',
@@ -461,9 +498,52 @@ export const AgentProfilePage: React.FC = () => {
             guardrails: { requireEvidence: true, noHallucination: true },
             retryPolicy: { retryCount: 1, retryBackoffMs: 2000 },
           }}
+          onValuesChange={(changedValues, allValues) => {
+            const changedName = changedValues.agentName as string | undefined;
+            if (changedName !== undefined && !isAgentCodeCustomized) {
+              const generatedCode = slugifyAgentCode(changedName);
+              form.setFieldsValue({ agentCode: generatedCode || undefined });
+            }
+
+            const changedAgentCode = changedValues.agentCode as string | undefined;
+            if (changedAgentCode !== undefined) {
+              const generatedCode = slugifyAgentCode(allValues.agentName as string | undefined);
+              const normalized = changedAgentCode.trim();
+              if (!normalized) {
+                setIsAgentCodeCustomized(false);
+              } else {
+                setIsAgentCodeCustomized(Boolean(generatedCode && normalized !== generatedCode));
+              }
+            }
+
+            const changedRoleType = changedValues.roleType as AgentRoleType | undefined;
+            if (changedRoleType !== undefined) {
+              const currentSchema = form.getFieldValue('outputSchemaCode') as string | undefined;
+              const currentSchemaNormalized = currentSchema?.trim();
+              const defaultSchema = defaultOutputSchemaByRole(allValues.roleType as AgentRoleType | undefined);
+              if (!currentSchemaNormalized || currentSchemaNormalized.endsWith('_output_v1')) {
+                form.setFieldsValue({ outputSchemaCode: defaultSchema });
+              }
+            }
+          }}
         >
           <Form.Item name="agentCode" label="编码" rules={[{ required: true }]}>
-            <Input placeholder="如 MARKET_ANALYST_V1" />
+            <Input
+              placeholder="如 MARKET_ANALYST_V1"
+              addonAfter={(
+                <Button
+                  type="link"
+                  size="small"
+                  onClick={() => {
+                    const generatedCode = slugifyAgentCode(form.getFieldValue('agentName'));
+                    form.setFieldsValue({ agentCode: generatedCode || undefined });
+                    setIsAgentCodeCustomized(false);
+                  }}
+                >
+                  自动生成
+                </Button>
+              )}
+            />
           </Form.Item>
           <Form.Item name="agentName" label="名称" rules={[{ required: true }]}>
             <Input />
@@ -512,23 +592,36 @@ export const AgentProfilePage: React.FC = () => {
           <Form.Item name="outputSchemaCode" label="输出 Schema 编码" rules={[{ required: true }]}>
             <Input />
           </Form.Item>
-          <Form.Item name="memoryPolicy" label="记忆策略" rules={[{ required: true }]}>
-            <Select options={memoryOptions.map((item) => ({ label: getMemoryPolicyLabel(item), value: item }))} />
-          </Form.Item>
-          <Form.Item name="timeoutMs" label="超时(ms)" rules={[{ required: true }]}>
-            <InputNumber min={1000} max={120000} style={{ width: '100%' }} />
-          </Form.Item>
-          <ToolPolicyForm name="toolPolicy" />
-          <GuardrailsForm name="guardrails" />
-          <RetryPolicyForm name="retryPolicy" />
-          <Form.Item name="templateSource" label="模板来源" rules={[{ required: true }]}>
-            <Select
-              options={[
-                { label: '私有', value: 'PRIVATE' },
-                { label: '公共', value: 'PUBLIC' },
-              ]}
-            />
-          </Form.Item>
+          <Collapse
+            size="small"
+            items={[
+              {
+                key: 'advanced-agent',
+                label: '高级设置（记忆、超时、工具与防护）',
+                children: (
+                  <Space direction="vertical" style={{ width: '100%' }} size={0}>
+                    <Form.Item name="memoryPolicy" label="记忆策略" rules={[{ required: true }]}>
+                      <Select options={memoryOptions.map((item) => ({ label: getMemoryPolicyLabel(item), value: item }))} />
+                    </Form.Item>
+                    <Form.Item name="timeoutMs" label="超时(ms)" rules={[{ required: true }]}>
+                      <InputNumber min={1000} max={120000} style={{ width: '100%' }} />
+                    </Form.Item>
+                    <ToolPolicyForm name="toolPolicy" />
+                    <GuardrailsForm name="guardrails" />
+                    <RetryPolicyForm name="retryPolicy" />
+                    <Form.Item name="templateSource" label="模板来源" rules={[{ required: true }]}>
+                      <Select
+                        options={[
+                          { label: '私有', value: 'PRIVATE' },
+                          { label: '公共', value: 'PUBLIC' },
+                        ]}
+                      />
+                    </Form.Item>
+                  </Space>
+                ),
+              },
+            ]}
+          />
         </Form>
       </Modal>
 

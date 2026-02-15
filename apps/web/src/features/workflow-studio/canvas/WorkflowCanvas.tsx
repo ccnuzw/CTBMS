@@ -11,7 +11,7 @@ import {
     SelectionMode,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
-import { Alert, message, theme } from 'antd';
+import { Alert, message, notification, theme, Tag } from 'antd';
 import {
     canonicalizeWorkflowDsl,
     normalizeWorkflowModeValue,
@@ -37,6 +37,69 @@ import { SaveTemplateModal } from './SaveTemplateModal';
 import { listNodeTemplates, saveNodeTemplate } from './nodeTemplateStore';
 import { SmartLinkMenu } from './SmartLinkMenu';
 import { CanvasErrorList, type ValidationError } from './CanvasErrorList';
+import {
+    applyAutoFixesToDsl,
+    extractIssueCode,
+    getAutoFixableIssueCodes,
+    hasAutoFixableIssues,
+} from './workflowAutoFix';
+import {
+    summarizeWorkflowDslChange,
+    type WorkflowDslChangeSummary,
+} from './workflowDslChangeSummary';
+
+const WORKFLOW_STUDIO_VIEW_LEVEL_STORAGE_KEY = 'ctbms.workflow-studio.view-level.v1';
+
+type WorkflowStudioViewLevel = 'business' | 'enhanced' | 'expert';
+type RuntimePreset = 'FAST' | 'BALANCED' | 'ROBUST';
+
+const runtimePresetPolicyMap: Record<RuntimePreset, { timeoutMs: number; retryCount: number; retryBackoffMs: number; onError: 'FAIL_FAST' | 'CONTINUE' | 'ROUTE_TO_ERROR' }> = {
+    FAST: {
+        timeoutMs: 15000,
+        retryCount: 0,
+        retryBackoffMs: 0,
+        onError: 'FAIL_FAST',
+    },
+    BALANCED: {
+        timeoutMs: 30000,
+        retryCount: 1,
+        retryBackoffMs: 2000,
+        onError: 'CONTINUE',
+    },
+    ROBUST: {
+        timeoutMs: 60000,
+        retryCount: 3,
+        retryBackoffMs: 3000,
+        onError: 'ROUTE_TO_ERROR',
+    },
+};
+
+const AUTO_FIX_STEP_SEQUENCE: Array<{ title: string; codes: string[] }> = [
+    { title: '结构连线修复', codes: ['WF003', 'WF004', 'WF005'] },
+    { title: '编排骨架修复', codes: ['WF101', 'WF102'] },
+    { title: '策略与风控修复', codes: ['WF106', 'WF104'] },
+];
+
+type AutoFixPreviewState = {
+    actions: string[];
+    remainingIssueCount: number;
+    generatedAt: string;
+    changeSummary: WorkflowDslChangeSummary;
+};
+
+type StepAutoFixReportStep = {
+    title: string;
+    codes: string[];
+    actions: string[];
+    remainingIssueCount: number;
+    changeSummary: WorkflowDslChangeSummary;
+};
+
+type StepAutoFixReportState = {
+    generatedAt: string;
+    finalIssueCount: number;
+    steps: StepAutoFixReportStep[];
+};
 
 interface WorkflowCanvasProps {
     initialDsl?: WorkflowDsl;
@@ -49,6 +112,10 @@ interface WorkflowCanvasProps {
     onRun?: (dsl: WorkflowDsl) => Promise<string | undefined>;
     currentVersionId?: string;
     currentDefinitionId?: string;
+    viewLevel?: WorkflowStudioViewLevel;
+    onViewLevelChange?: (level: WorkflowStudioViewLevel) => void;
+    viewMode?: 'edit' | 'replay';
+    executionData?: any; // We'll refine this type later
 }
 
 const WorkflowCanvasInner: React.FC<WorkflowCanvasProps> = ({
@@ -59,6 +126,10 @@ const WorkflowCanvasInner: React.FC<WorkflowCanvasProps> = ({
     onRun,
     currentVersionId,
     currentDefinitionId,
+    viewLevel,
+    onViewLevelChange,
+    viewMode = 'edit',
+    executionData,
 }) => {
     const { token } = theme.useToken();
     const reactFlow = useReactFlow();
@@ -75,6 +146,12 @@ const WorkflowCanvasInner: React.FC<WorkflowCanvasProps> = ({
     const [selectionMode, setSelectionMode] = useState<'hand' | 'pointer'>('hand');
     const [snapToGrid, setSnapToGrid] = useState(true);
     const [validationErrors, setValidationErrors] = useState<ValidationError[]>([]);
+    const [autoFixPreview, setAutoFixPreview] = useState<AutoFixPreviewState | null>(null);
+    const [previewAutoFixLoading, setPreviewAutoFixLoading] = useState(false);
+    const [lastAutoFixActions, setLastAutoFixActions] = useState<string[]>([]);
+    const [selectedAutoFixCodes, setSelectedAutoFixCodes] = useState<string[]>([]);
+    const [stepAutoFixLoading, setStepAutoFixLoading] = useState(false);
+    const [stepAutoFixReport, setStepAutoFixReport] = useState<StepAutoFixReportState | null>(null);
     const [workflowMode, setWorkflowMode] = useState<'linear' | 'dag' | 'debate'>(
         toWorkflowModeUi(initialDsl?.mode ?? 'DAG'),
     );
@@ -87,8 +164,19 @@ const WorkflowCanvasInner: React.FC<WorkflowCanvasProps> = ({
     } | null>(null);
     const [isTemplateModalOpen, setIsTemplateModalOpen] = useState(false);
     const [breakpoints, setBreakpoints] = useState<Set<string>>(new Set());
+    const [localViewLevel, setLocalViewLevel] = useState<WorkflowStudioViewLevel>(() => {
+        if (typeof window === 'undefined') {
+            return 'business';
+        }
+        const raw = window.localStorage.getItem(WORKFLOW_STUDIO_VIEW_LEVEL_STORAGE_KEY);
+        if (raw === 'business' || raw === 'enhanced' || raw === 'expert') {
+            return raw;
+        }
+        return 'business';
+    });
     const connectingNodeId = useRef<string | null>(null);
     const connectingHandleId = useRef<string | null>(null);
+    const currentViewLevel = viewLevel ?? localViewLevel;
 
     const { takeSnapshot, undo, redo, canUndo, canRedo } = useUndoRedo();
 
@@ -112,6 +200,19 @@ const WorkflowCanvasInner: React.FC<WorkflowCanvasProps> = ({
         }
     }, [initialDsl?.mode]);
 
+    React.useEffect(() => {
+        if (viewLevel) {
+            setLocalViewLevel(viewLevel);
+        }
+    }, [viewLevel]);
+
+    React.useEffect(() => {
+        if (typeof window === 'undefined') {
+            return;
+        }
+        window.localStorage.setItem(WORKFLOW_STUDIO_VIEW_LEVEL_STORAGE_KEY, currentViewLevel);
+    }, [currentViewLevel]);
+
     const {
         nodes,
         edges,
@@ -122,6 +223,7 @@ const WorkflowCanvasInner: React.FC<WorkflowCanvasProps> = ({
         updateNodeData,
         updateEdgeData,
         exportDsl,
+        loadDsl,
         setNodes,
         setEdges,
     } = useDslSync(initialDsl || defaultDsl, undefined, takeSnapshot);
@@ -148,6 +250,97 @@ const WorkflowCanvasInner: React.FC<WorkflowCanvasProps> = ({
         () => edges.find((edge) => edge.id === selectedEdgeId) ?? null,
         [edges, selectedEdgeId],
     );
+
+    // Execution Overlay Logic
+    const executionStatusMap = useMemo(() => {
+        if (viewMode !== 'replay' || !executionData) {
+            return new Map<string, string>();
+        }
+        const statusMap = new Map<string, string>();
+        const history = executionData.history || [];
+
+        // Mark executed nodes
+        history.forEach((step: any) => {
+            if (step.nodeId) {
+                statusMap.set(step.nodeId, step.status);
+            }
+        });
+
+        return statusMap;
+    }, [viewMode, executionData]);
+
+    const getEdgeStyle = useCallback((edge: any) => {
+        if (viewMode !== 'replay') return {};
+        const sourceStatus = executionStatusMap.get(edge.source);
+        const targetStatus = executionStatusMap.get(edge.target);
+
+        // Heuristic: if source and target are executed, edge might be traversed.
+        // For better accuracy, we would need edge traversal data from backend.
+        const isTraversed = sourceStatus === 'SUCCESS' && (targetStatus === 'SUCCESS' || targetStatus === 'FAILED');
+
+        if (isTraversed) {
+            return {
+                stroke: token.colorSuccess,
+                strokeWidth: 2,
+                animated: true,
+            };
+        }
+        return {
+            stroke: token.colorBorder,
+            opacity: 0.2,
+        };
+    }, [viewMode, executionStatusMap, token]);
+
+    const getNodeStyle = useCallback((node: Node) => {
+        if (viewMode !== 'replay') return {};
+        const status = executionStatusMap.get(node.id);
+
+        let borderColor = token.colorBorder;
+        let background = token.colorBgContainer;
+        let opacity = 1;
+
+        if (status === 'SUCCESS') {
+            borderColor = token.colorSuccess;
+            background = token.colorSuccessBg;
+        } else if (status === 'FAILED') {
+            borderColor = token.colorError;
+            background = token.colorErrorBg;
+        } else if (status === 'SKIPPED') {
+            borderColor = token.colorTextQuaternary;
+            opacity = 0.6;
+        } else if (!status) {
+            // Not executed yet or unreachable
+            opacity = 0.4;
+        }
+
+        return {
+            border: `2px solid ${borderColor}`,
+            background,
+            opacity,
+            transition: 'all 0.3s ease',
+        };
+    }, [viewMode, executionStatusMap, token]);
+
+    // Apply styles to nodes and edges in replay mode
+    const displayNodes = useMemo(() => {
+        if (viewMode !== 'replay') return nodes;
+        return nodes.map(node => ({
+            ...node,
+            style: { ...node.style, ...getNodeStyle(node) },
+            draggable: false,
+            connectable: false,
+            selectable: true, // Allow selection to see details
+        }));
+    }, [nodes, viewMode, getNodeStyle]);
+
+    const displayEdges = useMemo(() => {
+        if (viewMode !== 'replay') return edges;
+        return edges.map(edge => ({
+            ...edge,
+            style: { ...edge.style, ...getEdgeStyle(edge) },
+            animated: getEdgeStyle(edge).animated,
+        }));
+    }, [edges, viewMode, getEdgeStyle]);
 
     const buildCurrentDsl = useCallback((): WorkflowDsl => {
         const dsl = exportDsl();
@@ -190,6 +383,32 @@ const WorkflowCanvasInner: React.FC<WorkflowCanvasProps> = ({
         [onValidate, nodes, edges, workflowMode],
     );
 
+    const autoFixableIssueCodes = useMemo(
+        () => getAutoFixableIssueCodes(validationErrors),
+        [validationErrors],
+    );
+
+    React.useEffect(() => {
+        setSelectedAutoFixCodes((prev) => {
+            const kept = prev.filter((code) => autoFixableIssueCodes.includes(code));
+            if (kept.length > 0) {
+                return kept;
+            }
+            return autoFixableIssueCodes;
+        });
+    }, [autoFixableIssueCodes]);
+
+    const selectedAutoFixIssues = useMemo(() => {
+        if (selectedAutoFixCodes.length === 0) {
+            return [];
+        }
+        const selectedCodeSet = new Set(selectedAutoFixCodes);
+        return validationErrors.filter((item) => {
+            const code = extractIssueCode(item.message);
+            return Boolean(code && selectedCodeSet.has(code));
+        });
+    }, [validationErrors, selectedAutoFixCodes]);
+
     React.useEffect(() => {
         let active = true;
         const timer = setTimeout(async () => {
@@ -211,6 +430,179 @@ const WorkflowCanvasInner: React.FC<WorkflowCanvasProps> = ({
             clearTimeout(timer);
         };
     }, [nodes, edges, workflowMode, buildCurrentDsl, runValidation]);
+
+    const handleAutoFixValidationIssues = useCallback(async () => {
+        if (selectedAutoFixIssues.length === 0) {
+            message.info('请先选择要修复的问题类型');
+            return;
+        }
+        const dsl = buildCurrentDsl();
+        const { dsl: fixedDsl, actions } = applyAutoFixesToDsl(
+            dsl,
+            selectedAutoFixIssues,
+            selectedAutoFixCodes,
+        );
+        if (actions.length === 0) {
+            setStepAutoFixReport(null);
+            setAutoFixPreview(null);
+            setLastAutoFixActions([]);
+            message.info('当前问题暂不支持自动修复，请根据提示手动处理');
+            return;
+        }
+        setStepAutoFixReport(null);
+        setAutoFixPreview(null);
+        setLastAutoFixActions(actions);
+        const canonicalFixedDsl = canonicalizeWorkflowDsl(fixedDsl);
+        const changeSummary = summarizeWorkflowDslChange(dsl, canonicalFixedDsl);
+        loadDsl(canonicalFixedDsl);
+        message.success(`已自动修复 ${actions.length} 项问题`);
+        notification.success({
+            message: `自动修复明细（${actions.length} 项）`,
+            duration: 5,
+            description: (
+                <div>
+                    <div>
+                        节点 +{changeSummary.addedNodeIds.length} / -{changeSummary.removedNodeIds.length}，
+                        连线 +{changeSummary.addedEdgeIds.length} / -{changeSummary.removedEdgeIds.length}，
+                        策略更新 {changeSummary.updatedRuntimePolicyNodeIds.length}
+                    </div>
+                    {actions.map((action, index) => (
+                        <div key={`${action}-${index}`}>
+                            {index + 1}. {action}
+                        </div>
+                    ))}
+                </div>
+            ),
+        });
+        const nextErrors = await runValidation(canonicalFixedDsl);
+        setValidationErrors(nextErrors);
+    }, [
+        buildCurrentDsl,
+        loadDsl,
+        runValidation,
+        selectedAutoFixIssues,
+        selectedAutoFixCodes,
+    ]);
+
+    const handlePreviewAutoFixValidationIssues = useCallback(async () => {
+        if (selectedAutoFixIssues.length === 0) {
+            message.info('请先选择要预览修复的问题类型');
+            return;
+        }
+        const dsl = buildCurrentDsl();
+        const { dsl: fixedDsl, actions } = applyAutoFixesToDsl(
+            dsl,
+            selectedAutoFixIssues,
+            selectedAutoFixCodes,
+        );
+        if (actions.length === 0) {
+            setStepAutoFixReport(null);
+            setAutoFixPreview(null);
+            message.info('当前问题暂不支持预览修复');
+            return;
+        }
+        setStepAutoFixReport(null);
+        setPreviewAutoFixLoading(true);
+        try {
+            const canonicalFixedDsl = canonicalizeWorkflowDsl(fixedDsl);
+            const nextErrors = await runValidation(canonicalFixedDsl);
+            const changeSummary = summarizeWorkflowDslChange(dsl, canonicalFixedDsl);
+            setAutoFixPreview({
+                actions,
+                remainingIssueCount: nextErrors.length,
+                generatedAt: new Date().toLocaleString(),
+                changeSummary,
+            });
+            message.success('已生成修复预览');
+        } finally {
+            setPreviewAutoFixLoading(false);
+        }
+    }, [buildCurrentDsl, runValidation, selectedAutoFixIssues, selectedAutoFixCodes]);
+
+    const handleStepAutoFixValidationIssues = useCallback(async () => {
+        if (selectedAutoFixCodes.length === 0) {
+            message.info('请先选择要分步修复的问题类型');
+            return;
+        }
+        setStepAutoFixLoading(true);
+        try {
+            let workingDsl = buildCurrentDsl();
+            let workingErrors = validationErrors;
+            const stepReports: StepAutoFixReportStep[] = [];
+
+            for (const step of AUTO_FIX_STEP_SEQUENCE) {
+                const stepCodes = step.codes.filter((code) => selectedAutoFixCodes.includes(code));
+                if (stepCodes.length === 0) {
+                    continue;
+                }
+                const stepCodeSet = new Set(stepCodes);
+                const stepIssues = workingErrors.filter((issue) => {
+                    const code = extractIssueCode(issue.message);
+                    return Boolean(code && stepCodeSet.has(code));
+                });
+                if (stepIssues.length === 0) {
+                    continue;
+                }
+
+                const { dsl: fixedDsl, actions } = applyAutoFixesToDsl(workingDsl, stepIssues, stepCodes);
+                if (actions.length === 0) {
+                    continue;
+                }
+
+                const canonicalFixedDsl = canonicalizeWorkflowDsl(fixedDsl);
+                const nextErrors = await runValidation(canonicalFixedDsl);
+                const changeSummary = summarizeWorkflowDslChange(workingDsl, canonicalFixedDsl);
+                workingDsl = canonicalFixedDsl;
+                workingErrors = nextErrors;
+
+                stepReports.push({
+                    title: step.title,
+                    codes: stepCodes,
+                    actions,
+                    remainingIssueCount: nextErrors.length,
+                    changeSummary,
+                });
+            }
+
+            if (stepReports.length === 0) {
+                setStepAutoFixReport(null);
+                setAutoFixPreview(null);
+                message.info('所选问题暂无可执行的分步修复');
+                return;
+            }
+
+            loadDsl(workingDsl);
+            setValidationErrors(workingErrors);
+            setAutoFixPreview(null);
+            const mergedActions = stepReports.flatMap((item) => item.actions);
+            setLastAutoFixActions(mergedActions);
+            setStepAutoFixReport({
+                generatedAt: new Date().toLocaleString(),
+                finalIssueCount: workingErrors.length,
+                steps: stepReports,
+            });
+            message.success(`分步修复完成，共执行 ${stepReports.length} 步`);
+            notification.success({
+                message: `分步修复报告（${stepReports.length} 步）`,
+                duration: 6,
+                description: (
+                    <div>
+                        {stepReports.map((item, index) => (
+                            <div key={`${item.title}-${index}`}>
+                                {index + 1}. {item.title}，执行 {item.actions.length} 项，剩余 {item.remainingIssueCount} 项
+                            </div>
+                        ))}
+                    </div>
+                ),
+            });
+        } finally {
+            setStepAutoFixLoading(false);
+        }
+    }, [buildCurrentDsl, loadDsl, runValidation, selectedAutoFixCodes, validationErrors]);
+
+    React.useEffect(() => {
+        setAutoFixPreview(null);
+    }, [nodes, edges, workflowMode, selectedAutoFixCodes]);
 
     const handleDragOver = useCallback((event: DragEvent<HTMLDivElement>) => {
         event.preventDefault();
@@ -327,6 +719,38 @@ const WorkflowCanvasInner: React.FC<WorkflowCanvasProps> = ({
         setSelectedNodeId(null);
         setSelectedEdgeId(null);
     }, [takeSnapshot, nodes, edges, setNodes, setEdges]);
+
+    const handleApplyRuntimePreset = useCallback(
+        (preset: RuntimePreset) => {
+            const policy = runtimePresetPolicyMap[preset];
+            const nonRuntimeNodeTypes = new Set(['manual-trigger', 'cron-trigger', 'api-trigger', 'event-trigger', 'group']);
+            takeSnapshot(nodes, edges);
+            setNodes((items) =>
+                items.map((node) => {
+                    const nodeType = String(node.data.type || node.type);
+                    if (nonRuntimeNodeTypes.has(nodeType)) {
+                        return node;
+                    }
+                    const currentRuntimePolicy = (node.data.runtimePolicy as Record<string, unknown>) ?? {};
+                    return {
+                        ...node,
+                        data: {
+                            ...node.data,
+                            runtimePolicy: {
+                                ...currentRuntimePolicy,
+                                timeoutMs: policy.timeoutMs,
+                                retryCount: policy.retryCount,
+                                retryBackoffMs: policy.retryBackoffMs,
+                                onError: policy.onError,
+                            },
+                        },
+                    };
+                }),
+            );
+            message.success(`已批量应用${preset === 'FAST' ? '快速' : preset === 'ROBUST' ? '稳健' : '平衡'}运行策略`);
+        },
+        [takeSnapshot, nodes, edges, setNodes],
+    );
 
     // Keyboard shortcuts
     React.useEffect(() => {
@@ -576,7 +1000,7 @@ const WorkflowCanvasInner: React.FC<WorkflowCanvasProps> = ({
 
     return (
         <div style={{ display: 'flex', width: '100%', height: '100%' }}>
-            {!isReadOnly && <NodePalette />}
+            {!isReadOnly && <NodePalette viewLevel={currentViewLevel} />}
 
             <div
                 ref={canvasRef}
@@ -600,6 +1024,11 @@ const WorkflowCanvasInner: React.FC<WorkflowCanvasProps> = ({
                         onSelectionModeChange={setSelectionMode}
                         workflowMode={workflowMode}
                         onWorkflowModeChange={setWorkflowMode}
+                        viewLevel={currentViewLevel}
+                        onViewLevelChange={(level) => {
+                            setLocalViewLevel(level);
+                            onViewLevelChange?.(level);
+                        }}
                         onUndo={() => undo(nodes, edges, setNodes, setEdges)}
                         onRedo={() => redo(nodes, edges, setNodes, setEdges)}
                         canUndo={canUndo}
@@ -610,6 +1039,7 @@ const WorkflowCanvasInner: React.FC<WorkflowCanvasProps> = ({
                         onToggleSnapToGrid={() => setSnapToGrid((value) => !value)}
                         onAlign={alignNodes}
                         onPublish={currentVersionId ? () => setIsTemplateModalOpen(true) : undefined}
+                        onApplyRuntimePreset={handleApplyRuntimePreset}
                     />
                 )}
 
@@ -621,11 +1051,30 @@ const WorkflowCanvasInner: React.FC<WorkflowCanvasProps> = ({
                     {validationErrors.length > 0 && (
                         <CanvasErrorList
                             errors={validationErrors}
+                            onAutoFix={handleAutoFixValidationIssues}
+                            autoFixEnabled={hasAutoFixableIssues(selectedAutoFixIssues)}
+                            onStepAutoFix={handleStepAutoFixValidationIssues}
+                            stepAutoFixEnabled={hasAutoFixableIssues(selectedAutoFixIssues)}
+                            stepAutoFixLoading={stepAutoFixLoading}
+                            stepAutoFixReport={stepAutoFixReport}
+                            onClearStepAutoFixReport={() => setStepAutoFixReport(null)}
+                            onPreviewAutoFix={handlePreviewAutoFixValidationIssues}
+                            previewAutoFixEnabled={hasAutoFixableIssues(selectedAutoFixIssues)}
+                            previewAutoFixLoading={previewAutoFixLoading}
+                            autoFixPreview={autoFixPreview}
+                            onClearAutoFixPreview={() => setAutoFixPreview(null)}
+                            autoFixCodeOptions={autoFixableIssueCodes}
+                            selectedAutoFixCodes={selectedAutoFixCodes}
+                            onSelectedAutoFixCodesChange={setSelectedAutoFixCodes}
+                            lastAutoFixActions={lastAutoFixActions}
+                            onClearAutoFixActions={() => setLastAutoFixActions([])}
                             onFocusNode={(nodeId) => {
                                 const node = nodes.find(n => n.id === nodeId);
                                 if (node) {
                                     setSelectedNodeId(nodeId);
                                     reactFlow.fitView({ nodes: [{ id: nodeId }], duration: 800, padding: 0.5 });
+                                } else {
+                                    message.warning(`节点 ${nodeId} 不在当前画布（可能已删除）`);
                                 }
                             }}
                             onFocusEdge={(edgeId) => {
@@ -638,14 +1087,16 @@ const WorkflowCanvasInner: React.FC<WorkflowCanvasProps> = ({
                                     if (source && target) {
                                         reactFlow.fitView({ nodes: [{ id: source.id }, { id: target.id }], duration: 800, padding: 0.5 });
                                     }
+                                } else {
+                                    message.warning(`连线 ${edgeId} 不在当前画布（可能已删除）`);
                                 }
                             }}
                         />
                     )}
 
                     <ReactFlow
-                        nodes={nodes}
-                        edges={edges}
+                        nodes={displayNodes}
+                        edges={displayEdges}
                         onNodesChange={isReadOnly ? undefined : onNodesChange}
                         onEdgesChange={isReadOnly ? undefined : onEdgesChange}
                         onConnect={isReadOnly ? undefined : onConnect}
@@ -672,7 +1123,7 @@ const WorkflowCanvasInner: React.FC<WorkflowCanvasProps> = ({
                         selectionMode={selectionMode === 'pointer' ? SelectionMode.Partial : undefined}
                     >
                         <Background gap={16} size={1} color={token.colorBorderSecondary} />
-                        <Controls showInteractive={!isReadOnly} />
+                        <Controls showInteractive={!isReadOnly && viewMode === 'edit'} />
                         <MiniMap
                             nodeStrokeWidth={3}
                             style={{
@@ -682,6 +1133,15 @@ const WorkflowCanvasInner: React.FC<WorkflowCanvasProps> = ({
                             maskColor={`${token.colorBgLayout}80`}
                         />
                     </ReactFlow>
+
+                    {/* Execution Legend Overlay */}
+                    {viewMode === 'replay' && (
+                        <div style={{ position: 'absolute', bottom: 32, left: 16, zIndex: 10, background: token.colorBgContainer, padding: 8, borderRadius: 4, display: 'flex', flexDirection: 'column', gap: 4, boxShadow: token.boxShadowSecondary }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}><span style={{ width: 12, height: 12, background: token.colorSuccessBg, border: `1px solid ${token.colorSuccess}`, borderRadius: 2 }}></span> <span>成功</span></div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}><span style={{ width: 12, height: 12, background: token.colorErrorBg, border: `1px solid ${token.colorError}`, borderRadius: 2 }}></span> <span>失败</span></div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}><span style={{ width: 12, height: 12, background: token.colorBgContainer, border: `1px solid ${token.colorBorder}`, borderRadius: 2 }}></span> <span>未执行</span></div>
+                        </div>
+                    )}
                 </div>
 
                 {showLogPanel ? (
@@ -725,11 +1185,51 @@ const WorkflowCanvasInner: React.FC<WorkflowCanvasProps> = ({
                     selectedEdge={selectedEdge}
                     onUpdateNode={updateNodeData}
                     onUpdateEdge={updateEdgeData}
+                    viewLevel={currentViewLevel}
                     onClose={() => {
                         setSelectedNodeId(null);
                         setSelectedEdgeId(null);
                     }}
                 />
+            ) : null}
+
+            {viewMode === 'replay' && (selectedNode || selectedEdge) ? (
+                <div
+                    style={{
+                        width: 320,
+                        borderLeft: `1px solid ${token.colorBorderSecondary}`,
+                        background: token.colorBgContainer,
+                        padding: 16,
+                        overflowY: 'auto'
+                    }}
+                >
+                    <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <span style={{ fontWeight: 'bold', fontSize: 16 }}>
+                            {selectedNode ? '节点执行详情' : '连线信息'}
+                        </span>
+                        <a onClick={() => { setSelectedNodeId(null); setSelectedEdgeId(null); }} style={{ cursor: 'pointer' }}>关闭</a>
+                    </div>
+                    {selectedNode && (
+                        <div>
+                            <p style={{ marginBottom: 8 }}><Tag color="blue">{String(selectedNode.data.type)}</Tag> <strong>{String(selectedNode.data.name)}</strong></p>
+                            <div style={{ marginBottom: 16 }}>
+                                <Alert
+                                    message={executionStatusMap.get(selectedNode.id) || 'PENDING'}
+                                    type={
+                                        executionStatusMap.get(selectedNode.id) === 'SUCCESS' ? 'success' :
+                                            executionStatusMap.get(selectedNode.id) === 'FAILED' ? 'error' : 'info'
+                                    }
+                                    showIcon
+                                />
+                            </div>
+                            <div style={{ marginBottom: 8 }}>
+                                <span style={{ color: token.colorTextSecondary }}>Node ID: </span>
+                                <span style={{ fontFamily: 'monospace' }}>{selectedNode.id}</span>
+                            </div>
+                            {/* Detailed execution data visualization can be added here */}
+                        </div>
+                    )}
+                </div>
             ) : null}
 
             {menuState ? (

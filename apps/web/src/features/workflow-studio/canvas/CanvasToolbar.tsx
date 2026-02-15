@@ -43,6 +43,9 @@ interface CanvasToolbarProps {
     onWorkflowModeChange?: (mode: 'linear' | 'dag' | 'debate') => void;
     onToggleDebatePanel?: () => void;
     onPublish?: () => void;
+    onApplyRuntimePreset?: (preset: 'FAST' | 'BALANCED' | 'ROBUST') => void;
+    viewLevel?: 'business' | 'enhanced' | 'expert';
+    onViewLevelChange?: (level: 'business' | 'enhanced' | 'expert') => void;
     onUndo?: () => void;
     onRedo?: () => void;
     canUndo?: boolean;
@@ -80,6 +83,9 @@ export const CanvasToolbar: React.FC<CanvasToolbarProps> = ({
     onWorkflowModeChange,
     onToggleDebatePanel,
     onPublish,
+    onApplyRuntimePreset,
+    viewLevel = 'business',
+    onViewLevelChange,
     onUndo,
     onRedo,
     canUndo = false,
@@ -98,41 +104,11 @@ export const CanvasToolbar: React.FC<CanvasToolbarProps> = ({
                 background: token.colorBgContainer,
                 borderBottom: `1px solid ${token.colorBorderSecondary}`,
                 position: 'relative',
+                flexWrap: 'wrap',
+                gap: 8,
             }}
         >
-            {/* Center Selection Mode Switch */}
-            <div
-                style={{
-                    position: 'absolute',
-                    left: '50%',
-                    transform: 'translateX(-50%)',
-                    zIndex: 10,
-                    background: token.colorBgContainer,
-                    padding: '4px',
-                    borderRadius: token.borderRadiusLG,
-                    boxShadow: token.boxShadowSecondary,
-                }}
-            >
-                <Segmented
-                    value={selectionMode}
-                    onChange={(val) => onSelectionModeChange?.(val as 'hand' | 'pointer')}
-                    options={[
-                        {
-                            value: 'pointer',
-                            icon: <SelectOutlined />,
-                            label: '选择',
-                        },
-                        {
-                            value: 'hand',
-                            icon: <DragOutlined />,
-                            label: '移动',
-                        },
-                    ]}
-                    size="small"
-                />
-            </div>
-
-            <Space size={4}>
+            <Space size={4} wrap>
                 <Tooltip title="放大">
                     <Button
                         type="text"
@@ -175,6 +151,40 @@ export const CanvasToolbar: React.FC<CanvasToolbarProps> = ({
                         bordered={false}
                     />
                 </Space>
+
+                <Space size={8} align="center">
+                    <Text type="secondary" style={{ fontSize: 12 }}>视图:</Text>
+                    <Segmented
+                        size="small"
+                        value={viewLevel}
+                        onChange={(value) => onViewLevelChange?.(value as 'business' | 'enhanced' | 'expert')}
+                        options={[
+                            { label: '业务', value: 'business' },
+                            { label: '增强', value: 'enhanced' },
+                            { label: '专家', value: 'expert' },
+                        ]}
+                    />
+                </Space>
+
+                <Divider type="vertical" />
+
+                <Segmented
+                    value={selectionMode}
+                    onChange={(val) => onSelectionModeChange?.(val as 'hand' | 'pointer')}
+                    options={[
+                        {
+                            value: 'pointer',
+                            icon: <SelectOutlined />,
+                            label: '选择',
+                        },
+                        {
+                            value: 'hand',
+                            icon: <DragOutlined />,
+                            label: '移动',
+                        },
+                    ]}
+                    size="small"
+                />
 
                 <Tooltip title="自动布局 (Auto Layout)">
                     <Button
@@ -281,9 +291,30 @@ export const CanvasToolbar: React.FC<CanvasToolbarProps> = ({
                         </Tooltip>
                     </>
                 )}
+
+                {viewLevel !== 'business' && onApplyRuntimePreset ? (
+                    <>
+                        <Divider type="vertical" />
+                        <Space size={6} align="center">
+                            <Text type="secondary" style={{ fontSize: 12 }}>批量策略:</Text>
+                            <Select
+                                size="small"
+                                defaultValue="BALANCED"
+                                options={[
+                                    { label: '快速', value: 'FAST' },
+                                    { label: '平衡', value: 'BALANCED' },
+                                    { label: '稳健', value: 'ROBUST' },
+                                ]}
+                                onChange={(value) => onApplyRuntimePreset(value as 'FAST' | 'BALANCED' | 'ROBUST')}
+                                style={{ width: 88 }}
+                                bordered={false}
+                            />
+                        </Space>
+                    </>
+                ) : null}
             </Space>
 
-            <Space size={8}>
+            <Space size={8} wrap>
                 <Tooltip title="撤销">
                     <Button
                         icon={<UndoOutlined />}
@@ -351,6 +382,6 @@ export const CanvasToolbar: React.FC<CanvasToolbarProps> = ({
                     </Tooltip>
                 )}
             </Space>
-        </div>
+        </div >
     );
 };

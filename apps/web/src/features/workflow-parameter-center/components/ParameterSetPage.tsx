@@ -146,14 +146,31 @@ const formatValue = (value: unknown): string => {
   return JSON.stringify(value);
 };
 
-const parseMaybeJsonText = (value?: string): unknown => {
-  const raw = value?.trim();
+const parseMaybeJsonText = (value: unknown): unknown => {
+  if (value === null || value === undefined) {
+    return undefined;
+  }
+  if (typeof value !== 'string') {
+    return value;
+  }
+  const raw = value.trim();
   if (!raw) return undefined;
   try {
     return JSON.parse(raw);
   } catch {
     return raw;
   }
+};
+
+const slugifyParamCode = (name?: string): string => {
+  const normalized = (name || '')
+    .trim()
+    .toUpperCase()
+    .replace(/[\s/\\]+/g, '_')
+    .replace(/[^\w-]+/g, '')
+    .replace(/_+/g, '_')
+    .replace(/^_+|_+$/g, '');
+  return normalized;
 };
 
 export const ParameterSetPage: React.FC = () => {
@@ -177,6 +194,7 @@ export const ParameterSetPage: React.FC = () => {
   const [selectedSetId, setSelectedSetId] = useState<string | null>(null);
   const [publishingSetId, setPublishingSetId] = useState<string | null>(null);
   const [itemVisible, setItemVisible] = useState(false);
+  const [isParamCodeCustomized, setIsParamCodeCustomized] = useState(false);
   const [editItemVisible, setEditItemVisible] = useState(false);
   const [editingItem, setEditingItem] = useState<ParameterItemDto | null>(null);
   const [detailTab, setDetailTab] = useState('items');
@@ -210,6 +228,12 @@ export const ParameterSetPage: React.FC = () => {
     next.set('pageSize', String(pageSize));
     setSearchParams(next, { replace: true });
   }, [isActiveFilter, keyword, page, pageSize, setSearchParams]);
+
+  React.useEffect(() => {
+    if (!itemVisible) {
+      setIsParamCodeCustomized(false);
+    }
+  }, [itemVisible]);
 
   const { data, isLoading } = useParameterSets({
     includePublic: true,
@@ -611,8 +635,8 @@ export const ParameterSetPage: React.FC = () => {
       const values = await itemForm.validateFields();
       const payload: CreateParameterItemDto = {
         ...values,
-        value: parseMaybeJsonText(values.value as unknown as string | undefined),
-        defaultValue: parseMaybeJsonText(values.defaultValue as unknown as string | undefined),
+        value: parseMaybeJsonText(values.value),
+        defaultValue: parseMaybeJsonText(values.defaultValue),
       };
       await createItemMutation.mutateAsync({ setId: selectedSetId, payload });
       message.success('参数项创建成功');
@@ -1261,7 +1285,10 @@ export const ParameterSetPage: React.FC = () => {
       <Modal
         title="新建参数项"
         open={itemVisible}
-        onCancel={() => setItemVisible(false)}
+        onCancel={() => {
+          setItemVisible(false);
+          setIsParamCodeCustomized(false);
+        }}
         onOk={handleCreateItem}
         confirmLoading={createItemMutation.isPending}
       >
@@ -1269,9 +1296,40 @@ export const ParameterSetPage: React.FC = () => {
           layout="vertical"
           form={itemForm}
           initialValues={{ scopeLevel: 'GLOBAL', paramType: 'number' }}
+          onValuesChange={(changedValues, allValues) => {
+            const changedName = changedValues.paramName as string | undefined;
+            if (changedName !== undefined && !isParamCodeCustomized) {
+              const generatedCode = slugifyParamCode(changedName);
+              itemForm.setFieldsValue({ paramCode: generatedCode || undefined });
+            }
+            const changedCode = changedValues.paramCode as string | undefined;
+            if (changedCode !== undefined) {
+              const generatedCode = slugifyParamCode(allValues.paramName as string | undefined);
+              const normalized = changedCode.trim();
+              if (!normalized) {
+                setIsParamCodeCustomized(false);
+              } else {
+                setIsParamCodeCustomized(Boolean(generatedCode && normalized !== generatedCode));
+              }
+            }
+          }}
         >
           <Form.Item name="paramCode" label="参数编码" rules={[{ required: true }]}>
-            <Input />
+            <Input
+              addonAfter={(
+                <Button
+                  type="link"
+                  size="small"
+                  onClick={() => {
+                    const generatedCode = slugifyParamCode(itemForm.getFieldValue('paramName'));
+                    itemForm.setFieldsValue({ paramCode: generatedCode || undefined });
+                    setIsParamCodeCustomized(false);
+                  }}
+                >
+                  自动生成
+                </Button>
+              )}
+            />
           </Form.Item>
           <Form.Item name="paramName" label="参数名称" rules={[{ required: true }]}>
             <Input />
@@ -1285,11 +1343,28 @@ export const ParameterSetPage: React.FC = () => {
           <Form.Item name="scopeValue" label="作用域值">
             <Input />
           </Form.Item>
-          <Form.Item name="defaultValue" label="默认值(JSON或文本)">
-            <Input.TextArea rows={2} placeholder="设置模板默认值" />
-          </Form.Item>
-          <Form.Item name="value" label="值(JSON或文本)">
-            <Input.TextArea rows={2} placeholder={'例如 80 或 {"x":1}'} />
+          <Form.Item noStyle shouldUpdate={(prev, curr) => prev.paramType !== curr.paramType}>
+            {({ getFieldValue }) => {
+              const type = getFieldValue('paramType');
+              return (
+                <>
+                  <Form.Item
+                    name="defaultValue"
+                    label={type === 'json' || type === 'expression' ? '默认值(JSON或文本)' : '默认值'}
+                    valuePropName={type === 'boolean' ? 'checked' : 'value'}
+                  >
+                    {renderDynamicInput(type, '设置模板默认值')}
+                  </Form.Item>
+                  <Form.Item
+                    name="value"
+                    label={type === 'json' || type === 'expression' ? '值(JSON或文本)' : '值'}
+                    valuePropName={type === 'boolean' ? 'checked' : 'value'}
+                  >
+                    {renderDynamicInput(type, '设置当前值')}
+                  </Form.Item>
+                </>
+              );
+            }}
           </Form.Item>
         </Form>
       </Modal>

@@ -1,5 +1,6 @@
 import React from 'react';
-import { Form, Input, InputNumber, Select, Slider } from 'antd';
+import { Form, Input, Select, Slider } from 'antd';
+import { useAgentProfiles } from '../../../workflow-agent-center/api';
 
 interface SingleAgentFormProps {
     config: Record<string, unknown>;
@@ -7,35 +8,57 @@ interface SingleAgentFormProps {
 }
 
 export const SingleAgentForm: React.FC<SingleAgentFormProps> = ({ config, onChange }) => {
+    const { data: agentProfilePage, isLoading } = useAgentProfiles({
+        includePublic: true,
+        isActive: true,
+        page: 1,
+        pageSize: 200,
+    });
+
+    const selectedAgentCode = (config.agentProfileCode as string) || (config.agentCode as string);
+
     return (
         <Form layout="vertical" size="small">
-            <Form.Item label="智能体编码" required>
-                <Input
-                    value={config.agentCode as string}
-                    onChange={(e) => onChange('agentCode', e.target.value)}
-                    placeholder="例如: AGENT_MARKET_EVAL_V1"
-                />
-            </Form.Item>
-            <Form.Item label="模型覆盖">
+            <Form.Item label="智能体" required>
                 <Select
-                    value={config.model as string}
-                    onChange={(v) => onChange('model', v)}
-                    options={[
-                        { label: '默认模型', value: '' },
-                        { label: 'GPT-4', value: 'gpt-4' },
-                        { label: 'Claude 3 Opus', value: 'claude-3-opus' },
-                        { label: 'Gemini Pro', value: 'gemini-pro' },
-                    ]}
-                    allowClear
+                    value={selectedAgentCode}
+                    onChange={(value) => {
+                        onChange('agentProfileCode', value);
+                        onChange('agentCode', value);
+                    }}
+                    loading={isLoading}
+                    showSearch
+                    optionFilterProp="label"
+                    options={(agentProfilePage?.data || [])
+                        .filter((item) => item.isActive)
+                        .map((item) => ({
+                            label: `${item.agentName} (${item.agentCode})`,
+                            value: item.agentCode,
+                        }))}
+                    placeholder="选择智能体配置"
                 />
             </Form.Item>
-            <Form.Item label="温度">
+            <Form.Item label="模型覆盖（可选）" extra="不填则使用智能体默认模型">
+                <Input
+                    value={(config.modelOverride as string) ?? (config.model as string)}
+                    onChange={(e) => {
+                        onChange('modelOverride', e.target.value);
+                        onChange('model', e.target.value);
+                    }}
+                    placeholder="例如：openai/gpt-4.1"
+                />
+            </Form.Item>
+            <Form.Item label="温度" extra="数值越高，输出越发散">
                 <Slider
                     min={0}
                     max={1}
                     step={0.1}
-                    value={(config.temperature as number) ?? 0.7}
-                    onChange={(v) => onChange('temperature', v)}
+                    value={(config.temperatureOverride as number) ?? (config.temperature as number) ?? 0.7}
+                    onChange={(v) => {
+                        onChange('temperatureOverride', v);
+                        onChange('temperature', v);
+                    }}
+                    marks={{ 0: '0', 0.3: '0.3', 0.7: '0.7', 1: '1' }}
                 />
             </Form.Item>
         </Form>

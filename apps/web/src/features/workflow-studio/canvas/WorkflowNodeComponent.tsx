@@ -122,7 +122,7 @@ export const WorkflowNodeComponent = memo(({ data, selected }: NodeProps) => {
                     </Text>
                     <Text
                         type="secondary"
-                        style={{ fontSize: 11, lineHeight: '14px' }}
+                        style={{ fontSize: 11, lineHeight: '14px', display: 'block', marginTop: 2 }}
                     >
                         {nodeTypeConfig?.label ?? nodeType}
                     </Text>

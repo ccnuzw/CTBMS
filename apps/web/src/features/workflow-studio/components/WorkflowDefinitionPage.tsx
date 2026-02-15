@@ -6,7 +6,9 @@ import {
   App,
   Button,
   Card,
+  Collapse,
   DatePicker,
+  Divider,
   Drawer,
   Form,
   Input,
@@ -15,6 +17,7 @@ import {
   Popconfirm,
   Select,
   Space,
+  Steps,
   Switch,
   Table,
   Tag,
@@ -50,6 +53,7 @@ import {
 import { useDecisionRulePacks } from '../../workflow-rule-center/api';
 import { useParameterSets } from '../../workflow-parameter-center/api';
 import { useAgentProfiles } from '../../workflow-agent-center/api';
+import { useDataConnectors } from '../../workflow-data-connector/api';
 import { WorkflowCanvas } from '../canvas/WorkflowCanvas';
 import { VersionDiffViewer } from './VersionDiffViewer';
 
@@ -58,28 +62,42 @@ const { TextArea } = Input;
 const { RangePicker } = DatePicker;
 
 interface CreateWorkflowDefinitionFormValues extends CreateWorkflowDefinitionDto {
+  starterTemplate?: 'QUICK_DECISION' | 'RISK_REVIEW' | 'DEBATE_ANALYSIS';
   defaultTimeoutMs?: number;
   defaultRetryCount?: number;
   defaultRetryBackoffMs?: number;
   defaultOnError?: WorkflowNodeOnErrorPolicy;
   defaultRulePackCode?: string;
-  defaultAgentBindingsText?: string;
-  defaultParamSetBindingsText?: string;
-  defaultDataConnectorBindingsText?: string;
+  defaultAgentBindings?: string[];
+  defaultParamSetBindings?: string[];
+  defaultDataConnectorBindings?: string[];
 }
 
-const parseBindingInput = (value?: string): string[] | undefined => {
-  if (!value) {
+const normalizeBindingValues = (value?: string[] | null): string[] | undefined => {
+  if (!value || !Array.isArray(value)) {
     return undefined;
   }
   const list = value
-    .split(',')
     .map((item) => item.trim())
     .filter(Boolean);
   if (list.length === 0) {
     return undefined;
   }
   return [...new Set(list)];
+};
+
+const slugifyWorkflowId = (name?: string): string => {
+  const normalized = (name || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[\s/\\]+/g, '_')
+    .replace(/[^\w-]+/g, '')
+    .replace(/_+/g, '_')
+    .replace(/^-+|-+$/g, '');
+  if (!normalized) {
+    return '';
+  }
+  return normalized.startsWith('wf_') ? normalized : `wf_${normalized}`;
 };
 
 const modeOptions: { label: string; value: WorkflowMode }[] = [
@@ -92,6 +110,28 @@ const usageMethodOptions: { label: string; value: WorkflowUsageMethod }[] = [
   { label: '后台自动', value: 'HEADLESS' },
   { label: '人机协同', value: 'COPILOT' },
   { label: '按需触发', value: 'ON_DEMAND' },
+];
+
+const starterTemplateOptions: {
+  label: string;
+  value: NonNullable<CreateWorkflowDefinitionFormValues['starterTemplate']>;
+  description: string;
+}[] = [
+  {
+    label: '快速决策（推荐）',
+    value: 'QUICK_DECISION',
+    description: '手工触发 -> 规则评估 -> 风险闸门 -> 结果输出',
+  },
+  {
+    label: '风控评审',
+    value: 'RISK_REVIEW',
+    description: '增加数据采集节点，适合规则和风控校验流程',
+  },
+  {
+    label: '多智能体辩论',
+    value: 'DEBATE_ANALYSIS',
+    description: '上下文构建 -> 辩论 -> 裁判输出 -> 风险闸门',
+  },
 ];
 
 const runtimeOnErrorOptions: { label: string; value: WorkflowNodeOnErrorPolicy }[] = [
@@ -170,91 +210,207 @@ const buildInitialDslSnapshot = (
   },
 ) => {
   const normalizedRulePackCode = values.defaultRulePackCode?.trim();
-  const agentBindings = parseBindingInput(values.defaultAgentBindingsText);
-  const paramSetBindings = parseBindingInput(values.defaultParamSetBindingsText);
-  const dataConnectorBindings = parseBindingInput(values.defaultDataConnectorBindingsText);
+  const agentBindings = normalizeBindingValues(values.defaultAgentBindings);
+  const paramSetBindings = normalizeBindingValues(values.defaultParamSetBindings);
+  const dataConnectorBindings = normalizeBindingValues(values.defaultDataConnectorBindings);
+  const starterTemplate = values.starterTemplate ?? 'QUICK_DECISION';
   const hasRulePackNode = Boolean(normalizedRulePackCode);
   const riskProfileCode = 'CORN_RISK_BASE';
-  const nodes = [
-    {
-      id: 'n_trigger',
-      type: 'manual-trigger',
-      name: '手工触发',
-      enabled: true,
-      config: {},
-      runtimePolicy,
-    },
-    ...(hasRulePackNode
-      ? [
-        {
-          id: 'n_rule_pack',
-          type: 'rule-pack-eval',
-          name: '规则包评估',
-          enabled: true,
-          config: {
-            rulePackCode: normalizedRulePackCode,
-            ruleVersionPolicy: 'LOCKED',
-            minHitScore: 60,
-          },
-          runtimePolicy,
+  let nodes: WorkflowDsl['nodes'] = [];
+  let edges: WorkflowDsl['edges'] = [];
+
+  if (starterTemplate === 'DEBATE_ANALYSIS') {
+    nodes = [
+      {
+        id: 'n_trigger',
+        type: 'manual-trigger',
+        name: '手工触发',
+        enabled: true,
+        config: {},
+        runtimePolicy,
+      },
+      {
+        id: 'n_context',
+        type: 'context-builder',
+        name: '上下文构建',
+        enabled: true,
+        config: {},
+        runtimePolicy,
+      },
+      {
+        id: 'n_debate',
+        type: 'debate-round',
+        name: '辩论回合',
+        enabled: true,
+        config: {
+          maxRounds: 3,
+          judgePolicy: 'WEIGHTED',
         },
-      ]
-      : []),
-    {
-      id: 'n_risk_gate',
-      type: 'risk-gate',
-      name: '风险闸门',
-      enabled: true,
-      config: {
-        riskProfileCode,
-        degradeAction: 'HOLD',
-      },
-      runtimePolicy,
-    },
-    {
-      id: 'n_notify',
-      type: 'notify',
-      name: '结果输出',
-      enabled: true,
-      config: { channels: ['DASHBOARD'] },
-      runtimePolicy,
-    },
-  ];
-  const edges = hasRulePackNode
-    ? [
-      {
-        id: 'e_trigger_rule_pack',
-        from: 'n_trigger',
-        to: 'n_rule_pack',
-        edgeType: 'control-edge' as const,
+        runtimePolicy,
       },
       {
-        id: 'e_rule_pack_risk_gate',
-        from: 'n_rule_pack',
-        to: 'n_risk_gate',
-        edgeType: 'control-edge' as const,
+        id: 'n_judge',
+        type: 'judge-agent',
+        name: '裁判输出',
+        enabled: true,
+        config: {
+          agentProfileCode: agentBindings?.[0] || undefined,
+        },
+        runtimePolicy,
       },
       {
-        id: 'e_risk_gate_notify',
-        from: 'n_risk_gate',
-        to: 'n_notify',
-        edgeType: 'control-edge' as const,
-      },
-    ]
-    : [
-      {
-        id: 'e_trigger_risk_gate',
-        from: 'n_trigger',
-        to: 'n_risk_gate',
-        edgeType: 'control-edge' as const,
+        id: 'n_risk_gate',
+        type: 'risk-gate',
+        name: '风险闸门',
+        enabled: true,
+        config: {
+          riskProfileCode,
+          degradeAction: 'HOLD',
+        },
+        runtimePolicy,
       },
       {
-        id: 'e_risk_gate_notify',
-        from: 'n_risk_gate',
-        to: 'n_notify',
-        edgeType: 'control-edge' as const,
+        id: 'n_notify',
+        type: 'notify',
+        name: '结果输出',
+        enabled: true,
+        config: { channels: ['DASHBOARD'] },
+        runtimePolicy,
       },
     ];
+    edges = [
+      { id: 'e_trigger_context', from: 'n_trigger', to: 'n_context', edgeType: 'control-edge' },
+      { id: 'e_context_debate', from: 'n_context', to: 'n_debate', edgeType: 'data-edge' },
+      { id: 'e_debate_judge', from: 'n_debate', to: 'n_judge', edgeType: 'data-edge' },
+      { id: 'e_judge_risk', from: 'n_judge', to: 'n_risk_gate', edgeType: 'control-edge' },
+      { id: 'e_risk_notify', from: 'n_risk_gate', to: 'n_notify', edgeType: 'control-edge' },
+    ];
+  } else if (starterTemplate === 'RISK_REVIEW') {
+    nodes = [
+      {
+        id: 'n_trigger',
+        type: 'manual-trigger',
+        name: '手工触发',
+        enabled: true,
+        config: {},
+        runtimePolicy,
+      },
+      {
+        id: 'n_fetch_data',
+        type: 'data-fetch',
+        name: '数据采集',
+        enabled: true,
+        config: {
+          dataSourceCode: dataConnectorBindings?.[0] || '',
+          lookbackDays: 7,
+        },
+        runtimePolicy,
+      },
+      ...(hasRulePackNode
+        ? [
+          {
+            id: 'n_rule_pack',
+            type: 'rule-pack-eval',
+            name: '规则包评估',
+            enabled: true,
+            config: {
+              rulePackCode: normalizedRulePackCode,
+              ruleVersionPolicy: 'LOCKED',
+              minHitScore: 60,
+            },
+            runtimePolicy,
+          },
+        ]
+        : []),
+      {
+        id: 'n_risk_gate',
+        type: 'risk-gate',
+        name: '风险闸门',
+        enabled: true,
+        config: {
+          riskProfileCode,
+          degradeAction: 'HOLD',
+        },
+        runtimePolicy,
+      },
+      {
+        id: 'n_notify',
+        type: 'notify',
+        name: '结果输出',
+        enabled: true,
+        config: { channels: ['DASHBOARD'] },
+        runtimePolicy,
+      },
+    ];
+    edges = hasRulePackNode
+      ? [
+        { id: 'e_trigger_fetch', from: 'n_trigger', to: 'n_fetch_data', edgeType: 'control-edge' },
+        { id: 'e_fetch_rule_pack', from: 'n_fetch_data', to: 'n_rule_pack', edgeType: 'data-edge' },
+        { id: 'e_rule_pack_risk_gate', from: 'n_rule_pack', to: 'n_risk_gate', edgeType: 'control-edge' },
+        { id: 'e_risk_gate_notify', from: 'n_risk_gate', to: 'n_notify', edgeType: 'control-edge' },
+      ]
+      : [
+        { id: 'e_trigger_fetch', from: 'n_trigger', to: 'n_fetch_data', edgeType: 'control-edge' },
+        { id: 'e_fetch_risk_gate', from: 'n_fetch_data', to: 'n_risk_gate', edgeType: 'data-edge' },
+        { id: 'e_risk_gate_notify', from: 'n_risk_gate', to: 'n_notify', edgeType: 'control-edge' },
+      ];
+  } else {
+    nodes = [
+      {
+        id: 'n_trigger',
+        type: 'manual-trigger',
+        name: '手工触发',
+        enabled: true,
+        config: {},
+        runtimePolicy,
+      },
+      ...(hasRulePackNode
+        ? [
+          {
+            id: 'n_rule_pack',
+            type: 'rule-pack-eval',
+            name: '规则包评估',
+            enabled: true,
+            config: {
+              rulePackCode: normalizedRulePackCode,
+              ruleVersionPolicy: 'LOCKED',
+              minHitScore: 60,
+            },
+            runtimePolicy,
+          },
+        ]
+        : []),
+      {
+        id: 'n_risk_gate',
+        type: 'risk-gate',
+        name: '风险闸门',
+        enabled: true,
+        config: {
+          riskProfileCode,
+          degradeAction: 'HOLD',
+        },
+        runtimePolicy,
+      },
+      {
+        id: 'n_notify',
+        type: 'notify',
+        name: '结果输出',
+        enabled: true,
+        config: { channels: ['DASHBOARD'] },
+        runtimePolicy,
+      },
+    ];
+    edges = hasRulePackNode
+      ? [
+        { id: 'e_trigger_rule_pack', from: 'n_trigger', to: 'n_rule_pack', edgeType: 'control-edge' },
+        { id: 'e_rule_pack_risk_gate', from: 'n_rule_pack', to: 'n_risk_gate', edgeType: 'control-edge' },
+        { id: 'e_risk_gate_notify', from: 'n_risk_gate', to: 'n_notify', edgeType: 'control-edge' },
+      ]
+      : [
+        { id: 'e_trigger_risk_gate', from: 'n_trigger', to: 'n_risk_gate', edgeType: 'control-edge' },
+        { id: 'e_risk_gate_notify', from: 'n_risk_gate', to: 'n_notify', edgeType: 'control-edge' },
+      ];
+  }
 
   return {
     workflowId: values.workflowId,
@@ -357,16 +513,87 @@ interface WorkflowDependencyCheckResult {
   unavailable: WorkflowDependencyGroup;
 }
 
+interface PublishDryRunPreview {
+  generatedAt: Date;
+  dependencyResult: WorkflowDependencyCheckResult;
+  validationResult: WorkflowValidationResult | null;
+  blockers: string[];
+  readyToPublish: boolean;
+}
+
 const hasDependencyIssues = (group: WorkflowDependencyGroup): boolean =>
   group.rulePacks.length > 0 || group.parameterSets.length > 0 || group.agentProfiles.length > 0;
 
 const countDependencyIssues = (group: WorkflowDependencyGroup): number =>
   group.rulePacks.length + group.parameterSets.length + group.agentProfiles.length;
 
+const hasBlockingDependencyIssues = (
+  result?: WorkflowDependencyCheckResult | null,
+): boolean =>
+  Boolean(
+    result &&
+      (hasDependencyIssues(result.unpublished) || hasDependencyIssues(result.unavailable)),
+  );
+
+type DependencyLookupItem = {
+  isActive?: boolean;
+  version?: number | null;
+};
+
+const classifyDependencyCodes = (
+  codes: string[],
+  lookup: Map<string, DependencyLookupItem>,
+): { unpublished: string[]; unavailable: string[] } => {
+  const unpublished: string[] = [];
+  const unavailable: string[] = [];
+  for (const code of codes) {
+    const item = lookup.get(code);
+    if (!item || !item.isActive) {
+      unavailable.push(code);
+      continue;
+    }
+    if (!isPublished(item.version ?? undefined)) {
+      unpublished.push(code);
+    }
+  }
+  return { unpublished, unavailable };
+};
+
+const checkPublishDependenciesByLookups = (
+  dslSnapshot: WorkflowDsl,
+  lookups: {
+    rulePacks: Map<string, DependencyLookupItem>;
+    parameterSets: Map<string, DependencyLookupItem>;
+    agentProfiles: Map<string, DependencyLookupItem>;
+  },
+): WorkflowDependencyCheckResult => {
+  const rulePackCodes = extractRulePackCodesFromDsl(dslSnapshot);
+  const parameterSetCodes = extractParameterSetCodesFromDsl(dslSnapshot);
+  const agentCodes = extractAgentCodesFromDsl(dslSnapshot);
+
+  const rulePackCheck = classifyDependencyCodes(rulePackCodes, lookups.rulePacks);
+  const parameterSetCheck = classifyDependencyCodes(parameterSetCodes, lookups.parameterSets);
+  const agentProfileCheck = classifyDependencyCodes(agentCodes, lookups.agentProfiles);
+
+  return {
+    unpublished: {
+      rulePacks: rulePackCheck.unpublished,
+      parameterSets: parameterSetCheck.unpublished,
+      agentProfiles: agentProfileCheck.unpublished,
+    },
+    unavailable: {
+      rulePacks: rulePackCheck.unavailable,
+      parameterSets: parameterSetCheck.unavailable,
+      agentProfiles: agentProfileCheck.unavailable,
+    },
+  };
+};
+
 export const WorkflowDefinitionPage: React.FC = () => {
   const { message } = App.useApp();
   const [form] = Form.useForm<CreateWorkflowDefinitionFormValues>();
   const [createVisible, setCreateVisible] = useState(false);
+  const [isWorkflowIdCustomized, setIsWorkflowIdCustomized] = useState(false);
   const [versionVisible, setVersionVisible] = useState(false);
   const [studioVisible, setStudioVisible] = useState(false);
   const [diffVisible, setDiffVisible] = useState(false);
@@ -389,6 +616,16 @@ export const WorkflowDefinitionPage: React.FC = () => {
   const [includePublic, setIncludePublic] = useState(true);
   const [definitionPageNumber, setDefinitionPageNumber] = useState(1);
   const [definitionPageSize, setDefinitionPageSize] = useState(20);
+  const [publishWizardVersion, setPublishWizardVersion] = useState<WorkflowVersionDto | null>(null);
+  const [publishWizardDependencyResult, setPublishWizardDependencyResult] =
+    useState<WorkflowDependencyCheckResult | null>(null);
+  const [publishWizardValidationResult, setPublishWizardValidationResult] =
+    useState<WorkflowValidationResult | null>(null);
+  const [publishWizardValidationLoading, setPublishWizardValidationLoading] = useState(false);
+  const [publishWizardDependencyRefreshing, setPublishWizardDependencyRefreshing] = useState(false);
+  const [publishWizardDryRunLoading, setPublishWizardDryRunLoading] = useState(false);
+  const [publishWizardDryRunPreview, setPublishWizardDryRunPreview] =
+    useState<PublishDryRunPreview | null>(null);
 
   const definitionQuery = useMemo(
     () => ({
@@ -426,18 +663,35 @@ export const WorkflowDefinitionPage: React.FC = () => {
       pageSize: auditPageSize,
     },
   );
-  const { data: rulePackCatalog, isLoading: isRulePackLoading } = useDecisionRulePacks({
+  const {
+    data: rulePackCatalog,
+    isLoading: isRulePackLoading,
+    refetch: refetchRulePackCatalog,
+  } = useDecisionRulePacks({
     includePublic: true,
     page: 1,
     pageSize: 500,
   });
-  const { data: parameterSetCatalog, isLoading: isParameterSetLoading } = useParameterSets({
+  const {
+    data: parameterSetCatalog,
+    isLoading: isParameterSetLoading,
+    refetch: refetchParameterSetCatalog,
+  } = useParameterSets({
     includePublic: true,
     page: 1,
     pageSize: 500,
   });
-  const { data: agentProfileCatalog, isLoading: isAgentProfileLoading } = useAgentProfiles({
+  const {
+    data: agentProfileCatalog,
+    isLoading: isAgentProfileLoading,
+    refetch: refetchAgentProfileCatalog,
+  } = useAgentProfiles({
     includePublic: true,
+    page: 1,
+    pageSize: 500,
+  });
+  const { data: dataConnectorCatalog, isLoading: isDataConnectorLoading } = useDataConnectors({
+    isActive: true,
     page: 1,
     pageSize: 500,
   });
@@ -463,6 +717,39 @@ export const WorkflowDefinitionPage: React.FC = () => {
   const dependencyCatalogLoading =
     isRulePackLoading || isParameterSetLoading || isAgentProfileLoading;
 
+  const agentBindingOptions = useMemo(
+    () =>
+      (agentProfileCatalog?.data || [])
+        .filter((item) => item.isActive)
+        .map((item) => ({
+          label: `${item.agentName} (${item.agentCode})`,
+          value: item.agentCode,
+        })),
+    [agentProfileCatalog?.data],
+  );
+
+  const parameterBindingOptions = useMemo(
+    () =>
+      (parameterSetCatalog?.data || [])
+        .filter((item) => item.isActive)
+        .map((item) => ({
+          label: `${item.name} (${item.setCode})`,
+          value: item.setCode,
+        })),
+    [parameterSetCatalog?.data],
+  );
+
+  const dataConnectorBindingOptions = useMemo(
+    () =>
+      (dataConnectorCatalog?.data || [])
+        .filter((item) => item.isActive)
+        .map((item) => ({
+          label: `${item.connectorName} (${item.connectorCode})`,
+          value: item.connectorCode,
+        })),
+    [dataConnectorCatalog?.data],
+  );
+
   const rulePackCodeMap = useMemo(
     () => new Map((rulePackCatalog?.data || []).map((item) => [item.rulePackCode, item])),
     [rulePackCatalog?.data],
@@ -476,57 +763,12 @@ export const WorkflowDefinitionPage: React.FC = () => {
     [agentProfileCatalog?.data],
   );
 
-  const checkPublishDependencies = (dslSnapshot: WorkflowDsl): WorkflowDependencyCheckResult => {
-    const rulePackCodes = extractRulePackCodesFromDsl(dslSnapshot);
-    const parameterSetCodes = extractParameterSetCodesFromDsl(dslSnapshot);
-    const agentCodes = extractAgentCodesFromDsl(dslSnapshot);
-
-    const unpublished: WorkflowDependencyGroup = {
-      rulePacks: [],
-      parameterSets: [],
-      agentProfiles: [],
-    };
-    const unavailable: WorkflowDependencyGroup = {
-      rulePacks: [],
-      parameterSets: [],
-      agentProfiles: [],
-    };
-
-    for (const code of rulePackCodes) {
-      const item = rulePackCodeMap.get(code);
-      if (!item || !item.isActive) {
-        unavailable.rulePacks.push(code);
-        continue;
-      }
-      if (!isPublished(item.version)) {
-        unpublished.rulePacks.push(code);
-      }
-    }
-
-    for (const code of parameterSetCodes) {
-      const item = parameterSetCodeMap.get(code);
-      if (!item || !item.isActive) {
-        unavailable.parameterSets.push(code);
-        continue;
-      }
-      if (!isPublished(item.version)) {
-        unpublished.parameterSets.push(code);
-      }
-    }
-
-    for (const code of agentCodes) {
-      const item = agentProfileCodeMap.get(code);
-      if (!item || !item.isActive) {
-        unavailable.agentProfiles.push(code);
-        continue;
-      }
-      if (!isPublished(item.version)) {
-        unpublished.agentProfiles.push(code);
-      }
-    }
-
-    return { unpublished, unavailable };
-  };
+  const checkPublishDependencies = (dslSnapshot: WorkflowDsl): WorkflowDependencyCheckResult =>
+    checkPublishDependenciesByLookups(dslSnapshot, {
+      rulePacks: rulePackCodeMap as Map<string, DependencyLookupItem>,
+      parameterSets: parameterSetCodeMap as Map<string, DependencyLookupItem>,
+      agentProfiles: agentProfileCodeMap as Map<string, DependencyLookupItem>,
+    });
 
   const renderDependencySection = (title: string, group: WorkflowDependencyGroup) => {
     if (!hasDependencyIssues(group)) {
@@ -601,7 +843,20 @@ export const WorkflowDefinitionPage: React.FC = () => {
     setAuditPublisherInput('');
     setAuditPublisher(undefined);
     setAuditPublishedAtRange(null);
+    setPublishWizardVersion(null);
+    setPublishWizardDependencyResult(null);
+    setPublishWizardValidationResult(null);
+    setPublishWizardValidationLoading(false);
+    setPublishWizardDependencyRefreshing(false);
+    setPublishWizardDryRunLoading(false);
+    setPublishWizardDryRunPreview(null);
   }, [selectedDefinition?.id]);
+
+  useEffect(() => {
+    if (!createVisible) {
+      setIsWorkflowIdCustomized(false);
+    }
+  }, [createVisible]);
 
   const definitionColumns = useMemo<ColumnsType<WorkflowDefinitionDto>>(
     () => [
@@ -740,16 +995,7 @@ export const WorkflowDefinitionPage: React.FC = () => {
         render: (_: unknown, record: WorkflowVersionDto) => {
           const isPublishing = publishMutation.isPending && publishingVersionId === record.id;
           const isRunning = triggerExecutionMutation.isPending && runningVersionId === record.id;
-          const canPublishBase = record.status === 'DRAFT' && Boolean(selectedDefinition?.id);
-          const dependencyResult = dependencyCatalogLoading
-            ? null
-            : checkPublishDependencies(record.dslSnapshot);
-          const hasBlockingDependencyIssues = Boolean(
-            dependencyResult &&
-            (hasDependencyIssues(dependencyResult.unpublished) ||
-              hasDependencyIssues(dependencyResult.unavailable)),
-          );
-          const canPublish = canPublishBase && !hasBlockingDependencyIssues;
+          const canOpenPublishWizard = record.status === 'DRAFT' && Boolean(selectedDefinition?.id);
           const canRun = record.status === 'PUBLISHED' && Boolean(selectedDefinition?.id);
           return (
             <Space size={4}>
@@ -769,15 +1015,14 @@ export const WorkflowDefinitionPage: React.FC = () => {
               >
                 版本对比
               </Button>
-              <Popconfirm
-                title="确认发布该版本？"
-                onConfirm={() => handlePublish(record)}
-                disabled={!canPublish}
+              <Button
+                type="link"
+                disabled={!canOpenPublishWizard || dependencyCatalogLoading}
+                loading={isPublishing}
+                onClick={() => handleOpenPublishWizard(record)}
               >
-                <Button type="link" disabled={!canPublish} loading={isPublishing}>
-                  发布版本
-                </Button>
-              </Popconfirm>
+                发布版本
+              </Button>
               <Popconfirm
                 title="确认触发运行该版本？"
                 onConfirm={() => handleTriggerExecution(record)}
@@ -794,11 +1039,11 @@ export const WorkflowDefinitionPage: React.FC = () => {
     ],
     [
       dependencyCatalogLoading,
+      checkPublishDependencies,
+      handleOpenPublishWizard,
+      handleTriggerExecution,
       publishMutation.isPending,
       publishingVersionId,
-      rulePackCodeMap,
-      parameterSetCodeMap,
-      agentProfileCodeMap,
       selectedDefinition?.id,
       triggerExecutionMutation.isPending,
       runningVersionId,
@@ -865,14 +1110,15 @@ export const WorkflowDefinitionPage: React.FC = () => {
     try {
       const values = await form.validateFields();
       const {
+        starterTemplate,
         defaultTimeoutMs,
         defaultRetryCount,
         defaultRetryBackoffMs,
         defaultOnError,
         defaultRulePackCode,
-        defaultAgentBindingsText,
-        defaultParamSetBindingsText,
-        defaultDataConnectorBindingsText,
+        defaultAgentBindings,
+        defaultParamSetBindings,
+        defaultDataConnectorBindings,
         ...definitionPayload
       } = values;
 
@@ -889,10 +1135,11 @@ export const WorkflowDefinitionPage: React.FC = () => {
         dslSnapshot: buildInitialDslSnapshot(
           {
             ...values,
+            starterTemplate,
             defaultRulePackCode,
-            defaultAgentBindingsText,
-            defaultParamSetBindingsText,
-            defaultDataConnectorBindingsText,
+            defaultAgentBindings,
+            defaultParamSetBindings,
+            defaultDataConnectorBindings,
           },
           runtimePolicy,
         ),
@@ -908,41 +1155,45 @@ export const WorkflowDefinitionPage: React.FC = () => {
     }
   };
 
-  const handlePublish = async (version: WorkflowVersionDto) => {
-    if (!selectedDefinition?.id) {
-      return;
-    }
-    if (dependencyCatalogLoading) {
-      message.warning('依赖资源加载中，请稍后再试');
-      return;
-    }
-    const dependencyResult = checkPublishDependencies(version.dslSnapshot);
-    if (
-      hasDependencyIssues(dependencyResult.unpublished) ||
-      hasDependencyIssues(dependencyResult.unavailable)
-    ) {
-      Modal.warning({
-        title: '发布前检查未通过',
-        width: 720,
-        okText: '我知道了',
-        content: (
-          <Space direction="vertical" size={12}>
-            <Text type="secondary">
-              当前版本引用了未发布或不可用依赖，请先在对应中心完成发布/启用后再发布工作流。
-            </Text>
-            {renderDependencySection(
-              '未发布依赖（需要 version >= 2）',
-              dependencyResult.unpublished,
-            )}
-            {renderDependencySection(
-              '不可用依赖（不存在、未启用或无权限）',
-              dependencyResult.unavailable,
-            )}
-            {renderDependencyQuickActions(dependencyResult)}
-          </Space>
-        ),
+  const runPublishValidationCheck = async (
+    version: WorkflowVersionDto,
+  ): Promise<WorkflowValidationResult | null> => {
+    setPublishWizardValidationLoading(true);
+    try {
+      const result = await validateDslMutation.mutateAsync({
+        dslSnapshot: version.dslSnapshot,
+        stage: 'PUBLISH',
       });
-      return;
+      setPublishWizardValidationResult(result);
+      return result;
+    } catch (error) {
+      setPublishWizardValidationResult(null);
+      message.error(getErrorMessage(error));
+      return null;
+    } finally {
+      setPublishWizardValidationLoading(false);
+    }
+  };
+
+  const buildPublishBlockers = (
+    dependencyResult: WorkflowDependencyCheckResult,
+    validationResult: WorkflowValidationResult | null,
+  ): string[] => {
+    const blockers: string[] = [];
+    const unpublishedCount = countDependencyIssues(dependencyResult.unpublished);
+    const unavailableCount = countDependencyIssues(dependencyResult.unavailable);
+    if (unpublishedCount > 0 || unavailableCount > 0) {
+      blockers.push(`依赖未就绪：待发布 ${unpublishedCount} 项，不可用 ${unavailableCount} 项`);
+    }
+    if (!validationResult?.valid) {
+      blockers.push(`发布校验未通过：${validationResult?.issues.length ?? 0} 项`);
+    }
+    return blockers;
+  };
+
+  const publishVersion = async (version: WorkflowVersionDto): Promise<boolean> => {
+    if (!selectedDefinition?.id) {
+      return false;
     }
     try {
       setPublishingVersionId(version.id);
@@ -951,11 +1202,133 @@ export const WorkflowDefinitionPage: React.FC = () => {
         payload: { versionId: version.id },
       });
       message.success(`版本 ${version.versionCode} 已发布`);
+      return true;
     } catch (error) {
       message.error(getErrorMessage(error));
+      return false;
     } finally {
       setPublishingVersionId(null);
     }
+  };
+
+  async function handleOpenPublishWizard(version: WorkflowVersionDto) {
+    if (!selectedDefinition?.id) {
+      return;
+    }
+    if (dependencyCatalogLoading) {
+      message.warning('依赖资源加载中，请稍后再试');
+      return;
+    }
+    const dependencyResult = checkPublishDependencies(version.dslSnapshot);
+    setPublishWizardVersion(version);
+    setPublishWizardDependencyResult(dependencyResult);
+    setPublishWizardValidationResult(null);
+    setPublishWizardDryRunPreview(null);
+    await runPublishValidationCheck(version);
+  }
+
+  const handleRefreshPublishWizardDependencies = async () => {
+    if (!publishWizardVersion) {
+      return;
+    }
+    setPublishWizardDependencyRefreshing(true);
+    try {
+      const [rulePackResult, parameterSetResult, agentProfileResult] = await Promise.all([
+        refetchRulePackCatalog(),
+        refetchParameterSetCatalog(),
+        refetchAgentProfileCatalog(),
+      ]);
+      const nextDependencyResult = checkPublishDependenciesByLookups(
+        publishWizardVersion.dslSnapshot,
+        {
+          rulePacks: new Map(
+            (rulePackResult.data?.data || []).map((item) => [item.rulePackCode, item]),
+          ) as Map<string, DependencyLookupItem>,
+          parameterSets: new Map(
+            (parameterSetResult.data?.data || []).map((item) => [item.setCode, item]),
+          ) as Map<string, DependencyLookupItem>,
+          agentProfiles: new Map(
+            (agentProfileResult.data?.data || []).map((item) => [item.agentCode, item]),
+          ) as Map<string, DependencyLookupItem>,
+        },
+      );
+      setPublishWizardDependencyResult(nextDependencyResult);
+      setPublishWizardDryRunPreview(null);
+      message.success('依赖目录已刷新');
+    } catch (error) {
+      message.error(getErrorMessage(error));
+    } finally {
+      setPublishWizardDependencyRefreshing(false);
+    }
+  };
+
+  const handleConfirmPublishFromWizard = async () => {
+    if (!publishWizardVersion) {
+      return;
+    }
+    const latestDependencyResult = checkPublishDependencies(publishWizardVersion.dslSnapshot);
+    setPublishWizardDependencyResult(latestDependencyResult);
+    if (hasBlockingDependencyIssues(latestDependencyResult)) {
+      message.warning('仍存在依赖阻塞，请先处理后再发布');
+      return;
+    }
+    let latestValidationResult = publishWizardValidationResult;
+    if (!latestValidationResult || !latestValidationResult.valid) {
+      latestValidationResult = await runPublishValidationCheck(publishWizardVersion);
+    }
+    if (!latestValidationResult?.valid) {
+      message.warning('发布校验未通过，请先按提示修复');
+      return;
+    }
+    const published = await publishVersion(publishWizardVersion);
+    if (published) {
+      setPublishWizardVersion(null);
+      setPublishWizardDependencyResult(null);
+      setPublishWizardValidationResult(null);
+      setPublishWizardValidationLoading(false);
+      setPublishWizardDependencyRefreshing(false);
+      setPublishWizardDryRunLoading(false);
+      setPublishWizardDryRunPreview(null);
+    }
+  };
+
+  const handleRunPublishDryRun = async () => {
+    if (!publishWizardVersion) {
+      return;
+    }
+    setPublishWizardDryRunLoading(true);
+    try {
+      const dependencyResult = checkPublishDependencies(publishWizardVersion.dslSnapshot);
+      setPublishWizardDependencyResult(dependencyResult);
+      const validationResult = await runPublishValidationCheck(publishWizardVersion);
+      const blockers = buildPublishBlockers(dependencyResult, validationResult);
+      setPublishWizardDryRunPreview({
+        generatedAt: new Date(),
+        dependencyResult,
+        validationResult,
+        blockers,
+        readyToPublish: blockers.length === 0,
+      });
+      message.success(blockers.length === 0 ? '预演通过，可直接发布' : '预演完成，存在待修复项');
+    } finally {
+      setPublishWizardDryRunLoading(false);
+    }
+  };
+
+  const handleOpenStudioForPublishWizardVersion = () => {
+    if (!publishWizardVersion) {
+      return;
+    }
+    const version = publishWizardVersion;
+    setPublishWizardVersion(null);
+    setPublishWizardDependencyResult(null);
+    setPublishWizardValidationResult(null);
+    setPublishWizardValidationLoading(false);
+    setPublishWizardDependencyRefreshing(false);
+    setPublishWizardDryRunLoading(false);
+    setPublishWizardDryRunPreview(null);
+    setStudioVersion(version);
+    setStudioVisible(true);
   };
 
   const handleCreateDraftVersion = async () => {
@@ -1030,7 +1403,7 @@ export const WorkflowDefinitionPage: React.FC = () => {
     }
   };
 
-  const handleTriggerExecution = async (version: WorkflowVersionDto) => {
+  async function handleTriggerExecution(version: WorkflowVersionDto) {
     if (!selectedDefinition?.id) {
       return;
     }
@@ -1046,7 +1419,7 @@ export const WorkflowDefinitionPage: React.FC = () => {
     } finally {
       setRunningVersionId(null);
     }
-  };
+  }
 
   const handleStudioRun = async (dsl: WorkflowDsl) => {
     if (!selectedDefinition?.id || !studioVersion) {
@@ -1106,6 +1479,27 @@ export const WorkflowDefinitionPage: React.FC = () => {
     : 0;
   const latestDraftHasBlockingIssues =
     latestDraftUnpublishedCount > 0 || latestDraftUnavailableCount > 0;
+  const publishWizardHasDependencyBlock = hasBlockingDependencyIssues(
+    publishWizardDependencyResult,
+  );
+  const publishWizardHasValidationBlock = publishWizardValidationResult
+    ? !publishWizardValidationResult.valid
+    : true;
+  const publishWizardCurrentStep = publishWizardHasDependencyBlock
+    ? 0
+    : publishWizardValidationLoading || publishWizardHasValidationBlock
+      ? 1
+      : 2;
+  const publishWizardUnpublishedCount = publishWizardDependencyResult
+    ? countDependencyIssues(publishWizardDependencyResult.unpublished)
+    : 0;
+  const publishWizardUnavailableCount = publishWizardDependencyResult
+    ? countDependencyIssues(publishWizardDependencyResult.unavailable)
+    : 0;
+  const isPublishWizardPublishing =
+    publishMutation.isPending && publishingVersionId === publishWizardVersion?.id;
+  const publishWizardPreviewIssueCount =
+    publishWizardDryRunPreview?.validationResult?.issues.length ?? 0;
   const strictModeSourceLabel =
     strictModeSetting?.source === 'DB'
       ? '系统配置'
@@ -1260,6 +1654,7 @@ export const WorkflowDefinitionPage: React.FC = () => {
         width={560}
         onClose={() => {
           setCreateVisible(false);
+          setIsWorkflowIdCustomized(false);
           form.resetFields();
         }}
         extra={
@@ -1267,6 +1662,7 @@ export const WorkflowDefinitionPage: React.FC = () => {
             <Button
               onClick={() => {
                 setCreateVisible(false);
+                setIsWorkflowIdCustomized(false);
                 form.resetFields();
               }}
             >
@@ -1282,6 +1678,7 @@ export const WorkflowDefinitionPage: React.FC = () => {
           form={form}
           layout="vertical"
           initialValues={{
+            starterTemplate: 'QUICK_DECISION',
             mode: 'LINEAR',
             usageMethod: 'COPILOT',
             defaultTimeoutMs: 30000,
@@ -1289,16 +1686,47 @@ export const WorkflowDefinitionPage: React.FC = () => {
             defaultRetryBackoffMs: 2000,
             defaultOnError: 'FAIL_FAST',
           }}
+          onValuesChange={(changedValues, allValues) => {
+            const changedName = changedValues.name as string | undefined;
+            if (changedName !== undefined && !isWorkflowIdCustomized) {
+              const generated = slugifyWorkflowId(changedName);
+              form.setFieldsValue({ workflowId: generated || undefined });
+            }
+
+            const changedWorkflowId = changedValues.workflowId as string | undefined;
+            if (changedWorkflowId !== undefined) {
+              const generated = slugifyWorkflowId(allValues.name as string | undefined);
+              const normalized = changedWorkflowId.trim();
+              if (!normalized) {
+                setIsWorkflowIdCustomized(false);
+              } else {
+                setIsWorkflowIdCustomized(Boolean(generated && normalized !== generated));
+              }
+            }
+
+            const changedStarterTemplate =
+              changedValues.starterTemplate as CreateWorkflowDefinitionFormValues['starterTemplate'] | undefined;
+            if (changedStarterTemplate === 'DEBATE_ANALYSIS') {
+              form.setFieldsValue({ mode: 'DEBATE', usageMethod: 'COPILOT' });
+            } else if (changedStarterTemplate === 'RISK_REVIEW') {
+              form.setFieldsValue({ mode: 'DAG', usageMethod: 'HEADLESS' });
+            } else if (changedStarterTemplate === 'QUICK_DECISION') {
+              form.setFieldsValue({ mode: 'LINEAR', usageMethod: 'COPILOT' });
+            }
+          }}
         >
           <Form.Item
-            label="流程编码"
-            name="workflowId"
-            rules={[
-              { required: true, message: '请输入流程编码' },
-              { pattern: /^[a-zA-Z0-9_-]{3,100}$/, message: '仅支持字母、数字、下划线和中划线' },
-            ]}
+            label="快速起步模板"
+            name="starterTemplate"
+            rules={[{ required: true, message: '请选择快速起步模板' }]}
+            extra="先选业务场景，系统自动生成流程骨架。后续可在画布继续自由调整。"
           >
-            <Input placeholder="例如: wf_corn_morning_linear" />
+            <Select
+              options={starterTemplateOptions.map((item) => ({
+                label: `${item.label} - ${item.description}`,
+                value: item.value,
+              }))}
+            />
           </Form.Item>
           <Form.Item
             label="流程名称"
@@ -1306,6 +1734,32 @@ export const WorkflowDefinitionPage: React.FC = () => {
             rules={[{ required: true, message: '请输入流程名称' }]}
           >
             <Input placeholder="例如: 玉米晨间线性决策" />
+          </Form.Item>
+          <Form.Item
+            label="流程编码"
+            name="workflowId"
+            rules={[
+              { required: true, message: '请输入流程编码' },
+              { pattern: /^[a-zA-Z0-9_-]{3,100}$/, message: '仅支持字母、数字、下划线和中划线' },
+            ]}
+            extra="系统会根据流程名称自动生成编码，你也可以手动覆盖。"
+          >
+            <Input
+              placeholder="例如: wf_corn_morning_linear"
+              addonAfter={
+                <Button
+                  type="link"
+                  size="small"
+                  onClick={() => {
+                    const generated = slugifyWorkflowId(form.getFieldValue('name'));
+                    form.setFieldsValue({ workflowId: generated || undefined });
+                    setIsWorkflowIdCustomized(false);
+                  }}
+                >
+                  自动生成
+                </Button>
+              }
+            />
           </Form.Item>
           <Form.Item label="编排模式" name="mode" rules={[{ required: true }]}>
             <Select options={modeOptions} />
@@ -1329,44 +1783,81 @@ export const WorkflowDefinitionPage: React.FC = () => {
           </Form.Item>
           <Form.Item
             label="默认智能体绑定（可选）"
-            name="defaultAgentBindingsText"
-            extra="多个编码用逗号分隔，例如 MARKET_ANALYST_V1,RISK_OFFICER_V1"
+            name="defaultAgentBindings"
+            extra="可多选，系统将自动写入流程绑定。"
           >
-            <Input placeholder="AGENT_CODE_1,AGENT_CODE_2" />
+            <Select
+              mode="multiple"
+              allowClear
+              showSearch
+              loading={isAgentProfileLoading}
+              options={agentBindingOptions}
+              optionFilterProp="label"
+              placeholder="选择智能体（可多选）"
+            />
           </Form.Item>
           <Form.Item
             label="默认参数包绑定（可选）"
-            name="defaultParamSetBindingsText"
-            extra="多个编码用逗号分隔，例如 BASELINE_SET,VOLATILE_SET"
+            name="defaultParamSetBindings"
+            extra="可多选，系统将自动写入参数包绑定。"
           >
-            <Input placeholder="SET_CODE_1,SET_CODE_2" />
+            <Select
+              mode="multiple"
+              allowClear
+              showSearch
+              loading={isParameterSetLoading}
+              options={parameterBindingOptions}
+              optionFilterProp="label"
+              placeholder="选择参数包（可多选）"
+            />
           </Form.Item>
           <Form.Item
             label="默认连接器绑定（可选）"
-            name="defaultDataConnectorBindingsText"
-            extra="多个编码用逗号分隔，例如 INTERNAL_PRICE_DATA,EXTERNAL_FUTURES_API"
+            name="defaultDataConnectorBindings"
+            extra="可多选，便于后续节点直接引用连接器。"
           >
-            <Input placeholder="CONNECTOR_CODE_1,CONNECTOR_CODE_2" />
+            <Select
+              mode="multiple"
+              allowClear
+              showSearch
+              loading={isDataConnectorLoading}
+              options={dataConnectorBindingOptions}
+              optionFilterProp="label"
+              placeholder="选择数据连接器（可多选）"
+            />
           </Form.Item>
-          <Form.Item label="默认超时(ms)" name="defaultTimeoutMs" rules={[{ required: true }]}>
-            <InputNumber style={{ width: '100%' }} min={1000} max={120000} step={1000} />
-          </Form.Item>
-          <Form.Item label="默认重试次数" name="defaultRetryCount" rules={[{ required: true }]}>
-            <InputNumber style={{ width: '100%' }} min={0} max={5} step={1} />
-          </Form.Item>
-          <Form.Item
-            label="默认重试间隔(ms)"
-            name="defaultRetryBackoffMs"
-            rules={[{ required: true }]}
-          >
-            <InputNumber style={{ width: '100%' }} min={0} max={60000} step={500} />
-          </Form.Item>
-          <Form.Item label="默认异常策略" name="defaultOnError" rules={[{ required: true }]}>
-            <Select options={runtimeOnErrorOptions} />
-          </Form.Item>
-          <Form.Item label="描述" name="description">
-            <TextArea rows={4} placeholder="流程说明（可选）" />
-          </Form.Item>
+          <Collapse
+            size="small"
+            items={[
+              {
+                key: 'advanced-runtime',
+                label: '高级设置（运行策略与说明）',
+                children: (
+                  <Space direction="vertical" style={{ width: '100%' }} size={0}>
+                    <Form.Item label="默认超时(ms)" name="defaultTimeoutMs" rules={[{ required: true }]}>
+                      <InputNumber style={{ width: '100%' }} min={1000} max={120000} step={1000} />
+                    </Form.Item>
+                    <Form.Item label="默认重试次数" name="defaultRetryCount" rules={[{ required: true }]}>
+                      <InputNumber style={{ width: '100%' }} min={0} max={5} step={1} />
+                    </Form.Item>
+                    <Form.Item
+                      label="默认重试间隔(ms)"
+                      name="defaultRetryBackoffMs"
+                      rules={[{ required: true }]}
+                    >
+                      <InputNumber style={{ width: '100%' }} min={0} max={60000} step={500} />
+                    </Form.Item>
+                    <Form.Item label="默认异常策略" name="defaultOnError" rules={[{ required: true }]}>
+                      <Select options={runtimeOnErrorOptions} />
+                    </Form.Item>
+                    <Form.Item label="描述" name="description">
+                      <TextArea rows={4} placeholder="流程说明（可选）" />
+                    </Form.Item>
+                  </Space>
+                ),
+              },
+            ]}
+          />
         </Form>
       </Drawer>
 
@@ -1400,6 +1891,13 @@ export const WorkflowDefinitionPage: React.FC = () => {
           setStudioVisible(false);
           setDiffVisible(false);
           setStudioVersion(null);
+          setPublishWizardVersion(null);
+          setPublishWizardDependencyResult(null);
+          setPublishWizardValidationResult(null);
+          setPublishWizardValidationLoading(false);
+          setPublishWizardDependencyRefreshing(false);
+          setPublishWizardDryRunLoading(false);
+          setPublishWizardDryRunPreview(null);
           setAuditPage(1);
           setAuditPageSize(10);
         }}
@@ -1552,6 +2050,249 @@ export const WorkflowDefinitionPage: React.FC = () => {
           scroll={{ x: 900 }}
         />
       </Drawer>
+
+      <Modal
+        open={Boolean(publishWizardVersion)}
+        width={820}
+        title={
+          publishWizardVersion
+            ? `发布修复向导 - ${publishWizardVersion.versionCode}`
+            : '发布修复向导'
+        }
+        okText="确认发布"
+        cancelText="关闭"
+        onOk={handleConfirmPublishFromWizard}
+        okButtonProps={{
+          disabled:
+            !publishWizardVersion ||
+            publishWizardHasDependencyBlock ||
+            publishWizardHasValidationBlock ||
+            publishWizardValidationLoading,
+        }}
+        confirmLoading={isPublishWizardPublishing}
+        onCancel={() => {
+          setPublishWizardVersion(null);
+          setPublishWizardDependencyResult(null);
+          setPublishWizardValidationResult(null);
+          setPublishWizardValidationLoading(false);
+          setPublishWizardDependencyRefreshing(false);
+          setPublishWizardDryRunLoading(false);
+          setPublishWizardDryRunPreview(null);
+        }}
+        footer={[
+          <Button
+            key="cancel"
+            onClick={() => {
+              setPublishWizardVersion(null);
+              setPublishWizardDependencyResult(null);
+              setPublishWizardValidationResult(null);
+              setPublishWizardValidationLoading(false);
+              setPublishWizardDependencyRefreshing(false);
+              setPublishWizardDryRunLoading(false);
+              setPublishWizardDryRunPreview(null);
+            }}
+          >
+            关闭
+          </Button>,
+          <Button
+            key="dry-run"
+            loading={publishWizardDryRunLoading}
+            onClick={() => {
+              void handleRunPublishDryRun();
+            }}
+          >
+            发布预演
+          </Button>,
+          <Button
+            key="publish"
+            type="primary"
+            loading={isPublishWizardPublishing}
+            disabled={
+              !publishWizardVersion ||
+              publishWizardHasDependencyBlock ||
+              publishWizardHasValidationBlock ||
+              publishWizardValidationLoading
+            }
+            onClick={() => {
+              void handleConfirmPublishFromWizard();
+            }}
+          >
+            确认发布
+          </Button>,
+        ]}
+      >
+        {publishWizardVersion ? (
+          <Space direction="vertical" size={12} style={{ width: '100%' }}>
+            <Steps
+              size="small"
+              current={publishWizardCurrentStep}
+              items={[
+                {
+                  title: '依赖检查',
+                  description:
+                    publishWizardHasDependencyBlock && publishWizardDependencyResult
+                      ? `待发布 ${publishWizardUnpublishedCount}，不可用 ${publishWizardUnavailableCount}`
+                      : '依赖就绪',
+                },
+                {
+                  title: '发布校验',
+                  description: publishWizardValidationLoading
+                    ? '校验中'
+                    : publishWizardValidationResult?.valid
+                      ? '校验通过'
+                      : '需修复校验问题',
+                },
+                { title: '执行发布', description: '满足条件后发布版本' },
+              ]}
+            />
+
+            <Alert
+              showIcon
+              type={publishWizardHasDependencyBlock || publishWizardHasValidationBlock ? 'warning' : 'success'}
+              message={
+                publishWizardHasDependencyBlock || publishWizardHasValidationBlock
+                  ? '发布前仍有阻塞项'
+                  : '已满足发布条件，可直接发布'
+              }
+              description={
+                publishWizardHasDependencyBlock
+                  ? `依赖阻塞：待发布 ${publishWizardUnpublishedCount} 项，不可用 ${publishWizardUnavailableCount} 项。`
+                  : publishWizardHasValidationBlock
+                    ? '依赖已就绪，但发布校验仍未通过。'
+                    : '依赖与发布校验均通过。'
+              }
+            />
+
+            <Card
+              size="small"
+              title="步骤 1：依赖修复"
+              extra={
+                <Button
+                  size="small"
+                  loading={publishWizardDependencyRefreshing}
+                  onClick={handleRefreshPublishWizardDependencies}
+                >
+                  刷新依赖目录
+                </Button>
+              }
+            >
+              {publishWizardDependencyResult ? (
+                <Space direction="vertical" size={8}>
+                  {renderDependencySection(
+                    '未发布依赖（需要 version >= 2）',
+                    publishWizardDependencyResult.unpublished,
+                  )}
+                  {renderDependencySection(
+                    '不可用依赖（不存在、未启用或无权限）',
+                    publishWizardDependencyResult.unavailable,
+                  )}
+                  {renderDependencyQuickActions(publishWizardDependencyResult)}
+                  {!hasBlockingDependencyIssues(publishWizardDependencyResult) ? (
+                    <Text type="success">依赖已就绪。</Text>
+                  ) : null}
+                </Space>
+              ) : (
+                <Text type="secondary">暂无依赖检查结果。</Text>
+              )}
+            </Card>
+
+            <Card
+              size="small"
+              title="步骤 2：发布校验"
+              extra={
+                <Button
+                  size="small"
+                  loading={publishWizardValidationLoading}
+                  onClick={() => {
+                    if (publishWizardVersion) {
+                      void runPublishValidationCheck(publishWizardVersion);
+                    }
+                  }}
+                >
+                  重新校验
+                </Button>
+              }
+            >
+              {publishWizardValidationLoading ? (
+                <Text type="secondary">正在校验流程结构和发布规则，请稍候...</Text>
+              ) : publishWizardValidationResult ? (
+                <Space direction="vertical" size={8}>
+                  <Alert
+                    showIcon
+                    type={publishWizardValidationResult.valid ? 'success' : 'warning'}
+                    message={
+                      publishWizardValidationResult.valid
+                        ? '发布校验通过'
+                        : `发布校验未通过（${publishWizardValidationResult.issues.length} 项）`
+                    }
+                  />
+                  {!publishWizardValidationResult.valid ? (
+                    <Space direction="vertical" size={4}>
+                      {publishWizardValidationResult.issues.slice(0, 8).map((issue) => (
+                        <Text key={`${issue.code}-${issue.message}`} type="secondary">
+                          {issue.code}: {issue.message}
+                        </Text>
+                      ))}
+                    </Space>
+                  ) : null}
+                </Space>
+              ) : (
+                <Text type="secondary">尚未进行发布校验。</Text>
+              )}
+            </Card>
+
+            {publishWizardDryRunPreview ? (
+              <Card
+                size="small"
+                title="预演结果（不发布）"
+                extra={
+                  publishWizardDryRunPreview.readyToPublish ? null : (
+                    <Button size="small" type="link" onClick={handleOpenStudioForPublishWizardVersion}>
+                      去画布修复
+                    </Button>
+                  )
+                }
+              >
+                <Space direction="vertical" size={8} style={{ width: '100%' }}>
+                  <Alert
+                    showIcon
+                    type={publishWizardDryRunPreview.readyToPublish ? 'success' : 'warning'}
+                    message={
+                      publishWizardDryRunPreview.readyToPublish
+                        ? '预演通过：当前版本可发布'
+                        : '预演未通过：存在阻塞项'
+                    }
+                    description={`生成时间：${dayjs(publishWizardDryRunPreview.generatedAt).format('YYYY-MM-DD HH:mm:ss')}`}
+                  />
+                  {publishWizardDryRunPreview.blockers.length > 0 ? (
+                    <Space direction="vertical" size={4}>
+                      {publishWizardDryRunPreview.blockers.map((item, index) => (
+                        <Text key={`${item}-${index}`} type="secondary">
+                          {index + 1}. {item}
+                        </Text>
+                      ))}
+                    </Space>
+                  ) : (
+                    <Text type="success">无阻塞项，可执行发布。</Text>
+                  )}
+                  <Text type="secondary">
+                    预演摘要：待发布依赖{' '}
+                    {countDependencyIssues(publishWizardDryRunPreview.dependencyResult.unpublished)} 项，
+                    不可用依赖{' '}
+                    {countDependencyIssues(publishWizardDryRunPreview.dependencyResult.unavailable)} 项，
+                    校验问题 {publishWizardPreviewIssueCount} 项。
+                  </Text>
+                </Space>
+              </Card>
+            ) : null}
+
+            <Divider style={{ margin: 0 }} />
+            <Text type="secondary">
+              完成以上两步后，点击“确认发布”执行版本发布。若已在其他页面处理依赖，请先刷新依赖目录再发布。
+            </Text>
+          </Space>
+        ) : null}
+      </Modal>
 
       <Drawer
         title={`Workflow Studio - ${studioVersion?.versionCode || ''}`}

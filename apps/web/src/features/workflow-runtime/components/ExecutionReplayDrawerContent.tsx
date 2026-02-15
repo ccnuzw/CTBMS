@@ -28,6 +28,8 @@ import {
     useExecutionComparison,
     useDebateTimeline,
 } from '../../replay-evaluation/api/replayApi';
+import { useWorkflowVersions } from '../../workflow-studio/api';
+import { WorkflowCanvas } from '../../workflow-studio/canvas/WorkflowCanvas';
 import { apiClient } from '@/api/client';
 
 const { Text } = Typography;
@@ -66,6 +68,37 @@ export const ExecutionReplayDrawerContent: React.FC<ExecutionReplayDrawerContent
         initialExecutionId,
         !!initialExecutionId,
     );
+
+    // Fetch DSL for visual replay
+    // We need the version ID from the execution replay bundle
+    // replayBundle.execution.workflowVersionId
+    const workflowVersionId = replayBundle?.execution?.workflowVersionId;
+    const { data: versionList } = useWorkflowVersions(
+        undefined, // We can't fetch by definition ID easily here, but we can rely on cached data if we have it, or we need a way to fetch specific version
+    );
+
+    // Actually, useWorkflowVersions lists versions for a definition. 
+    // We might need a direct fetch for a specific version or valid DSL from the execution itself if stored.
+    // For now, let's assume we can fetch the version details if we have the ID.
+    // Since we don't have a direct "useWorkflowVersion(id)" hook readily available in the import list above (only useWorkflowVersions for list),
+    // let's try to find it in the list if available, or simpler: 
+    // The execution DTO might NOT contain the full DSL. 
+    // Let's assume we can use `useWorkflowVersion` if it existed, but since it doesn't, we might need to fetch it or use what we have.
+    // Wait, the `replayApi` might not return DSL.
+    // Let's check if `replayBundle` has it. It has `execution` and `stats`.
+    // If not, we might need to add a hook or use `apiClient` to fetch the version.
+
+    const [dslSnapshot, setDslSnapshot] = useState<any>(null);
+
+    useEffect(() => {
+        if (workflowVersionId) {
+            apiClient.get(`/workflow-versions/${workflowVersionId}`).then(res => {
+                setDslSnapshot(res.data.dslSnapshot);
+            }).catch(err => {
+                console.error("Failed to fetch DSL for replay", err);
+            });
+        }
+    }, [workflowVersionId]);
 
     const {
         data: comparison,
@@ -149,6 +182,36 @@ export const ExecutionReplayDrawerContent: React.FC<ExecutionReplayDrawerContent
                 activeKey={activeTab}
                 onChange={setActiveTab}
                 items={[
+                    {
+                        key: 'visual',
+                        label: (
+                            <Space size={4}>
+                                <NodeIndexOutlined />
+                                <span>可视化回放</span>
+                            </Space>
+                        ),
+                        children: (
+                            <div style={{ height: 600, border: `1px solid ${token.colorBorderSecondary}`, borderRadius: token.borderRadiusLG }}>
+                                {dslSnapshot ? (
+                                    <WorkflowCanvas
+                                        initialDsl={dslSnapshot}
+                                        isReadOnly={true}
+                                        viewMode="replay"
+                                        executionData={{
+                                            history: replayBundle?.timeline?.map((stat: any) => ({
+                                                nodeId: stat.nodeId,
+                                                status: stat.status,
+                                            })) || []
+                                        }}
+                                    />
+                                ) : (
+                                    <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                        {isReplayLoading ? <Spin tip="加载执行数据..." /> : <Empty description="无法加载流程定义快照" />}
+                                    </div>
+                                )}
+                            </div>
+                        )
+                    },
                     {
                         key: 'replay',
                         label: (

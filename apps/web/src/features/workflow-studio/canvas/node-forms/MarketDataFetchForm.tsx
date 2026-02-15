@@ -1,5 +1,6 @@
 import React from 'react';
 import { Form, InputNumber, Select } from 'antd';
+import { useDataConnectors } from '../../../workflow-data-connector/api';
 
 interface MarketDataFetchFormProps {
     config: Record<string, unknown>;
@@ -7,17 +8,31 @@ interface MarketDataFetchFormProps {
 }
 
 export const MarketDataFetchForm: React.FC<MarketDataFetchFormProps> = ({ config, onChange }) => {
+    const { data: connectorPage, isLoading } = useDataConnectors({
+        isActive: true,
+        page: 1,
+        pageSize: 200,
+    });
+    const selectedConnectorCode = (config.dataSourceCode as string) || (config.connectorCode as string);
+
     return (
         <Form layout="vertical" size="small">
-            <Form.Item label="数据连接器 (Connector)" required>
+            <Form.Item label="数据连接器" required>
                 <Select
-                    value={config.connectorCode as string}
-                    onChange={(v) => onChange('connectorCode', v)}
-                    options={[
-                        { label: 'Binance Market Data', value: 'binance-market' },
-                        { label: 'CoinGecko API', value: 'coingecko' },
-                        { label: 'Internal DB', value: 'internal-db' },
-                    ]}
+                    value={selectedConnectorCode}
+                    onChange={(value) => {
+                        onChange('dataSourceCode', value);
+                        onChange('connectorCode', value);
+                    }}
+                    loading={isLoading}
+                    showSearch
+                    optionFilterProp="label"
+                    options={(connectorPage?.data || [])
+                        .filter((item) => item.isActive)
+                        .map((item) => ({
+                            label: `${item.connectorName} (${item.connectorCode})`,
+                            value: item.connectorCode,
+                        }))}
                     placeholder="选择数据源"
                 />
             </Form.Item>

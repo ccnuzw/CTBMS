@@ -14,6 +14,7 @@ const { Text } = Typography;
 interface NodePaletteProps {
     /** 画布容器 ref，用于计算拖拽落点 */
     style?: React.CSSProperties;
+    viewLevel?: 'business' | 'enhanced' | 'expert';
 }
 
 /**
@@ -21,7 +22,26 @@ interface NodePaletteProps {
  *
  * 按分类展示可拖拽的节点类型，支持搜索过滤
  */
-export const NodePalette: React.FC<NodePaletteProps> = ({ style }) => {
+const BUSINESS_NODE_TYPES = new Set([
+    'manual-trigger',
+    'cron-trigger',
+    'api-trigger',
+    'data-fetch',
+    'rule-pack-eval',
+    'agent-call',
+    'decision-merge',
+    'risk-gate',
+    'notify',
+]);
+
+const EXPERT_ONLY_NODE_TYPES = new Set([
+    'switch',
+    'control-loop',
+    'control-delay',
+    'group',
+]);
+
+export const NodePalette: React.FC<NodePaletteProps> = ({ style, viewLevel = 'business' }) => {
     const { token } = theme.useToken();
     const [search, setSearch] = useState('');
     const categories = useMemo(() => getNodesByCategory(), []);
@@ -31,9 +51,14 @@ export const NodePalette: React.FC<NodePaletteProps> = ({ style }) => {
         .map(([category, configs]) => {
             const filtered = configs.filter(
                 (c) =>
-                    !search ||
-                    c.label.toLowerCase().includes(search.toLowerCase()) ||
-                    c.type.toLowerCase().includes(search.toLowerCase()),
+                    (viewLevel === 'expert'
+                        || (viewLevel === 'enhanced' && !EXPERT_ONLY_NODE_TYPES.has(c.type))
+                        || (viewLevel === 'business' && BUSINESS_NODE_TYPES.has(c.type)))
+                    && (
+                        !search ||
+                        c.label.toLowerCase().includes(search.toLowerCase()) ||
+                        c.type.toLowerCase().includes(search.toLowerCase())
+                    ),
             );
             return [category as NodeCategory, filtered] as [NodeCategory, NodeTypeConfig[]];
         })
@@ -113,18 +138,14 @@ export const NodePalette: React.FC<NodePaletteProps> = ({ style }) => {
                                 >
                                     <Icon />
                                 </div>
-                                <Text style={{ fontSize: 12, flex: 1 }}>{config.label}</Text>
-                                <Tag
-                                    bordered={false}
-                                    style={{
-                                        fontSize: 10,
-                                        lineHeight: '16px',
-                                        padding: '0 4px',
-                                        color: token.colorTextQuaternary,
-                                    }}
-                                >
-                                    {config.type}
-                                </Tag>
+                                <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
+                                    <Text style={{ fontSize: 12 }} ellipsis>{config.label}</Text>
+                                    {viewLevel !== 'business' ? (
+                                        <Text type="secondary" style={{ fontSize: 10, lineHeight: '1.2' }} ellipsis>
+                                            {config.type}
+                                        </Text>
+                                    ) : null}
+                                </div>
                             </div>
                         </Tooltip>
                     );
@@ -148,6 +169,13 @@ export const NodePalette: React.FC<NodePaletteProps> = ({ style }) => {
             <div style={{ padding: '12px 12px 8px' }}>
                 <Text strong style={{ fontSize: 14 }}>
                     节点库
+                </Text>
+                <Text type="secondary" style={{ display: 'block', marginTop: 2, fontSize: 11 }}>
+                    {viewLevel === 'business'
+                        ? '业务视图：仅展示高频节点'
+                        : viewLevel === 'enhanced'
+                            ? '增强视图：展示常用与进阶节点'
+                            : '专家视图：展示全部节点'}
                 </Text>
                 <Input
                     prefix={<SearchOutlined />}

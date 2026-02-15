@@ -1,5 +1,6 @@
 import React from 'react';
-import { Form, Input, InputNumber, Select, Switch } from 'antd';
+import { Form, InputNumber, Select, Switch } from 'antd';
+import { useDecisionRulePacks } from '../../../workflow-rule-center/api';
 
 interface RulePackEvalFormProps {
     config: Record<string, unknown>;
@@ -7,9 +8,23 @@ interface RulePackEvalFormProps {
 }
 
 export const RulePackEvalForm: React.FC<RulePackEvalFormProps> = ({ config, onChange }) => {
+    const { data: rulePackPage, isLoading } = useDecisionRulePacks({
+        includePublic: true,
+        isActive: true,
+        page: 1,
+        pageSize: 300,
+    });
+
     const rulePackCodes = Array.isArray(config.rulePackCodes)
         ? (config.rulePackCodes as unknown[]).filter((item): item is string => typeof item === 'string')
         : [];
+
+    const rulePackOptions = (rulePackPage?.data || [])
+        .filter((item) => item.isActive)
+        .map((item) => ({
+            label: `${item.name} (${item.rulePackCode})`,
+            value: item.rulePackCode,
+        }));
 
     return (
         <Form layout="vertical" size="small">
@@ -26,26 +41,27 @@ export const RulePackEvalForm: React.FC<RulePackEvalFormProps> = ({ config, onCh
                     ]}
                 />
             </Form.Item>
-            <Form.Item label="规则包代码 (Rule Pack Code)" required>
-                <Input
+            <Form.Item label="主规则包" required>
+                <Select
                     value={config.rulePackCode as string}
-                    onChange={(e) => onChange('rulePackCode', e.target.value)}
-                    placeholder="RP_MARKET_BASIC"
+                    onChange={(value) => onChange('rulePackCode', value)}
+                    loading={isLoading}
+                    showSearch
+                    optionFilterProp="label"
+                    options={rulePackOptions}
+                    placeholder="选择规则包"
                 />
             </Form.Item>
-            <Form.Item label="规则包列表 (逗号分隔)">
-                <Input
-                    value={rulePackCodes.join(',')}
-                    onChange={(e) =>
-                        onChange(
-                            'rulePackCodes',
-                            e.target.value
-                                .split(',')
-                                .map((item) => item.trim())
-                                .filter(Boolean),
-                        )
-                    }
-                    placeholder="RP_DEFAULT,RP_INDUSTRY,RP_EXPERIENCE"
+            <Form.Item label="附加规则包（可选）">
+                <Select
+                    mode="multiple"
+                    value={rulePackCodes}
+                    onChange={(value) => onChange('rulePackCodes', value)}
+                    loading={isLoading}
+                    showSearch
+                    optionFilterProp="label"
+                    options={rulePackOptions}
+                    placeholder="选择附加规则包"
                 />
             </Form.Item>
             <Form.Item label="启用分层规则包">
