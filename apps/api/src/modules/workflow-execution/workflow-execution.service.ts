@@ -27,6 +27,7 @@ import { DagScheduler } from './engine/dag-scheduler';
 import { ReplayAssembler, type ExecutionReplayBundle } from './engine/replay-assembler';
 import { WorkflowExperimentService } from '../workflow-experiment/workflow-experiment.service';
 import type { NodeExecutionResult } from './engine/node-executor.interface';
+import { ConfigService } from '../config/config.service';
 
 type WorkflowFailureCode =
   | 'EXECUTION_TIMEOUT'
@@ -83,6 +84,7 @@ export class WorkflowExecutionService {
     private readonly replayAssembler: ReplayAssembler,
     private readonly dagScheduler: DagScheduler,
     private readonly workflowExperimentService: WorkflowExperimentService,
+    private readonly configService: ConfigService,
   ) {}
 
   async trigger(
@@ -272,6 +274,8 @@ export class WorkflowExecutionService {
         },
       });
 
+    const workflowAgentStrictModeEnabled = await this.isWorkflowAgentStrictModeEnabled();
+
     if (dsl.mode === 'DAG') {
       return this.executeDagWorkflow({
         executionId: execution.id,
@@ -282,6 +286,7 @@ export class WorkflowExecutionService {
         subflowDepth,
         subflowPath: nextSubflowPath,
         workflowDefinitionId: definition.id,
+        strictModeEnabled: workflowAgentStrictModeEnabled,
       });
     }
 
@@ -423,7 +428,11 @@ export class WorkflowExecutionService {
           triggerUserId: ownerUserId,
         });
         const nodeExecutor = this.nodeExecutorRegistry.resolve(node);
-        const runtimePolicy = this.resolveRuntimePolicy(node, dsl.runPolicy);
+        const runtimePolicy = this.resolveRuntimePolicy(
+          node,
+          dsl.runPolicy,
+          workflowAgentStrictModeEnabled,
+        );
 
         let status: 'SUCCESS' | 'FAILED' | 'SKIPPED' = 'SUCCESS';
         let errorMessage: string | null = null;
@@ -920,6 +929,7 @@ export class WorkflowExecutionService {
     dsl: WorkflowDsl;
     paramSnapshot?: Record<string, unknown>;
     experimentRouting: ExperimentRoutingContext;
+    strictModeEnabled: boolean;
   }) {
     const outputsByNode = new Map<string, Record<string, unknown>>();
     const buildExecutionOutputSnapshot = (nodeCount: number, softFailureCount: number) => {
@@ -981,7 +991,8 @@ export class WorkflowExecutionService {
                 outputSnapshot: this.toJsonValue(payload.outputSnapshot),
               },
             }),
-          resolveRuntimePolicy: (node, runPolicy) => this.resolveRuntimePolicy(node, runPolicy),
+          resolveRuntimePolicy: (node, runPolicy) =>
+            this.resolveRuntimePolicy(node, runPolicy, params.strictModeEnabled),
           executeWithTimeout: (task, timeoutMs, timeoutMessage) =>
             this.executeWithTimeout(task, timeoutMs, timeoutMessage),
           sleep: (ms) => this.sleep(ms),
@@ -2601,6 +2612,7 @@ export class WorkflowExecutionService {
   private resolveRuntimePolicy(
     node: WorkflowNode,
     runPolicy?: WorkflowRunPolicy,
+    strictModeEnabled = false,
   ): WorkflowNodeRuntimePolicy {
     const defaults = WorkflowNodeRuntimePolicySchema.parse({});
     const config = node.config as Record<string, unknown>;
@@ -2619,13 +2631,50 @@ export class WorkflowExecutionService {
       nodeRuntimePolicy.onError ?? config.onError ?? workflowNodeDefaults.onError;
 
     const onErrorParsed = WorkflowNodeOnErrorPolicyEnum.safeParse(onErrorSource);
+    const onErrorResolved = onErrorParsed.success ? onErrorParsed.data : defaults.onError;
+    const onError = strictModeEnabled && this.isStrictModeAgentNode(node.type)
+      ? 'FAIL_FAST'
+      : onErrorResolved;
 
     return {
       timeoutMs: this.toInteger(timeoutMsSource, defaults.timeoutMs, 1_000, 120_000),
       retryCount: this.toInteger(retryCountSource, defaults.retryCount, 0, 5),
       retryBackoffMs: this.toInteger(retryBackoffMsSource, defaults.retryBackoffMs, 0, 60_000),
-      onError: onErrorParsed.success ? onErrorParsed.data : defaults.onError,
+      onError,
     };
+  }
+
+  private isStrictModeAgentNode(nodeType: string): boolean {
+    return (
+      nodeType === 'agent-call' ||
+      nodeType === 'single-agent' ||
+      nodeType === 'debate-round' ||
+      nodeType === 'judge-agent'
+    );
+  }
+
+  private async isWorkflowAgentStrictModeEnabled(): Promise<boolean> {
+    try {
+      const setting = await this.configService.getWorkflowAgentStrictMode();
+      return setting.enabled;
+    } catch {
+      const fallback = this.parseBooleanFlag(process.env.WORKFLOW_AGENT_STRICT_MODE);
+      return fallback ?? false;
+    }
+  }
+
+  private parseBooleanFlag(value: unknown): boolean | null {
+    if (typeof value === 'boolean') return value;
+    if (typeof value === 'number' && Number.isFinite(value)) {
+      if (value === 1) return true;
+      if (value === 0) return false;
+    }
+    if (typeof value !== 'string') return null;
+    const normalized = value.trim().toLowerCase();
+    if (!normalized) return null;
+    if (['1', 'true', 'yes', 'on', 'enabled'].includes(normalized)) return true;
+    if (['0', 'false', 'no', 'off', 'disabled'].includes(normalized)) return false;
+    return null;
   }
 
   private markNonErrorBranchSkipped(

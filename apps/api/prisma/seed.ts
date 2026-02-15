@@ -107,6 +107,7 @@ async function main() {
 
   // 9.4 内置工作流模板 + 触发器 + 用户默认绑定
   runSeedScript('seed-workflow-templates.ts');
+  runSeedScript('seed-workflow-consistency.ts');
   runSeedScript('seed-template-catalog.ts');
   runSeedScript('seed-workflow-experiments.ts');
   runSeedScript('seed-trigger-configs.ts');

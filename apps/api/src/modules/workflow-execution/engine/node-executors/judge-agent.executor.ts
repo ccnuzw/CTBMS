@@ -1,8 +1,10 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { WorkflowNodeExecutor, NodeExecutionContext, NodeExecutionResult } from '../node-executor.interface';
+import { AIModelConfig } from '@prisma/client';
 import { PrismaService } from '../../../../prisma';
 import { AIProviderFactory } from '../../../ai/providers/provider.factory';
 import { AIRequestOptions } from '../../../ai/providers/base.provider';
+import { ConfigService } from '../../../config/config.service';
 import type { WorkflowNode } from '@packages/types';
 
 import { DecisionRecordService } from '../../../decision-record/decision-record.service';
@@ -34,6 +36,7 @@ export class JudgeAgentNodeExecutor implements WorkflowNodeExecutor {
     constructor(
         private readonly prisma: PrismaService,
         private readonly aiProviderFactory: AIProviderFactory,
+        private readonly configService: ConfigService,
         private readonly decisionRecordService: DecisionRecordService,
     ) { }
 
@@ -70,10 +73,8 @@ export class JudgeAgentNodeExecutor implements WorkflowNodeExecutor {
             : null;
 
         // 加载模型配置
-        const modelConfigKey = (profile as Record<string, unknown> | null)?.modelConfigKey as string ?? 'default';
-        const modelConfig = await this.prisma.aIModelConfig.findFirst({
-            where: { configKey: modelConfigKey, isActive: true },
-        });
+        const modelConfigKey = (profile as Record<string, unknown> | null)?.modelConfigKey as string ?? 'DEFAULT';
+        const modelConfig = await this.resolveModelConfig(modelConfigKey);
 
         if (!modelConfig) {
             // 无 AI 模型时使用规则裁决
@@ -111,9 +112,15 @@ export class JudgeAgentNodeExecutor implements WorkflowNodeExecutor {
             const requestOptions: AIRequestOptions = {
                 modelName: modelConfig.modelName,
                 apiKey: this.resolveApiKey(modelConfig as Record<string, unknown>),
+                apiUrl: modelConfig.apiUrl ?? undefined,
+                authType: modelConfig.authType as AIRequestOptions['authType'] | undefined,
+                headers: this.toRecord(modelConfig.headers),
+                queryParams: this.toRecord(modelConfig.queryParams),
+                pathOverrides: this.toRecord(modelConfig.pathOverrides),
                 temperature: 0.3,
                 maxTokens: 3000,
                 timeoutMs: (profile as Record<string, unknown> | null)?.timeoutMs as number ?? 30000,
+                maxRetries: modelConfig.maxRetries,
             };
 
             const rawResponse = await provider.generateResponse(
@@ -168,6 +175,15 @@ export class JudgeAgentNodeExecutor implements WorkflowNodeExecutor {
         } catch (error) {
             const errorMsg = error instanceof Error ? error.message : String(error);
             this.logger.error(`[${node.name}] judge-agent 调用失败: ${errorMsg}`);
+
+            const strictModeEnabled = await this.isWorkflowAgentStrictModeEnabled();
+            if (strictModeEnabled && this.isCredentialError(errorMsg)) {
+                return {
+                    status: 'FAILED',
+                    output: { error: errorMsg },
+                    message: `[${node.name}] judge-agent 鉴权失败: ${errorMsg}`,
+                };
+            }
 
             // 降级为规则裁决
             return this.ruleBasedVerdict(
@@ -444,15 +460,97 @@ export class JudgeAgentNodeExecutor implements WorkflowNodeExecutor {
     // ────────────────── 工具方法 ──────────────────
 
     private detectProviderType(config: Record<string, unknown>): 'google' | 'openai' {
-        const model = String(config.modelName ?? config.modelId ?? '');
+        const provider = String(config.provider ?? '').toLowerCase();
+        if (provider === 'google' || provider === 'openai') {
+            return provider;
+        }
+        const model = String(config.modelName ?? config.modelId ?? '').toLowerCase();
         if (model.includes('gemini') || model.includes('palm')) return 'google';
         return 'openai';
+    }
+
+    private async resolveModelConfig(configKey: string): Promise<AIModelConfig | null> {
+        const normalized = (configKey || 'DEFAULT').trim() || 'DEFAULT';
+        const isDefaultAlias = normalized.toUpperCase() === 'DEFAULT';
+
+        if (isDefaultAlias) {
+            const dynamicDefault = await this.configService.getDefaultAIConfig();
+            if (dynamicDefault?.isActive) {
+                return dynamicDefault;
+            }
+        }
+
+        const exactConfig = await this.prisma.aIModelConfig.findFirst({
+            where: { configKey: normalized, isActive: true },
+        });
+        if (exactConfig) {
+            return exactConfig;
+        }
+
+        if (!isDefaultAlias) {
+            const dynamicDefault = await this.configService.getDefaultAIConfig();
+            if (dynamicDefault?.isActive) {
+                return dynamicDefault;
+            }
+        }
+
+        return null;
     }
 
     private resolveApiKey(config: Record<string, unknown>): string {
         if (typeof config.apiKey === 'string' && config.apiKey) return config.apiKey;
         const envVar = config.apiKeyEnvVar as string;
         if (envVar) return process.env[envVar] ?? '';
-        return process.env.GEMINI_API_KEY ?? '';
+        const provider = this.detectProviderType(config);
+        if (provider === 'openai') {
+            return process.env.OPENAI_API_KEY ?? process.env.DEFAULT_AI_API_KEY ?? '';
+        }
+        return process.env.GEMINI_API_KEY ?? process.env.DEFAULT_AI_API_KEY ?? '';
+    }
+
+    private toRecord(value: unknown): Record<string, string> | undefined {
+        if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined;
+        return value as Record<string, string>;
+    }
+
+    private async isWorkflowAgentStrictModeEnabled(): Promise<boolean> {
+        try {
+            const setting = await this.configService.getWorkflowAgentStrictMode();
+            return setting.enabled;
+        } catch {
+            const fallback = this.parseBooleanFlag(process.env.WORKFLOW_AGENT_STRICT_MODE);
+            if (fallback !== null) {
+                this.logger.warn('读取 workflow strict mode 配置失败，回退到环境变量');
+                return fallback;
+            }
+            return false;
+        }
+    }
+
+    private isCredentialError(errorMsg: string): boolean {
+        const normalized = errorMsg.toLowerCase();
+        return normalized.includes('api key not valid')
+            || normalized.includes('api_key_invalid')
+            || normalized.includes('invalid api key')
+            || normalized.includes('incorrect api key')
+            || normalized.includes('missing api key')
+            || normalized.includes('invalid authentication')
+            || normalized.includes('authentication failed')
+            || normalized.includes('unauthorized')
+            || normalized.includes('401');
+    }
+
+    private parseBooleanFlag(value: unknown): boolean | null {
+        if (typeof value === 'boolean') return value;
+        if (typeof value === 'number' && Number.isFinite(value)) {
+            if (value === 1) return true;
+            if (value === 0) return false;
+        }
+        if (typeof value !== 'string') return null;
+        const normalized = value.trim().toLowerCase();
+        if (!normalized) return null;
+        if (['1', 'true', 'yes', 'on', 'enabled'].includes(normalized)) return true;
+        if (['0', 'false', 'no', 'off', 'disabled'].includes(normalized)) return false;
+        return null;
     }
 }

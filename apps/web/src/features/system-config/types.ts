@@ -38,6 +38,12 @@ export interface AIModelConfig extends BaseEntity {
     availableModels: string[];
 }
 
+export interface WorkflowAgentStrictModeSetting {
+    enabled: boolean;
+    source: 'DB' | 'ENV' | 'DEFAULT';
+    updatedAt: string | null;
+}
+
 export interface CreateMappingRuleDTO extends Omit<BusinessMappingRule, 'id' | 'createdAt' | 'updatedAt'> { }
 export interface UpdateMappingRuleDTO extends Partial<CreateMappingRuleDTO> { }
 export interface CreateAIConfigDTO extends Omit<AIModelConfig, 'id' | 'createdAt' | 'updatedAt'> { }

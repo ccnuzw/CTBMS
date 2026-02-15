@@ -15,6 +15,7 @@ import {
   Popconfirm,
   Select,
   Space,
+  Switch,
   Table,
   Tag,
   Typography,
@@ -42,6 +43,10 @@ import {
   useWorkflowPublishAudits,
   useWorkflowVersions,
 } from '../api';
+import {
+  useUpdateWorkflowAgentStrictMode,
+  useWorkflowAgentStrictMode,
+} from '../../system-config/api';
 import { useDecisionRulePacks } from '../../workflow-rule-center/api';
 import { useParameterSets } from '../../workflow-parameter-center/api';
 import { useAgentProfiles } from '../../workflow-agent-center/api';
@@ -441,6 +446,8 @@ export const WorkflowDefinitionPage: React.FC = () => {
   const publishMutation = usePublishWorkflowVersion();
   const triggerExecutionMutation = useTriggerWorkflowExecution();
   const validateDslMutation = useValidateWorkflowDsl();
+  const { data: strictModeSetting, isLoading: strictModeLoading } = useWorkflowAgentStrictMode();
+  const updateStrictModeMutation = useUpdateWorkflowAgentStrictMode();
 
   const rulePackOptions = useMemo(
     () =>
@@ -1099,6 +1106,26 @@ export const WorkflowDefinitionPage: React.FC = () => {
     : 0;
   const latestDraftHasBlockingIssues =
     latestDraftUnpublishedCount > 0 || latestDraftUnavailableCount > 0;
+  const strictModeSourceLabel =
+    strictModeSetting?.source === 'DB'
+      ? '系统配置'
+      : strictModeSetting?.source === 'ENV'
+        ? '环境变量'
+        : '默认值';
+
+  const handleStrictModeChange = async (checked: boolean) => {
+    try {
+      await updateStrictModeMutation.mutateAsync(checked);
+      message.success(
+        checked
+          ? '已开启严格模式：鉴权失败将直接标记为 FAILED'
+          : '已关闭严格模式：鉴权失败将按降级策略继续',
+      );
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : '保存失败';
+      message.error(errorMessage);
+    }
+  };
 
   return (
     <Card>
@@ -1110,9 +1137,22 @@ export const WorkflowDefinitionPage: React.FC = () => {
             </Title>
             <Text type="secondary">第一阶段能力：流程定义、版本快照、版本发布。</Text>
           </div>
-          <Button type="primary" onClick={() => setCreateVisible(true)}>
-            新建流程
-          </Button>
+          <Space wrap size={12}>
+            <Space size={6}>
+              <Text type="secondary">Agent 严格模式</Text>
+              <Switch
+                checked={strictModeSetting?.enabled ?? false}
+                loading={strictModeLoading || updateStrictModeMutation.isPending}
+                checkedChildren="严格"
+                unCheckedChildren="宽松"
+                onChange={handleStrictModeChange}
+              />
+              <Tag color="blue">{strictModeSourceLabel}</Tag>
+            </Space>
+            <Button type="primary" onClick={() => setCreateVisible(true)}>
+              新建流程
+            </Button>
+          </Space>
         </Space>
         <Space wrap>
           <Input.Search
@@ -1516,7 +1556,7 @@ export const WorkflowDefinitionPage: React.FC = () => {
       <Drawer
         title={`Workflow Studio - ${studioVersion?.versionCode || ''}`}
         open={studioVisible}
-        width="92vw"
+        width="100%"
         destroyOnClose
         onClose={() => {
           setStudioVisible(false);

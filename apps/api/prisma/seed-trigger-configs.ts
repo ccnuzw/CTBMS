@@ -83,6 +83,82 @@ const TRIGGER_CONFIGS: SeedTriggerConfig[] = [
       topic: '当前玉米现货上涨背景下是否追涨',
     },
   },
+  {
+    workflowId: 'linear_policy_event_guard_public_v1',
+    triggerType: 'MANUAL',
+    name: '政策事件联防手动触发',
+    description: '手动触发政策事件联防流程。',
+    status: 'ACTIVE',
+    paramOverrides: {
+      commodity: 'CORN',
+      region: 'NORTH_CHINA',
+      strategy: 'CONSERVATIVE',
+      context: {
+        eventType: 'POLICY',
+      },
+    },
+  },
+  {
+    workflowId: 'dag_multi_agent_fusion_public_v1',
+    triggerType: 'MANUAL',
+    name: '多智能体融合手动触发',
+    description: '手动触发多智能体融合流程。',
+    status: 'ACTIVE',
+    paramOverrides: {
+      commodity: 'CORN',
+      region: 'NORTH_CHINA',
+      route: 'NORTH_TO_SOUTH',
+      strategy: 'AGGRESSIVE',
+      sessionOverrides: {
+        volatilityFactor: 1.35,
+      },
+    },
+  },
+  {
+    workflowId: 'linear_trade_playbook_public_v1',
+    triggerType: 'ON_DEMAND',
+    name: '交易剧本按需触发',
+    description: '按需触发交易剧本生成流程。',
+    status: 'ACTIVE',
+    paramOverrides: {
+      commodity: 'CORN',
+      region: 'NORTH_CHINA',
+      strategy: 'DAY_TRADE',
+      topic: '日内交易剧本生成',
+    },
+  },
+  {
+    workflowId: 'debate_macro_policy_committee_public_v1',
+    triggerType: 'ON_DEMAND',
+    name: '宏观政策辩论按需触发',
+    description: '按需触发宏观政策辩论流程。',
+    status: 'ACTIVE',
+    paramOverrides: {
+      commodity: 'CORN',
+      region: 'NORTH_CHINA',
+      strategy: 'SWING',
+      topic: '政策扰动场景下是否降低风险暴露',
+    },
+  },
+  {
+    workflowId: 'dag_stress_defense_public_v1',
+    triggerType: 'SCHEDULE',
+    name: '压力防御日终巡检',
+    description: '每日收盘后触发压力防御流程。',
+    status: 'ACTIVE',
+    cronState: 'IDLE',
+    cronConfig: {
+      cronExpression: '30 16 * * 1-5',
+      timezone: 'Asia/Shanghai',
+      maxConcurrent: 1,
+      catchUpMissed: false,
+    },
+    paramOverrides: {
+      commodity: 'CORN',
+      region: 'NORTH_CHINA',
+      strategy: 'CONSERVATIVE',
+    },
+  },
 ];
 
 function toJsonValue(value: unknown): Prisma.InputJsonValue {

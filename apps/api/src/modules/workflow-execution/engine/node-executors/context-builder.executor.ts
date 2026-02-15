@@ -91,12 +91,14 @@ export class ContextBuilderNodeExecutor implements WorkflowNodeExecutor {
             `size=${contextSize}, truncated=${isTruncated}`,
         );
 
+        const safeContext = isTruncated
+            ? this.buildTruncatedContextPreview(debateContext, maxContextSize)
+            : debateContext;
+
         return {
             status: 'SUCCESS',
             output: {
-                debateContext: isTruncated
-                    ? JSON.parse(contextJson.slice(0, maxContextSize) + '"}')
-                    : debateContext,
+                debateContext: safeContext,
                 contextFields: Object.keys(debateContext),
                 contextSize,
                 isTruncated,
@@ -142,5 +144,19 @@ export class ContextBuilderNodeExecutor implements WorkflowNodeExecutor {
             current = (current as Record<string, unknown>)[part];
         }
         return current;
+    }
+
+    private buildTruncatedContextPreview(
+        debateContext: Record<string, unknown>,
+        maxContextSize: number,
+    ): Record<string, unknown> {
+        const fullJson = JSON.stringify(debateContext);
+        const previewSize = Math.max(200, Math.min(maxContextSize, fullJson.length));
+        return {
+            _truncated: true,
+            preview: fullJson.slice(0, previewSize),
+            originalFieldCount: Object.keys(debateContext).length,
+            originalSize: fullJson.length,
+        };
     }
 }

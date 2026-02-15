@@ -76,9 +76,9 @@ const WORKFLOW_NODE_CONTRACT_MAP: Record<WorkflowCanonicalNodeType, WorkflowNode
     nodeType: 'data-fetch',
     inputsSchema: [{ name: 'input', type: 'object' }],
     outputsSchema: [{ name: 'data', type: 'array' }],
-    defaultConfig: { connectorCode: '', timeRangeType: 'LAST_N_DAYS', lookbackDays: 7 },
+    defaultConfig: { dataSourceCode: '', timeRangeType: 'LAST_N_DAYS', lookbackDays: 7 },
     configSchema: withParamOverride({
-      connectorCode: z.string().optional(),
+      dataSourceCode: z.string().optional(),
       timeRangeType: z.string().optional(),
       lookbackDays: z.number().int().min(1).optional(),
     }),
@@ -266,7 +266,16 @@ const WORKFLOW_NODE_CONTRACT_MAP: Record<WorkflowCanonicalNodeType, WorkflowNode
     ],
     defaultConfig: { participants: [], maxRounds: 3, judgePolicy: 'WEIGHTED' },
     configSchema: withParamOverride({
-      participants: z.array(z.string()).optional(),
+      participants: z
+        .array(
+          z.object({
+            agentCode: z.string(),
+            role: z.string().optional(),
+            perspective: z.string().optional(),
+            weight: z.number().optional(),
+          }),
+        )
+        .optional(),
       maxRounds: z.number().int().min(1).optional(),
       judgePolicy: z.string().optional(),
     }),

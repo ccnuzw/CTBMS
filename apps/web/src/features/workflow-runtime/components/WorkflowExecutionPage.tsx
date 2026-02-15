@@ -47,7 +47,7 @@ import {
 import { useWorkflowDefinitions } from '../../workflow-studio/api';
 import { getAgentRoleLabel, getTemplateSourceLabel } from '../../workflow-agent-center/constants';
 import { getErrorMessage } from '../../../api/client';
-import { useSearchParams } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { ExecutionFilterBar } from './ExecutionFilterBar';
 import { ExecutionSummaryCards } from './ExecutionSummaryCards';
 
@@ -710,6 +710,7 @@ const getRiskGateSortScore = (summary: RiskGateSummary | null): number => {
 
 export const WorkflowExecutionPage: React.FC = () => {
   const { message } = App.useApp();
+  const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const [selectedExecutionId, setSelectedExecutionId] = useState<string | null>(null);
   const [selectedWorkflowDefinitionId, setSelectedWorkflowDefinitionId] = useState<
@@ -1179,7 +1180,9 @@ export const WorkflowExecutionPage: React.FC = () => {
         title: '角色',
         dataIndex: 'participantRole',
         width: 140,
-        render: (value: string) => getAgentRoleLabel(value),
+        render: (value: string) => (
+          <div style={{ whiteSpace: 'nowrap' }}>{getAgentRoleLabel(value)}</div>
+        ),
       },
       {
         title: '置信度',
@@ -1196,7 +1199,9 @@ export const WorkflowExecutionPage: React.FC = () => {
       {
         title: '发言摘要',
         dataIndex: 'statementText',
-        render: (value: string) => <Text ellipsis={{ tooltip: value }}>{value}</Text>,
+        render: (value: string) => (
+          <div style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{value}</div>
+        ),
       },
     ],
     [],
@@ -1342,12 +1347,19 @@ export const WorkflowExecutionPage: React.FC = () => {
       {
         title: '操作',
         key: 'actions',
-        width: 180,
+        width: 220,
         fixed: 'right',
         render: (_, record) => (
           <Space size={0} split={<Divider type="vertical" />}>
             <Typography.Link onClick={() => setSelectedExecutionId(record.id)}>
               详情
+            </Typography.Link>
+            <Typography.Link
+              onClick={() =>
+                navigate(`/workflow/replay?executionId=${encodeURIComponent(record.id)}`)
+              }
+            >
+              回放
             </Typography.Link>
             {record.status === 'FAILED' && (
               <Typography.Link
@@ -1369,7 +1381,13 @@ export const WorkflowExecutionPage: React.FC = () => {
         ),
       },
     ],
-    [rerunMutation.isPending, rerunningExecutionId, cancelMutation.isPending, cancelingExecutionId],
+    [
+      navigate,
+      rerunMutation.isPending,
+      rerunningExecutionId,
+      cancelMutation.isPending,
+      cancelingExecutionId,
+    ],
   );
 
   const nodeColumns = useMemo<ColumnsType<NodeExecutionDto>>(
@@ -1533,7 +1551,7 @@ export const WorkflowExecutionPage: React.FC = () => {
 
       <Drawer
         title={`运行详情 - ${selectedExecutionId?.slice(0, 8) || ''}`}
-        width={1000}
+        width={1400}
         open={Boolean(selectedExecutionId)}
         onClose={() => setSelectedExecutionId(null)}
       >

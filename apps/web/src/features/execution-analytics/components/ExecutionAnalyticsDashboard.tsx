@@ -43,6 +43,34 @@ const failureCategoryLabels: Record<string, string> = {
   UNKNOWN: '未知',
 };
 
+const nodeTypeLabels: Record<string, string> = {
+  'manual-trigger': '手动触发',
+  'cron-trigger': '定时触发',
+  'event-trigger': '事件触发',
+  'api-trigger': 'API 触发',
+  'data-fetch': '数据获取',
+  'rule-eval': '规则评估',
+  'rule-pack-eval': '规则包评估',
+  'risk-gate': '风险闸门',
+  'notify': '结果通知',
+  'single-agent': '单智能体',
+  'agent-call': '智能体调用',
+  'agent-group': '智能体组',
+  'debate-round': '多角色辩论',
+  'judge-agent': '裁判智能体',
+  'context-builder': '上下文构建',
+  'formula-calc': '公式计算',
+  'feature-calc': '特征计算',
+  'join': '并行汇聚',
+  'decision-merge': '决策融合',
+  'start': '开始节点',
+  'end': '结束节点',
+  'approval': '人工审批',
+  'report-generate': '报告生成',
+  'dashboard-publish': '看板发布',
+  'external-api-fetch': '外部API',
+};
+
 export const ExecutionAnalyticsDashboard: React.FC = () => {
   const { token } = theme.useToken();
 
@@ -89,7 +117,12 @@ export const ExecutionAnalyticsDashboard: React.FC = () => {
   ];
 
   const nodeColumns: ColumnsType<NodePerformanceStatDto> = [
-    { title: '节点类型', dataIndex: 'nodeType', width: 160 },
+    {
+      title: '节点类型',
+      dataIndex: 'nodeType',
+      width: 160,
+      render: (type: string) => nodeTypeLabels[type] ?? type,
+    },
     { title: '执行次数', dataIndex: 'totalExecutions', width: 90 },
     {
       title: '成功率',
@@ -229,7 +262,7 @@ export const ExecutionAnalyticsDashboard: React.FC = () => {
                       strokeColor={
                         bucket.minMs >= 30000 ? token.colorError
                           : bucket.minMs >= 10000 ? token.colorWarning
-                          : token.colorPrimary
+                            : token.colorPrimary
                       }
                     />
                     <Text style={{ width: 50, textAlign: 'right', fontSize: 12 }}>{bucket.count}</Text>

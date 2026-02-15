@@ -159,8 +159,8 @@ export const DecisionRulePackPage: React.FC = () => {
         searchParams.get('isActive') === 'true'
             ? true
             : searchParams.get('isActive') === 'false'
-              ? false
-              : undefined,
+                ? false
+                : undefined,
     );
     const [page, setPage] = useState(parsePositiveInt(searchParams.get('page'), 1));
     const [pageSize, setPageSize] = useState(parsePositiveInt(searchParams.get('pageSize'), 20));
@@ -639,10 +639,10 @@ export const DecisionRulePackPage: React.FC = () => {
                         onRow={(record) =>
                             record.id === highlightedPackId
                                 ? {
-                                      style: {
-                                          backgroundColor: '#fffbe6',
-                                      },
-                                  }
+                                    style: {
+                                        backgroundColor: '#fffbe6',
+                                    },
+                                }
                                 : {}
                         }
                         pagination={{
@@ -720,7 +720,7 @@ export const DecisionRulePackPage: React.FC = () => {
             <Drawer
                 title={`规则包详情 - ${selectedPack?.name || ''}`}
                 open={Boolean(selectedPackId)}
-                width={980}
+                width={1400}
                 onClose={() => {
                     setSelectedPackId(null);
                     setRuleVisible(false);

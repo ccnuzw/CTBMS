@@ -3,6 +3,7 @@ import { WorkflowNode } from '@packages/types';
 import { PrismaService } from '../../../../prisma';
 import { AIProviderFactory } from '../../../ai/providers/provider.factory';
 import { AIRequestOptions } from '../../../ai/providers/base.provider';
+import { ConfigService } from '../../../config/config.service';
 import { DebateTraceService } from '../../../debate-trace/debate-trace.service';
 import {
     WorkflowNodeExecutor,
@@ -54,6 +55,7 @@ export class DebateRoundNodeExecutor implements WorkflowNodeExecutor {
     constructor(
         private readonly prisma: PrismaService,
         private readonly aiProviderFactory: AIProviderFactory,
+        private readonly configService: ConfigService,
         private readonly debateTraceService: DebateTraceService,
     ) { }
 
@@ -71,6 +73,7 @@ export class DebateRoundNodeExecutor implements WorkflowNodeExecutor {
         const judgePolicy = (config.judgePolicy as string) ?? 'WEIGHTED';
         const consensusThreshold = (config.consensusThreshold as number) ?? 0.8;
         const debateTopic = (config.topic as string) ?? this.extractTopicFromInput(input);
+        const strictModeEnabled = await this.isWorkflowAgentStrictModeEnabled();
 
         if (participants.length < 2) {
             return {
@@ -100,11 +103,11 @@ export class DebateRoundNodeExecutor implements WorkflowNodeExecutor {
         for (let round = 1; round <= maxRounds; round++) {
             this.logger.log(`[${executionId}] 辩论第 ${round}/${maxRounds} 轮`);
 
-            const roundArguments: DebateRoundRecord['arguments'] = [];
-
-            for (const participant of participants) {
+            const participantTasks = participants.map(async (participant) => {
                 const profile = agentProfiles.get(participant.agentCode);
-                if (!profile) continue;
+                if (!profile) {
+                    return null;
+                }
 
                 const effectiveParticipant: DebateParticipant = {
                     ...participant,
@@ -121,15 +124,32 @@ export class DebateRoundNodeExecutor implements WorkflowNodeExecutor {
                     previousArguments,
                     round,
                     maxRounds,
+                    strictModeEnabled,
                 );
 
-                roundArguments.push({
+                return {
                     agentCode: effectiveParticipant.agentCode,
                     role: effectiveParticipant.role,
                     response: response.text,
                     confidence: response.confidence,
                     keyPoints: response.keyPoints,
-                });
+                };
+            });
+
+            let roundArguments: DebateRoundRecord['arguments'];
+            try {
+                const settled = await Promise.all(participantTasks);
+                roundArguments = settled.flatMap((item) => (item ? [item] : []));
+            } catch (error) {
+                const errorMsg = error instanceof Error ? error.message : String(error);
+                return {
+                    status: 'FAILED',
+                    output: {
+                        error: errorMsg,
+                        round,
+                    },
+                    message: `辩论参与者调用失败: ${errorMsg}`,
+                };
             }
 
             // 评估共识度
@@ -165,15 +185,28 @@ export class DebateRoundNodeExecutor implements WorkflowNodeExecutor {
         }
 
         // ── 裁判合成 ──
-        const verdict = await this.synthesizeVerdict(
-            judgePolicy,
-            participants,
-            rounds,
-            debateTopic,
-            agentProfiles,
-            input,
-            paramSnapshot,
-        );
+        let verdict: Record<string, unknown>;
+        try {
+            verdict = await this.synthesizeVerdict(
+                judgePolicy,
+                participants,
+                rounds,
+                debateTopic,
+                agentProfiles,
+                input,
+                paramSnapshot,
+                strictModeEnabled,
+            );
+        } catch (error) {
+            const errorMsg = error instanceof Error ? error.message : String(error);
+            return {
+                status: 'FAILED',
+                output: {
+                    error: errorMsg,
+                },
+                message: `辩论裁决失败: ${errorMsg}`,
+            };
+        }
 
         return {
             status: 'SUCCESS',
@@ -244,8 +277,9 @@ export class DebateRoundNodeExecutor implements WorkflowNodeExecutor {
         previousArguments: string[],
         round: number,
         maxRounds: number,
+        strictModeEnabled: boolean,
     ): Promise<{ text: string; confidence?: number; keyPoints: string[] }> {
-        const modelConfigKey = (profile.modelConfigKey as string) ?? 'default';
+        const modelConfigKey = (profile.modelConfigKey as string) ?? 'DEFAULT';
         const modelConfig = await this.resolveModelConfig(modelConfigKey);
 
         const systemPrompt = this.buildDebateSystemPrompt(
@@ -267,10 +301,19 @@ export class DebateRoundNodeExecutor implements WorkflowNodeExecutor {
             const provider = this.aiProviderFactory.getProvider(providerType);
 
             const requestOptions: AIRequestOptions = {
-                modelName: (modelConfig.modelId as string) ?? 'gemini-2.0-flash',
+                modelName: String(modelConfig.modelName ?? modelConfig.modelId ?? 'gemini-2.0-flash'),
                 apiKey: this.resolveApiKey(modelConfig),
+                apiUrl: typeof modelConfig.apiUrl === 'string' ? modelConfig.apiUrl : undefined,
+                authType: typeof modelConfig.authType === 'string'
+                    ? (modelConfig.authType as AIRequestOptions['authType'])
+                    : undefined,
+                headers: this.toRecord(modelConfig.headers),
+                queryParams: this.toRecord(modelConfig.queryParams),
+                pathOverrides: this.toRecord(modelConfig.pathOverrides),
                 temperature: 0.7,
                 maxTokens: 2000,
+                timeoutMs: typeof profile.timeoutMs === 'number' ? (profile.timeoutMs as number) : undefined,
+                maxRetries: typeof modelConfig.maxRetries === 'number' ? modelConfig.maxRetries as number : undefined,
             };
 
             const response = await provider.generateResponse(
@@ -280,8 +323,12 @@ export class DebateRoundNodeExecutor implements WorkflowNodeExecutor {
             );
 
             return this.parseDebateResponse(response);
-        } catch {
-            this.logger.warn(`Agent ${participant.agentCode} 辩论调用失败，使用默认回复`);
+        } catch (error) {
+            const errorMsg = error instanceof Error ? error.message : String(error);
+            if (strictModeEnabled && this.isCredentialError(errorMsg)) {
+                throw new Error(`Agent ${participant.agentCode} 鉴权失败: ${errorMsg}`);
+            }
+            this.logger.warn(`Agent ${participant.agentCode} 辩论调用失败，使用默认回复: ${errorMsg}`);
             return {
                 text: `[${participant.role}] 无法参与本轮辩论`,
                 keyPoints: [],
@@ -300,6 +347,7 @@ export class DebateRoundNodeExecutor implements WorkflowNodeExecutor {
         agentProfiles: Map<string, Record<string, unknown>>,
         input: Record<string, unknown>,
         paramSnapshot: Record<string, unknown> | undefined,
+        strictModeEnabled: boolean,
     ): Promise<Record<string, unknown>> {
         const lastRound = rounds[rounds.length - 1];
         if (!lastRound) {
@@ -316,7 +364,7 @@ export class DebateRoundNodeExecutor implements WorkflowNodeExecutor {
 
         if (judgePolicy === 'JUDGE_AGENT') {
             return this.judgeAgentVerdict(
-                rounds, topic, participants, agentProfiles, input, paramSnapshot,
+                rounds, topic, participants, agentProfiles, input, paramSnapshot, strictModeEnabled,
             );
         }
 
@@ -386,6 +434,7 @@ export class DebateRoundNodeExecutor implements WorkflowNodeExecutor {
         agentProfiles: Map<string, Record<string, unknown>>,
         input: Record<string, unknown>,
         _paramSnapshot: Record<string, unknown> | undefined,
+        strictModeEnabled: boolean,
     ): Promise<Record<string, unknown>> {
         const judgeSystemPrompt = [
             '你是一位公正的辩论裁判。请基于以下多轮辩论记录，综合各方论点，给出最终结论。',
@@ -417,15 +466,23 @@ export class DebateRoundNodeExecutor implements WorkflowNodeExecutor {
         ].join('\n');
 
         try {
-            const modelConfig = await this.resolveModelConfig('default');
+            const modelConfig = await this.resolveModelConfig('DEFAULT');
             const providerType = this.detectProviderType(modelConfig);
             const provider = this.aiProviderFactory.getProvider(providerType);
 
             const requestOptions: AIRequestOptions = {
-                modelName: (modelConfig.modelId as string) ?? 'gemini-2.0-flash',
+                modelName: String(modelConfig.modelName ?? modelConfig.modelId ?? 'gemini-2.0-flash'),
                 apiKey: this.resolveApiKey(modelConfig),
+                apiUrl: typeof modelConfig.apiUrl === 'string' ? modelConfig.apiUrl : undefined,
+                authType: typeof modelConfig.authType === 'string'
+                    ? (modelConfig.authType as AIRequestOptions['authType'])
+                    : undefined,
+                headers: this.toRecord(modelConfig.headers),
+                queryParams: this.toRecord(modelConfig.queryParams),
+                pathOverrides: this.toRecord(modelConfig.pathOverrides),
                 temperature: 0.3,
                 maxTokens: 2000,
+                maxRetries: typeof modelConfig.maxRetries === 'number' ? modelConfig.maxRetries as number : undefined,
             };
 
             const response = await provider.generateResponse(
@@ -441,7 +498,11 @@ export class DebateRoundNodeExecutor implements WorkflowNodeExecutor {
                 return { method: 'JUDGE_AGENT', conclusion: response, confidence: 50 };
             }
         } catch (error) {
-            this.logger.error(`Judge Agent 裁决失败`, (error as Error).stack);
+            const errorMsg = error instanceof Error ? error.message : String(error);
+            if (strictModeEnabled && this.isCredentialError(errorMsg)) {
+                throw new Error(`Judge Agent 鉴权失败: ${errorMsg}`);
+            }
+            this.logger.error(`Judge Agent 裁决失败: ${errorMsg}`, (error as Error).stack);
             return this.weightedVerdict(
                 participants,
                 rounds[rounds.length - 1],
@@ -498,14 +559,33 @@ export class DebateRoundNodeExecutor implements WorkflowNodeExecutor {
     }
 
     private async resolveModelConfig(configKey: string): Promise<Record<string, unknown>> {
-        const config = await this.prisma.aIModelConfig.findFirst({
-            where: { configKey, isActive: true },
+        const normalized = (configKey || 'DEFAULT').trim();
+        const isDefaultAlias = normalized.toUpperCase() === 'DEFAULT';
+
+        if (isDefaultAlias) {
+            const dynamicDefault = await this.configService.getDefaultAIConfig();
+            if (dynamicDefault?.isActive) {
+                return dynamicDefault as unknown as Record<string, unknown>;
+            }
+        }
+
+        const exactConfig = await this.prisma.aIModelConfig.findFirst({
+            where: { configKey: normalized, isActive: true },
         });
-        return (config as unknown as Record<string, unknown>) ?? {};
+        if (exactConfig) {
+            return exactConfig as unknown as Record<string, unknown>;
+        }
+
+        const fallback = await this.configService.getDefaultAIConfig();
+        return (fallback as unknown as Record<string, unknown>) ?? {};
     }
 
     private detectProviderType(config: Record<string, unknown>): 'google' | 'openai' {
-        const model = String(config.modelId ?? '');
+        const provider = String(config.provider ?? '').toLowerCase();
+        if (provider === 'google' || provider === 'openai') {
+            return provider;
+        }
+        const model = String(config.modelName ?? config.modelId ?? '').toLowerCase();
         if (model.includes('gemini') || model.includes('palm')) return 'google';
         return 'openai';
     }
@@ -514,7 +594,57 @@ export class DebateRoundNodeExecutor implements WorkflowNodeExecutor {
         if (typeof config.apiKey === 'string' && config.apiKey) return config.apiKey;
         const envVar = config.apiKeyEnvVar as string;
         if (envVar) return process.env[envVar] ?? '';
-        return process.env.DEFAULT_AI_API_KEY ?? '';
+        const provider = this.detectProviderType(config);
+        if (provider === 'openai') {
+            return process.env.OPENAI_API_KEY ?? process.env.DEFAULT_AI_API_KEY ?? '';
+        }
+        return process.env.GEMINI_API_KEY ?? process.env.DEFAULT_AI_API_KEY ?? '';
+    }
+
+    private toRecord(value: unknown): Record<string, string> | undefined {
+        if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined;
+        return value as Record<string, string>;
+    }
+
+    private async isWorkflowAgentStrictModeEnabled(): Promise<boolean> {
+        try {
+            const setting = await this.configService.getWorkflowAgentStrictMode();
+            return setting.enabled;
+        } catch {
+            const fallback = this.parseBooleanFlag(process.env.WORKFLOW_AGENT_STRICT_MODE);
+            if (fallback !== null) {
+                this.logger.warn('读取 workflow strict mode 配置失败，回退到环境变量');
+                return fallback;
+            }
+            return false;
+        }
+    }
+
+    private isCredentialError(errorMsg: string): boolean {
+        const normalized = errorMsg.toLowerCase();
+        return normalized.includes('api key not valid')
+            || normalized.includes('api_key_invalid')
+            || normalized.includes('invalid api key')
+            || normalized.includes('incorrect api key')
+            || normalized.includes('missing api key')
+            || normalized.includes('invalid authentication')
+            || normalized.includes('authentication failed')
+            || normalized.includes('unauthorized')
+            || normalized.includes('401');
+    }
+
+    private parseBooleanFlag(value: unknown): boolean | null {
+        if (typeof value === 'boolean') return value;
+        if (typeof value === 'number' && Number.isFinite(value)) {
+            if (value === 1) return true;
+            if (value === 0) return false;
+        }
+        if (typeof value !== 'string') return null;
+        const normalized = value.trim().toLowerCase();
+        if (!normalized) return null;
+        if (['1', 'true', 'yes', 'on', 'enabled'].includes(normalized)) return true;
+        if (['0', 'false', 'no', 'off', 'disabled'].includes(normalized)) return false;
+        return null;
     }
 
     private buildDebateSystemPrompt(

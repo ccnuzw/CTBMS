@@ -1,10 +1,11 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { WorkflowNode } from '@packages/types';
-import { Prisma } from '@prisma/client';
+import { AIModelConfig, Prisma } from '@prisma/client';
 import { PrismaService } from '../../../../prisma';
 import { AIProviderFactory } from '../../../ai/providers/provider.factory';
 import { AIRequestOptions } from '../../../ai/providers/base.provider';
 import { OutputSchemaRegistryService } from '../../../agent-profile';
+import { ConfigService } from '../../../config/config.service';
 import {
     NodeExecutionContext,
     NodeExecutionResult,
@@ -30,6 +31,7 @@ export class AgentCallNodeExecutor implements WorkflowNodeExecutor {
         private readonly prisma: PrismaService,
         private readonly aiProviderFactory: AIProviderFactory,
         private readonly outputSchemaRegistryService: OutputSchemaRegistryService,
+        private readonly configService: ConfigService,
     ) { }
 
     supports(node: WorkflowNode): boolean {
@@ -95,9 +97,7 @@ export class AgentCallNodeExecutor implements WorkflowNodeExecutor {
         }
 
         // 3. 获取 AI 模型配置
-        const modelConfig = await this.prisma.aIModelConfig.findFirst({
-            where: { configKey: profile.modelConfigKey, isActive: true },
-        });
+        const modelConfig = await this.resolveModelConfig(String(profile.modelConfigKey ?? 'DEFAULT'));
         if (!modelConfig) {
             return {
                 status: 'FAILED',
@@ -165,18 +165,15 @@ export class AgentCallNodeExecutor implements WorkflowNodeExecutor {
                 if (retryResult.success) {
                     rawResponse = retryResult.response!;
                 } else {
-                    return {
-                        status: 'FAILED',
-                        output: { error: errorMsg, retryAttempts: retryCount },
-                        message: `Agent[${agentCode}] 调用失败（已重试 ${retryCount} 次）: ${errorMsg}`,
-                    };
+                    return await this.buildInvocationFailureResult(
+                        context,
+                        agentCode,
+                        errorMsg,
+                        retryCount,
+                    );
                 }
             } else {
-                return {
-                    status: 'FAILED',
-                    output: { error: errorMsg },
-                    message: `Agent[${agentCode}] 调用失败: ${errorMsg}`,
-                };
+                return await this.buildInvocationFailureResult(context, agentCode, errorMsg);
             }
         }
 
@@ -281,6 +278,106 @@ export class AgentCallNodeExecutor implements WorkflowNodeExecutor {
         return undefined;
     }
 
+    private async resolveModelConfig(configKey: string): Promise<AIModelConfig | null> {
+        const normalized = (configKey || 'DEFAULT').trim() || 'DEFAULT';
+        const isDefaultAlias = normalized.toUpperCase() === 'DEFAULT';
+
+        if (isDefaultAlias) {
+            const dynamicDefault = await this.configService.getDefaultAIConfig();
+            if (dynamicDefault?.isActive) {
+                return dynamicDefault;
+            }
+        }
+
+        const exactConfig = await this.prisma.aIModelConfig.findFirst({
+            where: { configKey: normalized, isActive: true },
+        });
+        if (exactConfig) {
+            return exactConfig;
+        }
+
+        if (!isDefaultAlias) {
+            const dynamicDefault = await this.configService.getDefaultAIConfig();
+            if (dynamicDefault?.isActive) {
+                return dynamicDefault;
+            }
+        }
+
+        return null;
+    }
+
+    private async buildInvocationFailureResult(
+        context: NodeExecutionContext,
+        agentCode: string,
+        errorMsg: string,
+        retryAttempts = 0,
+    ): Promise<NodeExecutionResult> {
+        const strictModeEnabled = await this.isWorkflowAgentStrictModeEnabled();
+
+        if (this.isCredentialError(errorMsg) && !strictModeEnabled) {
+            return {
+                status: 'SUCCESS',
+                output: {
+                    ...context.input,
+                    agentCode,
+                    skipped: true,
+                    degraded: true,
+                    skipReason: 'agent-auth-invalid',
+                    error: errorMsg,
+                    retryAttempts,
+                },
+                message: `Agent[${agentCode}] 调用鉴权失败，已按降级策略跳过`,
+            };
+        }
+
+        return {
+            status: 'FAILED',
+            output: retryAttempts > 0 ? { error: errorMsg, retryAttempts } : { error: errorMsg },
+            message:
+                retryAttempts > 0
+                    ? `Agent[${agentCode}] 调用失败（已重试 ${retryAttempts} 次）: ${errorMsg}`
+                    : `Agent[${agentCode}] 调用失败: ${errorMsg}`,
+        };
+    }
+
+    private async isWorkflowAgentStrictModeEnabled(): Promise<boolean> {
+        try {
+            const setting = await this.configService.getWorkflowAgentStrictMode();
+            return setting.enabled;
+        } catch {
+            const fallback = this.parseBooleanFlag(process.env.WORKFLOW_AGENT_STRICT_MODE);
+            if (fallback !== null) {
+                this.logger.warn('读取 workflow strict mode 配置失败，回退到环境变量');
+                return fallback;
+            }
+            return false;
+        }
+    }
+
+    private isCredentialError(errorMsg: string): boolean {
+        const normalized = errorMsg.toLowerCase();
+        return normalized.includes('api key not valid')
+            || normalized.includes('api_key_invalid')
+            || normalized.includes('invalid api key')
+            || normalized.includes('incorrect api key')
+            || normalized.includes('missing api key')
+            || normalized.includes('invalid authentication');
+    }
+
+    private parseBooleanFlag(value: unknown): boolean | null {
+        if (typeof value === 'boolean') return value;
+        if (typeof value === 'number' && Number.isFinite(value)) {
+            if (value === 1) return true;
+            if (value === 0) return false;
+        }
+        if (typeof value !== 'string') return null;
+        const normalized = value.trim().toLowerCase();
+        if (!normalized) return null;
+        if (['1', 'true', 'yes', 'on', 'enabled'].includes(normalized)) return true;
+        if (['0', 'false', 'no', 'off', 'disabled'].includes(normalized)) return false;
+        return null;
+    }
+
     /**
      * 安全地将 JSON 字段转换为 Record<string, string>
      */
@@ -300,12 +397,15 @@ export class AgentCallNodeExecutor implements WorkflowNodeExecutor {
         const vars: Record<string, string> = {};
 
         // 上游节点输入
+        vars['context'] = JSON.stringify(context.input ?? {});
+        vars['input'] = vars['context'];
         for (const [key, value] of Object.entries(context.input)) {
             vars[`input.${key}`] = typeof value === 'string' ? value : JSON.stringify(value);
         }
 
         // 参数快照
         if (context.paramSnapshot) {
+            vars['params'] = JSON.stringify(context.paramSnapshot);
             for (const [key, value] of Object.entries(context.paramSnapshot)) {
                 vars[`params.${key}`] = typeof value === 'string' ? value : JSON.stringify(value);
             }
@@ -372,7 +472,7 @@ export class AgentCallNodeExecutor implements WorkflowNodeExecutor {
             try {
                 // 尝试提取 JSON 块（兼容 markdown code block）
                 const jsonMatch = raw.match(/```(?:json)?\s*\n?([\s\S]*?)\n?```/);
-                const jsonStr = jsonMatch ? jsonMatch[1] : raw;
+                const jsonStr = jsonMatch ? jsonMatch[1] : this.extractFirstJsonObject(raw) ?? raw;
                 const parsed = JSON.parse(jsonStr.trim());
                 return typeof parsed === 'object' && parsed !== null ? parsed : { result: parsed };
             } catch {
@@ -383,6 +483,48 @@ export class AgentCallNodeExecutor implements WorkflowNodeExecutor {
 
         // markdown / text / csv 直接返回原文
         return { content: raw, format: outputFormat };
+    }
+
+    private extractFirstJsonObject(raw: string): string | null {
+        const start = raw.indexOf('{');
+        if (start < 0) {
+            return null;
+        }
+        let depth = 0;
+        let inString = false;
+        let escape = false;
+        for (let i = start; i < raw.length; i += 1) {
+            const ch = raw[i];
+            if (inString) {
+                if (escape) {
+                    escape = false;
+                    continue;
+                }
+                if (ch === '\\') {
+                    escape = true;
+                    continue;
+                }
+                if (ch === '"') {
+                    inString = false;
+                }
+                continue;
+            }
+            if (ch === '"') {
+                inString = true;
+                continue;
+            }
+            if (ch === '{') {
+                depth += 1;
+                continue;
+            }
+            if (ch === '}') {
+                depth -= 1;
+                if (depth === 0) {
+                    return raw.slice(start, i + 1);
+                }
+            }
+        }
+        return null;
     }
 
     /**

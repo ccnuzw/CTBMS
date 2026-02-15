@@ -10,9 +10,13 @@ import {
 } from './dto/dictionary.dto';
 import { CreateAIModelConfigDto } from './dto/create-ai-model-config.dto';
 
+type WorkflowAgentStrictModeSource = 'DB' | 'ENV' | 'DEFAULT';
+
 @Injectable()
 export class ConfigService implements OnModuleInit {
     private readonly logger = new Logger(ConfigService.name);
+    private static readonly WORKFLOW_RUNTIME_FLAG_DOMAIN_CODE = 'WORKFLOW_RUNTIME_FLAGS';
+    private static readonly WORKFLOW_AGENT_STRICT_MODE_CODE = 'WORKFLOW_AGENT_STRICT_MODE';
 
     // Cache
     private mappingRulesCache: Map<string, BusinessMappingRule[]> = new Map();
@@ -22,6 +26,37 @@ export class ConfigService implements OnModuleInit {
     private readonly CACHE_TTL_MS = 60 * 1000; // 1 minute generic cache
 
     constructor(private readonly prisma: PrismaService) { }
+
+    private parseBooleanFlag(value: unknown): boolean | null {
+        if (typeof value === 'boolean') {
+            return value;
+        }
+        if (typeof value === 'number' && Number.isFinite(value)) {
+            if (value === 1) return true;
+            if (value === 0) return false;
+        }
+        if (typeof value === 'string') {
+            const normalized = value.trim().toLowerCase();
+            if (!normalized) return null;
+            if (['1', 'true', 'yes', 'on', 'enabled'].includes(normalized)) return true;
+            if (['0', 'false', 'no', 'off', 'disabled'].includes(normalized)) return false;
+        }
+        return null;
+    }
+
+    private parseStrictModeFromMeta(meta: Prisma.JsonValue | null): boolean | null {
+        if (meta === null) {
+            return null;
+        }
+        if (typeof meta === 'object' && !Array.isArray(meta)) {
+            const enabledValue = (meta as Record<string, unknown>).enabled;
+            const parsed = this.parseBooleanFlag(enabledValue);
+            if (parsed !== null) {
+                return parsed;
+            }
+        }
+        return this.parseBooleanFlag(meta);
+    }
 
     private normalizeNullableString(value?: string | null): string | null | undefined {
         if (value === undefined) return undefined;
@@ -129,6 +164,121 @@ export class ConfigService implements OnModuleInit {
         }
 
         return Array.from(this.aiConfigCache.values());
+    }
+
+    async getWorkflowAgentStrictMode(): Promise<{
+        enabled: boolean;
+        source: WorkflowAgentStrictModeSource;
+        updatedAt: string | null;
+    }> {
+        const strictModeItem = await this.prisma.dictionaryItem.findUnique({
+            where: {
+                domainCode_code: {
+                    domainCode: ConfigService.WORKFLOW_RUNTIME_FLAG_DOMAIN_CODE,
+                    code: ConfigService.WORKFLOW_AGENT_STRICT_MODE_CODE,
+                },
+            },
+            select: {
+                meta: true,
+                updatedAt: true,
+            },
+        });
+
+        if (strictModeItem) {
+            const parsedFromMeta = this.parseStrictModeFromMeta(strictModeItem.meta as Prisma.JsonValue | null);
+            if (parsedFromMeta !== null) {
+                return {
+                    enabled: parsedFromMeta,
+                    source: 'DB',
+                    updatedAt: strictModeItem.updatedAt.toISOString(),
+                };
+            }
+        }
+
+        const parsedFromEnv = this.parseBooleanFlag(process.env.WORKFLOW_AGENT_STRICT_MODE);
+        if (parsedFromEnv !== null) {
+            return {
+                enabled: parsedFromEnv,
+                source: 'ENV',
+                updatedAt: null,
+            };
+        }
+
+        return {
+            enabled: false,
+            source: 'DEFAULT',
+            updatedAt: null,
+        };
+    }
+
+    async setWorkflowAgentStrictMode(
+        enabled: boolean,
+        updatedBy?: string,
+    ): Promise<{
+        enabled: boolean;
+        source: WorkflowAgentStrictModeSource;
+        updatedAt: string | null;
+    }> {
+        if (typeof enabled !== 'boolean') {
+            throw new BadRequestException('enabled 必须是布尔值');
+        }
+
+        const updateMeta = {
+            enabled,
+            updatedBy: updatedBy ?? null,
+            updatedAt: new Date().toISOString(),
+        } as Prisma.InputJsonValue;
+
+        await this.prisma.$transaction(async (tx) => {
+            await tx.dictionaryDomain.upsert({
+                where: { code: ConfigService.WORKFLOW_RUNTIME_FLAG_DOMAIN_CODE },
+                update: {
+                    name: '工作流运行时开关',
+                    description: '工作流执行相关的系统运行开关',
+                    category: 'WORKFLOW',
+                    usageHint: '用于控制工作流执行期的全局行为',
+                    usageLocations: ['system/config/ai-models'],
+                    isSystemDomain: true,
+                    isActive: true,
+                },
+                create: {
+                    code: ConfigService.WORKFLOW_RUNTIME_FLAG_DOMAIN_CODE,
+                    name: '工作流运行时开关',
+                    description: '工作流执行相关的系统运行开关',
+                    category: 'WORKFLOW',
+                    usageHint: '用于控制工作流执行期的全局行为',
+                    usageLocations: ['system/config/ai-models'],
+                    isSystemDomain: true,
+                    isActive: true,
+                },
+            });
+
+            await tx.dictionaryItem.upsert({
+                where: {
+                    domainCode_code: {
+                        domainCode: ConfigService.WORKFLOW_RUNTIME_FLAG_DOMAIN_CODE,
+                        code: ConfigService.WORKFLOW_AGENT_STRICT_MODE_CODE,
+                    },
+                },
+                update: {
+                    label: 'Agent 鉴权严格模式',
+                    sortOrder: 100,
+                    isActive: true,
+                    meta: updateMeta,
+                },
+                create: {
+                    domainCode: ConfigService.WORKFLOW_RUNTIME_FLAG_DOMAIN_CODE,
+                    code: ConfigService.WORKFLOW_AGENT_STRICT_MODE_CODE,
+                    label: 'Agent 鉴权严格模式',
+                    sortOrder: 100,
+                    isActive: true,
+                    meta: updateMeta,
+                },
+            });
+        });
+
+        await this.refreshCache();
+        return this.getWorkflowAgentStrictMode();
     }
 
     /**

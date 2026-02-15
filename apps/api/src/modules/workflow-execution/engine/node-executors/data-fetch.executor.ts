@@ -7,6 +7,14 @@ import {
     WorkflowNodeExecutor,
 } from '../node-executor.interface';
 
+const LEGACY_DATA_SOURCE_CODE_MAP: Record<string, string> = {
+    INTERNAL_DB: 'MARKET_INTEL_INTERNAL_DB',
+    VOLATILITY_DB: 'MARKET_EVENT_INTERNAL_DB',
+    INTERNAL_MARKET_DB: 'MARKET_INTEL_INTERNAL_DB',
+    market_intel_db: 'MARKET_INTEL_INTERNAL_DB',
+    inventory_db: 'MARKET_EVENT_INTERNAL_DB',
+};
+
 /**
  * 数据采集节点执行器
  *
@@ -31,14 +39,25 @@ export class DataFetchNodeExecutor implements WorkflowNodeExecutor {
 
     async execute(context: NodeExecutionContext): Promise<NodeExecutionResult> {
         const config = context.node.config as Record<string, unknown>;
-        const dataSourceCode = config.dataSourceCode as string | undefined;
+        // Backward compatibility: early seeded templates used connectorCode on data-fetch nodes.
+        const rawDataSourceCode =
+            (config.dataSourceCode as string | undefined) ??
+            (config.connectorCode as string | undefined);
 
-        if (!dataSourceCode) {
+        if (!rawDataSourceCode) {
             return {
                 status: 'FAILED',
                 output: {},
                 message: '节点配置缺少 dataSourceCode',
             };
+        }
+
+        const dataSourceCode = LEGACY_DATA_SOURCE_CODE_MAP[rawDataSourceCode] ?? rawDataSourceCode;
+
+        if (dataSourceCode !== rawDataSourceCode) {
+            this.logger.warn(
+                `DataFetch 使用兼容映射: ${rawDataSourceCode} -> ${dataSourceCode}`,
+            );
         }
 
         // 1. 获取 DataConnector

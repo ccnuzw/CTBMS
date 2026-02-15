@@ -6,6 +6,7 @@ import { PrismaService } from '../../prisma';
 interface DebateTraceRecord {
   roundNumber: number;
   participantCode: string;
+  participantName?: string;
   confidence: number | null;
   previousConfidence: number | null;
   isJudgement: boolean;
@@ -15,7 +16,7 @@ interface DebateTraceRecord {
 export class DebateTraceService {
   private readonly logger = new Logger(DebateTraceService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private readonly prisma: PrismaService) { }
 
   /**
    * 批量写入辩论轨迹（由执行器调用）
@@ -76,10 +77,38 @@ export class DebateTraceService {
     });
 
     // 按轮次分组
+    // 获取参与者名称映射
+    const participantCodes = [...new Set(allTraces.map((t) => t.participantCode))];
+    const agentProfiles = await this.prisma.agentProfile.findMany({
+      where: { agentCode: { in: participantCodes } },
+      select: { agentCode: true, agentName: true },
+    });
+    const nameMap = new Map(agentProfiles.map((p) => [p.agentCode, p.agentName]));
+
+    // 按轮次分组并填充名称和归一化置信度
     const roundMap = new Map<number, DebateTraceRecord[]>();
     for (const trace of allTraces) {
       const existing = roundMap.get(trace.roundNumber) ?? [];
-      existing.push(trace as DebateTraceRecord);
+
+      // 归一化置信度 (如果大于1则除以100)
+      let confidence = trace.confidence;
+      if (confidence !== null && confidence > 1) {
+        confidence = confidence / 100;
+      }
+
+      let previousConfidence = trace.previousConfidence;
+      if (previousConfidence !== null && previousConfidence > 1) {
+        previousConfidence = previousConfidence / 100;
+      }
+
+      const enrichedTrace = {
+        ...trace,
+        confidence,
+        previousConfidence,
+        participantName: nameMap.get(trace.participantCode),
+      };
+
+      existing.push(enrichedTrace as DebateTraceRecord);
       roundMap.set(trace.roundNumber, existing);
     }
 
@@ -102,7 +131,7 @@ export class DebateTraceService {
         const avgPrevConfidence =
           prevConfidences.length > 0
             ? prevConfidences.reduce((sum: number, c: number) => sum + c, 0) /
-              prevConfidences.length
+            prevConfidences.length
             : null;
 
         return {

@@ -120,8 +120,8 @@ export const CreateAgentPromptTemplateSchema = z.object({
   userPromptTemplate: z.string().min(1).max(20000),
   fewShotExamples: z.array(z.record(z.unknown())).max(20).optional(),
   outputFormat: AgentPromptOutputFormatEnum.default('json'),
-  variables: z.record(z.unknown()).optional(),
-  guardrails: z.record(z.unknown()).optional(),
+  variables: z.any().optional(), // Allow any structure for visual editor
+  guardrails: z.any().optional(), // Allow any structure for visual editor
   outputSchemaCode: z.string().max(120).optional(),
   templateSource: WorkflowTemplateSourceEnum.default('PRIVATE'),
 });
@@ -133,8 +133,8 @@ export const UpdateAgentPromptTemplateSchema = z.object({
   userPromptTemplate: z.string().min(1).max(20000).optional(),
   fewShotExamples: z.array(z.record(z.unknown())).max(20).optional(),
   outputFormat: AgentPromptOutputFormatEnum.optional(),
-  variables: z.record(z.unknown()).optional(),
-  guardrails: z.record(z.unknown()).optional(),
+  variables: z.any().optional(), // Allow any structure for visual editor
+  guardrails: z.any().optional(), // Allow any structure for visual editor
   outputSchemaCode: z.string().max(120).optional(),
   isActive: z.boolean().optional(),
 });
@@ -180,6 +180,7 @@ export const DebateRoundTraceSchema = z.object({
   nodeExecutionId: z.string().uuid().nullable().optional(),
   roundNumber: z.number().int().min(1),
   participantCode: z.string().min(1),
+  participantName: z.string().optional(),
   participantRole: z.string().min(1),
   stance: z.string().nullable().optional(),
   confidence: z.number().min(0).max(1).nullable().optional(),

@@ -1,4 +1,5 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import type { ColumnsType } from 'antd/es/table';
 import {
     App,
@@ -30,6 +31,8 @@ import {
 } from '../api';
 import { AGENT_ROLE_OPTIONS, getAgentRoleLabel, getAgentStatusLabel } from '../constants';
 import { AgentPromptTemplateHistory } from './AgentPromptTemplateHistory';
+import { VariablesEditor } from './VariablesEditor';
+import { GuardrailsEditor } from './GuardrailsEditor';
 
 const { Title } = Typography;
 
@@ -37,6 +40,14 @@ export const AgentPromptTemplatePage: React.FC = () => {
     const { message } = App.useApp();
     const [createForm] = Form.useForm<CreateAgentPromptTemplateDto>();
     const [editForm] = Form.useForm<any>();
+    const [urlSearchParams, setUrlSearchParams] = useSearchParams();
+
+    // Parse initial values from URL
+    const initialPage = Number(urlSearchParams.get('page')) || 1;
+    const initialPageSize = Number(urlSearchParams.get('pageSize')) || 20;
+    const initialKeyword = urlSearchParams.get('keyword') || '';
+    const initialIsActive = urlSearchParams.get('isActive') !== 'false'; // Default true unless 'false'
+
     const [searchParams, setSearchParams] = useState<{
         keyword?: string;
         isActive?: boolean;
@@ -44,10 +55,21 @@ export const AgentPromptTemplatePage: React.FC = () => {
         page: number;
         pageSize: number;
     }>({
-        page: 1,
-        pageSize: 20,
-        isActive: true,
+        page: initialPage,
+        pageSize: initialPageSize,
+        isActive: initialIsActive,
+        keyword: initialKeyword,
     });
+
+    // Sync state to URL
+    useEffect(() => {
+        const nextParams = new URLSearchParams();
+        if (searchParams.keyword) nextParams.set('keyword', searchParams.keyword);
+        if (searchParams.isActive !== undefined) nextParams.set('isActive', String(searchParams.isActive));
+        nextParams.set('page', String(searchParams.page));
+        nextParams.set('pageSize', String(searchParams.pageSize));
+        setUrlSearchParams(nextParams, { replace: true });
+    }, [searchParams, setUrlSearchParams]);
 
     const { data, isLoading, refetch } = useAgentPromptTemplates({ ...searchParams, includePublic: true });
 
@@ -63,18 +85,32 @@ export const AgentPromptTemplatePage: React.FC = () => {
     const handleCreate = async () => {
         try {
             const values = await createForm.validateFields();
-            // Handle JSON fields
-            let variables, guardrails;
-            try {
-                variables = values.variables ? JSON.parse(values.variables as any) : undefined;
-                guardrails = values.guardrails ? JSON.parse(values.guardrails as any) : undefined;
-            } catch (e) {
-                message.error('JSON 格式错误');
-                return;
-            }
+            const formValues = values as any;
+
+            // Transform Variables List to Object
+            const variables = (formValues.variablesList || []).reduce((acc: any, curr: { key: string; description: string }) => {
+                acc[curr.key] = curr.description;
+                return acc;
+            }, {});
+
+            // Transform Guardrails to Object
+            const guardrails: any = {};
+            if (formValues.guardrailsConfig?.noHallucination) guardrails.noHallucination = true;
+            if (formValues.guardrailsConfig?.requireEvidence) guardrails.requireEvidence = true;
+            (formValues.guardrailsConfig?.customRules || []).forEach((rule: { key: string; value: string }) => {
+                try {
+                    // Try to parse boolean or number
+                    if (rule.value === 'true') guardrails[rule.key] = true;
+                    else if (rule.value === 'false') guardrails[rule.key] = false;
+                    else if (!isNaN(Number(rule.value))) guardrails[rule.key] = Number(rule.value);
+                    else guardrails[rule.key] = rule.value;
+                } catch (e) {
+                    guardrails[rule.key] = rule.value;
+                }
+            });
 
             await createMutation.mutateAsync({
-                ...values,
+                ...formValues,
                 variables,
                 guardrails,
             });
@@ -91,15 +127,27 @@ export const AgentPromptTemplatePage: React.FC = () => {
         if (!editingTemplate) return;
         try {
             const values = await editForm.validateFields();
-            // Handle JSON fields
-            let variables, guardrails;
-            try {
-                variables = values.variablesText ? JSON.parse(values.variablesText) : undefined;
-                guardrails = values.guardrailsText ? JSON.parse(values.guardrailsText) : undefined;
-            } catch (e) {
-                message.error('JSON 格式错误');
-                return;
-            }
+            const formValues = values as any;
+
+            // Transform Variables List to Object
+            const variables = (formValues.variablesList || []).reduce((acc: any, curr: { key: string; description: string }) => {
+                acc[curr.key] = curr.description;
+                return acc;
+            }, {});
+
+            const guardrails: any = {};
+            if (formValues.guardrailsConfig?.noHallucination) guardrails.noHallucination = true;
+            if (formValues.guardrailsConfig?.requireEvidence) guardrails.requireEvidence = true;
+            (formValues.guardrailsConfig?.customRules || []).forEach((rule: { key: string; value: string }) => {
+                try {
+                    if (rule.value === 'true') guardrails[rule.key] = true;
+                    else if (rule.value === 'false') guardrails[rule.key] = false;
+                    else if (!isNaN(Number(rule.value))) guardrails[rule.key] = Number(rule.value);
+                    else guardrails[rule.key] = rule.value;
+                } catch (e) {
+                    guardrails[rule.key] = rule.value;
+                }
+            });
 
             await updateMutation.mutateAsync({
                 id: editingTemplate.id,
@@ -153,6 +201,24 @@ export const AgentPromptTemplatePage: React.FC = () => {
                             setDrawerVisible(true);
                         }}>详情</Button>
                         <Button type="link" onClick={() => {
+                            // Transform variables object to list
+                            const variablesList = Object.entries(record.variables || {}).map(([key, description]) => ({
+                                key,
+                                description: String(description),
+                            }));
+
+                            // Transform guardrails object to config
+                            const guardrails = record.guardrails || {};
+                            const customRules = Object.entries(guardrails)
+                                .filter(([k]) => k !== 'noHallucination' && k !== 'requireEvidence')
+                                .map(([k, v]) => ({ key: k, value: String(v) }));
+
+                            const guardrailsConfig = {
+                                noHallucination: !!guardrails.noHallucination,
+                                requireEvidence: !!guardrails.requireEvidence,
+                                customRules,
+                            };
+
                             setEditingTemplate(record);
                             editForm.setFieldsValue({
                                 name: record.name,
@@ -162,8 +228,8 @@ export const AgentPromptTemplatePage: React.FC = () => {
                                 outputFormat: record.outputFormat,
                                 outputSchemaCode: record.outputSchemaCode,
                                 isActive: record.isActive,
-                                variablesText: JSON.stringify(record.variables || {}, null, 2),
-                                guardrailsText: JSON.stringify(record.guardrails || {}, null, 2),
+                                variablesList,
+                                guardrailsConfig,
                             });
                             setEditVisible(true);
                         }}>编辑</Button>
@@ -183,6 +249,7 @@ export const AgentPromptTemplatePage: React.FC = () => {
                     <Space>
                         <Input.Search
                             placeholder="搜索编码/名称"
+                            defaultValue={initialKeyword}
                             onSearch={(v) => setSearchParams((p) => ({ ...p, keyword: v, page: 1 }))}
                             style={{ width: 240 }}
                         />
@@ -244,12 +311,8 @@ export const AgentPromptTemplatePage: React.FC = () => {
                         <Input placeholder="关联的输出 Schema 编码" />
                     </Form.Item>
 
-                    <Form.Item name="variables" label="变量定义 (JSON)">
-                        <Input.TextArea rows={4} />
-                    </Form.Item>
-                    <Form.Item name="guardrails" label="防护规则 (JSON)">
-                        <Input.TextArea rows={4} placeholder="例如: { 'no_hallucination': true }" />
-                    </Form.Item>
+                    <VariablesEditor name="variablesList" />
+                    <GuardrailsEditor name="guardrailsConfig" />
                     <Form.Item name="templateSource" label="来源" hidden>
                         <Input />
                     </Form.Item>
@@ -294,12 +357,8 @@ export const AgentPromptTemplatePage: React.FC = () => {
                                     <Form.Item name="isActive" label="启用状态" valuePropName="checked">
                                         <Switch checkedChildren="启用" unCheckedChildren="停用" />
                                     </Form.Item>
-                                    <Form.Item name="variablesText" label="变量定义 (JSON)">
-                                        <Input.TextArea rows={4} />
-                                    </Form.Item>
-                                    <Form.Item name="guardrailsText" label="防护规则 (JSON)">
-                                        <Input.TextArea rows={4} />
-                                    </Form.Item>
+                                    <VariablesEditor name="variablesList" />
+                                    <GuardrailsEditor name="guardrailsConfig" />
                                 </Form>
                             ),
                         },

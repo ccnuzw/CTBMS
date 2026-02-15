@@ -32,6 +32,12 @@ const BINDING_TARGETS: SeedBindingTarget[] = [
     metadata: { role: 'volatile', source: 'SYSTEM_SEED' },
   },
   {
+    bindingType: 'PARAMETER_SET',
+    code: 'WORKFLOW_RUNTIME_GUARDRAIL_SET',
+    priority: 30,
+    metadata: { role: 'runtime_governance', source: 'SYSTEM_SEED' },
+  },
+  {
     bindingType: 'DECISION_RULE_PACK',
     code: 'corn_baseline_rule_pack_v1',
     priority: 10,
@@ -62,6 +68,24 @@ const BINDING_TARGETS: SeedBindingTarget[] = [
     metadata: { role: 'judge', source: 'SYSTEM_SEED' },
   },
   {
+    bindingType: 'AGENT_PROFILE',
+    code: 'POLICY_ANALYST_AGENT_V1',
+    priority: 40,
+    metadata: { role: 'policy', source: 'SYSTEM_SEED' },
+  },
+  {
+    bindingType: 'AGENT_PROFILE',
+    code: 'BASIS_ARBITRAGE_AGENT_V1',
+    priority: 50,
+    metadata: { role: 'arbitrage', source: 'SYSTEM_SEED' },
+  },
+  {
+    bindingType: 'AGENT_PROFILE',
+    code: 'SCENARIO_STRESS_AGENT_V1',
+    priority: 60,
+    metadata: { role: 'stress', source: 'SYSTEM_SEED' },
+  },
+  {
     bindingType: 'WORKFLOW_DEFINITION',
     code: 'quick_rule_guard_public_v1',
     priority: 10,
@@ -74,6 +98,36 @@ const BINDING_TARGETS: SeedBindingTarget[] = [
     metadata: { role: 'debate', source: 'SYSTEM_SEED' },
   },
   {
+    bindingType: 'WORKFLOW_DEFINITION',
+    code: 'linear_policy_event_guard_public_v1',
+    priority: 30,
+    metadata: { role: 'policy-risk', source: 'SYSTEM_SEED' },
+  },
+  {
+    bindingType: 'WORKFLOW_DEFINITION',
+    code: 'dag_multi_agent_fusion_public_v1',
+    priority: 40,
+    metadata: { role: 'multi-agent-fusion', source: 'SYSTEM_SEED' },
+  },
+  {
+    bindingType: 'WORKFLOW_DEFINITION',
+    code: 'linear_trade_playbook_public_v1',
+    priority: 50,
+    metadata: { role: 'playbook', source: 'SYSTEM_SEED' },
+  },
+  {
+    bindingType: 'WORKFLOW_DEFINITION',
+    code: 'debate_macro_policy_committee_public_v1',
+    priority: 60,
+    metadata: { role: 'macro-policy-debate', source: 'SYSTEM_SEED' },
+  },
+  {
+    bindingType: 'WORKFLOW_DEFINITION',
+    code: 'dag_stress_defense_public_v1',
+    priority: 70,
+    metadata: { role: 'stress-defense', source: 'SYSTEM_SEED' },
+  },
+  {
     bindingType: 'TEMPLATE_CATALOG',
     code: 'TPL_QUICK_RULE_GUARD_V1',
     priority: 40,
@@ -83,6 +137,30 @@ const BINDING_TARGETS: SeedBindingTarget[] = [
     bindingType: 'TEMPLATE_CATALOG',
     code: 'TPL_DAG_SIGNAL_FUSION_V1',
     priority: 50,
+    metadata: { role: 'official-template', source: 'SYSTEM_SEED' },
+  },
+  {
+    bindingType: 'TEMPLATE_CATALOG',
+    code: 'TPL_MULTI_AGENT_FUSION_V1',
+    priority: 60,
+    metadata: { role: 'official-template', source: 'SYSTEM_SEED' },
+  },
+  {
+    bindingType: 'TEMPLATE_CATALOG',
+    code: 'TPL_TRADE_PLAYBOOK_V1',
+    priority: 70,
+    metadata: { role: 'official-template', source: 'SYSTEM_SEED' },
+  },
+  {
+    bindingType: 'TEMPLATE_CATALOG',
+    code: 'TPL_MACRO_POLICY_DEBATE_V1',
+    priority: 80,
+    metadata: { role: 'official-template', source: 'SYSTEM_SEED' },
+  },
+  {
+    bindingType: 'TEMPLATE_CATALOG',
+    code: 'TPL_STRESS_DEFENSE_DAG_V1',
+    priority: 90,
     metadata: { role: 'official-template', source: 'SYSTEM_SEED' },
   },
 ];

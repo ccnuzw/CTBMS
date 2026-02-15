@@ -113,14 +113,18 @@ export const DebateReplayViewer: React.FC<DebateReplayViewerProps> = ({
   const rounds = timeline.rounds;
   const totalRounds = timeline.totalRounds;
 
-  const allParticipants = useMemo(() => {
+  const { allParticipants, participantNameMap } = useMemo(() => {
     const codes = new Set<string>();
+    const nameMap = new Map<string, string>();
     for (const round of rounds) {
       for (const entry of round.entries) {
         codes.add(entry.participantCode);
+        if (entry.participantName) {
+          nameMap.set(entry.participantCode, entry.participantName);
+        }
       }
     }
-    return Array.from(codes);
+    return { allParticipants: Array.from(codes), participantNameMap: nameMap };
   }, [rounds]);
 
   const currentRoundData: DebateTimelineEntryDto | undefined = rounds[currentRound];
@@ -291,7 +295,10 @@ export const DebateReplayViewer: React.FC<DebateReplayViewerProps> = ({
               placeholder="筛选参与者"
               value={selectedParticipant}
               onChange={setSelectedParticipant}
-              options={allParticipants.map((code) => ({ label: code, value: code }))}
+              options={allParticipants.map((code) => ({
+                label: participantNameMap.get(code) || code,
+                value: code,
+              }))}
             />
           </Flex>
         </Card>
@@ -382,6 +389,7 @@ export const DebateReplayViewer: React.FC<DebateReplayViewerProps> = ({
                         key={code}
                         type="monotone"
                         dataKey={code}
+                        name={participantNameMap.get(code) || code}
                         stroke={PARTICIPANT_LINE_COLORS[idx % PARTICIPANT_LINE_COLORS.length]}
                         strokeWidth={2}
                         dot={{ r: 3 }}
@@ -416,7 +424,9 @@ export const DebateReplayViewer: React.FC<DebateReplayViewerProps> = ({
                     <Flex key={code} justify="space-between" align="center">
                       <Space size={4}>
                         <UserOutlined />
-                        <Text style={{ fontSize: 12 }}>{code}</Text>
+                        <Text style={{ fontSize: 12 }}>
+                          {participantNameMap.get(code) || code}
+                        </Text>
                       </Space>
                       <Space size={4}>
                         <Progress
@@ -476,7 +486,9 @@ export const DebateReplayViewer: React.FC<DebateReplayViewerProps> = ({
                           ) : (
                             <UserOutlined />
                           )}
-                          <Text strong>{entry.participantCode}</Text>
+                          <Text strong>
+                            {entry.participantName || entry.participantCode}
+                          </Text>
                           <Tag color={roleColorMap[entry.participantRole] || 'default'}>
                             {getAgentRoleLabel(entry.participantRole)}
                           </Tag>
@@ -584,7 +596,10 @@ export const DebateReplayViewer: React.FC<DebateReplayViewerProps> = ({
                           title={
                             <Space size={4}>
                               <UserOutlined />
-                              <Text style={{ fontSize: 12 }}>{pair.challenger.participantCode}</Text>
+                              <Text style={{ fontSize: 12 }}>
+                                {participantNameMap.get(pair.challenger.participantCode) ||
+                                  pair.challenger.participantCode}
+                              </Text>
                               <Tag color="volcano" style={{ fontSize: 11 }}>
                                 质询方
                               </Tag>
@@ -610,7 +625,9 @@ export const DebateReplayViewer: React.FC<DebateReplayViewerProps> = ({
                             <Space size={4}>
                               <UserOutlined />
                               <Text style={{ fontSize: 12 }}>
-                                {pair.challenger.challengeTargetCode}
+                                {participantNameMap.get(
+                                  pair.challenger.challengeTargetCode || '',
+                                ) || pair.challenger.challengeTargetCode}
                               </Text>
                               <Tag color="cyan" style={{ fontSize: 11 }}>
                                 应答方

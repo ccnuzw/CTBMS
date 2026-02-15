@@ -64,6 +64,18 @@ export class ConfigController {
         return this.configService.deleteAIModelConfig(key);
     }
 
+    @Get('workflow-agent-strict-mode')
+    async getWorkflowAgentStrictMode() {
+        return this.configService.getWorkflowAgentStrictMode();
+    }
+
+    @Put('workflow-agent-strict-mode')
+    async setWorkflowAgentStrictMode(
+        @Body() body: { enabled: boolean; updatedBy?: string },
+    ) {
+        return this.configService.setWorkflowAgentStrictMode(body.enabled, body.updatedBy);
+    }
+
     // ===== Dictionaries =====
     @Get('dictionary-domains')
     async getDictionaryDomains(@Query('includeInactive') includeInactive?: string) {

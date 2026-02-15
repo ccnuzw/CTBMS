@@ -1,6 +1,13 @@
 import { PageContainer, ProTable, ActionType, ProColumns, ModalForm, ProFormText, ProFormSelect, ProFormDigit, ProFormSwitch, ProFormDependency, ProFormTextArea, ProFormInstance } from '@ant-design/pro-components';
 import { Card, App, Alert, Space, Button, Modal, Tag, Typography, Tooltip, Badge, Divider, Checkbox, Table } from 'antd';
-import { useAIConfigs, useUpdateAIConfig, useDeleteAIConfig, useTestAIConnection, useFetchAIModels, useTestAIModel } from '../api';
+import {
+    useAIConfigs,
+    useUpdateAIConfig,
+    useDeleteAIConfig,
+    useTestAIConnection,
+    useFetchAIModels,
+    useTestAIModel,
+} from '../api';
 import { useRef, useState } from 'react';
 import { PlusOutlined, DeleteOutlined, EditOutlined, ApiOutlined, ReloadOutlined, CheckCircleFilled } from '@ant-design/icons';
 import { AIModelConfig } from '../types';
@@ -694,7 +701,6 @@ export const AIModelConfigPage = () => {
                 showIcon
                 style={{ marginBottom: 16 }}
             />
-
             <ProTable<AIModelConfig>
                 headerTitle="模型配置列表"
                 actionRef={actionRef}

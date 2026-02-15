@@ -110,7 +110,7 @@ export const PropertyPanel: React.FC<PropertyPanelProps> = ({
     return (
         <div
             style={{
-                width: 360, // Slightly wider for expression editor
+                width: 380, // Widened for better UX
                 height: '100%',
                 background: token.colorBgContainer,
                 borderLeft: `1px solid ${token.colorBorderSecondary}`,
@@ -171,7 +171,7 @@ export const PropertyPanel: React.FC<PropertyPanelProps> = ({
             </div>
 
             {/* Body */}
-            <div style={{ flex: 1, overflow: 'auto', padding: 16 }}>
+            <div style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden', padding: 16 }}>
                 {/* 基础信息 */}
                 <Form layout="vertical" size="small" style={{ marginBottom: 0 }}>
                     <Form.Item label="节点名称" style={{ marginBottom: 12 }}>

@@ -25,10 +25,11 @@ import {
   AgentRoleType,
   CreateAgentProfileDto,
 } from '@packages/types';
-import { useSearchParams } from 'react-router-dom';
+import { useSearchParams, Link } from 'react-router-dom';
 import { getErrorMessage } from '../../../api/client';
 import {
   useAgentProfiles,
+  useAgentPromptTemplates,
   useCreateAgentProfile,
   useDeleteAgentProfile,
   usePublishAgentProfile,
@@ -75,6 +76,7 @@ export const AgentProfilePage: React.FC = () => {
   const [editForm] = Form.useForm<{
     agentName: string;
     modelConfigKey: string;
+    agentPromptCode: string;
     timeoutMs: number;
     isActive: boolean;
     toolPolicy: Record<string, unknown>;
@@ -102,6 +104,19 @@ export const AgentProfilePage: React.FC = () => {
   const agentTableContainerRef = React.useRef<HTMLDivElement | null>(null);
 
   const { data: aiConfigs } = useAIConfigs();
+  const { data: promptTemplates } = useAgentPromptTemplates({
+    page: 1,
+    pageSize: 100,
+    isActive: true,
+    includePublic: true,
+  });
+
+  const promptOptions = useMemo(() => {
+    return (promptTemplates?.data || []).map((t) => ({
+      label: `${t.name} (${t.promptCode})`,
+      value: t.promptCode,
+    }));
+  }, [promptTemplates]);
 
   const { data, isLoading } = useAgentProfiles({
     includePublic: true,
@@ -183,7 +198,12 @@ export const AgentProfilePage: React.FC = () => {
         render: (v: AgentRoleType) => <Tag>{getAgentRoleLabel(v)}</Tag>,
       },
       { title: '模型配置Key', dataIndex: 'modelConfigKey', width: 160 },
-      { title: '提示词编码', dataIndex: 'agentPromptCode', width: 180 },
+      {
+        title: '提示词编码',
+        dataIndex: 'agentPromptCode',
+        width: 180,
+        render: (code: string) => (code ? <Link to={`/workflow/prompts?keyword=${code}`}>{code}</Link> : '-'),
+      },
       { title: '版本', dataIndex: 'version', width: 80 },
       {
         title: '状态',
@@ -215,6 +235,7 @@ export const AgentProfilePage: React.FC = () => {
                 editForm.setFieldsValue({
                   agentName: record.agentName,
                   modelConfigKey: record.modelConfigKey,
+                  agentPromptCode: record.agentPromptCode,
                   timeoutMs: record.timeoutMs,
                   isActive: record.isActive,
                   toolPolicy: (record.toolPolicy || {}) as any,
@@ -274,6 +295,7 @@ export const AgentProfilePage: React.FC = () => {
         payload: {
           agentName: values.agentName,
           modelConfigKey: values.modelConfigKey,
+          agentPromptCode: values.agentPromptCode,
           timeoutMs: values.timeoutMs,
           isActive: values.isActive,
           toolPolicy: values.toolPolicy,
@@ -445,7 +467,15 @@ export const AgentProfilePage: React.FC = () => {
             />
           </Form.Item>
           <Form.Item name="agentPromptCode" label="提示词编码" rules={[{ required: true }]}>
-            <Input />
+            <Select
+              showSearch
+              placeholder="选择提示词模板"
+              options={promptOptions}
+              filterOption={(input, option) =>
+                (option?.label ?? '').toLowerCase().includes(input.toLowerCase()) ||
+                (option?.value ?? '').toLowerCase().includes(input.toLowerCase())
+              }
+            />
           </Form.Item>
           <Form.Item name="outputSchemaCode" label="输出 Schema 编码" rules={[{ required: true }]}>
             <Input />
@@ -491,6 +521,17 @@ export const AgentProfilePage: React.FC = () => {
               showSearch
             />
           </Form.Item>
+          <Form.Item name="agentPromptCode" label="提示词编码" rules={[{ required: true }]}>
+            <Select
+              showSearch
+              placeholder="选择提示词模板"
+              options={promptOptions}
+              filterOption={(input, option) =>
+                (option?.label ?? '').toLowerCase().includes(input.toLowerCase()) ||
+                (option?.value ?? '').toLowerCase().includes(input.toLowerCase())
+              }
+            />
+          </Form.Item>
           <Form.Item name="timeoutMs" label="超时(ms)" rules={[{ required: true }]}>
             <InputNumber min={1000} max={120000} style={{ width: '100%' }} />
           </Form.Item>
@@ -504,7 +545,7 @@ export const AgentProfilePage: React.FC = () => {
       </Modal>
       <Drawer
         title="智能体详情"
-        width={860}
+        width={1000}
         open={Boolean(selectedAgent)}
         onClose={() => setSelectedAgent(null)}
       >
@@ -521,7 +562,17 @@ export const AgentProfilePage: React.FC = () => {
             },
             { key: 'role', label: '角色', children: getAgentRoleLabel(selectedAgent?.roleType) },
             { key: 'model', label: '模型配置Key', children: selectedAgent?.modelConfigKey || '-' },
-            { key: 'prompt', label: '提示词编码', children: selectedAgent?.agentPromptCode || '-' },
+            {
+              key: 'prompt',
+              label: '提示词编码',
+              children: selectedAgent?.agentPromptCode ? (
+                <Link to={`/workflow/prompts?keyword=${selectedAgent.agentPromptCode}`}>
+                  {selectedAgent.agentPromptCode}
+                </Link>
+              ) : (
+                '-'
+              ),
+            },
             {
               key: 'schema',
               label: '输出 Schema',
