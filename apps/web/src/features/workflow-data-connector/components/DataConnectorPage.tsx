@@ -145,8 +145,7 @@ export const DataConnectorPage: React.FC = () => {
 
   const columns = useMemo<ColumnsType<DataConnectorDto>>(
     () => [
-      { title: '连接器编码', dataIndex: 'connectorCode', width: 220 },
-      { title: '名称', dataIndex: 'connectorName', width: 180 },
+      { title: '名称', dataIndex: 'connectorName', width: 220 },
       {
         title: '类型',
         dataIndex: 'connectorType',

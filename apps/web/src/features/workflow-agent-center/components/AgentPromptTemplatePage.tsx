@@ -275,7 +275,7 @@ export const AgentPromptTemplatePage: React.FC = () => {
 
             <Drawer
                 title="新建提示词模板"
-                width={720}
+                width={1000}
                 open={visible}
                 onClose={() => setVisible(false)}
                 extra={
@@ -321,7 +321,7 @@ export const AgentPromptTemplatePage: React.FC = () => {
 
             <Drawer
                 title={`编辑提示词模板 - ${editingTemplate?.promptCode}`}
-                width={800}
+                width={1000}
                 open={editVisible}
                 onClose={() => setEditVisible(false)}
                 extra={
@@ -381,7 +381,7 @@ export const AgentPromptTemplatePage: React.FC = () => {
 
             <Drawer
                 title="模板详情"
-                width={600}
+                width={1000}
                 open={drawerVisible}
                 onClose={() => setDrawerVisible(false)}
             >

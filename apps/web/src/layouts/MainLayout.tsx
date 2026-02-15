@@ -101,11 +101,7 @@ export const MainLayout: React.FC = () => {
             icon: <BarChartOutlined />,
             label: '执行分析',
           },
-          {
-            key: '/workflow/replay',
-            icon: <PlayCircleOutlined />,
-            label: '回放评估',
-          },
+
           {
             key: '/workflow/rules',
             icon: <DatabaseOutlined />,

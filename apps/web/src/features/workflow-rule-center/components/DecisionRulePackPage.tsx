@@ -272,14 +272,9 @@ export const DecisionRulePackPage: React.FC = () => {
     const packColumns = useMemo<ColumnsType<DecisionRulePackDto>>(
         () => [
             {
-                title: '规则包编码',
-                dataIndex: 'rulePackCode',
-                width: 220,
-            },
-            {
                 title: '名称',
                 dataIndex: 'name',
-                width: 220,
+                width: 260,
             },
             {
                 title: '来源',
@@ -362,14 +357,9 @@ export const DecisionRulePackPage: React.FC = () => {
     const ruleColumns = useMemo<ColumnsType<DecisionRuleDto>>(
         () => [
             {
-                title: '规则编码',
-                dataIndex: 'ruleCode',
-                width: 180,
-            },
-            {
                 title: '名称',
                 dataIndex: 'name',
-                width: 180,
+                width: 220,
             },
             {
                 title: '字段路径',

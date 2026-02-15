@@ -334,8 +334,7 @@ export const ParameterSetPage: React.FC = () => {
 
   const setColumns = useMemo<ColumnsType<ParameterSetDto>>(
     () => [
-      { title: '参数包编码', dataIndex: 'setCode', width: 220 },
-      { title: '名称', dataIndex: 'name', width: 180 },
+      { title: '名称', dataIndex: 'name', width: 220 },
       {
         title: '来源',
         dataIndex: 'templateSource',
@@ -415,8 +414,7 @@ export const ParameterSetPage: React.FC = () => {
 
   const itemColumns = useMemo<ColumnsType<ParameterItemDto>>(
     () => [
-      { title: '参数编码', dataIndex: 'paramCode', width: 180 },
-      { title: '名称', dataIndex: 'paramName', width: 150 },
+      { title: '名称', dataIndex: 'paramName', width: 180 },
       { title: '类型', dataIndex: 'paramType', width: 90 },
       {
         title: '作用域',
@@ -494,8 +492,7 @@ export const ParameterSetPage: React.FC = () => {
 
   const diffColumns = useMemo<ColumnsType<ParameterOverrideDiffItemDto>>(
     () => [
-      { title: '参数编码', dataIndex: 'paramCode', width: 180 },
-      { title: '名称', dataIndex: 'paramName', width: 150 },
+      { title: '名称', dataIndex: 'paramName', width: 180 },
       {
         title: '作用域',
         dataIndex: 'scopeLevel',

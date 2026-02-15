@@ -50,6 +50,7 @@ import { getErrorMessage } from '../../../api/client';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { ExecutionFilterBar } from './ExecutionFilterBar';
 import { ExecutionSummaryCards } from './ExecutionSummaryCards';
+import { ExecutionReplayDrawerContent } from './ExecutionReplayDrawerContent';
 
 type WorkflowBindingEntity = {
   id: string;
@@ -708,11 +709,16 @@ const getRiskGateSortScore = (summary: RiskGateSummary | null): number => {
   return blockedScore + riskLevelScore;
 };
 
+// ── Debate Replay Container ──
+
+
+
 export const WorkflowExecutionPage: React.FC = () => {
   const { message } = App.useApp();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const [selectedExecutionId, setSelectedExecutionId] = useState<string | null>(null);
+  const [selectedReplayExecutionId, setSelectedReplayExecutionId] = useState<string | null>(null);
   const [selectedWorkflowDefinitionId, setSelectedWorkflowDefinitionId] = useState<
     string | undefined
   >(() => normalizeOptionalText(searchParams.get('workflowDefinitionId')));
@@ -1356,7 +1362,7 @@ export const WorkflowExecutionPage: React.FC = () => {
             </Typography.Link>
             <Typography.Link
               onClick={() =>
-                navigate(`/workflow/replay?executionId=${encodeURIComponent(record.id)}`)
+                setSelectedReplayExecutionId(record.id)
               }
             >
               回放
@@ -1815,6 +1821,17 @@ export const WorkflowExecutionPage: React.FC = () => {
             }
           ]}
         />
+      </Drawer>
+      <Drawer
+        title="执行回放与评估"
+        width={1400}
+        open={Boolean(selectedReplayExecutionId)}
+        onClose={() => setSelectedReplayExecutionId(null)}
+        destroyOnClose
+      >
+        {selectedReplayExecutionId && (
+          <ExecutionReplayDrawerContent executionId={selectedReplayExecutionId} />
+        )}
       </Drawer>
     </Card>
   );

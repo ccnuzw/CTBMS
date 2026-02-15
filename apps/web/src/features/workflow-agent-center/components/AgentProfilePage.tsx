@@ -184,7 +184,6 @@ export const AgentProfilePage: React.FC = () => {
 
   const columns = useMemo<ColumnsType<AgentProfileDto>>(
     () => [
-      { title: '编码', dataIndex: 'agentCode', width: 200 },
       {
         title: '名称',
         dataIndex: 'agentName',
