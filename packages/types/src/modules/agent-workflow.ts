@@ -4,13 +4,23 @@ import { WorkflowTemplateSourceEnum } from './workflow';
 export const AgentMemoryPolicyEnum = z.enum(['none', 'short-term', 'windowed']);
 export const AgentRoleTypeEnum = z.enum([
   'ANALYST',
-  'RISK_OFFICER',
-  'JUDGE',
   'COST_SPREAD',
   'FUTURES_EXPERT',
   'SPOT_EXPERT',
   'LOGISTICS_EXPERT',
+  'RISK_OFFICER',
   'EXECUTION_ADVISOR',
+  'JUDGE',
+  'RISK_INSPECTOR',
+  'SENTIMENT_ANALYST',
+  'POLICY_ANALYST',
+  'INVENTORY_ANALYST',
+  'BASIS_ARBITRAGE',
+  'COMPLIANCE_GUARD',
+  'POSITION_SIZING',
+  'EVENT_IMPACT',
+  'CASHFLOW_RISK',
+  'SCENARIO_STRESS',
 ]);
 
 export const AgentProfileSchema = z.object({
