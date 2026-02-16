@@ -1,3 +1,3 @@
 -- AlterTable
-ALTER TABLE "AgentPromptTemplate" ADD COLUMN "guardrails" JSONB;
-ALTER TABLE "AgentPromptTemplate" ADD COLUMN "outputSchemaCode" TEXT;
+ALTER TABLE "AgentPromptTemplate" ADD COLUMN IF NOT EXISTS "guardrails" JSONB;
+ALTER TABLE "AgentPromptTemplate" ADD COLUMN IF NOT EXISTS "outputSchemaCode" TEXT;
