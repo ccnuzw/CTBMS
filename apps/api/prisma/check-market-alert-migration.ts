@@ -15,7 +15,7 @@ async function main() {
     const validLegacy = legacyRules
         .map((row) => {
             const normalized = normalizeLegacyAlertRule(row);
-            if (!normalized.ok) {
+            if (normalized.ok === false) {
                 invalidLegacy.push({ id: row.id, reason: normalized.error });
                 return null;
             }

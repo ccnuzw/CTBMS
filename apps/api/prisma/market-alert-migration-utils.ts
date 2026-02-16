@@ -94,13 +94,11 @@ function parseType(value: unknown): MarketAlertRuleType | null {
     return null;
 }
 
-export function normalizeLegacyAlertRule(row: LegacyRuleRow): {
-    ok: true;
-    value: NormalizedAlertRule;
-} | {
-    ok: false;
-    error: string;
-} {
+export type NormalizationResult =
+    | { ok: true; value: NormalizedAlertRule }
+    | { ok: false; error: string };
+
+export function normalizeLegacyAlertRule(row: LegacyRuleRow): NormalizationResult {
     const payload = parseJsonPayload(row.targetValue);
     const type = parseType(payload?.type ?? row.pattern);
     if (!type) {

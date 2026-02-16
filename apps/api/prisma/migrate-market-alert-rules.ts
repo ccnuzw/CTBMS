@@ -19,7 +19,7 @@ async function main() {
 
     for (const legacyRule of legacyRules) {
         const normalized = normalizeLegacyAlertRule(legacyRule);
-        if (!normalized.ok) {
+        if (normalized.ok === false) {
             failed += 1;
             console.error(`[FAILED] ${legacyRule.id}: ${normalized.error}`);
             continue;
