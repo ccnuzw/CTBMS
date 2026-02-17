@@ -24,6 +24,9 @@ interface ParamOverrideEntry {
     value: string;
 }
 
+const EMPTY_RECORD: Record<string, unknown> = {};
+const EMPTY_STRING_RECORD: Record<string, string> = {};
+
 const toParamOverrideEntries = (overrides: Record<string, unknown>): ParamOverrideEntry[] => {
     return Object.entries(overrides).map(([key, value], idx) => ({
         id: `${key}-${idx}`,
@@ -93,6 +96,38 @@ export const PropertyPanel: React.FC<PropertyPanelProps> = ({
 }) => {
     const { token } = theme.useToken();
 
+    const nodeData = (selectedNode?.data as Record<string, unknown> | undefined) ?? EMPTY_RECORD;
+    const nodeType = (nodeData.type as string) ?? '';
+    const nodeName = (nodeData.name as string) ?? '';
+    const nodeTypeConfig = getNodeTypeConfig(nodeType);
+    const config = (nodeData.config as Record<string, unknown>) ?? EMPTY_RECORD;
+    const inputBindings = (nodeData.inputBindings as Record<string, string>) ?? EMPTY_STRING_RECORD; // Input Mappings
+    const defaultValues = (nodeData.defaultValues as Record<string, unknown>) ?? EMPTY_RECORD;
+    const nullPolicies = (nodeData.nullPolicies as Record<string, string>) ?? EMPTY_STRING_RECORD;
+    const runtimePolicy = (nodeData.runtimePolicy as Record<string, unknown>) ?? EMPTY_RECORD;
+    const isEnabled = (nodeData.enabled as boolean) ?? true;
+    const paramOverrideMode = (config.paramOverrideMode as 'INHERIT' | 'PRIVATE_OVERRIDE') ?? 'INHERIT';
+    const paramOverrides = (config.paramOverrides as Record<string, unknown>) ?? EMPTY_RECORD;
+
+    const [viewMode, setViewMode] = React.useState<'ui' | 'json'>('ui');
+    const [paramOverrideEntries, setParamOverrideEntries] = React.useState<ParamOverrideEntry[]>(
+        toParamOverrideEntries(paramOverrides),
+    );
+
+    React.useEffect(() => {
+        if (!selectedNode) {
+            setParamOverrideEntries([]);
+            return;
+        }
+        setParamOverrideEntries(toParamOverrideEntries(paramOverrides));
+    }, [selectedNode?.id, paramOverrides]);
+
+    React.useEffect(() => {
+        if (viewLevel === 'business' && viewMode !== 'ui') {
+            setViewMode('ui');
+        }
+    }, [viewLevel, viewMode]);
+
     if (selectedEdge) {
         return (
             <EdgePropertyPanel
@@ -105,34 +140,6 @@ export const PropertyPanel: React.FC<PropertyPanelProps> = ({
     }
 
     if (!selectedNode) return null;
-
-    const nodeData = selectedNode.data;
-    const nodeType = nodeData.type as string;
-    const nodeName = nodeData.name as string;
-    const nodeTypeConfig = getNodeTypeConfig(nodeType);
-    const config = (nodeData.config as Record<string, unknown>) ?? {};
-    const inputBindings = (nodeData.inputBindings as Record<string, string>) ?? {}; // Input Mappings
-    const defaultValues = (nodeData.defaultValues as Record<string, unknown>) ?? {};
-    const nullPolicies = (nodeData.nullPolicies as Record<string, string>) ?? {};
-    const runtimePolicy = (nodeData.runtimePolicy as Record<string, unknown>) ?? {};
-    const isEnabled = (nodeData.enabled as boolean) ?? true;
-    const paramOverrideMode = (config.paramOverrideMode as 'INHERIT' | 'PRIVATE_OVERRIDE') ?? 'INHERIT';
-    const paramOverrides = (config.paramOverrides as Record<string, unknown>) ?? {};
-
-    const [viewMode, setViewMode] = React.useState<'ui' | 'json'>('ui');
-    const [paramOverrideEntries, setParamOverrideEntries] = React.useState<ParamOverrideEntry[]>(
-        toParamOverrideEntries(paramOverrides),
-    );
-
-    React.useEffect(() => {
-        setParamOverrideEntries(toParamOverrideEntries(paramOverrides));
-    }, [selectedNode.id, paramOverrides]);
-
-    React.useEffect(() => {
-        if (viewLevel === 'business' && viewMode !== 'ui') {
-            setViewMode('ui');
-        }
-    }, [viewLevel, viewMode]);
 
     const isBusinessView = viewLevel === 'business';
     const isExpertView = viewLevel === 'expert';
