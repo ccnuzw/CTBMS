@@ -23,7 +23,7 @@ export class AgentPromptTemplateService {
             throw new BadRequestException(`promptCode 已存在: ${dto.promptCode}`);
         }
 
-        if (dto.outputSchemaCode) {
+        if (dto.outputSchemaCode && !dto.outputSchema) {
             this.ensureOutputSchemaKnown(dto.outputSchemaCode);
         }
         const template = await this.prisma.agentPromptTemplate.create({
@@ -38,6 +38,7 @@ export class AgentPromptTemplateService {
                 variables: this.toNullableJsonValue(dto.variables),
                 guardrails: this.toNullableJsonValue(dto.guardrails),
                 outputSchemaCode: dto.outputSchemaCode,
+                outputSchema: this.toNullableJsonValue(dto.outputSchema),
                 previousVersionId: null,
                 ownerUserId,
                 templateSource: dto.templateSource,
@@ -104,7 +105,7 @@ export class AgentPromptTemplateService {
 
     async update(ownerUserId: string, id: string, dto: UpdateAgentPromptTemplateDto) {
         const current = await this.ensureEditableTemplate(ownerUserId, id);
-        if (dto.outputSchemaCode) {
+        if (dto.outputSchemaCode && !dto.outputSchema) {
             this.ensureOutputSchemaKnown(dto.outputSchemaCode);
         }
         const previousSnapshot = await this.prisma.agentPromptTemplateSnapshot.findFirst({
@@ -135,6 +136,9 @@ export class AgentPromptTemplateService {
         }
         if (Object.prototype.hasOwnProperty.call(dto, 'outputSchemaCode')) {
             data.outputSchemaCode = dto.outputSchemaCode;
+        }
+        if (Object.prototype.hasOwnProperty.call(dto, 'outputSchema')) {
+            data.outputSchema = this.toNullableJsonValue(dto.outputSchema);
         }
 
         const updated = await this.prisma.agentPromptTemplate.update({
@@ -195,6 +199,7 @@ export class AgentPromptTemplateService {
                 variables: this.toNullableJsonValue(snapshotData.variables),
                 guardrails: this.toNullableJsonValue(snapshotData.guardrails),
                 outputSchemaCode: snapshotData.outputSchemaCode,
+                outputSchema: this.toNullableJsonValue(snapshotData.outputSchema),
                 version: { increment: 1 },
                 previousVersionId: previousSnapshot?.id ?? current.previousVersionId ?? null,
             },

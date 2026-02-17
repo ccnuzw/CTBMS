@@ -14,7 +14,7 @@ export class AgentProfileService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly outputSchemaRegistryService: OutputSchemaRegistryService,
-  ) {}
+  ) { }
 
   async create(ownerUserId: string, dto: CreateAgentProfileDto) {
     const existing = await this.prisma.agentProfile.findUnique({
@@ -24,7 +24,9 @@ export class AgentProfileService {
       throw new BadRequestException(`agentCode 已存在: ${dto.agentCode}`);
     }
 
-    this.ensureOutputSchemaKnown(dto.outputSchemaCode);
+    if (!dto.outputSchema) {
+      this.ensureOutputSchemaKnown(dto.outputSchemaCode);
+    }
     const created = await this.prisma.agentProfile.create({
       data: {
         agentCode: dto.agentCode,
@@ -41,6 +43,7 @@ export class AgentProfileService {
         retryPolicy: this.toNullableJsonValue(dto.retryPolicy),
         ownerUserId,
         templateSource: dto.templateSource,
+        outputSchema: this.toNullableJsonValue(dto.outputSchema),
       },
     });
     await this.createSnapshot(created, ownerUserId);
@@ -87,7 +90,7 @@ export class AgentProfileService {
 
   async update(ownerUserId: string, id: string, dto: UpdateAgentProfileDto) {
     await this.ensureEditableProfile(ownerUserId, id);
-    if (dto.outputSchemaCode) {
+    if (dto.outputSchemaCode && !dto.outputSchema) {
       this.ensureOutputSchemaKnown(dto.outputSchemaCode);
     }
 
@@ -101,6 +104,7 @@ export class AgentProfileService {
       outputSchemaCode: dto.outputSchemaCode,
       timeoutMs: dto.timeoutMs,
       isActive: dto.isActive,
+      outputSchema: dto.outputSchema ? this.toNullableJsonValue(dto.outputSchema) : undefined,
     };
 
     if (Object.prototype.hasOwnProperty.call(dto, 'toolPolicy')) {

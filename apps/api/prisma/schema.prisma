@@ -2177,6 +2177,7 @@ model AgentPromptTemplate {
   variables          Json?
   guardrails         Json?
   outputSchemaCode   String? // Optional initially as we migrate or create new ones
+  outputSchema       Json?   // [NEW] Custom Output Schema Definition
 
   version           Int                    @default(1)
   previousVersionId String?
@@ -2206,6 +2207,7 @@ model AgentProfile {
   toolPolicy       Json?
   guardrails       Json?
   outputSchemaCode String
+  outputSchema     Json?   // [NEW] Custom Output Schema Definition
   timeoutMs        Int     @default(30000)
   retryPolicy      Json?
   isActive         Boolean @default(true)
