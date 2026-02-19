@@ -19,6 +19,8 @@ export interface AIModelConfig extends BaseEntity {
     configKey: string;
     provider: string; // 'google' | 'openai'
     modelName: string;
+    wireApi?: string; // [NEW] For 'responses' protocol
+    embeddingModel?: string; // [NEW] Separate embedding model
     apiUrl?: string; // [NEW] Custom API URL
     apiKeyEnvVar?: string;
     apiKey?: string; // Optional (masked)

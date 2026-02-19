@@ -205,8 +205,8 @@ export const AIModelConfigPage = () => {
 
         const config = configs?.find(c => c.configKey === key);
         if (config?.isDefault) {
-             message.warning('当前默认配置不可删除，请先设置其他配置为默认');
-             return;
+            message.warning('当前默认配置不可删除，请先设置其他配置为默认');
+            return;
         }
 
         blurActiveElement();
@@ -352,7 +352,7 @@ export const AIModelConfigPage = () => {
 
         try {
             const values = form.getFieldsValue();
-                const payload = {
+            const payload = {
                 provider: values.provider,
                 modelName,
                 apiKey: values.apiKey,
@@ -786,304 +786,331 @@ export const AIModelConfigPage = () => {
                         label="供应商"
                         options={[
                             { label: 'Google Gemini', value: 'google' },
-                            { label: 'OpenAI (兼容协议)', value: 'openai' },
+                            { label: 'OpenAI (及兼容)', value: 'openai' },
+                            { label: 'Sub2API (Codex)', value: 'sub2api' },
+                            { label: 'Anthropic', value: 'anthropic', disabled: true },
+                            { label: 'Custom', value: 'custom', disabled: true },
                         ]}
                         rules={[{ required: true }]}
-                        fieldProps={currentRow?.id ? {
-                            ...(autoFocusFieldProps as any),
-                            ref: editModalFocusRef,
-                        } : undefined}
                     />
 
-                <ProFormSelect
-                    name="modelName"
-                    label="模型名称"
-                    placeholder="选择或输入模型名称"
-                    rules={[{ required: true }]}
-                    showSearch
-                    dependencies={['availableModels']}
-                    request={async (params) => {
-                        const { availableModels = [] } = params;
-                        // Ensure current row's model is also an option if it exists
-                        const options = [...new Set([...(availableModels || []), currentRow?.modelName].filter(Boolean))];
-                        return options.map((m: string) => ({ label: m, value: m }));
-                    }}
-                />
+                    <ProFormSelect
+                        name="modelName"
+                        label="模型名称"
+                        placeholder="选择或输入模型名称"
+                        rules={[{ required: true }]}
+                        showSearch
+                        dependencies={['availableModels']}
+                        request={async (params) => {
+                            const { availableModels = [] } = params;
+                            // Ensure current row's model is also an option if it exists
+                            const options = [...new Set([...(availableModels || []), currentRow?.modelName].filter(Boolean))];
+                            return options.map((m: string) => ({ label: m, value: m }));
+                        }}
+                    />
 
-                <ProFormSelect
-                    name="availableModels"
-                    label="可用模型列表"
-                    placeholder="管理可用模型"
-                    mode="tags"
-                    tooltip="自动拉取会更新此处列表，也可手动维护。"
-                    fieldProps={{
-                        tokenSeparators: [',']
-                    }}
-                />
+                    <ProFormText
+                        name="embeddingModel"
+                        label="Embedding 模型"
+                        placeholder="例如：text-embedding-3-small"
+                        tooltip="用于知识库向量检索的模型。若为空，OpenAI 默认为 text-embedding-3-small，Gemini 默认为 text-embedding-004"
+                    />
 
-                <ProFormDependency name={['provider', 'apiKey', 'apiUrl', 'availableModels']}>
-                    {({ provider, apiKey, apiUrl, availableModels }, form) => {
-                        return (
-                            <div style={{ marginBottom: 24, display: 'flex', justifyContent: 'flex-end', marginTop: -20 }}>
-                                <Button
-                                    type="link"
-                                    size="small"
-                                    icon={<ReloadOutlined />}
-                                    loading={fetchModelsMutation.isPending}
-                                    onClick={async () => {
-                                        await handleFetchModels(form);
-                                        // The handleFetchModels now updates the form field directly
-                                    }}
-                                >
-                                    从 {provider} 获取可用模型列表
-                                </Button>
-                            </div>
-                        );
-                    }}
-                </ProFormDependency>
+                    <ProFormDependency name={['provider']}>
+                        {({ provider }) => {
+                            if (provider === 'sub2api') {
+                                return (
+                                    <ProFormSelect
+                                        name={['pathOverrides', 'wireApi']}
+                                        label="协议类型 (Protocol)"
+                                        options={[
+                                            { label: 'Standard Chat (OpenAI)', value: 'chat' },
+                                            { label: 'Codex Responses (Legacy)', value: 'responses' },
+                                        ]}
+                                        placeholder="选择 API 协议"
+                                        tooltip="Sub2API 支持标准 Chat 协议和旧版 Codex Responses 协议。若遇到 404 错误请尝试切换。"
+                                        initialValue="responses"
+                                    />
+                                );
+                            }
+                            return null;
+                        }}
+                    </ProFormDependency>
 
-                {fetchedModels.length > 0 && (
-                    <Card
-                        size="small"
-                        title="已获取模型列表"
-                        style={{ marginBottom: 16 }}
-                        extra={(
-                            <Space size={8}>
-                                <Button size="small" onClick={() => setSelectedFetchedModels(fetchedModels)}>
-                                    全选
-                                </Button>
-                                <Button size="small" onClick={() => setSelectedFetchedModels([])}>
-                                    清空选择
-                                </Button>
-                                <Button size="small" onClick={handleAddSelectedModels}>
-                                    添加选中
-                                </Button>
-                                <Button size="small" onClick={handleAddAllModels}>
-                                    添加全部
-                                </Button>
-                                <Button size="small" onClick={handleTestSelectedModel} loading={testModelMutation.isPending}>
-                                    测试选中模型
-                                </Button>
-                                <Button size="small" onClick={handleBatchTestModels} loading={batchTestRunning}>
-                                    批量测试选中
-                                </Button>
-                                <Button size="small" onClick={() => {
-                                    setFetchedModels([]);
-                                    setSelectedFetchedModels([]);
-                                    setFetchRecommendation(undefined);
-                                    setFetchRecommendationPatch(undefined);
-                                    setBatchTestResults([]);
-                                    blurActiveElement();
-                                    setBatchTestVisible(false);
-                                    setBatchTestRunning(false);
-                                }}>
-                                    清空列表
-                                </Button>
-                            </Space>
-                        )}
-                    >
-                        {fetchRecommendation && (
-                            <Alert
-                                type="info"
-                                showIcon
-                                message="推荐配置"
-                                description={(
-                                    <Space size={8}>
-                                        <span>{fetchRecommendation}</span>
-                                        {fetchRecommendationPatch && (
-                                            <Button
-                                                size="small"
-                                                type="link"
-                                                onClick={() => {
-                                                    const form = formRef.current;
-                                                    if (!form) return;
-                                                    form.setFieldsValue(fetchRecommendationPatch);
-                                                    message.success('已应用推荐配置');
-                                                }}
-                                            >
-                                                应用推荐
-                                            </Button>
-                                        )}
-                                    </Space>
-                                )}
-                                style={{ marginBottom: 12 }}
-                            />
-                        )}
-                        {fetchDiagnostics.length > 0 && (
-                            <Alert
-                                type="warning"
-                                showIcon
-                                message="模型获取诊断"
-                                description={(
-                                    <div>
-                                        {fetchDiagnostics.map((item, index) => (
-                                            <div key={`${item.provider}-${index}`} style={{ marginBottom: 4 }}>
-                                                <Text strong>{item.provider}</Text>
-                                                {item.activeUrl ? ` (${item.activeUrl})` : ''}
-                                                ：{item.message}
-                                            </div>
-                                        ))}
-                                    </div>
-                                )}
-                                style={{ marginBottom: 12 }}
-                            />
-                        )}
-                        <Checkbox.Group
-                            value={selectedFetchedModels}
-                            onChange={(values) => setSelectedFetchedModels(values as string[])}
-                            options={fetchedModels.map((model) => ({ label: model, value: model }))}
-                            style={{
-                                display: 'grid',
-                                gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))',
-                                gap: 8,
-                            }}
-                        />
-                        <div style={{ marginTop: 8, color: '#666', fontSize: 12 }}>
-                            已选择 {selectedFetchedModels.length} / {fetchedModels.length}
-                        </div>
-                    </Card>
-                )}
+                    <ProFormSelect
+                        name="availableModels"
+                        label="可用模型列表"
+                        placeholder="管理可用模型"
+                        mode="tags"
+                        tooltip="自动拉取会更新此处列表，也可手动维护。"
+                        fieldProps={{
+                            tokenSeparators: [',']
+                        }}
+                    />
 
-                <ProFormText
-                    name="apiUrl"
-                    label="API 基础地址"
-                    tooltip="OpenAI 默认 https://api.openai.com/v1；Gemini 默认 https://generativelanguage.googleapis.com/v1beta"
-                    placeholder="留空使用默认值（建议使用模板）"
-                />
+                    <ProFormDependency name={['provider', 'apiKey', 'apiUrl', 'availableModels']}>
+                        {({ provider, apiKey, apiUrl, availableModels }, form) => {
+                            return (
+                                <div style={{ marginBottom: 24, display: 'flex', justifyContent: 'flex-end', marginTop: -20 }}>
+                                    <Button
+                                        type="link"
+                                        size="small"
+                                        icon={<ReloadOutlined />}
+                                        loading={fetchModelsMutation.isPending}
+                                        onClick={async () => {
+                                            await handleFetchModels(form);
+                                            // The handleFetchModels now updates the form field directly
+                                        }}
+                                    >
+                                        从 {provider} 获取可用模型列表
+                                    </Button>
+                                </div>
+                            );
+                        }}
+                    </ProFormDependency>
 
-                <ProFormText.Password
-                    name="apiKey"
-                    label="API 密钥"
-                    placeholder="sk-..."
-                    tooltip="若为空则尝试使用环境变量"
-                />
-
-                <ProFormSelect
-                    name="authType"
-                    label="认证方式"
-                    tooltip="OpenAI 兼容默认 Bearer；Gemini 官方建议 API Key"
-                    options={[
-                        { label: 'Bearer', value: 'bearer' },
-                        { label: 'API Key', value: 'api-key' },
-                        { label: '自定义', value: 'custom' },
-                        { label: '无认证', value: 'none' },
-                    ]}
-                />
-
-                <ProFormSelect
-                    name="modelFetchMode"
-                    label="模型获取方式"
-                    tooltip="官方自动拉取或手动维护"
-                    options={[
-                        { label: '官方/自动', value: 'official' },
-                        { label: '手动维护', value: 'manual' },
-                        { label: '自定义', value: 'custom' },
-                    ]}
-                />
-
-                <Divider style={{ margin: '12px 0' }} />
-                <Text strong>高级配置（代理/中转）</Text>
-                <Divider style={{ margin: '8px 0 12px' }} />
-
-                <ProFormSwitch
-                    name="showAdvanced"
-                    label="显示高级配置"
-                    tooltip="仅代理/中转或特殊网关需要"
-                />
-
-                <ProFormDependency name={['showAdvanced', 'provider']}>
-                    {({ showAdvanced, provider }) => (showAdvanced ? (
-                        <>
-                            {provider === 'openai' ? (
-                                <ProFormSwitch
-                                    name="allowUrlProbe"
-                                    label="启用 URL 探测"
-                                    tooltip="获取模型列表失败时尝试常见路径"
+                    {fetchedModels.length > 0 && (
+                        <Card
+                            size="small"
+                            title="已获取模型列表"
+                            style={{ marginBottom: 16 }}
+                            extra={(
+                                <Space size={8}>
+                                    <Button size="small" onClick={() => setSelectedFetchedModels(fetchedModels)}>
+                                        全选
+                                    </Button>
+                                    <Button size="small" onClick={() => setSelectedFetchedModels([])}>
+                                        清空选择
+                                    </Button>
+                                    <Button size="small" onClick={handleAddSelectedModels}>
+                                        添加选中
+                                    </Button>
+                                    <Button size="small" onClick={handleAddAllModels}>
+                                        添加全部
+                                    </Button>
+                                    <Button size="small" onClick={handleTestSelectedModel} loading={testModelMutation.isPending}>
+                                        测试选中模型
+                                    </Button>
+                                    <Button size="small" onClick={handleBatchTestModels} loading={batchTestRunning}>
+                                        批量测试选中
+                                    </Button>
+                                    <Button size="small" onClick={() => {
+                                        setFetchedModels([]);
+                                        setSelectedFetchedModels([]);
+                                        setFetchRecommendation(undefined);
+                                        setFetchRecommendationPatch(undefined);
+                                        setBatchTestResults([]);
+                                        blurActiveElement();
+                                        setBatchTestVisible(false);
+                                        setBatchTestRunning(false);
+                                    }}>
+                                        清空列表
+                                    </Button>
+                                </Space>
+                            )}
+                        >
+                            {fetchRecommendation && (
+                                <Alert
+                                    type="info"
+                                    showIcon
+                                    message="推荐配置"
+                                    description={(
+                                        <Space size={8}>
+                                            <span>{fetchRecommendation}</span>
+                                            {fetchRecommendationPatch && (
+                                                <Button
+                                                    size="small"
+                                                    type="link"
+                                                    onClick={() => {
+                                                        const form = formRef.current;
+                                                        if (!form) return;
+                                                        form.setFieldsValue(fetchRecommendationPatch);
+                                                        message.success('已应用推荐配置');
+                                                    }}
+                                                >
+                                                    应用推荐
+                                                </Button>
+                                            )}
+                                        </Space>
+                                    )}
+                                    style={{ marginBottom: 12 }}
                                 />
-                            ) : null}
-
-                            <ProFormSwitch
-                                name="allowCompatPathFallback"
-                                label="启用兼容路径回退"
-                                tooltip="当调用 /chat/completions 失败时自动改用 /completions"
+                            )}
+                            {fetchDiagnostics.length > 0 && (
+                                <Alert
+                                    type="warning"
+                                    showIcon
+                                    message="模型获取诊断"
+                                    description={(
+                                        <div>
+                                            {fetchDiagnostics.map((item, index) => (
+                                                <div key={`${item.provider}-${index}`} style={{ marginBottom: 4 }}>
+                                                    <Text strong>{item.provider}</Text>
+                                                    {item.activeUrl ? ` (${item.activeUrl})` : ''}
+                                                    ：{item.message}
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
+                                    style={{ marginBottom: 12 }}
+                                />
+                            )}
+                            <Checkbox.Group
+                                value={selectedFetchedModels}
+                                onChange={(values) => setSelectedFetchedModels(values as string[])}
+                                options={fetchedModels.map((model) => ({ label: model, value: model }))}
+                                style={{
+                                    display: 'grid',
+                                    gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))',
+                                    gap: 8,
+                                }}
                             />
+                            <div style={{ marginTop: 8, color: '#666', fontSize: 12 }}>
+                                已选择 {selectedFetchedModels.length} / {fetchedModels.length}
+                            </div>
+                        </Card>
+                    )}
 
-                            <ProFormTextArea
-                                name="headers"
-                                label="自定义 Headers (JSON)"
-                                placeholder='例如：{"x-goog-api-key": "..."}'
-                                tooltip="代理/中转常用。JSON 格式 Key-Value"
-                                fieldProps={{ autoSize: { minRows: 3, maxRows: 6 } }}
-                            />
-
-                            <ProFormTextArea
-                                name="queryParams"
-                                label="Query Params (JSON)"
-                                placeholder='例如：{"key": "..."}'
-                                tooltip="将附加到请求 URL 的查询参数"
-                                fieldProps={{ autoSize: { minRows: 3, maxRows: 6 } }}
-                            />
-
-                            <ProFormTextArea
-                                name="pathOverrides"
-                                label="Path Overrides (JSON)"
-                                placeholder='例如：{"models": "/models", "generateContent": "/models/gemini-1.5-pro:generateContent"}'
-                                tooltip="用于代理/中转自定义路径"
-                                fieldProps={{ autoSize: { minRows: 3, maxRows: 6 } }}
-                            />
-                        </>
-                    ) : null)}
-                </ProFormDependency>
-
-                <Divider style={{ margin: '12px 0' }} />
-                <Text strong>模型参数</Text>
-                <Divider style={{ margin: '8px 0 12px' }} />
-
-                <Space size="large">
-                    <ProFormDigit
-                        name="temperature"
-                        label="随机性 (Temperature)"
-                        min={0}
-                        max={2}
-                        step={0.1}
-                        width="xs"
+                    <ProFormText
+                        name="apiUrl"
+                        label="API 基础地址"
+                        tooltip="OpenAI 默认 https://api.openai.com/v1；Gemini 默认 https://generativelanguage.googleapis.com/v1beta"
+                        placeholder="留空使用默认值（建议使用模板）"
                     />
-                    <ProFormDigit
-                        name="maxTokens"
-                        label="最大 Token 数"
-                        min={100}
-                        step={100}
-                        width="sm"
-                    />
-                </Space>
 
-                <Space size="large">
-                    <ProFormDigit
-                        name="maxRetries"
-                        label="重试次数"
-                        min={0}
-                        max={5}
-                        width="xs"
+                    <ProFormText.Password
+                        name="apiKey"
+                        label="API 密钥"
+                        placeholder="sk-..."
+                        tooltip="若为空则尝试使用环境变量"
                     />
-                    <ProFormDigit
-                        name="timeoutMs"
-                        label="超时时间 (ms)"
-                        min={1000}
-                        width="sm"
-                    />
-                </Space>
 
-                <Space size="large">
+                    <ProFormSelect
+                        name="authType"
+                        label="认证方式"
+                        tooltip="OpenAI 兼容默认 Bearer；Gemini 官方建议 API Key"
+                        options={[
+                            { label: 'Bearer', value: 'bearer' },
+                            { label: 'API Key', value: 'api-key' },
+                            { label: '自定义', value: 'custom' },
+                            { label: '无认证', value: 'none' },
+                        ]}
+                    />
+
+                    <ProFormSelect
+                        name="modelFetchMode"
+                        label="模型获取方式"
+                        tooltip="官方自动拉取或手动维护"
+                        options={[
+                            { label: '官方/自动', value: 'official' },
+                            { label: '手动维护', value: 'manual' },
+                            { label: '自定义', value: 'custom' },
+                        ]}
+                    />
+
+                    <Divider style={{ margin: '12px 0' }} />
+                    <Text strong>高级配置（代理/中转）</Text>
+                    <Divider style={{ margin: '8px 0 12px' }} />
+
                     <ProFormSwitch
-                        name="isActive"
-                        label="启用配置"
+                        name="showAdvanced"
+                        label="显示高级配置"
+                        tooltip="仅代理/中转或特殊网关需要"
                     />
-                    <ProFormSwitch
-                        name="isDefault"
-                        label="设为默认"
-                        tooltip="设为默认后，其他配置将自动取消默认状态"
-                    />
-                </Space>
+
+                    <ProFormDependency name={['showAdvanced', 'provider']}>
+                        {({ showAdvanced, provider }) => (showAdvanced ? (
+                            <>
+                                {provider === 'openai' ? (
+                                    <ProFormSwitch
+                                        name="allowUrlProbe"
+                                        label="启用 URL 探测"
+                                        tooltip="获取模型列表失败时尝试常见路径"
+                                    />
+                                ) : null}
+
+                                <ProFormSwitch
+                                    name="allowCompatPathFallback"
+                                    label="启用兼容路径回退"
+                                    tooltip="当调用 /chat/completions 失败时自动改用 /completions"
+                                />
+
+                                <ProFormTextArea
+                                    name="headers"
+                                    label="自定义 Headers (JSON)"
+                                    placeholder='例如：{"x-goog-api-key": "..."}'
+                                    tooltip="代理/中转常用。JSON 格式 Key-Value"
+                                    fieldProps={{ autoSize: { minRows: 3, maxRows: 6 } }}
+                                />
+
+                                <ProFormTextArea
+                                    name="queryParams"
+                                    label="Query Params (JSON)"
+                                    placeholder='例如：{"key": "..."}'
+                                    tooltip="将附加到请求 URL 的查询参数"
+                                    fieldProps={{ autoSize: { minRows: 3, maxRows: 6 } }}
+                                />
+
+                                <ProFormTextArea
+                                    name="pathOverrides"
+                                    label="Path Overrides (JSON)"
+                                    placeholder='例如：{"models": "/models", "generateContent": "/models/gemini-1.5-pro:generateContent"}'
+                                    tooltip="用于代理/中转自定义路径"
+                                    fieldProps={{ autoSize: { minRows: 3, maxRows: 6 } }}
+                                />
+                            </>
+                        ) : null)}
+                    </ProFormDependency>
+
+                    <Divider style={{ margin: '12px 0' }} />
+                    <Text strong>模型参数</Text>
+                    <Divider style={{ margin: '8px 0 12px' }} />
+
+                    <Space size="large">
+                        <ProFormDigit
+                            name="temperature"
+                            label="随机性 (Temperature)"
+                            min={0}
+                            max={2}
+                            step={0.1}
+                            width="xs"
+                        />
+                        <ProFormDigit
+                            name="maxTokens"
+                            label="最大 Token 数"
+                            min={100}
+                            step={100}
+                            width="sm"
+                        />
+                    </Space>
+
+                    <Space size="large">
+                        <ProFormDigit
+                            name="maxRetries"
+                            label="重试次数"
+                            min={0}
+                            max={5}
+                            width="xs"
+                        />
+                        <ProFormDigit
+                            name="timeoutMs"
+                            label="超时时间 (ms)"
+                            min={1000}
+                            width="sm"
+                        />
+                    </Space>
+
+                    <Space size="large">
+                        <ProFormSwitch
+                            name="isActive"
+                            label="启用配置"
+                        />
+                        <ProFormSwitch
+                            name="isDefault"
+                            label="设为默认"
+                            tooltip="设为默认后，其他配置将自动取消默认状态"
+                        />
+                    </Space>
                 </div>
             </ModalForm>
             <Modal

@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-export const AIProviderSchema = z.enum(['google', 'openai', 'anthropic', 'custom']);
+export const AIProviderSchema = z.enum(['google', 'openai', 'anthropic', 'custom', 'sub2api']);
 export type AIProvider = z.infer<typeof AIProviderSchema>;
 
 export const AIAuthTypeSchema = z.enum(['bearer', 'api-key', 'custom', 'none']);
@@ -14,6 +14,8 @@ export const AIConfigSchema = z.object({
   configKey: z.string().min(1, "配置键不能为空"),
   provider: AIProviderSchema,
   modelName: z.string().min(1, "模型名称不能为空"),
+  wireApi: z.string().optional(), // [NEW] For 'responses' vs 'chat'
+  embeddingModel: z.string().optional(),
   apiUrl: z.string().url().optional().or(z.literal('')),
   apiKey: z.string().optional(), // In transit, might be masked
   apiKeyEnvVar: z.string().optional(),

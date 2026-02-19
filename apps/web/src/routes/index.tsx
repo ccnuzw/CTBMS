@@ -49,6 +49,7 @@ import { WorkflowDefinitionPage } from '../features/workflow-studio';
 import { WorkflowExecutionPage } from '../features/workflow-runtime';
 import { DecisionRulePackPage } from '../features/workflow-rule-center';
 import { AgentProfilePage, AgentPromptTemplatePage } from '../features/workflow-agent-center';
+import { AgentWizardPage } from '../features/agent-wizard';
 import { ParameterSetPage } from '../features/workflow-parameter-center';
 import { DataConnectorPage } from '../features/workflow-data-connector';
 import { TriggerGatewayPage } from '../features/trigger-gateway';
@@ -124,6 +125,11 @@ export const router = createBrowserRouter([
         path: 'workflow/agents',
         element: <AgentProfilePage />,
       },
+      {
+        path: 'workflow/agents/wizard',
+        element: <AgentWizardPage />,
+      },
+
       {
         path: 'workflow/prompts',
         element: <AgentPromptTemplatePage />,

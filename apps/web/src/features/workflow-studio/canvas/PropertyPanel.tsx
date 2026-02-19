@@ -23,6 +23,7 @@ import { NODE_FORM_REGISTRY } from './node-forms/formRegistry';
 import { InputMappingMatrix } from './property-panel/InputMappingMatrix';
 import { NodeDryRunPreview } from './property-panel/NodeDryRunPreview';
 import { ParameterOverrideBuilder } from './property-panel/ParameterOverrideBuilder';
+import { RuntimePresetCard as RuntimePresetCardComponent } from './property-panel/RuntimePresetCard';
 
 const { Text } = Typography;
 
@@ -142,19 +143,19 @@ export const PropertyPanel: React.FC<PropertyPanelProps> = ({
 
   const currentRuntimePreset =
     currentTimeoutMs === 15000 &&
-    currentRetryCount === 0 &&
-    currentRetryBackoffMs === 0 &&
-    currentOnError === 'FAIL_FAST'
+      currentRetryCount === 0 &&
+      currentRetryBackoffMs === 0 &&
+      currentOnError === 'FAIL_FAST'
       ? 'FAST'
       : currentTimeoutMs === 30000 &&
-          currentRetryCount === 1 &&
-          currentRetryBackoffMs === 2000 &&
-          currentOnError === 'CONTINUE'
+        currentRetryCount === 1 &&
+        currentRetryBackoffMs === 2000 &&
+        currentOnError === 'CONTINUE'
         ? 'BALANCED'
         : currentTimeoutMs === 60000 &&
-            currentRetryCount === 3 &&
-            currentRetryBackoffMs === 3000 &&
-            currentOnError === 'ROUTE_TO_ERROR'
+          currentRetryCount === 3 &&
+          currentRetryBackoffMs === 3000 &&
+          currentOnError === 'ROUTE_TO_ERROR'
           ? 'ROBUST'
           : 'CUSTOM';
 
@@ -332,10 +333,12 @@ export const PropertyPanel: React.FC<PropertyPanelProps> = ({
       <Form.Item
         label="策略预设"
         help="使用业务预设快速配置节点稳定性与性能；切到自定义可逐项调整。"
-        style={{ marginBottom: 12 }}
+        style={{ marginBottom: 16 }}
       >
-        <Select
+        <RuntimePresetCardComponent
           value={currentRuntimePreset}
+          currentTimeout={currentTimeoutMs}
+          currentRetry={currentRetryCount}
           onChange={(value) => {
             if (value === 'CUSTOM') return;
             const preset = applyRuntimePreset(value as 'FAST' | 'BALANCED' | 'ROBUST');
@@ -344,12 +347,6 @@ export const PropertyPanel: React.FC<PropertyPanelProps> = ({
             handleRuntimePolicyChange('retryBackoffMs', preset.retryBackoffMs);
             handleRuntimePolicyChange('onError', preset.onError);
           }}
-          options={[
-            { label: '低延迟（快速失败）', value: 'FAST' },
-            { label: '标准（平衡推荐）', value: 'BALANCED' },
-            { label: '高可靠（容错优先）', value: 'ROBUST' },
-            { label: '自定义', value: 'CUSTOM' },
-          ]}
         />
       </Form.Item>
 
@@ -455,55 +452,57 @@ export const PropertyPanel: React.FC<PropertyPanelProps> = ({
       key: 'overview',
       label: '概览',
       children: (
-        <Form layout="vertical" size="small" style={{ marginBottom: 0 }}>
-          <Form.Item label="节点名称" style={{ marginBottom: 12 }}>
-            <Input
-              value={nodeName}
-              onChange={(event) => handleFieldChange('name', event.target.value)}
-            />
-          </Form.Item>
+        <div style={{ paddingRight: 4 }}>
+          <Form layout="vertical" size="small" style={{ marginBottom: 0 }}>
+            <Form.Item label="节点名称" style={{ marginBottom: 12 }}>
+              <Input
+                value={nodeName}
+                onChange={(event) => handleFieldChange('name', event.target.value)}
+              />
+            </Form.Item>
 
-          <Form.Item label="节点类型" style={{ marginBottom: 12 }}>
-            <Space>
-              <Tag color={nodeTypeConfig?.color}>{nodeTypeConfig?.label ?? nodeType}</Tag>
-              {!isBusinessView ? (
-                <Text type="secondary" style={{ fontSize: 11 }}>
-                  {selectedNode.id}
-                </Text>
-              ) : null}
-            </Space>
-          </Form.Item>
+            <Form.Item label="节点类型" style={{ marginBottom: 12 }}>
+              <Space>
+                <Tag color={nodeTypeConfig?.color}>{nodeTypeConfig?.label ?? nodeType}</Tag>
+                {!isBusinessView ? (
+                  <Text type="secondary" style={{ fontSize: 11 }}>
+                    {selectedNode.id}
+                  </Text>
+                ) : null}
+              </Space>
+            </Form.Item>
 
-          <Form.Item label="启用" style={{ marginBottom: 12 }}>
-            <Switch
-              checked={isEnabled}
-              onChange={(value) => handleFieldChange('enabled', value)}
-              size="small"
-            />
-          </Form.Item>
-
-          <Form.Item label="描述" style={{ marginBottom: 12 }}>
-            <Input.TextArea
-              value={nodeData.description as string}
-              onChange={(event) => handleFieldChange('description', event.target.value)}
-              rows={2}
-              placeholder="节点描述..."
-            />
-          </Form.Item>
-
-          {!isBusinessView ? (
-            <Form.Item label="标签 (Tags)" style={{ marginBottom: 12 }}>
-              <Select
-                mode="tags"
-                value={nodeTags}
-                onChange={(value) => handleFieldChange('tags', value)}
-                tokenSeparators={[',']}
-                placeholder="添加标签..."
+            <Form.Item label="启用" style={{ marginBottom: 12 }}>
+              <Switch
+                checked={isEnabled}
+                onChange={(value) => handleFieldChange('enabled', value)}
                 size="small"
               />
             </Form.Item>
-          ) : null}
-        </Form>
+
+            <Form.Item label="描述" style={{ marginBottom: 12 }}>
+              <Input.TextArea
+                value={nodeData.description as string}
+                onChange={(event) => handleFieldChange('description', event.target.value)}
+                rows={2}
+                placeholder="节点描述..."
+              />
+            </Form.Item>
+
+            {!isBusinessView ? (
+              <Form.Item label="标签 (Tags)" style={{ marginBottom: 12 }}>
+                <Select
+                  mode="tags"
+                  value={nodeTags}
+                  onChange={(value) => handleFieldChange('tags', value)}
+                  tokenSeparators={[',']}
+                  placeholder="添加标签..."
+                  size="small"
+                />
+              </Form.Item>
+            ) : null}
+          </Form>
+        </div>
       ),
     },
     {
@@ -511,83 +510,97 @@ export const PropertyPanel: React.FC<PropertyPanelProps> = ({
       label: '输入',
       children:
         nodeTypeConfig?.inputsSchema && nodeTypeConfig.inputsSchema.length > 0 ? (
-          <InputMappingMatrix
-            currentNodeId={selectedNode.id}
-            inputsSchema={nodeTypeConfig.inputsSchema}
-            inputBindings={inputBindings}
-            defaultValues={defaultValues}
-            nullPolicies={nullPolicies}
-            onInputBindingChange={handleInputBindingChange}
-            onInputBindingsChange={handleInputBindingsChange}
-            onDefaultValueChange={handleDefaultValueChange}
-            onNullPolicyChange={handleNullPolicyChange}
-          />
+          <div style={{ paddingRight: 4 }}>
+            <InputMappingMatrix
+              currentNodeId={selectedNode.id}
+              inputsSchema={nodeTypeConfig.inputsSchema}
+              inputBindings={inputBindings}
+              defaultValues={defaultValues}
+              nullPolicies={nullPolicies}
+              onInputBindingChange={handleInputBindingChange}
+              onInputBindingsChange={handleInputBindingsChange}
+              onDefaultValueChange={handleDefaultValueChange}
+              onNullPolicyChange={handleNullPolicyChange}
+            />
+          </div>
         ) : (
-          <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="当前节点无输入字段" />
+          <div style={{ paddingRight: 4 }}>
+            <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="当前节点无输入字段" />
+          </div>
         ),
     },
     {
       key: 'capability',
       label: '能力',
-      children: capabilityContent,
+      children: (
+        <div style={{ paddingRight: 4 }}>
+          {capabilityContent}
+        </div>
+      ),
     },
     {
       key: 'runtime',
       label: '运行',
-      children: runtimeContent,
+      children: (
+        <div style={{ paddingRight: 4 }}>
+          {runtimeContent}
+        </div>
+      ),
     },
     {
       key: 'validation',
       label: '校验',
       children: (
-        <Space direction="vertical" size={8} style={{ width: '100%' }}>
-          {validationIssues.length === 0 ? (
-            <Alert type="success" showIcon message="当前配置通过基础校验" />
-          ) : (
-            validationIssues.map((issue, index) => (
-              <Alert
-                key={`${issue.type}-${index}`}
-                type={issue.type === 'info' ? 'info' : issue.type}
-                showIcon
-                message={issue.message}
-              />
-            ))
-          )}
+        <div style={{ paddingRight: 4 }}>
+          <Space direction="vertical" size={8} style={{ width: '100%' }}>
+            {validationIssues.length === 0 ? (
+              <Alert type="success" showIcon message="当前配置通过基础校验" />
+            ) : (
+              validationIssues.map((issue, index) => (
+                <Alert
+                  key={`${issue.type}-${index}`}
+                  type={issue.type === 'info' ? 'info' : issue.type}
+                  showIcon
+                  message={issue.message}
+                />
+              ))
+            )}
 
-          <Alert
-            type="info"
-            showIcon
-            message="配置摘要"
-            description={[
-              `输入映射数: ${Object.keys(inputBindings).filter((key) => (inputBindings[key] ?? '').trim().length > 0).length}`,
-              `默认值数: ${Object.keys(defaultValues).length}`,
-              `参数覆盖模式: ${paramOverrideMode}`,
-              `参数覆盖项: ${Object.keys(paramOverrides).length}`,
-            ].join(' | ')}
-          />
-
-          {!isBusinessView ? (
             <Alert
-              type="warning"
+              type="info"
               showIcon
-              message="调试信息"
-              description={`Node ${selectedNode.id} / Type ${nodeType}`}
+              message="配置摘要"
+              description={[
+                `输入映射数: ${Object.keys(inputBindings).filter((key) => (inputBindings[key] ?? '').trim().length > 0).length}`,
+                `默认值数: ${Object.keys(defaultValues).length}`,
+                `参数覆盖模式: ${paramOverrideMode}`,
+                `参数覆盖项: ${Object.keys(paramOverrides).length}`,
+              ].join(' | ')}
             />
-          ) : null}
 
-          {currentDsl && nodeTypeConfig?.inputsSchema && nodeTypeConfig.inputsSchema.length > 0 ? (
-            <NodeDryRunPreview
-              nodeId={selectedNode.id}
-              currentDsl={currentDsl}
-              inputsSchema={nodeTypeConfig.inputsSchema}
-              inputBindings={inputBindings}
-              defaultValues={defaultValues}
-              nullPolicies={nullPolicies}
-              onLocateField={() => setActiveTab('inputs')}
-              onFocusNode={onFocusNode}
-            />
-          ) : null}
-        </Space>
+            {!isBusinessView ? (
+              <Alert
+                type="warning"
+                showIcon
+                message="调试信息"
+                description={`Node ${selectedNode.id} / Type ${nodeType}`}
+              />
+            ) : null}
+
+            {currentDsl && nodeTypeConfig?.inputsSchema && nodeTypeConfig.inputsSchema.length > 0 ? (
+              <NodeDryRunPreview
+                nodeId={selectedNode.id}
+                currentDsl={currentDsl}
+                inputsSchema={nodeTypeConfig.inputsSchema}
+                inputBindings={inputBindings}
+                defaultValues={defaultValues}
+                nullPolicies={nullPolicies}
+                onLocateField={() => setActiveTab('inputs')}
+                onFocusNode={onFocusNode}
+              />
+            ) : null}
+          </Space>
+        </div>
       ),
     },
   ];
@@ -641,13 +654,12 @@ export const PropertyPanel: React.FC<PropertyPanelProps> = ({
         />
       </div>
 
-      <div style={{ flex: 1, overflow: 'hidden', padding: '8px 12px 0 12px' }}>
+      <div style={{ flex: 1, overflowY: 'auto', padding: '8px 12px 0 12px' }}>
         <Tabs
           activeKey={activeTab}
           onChange={setActiveTab}
           items={tabs}
           size="small"
-          style={{ height: '100%' }}
           tabBarStyle={{ marginBottom: 8 }}
         />
       </div>

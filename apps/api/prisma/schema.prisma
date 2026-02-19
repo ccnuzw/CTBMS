@@ -56,7 +56,7 @@ model User {
   status UserStatus @default(ACTIVE)
 
   // 角色（通过 UserRole 关联）
-  roles UserRole[]
+  roles              UserRole[]
   userConfigBindings UserConfigBinding[]
 
   // 商情情报关联
@@ -786,34 +786,37 @@ model ResearchReport {
 }
 
 model KnowledgeItem {
-  id               String                 @id @default(uuid())
-  type             KnowledgeType
-  title            String
-  contentFormat    KnowledgeContentFormat @default(HTML)
-  contentPlain     String                 @db.Text
-  contentRich      String?                @db.Text
-  sourceType       String?
-  publishAt        DateTime?
-  effectiveAt      DateTime?
-  periodType       KnowledgePeriodType    @default(ADHOC)
-  periodKey        String?
-  location         String?
-  region           String[]               @default([])
-  commodities      String[]               @default([])
-  status           KnowledgeStatus        @default(DRAFT)
+  id            String                 @id @default(uuid())
+  type          KnowledgeType
+  title         String
+  contentFormat KnowledgeContentFormat @default(HTML)
+  contentPlain  String                 @db.Text
+  contentRich   String?                @db.Text
+  sourceType    String?
+  publishAt     DateTime?
+  effectiveAt   DateTime?
+  periodType    KnowledgePeriodType    @default(ADHOC)
+  periodKey     String?
+  location      String?
+
+  vectors KnowledgeVector[]
+
+  region           String[]        @default([])
+  commodities      String[]        @default([])
+  status           KnowledgeStatus @default(DRAFT)
   authorId         String
   reviewerId       String?
   reviewedAt       DateTime?
   rejectReason     String?
-  version          Int                    @default(1)
+  version          Int             @default(1)
   parentVersionId  String?
-  parentVersion    KnowledgeItem?         @relation("KnowledgeVersion", fields: [parentVersionId], references: [id])
-  childVersions    KnowledgeItem[]        @relation("KnowledgeVersion")
+  parentVersion    KnowledgeItem?  @relation("KnowledgeVersion", fields: [parentVersionId], references: [id])
+  childVersions    KnowledgeItem[] @relation("KnowledgeVersion")
   originLegacyType String?
   originLegacyId   String?
-  qualityScore     Int                    @default(0)
-  createdAt        DateTime               @default(now())
-  updatedAt        DateTime               @updatedAt
+  qualityScore     Int             @default(0)
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
 
   analysis      KnowledgeAnalysis?
   attachments   KnowledgeAttachment[]
@@ -827,6 +830,33 @@ model KnowledgeItem {
   @@index([sourceType, status])
   @@index([authorId])
   @@index([originLegacyType, originLegacyId])
+}
+
+// =============================================
+// Vector Storage for RAG
+// =============================================
+model KnowledgeVector {
+  id String @id @default(uuid())
+
+  // 关联父文档
+  knowledgeItemId String
+  knowledgeItem   KnowledgeItem @relation(fields: [knowledgeItemId], references: [id], onDelete: Cascade)
+
+  // 分块信息
+  chunkIndex Int
+  content    String @db.Text
+  tokenCount Int
+
+  // 向量数据 (使用 Unsupported 类型适配 pgvector 插件)
+  // 维度：1536 (OpenAI text-embedding-3-small)
+  embedding Unsupported("vector(1536)")?
+
+  // 元数据 (用于混合检索过滤)
+  metadata Json?
+
+  createdAt DateTime @default(now())
+
+  @@index([knowledgeItemId])
 }
 
 model KnowledgeAnalysis {
@@ -1799,6 +1829,7 @@ model AIModelConfig {
 
   provider  String // "google", "openai"
   modelName String // "gemini-1.5-pro"
+  embeddingModel String? // [NEW] Embedding model name (e.g. "text-embedding-004")
   apiUrl    String? // [NEW] Custom API Endpoint
 
   apiKeyEnvVar String? // 环境变量名 (推荐)
@@ -2114,20 +2145,20 @@ model WorkflowBackfillAudit {
 }
 
 model DecisionRulePack {
-  id             String                 @id @default(uuid())
-  rulePackCode   String                 @unique
-  name           String
-  description    String?
-  applicableScopes String[]             @default([])
-  ruleLayer      String                 @default("DEFAULT")
-  ownerType      String                 @default("USER")
-  ownerUserId    String?
-  templateSource WorkflowTemplateSource @default(PRIVATE)
-  isActive       Boolean                @default(true)
-  version        Int                    @default(1)
-  priority       Int                    @default(0)
-  publishedByUserId String?
-  publishedAt    DateTime?
+  id                 String                 @id @default(uuid())
+  rulePackCode       String                 @unique
+  name               String
+  description        String?
+  applicableScopes   String[]               @default([])
+  ruleLayer          String                 @default("DEFAULT")
+  ownerType          String                 @default("USER")
+  ownerUserId        String?
+  templateSource     WorkflowTemplateSource @default(PRIVATE)
+  isActive           Boolean                @default(true)
+  version            Int                    @default(1)
+  priority           Int                    @default(0)
+  publishedByUserId  String?
+  publishedAt        DateTime?
   lastPublishComment String?
 
   rules DecisionRule[]
@@ -2170,16 +2201,16 @@ model AgentPromptTemplate {
   name       String
   roleType   String
 
-  systemPrompt       String @db.Text
-  userPromptTemplate String @db.Text
+  systemPrompt       String  @db.Text
+  userPromptTemplate String  @db.Text
   fewShotExamples    Json?
-  outputFormat       String @default("json")
+  outputFormat       String  @default("json")
   variables          Json?
   guardrails         Json?
   outputSchemaCode   String? // Optional initially as we migrate or create new ones
-  outputSchema       Json?   // [NEW] Custom Output Schema Definition
+  outputSchema       Json? // [NEW] Custom Output Schema Definition
 
-  version           Int                    @default(1)
+  version           Int     @default(1)
   previousVersionId String?
 
   ownerUserId    String?
@@ -2207,7 +2238,7 @@ model AgentProfile {
   toolPolicy       Json?
   guardrails       Json?
   outputSchemaCode String
-  outputSchema     Json?   // [NEW] Custom Output Schema Definition
+  outputSchema     Json? // [NEW] Custom Output Schema Definition
   timeoutMs        Int     @default(30000)
   retryPolicy      Json?
   isActive         Boolean @default(true)
@@ -2265,10 +2296,10 @@ model ParameterItem {
   source        String?
   changeReason  String?
 
-  ownerType    String                 @default("USER")
-  ownerUserId  String?
-  itemSource   WorkflowTemplateSource @default(PRIVATE)
-  version      Int                    @default(1)
+  ownerType   String                 @default("USER")
+  ownerUserId String?
+  itemSource  WorkflowTemplateSource @default(PRIVATE)
+  version     Int                    @default(1)
 
   effectiveFrom DateTime?
   effectiveTo   DateTime?
@@ -2284,24 +2315,24 @@ model ParameterItem {
 }
 
 model AgentPromptTemplateSnapshot {
-  id String @id @default(uuid())
-  templateId String
-  promptCode String
-  version Int
-  data Json // Full snapshot of the template
-  createdAt DateTime @default(now())
+  id              String   @id @default(uuid())
+  templateId      String
+  promptCode      String
+  version         Int
+  data            Json // Full snapshot of the template
+  createdAt       DateTime @default(now())
   createdByUserId String?
 
   @@index([templateId, version])
 }
 
 model AgentProfileSnapshot {
-  id String @id @default(uuid())
-  profileId String
-  agentCode String
-  version Int
-  data Json // Full snapshot
-  createdAt DateTime @default(now())
+  id              String   @id @default(uuid())
+  profileId       String
+  agentCode       String
+  version         Int
+  data            Json // Full snapshot
+  createdAt       DateTime @default(now())
   createdByUserId String?
 
   @@index([profileId, version])
@@ -2334,6 +2365,45 @@ model DataConnector {
   @@index([connectorType, isActive])
 }
 
+// =============================================
+// MVP: Simplified Agent Config Models
+// =============================================
+
+model AgentPersona {
+  id String @id @default(uuid())
+
+  personaCode String  @unique
+  name        String
+  description String?
+  roleType    String // e.g., "ANALYST", "RESEARCHER"
+  icon        String?
+
+  // Default configuration applied when this persona is selected
+  defaultConfig Json? // { promptTemplate, tools, outputSchema, ... }
+
+  sortOrder Int     @default(0)
+  isActive  Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model WizardSession {
+  id String @id @default(uuid())
+
+  userId String
+  // user   User   @relation(fields: [userId], references: [id]) // Optional: Add relation if User model is stable
+
+  currentStep String  @default("personaSelection") // e.g., "personaSelection", "credentialBinding"
+  sessionData Json? // Full XState context snapshot
+  isCompleted Boolean @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId, isCompleted])
+}
+
 // ─────────────── DecisionRecord ───────────────
 
 enum DecisionAction {
@@ -2345,29 +2415,29 @@ enum DecisionAction {
 }
 
 model DecisionRecord {
-  id                    String              @id @default(uuid())
-  workflowExecutionId   String
-  workflowExecution     WorkflowExecution   @relation(fields: [workflowExecutionId], references: [id], onDelete: Cascade)
-  workflowDefinitionId  String?
+  id                   String            @id @default(uuid())
+  workflowExecutionId  String
+  workflowExecution    WorkflowExecution @relation(fields: [workflowExecutionId], references: [id], onDelete: Cascade)
+  workflowDefinitionId String?
 
-  action              DecisionAction
-  confidence          Float?
-  riskLevel           String?
-  targetWindow        String?
-  reasoningSummary    String?             @db.Text
-  evidenceSummary     Json?
-  paramSnapshot       Json?
-  outputSnapshot      Json?
-  traceId             String?             @unique
+  action           DecisionAction
+  confidence       Float?
+  riskLevel        String?
+  targetWindow     String?
+  reasoningSummary String?        @db.Text
+  evidenceSummary  Json?
+  paramSnapshot    Json?
+  outputSnapshot   Json?
+  traceId          String?        @unique
 
-  isPublished         Boolean             @default(false)
-  publishedAt         DateTime?
-  reviewedByUserId    String?
-  reviewComment       String?             @db.Text
+  isPublished      Boolean   @default(false)
+  publishedAt      DateTime?
+  reviewedByUserId String?
+  reviewComment    String?   @db.Text
 
-  createdByUserId     String
-  createdAt           DateTime            @default(now())
-  updatedAt           DateTime            @updatedAt
+  createdByUserId String
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 
   @@index([workflowExecutionId])
   @@index([workflowDefinitionId, createdAt])
@@ -2387,36 +2457,36 @@ enum ExperimentStatus {
 }
 
 model WorkflowExperiment {
-  id                      String           @id @default(uuid())
-  experimentCode          String           @unique
-  name                    String
-  description             String?          @db.Text
+  id             String  @id @default(uuid())
+  experimentCode String  @unique
+  name           String
+  description    String? @db.Text
 
-  workflowDefinitionId    String
-  variantAVersionId       String
-  variantBVersionId       String
+  workflowDefinitionId String
+  variantAVersionId    String
+  variantBVersionId    String
 
-  trafficSplitPercent     Int              @default(50)
-  status                  ExperimentStatus @default(DRAFT)
+  trafficSplitPercent Int              @default(50)
+  status              ExperimentStatus @default(DRAFT)
 
-  startedAt               DateTime?
-  endedAt                 DateTime?
-  maxExecutions           Int?
-  currentExecutionsA      Int              @default(0)
-  currentExecutionsB      Int              @default(0)
+  startedAt          DateTime?
+  endedAt            DateTime?
+  maxExecutions      Int?
+  currentExecutionsA Int       @default(0)
+  currentExecutionsB Int       @default(0)
 
-  winnerVariant           String?
-  conclusionSummary       String?          @db.Text
-  metricsSnapshot         Json?
+  winnerVariant     String?
+  conclusionSummary String? @db.Text
+  metricsSnapshot   Json?
 
-  autoStopEnabled         Boolean          @default(true)
-  badCaseThreshold        Float            @default(0.2)
+  autoStopEnabled  Boolean @default(true)
+  badCaseThreshold Float   @default(0.2)
 
-  createdByUserId         String
-  createdAt               DateTime         @default(now())
-  updatedAt               DateTime         @updatedAt
+  createdByUserId String
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 
-  runs                    WorkflowExperimentRun[]
+  runs WorkflowExperimentRun[]
 
   @@index([workflowDefinitionId, status])
   @@index([status, createdAt])
@@ -2426,26 +2496,26 @@ model WorkflowExperiment {
 // ─────────────── DebateRoundTrace (辩论轮次轨迹) ───────────────
 
 model DebateRoundTrace {
-  id                    String   @id @default(uuid())
-  workflowExecutionId   String
-  nodeExecutionId       String?
-  roundNumber           Int
-  participantCode       String
-  participantRole       String
-  stance                String?
-  confidence            Float?
-  previousConfidence    Float?
-  statementText         String   @db.Text
-  evidenceRefs          Json?
-  challengeTargetCode   String?
-  challengeText         String?  @db.Text
-  responseText          String?  @db.Text
-  keyPoints             Json?
-  isJudgement           Boolean  @default(false)
-  judgementVerdict       String?
-  judgementReasoning     String?  @db.Text
-  durationMs            Int?
-  createdAt             DateTime @default(now())
+  id                  String   @id @default(uuid())
+  workflowExecutionId String
+  nodeExecutionId     String?
+  roundNumber         Int
+  participantCode     String
+  participantRole     String
+  stance              String?
+  confidence          Float?
+  previousConfidence  Float?
+  statementText       String   @db.Text
+  evidenceRefs        Json?
+  challengeTargetCode String?
+  challengeText       String?  @db.Text
+  responseText        String?  @db.Text
+  keyPoints           Json?
+  isJudgement         Boolean  @default(false)
+  judgementVerdict    String?
+  judgementReasoning  String?  @db.Text
+  durationMs          Int?
+  createdAt           DateTime @default(now())
 
   @@index([workflowExecutionId, roundNumber])
   @@index([workflowExecutionId, participantCode])
@@ -2455,24 +2525,24 @@ model DebateRoundTrace {
 // ─────────────── TriggerConfig (触发器配置) ───────────────
 
 model TriggerConfig {
-  id                    String    @id @default(uuid())
-  workflowDefinitionId  String
-  triggerType           String    // MANUAL | API | SCHEDULE | EVENT | ON_DEMAND
-  name                  String
-  description           String?   @db.Text
-  status                String    @default("ACTIVE") // ACTIVE | INACTIVE | ERROR
-  cronConfig            Json?
-  apiConfig             Json?
-  eventConfig           Json?
-  paramOverrides        Json?
-  lastTriggeredAt       DateTime?
-  nextFireAt            DateTime?
-  cronState             String?   // IDLE | SCHEDULED | RUNNING | PAUSED
-  createdByUserId       String
-  createdAt             DateTime  @default(now())
-  updatedAt             DateTime  @updatedAt
+  id                   String    @id @default(uuid())
+  workflowDefinitionId String
+  triggerType          String // MANUAL | API | SCHEDULE | EVENT | ON_DEMAND
+  name                 String
+  description          String?   @db.Text
+  status               String    @default("ACTIVE") // ACTIVE | INACTIVE | ERROR
+  cronConfig           Json?
+  apiConfig            Json?
+  eventConfig          Json?
+  paramOverrides       Json?
+  lastTriggeredAt      DateTime?
+  nextFireAt           DateTime?
+  cronState            String? // IDLE | SCHEDULED | RUNNING | PAUSED
+  createdByUserId      String
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
 
-  triggerLogs           TriggerLog[]
+  triggerLogs TriggerLog[]
 
   @@index([workflowDefinitionId, triggerType])
   @@index([status])
@@ -2482,18 +2552,18 @@ model TriggerConfig {
 // ─────────────── TriggerLog (触发日志) ───────────────
 
 model TriggerLog {
-  id                    String    @id @default(uuid())
-  triggerConfigId       String
-  workflowExecutionId   String?
-  triggerType           String
-  status                String    // SUCCESS | FAILED | SKIPPED | TIMEOUT
-  payload               Json?
-  errorMessage          String?   @db.Text
-  durationMs            Int?
-  triggeredAt           DateTime
-  createdAt             DateTime  @default(now())
+  id                  String   @id @default(uuid())
+  triggerConfigId     String
+  workflowExecutionId String?
+  triggerType         String
+  status              String // SUCCESS | FAILED | SKIPPED | TIMEOUT
+  payload             Json?
+  errorMessage        String?  @db.Text
+  durationMs          Int?
+  triggeredAt         DateTime
+  createdAt           DateTime @default(now())
 
-  triggerConfig         TriggerConfig @relation(fields: [triggerConfigId], references: [id])
+  triggerConfig TriggerConfig @relation(fields: [triggerConfigId], references: [id])
 
   @@index([triggerConfigId, triggeredAt])
   @@index([workflowExecutionId])
@@ -2503,16 +2573,16 @@ model TriggerLog {
 // ─────────────── ParameterChangeLog (参数变更审计) ───────────────
 
 model ParameterChangeLog {
-  id                String    @id @default(uuid())
-  parameterSetId    String
-  parameterItemId   String?
-  operation         String    // CREATE | UPDATE | DELETE | RESET_TO_DEFAULT | BATCH_RESET | PUBLISH
-  fieldPath         String?
-  oldValue          Json?
-  newValue          Json?
-  changeReason      String?   @db.Text
-  changedByUserId   String
-  createdAt         DateTime  @default(now())
+  id              String   @id @default(uuid())
+  parameterSetId  String
+  parameterItemId String?
+  operation       String // CREATE | UPDATE | DELETE | RESET_TO_DEFAULT | BATCH_RESET | PUBLISH
+  fieldPath       String?
+  oldValue        Json?
+  newValue        Json?
+  changeReason    String?  @db.Text
+  changedByUserId String
+  createdAt       DateTime @default(now())
 
   @@index([parameterSetId, createdAt])
   @@index([parameterItemId])
@@ -2522,19 +2592,19 @@ model ParameterChangeLog {
 // ─────────────── ExportTask (报告导出任务) ───────────────
 
 model ExportTask {
-  id                    String    @id @default(uuid())
-  workflowExecutionId   String
-  format                String    // PDF | WORD | JSON
-  status                String    @default("PENDING") // PENDING | PROCESSING | COMPLETED | FAILED
-  sections              Json      // string[]
-  reportData            Json?
-  downloadUrl           String?
-  errorMessage          String?   @db.Text
-  title                 String?   @db.VarChar(200)
-  includeRawData        Boolean   @default(false)
-  createdByUserId       String
-  createdAt             DateTime  @default(now())
-  completedAt           DateTime?
+  id                  String    @id @default(uuid())
+  workflowExecutionId String
+  format              String // PDF | WORD | JSON
+  status              String    @default("PENDING") // PENDING | PROCESSING | COMPLETED | FAILED
+  sections            Json // string[]
+  reportData          Json?
+  downloadUrl         String?
+  errorMessage        String?   @db.Text
+  title               String?   @db.VarChar(200)
+  includeRawData      Boolean   @default(false)
+  createdByUserId     String
+  createdAt           DateTime  @default(now())
+  completedAt         DateTime?
 
   @@index([workflowExecutionId, createdAt])
   @@index([status])
@@ -2544,21 +2614,21 @@ model ExportTask {
 // ─────────────── WorkflowExperimentRun (实验运行明细) ───────────────
 
 model WorkflowExperimentRun {
-  id                    String    @id @default(uuid())
-  experimentId          String
-  workflowExecutionId   String
-  variant               String    // A | B
-  success               Boolean
-  durationMs            Int
-  nodeCount             Int?
-  failureCategory       String?   @db.VarChar(100)
-  action                String?   @db.VarChar(60)
-  confidence            Float?
-  riskLevel             String?   @db.VarChar(60)
-  metricsPayload        Json?
-  createdAt             DateTime  @default(now())
+  id                  String   @id @default(uuid())
+  experimentId        String
+  workflowExecutionId String
+  variant             String // A | B
+  success             Boolean
+  durationMs          Int
+  nodeCount           Int?
+  failureCategory     String?  @db.VarChar(100)
+  action              String?  @db.VarChar(60)
+  confidence          Float?
+  riskLevel           String?  @db.VarChar(60)
+  metricsPayload      Json?
+  createdAt           DateTime @default(now())
 
-  experiment            WorkflowExperiment @relation(fields: [experimentId], references: [id])
+  experiment WorkflowExperiment @relation(fields: [experimentId], references: [id])
 
   @@index([experimentId, variant, createdAt])
   @@index([workflowExecutionId])
@@ -2568,24 +2638,24 @@ model WorkflowExperimentRun {
 // ─────────────── TemplateCatalog (流程模板市场) ───────────────
 
 model TemplateCatalog {
-  id                    String    @id @default(uuid())
-  templateCode          String    @unique
-  name                  String
-  description           String?   @db.Text
-  category              String    // TRADING | RISK_MANAGEMENT | ANALYSIS | MONITORING | REPORTING | CUSTOM
-  status                String    @default("DRAFT") // DRAFT | PUBLISHED | ARCHIVED
-  tags                  Json?     // string[]
-  coverImageUrl         String?
-  dslSnapshot           Json
-  nodeCount             Int       @default(0)
-  edgeCount             Int       @default(0)
-  usageCount            Int       @default(0)
-  rating                Float?
-  authorUserId          String
-  authorName            String?
-  isOfficial            Boolean   @default(false)
-  createdAt             DateTime  @default(now())
-  updatedAt             DateTime  @updatedAt
+  id            String   @id @default(uuid())
+  templateCode  String   @unique
+  name          String
+  description   String?  @db.Text
+  category      String // TRADING | RISK_MANAGEMENT | ANALYSIS | MONITORING | REPORTING | CUSTOM
+  status        String   @default("DRAFT") // DRAFT | PUBLISHED | ARCHIVED
+  tags          Json? // string[]
+  coverImageUrl String?
+  dslSnapshot   Json
+  nodeCount     Int      @default(0)
+  edgeCount     Int      @default(0)
+  usageCount    Int      @default(0)
+  rating        Float?
+  authorUserId  String
+  authorName    String?
+  isOfficial    Boolean  @default(false)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 
   @@index([category, status])
   @@index([status, createdAt])
@@ -2596,18 +2666,18 @@ model TemplateCatalog {
 // ─────────────── UserConfigBinding (用户配置绑定) ───────────────
 
 model UserConfigBinding {
-  id                String    @id @default(uuid())
-  userId            String
-  bindingType       String    @db.VarChar(50)
-  targetId          String
-  targetCode        String?   @db.VarChar(100)
-  metadata          Json?
-  isActive          Boolean   @default(true)
-  priority          Int       @default(100)
-  createdAt         DateTime  @default(now())
-  updatedAt         DateTime  @updatedAt
+  id          String   @id @default(uuid())
+  userId      String
+  bindingType String   @db.VarChar(50)
+  targetId    String
+  targetCode  String?  @db.VarChar(100)
+  metadata    Json?
+  isActive    Boolean  @default(true)
+  priority    Int      @default(100)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
-  user              User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([userId, bindingType, targetId])
   @@index([userId, bindingType, isActive])
@@ -2617,24 +2687,24 @@ model UserConfigBinding {
 // ─────────────── FuturesQuoteSnapshot (期货行情快照) ───────────────
 
 model FuturesQuoteSnapshot {
-  id                String    @id @default(uuid())
-  contractCode      String    @db.VarChar(30)
-  exchange          String    @db.VarChar(10)
-  lastPrice         Float
-  openPrice         Float?
-  highPrice         Float?
-  lowPrice          Float?
-  closePrice        Float?
-  settlementPrice   Float?
-  volume            Int?
-  openInterest      Int?
-  bidPrice1         Float?
-  askPrice1         Float?
-  bidVolume1        Int?
-  askVolume1        Int?
-  tradingDay        String    @db.VarChar(10)
-  snapshotAt        DateTime
-  createdAt         DateTime  @default(now())
+  id              String   @id @default(uuid())
+  contractCode    String   @db.VarChar(30)
+  exchange        String   @db.VarChar(10)
+  lastPrice       Float
+  openPrice       Float?
+  highPrice       Float?
+  lowPrice        Float?
+  closePrice      Float?
+  settlementPrice Float?
+  volume          Int?
+  openInterest    Int?
+  bidPrice1       Float?
+  askPrice1       Float?
+  bidVolume1      Int?
+  askVolume1      Int?
+  tradingDay      String   @db.VarChar(10)
+  snapshotAt      DateTime
+  createdAt       DateTime @default(now())
 
   @@index([contractCode, tradingDay])
   @@index([exchange, tradingDay])
@@ -2644,14 +2714,14 @@ model FuturesQuoteSnapshot {
 // ─────────────── FuturesDerivedFeature (期货衍生特征) ───────────────
 
 model FuturesDerivedFeature {
-  id                String    @id @default(uuid())
-  contractCode      String    @db.VarChar(30)
-  featureType       String    @db.VarChar(60)
-  featureValue      Float
-  parameters        Json?
-  calculatedAt      DateTime
-  tradingDay        String    @db.VarChar(10)
-  createdAt         DateTime  @default(now())
+  id           String   @id @default(uuid())
+  contractCode String   @db.VarChar(30)
+  featureType  String   @db.VarChar(60)
+  featureValue Float
+  parameters   Json?
+  calculatedAt DateTime
+  tradingDay   String   @db.VarChar(10)
+  createdAt    DateTime @default(now())
 
   @@index([contractCode, featureType, tradingDay])
   @@index([tradingDay])
@@ -2660,30 +2730,30 @@ model FuturesDerivedFeature {
 // ─────────────── VirtualFuturesPosition (虚拟期货持仓) ───────────────
 
 model VirtualFuturesPosition {
-  id                      String    @id @default(uuid())
-  accountId               String    @db.VarChar(60)
-  contractCode            String    @db.VarChar(30)
-  exchange                String    @db.VarChar(10)
-  direction               String    // LONG | SHORT
-  status                  String    @default("OPEN") // OPEN | CLOSED | PARTIALLY_CLOSED | LIQUIDATED
-  openPrice               Float
-  currentPrice            Float?
-  quantity                Int
-  remainingQty            Int
-  marginRate              Float     @default(0.1)
-  marginAmount            Float
-  floatingPnl             Float?
-  realizedPnl             Float?
-  stopLossPrice           Float?
-  takeProfitPrice         Float?
-  openedAt                DateTime
-  closedAt                DateTime?
-  ownerUserId             String
-  workflowExecutionId     String?
-  createdAt               DateTime  @default(now())
-  updatedAt               DateTime  @updatedAt
+  id                  String    @id @default(uuid())
+  accountId           String    @db.VarChar(60)
+  contractCode        String    @db.VarChar(30)
+  exchange            String    @db.VarChar(10)
+  direction           String // LONG | SHORT
+  status              String    @default("OPEN") // OPEN | CLOSED | PARTIALLY_CLOSED | LIQUIDATED
+  openPrice           Float
+  currentPrice        Float?
+  quantity            Int
+  remainingQty        Int
+  marginRate          Float     @default(0.1)
+  marginAmount        Float
+  floatingPnl         Float?
+  realizedPnl         Float?
+  stopLossPrice       Float?
+  takeProfitPrice     Float?
+  openedAt            DateTime
+  closedAt            DateTime?
+  ownerUserId         String
+  workflowExecutionId String?
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
 
-  trades                  VirtualTradeLedger[]
+  trades VirtualTradeLedger[]
 
   @@index([accountId, status])
   @@index([ownerUserId, accountId])
@@ -2694,25 +2764,25 @@ model VirtualFuturesPosition {
 // ─────────────── VirtualTradeLedger (虚拟成交流水) ───────────────
 
 model VirtualTradeLedger {
-  id                      String    @id @default(uuid())
-  accountId               String    @db.VarChar(60)
-  positionId              String?
-  contractCode            String    @db.VarChar(30)
-  exchange                String    @db.VarChar(10)
-  action                  String    // OPEN_LONG | OPEN_SHORT | CLOSE_LONG | CLOSE_SHORT | FORCED_LIQUIDATION
-  status                  String    @default("FILLED") // PENDING | FILLED | REJECTED | CANCELED
-  price                   Float
-  quantity                Int
-  amount                  Float
-  commission              Float     @default(0)
-  realizedPnl             Float?
-  reason                  String?   @db.Text
-  workflowExecutionId     String?
-  ownerUserId             String
-  tradedAt                DateTime
-  createdAt               DateTime  @default(now())
+  id                  String   @id @default(uuid())
+  accountId           String   @db.VarChar(60)
+  positionId          String?
+  contractCode        String   @db.VarChar(30)
+  exchange            String   @db.VarChar(10)
+  action              String // OPEN_LONG | OPEN_SHORT | CLOSE_LONG | CLOSE_SHORT | FORCED_LIQUIDATION
+  status              String   @default("FILLED") // PENDING | FILLED | REJECTED | CANCELED
+  price               Float
+  quantity            Int
+  amount              Float
+  commission          Float    @default(0)
+  realizedPnl         Float?
+  reason              String?  @db.Text
+  workflowExecutionId String?
+  ownerUserId         String
+  tradedAt            DateTime
+  createdAt           DateTime @default(now())
 
-  position                VirtualFuturesPosition? @relation(fields: [positionId], references: [id])
+  position VirtualFuturesPosition? @relation(fields: [positionId], references: [id])
 
   @@index([accountId, tradedAt])
   @@index([positionId])

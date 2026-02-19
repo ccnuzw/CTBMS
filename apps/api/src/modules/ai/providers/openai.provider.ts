@@ -176,14 +176,14 @@ export class OpenAIProvider implements IAIProvider {
         role: 'user',
         content: options.images?.length
           ? [
-              { type: 'text', text: userPrompt },
-              ...options.images.map((img) => ({
-                type: 'image_url' as const,
-                image_url: {
-                  url: `data:${img.mimeType};base64,${img.base64}`,
-                },
-              })),
-            ]
+            { type: 'text', text: userPrompt },
+            ...options.images.map((img) => ({
+              type: 'image_url' as const,
+              image_url: {
+                url: `data:${img.mimeType};base64,${img.base64}`,
+              },
+            })),
+          ]
           : userPrompt,
       },
     ];
@@ -307,8 +307,7 @@ export class OpenAIProvider implements IAIProvider {
       }
 
       this.logger.error('OpenAI List Models failed after retries', error);
-      // Fallback to basic models if list fails
-      return { models: ['gpt-4o', 'gpt-4-turbo', 'gpt-3.5-turbo'] };
+      throw error;
     }
   }
 
@@ -327,10 +326,10 @@ export class OpenAIProvider implements IAIProvider {
 
     // 3. If original has /v1 or /v1beta, try base
     if (trimmed.endsWith('/v1')) {
-        urls.add(trimmed.slice(0, -3));
+      urls.add(trimmed.slice(0, -3));
     }
     if (trimmed.endsWith('/v1beta')) {
-        urls.add(trimmed.slice(0, -7));
+      urls.add(trimmed.slice(0, -7));
     }
 
     return Array.from(urls);
@@ -348,22 +347,6 @@ export class OpenAIProvider implements IAIProvider {
 
     const response = await client.models.list();
     return response.data
-      .filter((model) => {
-        const id = model.id.toLowerCase();
-        return (
-            id.includes('gpt') ||
-            id.includes('deepseek') ||
-            id.includes('claude') ||
-            id.includes('gemini') ||
-            id.includes('qwen') ||
-            id.includes('hunyuan') ||
-            id.includes('spark') ||
-            id.includes('doubao') ||
-            id.includes('yi-') ||
-            id.includes('chatglm') ||
-            id.includes('minimax')
-        );
-      })
       .map((model) => model.id)
       .sort();
   }

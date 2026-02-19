@@ -62,6 +62,7 @@ async function main() {
   runSeedScript('seed-prompts.ts');
   runSeedScript('seed-agent-role-templates.ts');
   runSeedScript('seed-ai-model-configs.ts');
+  runSeedScript('seed-agent-personas.ts');
 
   // 2.5 数据字典 (统一枚举/标签)
   runSeedScript('seed-dictionaries.ts');

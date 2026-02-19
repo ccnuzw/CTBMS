@@ -1,0 +1,32 @@
+meta:
+  id: google-search
+  name: Google Search
+  description: Search the web using Google Programmable Search Engine.
+  version: 1.0.0
+  icon: GoogleOutlined
+  auth:
+    type: API_KEY
+    param: key
+    in: QUERY
+
+endpoints:
+  - id: search
+    method: GET
+    url: https://www.googleapis.com/customsearch/v1
+    params:
+      - name: q
+        in: QUERY
+        required: true
+      - name: cx
+        in: QUERY
+        required: true
+        description: Custom Search Engine ID
+      - name: key
+        in: QUERY
+        required: true
+        description: API Key
+
+transform:
+  - op: json_pick
+    args:
+      path: $.items

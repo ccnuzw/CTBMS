@@ -501,6 +501,7 @@ export class AIService implements OnModuleInit {
                 headers: this.resolveRecord(aiConfig?.headers),
                 queryParams: this.resolveRecord(aiConfig?.queryParams),
                 pathOverrides: this.resolveRecord(aiConfig?.pathOverrides),
+                wireApi: this.resolveRecord(aiConfig?.pathOverrides)?.['wireApi'], // [NEW] Extract wireApi
                 modelFetchMode: aiConfig?.modelFetchMode as AIRequestOptions['modelFetchMode'],
                 allowUrlProbe: aiConfig?.allowUrlProbe ?? undefined,
                 allowCompatPathFallback: aiConfig?.allowCompatPathFallback ?? undefined,
@@ -588,6 +589,7 @@ export class AIService implements OnModuleInit {
                 headers: payload.headers,
                 queryParams: payload.queryParams,
                 pathOverrides: payload.pathOverrides,
+                wireApi: payload.pathOverrides?.['wireApi'], // [NEW] Extract wireApi
                 modelFetchMode: payload.modelFetchMode,
                 allowUrlProbe: payload.allowUrlProbe,
                 allowCompatPathFallback: payload.allowCompatPathFallback,
@@ -698,6 +700,7 @@ export class AIService implements OnModuleInit {
                     headers: this.resolveRecord(resolvedConfig?.headers),
                     queryParams: this.resolveRecord(resolvedConfig?.queryParams),
                     pathOverrides: this.resolveRecord(resolvedConfig?.pathOverrides),
+                    wireApi: this.resolveRecord(resolvedConfig?.pathOverrides)?.['wireApi'], // [NEW] Extract wireApi
                     modelFetchMode: resolvedConfig?.modelFetchMode as AIRequestOptions['modelFetchMode'],
                     allowUrlProbe: resolvedConfig?.allowUrlProbe ?? undefined,
                     allowCompatPathFallback: resolvedConfig?.allowCompatPathFallback ?? undefined,
@@ -953,6 +956,7 @@ export class AIService implements OnModuleInit {
             headers: this.resolveRecord(aiConfig?.headers),
             queryParams: this.resolveRecord(aiConfig?.queryParams),
             pathOverrides: this.resolveRecord(aiConfig?.pathOverrides),
+            wireApi: this.resolveRecord(aiConfig?.pathOverrides)?.['wireApi'], // [NEW] Extract wireApi
             modelFetchMode: aiConfig?.modelFetchMode as AIRequestOptions['modelFetchMode'],
             allowUrlProbe: aiConfig?.allowUrlProbe ?? undefined,
             allowCompatPathFallback: aiConfig?.allowCompatPathFallback ?? undefined,
@@ -1342,5 +1346,63 @@ export class AIService implements OnModuleInit {
         if (!sentiment) return 'neutral';
         const matched = this.configService.evaluateMappingRule('SENTIMENT', sentiment.toLowerCase(), 'neutral');
         return matched as 'neutral' | 'positive' | 'negative';
+    }
+
+    /**
+     * [NEW] 通用对话接口
+     */
+    async chat(
+        systemPrompt: string,
+        userPrompt: string,
+        modelConfigKey?: string,
+    ): Promise<string> {
+        // [NEW] Get Configuration
+        // Priority: Argument ConfigKey > Default Config
+        let aiConfig: AIModelConfig | null = null;
+        if (modelConfigKey) {
+            aiConfig = await this.prisma.aIModelConfig.findUnique({ where: { configKey: modelConfigKey } });
+        }
+        if (!aiConfig) {
+            aiConfig = await this.configService.getDefaultAIConfig();
+        }
+
+        // Resolve Config Priority: DB > ENV > Default
+        const currentApiKey = this.resolveApiKey(aiConfig, this.apiKey);
+        const currentApiUrl = this.resolveApiUrl(aiConfig, this.apiUrl);
+        const currentModelId = aiConfig?.modelName || this.modelId;
+        const providerType = (aiConfig?.provider as AIProvider) || 'google';
+
+        if (!currentApiKey) {
+            // Fallback to Env if DB config is missing/invalid but env exists & matching provider
+            if (providerType === 'google' && this.apiKey) {
+                // use default
+            } else {
+                return `【系统错误】AI 服务未配置或 API Key 缺失 (Config: ${modelConfigKey || 'DEFAULT'})`;
+            }
+        }
+
+        try {
+            const provider = this.aiProviderFactory.getProvider(providerType);
+            const options: AIRequestOptions = {
+                modelName: currentModelId,
+                apiKey: currentApiKey || this.apiKey, // fallback
+                apiUrl: currentApiUrl || undefined,
+                authType: aiConfig?.authType as AIRequestOptions['authType'],
+                headers: this.resolveRecord(aiConfig?.headers),
+                queryParams: this.resolveRecord(aiConfig?.queryParams),
+                pathOverrides: this.resolveRecord(aiConfig?.pathOverrides),
+                modelFetchMode: aiConfig?.modelFetchMode as AIRequestOptions['modelFetchMode'],
+                allowUrlProbe: aiConfig?.allowUrlProbe ?? undefined,
+                timeoutMs: aiConfig?.timeoutMs ?? undefined,
+                maxRetries: aiConfig?.maxRetries ?? undefined,
+                temperature: aiConfig?.temperature ?? 0.7, // Chat usually needs higher temp
+                maxTokens: aiConfig?.maxTokens ?? 2048,
+            };
+
+            return await provider.generateResponse(systemPrompt, userPrompt, options);
+        } catch (error) {
+            this.logger.error('Chat generation failed', error);
+            throw new Error(`AI 对话失败: ${error instanceof Error ? error.message : String(error)}`);
+        }
     }
 }
