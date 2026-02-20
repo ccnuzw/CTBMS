@@ -13,6 +13,8 @@ import { ContentType } from '@packages/types';
 import { AIService } from '../ai/ai.service';
 import { PrismaService } from '../../prisma';
 import { RagPipelineService } from './rag/rag-pipeline.service';
+import { IntelTaskService } from '../intel-task/intel-task.service';
+import { forwardRef, Inject } from '@nestjs/common';
 
 type KnowledgeListQuery = {
   type?: KnowledgeType;
@@ -70,6 +72,7 @@ export class KnowledgeService {
     private prisma: PrismaService,
     private aiService: AIService,
     private ragPipelineService: RagPipelineService,
+    @Inject(forwardRef(() => IntelTaskService)) private intelTaskService: IntelTaskService,
   ) { }
 
   async findAll(query: KnowledgeListQuery) {
@@ -1402,7 +1405,6 @@ export class KnowledgeService {
       });
     }
 
-    // 触发 AI 分析
     if (input.triggerAnalysis !== false && content.length > 50) {
       this.reanalyze(item.id, true).catch((err) => {
         console.error('[KnowledgeService.createResearchReport] AI analysis failed:', err);
@@ -1410,6 +1412,52 @@ export class KnowledgeService {
     }
 
     return this.findOne(item.id);
+  }
+
+  /**
+   * 将草稿研报提交审核
+   */
+  async submitDraftReport(id: string, taskId?: string, authorId?: string) {
+    const item = await this.prisma.knowledgeItem.findUnique({
+      where: { id },
+    });
+
+    if (!item) {
+      throw new NotFoundException(`Knowledge items with id ${id} not found`);
+    }
+
+    if (item.type !== 'RESEARCH') {
+      throw new BadRequestException('Only RESEARCH reports can be submitted');
+    }
+
+    if (item.status !== 'DRAFT') {
+      throw new BadRequestException(`Report is currently ${item.status}, expected DRAFT`);
+    }
+
+    // 更新研报状态为待审核
+    const updatedReport = await this.prisma.knowledgeItem.update({
+      where: { id },
+      data: { status: 'PENDING_REVIEW' },
+    });
+
+    // 若传入了 taskId，触发任务联动提交
+    if (taskId) {
+      if (!this.intelTaskService) {
+        console.warn('IntelTaskService is not injected, task binding skipped.');
+      } else {
+        try {
+          // 调用任务的提交功能，将任务置于完成/待审状态
+          await this.intelTaskService.submitTask(taskId, authorId || item.authorId || 'system-user-placeholder', {
+            intelId: id,
+          });
+        } catch (error) {
+          console.error(`Failed to submit task ${taskId} for report ${id}:`, error);
+          // 这里可以考虑不要因此中断研报自己的提审流程，只打错误日志
+        }
+      }
+    }
+
+    return updatedReport;
   }
 
   /**

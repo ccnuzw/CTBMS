@@ -590,6 +590,29 @@ export const useUpdateKnowledgeReport = () => {
 };
 
 /**
+ * 提交草稿研报至审核区并联动任务
+ */
+export const useSubmitDraftReport = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({ id, taskId, authorId }: { id: string; taskId?: string; authorId?: string }) => {
+      const res = await apiClient.post<KnowledgeItem>(`/knowledge/reports/${id}/submit`, { taskId, authorId });
+      return mapKnowledgeItem(res.data);
+    },
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: ['knowledge', 'reports'] });
+      queryClient.invalidateQueries({ queryKey: ['knowledge', 'report', variables.id] });
+      queryClient.invalidateQueries({ queryKey: ['knowledge', 'list'] });
+      // 如果联动了任务，也一并刷新相关任务列表
+      if (variables.taskId) {
+        queryClient.invalidateQueries({ queryKey: ['intel-tasks'] });
+      }
+    },
+  });
+};
+
+/**
  * 删除研报
  */
 export const useDeleteKnowledgeReport = () => {

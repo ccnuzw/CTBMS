@@ -369,6 +369,15 @@ export class KnowledgeController {
     });
   }
 
+  @Post('reports/:id/submit')
+  submitDraftReport(
+    @Param('id') id: string,
+    @Body('taskId') taskId?: string,
+    @Body('authorId') authorId?: string,
+  ) {
+    return this.knowledgeService.submitDraftReport(id, taskId, authorId);
+  }
+
   @Delete('reports/:id')
   deleteReport(@Param('id') id: string) {
     return this.knowledgeService.deleteReport(id);

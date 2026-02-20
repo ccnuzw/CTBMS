@@ -26,6 +26,7 @@ import {
   theme,
   Progress,
   Modal,
+  Alert,
 } from 'antd';
 import {
   FileWordOutlined,
@@ -38,7 +39,7 @@ import {
   BarChartOutlined,
   ExpandAltOutlined,
 } from '@ant-design/icons';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import {
   ReportType,
   REPORT_TYPE_LABELS,
@@ -55,6 +56,7 @@ import {
   useUpdateKnowledgeReport,
   useKnowledgeReport,
   useKnowledgeReportStats,
+  useSubmitDraftReport,
   CreateReportPayload,
 } from '../api/knowledge-hooks';
 import { useProvinces } from '../api/region';
@@ -116,6 +118,8 @@ export const ResearchReportCreatePage = () => {
   const navigate = useNavigate();
   const { id: editId } = useParams<{ id?: string }>();
   const isEditMode = Boolean(editId);
+  const [searchParams] = useSearchParams();
+  const taskId = searchParams.get('taskId');
 
   const [form] = Form.useForm<CreateReportPayload & { content?: string }>();
   const keyPointsWatch = Form.useWatch('keyPoints', form);
@@ -123,6 +127,8 @@ export const ResearchReportCreatePage = () => {
   const dataPointsWatch = Form.useWatch('dataPoints', form);
   const createMutation = useCreateKnowledgeReport();
   const updateMutation = useUpdateKnowledgeReport();
+  const submitReportMutation = useSubmitDraftReport();
+  const analyzeMutation = useAnalyzeContent();
 
   // Fetch existing report for edit mode
   const { data: existingReport, isLoading: isLoadingReport } = useKnowledgeReport(editId || '');
@@ -302,7 +308,7 @@ export const ResearchReportCreatePage = () => {
     (predictionWatch as any)?.direction ||
     ((dataPointsWatch as any[])?.length || 0) > 0;
 
-  const handleFinish = async (values: CreateReportPayload & { content?: string }) => {
+  const handleFinish = async (values: CreateReportPayload & { content?: string }, submitAction?: 'save' | 'submit') => {
     // Force-read content from form (ProFormItem with custom TiptapEditor may not include it in values)
     const bodyContent = form.getFieldValue('content') || values.content;
     const summaryContent = form.getFieldValue('summary') || values.summary;
@@ -326,24 +332,35 @@ export const ResearchReportCreatePage = () => {
     };
 
     try {
+      let currentReportId = editId;
       if (isEditMode && editId) {
         await updateMutation.mutateAsync({
           id: editId,
           ...payload,
         });
-        message.success('研报更新成功');
       } else {
-        await createMutation.mutateAsync(payload);
-        message.success('研报创建成功');
+        const createRes = await createMutation.mutateAsync(payload);
+        currentReportId = createRes.id;
       }
+
+      // 如果是通过“提交审核并完成任务”按钮进来的，额外调用 submitDraftReport
+      if (submitAction === 'submit' && currentReportId) {
+        await submitReportMutation.mutateAsync({
+          id: currentReportId,
+          taskId: taskId || undefined,
+          authorId: payload.authorId,
+        });
+        message.success(taskId ? '已提交审核并标记任务为待审核' : '研报已提交审核');
+      } else {
+        message.success(isEditMode ? '研报草稿更新成功' : '研报草稿保存成功');
+      }
+
       navigate('/intel/knowledge?tab=library&content=reports');
     } catch (error) {
-      message.error(isEditMode ? '更新失败，请重试' : '创建失败，请重试');
+      message.error(isEditMode ? '操作失败，请重试' : '操作失败，请重试');
       console.error(error);
     }
   };
-
-  const analyzeMutation = useAnalyzeContent();
 
   // Track if an existing MarketIntel was created via upload
   const [uploadedIntelId, setUploadedIntelId] = useState<string | null>(null);
@@ -358,7 +375,7 @@ export const ResearchReportCreatePage = () => {
       setUploadedAttachment(result.attachment);
     }
 
-    const content = result.intel?.rawContent;
+    const content = result.intel?.rawContent || result.content;
     if (content) {
       const currentContent = form.getFieldValue('content') || '';
       const isHtml = /^\s*<.*>/.test(content) || /<br\/>|<p>|<div>/i.test(content);
@@ -648,10 +665,21 @@ export const ResearchReportCreatePage = () => {
             </Button>,
           ],
         }}
+        content={
+          taskId && (
+            <Alert
+              message="任务正在进行中"
+              description="该研究报告直接关联到您的采编任务。保存草稿后，请务必点击【提交审核】以完成任务上报。"
+              type="info"
+              showIcon
+              style={{ marginBottom: 16 }}
+            />
+          )
+        }
       >
         <ProForm<CreateReportPayload & { content?: string }>
           form={form}
-          onFinish={handleFinish}
+          onFinish={(values) => handleFinish(values, 'save')}
           layout="vertical"
           submitter={{
             render: () => (
@@ -672,13 +700,28 @@ export const ResearchReportCreatePage = () => {
               >
                 <Button onClick={() => form.resetFields()}>重置</Button>
                 <Button
+                  onClick={() => form.submit()} // ProForm 默认回调为 onFinish -> handleFinish(values, 'save')
+                  loading={createMutation.isPending || updateMutation.isPending}
+                  size="large"
+                >
+                  保存草稿
+                </Button>
+                <Button
                   type="primary"
-                  onClick={() => form.submit()}
-                  loading={createMutation.isPending}
+                  onClick={() => {
+                    form.validateFields().then((values) => {
+                      handleFinish(values as CreateReportPayload, 'submit');
+                    });
+                  }}
+                  loading={
+                    createMutation.isPending ||
+                    updateMutation.isPending ||
+                    submitReportMutation.isPending
+                  }
                   icon={<CheckCircleOutlined />}
                   size="large"
                 >
-                  保存研报
+                  {taskId ? '提交审核并完成任务' : '提交审核'}
                 </Button>
               </div>
             ),
@@ -703,6 +746,7 @@ export const ResearchReportCreatePage = () => {
                   size="small"
                 >
                   <DocumentUploader
+                    uploadMode="parse_only"
                     contentType={ContentType.RESEARCH_REPORT}
                     onUploadSuccess={handleUploadSuccess}
                     onStartAnalysis={handleUploadAnalysisTrigger}

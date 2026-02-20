@@ -34,6 +34,7 @@ interface DocumentUploaderProps {
   contentType?: ContentType;
   sourceType?: IntelSourceType;
   location?: string;
+  uploadMode?: 'save' | 'parse_only';
   onUploadSuccess?: (result: UploadResult) => void;
   onStartAnalysis?: (content: string) => void;
   onViewDetail?: (intelId: string) => void;
@@ -43,17 +44,21 @@ interface DocumentUploaderProps {
 
 export interface UploadResult {
   success: boolean;
-  intel: {
+  // 仅 save 模式有以下两个字段
+  intel?: {
     id: string;
     rawContent: string;
   };
-  attachment: {
+  attachment?: {
     id: string;
     filename: string;
     mimeType: string;
     fileSize: number;
   };
-  message: string;
+  // parse_only 模式会返回 content
+  content?: string;
+  filename?: string;
+  message?: string;
 }
 
 const MIME_TYPE_ICONS: Record<string, React.ReactNode> = {
@@ -81,6 +86,7 @@ export const DocumentUploader: React.FC<DocumentUploaderProps> = ({
   contentType,
   sourceType,
   location,
+  uploadMode = 'save',
   onUploadSuccess,
   onStartAnalysis,
   onViewDetail,
@@ -109,7 +115,8 @@ export const DocumentUploader: React.FC<DocumentUploaderProps> = ({
     setUploading(true);
 
     try {
-      const response = await fetch('/api/market-intel/upload', {
+      const endpoint = uploadMode === 'parse_only' ? '/api/market-intel/parse-document' : '/api/market-intel/upload';
+      const response = await fetch(endpoint, {
         method: 'POST',
         body: formData,
       });
@@ -121,10 +128,10 @@ export const DocumentUploader: React.FC<DocumentUploaderProps> = ({
 
       const result: UploadResult = await response.json();
       setUploadResult(result);
-      message.success('文档上传成功');
+      message.success(uploadMode === 'parse_only' ? '文档解析成功' : '文档上传成功');
       onUploadSuccess?.(result);
     } catch (error) {
-      message.error(error instanceof Error ? error.message : '上传失败');
+      message.error(error instanceof Error ? error.message : '操作失败');
     } finally {
       setUploading(false);
     }
@@ -236,7 +243,7 @@ export const DocumentUploader: React.FC<DocumentUploaderProps> = ({
           type="success"
           showIcon
           icon={<CheckCircleOutlined />}
-          message="上传成功"
+          message={uploadMode === 'parse_only' ? '解析成功' : '上传成功'}
           description={
             <div style={{ marginTop: 8, fontSize: 12 }}>
               <div style={{ marginBottom: 4 }}>
@@ -245,13 +252,15 @@ export const DocumentUploader: React.FC<DocumentUploaderProps> = ({
                   ellipsis
                   style={{ maxWidth: 150, display: 'inline-block', verticalAlign: 'bottom' }}
                 >
-                  {uploadResult.attachment.filename}
+                  {uploadResult.attachment?.filename || uploadResult.filename || fileList[0]?.name}
                 </Text>
               </div>
-              <div>
-                <Text type="secondary">大小：</Text>
-                <Text>{formatFileSize(uploadResult.attachment.fileSize)}</Text>
-              </div>
+              {uploadResult.attachment?.fileSize && (
+                <div>
+                  <Text type="secondary">大小：</Text>
+                  <Text>{formatFileSize(uploadResult.attachment.fileSize)}</Text>
+                </div>
+              )}
             </div>
           }
           style={{ marginBottom: 16 }}
@@ -274,7 +283,7 @@ export const DocumentUploader: React.FC<DocumentUploaderProps> = ({
             disabled={fileList.length === 0}
             icon={uploading ? <LoadingOutlined /> : undefined}
           >
-            {uploading ? '上传中...' : '上传'}
+            {uploading ? (uploadMode === 'parse_only' ? '解析中...' : '上传中...') : (uploadMode === 'parse_only' ? '解析' : '上传')}
           </Button>
         ) : (
           <Space size={8} wrap>
@@ -287,11 +296,11 @@ export const DocumentUploader: React.FC<DocumentUploaderProps> = ({
             >
               继续上传
             </Button>
-            {onStartAnalysis && uploadResult.intel.rawContent && (
+            {onStartAnalysis && (uploadResult.intel?.rawContent || uploadResult.content) && (
               <Button
                 type="primary"
                 size="small"
-                onClick={() => onStartAnalysis(uploadResult.intel.rawContent)}
+                onClick={() => onStartAnalysis(uploadResult.intel?.rawContent || uploadResult.content || '')}
                 loading={isAnalyzing}
               >
                 {isAnalyzing ? '分析中...' : 'AI 分析'}

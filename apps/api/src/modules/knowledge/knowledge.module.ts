@@ -6,6 +6,7 @@ import { KnowledgeController } from './knowledge.controller';
 import { KnowledgeService } from './knowledge.service';
 import { KnowledgeWeeklyRollupJob } from './knowledge-weekly-rollup.job';
 
+import { IntelTaskModule } from '../intel-task/intel-task.module';
 import { RagPipelineService } from './rag/rag-pipeline.service';
 import { KnowledgeIngestionService } from './services/knowledge-ingestion.service';
 import { KnowledgeRetrievalService } from './services/knowledge-retrieval.service';
@@ -16,7 +17,7 @@ import { KnowledgeExtractionService } from './services/knowledge-extraction.serv
 import { DeepAnalysisService } from './services/deep-analysis.service';
 
 @Module({
-  imports: [PrismaModule, AIModule, ConfigModule],
+  imports: [PrismaModule, AIModule, ConfigModule, IntelTaskModule],
   controllers: [KnowledgeController, KnowledgeUploadController],
   providers: [
     KnowledgeService,

@@ -86,6 +86,28 @@ export class MarketIntelController {
     return this.marketIntelService.getLeaderboard(parseInt(limit, 10), timeframe);
   }
 
+  @Post('parse-document')
+  @UseInterceptors(FileInterceptor('file'))
+  async parseDocument(@UploadedFile() file: Express.Multer.File) {
+    if (!file) {
+      throw new BadRequestException('No file uploaded');
+    }
+    // Convert filename encoding specifically for originalname handling
+    file.originalname = Buffer.from(file.originalname, 'latin1').toString('utf8');
+
+    // 只提取为 Markdown 不做进一步建档和关联
+    const markdownContent = await this.pdfToMarkdownService.convertToMarkdown(
+      file.buffer,
+      file.mimetype,
+    );
+
+    return {
+      success: true,
+      content: markdownContent,
+      filename: file.originalname,
+    };
+  }
+
   @Post('analyze')
   async analyze(@Body() dto: AnalyzeContentRequest) {
     return this.marketIntelService.analyze(
