@@ -462,6 +462,7 @@ export type ReportListQuery = {
 
 export type ReportStatsResponse = {
   total: number;
+  weeklyReportsCount?: number;
   totalViews: number;
   totalDownloads: number;
   byStatus: Record<string, number>;

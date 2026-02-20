@@ -17,17 +17,12 @@ export const KnowledgeLayout: React.FC<{ children?: React.ReactNode }> = ({ chil
     // Determine active tab based on current path
     const activeTab = React.useMemo(() => {
         const path = location.pathname;
-        if (path.includes('/intel/knowledge/workbench')) return 'workbench';
-        if (path.includes('/intel/knowledge/items')) return 'items';
         if (path.includes('/intel/knowledge/dashboard')) return 'dashboard';
-        return 'workbench';
+        return 'items';
     }, [location.pathname]);
 
     const handleTabChange = (value: string | number) => {
         switch (String(value)) {
-            case 'workbench':
-                navigate('/intel/knowledge/workbench');
-                break;
             case 'items':
                 navigate('/intel/knowledge/items');
                 break;
@@ -52,17 +47,8 @@ export const KnowledgeLayout: React.FC<{ children?: React.ReactNode }> = ({ chil
                                 {
                                     label: (
                                         <Space>
-                                            <ThunderboltOutlined />
-                                            工作台
-                                        </Space>
-                                    ),
-                                    value: 'workbench',
-                                },
-                                {
-                                    label: (
-                                        <Space>
                                             <DatabaseOutlined />
-                                            知识列表
+                                            知识库
                                         </Space>
                                     ),
                                     value: 'items',
@@ -71,25 +57,20 @@ export const KnowledgeLayout: React.FC<{ children?: React.ReactNode }> = ({ chil
                                     label: (
                                         <Space>
                                             <BarChartOutlined />
-                                            分析看板
+                                            综合看板
                                         </Space>
                                     ),
                                     value: 'dashboard',
                                 },
                             ]}
                         />
-                        <Space>
-                            <Button icon={<CloudUploadOutlined />} onClick={() => navigate('/intel/entry')}>
-                                快速采集
-                            </Button>
-                            <Button
-                                type="primary"
-                                icon={<FormOutlined />}
-                                onClick={() => navigate('/intel/knowledge/reports/create')}
-                            >
-                                新建研报
-                            </Button>
-                        </Space>
+                        <Button
+                            type="primary"
+                            icon={<FormOutlined />}
+                            onClick={() => navigate('/intel/knowledge/reports/create')}
+                        >
+                            新建研报
+                        </Button>
                     </div>
                 </Card>
             </div>

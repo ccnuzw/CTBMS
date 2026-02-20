@@ -20,7 +20,6 @@ import {
 import { useMemo } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import {
-  useGenerateWeeklyRollup,
   useKnowledgeItem,
   useKnowledgeRelations,
   useReanalyzeKnowledge,
@@ -35,7 +34,6 @@ import {
   KNOWLEDGE_TYPE_LABELS,
 } from '../constants/knowledge-labels';
 import { KnowledgeRelationGraph } from './KnowledgeRelationGraph';
-import { KnowledgeTopActionsBar } from './knowledge/KnowledgeTopActionsBar';
 
 const { Paragraph, Text, Title } = Typography;
 
@@ -75,7 +73,6 @@ export const KnowledgeDetailPage: React.FC = () => {
   const { data: detail, isLoading } = useKnowledgeItem(id);
   const { data: relations } = useKnowledgeRelations(id);
   const reanalyzeMutation = useReanalyzeKnowledge();
-  const weeklyRollupMutation = useGenerateWeeklyRollup();
 
   const weeklySections: WeeklySections = useMemo(() => {
     const keyPoints = detail?.analysis?.keyPoints as any;
@@ -94,18 +91,14 @@ export const KnowledgeDetailPage: React.FC = () => {
   const returnTo = (location.state as { returnTo?: string } | null)?.returnTo;
   const backTo =
     returnTo ||
-    (fromState === 'workbench'
-      ? '/intel/knowledge?tab=workbench'
-      : fromState === 'dashboard'
-        ? '/intel/knowledge/dashboard'
-        : '/intel/knowledge?tab=library');
+    (fromState === 'dashboard'
+      ? '/intel/knowledge/dashboard'
+      : '/intel/knowledge?tab=library');
 
   const navPath =
-    fromState === 'workbench'
-      ? ['工作台', '知识详情']
-      : fromState === 'dashboard'
-        ? ['分析看板', '知识详情']
-        : ['知识库', '知识详情'];
+    fromState === 'dashboard'
+      ? ['综合看板', '知识详情']
+      : ['知识库', '知识详情'];
 
   if (isLoading) {
     return (
@@ -158,18 +151,14 @@ export const KnowledgeDetailPage: React.FC = () => {
       }
       extra={[
         <Button key="back" icon={<ArrowLeftOutlined />} onClick={() => navigate(backTo)}>
-          {backTo.includes('workbench')
-            ? '返回工作台'
-            : backTo.includes('/dashboard')
-              ? '返回看板'
-              : '返回列表'}
+          {backTo.includes('/dashboard') ? '返回看板' : '返回列表'}
         </Button>,
         <Button
           key="dashboard"
           icon={<BarChartOutlined />}
           onClick={() => navigate('/intel/knowledge/dashboard')}
         >
-          分析看板
+          综合看板
         </Button>,
         <Button
           key="reanalyze"
@@ -182,35 +171,6 @@ export const KnowledgeDetailPage: React.FC = () => {
         </Button>,
       ]}
     >
-      <KnowledgeTopActionsBar
-        contextBackLabel={
-          backTo.includes('workbench')
-            ? '返回工作台'
-            : backTo.includes('/dashboard')
-              ? '返回看板'
-              : undefined
-        }
-        onContextBack={
-          backTo.includes('workbench') || backTo.includes('/dashboard')
-            ? () => navigate(backTo)
-            : undefined
-        }
-        onBackLibrary={() => navigate('/intel/knowledge?tab=library')}
-        onQuickEntry={() => navigate('/intel/entry')}
-        onOpenDashboard={() => navigate('/intel/knowledge/dashboard?from=library')}
-        onCreateReport={() => navigate('/intel/knowledge/reports/create')}
-        generatingWeekly={weeklyRollupMutation.isPending}
-        onGenerateWeekly={async () => {
-          try {
-            await weeklyRollupMutation.mutateAsync({ triggerAnalysis: true });
-            message.success('已生成本周周报');
-          } catch (error) {
-            message.error('周报生成失败，请稍后重试');
-            console.error(error);
-          }
-        }}
-      />
-
       <Row gutter={[16, 16]}>
         <Col xs={24} lg={16}>
           <Space direction="vertical" style={{ width: '100%' }} size={16}>

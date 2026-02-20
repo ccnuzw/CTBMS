@@ -710,11 +710,45 @@ export class KnowledgeService {
     });
 
     if (!weekly) {
+      const fallbackStartDate = new Date();
+      fallbackStartDate.setDate(fallbackStartDate.getDate() - 7);
+
+      const fallbackDocs = await this.prisma.knowledgeItem.findMany({
+        where: {
+          type: { in: ['RESEARCH', 'THIRD_PARTY', 'FLASH'] },
+          createdAt: { gte: fallbackStartDate },
+        },
+        include: { analysis: true },
+        orderBy: { publishAt: 'desc' },
+      });
+
+      const fallbackByType: Record<string, number> = {};
+      let totalConf = 0;
+      let confCount = 0;
+      for (const doc of fallbackDocs) {
+        fallbackByType[doc.type] = (fallbackByType[doc.type] || 0) + 1;
+        if (doc.analysis?.confidenceScore) {
+          totalConf += doc.analysis.confidenceScore;
+          confCount++;
+        }
+      }
+
       return {
         periodKey: target,
         found: false,
-        metrics: null,
-        sourceStats: { totalSources: 0, byType: {} as Record<string, number> },
+        weekly: null,
+        metrics: {
+          riskLevel: 'MEDIUM',
+          sentiment: 'NEUTRAL',
+          confidence: confCount > 0 ? Math.round(totalConf / confCount) : 80,
+        },
+        sourceStats: { totalSources: fallbackDocs.length, byType: fallbackByType },
+        topSources: fallbackDocs.slice(0, 10).map((item) => ({
+          id: item.id,
+          type: item.type,
+          title: item.title,
+          publishAt: item.publishAt,
+        })),
       };
     }
 
@@ -766,9 +800,9 @@ export class KnowledgeService {
   async getTopicEvolution(commodity?: string, weeks = 8) {
     const take = Math.max(1, Math.min(52, weeks));
 
+    // 兼容普通研报作为周度话题演化的基础数据
     const where: Prisma.KnowledgeItemWhereInput = {
-      type: 'WEEKLY',
-      periodType: 'WEEK',
+      type: { in: ['WEEKLY', 'RESEARCH'] },
     };
 
     if (commodity) {
@@ -1722,6 +1756,14 @@ export class KnowledgeService {
 
     const where: Prisma.KnowledgeItemWhereInput = { type: 'RESEARCH' };
 
+    // 对于本周研报，改为查询所有 RESEARCH 类型（不受 reportType 影响）
+    const weeklyReportsCount = await this.prisma.knowledgeItem.count({
+      where: {
+        type: 'RESEARCH',
+        createdAt: { gte: startDate },
+      },
+    });
+
     const [total, totalViews, totalDownloads, byStatus, recent] =
       await Promise.all([
         this.prisma.knowledgeItem.count({ where }),
@@ -1786,6 +1828,7 @@ export class KnowledgeService {
 
     return {
       total,
+      weeklyReportsCount,
       totalViews: totalViews._sum.viewCount || 0,
       totalDownloads: totalDownloads._sum.downloadCount || 0,
       byStatus: byStatus.reduce(

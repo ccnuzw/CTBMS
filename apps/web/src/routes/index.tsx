@@ -29,10 +29,9 @@ import {
   ResearchReportCreatePage,
   KnowledgeLayout,
   KnowledgeDefaultRedirect,
-  Workbench,
   KnowledgeCenterPage,
   KnowledgeDetailPage,
-  KnowledgeDashboardPage,
+  ComprehensiveDashboard,
   LegacyKnowledgeRedirectPage,
   ReportEntryForm,
   ReviewWorkbench,
@@ -210,14 +209,6 @@ export const router = createBrowserRouter([
             children: [
               { index: true, element: <KnowledgeDefaultRedirect /> },
               {
-                path: 'workbench',
-                element: (
-                  <KnowledgeLayout>
-                    <Workbench />
-                  </KnowledgeLayout>
-                ),
-              },
-              {
                 path: 'items',
                 element: (
                   <KnowledgeLayout>
@@ -229,7 +220,7 @@ export const router = createBrowserRouter([
                 path: 'dashboard',
                 element: (
                   <KnowledgeLayout>
-                    <KnowledgeDashboardPage />
+                    <ComprehensiveDashboard />
                   </KnowledgeLayout>
                 ),
               },
