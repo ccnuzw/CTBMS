@@ -43,18 +43,20 @@ import {
   ReportType,
   REPORT_TYPE_LABELS,
   REPORT_PERIOD_LABELS,
-  CreateManualResearchReportDto,
   IntelCategory,
   ContentType,
   type AIAnalysisResult,
 } from '@packages/types';
 import {
-  useCreateManualResearchReport,
-  useUpdateResearchReport,
-  useResearchReport,
-  useResearchReportStats,
   useAnalyzeContent,
 } from '../api/hooks';
+import {
+  useCreateKnowledgeReport,
+  useUpdateKnowledgeReport,
+  useKnowledgeReport,
+  useKnowledgeReportStats,
+  CreateReportPayload,
+} from '../api/knowledge-hooks';
 import { useProvinces } from '../api/region';
 import TiptapEditor from '@/components/TiptapEditor';
 import { DocumentUploader } from './DocumentUploader';
@@ -115,15 +117,15 @@ export const ResearchReportCreatePage = () => {
   const { id: editId } = useParams<{ id?: string }>();
   const isEditMode = Boolean(editId);
 
-  const [form] = Form.useForm<CreateManualResearchReportDto>();
+  const [form] = Form.useForm<CreateReportPayload & { content?: string }>();
   const keyPointsWatch = Form.useWatch('keyPoints', form);
   const predictionWatch = Form.useWatch('prediction', form);
   const dataPointsWatch = Form.useWatch('dataPoints', form);
-  const createMutation = useCreateManualResearchReport();
-  const updateMutation = useUpdateResearchReport();
+  const createMutation = useCreateKnowledgeReport();
+  const updateMutation = useUpdateKnowledgeReport();
 
   // Fetch existing report for edit mode
-  const { data: existingReport, isLoading: isLoadingReport } = useResearchReport(editId || '');
+  const { data: existingReport, isLoading: isLoadingReport } = useKnowledgeReport(editId || '');
 
   // Theme
   const { token } = theme.useToken();
@@ -140,7 +142,7 @@ export const ResearchReportCreatePage = () => {
   }>({});
 
   // Data Fetching
-  const { data: stats } = useResearchReportStats();
+  const { data: stats } = useKnowledgeReportStats();
   const { data: provinces } = useProvinces();
   const { data: dictionaries } = useDictionaries([
     'REPORT_TYPE',
@@ -153,9 +155,9 @@ export const ResearchReportCreatePage = () => {
 
   // Computed Options
   const commodityOptions =
-    stats?.commodityDistribution?.map((item: any) => ({
-      label: item.type,
-      value: item.type,
+    stats?.topCommodities?.map((item: any) => ({
+      label: item.name,
+      value: item.name,
     })) || [];
 
   const regionOptions =
@@ -272,38 +274,37 @@ export const ResearchReportCreatePage = () => {
   // Pre-fill form in edit mode
   useEffect(() => {
     if (isEditMode && existingReport) {
-      const existingPrediction = (existingReport.prediction || {}) as any;
-      // 正文优先从 intel.rawContent 获取，摘要为 report.summary
-      const bodyContent = (existingReport as any).intel?.rawContent || existingReport.summary;
+      const existingPrediction = (existingReport.analysis?.prediction || {}) as any;
+      const bodyContent = existingReport.contentRich || existingReport.contentPlain || existingReport.analysis?.summary;
       form.setFieldsValue({
         title: existingReport.title,
-        reportType: existingReport.reportType,
-        publishDate: existingReport.publishDate || undefined,
-        source: existingReport.source || undefined,
+        reportType: existingReport.analysis?.reportType || existingReport.type,
+        publishAt: existingReport.publishAt ? existingReport.publishAt : undefined,
+        sourceType: existingReport.sourceType || undefined,
         commodities: existingReport.commodities,
-        regions: existingReport.regions,
-        summary: existingReport.summary,
-        content: bodyContent,
-        keyPoints: existingReport.keyPoints,
+        region: existingReport.region,
+        summary: existingReport.analysis?.summary || undefined,
+        content: bodyContent || undefined,
+        keyPoints: existingReport.analysis?.keyPoints as any,
         prediction: {
           ...existingPrediction,
           direction: normalizePredictionDirection(existingPrediction.direction),
           timeframe: normalizePredictionTimeframe(existingPrediction.timeframe),
         },
-        dataPoints: existingReport.dataPoints,
+        dataPoints: existingReport.analysis?.dataPoints as any,
       });
     }
   }, [isEditMode, existingReport, form, predictionDirectionValueMap, predictionTimeframeValueMap]);
 
   // Check if has AI analysis data
   const hasAiData =
-    (keyPointsWatch?.length || 0) > 0 ||
-    predictionWatch?.direction ||
-    (dataPointsWatch?.length || 0) > 0;
+    ((keyPointsWatch as any[])?.length || 0) > 0 ||
+    (predictionWatch as any)?.direction ||
+    ((dataPointsWatch as any[])?.length || 0) > 0;
 
-  const handleFinish = async (values: CreateManualResearchReportDto) => {
+  const handleFinish = async (values: CreateReportPayload & { content?: string }) => {
     // Force-read content from form (ProFormItem with custom TiptapEditor may not include it in values)
-    const bodyContent = form.getFieldValue('content') || (values as any).content;
+    const bodyContent = form.getFieldValue('content') || values.content;
     const summaryContent = form.getFieldValue('summary') || values.summary;
 
     console.log('[handleFinish] content length:', bodyContent?.length, 'summary length:', summaryContent?.length);
@@ -313,23 +314,26 @@ export const ResearchReportCreatePage = () => {
       return;
     }
 
+    const stripped = bodyContent.replace(/<[^>]*>?/gm, '');
+
     // Build the final payload with explicit content field
-    const payload = {
+    const payload: CreateReportPayload = {
       ...values,
-      content: bodyContent,
-      summary: summaryContent || bodyContent.slice(0, 300) + '...',
-      intelId: uploadedIntelId || undefined,
+      contentRich: bodyContent,
+      contentPlain: stripped,
+      summary: summaryContent || stripped.slice(0, 300) + '...',
+      authorId: 'current-user', // Required by new API
     };
 
     try {
       if (isEditMode && editId) {
         await updateMutation.mutateAsync({
           id: editId,
-          data: payload,
+          ...payload,
         });
         message.success('研报更新成功');
       } else {
-        await createMutation.mutateAsync(payload as any);
+        await createMutation.mutateAsync(payload);
         message.success('研报创建成功');
       }
       navigate('/intel/knowledge?tab=library&content=reports');
@@ -417,7 +421,7 @@ export const ResearchReportCreatePage = () => {
         const applyAll = targets.includes('all');
         const shouldApply = (target: AnalysisTarget) => applyAll || targets.includes(target);
 
-        const updates: Partial<CreateManualResearchReportDto> = {};
+        const updates: Partial<CreateReportPayload> = {};
         const extractedFields: string[] = [];
 
         if (shouldApply('meta')) {
@@ -431,7 +435,7 @@ export const ResearchReportCreatePage = () => {
             extractedFields.push('关联品种');
           }
           if (result.regions?.length) {
-            updates.regions = result.regions;
+            updates.region = result.regions;
             extractedFields.push('关联区域');
           }
 
@@ -502,7 +506,7 @@ export const ResearchReportCreatePage = () => {
           extractedFields.push('摘要');
         }
 
-        form.setFieldsValue(updates);
+        form.setFieldsValue(updates as any);
         setAiSectionCollapsed(false); // 展开 AI 分析区
         setAiResult(result);
         setAiSectionMeta((prev) => ({
@@ -645,7 +649,7 @@ export const ResearchReportCreatePage = () => {
           ],
         }}
       >
-        <ProForm<CreateManualResearchReportDto>
+        <ProForm<CreateReportPayload & { content?: string }>
           form={form}
           onFinish={handleFinish}
           layout="vertical"
@@ -731,8 +735,8 @@ export const ResearchReportCreatePage = () => {
                       />
                     </Col>
                   </Row>
-                  <ProFormDatePicker name="publishDate" label="发布日期" width="100%" />
-                  <ProFormText name="source" label="来源机构" placeholder="如：中信期货" />
+                  <ProFormDatePicker name="publishAt" label="发布日期" width="100%" />
+                  <ProFormText name="sourceType" label="来源机构" placeholder="如：中信期货" />
                 </ProCard>
 
                 {/* 分类标签 */}
@@ -745,7 +749,7 @@ export const ResearchReportCreatePage = () => {
                     placeholder="选择或输入品种"
                   />
                   <ProFormSelect
-                    name="regions"
+                    name="region"
                     label="关联区域"
                     mode="tags"
                     options={regionOptions}
@@ -894,9 +898,9 @@ export const ResearchReportCreatePage = () => {
                       <Text type="secondary">已提取</Text>
                       <div style={{ marginTop: 6 }}>
                         <Space wrap>
-                          <Tag>观点 {keyPointsWatch?.length || 0}</Tag>
-                          <Tag>数据 {dataPointsWatch?.length || 0}</Tag>
-                          <Tag>预测 {predictionWatch?.direction ? 1 : 0}</Tag>
+                          <Tag>观点 {((keyPointsWatch as any[])?.length) || 0}</Tag>
+                          <Tag>数据 {((dataPointsWatch as any[])?.length) || 0}</Tag>
+                          <Tag>预测 {((predictionWatch as any)?.direction) ? 1 : 0}</Tag>
                         </Space>
                       </div>
                     </div>
@@ -948,7 +952,7 @@ export const ResearchReportCreatePage = () => {
                     <Space>
                       <BulbOutlined style={{ color: token.colorWarning }} />
                       <span>核心观点</span>
-                      <Badge count={keyPointsWatch?.length || 0} showZero={false} />
+                      <Badge count={((keyPointsWatch as any[])?.length) || 0} showZero={false} />
                     </Space>
                   }
                   bordered
@@ -1048,7 +1052,7 @@ export const ResearchReportCreatePage = () => {
                     <Space>
                       <LineChartOutlined style={{ color: token.colorInfo }} />
                       <span>后市预判</span>
-                      {predictionWatch?.direction && <Tag color="processing">已设置</Tag>}
+                      {((predictionWatch as any)?.direction) && <Tag color="processing">已设置</Tag>}
                     </Space>
                   }
                   bordered
@@ -1096,7 +1100,7 @@ export const ResearchReportCreatePage = () => {
                     <Space>
                       <BarChartOutlined style={{ color: token.colorSuccess }} />
                       <span>关键数据</span>
-                      <Badge count={dataPointsWatch?.length || 0} showZero={false} />
+                      <Badge count={((dataPointsWatch as any[])?.length) || 0} showZero={false} />
                     </Space>
                   }
                   bordered

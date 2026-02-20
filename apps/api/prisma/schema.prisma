@@ -885,6 +885,11 @@ model KnowledgeItem {
   originLegacyType String?
   originLegacyId   String?
   qualityScore     Int             @default(0)
+
+  // 研报统计（从 ResearchReport 迁移）
+  viewCount     Int @default(0)
+  downloadCount Int @default(0)
+
   createdAt        DateTime        @default(now())
   updatedAt        DateTime        @updatedAt
 

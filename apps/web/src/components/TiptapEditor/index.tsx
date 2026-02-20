@@ -14,7 +14,6 @@ import { TextStyle } from '@tiptap/extension-text-style';
 import CharacterCount from '@tiptap/extension-character-count';
 import { Markdown } from 'tiptap-markdown';
 import { marked } from 'marked';
-import { generateJSON } from '@tiptap/html';
 import { Toolbar } from './Toolbar';
 import { MobileToolbar } from './MobileToolbar';
 import './styles.css';
@@ -28,24 +27,10 @@ export interface TiptapEditorProps {
     readOnly?: boolean;
 }
 
-/**
- * Extensions list shared between the editor and generateJSON.
- * Must be the same set so HTML ↔ JSON conversion is schema-compatible.
- */
 function createExtensions(placeholderText: string) {
     return [
         StarterKit.configure({
             heading: { levels: [1, 2, 3, 4] },
-            link: {
-                openOnClick: false,
-                HTMLAttributes: { class: 'tiptap-link' },
-            },
-        }),
-        Markdown.configure({
-            html: true,
-            tightLists: false,
-            transformPastedText: true,
-            transformCopiedText: true,
         }),
         TextStyle,
         Color,
@@ -60,28 +45,29 @@ function createExtensions(placeholderText: string) {
         TableCell,
         CharacterCount.configure({ limit: null }),
         Placeholder.configure({ placeholder: placeholderText }),
+        Markdown.configure({
+            html: true,
+            tightLists: false,
+            transformPastedText: true,
+            transformCopiedText: true,
+        }),
     ];
 }
 
 /**
- * Convert markdown string to ProseMirror JSON using:
- *   1. marked (markdown → HTML with full GFM table/list support)
- *   2. @tiptap/html generateJSON (HTML → ProseMirror JSON)
- *
- * The resulting JSON can be passed to editor.commands.setContent()
- * which bypasses tiptap-markdown's string interception entirely.
+ * 安全地将外部获取的 Markdown 转换回 ProseMirror 可以识别的合法 HTML
+ * 以避免 tiptap-markdown 在解析含有各种复杂格式/Thead表格时直接丢弃节点导致变成纯文本的问题
  */
-function markdownToJson(md: string, extensions: ReturnType<typeof createExtensions>) {
-    if (!md) return null;
-    // If content is already HTML, use it directly
-    const html = md.trim().startsWith('<') ? md : (marked.parse(md, { gfm: true, breaks: true }) as string);
-    if (!html || html.trim().length === 0) return null;
-    try {
-        return generateJSON(html, extensions);
-    } catch (e) {
-        console.warn('[TiptapEditor] Failed to convert content to JSON:', e);
-        return null;
+function safeMarkdownToEditorHtml(content: string): string {
+    if (!content || content.trim().length === 0) return '';
+    let html: string;
+    if (content.trim().startsWith('<')) {
+        html = content;
+    } else {
+        html = marked.parse(content, { gfm: true, breaks: true }) as string;
     }
+    // 表格特殊处理：移除 tiptap 原生 table 不认识的 tbody / thead，这极大可能导致表格被无视
+    return html.replace(/<\/?t(head|body|foot)[^>]*>/gi, '');
 }
 
 export const TiptapEditor: React.FC<TiptapEditorProps> = ({
@@ -94,67 +80,52 @@ export const TiptapEditor: React.FC<TiptapEditorProps> = ({
 }) => {
     const { token } = theme.useToken();
     const [counts, setCounts] = React.useState({ words: 0, characters: 0 });
-    const lastSetValueRef = React.useRef<string>('');
+    const lastEmittedValueRef = React.useRef<string>('');
 
-    const extensions = React.useMemo(() => createExtensions(placeholder), []);
+    const extensions = React.useMemo(() => createExtensions(placeholder), [placeholder]);
 
-    // Convert initial value to JSON (computed once)
-    const initialJson = React.useMemo(() => {
-        if (!value) return undefined;
-        return markdownToJson(value, extensions) || undefined;
-    }, []); // Only compute on mount
+    const initialContent = React.useMemo(() => {
+        return safeMarkdownToEditorHtml(value || '');
+    }, []);
 
     const editor = useEditor(
         {
             extensions,
-            content: initialJson || '', // Pass JSON directly; bypasses tiptap-markdown
+            content: initialContent,
             immediatelyRender: false,
             shouldRerenderOnTransaction: false,
             editorProps: {
-                attributes: { class: 'tiptap-editor' },
+                attributes: { class: 'tiptap tiptap-editor' },
             },
             editable: !readOnly,
-            onUpdate: ({ editor }) => {
+            onUpdate: ({ editor: ed }) => {
                 setCounts({
-                    words: editor.storage.characterCount.words(),
-                    characters: editor.storage.characterCount.characters(),
+                    words: ed.storage.characterCount.words(),
+                    characters: ed.storage.characterCount.characters(),
                 });
-                // Output as standard Markdown via tiptap-markdown
-                const md = (editor.storage as any).markdown.getMarkdown();
-                lastSetValueRef.current = md;
+                const md = (ed.storage as any).markdown.getMarkdown();
+                lastEmittedValueRef.current = md;
                 onChange?.(md);
             },
         },
-        [readOnly],
+        [readOnly, extensions],
     );
 
-    // Update placeholder
-    React.useEffect(() => {
-        if (editor && placeholder) {
-            editor.extensionManager.extensions.forEach((ext) => {
-                if (ext.name === 'placeholder') {
-                    ext.options.placeholder = placeholder;
-                }
-            });
-        }
-    }, [editor, placeholder]);
-
-    // Sync external value changes (e.g. when PDF content is loaded after upload)
-    // Converts markdown → HTML → JSON → setContent(json) to bypass tiptap-markdown
     React.useEffect(() => {
         if (!editor || value === undefined) return;
-        if (value === lastSetValueRef.current) return;
 
-        const json = markdownToJson(value, extensions);
-        if (json) {
-            editor.commands.setContent(json, { emitUpdate: false }); // JSON bypasses tiptap-markdown
-        } else if (value === '') {
-            editor.commands.clearContent();
+        if (value !== lastEmittedValueRef.current) {
+            if (value) {
+                const safeHtml = safeMarkdownToEditorHtml(value);
+                editor.commands.setContent(safeHtml, { emitUpdate: false });
+            } else {
+                editor.commands.clearContent();
+            }
+            lastEmittedValueRef.current = value;
         }
-        lastSetValueRef.current = value;
-    }, [value, editor, extensions]);
+    }, [value, editor]);
 
-    // Initial counts
+    // 显示最初的计数
     React.useEffect(() => {
         if (editor) {
             setCounts({
@@ -162,7 +133,7 @@ export const TiptapEditor: React.FC<TiptapEditorProps> = ({
                 characters: editor.storage.characterCount.characters(),
             });
         }
-    }, [editor, value]);
+    }, [editor]);
 
     if (!editor) return null;
 

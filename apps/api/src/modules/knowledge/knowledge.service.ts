@@ -1330,6 +1330,465 @@ export class KnowledgeService {
     return this.findOne(weekly.id);
   }
 
+  // =============================================
+  // 研报专用方法（统一到 KnowledgeItem）
+  // =============================================
+
+  /**
+   * 创建研报（直接写入 KnowledgeItem，不经过 MarketIntel）
+   */
+  async createResearchReport(input: {
+    title: string;
+    contentPlain: string;
+    contentRich?: string;
+    reportType?: string;
+    reportPeriod?: string;
+    publishAt?: Date;
+    sourceType?: string;
+    commodities?: string[];
+    region?: string[];
+    authorId: string;
+    summary?: string;
+    keyPoints?: unknown;
+    prediction?: unknown;
+    dataPoints?: unknown;
+    triggerAnalysis?: boolean;
+  }) {
+    const periodType = this.mapReportPeriodToKnowledgePeriodType(
+      (input.reportPeriod as 'DAILY' | 'WEEKLY' | 'MONTHLY' | 'QUARTERLY' | 'ANNUAL' | 'ADHOC') || null,
+    );
+    const publishAt = input.publishAt || new Date();
+
+    const item = await this.prisma.knowledgeItem.create({
+      data: {
+        type: 'RESEARCH',
+        title: input.title,
+        contentFormat: 'MARKDOWN',
+        contentPlain: input.contentPlain,
+        contentRich: input.contentRich,
+        sourceType: input.sourceType || 'INTERNAL_REPORT',
+        publishAt,
+        effectiveAt: publishAt,
+        periodType,
+        periodKey: this.toPeriodKey(publishAt, periodType),
+        commodities: input.commodities || [],
+        region: input.region || [],
+        status: 'DRAFT',
+        authorId: input.authorId,
+      },
+    });
+
+    // 创建分析记录
+    if (input.summary || input.keyPoints || input.prediction || input.dataPoints || input.reportType) {
+      await this.prisma.knowledgeAnalysis.create({
+        data: {
+          knowledgeId: item.id,
+          summary: input.summary || input.contentPlain.slice(0, 500),
+          reportType: input.reportType,
+          reportPeriod: input.reportPeriod,
+          keyPoints: input.keyPoints as Prisma.InputJsonValue,
+          prediction: input.prediction as Prisma.InputJsonValue,
+          dataPoints: input.dataPoints as Prisma.InputJsonValue,
+          tags: input.commodities || [],
+        },
+      });
+    }
+
+    // 触发向量化
+    const content = input.contentPlain || input.contentRich || '';
+    if (content.length > 50) {
+      this.ragPipelineService.ingest(item.id, content).catch((err) => {
+        console.error('[KnowledgeService.createResearchReport] RAG ingest failed:', err);
+      });
+    }
+
+    // 触发 AI 分析
+    if (input.triggerAnalysis !== false && content.length > 50) {
+      this.reanalyze(item.id, true).catch((err) => {
+        console.error('[KnowledgeService.createResearchReport] AI analysis failed:', err);
+      });
+    }
+
+    return this.findOne(item.id);
+  }
+
+  /**
+   * 查询研报列表（type=RESEARCH 的 KnowledgeItem）
+   */
+  async findAllReports(query?: {
+    reportType?: string;
+    status?: KnowledgeStatus;
+    commodity?: string;
+    region?: string;
+    startDate?: Date;
+    endDate?: Date;
+    keyword?: string;
+    title?: string;
+    sourceType?: string;
+    page?: number;
+    pageSize?: number;
+  }) {
+    const {
+      reportType,
+      status,
+      commodity,
+      region,
+      startDate,
+      endDate,
+      keyword,
+      title,
+      sourceType,
+      page = 1,
+      pageSize = 20,
+    } = query || {};
+
+    const where: Prisma.KnowledgeItemWhereInput = {
+      type: 'RESEARCH',
+    };
+
+    if (status) where.status = status;
+    if (commodity) where.commodities = { has: commodity };
+    if (region) where.region = { has: region };
+    if (sourceType) where.sourceType = sourceType;
+
+    if (startDate || endDate) {
+      where.publishAt = {};
+      if (startDate) where.publishAt.gte = startDate;
+      if (endDate) where.publishAt.lte = endDate;
+    }
+
+    if (title) where.title = { contains: title, mode: 'insensitive' };
+
+    if (keyword) {
+      where.OR = [
+        { title: { contains: keyword, mode: 'insensitive' } },
+        { contentPlain: { contains: keyword, mode: 'insensitive' } },
+      ];
+    }
+
+    // 按 reportType 过滤（通过 analysis 子查询）
+    if (reportType) {
+      where.analysis = { reportType };
+    }
+
+    const [data, total] = await Promise.all([
+      this.prisma.knowledgeItem.findMany({
+        where,
+        skip: (page - 1) * pageSize,
+        take: pageSize,
+        orderBy: { publishAt: 'desc' },
+        include: {
+          analysis: {
+            select: {
+              summary: true,
+              reportType: true,
+              reportPeriod: true,
+              keyPoints: true,
+              prediction: true,
+              dataPoints: true,
+            },
+          },
+        },
+      }),
+      this.prisma.knowledgeItem.count({ where }),
+    ]);
+
+    return { data, total, page, pageSize };
+  }
+
+  /**
+   * 获取单个研报详情
+   */
+  async findOneReport(id: string) {
+    const item = await this.prisma.knowledgeItem.findUnique({
+      where: { id },
+      include: {
+        analysis: true,
+        attachments: true,
+        tagMaps: true,
+        relationsFrom: {
+          include: {
+            toKnowledge: { select: { id: true, title: true, type: true } },
+          },
+          take: 10,
+        },
+        relationsTo: {
+          include: {
+            fromKnowledge: { select: { id: true, title: true, type: true } },
+          },
+          take: 10,
+        },
+      },
+    });
+
+    if (!item) {
+      throw new NotFoundException(`研报 ID ${id} 不存在`);
+    }
+
+    // 自动增加浏览次数
+    await this.prisma.knowledgeItem.update({
+      where: { id },
+      data: { viewCount: { increment: 1 } },
+    });
+
+    return item;
+  }
+
+  /**
+   * 更新研报
+   */
+  async updateResearchReport(id: string, input: {
+    title?: string;
+    contentPlain?: string;
+    contentRich?: string;
+    reportType?: string;
+    reportPeriod?: string;
+    publishAt?: Date;
+    sourceType?: string;
+    commodities?: string[];
+    region?: string[];
+    summary?: string;
+    keyPoints?: unknown;
+    prediction?: unknown;
+    dataPoints?: unknown;
+  }) {
+    const data: Prisma.KnowledgeItemUpdateInput = {};
+
+    if (input.title !== undefined) data.title = input.title;
+    if (input.contentPlain !== undefined) data.contentPlain = input.contentPlain;
+    if (input.contentRich !== undefined) data.contentRich = input.contentRich;
+    if (input.sourceType !== undefined) data.sourceType = input.sourceType;
+    if (input.commodities !== undefined) data.commodities = input.commodities;
+    if (input.region !== undefined) data.region = input.region;
+    if (input.publishAt !== undefined) {
+      data.publishAt = input.publishAt;
+      data.effectiveAt = input.publishAt;
+    }
+
+    const item = await this.prisma.knowledgeItem.update({
+      where: { id },
+      data,
+    });
+
+    // 同步更新分析记录
+    const analysisData: Prisma.KnowledgeAnalysisUpdateInput = {};
+    if (input.summary !== undefined) analysisData.summary = input.summary;
+    if (input.reportType !== undefined) analysisData.reportType = input.reportType;
+    if (input.reportPeriod !== undefined) analysisData.reportPeriod = input.reportPeriod;
+    if (input.keyPoints !== undefined) analysisData.keyPoints = input.keyPoints as Prisma.InputJsonValue;
+    if (input.prediction !== undefined) analysisData.prediction = input.prediction as Prisma.InputJsonValue;
+    if (input.dataPoints !== undefined) analysisData.dataPoints = input.dataPoints as Prisma.InputJsonValue;
+
+    if (Object.keys(analysisData).length > 0) {
+      await this.prisma.knowledgeAnalysis.upsert({
+        where: { knowledgeId: id },
+        create: {
+          knowledgeId: id,
+          ...analysisData,
+          tags: input.commodities || [],
+        } as Prisma.KnowledgeAnalysisCreateInput,
+        update: analysisData,
+      });
+    }
+
+    // 重新向量化
+    const content = input.contentPlain || item.contentPlain;
+    if (content && content.length > 50) {
+      this.ragPipelineService.ingest(item.id, content).catch((err) => {
+        console.error('[KnowledgeService.updateResearchReport] RAG ingest failed:', err);
+      });
+    }
+
+    return this.findOne(item.id);
+  }
+
+  /**
+   * 删除研报
+   */
+  async deleteReport(id: string) {
+    await this.prisma.knowledgeItem.delete({ where: { id } });
+    return { success: true };
+  }
+
+  /**
+   * 批量删除研报
+   */
+  async batchDeleteReports(ids: string[]) {
+    const result = await this.prisma.knowledgeItem.deleteMany({
+      where: { id: { in: ids }, type: 'RESEARCH' },
+    });
+    return { success: true, deletedCount: result.count };
+  }
+
+  /**
+   * 增加浏览次数
+   */
+  async incrementReportViewCount(id: string) {
+    return this.prisma.knowledgeItem.update({
+      where: { id },
+      data: { viewCount: { increment: 1 } },
+      select: { id: true, viewCount: true },
+    });
+  }
+
+  /**
+   * 增加下载次数
+   */
+  async incrementReportDownloadCount(id: string) {
+    return this.prisma.knowledgeItem.update({
+      where: { id },
+      data: { downloadCount: { increment: 1 } },
+      select: { id: true, downloadCount: true },
+    });
+  }
+
+  /**
+   * 研报统计
+   */
+  async getReportStats(options?: { days?: number }) {
+    const days = options?.days || 30;
+    const startDate = new Date();
+    startDate.setDate(startDate.getDate() - days);
+
+    const where: Prisma.KnowledgeItemWhereInput = { type: 'RESEARCH' };
+
+    const [total, totalViews, totalDownloads, byStatus, recent] =
+      await Promise.all([
+        this.prisma.knowledgeItem.count({ where }),
+        this.prisma.knowledgeItem.aggregate({
+          where,
+          _sum: { viewCount: true },
+        }),
+        this.prisma.knowledgeItem.aggregate({
+          where,
+          _sum: { downloadCount: true },
+        }),
+        this.prisma.knowledgeItem.groupBy({
+          by: ['status'],
+          where,
+          _count: true,
+        }),
+        this.prisma.knowledgeItem.findMany({
+          where,
+          take: 10,
+          orderBy: { createdAt: 'desc' },
+          select: {
+            id: true,
+            title: true,
+            sourceType: true,
+            createdAt: true,
+            viewCount: true,
+            status: true,
+          },
+        }),
+      ]);
+
+    // 按 reportType 统计（通过 analysis）
+    const byReportType = await this.prisma.knowledgeAnalysis.groupBy({
+      by: ['reportType'],
+      where: {
+        knowledge: { type: 'RESEARCH' },
+        reportType: { not: null },
+      },
+      _count: true,
+    });
+
+    // 品种/区域热度
+    const allReports = await this.prisma.knowledgeItem.findMany({
+      where,
+      select: { commodities: true, region: true },
+    });
+
+    const commodityCount: Record<string, number> = {};
+    const regionCount: Record<string, number> = {};
+    allReports.forEach((r) => {
+      r.commodities.forEach((c) => { commodityCount[c] = (commodityCount[c] || 0) + 1; });
+      r.region.forEach((reg) => { regionCount[reg] = (regionCount[reg] || 0) + 1; });
+    });
+
+    const topCommodities = Object.entries(commodityCount)
+      .sort((a, b) => b[1] - a[1]).slice(0, 10)
+      .map(([name, count]) => ({ name, count }));
+
+    const topRegions = Object.entries(regionCount)
+      .sort((a, b) => b[1] - a[1]).slice(0, 10)
+      .map(([name, count]) => ({ name, count }));
+
+    return {
+      total,
+      totalViews: totalViews._sum.viewCount || 0,
+      totalDownloads: totalDownloads._sum.downloadCount || 0,
+      byStatus: byStatus.reduce(
+        (acc, item) => { acc[item.status] = item._count; return acc; },
+        {} as Record<string, number>,
+      ),
+      byReportType: byReportType.reduce(
+        (acc, item) => { if (item.reportType) acc[item.reportType] = item._count; return acc; },
+        {} as Record<string, number>,
+      ),
+      topCommodities,
+      topRegions,
+      recent,
+    };
+  }
+
+  /**
+   * 导出研报（Excel）
+   */
+  async exportReports(ids?: string[], query?: {
+    reportType?: string;
+    status?: KnowledgeStatus;
+    commodity?: string;
+    region?: string;
+    startDate?: Date;
+    endDate?: Date;
+  }) {
+    const where: Prisma.KnowledgeItemWhereInput = { type: 'RESEARCH' };
+
+    if (ids && ids.length > 0) {
+      where.id = { in: ids };
+    } else {
+      if (query?.status) where.status = query.status;
+      if (query?.commodity) where.commodities = { has: query.commodity };
+      if (query?.region) where.region = { has: query.region };
+      if (query?.startDate || query?.endDate) {
+        where.publishAt = {};
+        if (query?.startDate) where.publishAt.gte = query.startDate;
+        if (query?.endDate) where.publishAt.lte = query.endDate;
+      }
+      if (query?.reportType) {
+        where.analysis = { reportType: query.reportType };
+      }
+    }
+
+    const items = await this.prisma.knowledgeItem.findMany({
+      where,
+      include: { analysis: true },
+      orderBy: { publishAt: 'desc' },
+      take: 500,
+    });
+
+    // 动态导入 xlsx
+    const XLSX = await import('xlsx');
+    const worksheetData = items.map((item) => ({
+      '标题': item.title,
+      '类型': item.analysis?.reportType || '-',
+      '来源': item.sourceType || '-',
+      '品种': item.commodities.join(', '),
+      '区域': item.region.join(', '),
+      '状态': item.status,
+      '发布日期': item.publishAt ? new Date(item.publishAt).toISOString().split('T')[0] : '-',
+      '浏览次数': item.viewCount,
+      '下载次数': item.downloadCount,
+      '摘要': (item.analysis?.summary || item.contentPlain || '').slice(0, 200),
+    }));
+
+    const worksheet = XLSX.utils.json_to_sheet(worksheetData);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, '研报列表');
+    return Buffer.from(XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' }) as ArrayBuffer);
+  }
+
   private toContentType(type: KnowledgeType): ContentType {
     if (type === 'DAILY') return ContentType.DAILY_REPORT;
     return ContentType.RESEARCH_REPORT;

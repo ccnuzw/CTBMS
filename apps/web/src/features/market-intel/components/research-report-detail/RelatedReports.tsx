@@ -3,34 +3,38 @@ import React, { useMemo } from 'react';
 import { Card, List, Empty, Space, Tag, Typography } from 'antd';
 import { useNavigate } from 'react-router-dom';
 import dayjs from 'dayjs';
-import { useResearchReports } from '../../api/hooks';
-import { REPORT_TYPE_LABELS, ReviewStatus, type ResearchReportResponse } from '@packages/types';
+import { useKnowledgeReports, KnowledgeItem } from '../../api/knowledge-hooks';
+import { REPORT_TYPE_LABELS } from '@packages/types';
 import { useDictionaries } from '@/hooks/useDictionaries';
 
 interface RelatedReportsProps {
     currentReportId: string;
-    report?: ResearchReportResponse | null;
+    report?: KnowledgeItem | null;
 }
 
 export const RelatedReports: React.FC<RelatedReportsProps> = ({ currentReportId, report }) => {
     const navigate = useNavigate();
     const { data: dictionaries } = useDictionaries(['REPORT_TYPE']);
-    const { data, isLoading } = useResearchReports({
+    const { data, isLoading } = useKnowledgeReports({
         pageSize: 50,
-        reviewStatus: ReviewStatus.APPROVED,
+        status: 'PUBLISHED',
     });
 
     const relatedReports = useMemo(() => {
         const candidates = data?.data || [];
         const commoditySet = new Set(report?.commodities || []);
-        const regionSet = new Set(report?.regions || []);
+        const regionSet = new Set(report?.region || []);
 
         const scored = candidates
             .filter((item) => item.id !== currentReportId)
             .map((item) => {
                 const commodityScore = item.commodities?.filter((c) => commoditySet.has(c)).length || 0;
-                const regionScore = item.regions?.filter((r) => regionSet.has(r)).length || 0;
-                const typeScore = report?.reportType && item.reportType === report.reportType ? 1 : 0;
+                const regionScore = item.region?.filter((r) => regionSet.has(r)).length || 0;
+
+                const currentReportType = report?.analysis?.reportType || report?.type;
+                const itemReportType = item.analysis?.reportType || item.type;
+                const typeScore = currentReportType && itemReportType === currentReportType ? 1 : 0;
+
                 return {
                     item,
                     score: commodityScore * 3 + regionScore * 2 + typeScore,
@@ -41,11 +45,11 @@ export const RelatedReports: React.FC<RelatedReportsProps> = ({ currentReportId,
 
         const top = scored.slice(0, 6);
         return top.length > 0 ? top : candidates.filter((item) => item.id !== currentReportId).slice(0, 6);
-    }, [data, currentReportId, report?.commodities, report?.regions, report?.reportType]);
+    }, [data, currentReportId, report?.commodities, report?.region, report?.analysis?.reportType, report?.type]);
 
-    const reportTypeLabels = useMemo(() => {
+    const reportTypeLabels: Record<string, string> = useMemo(() => {
         const items = dictionaries?.REPORT_TYPE?.filter((item) => item.isActive) || [];
-        if (!items.length) return REPORT_TYPE_LABELS;
+        if (!items.length) return REPORT_TYPE_LABELS as Record<string, string>;
         return items.reduce<Record<string, string>>((acc, item) => {
             acc[item.code] = item.label;
             return acc;
@@ -74,17 +78,17 @@ export const RelatedReports: React.FC<RelatedReportsProps> = ({ currentReportId,
                 size="small"
                 loading={isLoading}
                 dataSource={relatedReports}
-                renderItem={(item: ResearchReportResponse) => (
+                renderItem={(item: KnowledgeItem) => (
                     <List.Item>
                         <List.Item.Meta
                             title={<a onClick={() => navigate(`/intel/knowledge/reports/${item.id}`)}>{item.title}</a>}
                             description={
                                 <Space size={8}>
                                     <Typography.Text type="secondary">
-                                        {dayjs(item.publishDate || item.createdAt).format('YYYY-MM-DD')}
+                                        {dayjs(item.publishAt || item.createdAt).format('YYYY-MM-DD')}
                                     </Typography.Text>
-                                    <Tag color={reportTypeColors[item.reportType] || 'blue'}>
-                                        {reportTypeLabels[item.reportType] || item.reportType}
+                                    <Tag color={reportTypeColors[item.analysis?.reportType || item.type] || 'blue'}>
+                                        {reportTypeLabels[item.analysis?.reportType || item.type] || item.analysis?.reportType || item.type}
                                     </Tag>
                                 </Space>
                             }

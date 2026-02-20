@@ -4,7 +4,8 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { PageContainer } from '@ant-design/pro-components';
 import { Row, Col, Spin, Button, Space, App, Typography, Card, Tag, theme, FloatButton, Anchor, Divider, List, Alert } from 'antd';
 import { ArrowLeftOutlined, DownloadOutlined as DownloadIcon, ClockCircleOutlined, EyeOutlined, FileTextOutlined, LinkOutlined } from '@ant-design/icons';
-import { useResearchReport, useIncrementViewCount, useIncrementDownloadCount, useMarketIntel } from '../api/hooks';
+import { useMarketIntel } from '../api/hooks';
+import { useKnowledgeReport, useIncrementReportView, useIncrementReportDownload, KnowledgeItem } from '../api/knowledge-hooks';
 import { AIAnalysisPanel } from './research-report-detail/AIAnalysisPanel';
 import { DocumentPreview } from './research-report-detail/DocumentPreview';
 import { RelatedReports } from './research-report-detail/RelatedReports';
@@ -13,21 +14,29 @@ import { REVIEW_STATUS_LABELS } from '@/constants';
 import { useDictionaries } from '@/hooks/useDictionaries';
 import dayjs from 'dayjs';
 
+// 兼容旧枚举
+const ReviewStatus = {
+    PENDING: 'PENDING_REVIEW',
+    APPROVED: 'PUBLISHED',
+    REJECTED: 'REJECTED',
+    ARCHIVED: 'ARCHIVED'
+};
+
 export const ResearchReportDetailPage: React.FC = () => {
     const { id } = useParams<{ id: string }>();
     const navigate = useNavigate();
     const { message } = App.useApp(); // Fix: Use App context hooks
     const { token } = theme.useToken();
 
-    const { data: report, isLoading, error } = useResearchReport(id || '');
-    const { mutate: incrementView } = useIncrementViewCount();
-    const { mutate: incrementDownload } = useIncrementDownloadCount();
+    const { data: report, isLoading, error } = useKnowledgeReport(id || '');
+    const { mutate: incrementView } = useIncrementReportView();
+    const { mutate: incrementDownload } = useIncrementReportDownload();
     const viewIncrementedRef = useRef(false);
     const { data: dictionaries } = useDictionaries(['REPORT_TYPE', 'REVIEW_STATUS']);
 
-    const reportTypeLabels = useMemo(() => {
+    const reportTypeLabels: Record<string, string> = useMemo(() => {
         const items = dictionaries?.REPORT_TYPE?.filter((item) => item.isActive) || [];
-        if (!items.length) return REPORT_TYPE_LABELS;
+        if (!items.length) return REPORT_TYPE_LABELS as Record<string, string>;
         return items.reduce<Record<string, string>>((acc, item) => {
             acc[item.code] = item.label;
             return acc;
@@ -111,12 +120,12 @@ export const ResearchReportDetailPage: React.FC = () => {
     // New data: rawContent = body (long), summary = abstract (short)
     // Legacy data: rawContent = summary = full body (same text)
     const rawContent = (report as any).intel?.rawContent || '';
-    const reportSummary = report.summary || '';
+    const reportSummary = report.analysis?.summary || '';
     const intelSummary = (report as any).intel?.summary || '';
 
     // Body content: prefer the longest available text (most likely the actual full body)
-    const allTexts = [rawContent, reportSummary, intelSummary].filter(Boolean);
-    const longestText = allTexts.reduce((a, b) => (a.length >= b.length ? a : b), '');
+    const allTexts = [rawContent, report.contentRich, report.contentPlain, reportSummary, intelSummary].filter(Boolean);
+    const longestText = allTexts.reduce((a, b) => ((a?.length || 0) >= (b?.length || 0) ? a : b), '');
     const content = longestText || '暂无正文';
 
     // Summary/Abstract: prefer reportSummary if it's shorter than rawContent (new behavior),
@@ -176,14 +185,19 @@ export const ResearchReportDetailPage: React.FC = () => {
 
     const heroBackground = `linear-gradient(135deg, ${token.colorPrimaryBg} 0%, ${token.colorBgLayout} 100%)`;
 
-    const publishDate = dayjs(report.publishDate || report.createdAt).format('YYYY-MM-DD');
+    const publishDate = dayjs(report.publishAt || report.createdAt).format('YYYY-MM-DD');
 
     const commodityTags = report.commodities?.slice(0, 6) || [];
-    const regionTags = report.regions?.slice(0, 6) || [];
+    const regionTags = report.region?.slice(0, 6) || [];
+
+    let uiStatusKey = 'PENDING';
+    if (report.status === 'PUBLISHED') uiStatusKey = 'APPROVED';
+    else if (report.status === 'REJECTED') uiStatusKey = 'REJECTED';
+    else if (report.status === 'ARCHIVED') uiStatusKey = 'ARCHIVED';
 
     const statusTag = (
-        <Tag color={reviewStatusMeta.colors[report.reviewStatus] || 'default'} style={{ marginLeft: 8 }}>
-            {reviewStatusMeta.labels[report.reviewStatus] || report.reviewStatus}
+        <Tag color={reviewStatusMeta.colors[uiStatusKey] || 'default'} style={{ marginLeft: 8 }}>
+            {reviewStatusMeta.labels[uiStatusKey] || report.status}
         </Tag>
     );
 
@@ -226,18 +240,18 @@ export const ResearchReportDetailPage: React.FC = () => {
                                 {statusTag}
                             </Typography.Title>
                             <Space size="small" wrap>
-                                <Tag color={reportTypeColors[report.reportType] || 'blue'}>
-                                    {reportTypeLabels[report.reportType] || report.reportType}
+                                <Tag color={reportTypeColors[report.analysis?.reportType || report.type] || 'blue'}>
+                                    {reportTypeLabels[report.analysis?.reportType || report.type] || report.analysis?.reportType || report.type}
                                 </Tag>
                                 {commodityTags.map((item) => <Tag key={`commodity-${item}`}>{item}</Tag>)}
                                 {report.commodities?.length > 6 && <Tag>+{report.commodities.length - 6}</Tag>}
                                 {regionTags.map((item) => <Tag key={`region-${item}`}>{item}</Tag>)}
-                                {report.regions?.length > 6 && <Tag>+{report.regions.length - 6}</Tag>}
+                                {report.region?.length > 6 && <Tag>+{report.region.length - 6}</Tag>}
                             </Space>
                             <Space size="middle" wrap>
                                 <Typography.Text type="secondary"><ClockCircleOutlined /> {publishDate}</Typography.Text>
-                                <Typography.Text type="secondary">来源：{report.source || '未知来源'}</Typography.Text>
-                                <Typography.Text type="secondary">版本 v{report.version}</Typography.Text>
+                                <Typography.Text type="secondary">来源：{report.sourceType || '未知来源'}</Typography.Text>
+                                <Typography.Text type="secondary">版本 v1</Typography.Text>
                             </Space>
                         </Space>
                     </Col>

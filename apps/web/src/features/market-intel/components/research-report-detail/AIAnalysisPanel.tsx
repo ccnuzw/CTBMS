@@ -12,7 +12,7 @@ import {
   Col,
   theme,
 } from 'antd';
-import { ResearchReportResponse } from '@packages/types';
+import { KnowledgeItem } from '../../api/knowledge-hooks';
 import {
   RobotOutlined,
   RiseOutlined,
@@ -28,7 +28,7 @@ import { MARKET_SENTIMENT_LABELS, PREDICTION_TIMEFRAME_LABELS } from '../../cons
 const { Text } = Typography;
 
 interface AIAnalysisPanelProps {
-  report: ResearchReportResponse;
+  report: KnowledgeItem;
   mode?: 'summary' | 'data';
 }
 
@@ -128,9 +128,9 @@ export const AIAnalysisPanel: React.FC<AIAnalysisPanelProps> = ({ report, mode =
   // Check types first. ResearchReportResponse (from types packages) defines:
   // keyPoints: any; prediction: any; dataPoints: any;
 
-  const keyPoints = (report.keyPoints as any[]) || [];
-  const prediction = report.prediction as any;
-  const dataPoints = (report.dataPoints as any[]) || [];
+  const keyPoints = (report.analysis?.keyPoints as any[]) || [];
+  const prediction = report.analysis?.prediction as any;
+  const dataPoints = (report.analysis?.dataPoints as any[]) || [];
 
   const getSentimentIcon = (sentiment?: string) => {
     const sentimentCode = resolveSentimentCode(sentiment);
@@ -139,7 +139,7 @@ export const AIAnalysisPanel: React.FC<AIAnalysisPanelProps> = ({ report, mode =
     return <MinusOutlined style={{ color: token.colorTextTertiary }} />;
   };
 
-  const structuredAnalysis = (report as any).structuredAnalysis;
+  const structuredAnalysis = (report as any).analysis?.structuredAnalysis;
 
   if (mode === 'data') {
     return (
