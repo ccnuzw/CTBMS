@@ -45,7 +45,7 @@ export const KnowledgeCenterPage: React.FC = () => {
   const initialType = content === 'reports' ? 'RESEARCH' : undefined;
 
   const [type, setType] = useState<string | undefined>(initialType || stored?.type);
-  const [status, setStatus] = useState<string | undefined>(stored?.status || 'PUBLISHED');
+  const [status, setStatus] = useState<string | undefined>(stored?.status || undefined);
   const [quickRange, setQuickRange] = useState<'ALL' | 'THIS_WEEK' | 'THIS_MONTH'>(
     stored?.quickRange || 'ALL',
   );
@@ -188,7 +188,7 @@ export const KnowledgeCenterPage: React.FC = () => {
 
   const resetFilters = () => {
     setType(initialType);
-    setStatus('PUBLISHED');
+    setStatus(undefined);
     setQuickRange('ALL');
     setKeywordInput('');
     setKeyword('');

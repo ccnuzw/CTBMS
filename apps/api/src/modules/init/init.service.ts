@@ -10,7 +10,7 @@ export class InitService implements OnModuleInit {
   // Init service for seeding data
   private readonly logger = new Logger(InitService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private readonly prisma: PrismaService) { }
 
   async onModuleInit() {
     await this.measureTime('Seed AI Config', () => this.seedAIConfig());
@@ -140,6 +140,11 @@ export class InitService implements OnModuleInit {
       );
 
       // 2. Intelligence Data
+      await this.measureTime('Clear KnowledgeRelations', () =>
+        this.prisma.knowledgeRelation.deleteMany(),
+      );
+      await this.measureTime('Clear KnowledgeItems', () => this.prisma.knowledgeItem.deleteMany());
+
       await this.measureTime('Clear MarketInsight', () => this.prisma.marketInsight.deleteMany());
       await this.measureTime('Clear MarketEvent', () => this.prisma.marketEvent.deleteMany());
 
@@ -151,6 +156,10 @@ export class InitService implements OnModuleInit {
       );
 
       // 3. Main Intel (Depends on User - authorId)
+      // [FIX] Explicitly clear ResearchReport first (it depends on MarketIntel)
+      await this.measureTime('Clear ResearchReports', () =>
+        this.prisma.researchReport.deleteMany(),
+      );
       await this.measureTime('Clear MarketIntel', () => this.prisma.marketIntel.deleteMany());
 
       // 4. Collection Points (Depends on Region)

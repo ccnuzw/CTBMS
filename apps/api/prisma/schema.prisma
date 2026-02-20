@@ -776,6 +776,9 @@ model ResearchReport {
   intelId String      @unique // 关联 MarketIntel
   intel   MarketIntel @relation(fields: [intelId], references: [id], onDelete: Cascade)
 
+  // [NEW] 深度分析结果
+  structuredAnalysis Json? // { drivers: [], risks: [], outlook: {}, suggestions: [] }
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -783,6 +786,73 @@ model ResearchReport {
   @@index([reportPeriod])
   @@index([publishDate])
   @@index([reviewStatus])
+}
+
+// =============================================
+// Knowledge Graph (知识图谱)
+// =============================================
+
+enum NodeType {
+  COMMODITY    // 品种
+  REGION       // 地域
+  ORGANIZATION // 机构
+  EVENT        // 事件
+  FACTOR       // 影响因素 (e.g., "天气", "政策")
+  CONCEPT      // 概念 (e.g., "去库存", "通胀")
+}
+
+enum RelationType {
+  AFFECTS       // 影响 (供需 -> 价格)
+  CAUSES        // 导致 (暴雨 -> 减产)
+  LOCATED_IN    // 位于
+  BELONGS_TO    // 属于
+  HAS_RISK      // 存在风险
+  MENTIONS      // 提及
+}
+
+// 知识节点 (实体)
+model KnowledgeNode {
+  id        String   @id @default(uuid())
+  name      String   // 实体名称
+  type      NodeType // 实体类型
+  
+  // 索引与去重
+  code      String?  @unique // 标准化编码 (可选)
+  
+  description String? // 描述
+  meta        Json?   // 元数据
+  
+  edgesFrom KnowledgeEdge[] @relation("SourceNode")
+  edgesTo   KnowledgeEdge[] @relation("TargetNode")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([name])
+  @@index([type])
+}
+
+// 知识边 (关系)
+model KnowledgeEdge {
+  id        String   @id @default(uuid())
+  
+  sourceId  String
+  source    KnowledgeNode @relation("SourceNode", fields: [sourceId], references: [id], onDelete: Cascade)
+  
+  targetId  String
+  target    KnowledgeNode @relation("TargetNode", fields: [targetId], references: [id], onDelete: Cascade)
+  
+  type      RelationType // 关系类型
+  weight    Float    @default(1.0) // 权重/置信度
+  
+  // 来源溯源
+  sourceIntelId String? // 该关系提取自哪篇情报
+  
+  createdAt DateTime @default(now())
+
+  @@index([sourceId])
+  @@index([targetId])
+  @@index([type])
 }
 
 model KnowledgeItem {

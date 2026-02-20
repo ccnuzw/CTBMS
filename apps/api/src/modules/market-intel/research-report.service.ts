@@ -19,13 +19,15 @@ import {
 } from '@packages/types';
 import * as XLSX from 'xlsx';
 import { KnowledgeService } from '../knowledge/knowledge.service';
+import { DeepAnalysisService } from '../knowledge/services/deep-analysis.service';
 
 @Injectable()
 export class ResearchReportService {
   constructor(
     private prisma: PrismaService,
     private knowledgeService: KnowledgeService,
-  ) {}
+    private deepAnalysisService: DeepAnalysisService,
+  ) { }
 
   private toPrismaReportType(value: TypesReportType): PrismaReportType;
   private toPrismaReportType(value?: TypesReportType): PrismaReportType | undefined;
@@ -85,6 +87,13 @@ export class ResearchReportService {
       console.warn('[ResearchReportService.create] Knowledge V2 sync failed:', error);
     }
 
+    // Trigger Deep Analysis
+    if (report.summary && report.summary.length > 50) {
+      this.deepAnalysisService.analyzeReport(report.id, report.summary).catch(err => {
+        console.error('[ResearchReportService.create] Deep analysis status update failed', err);
+      });
+    }
+
     return report;
   }
 
@@ -92,42 +101,52 @@ export class ResearchReportService {
    * 手工创建研报 (无需 IntelID)
    */
   async createManual(dto: CreateManualResearchReportDto) {
-    return this.prisma.$transaction(async (tx) => {
+    // 正文优先使用 content 字段，向后兼容 summary
+    // NOTE: content is in the Zod schema but TS type may not reflect it yet
+    const dtoContent = (dto as Record<string, unknown>).content as string | undefined;
+    const bodyContent = dtoContent || dto.summary;
+
+    console.log('[createManual] dto.content length:', dtoContent?.length, 'dto.summary length:', dto.summary?.length, 'bodyContent length:', bodyContent?.length);
+
+    const report = await this.prisma.$transaction(async (tx) => {
       // 1. 准备 MarketIntel ID (如果有传入，说明已通过上传接口创建；否则创建新的)
       let intelId = dto.intelId;
 
       if (!intelId) {
         const intel = await tx.marketIntel.create({
           data: {
-            rawContent: dto.summary,
+            rawContent: bodyContent,
             category: 'C_DOCUMENT', // IntelCategory.C_DOCUMENT
             contentType: 'RESEARCH_REPORT', // ContentType.RESEARCH_REPORT
-            sourceType: 'INTERNAL_REPORT', // IntelSourceType.INTERNAL_REPORT (Assumption: Manual entry is internal or official)
+            sourceType: 'INTERNAL_REPORT', // IntelSourceType.INTERNAL_REPORT
             location: dto.regions?.[0] || '全国',
             region: dto.regions,
             effectiveTime: dto.publishDate || new Date(),
-            summary: dto.summary,
-            // I need to update the signature to accept userId.
+            summary: dto.summary, // 摘要（简短）
             authorId: 'system-user-placeholder', // Matches 'seed.sql' system user
           },
         });
         intelId = intel.id;
       } else {
-        // 如果已存在 Intel (例如通过上传创建)，我们可能需要更新它的 summary 或 metadata
-        // 但为了安全起见，这里只关联它。如果需要同步更新 Intel 属性，可以在这里做 update
+        // 如果已存在 Intel (例如通过上传创建)，仅更新摘要
+        // 注意：不覆盖 rawContent！上传时已存储了完整的 PDF 正文
+        const updateData: Record<string, unknown> = {
+          summary: dto.summary,
+          effectiveTime: dto.publishDate || new Date(),
+          region: dto.regions,
+        };
+        // 只在有显式 content 时才更新 rawContent
+        if (dtoContent) {
+          updateData.rawContent = dtoContent;
+        }
         await tx.marketIntel.update({
           where: { id: intelId },
-          data: {
-            summary: dto.summary, // 同步最新的编辑器内容
-            rawContent: dto.summary,
-            effectiveTime: dto.publishDate || new Date(),
-            region: dto.regions,
-          },
+          data: updateData,
         });
       }
 
       // 2. 创建 ResearchReport
-      const result = await tx.researchReport.create({
+      return tx.researchReport.create({
         data: {
           title: dto.title,
           reportType: this.toPrismaReportType(dto.reportType),
@@ -147,15 +166,23 @@ export class ResearchReportService {
           intel: true, // Return with intel relation
         },
       });
-
-      try {
-        await this.knowledgeService.syncFromResearchReport(result.id);
-      } catch (error) {
-        console.warn('[ResearchReportService.createManual] Knowledge V2 sync failed:', error);
-      }
-
-      return result;
     });
+
+    try {
+      await this.knowledgeService.syncFromResearchReport(report.id);
+    } catch (error) {
+      console.warn('[ResearchReportService.createManual] Knowledge V2 sync failed:', error);
+    }
+
+    // Trigger Deep Analysis (use bodyContent for better analysis)
+    const analysisContent = bodyContent || report.summary;
+    if (analysisContent && analysisContent.length > 50) {
+      this.deepAnalysisService.analyzeReport(report.id, analysisContent).catch(err => {
+        console.error('[ResearchReportService.createManual] Deep analysis failed', err);
+      });
+    }
+
+    return report;
   }
 
   /**
@@ -202,6 +229,7 @@ export class ResearchReportService {
       ];
     }
 
+    // Debug log
     const [data, total] = await Promise.all([
       this.prisma.researchReport.findMany({
         where,
@@ -272,6 +300,7 @@ export class ResearchReportService {
       ...(dto.commodities !== undefined ? { commodities: dto.commodities } : {}),
       ...(dto.regions !== undefined ? { regions: dto.regions } : {}),
       ...(dto.timeframe !== undefined ? { timeframe: dto.timeframe } : {}),
+      ...(dto.intelId !== undefined ? { intelId: dto.intelId } : {}), // Update intelId if provided
     };
 
     const report = await this.prisma.researchReport.update({
@@ -469,14 +498,14 @@ export class ResearchReportService {
       aiAnalysis.prediction ||
       (aiAnalysis.forecast
         ? {
-            direction: aiAnalysis.forecast.shortTerm?.includes('涨')
-              ? 'UP'
-              : aiAnalysis.forecast.shortTerm?.includes('跌')
-                ? 'DOWN'
-                : 'STABLE',
-            timeframe: 'SHORT_TERM',
-            reasoning: aiAnalysis.forecast.shortTerm || aiAnalysis.forecast.mediumTerm,
-          }
+          direction: aiAnalysis.forecast.shortTerm?.includes('涨')
+            ? 'UP'
+            : aiAnalysis.forecast.shortTerm?.includes('跌')
+              ? 'DOWN'
+              : 'STABLE',
+          timeframe: 'SHORT_TERM',
+          reasoning: aiAnalysis.forecast.shortTerm || aiAnalysis.forecast.mediumTerm,
+        }
         : undefined);
 
     const dataPoints =
@@ -523,6 +552,13 @@ export class ResearchReportService {
       await this.knowledgeService.syncFromResearchReport(report.id);
     } catch (error) {
       console.warn('[ResearchReportService.promoteToReport] Knowledge V2 sync failed:', error);
+    }
+
+    // Trigger Deep Analysis
+    if (report.summary && report.summary.length > 50) {
+      this.deepAnalysisService.analyzeReport(report.id, report.summary).catch(err => {
+        console.error('[ResearchReportService.promoteToReport] Deep analysis failed', err);
+      });
     }
 
     return {

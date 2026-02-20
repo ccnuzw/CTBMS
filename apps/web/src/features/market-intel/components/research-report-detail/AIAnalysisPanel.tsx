@@ -139,6 +139,8 @@ export const AIAnalysisPanel: React.FC<AIAnalysisPanelProps> = ({ report, mode =
     return <MinusOutlined style={{ color: token.colorTextTertiary }} />;
   };
 
+  const structuredAnalysis = (report as any).structuredAnalysis;
+
   if (mode === 'data') {
     return (
       <Card
@@ -248,6 +250,55 @@ export const AIAnalysisPanel: React.FC<AIAnalysisPanelProps> = ({ report, mode =
           )}
         </Card>
       </Col>
+
+      {/* Structured Analysis (Deep Analysis) */}
+      {structuredAnalysis && (
+        <Col span={24}>
+          <Card
+            bordered={false}
+            className="shadow-sm"
+            title={
+              <Space>
+                <LineChartOutlined /> 深度分析 (Deep Analysis)
+              </Space>
+            }
+          >
+            <Row gutter={[16, 16]}>
+              <Col xs={24} md={8}>
+                <Card size="small" title="关键驱动因素 (Drivers)" type="inner">
+                  <ul>
+                    {(structuredAnalysis.drivers || []).map((d: string, i: number) => <li key={i}>{d}</li>)}
+                  </ul>
+                </Card>
+              </Col>
+              <Col xs={24} md={8}>
+                <Card size="small" title="风险因素 (Risks)" type="inner">
+                  <ul>
+                    {(structuredAnalysis.risks || []).map((r: string, i: number) => <li key={i}>{r}</li>)}
+                  </ul>
+                </Card>
+              </Col>
+              <Col xs={24} md={8}>
+                <Card size="small" title="操作建议 (Suggestions)" type="inner">
+                  <ul>
+                    {(structuredAnalysis.suggestions || []).map((s: string, i: number) => <li key={i}>{s}</li>)}
+                  </ul>
+                </Card>
+              </Col>
+
+              {structuredAnalysis.outlook && (
+                <Col span={24}>
+                  <Descriptions title="市场展望 (Outlook)" bordered size="small">
+                    <Descriptions.Item label="短期 (Short Term)">{structuredAnalysis.outlook.shortTerm || '-'}</Descriptions.Item>
+                    <Descriptions.Item label="中期 (Medium Term)">{structuredAnalysis.outlook.mediumTerm || '-'}</Descriptions.Item>
+                    <Descriptions.Item label="长期 (Long Term)">{structuredAnalysis.outlook.longTerm || '-'}</Descriptions.Item>
+                  </Descriptions>
+                </Col>
+              )}
+            </Row>
+          </Card>
+        </Col>
+      )}
     </Row>
   );
 };

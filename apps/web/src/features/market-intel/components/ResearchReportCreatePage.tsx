@@ -273,6 +273,8 @@ export const ResearchReportCreatePage = () => {
   useEffect(() => {
     if (isEditMode && existingReport) {
       const existingPrediction = (existingReport.prediction || {}) as any;
+      // 正文优先从 intel.rawContent 获取，摘要为 report.summary
+      const bodyContent = (existingReport as any).intel?.rawContent || existingReport.summary;
       form.setFieldsValue({
         title: existingReport.title,
         reportType: existingReport.reportType,
@@ -281,6 +283,7 @@ export const ResearchReportCreatePage = () => {
         commodities: existingReport.commodities,
         regions: existingReport.regions,
         summary: existingReport.summary,
+        content: bodyContent,
         keyPoints: existingReport.keyPoints,
         prediction: {
           ...existingPrediction,
@@ -299,29 +302,34 @@ export const ResearchReportCreatePage = () => {
     (dataPointsWatch?.length || 0) > 0;
 
   const handleFinish = async (values: CreateManualResearchReportDto) => {
-    // Ensure summary is physically present in the values
-    if (!values.summary) {
-      const currentSummary = form.getFieldValue('summary');
-      if (currentSummary) {
-        values.summary = currentSummary;
-      } else {
-        message.error('研报正文不能为空');
-        return;
-      }
+    // Force-read content from form (ProFormItem with custom TiptapEditor may not include it in values)
+    const bodyContent = form.getFieldValue('content') || (values as any).content;
+    const summaryContent = form.getFieldValue('summary') || values.summary;
+
+    console.log('[handleFinish] content length:', bodyContent?.length, 'summary length:', summaryContent?.length);
+
+    if (!bodyContent) {
+      message.error('研报正文不能为空');
+      return;
     }
+
+    // Build the final payload with explicit content field
+    const payload = {
+      ...values,
+      content: bodyContent,
+      summary: summaryContent || bodyContent.slice(0, 300) + '...',
+      intelId: uploadedIntelId || undefined,
+    };
 
     try {
       if (isEditMode && editId) {
         await updateMutation.mutateAsync({
           id: editId,
-          data: values,
+          data: payload,
         });
         message.success('研报更新成功');
       } else {
-        await createMutation.mutateAsync({
-          ...values,
-          intelId: uploadedIntelId || undefined,
-        });
+        await createMutation.mutateAsync(payload as any);
         message.success('研报创建成功');
       }
       navigate('/intel/knowledge?tab=library&content=reports');
@@ -348,21 +356,28 @@ export const ResearchReportCreatePage = () => {
 
     const content = result.intel?.rawContent;
     if (content) {
-      const currentContent = form.getFieldValue('summary') || '';
+      const currentContent = form.getFieldValue('content') || '';
       const isHtml = /^\s*<.*>/.test(content) || /<br\/>|<p>|<div>/i.test(content);
 
+      // Markdown reform: Treat content as Markdown or plain text.
+      // If plain text, ensure paragraphs are separated by blank lines.
       const processedContent = isHtml
         ? content
         : content
-            .split('\n')
-            .map((line: string) => line.trim())
-            .filter((line: string) => line.length > 0)
-            .map((line: string) => `<p>${line}</p>`)
-            .join('');
+          .split('\n')
+          .map((line: string) => {
+            const trimmed = line.trim();
+            // Heuristic for Chinese headers
+            if (/^[一二三四五六七八九十]+、/.test(trimmed)) return `### ${trimmed}`;
+            if (/^[(（][一二三四五六七八九十]+[)）]/.test(trimmed)) return `#### ${trimmed}`;
+            return trimmed;
+          })
+          .filter((line: string) => line.length > 0)
+          .join('\n\n'); // Markdown uses double newline for paragraphs
 
       const newContent = currentContent ? `${currentContent}${processedContent}` : processedContent;
 
-      form.setFieldValue('summary', newContent);
+      form.setFieldValue('content', newContent);
       message.success('文档解析成功，内容已自动填入');
     } else {
       message.warning({
@@ -377,7 +392,7 @@ export const ResearchReportCreatePage = () => {
   const handleAnalyzeEditorContent = async (targets: AnalysisTarget[] = ['all']) => {
     if (analyzeMutation.isPending) return;
 
-    const content = form.getFieldValue('summary');
+    const content = form.getFieldValue('content');
     if (!content || content.replace(/<[^>]*>?/gm, '').trim().length === 0) {
       message.warning('编辑器内容为空，无法分析');
       return;
@@ -481,6 +496,12 @@ export const ResearchReportCreatePage = () => {
           }));
         }
 
+        // AI 分析可能返回 summary，用于填充摘要字段
+        if (result.summary && typeof result.summary === 'string' && result.summary.length > 20) {
+          updates.summary = result.summary;
+          extractedFields.push('摘要');
+        }
+
         form.setFieldsValue(updates);
         setAiSectionCollapsed(false); // 展开 AI 分析区
         setAiResult(result);
@@ -512,6 +533,7 @@ export const ResearchReportCreatePage = () => {
       reportType: ReportType.MARKET,
       publishDate: new Date(),
       summary: '',
+      content: '',
     }),
     [],
   );
@@ -766,14 +788,24 @@ export const ResearchReportCreatePage = () => {
                     </Space>
                   }
                 >
-                  <ProFormItem
+                  <ProFormTextArea
                     name="summary"
+                    label="摘要（可由 AI 自动生成，也可手动编辑）"
+                    placeholder="点击上方 'AI 深度分析' 按钮自动生成摘要，或手动输入..."
+                    fieldProps={{
+                      rows: 3,
+                      maxLength: 500,
+                      showCount: true,
+                    }}
+                  />
+                  <ProFormItem
+                    name="content"
                     rules={[{ required: true, message: '请输入正文内容' }]}
                     style={{ marginBottom: 0, flex: 1, display: 'flex', flexDirection: 'column' }}
                     className="fullHeightItem"
                   >
                     <TiptapEditor
-                      minHeight={580}
+                      minHeight={480}
                       placeholder="在此输入研报内容，或从左侧上传文档自动导入..."
                     />
                   </ProFormItem>

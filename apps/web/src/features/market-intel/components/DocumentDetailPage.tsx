@@ -42,6 +42,7 @@ import { useDictionaries } from '@/hooks/useDictionaries';
 import { useModalAutoFocus } from '@/hooks/useModalAutoFocus';
 import DOMPurify from 'dompurify';
 import { DocumentPreview } from './research-report-detail/DocumentPreview';
+import { KnowledgeGraphView } from './KnowledgeGraphView';
 
 const { Title, Text, Paragraph } = Typography;
 
@@ -342,6 +343,11 @@ export const DocumentDetailPage: React.FC = () => {
                             originalLabel="原始附件"
                         />
                     </Card>
+
+                    {/* Knowledge Graph View */}
+                    <div style={{ marginTop: 24 }}>
+                        <KnowledgeGraphView intelId={id} height={500} />
+                    </div>
                 </Col>
 
                 {/* Right Column: Metadata & AI Analysis */}
@@ -445,15 +451,15 @@ export const DocumentDetailPage: React.FC = () => {
                                                 document.aiAnalysis.sentiment === 'positive'
                                                     ? 'success'
                                                     : document.aiAnalysis.sentiment === 'negative'
-                                                    ? 'error'
-                                                    : 'default'
+                                                        ? 'error'
+                                                        : 'default'
                                             }
                                         >
                                             {document.aiAnalysis.sentiment === 'positive'
                                                 ? '利多'
                                                 : document.aiAnalysis.sentiment === 'negative'
-                                                ? '利空'
-                                                : '中性'}
+                                                    ? '利空'
+                                                    : '中性'}
                                         </Tag>
                                     </div>
                                 </div>

@@ -1,7 +1,7 @@
 
 import React, { useMemo, useRef, useState } from 'react';
 import { PageContainer, ProTable, ActionType, ProColumns } from '@ant-design/pro-components';
-import { Button, message, Tag, Space, Popconfirm, Dropdown, MenuProps, Modal } from 'antd';
+import { Button, message, Tag, Space, Popconfirm, Dropdown, MenuProps, Modal, Alert } from 'antd';
 import {
     FileTextOutlined,
     DeleteOutlined,
@@ -88,6 +88,9 @@ export const ResearchReportListPage: React.FC = () => {
         colors: REVIEW_STATUS_COLORS,
     };
 
+    // Debug state
+    const [debugInfo, setDebugInfo] = useState<{ loaded: number; total: number }>({ loaded: 0, total: 0 });
+
     // Columns
     const columns: ProColumns<ResearchReportResponse>[] = [
         {
@@ -103,8 +106,8 @@ export const ResearchReportListPage: React.FC = () => {
         {
             title: '类型',
             dataIndex: 'reportType',
-            valueType: 'select',
-            valueEnum: reportTypeValueEnum,
+            // valueType: 'select',
+            // valueEnum: reportTypeValueEnum,
             width: 100,
         },
         {
@@ -117,8 +120,8 @@ export const ResearchReportListPage: React.FC = () => {
             title: '审核状态',
             dataIndex: 'reviewStatus',
             width: 100,
-            valueType: 'select',
-            valueEnum: reviewStatusValueEnum,
+            // valueType: 'select',
+            // valueEnum: reviewStatusValueEnum,
             render: (_, record) => {
                 return (
                     <Tag color={reviewStatusMeta.colors[record.reviewStatus] || 'default'}>
@@ -223,13 +226,13 @@ export const ResearchReportListPage: React.FC = () => {
                 return (
                     <Space>
                         {renderQuickAudit()}
-                        <a onClick={() => navigate(`/intel/knowledge/reports/${record.id}`)}>查看</a>
+                        <a onClick={() => navigate(`/intel/research-reports/${record.id}`)}>查看</a>
                         <Dropdown menu={{
                             items: [
                                 {
                                     key: 'edit',
                                     label: '编辑',
-                                    onClick: () => navigate(`/intel/knowledge/reports/${record.id}?action=edit`)
+                                    onClick: () => navigate(`/intel/knowledge/reports/${record.id}/edit`)
                                 },
                                 ...menuItems // Spread existing menu items
                             ],
@@ -318,6 +321,13 @@ export const ResearchReportListPage: React.FC = () => {
         <div style={{ padding: 24 }}>
             {contextHolder}
             {modalContextHolder}
+            <Alert
+                message="Debug Mode"
+                description={`Total Records from API: ${debugInfo.total} | Actually Loaded in Table: ${debugInfo.loaded} | Page Size: 50`}
+                type="warning"
+                showIcon
+                style={{ marginBottom: 16 }}
+            />
             <ProTable<ResearchReportResponse>
                 headerTitle="研报列表"
                 actionRef={actionRef}
@@ -377,7 +387,7 @@ export const ResearchReportListPage: React.FC = () => {
                     // Construct query params
                     const queryParams = new URLSearchParams();
                     queryParams.append('page', String(current || 1));
-                    queryParams.append('pageSize', String(pageSize || 20));
+                    queryParams.append('pageSize', String(pageSize || 50));
 
                     Object.entries(searchParams).forEach(([key, value]) => {
                         if (value) queryParams.append(key, String(value));
@@ -398,6 +408,8 @@ export const ResearchReportListPage: React.FC = () => {
 
                     try {
                         const res = await apiClient.get<any>(`/market-intel/research-reports?${queryParams.toString()}`);
+                        console.log('[ResearchReportList] Loaded:', res.data.data?.length, 'Total:', res.data.total, 'Data:', res.data.data);
+                        setDebugInfo({ loaded: res.data.data?.length || 0, total: res.data.total || 0 });
                         return {
                             data: res.data.data,
                             success: true,

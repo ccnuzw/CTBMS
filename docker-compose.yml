@@ -1,7 +1,9 @@
 version: '3.8'
 services:
   postgres:
-    image: postgres:15-alpine
+    build:
+      context: .
+      dockerfile: Dockerfile.pgvector
     container_name: ctbms_postgres
     ports:
       - "5433:5432"

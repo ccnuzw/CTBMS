@@ -24,7 +24,7 @@ export class Sub2ApiProvider implements IAIProvider {
     }
 
     private getEndpoint(options: AIRequestOptions, type: 'chat' | 'models'): string {
-        let baseUrl = (options.apiUrl || 'https://sub2api.526566.xyz').replace(/\/+$/, '');
+        const baseUrl = (options.apiUrl || 'https://sub2api.526566.xyz').replace(/\/+$/, '');
 
         // Wire API: responses (Codex protocol)
         const wireApi = options.wireApi || 'chat'; // default to chat if not specified? or rely on user config
@@ -63,7 +63,7 @@ export class Sub2ApiProvider implements IAIProvider {
 
         const wireApi = options.wireApi || 'chat';
 
-        let body: any;
+        let body: Record<string, unknown>;
 
         if (wireApi === 'responses') {
             // Codex / Responses Protocol
@@ -115,7 +115,7 @@ export class Sub2ApiProvider implements IAIProvider {
                 throw new Error(`Sub2API Error (${response.status}): ${errorText}`);
             }
 
-            const data = await response.json() as any;
+            const data = await response.json() as { output?: Array<{ content?: string }>, choices?: Array<{ message?: { content?: string } }> };
 
             if (wireApi === 'responses') {
                 // Parse 'Response' object
@@ -189,14 +189,14 @@ export class Sub2ApiProvider implements IAIProvider {
                 throw new Error(`HTTP ${response.status}: ${errorText}`);
             }
 
-            const data = await response.json() as any;
+            const data = await response.json() as { output?: Array<{ content?: string }>, choices?: Array<{ message?: { content?: string } }> };
             let content = '';
 
             if (wireApi === 'responses') {
-                if (data.output && data.output[0]) content = data.output[0].content;
-                else if (data.choices && data.choices[0]) content = data.choices[0].message?.content;
+                if (data.output && data.output[0]) content = data.output[0].content || '';
+                else if (data.choices && data.choices[0]) content = data.choices[0].message?.content || '';
             } else {
-                content = data.choices?.[0]?.message?.content;
+                content = data.choices?.[0]?.message?.content || '';
             }
 
             return {
@@ -227,8 +227,8 @@ export class Sub2ApiProvider implements IAIProvider {
             const response = await fetch(url, { headers });
             if (!response.ok) throw new Error(`${response.status} ${await response.text()}`);
 
-            const data = await response.json() as any;
-            const models = (data.data || []).map((m: any) => m.id).sort();
+            const data = await response.json() as { data?: Array<{ id: string }> };
+            const models = (data.data || []).map((m) => m.id).sort();
 
             return { models, activeUrl: url };
         } catch (error) {

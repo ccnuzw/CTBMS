@@ -262,4 +262,12 @@ export class KnowledgeController {
       triggerAnalysis,
     });
   }
+
+  @Get('graph')
+  getGraphData(
+    @Query('intelId') intelId?: string,
+    @Query('limit', new DefaultValuePipe(100), ParseIntPipe) limit?: number,
+  ) {
+    return this.knowledgeService.getGraphData({ intelId, limit });
+  }
 }

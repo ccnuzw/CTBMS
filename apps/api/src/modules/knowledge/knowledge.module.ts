@@ -12,6 +12,8 @@ import { KnowledgeRetrievalService } from './services/knowledge-retrieval.servic
 import { KnowledgeQueryExpansionService } from './services/knowledge-query-expansion.service';
 
 import { KnowledgeUploadController } from './knowledge-upload.controller';
+import { KnowledgeExtractionService } from './services/knowledge-extraction.service';
+import { DeepAnalysisService } from './services/deep-analysis.service';
 
 @Module({
   imports: [PrismaModule, AIModule, ConfigModule],
@@ -22,14 +24,18 @@ import { KnowledgeUploadController } from './knowledge-upload.controller';
     RagPipelineService,
     KnowledgeIngestionService,
     KnowledgeRetrievalService,
-    KnowledgeQueryExpansionService
+    KnowledgeQueryExpansionService,
+    KnowledgeExtractionService,
+    DeepAnalysisService
   ],
   exports: [
     KnowledgeService,
     RagPipelineService,
     KnowledgeIngestionService,
     KnowledgeRetrievalService,
-    KnowledgeQueryExpansionService
+    KnowledgeQueryExpansionService,
+    KnowledgeExtractionService,
+    DeepAnalysisService
   ],
 })
 export class KnowledgeModule { }

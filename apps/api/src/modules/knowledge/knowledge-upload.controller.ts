@@ -2,7 +2,7 @@
 import { Controller, Post, UseInterceptors, UploadedFile, BadRequestException } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { RagPipelineService } from './rag/rag-pipeline.service';
-import * as pdf from 'pdf-parse';
+import pdf from 'pdf-parse';
 
 @Controller('knowledge')
 export class KnowledgeUploadController {
@@ -32,12 +32,12 @@ export class KnowledgeUploadController {
             throw new BadRequestException('File is empty or text could not be extracted');
         }
 
-        const result = await this.ragService.ingest(fileId, text);
+        const chunksCount = await this.ragService.ingest(fileId, text);
 
         return {
             id: fileId,
             filename: file.originalname,
-            chunks: result.chunks,
+            chunks: chunksCount,
             message: 'File uploaded and indexed successfully'
         };
     }

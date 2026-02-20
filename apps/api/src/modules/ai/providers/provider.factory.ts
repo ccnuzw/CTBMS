@@ -12,7 +12,7 @@ export class AIProviderFactory {
   constructor() {
     this.providers.set('google', new GoogleProvider());
     this.providers.set('openai', new OpenAIProvider());
-    this.providers.set('sub2api' as any, new Sub2ApiProvider());
+    this.providers.set('sub2api' as AIProvider, new Sub2ApiProvider());
     // initialize other providers here
   }
 

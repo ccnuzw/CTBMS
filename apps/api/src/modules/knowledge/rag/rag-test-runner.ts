@@ -1,10 +1,17 @@
 
+import { NestFactory } from '@nestjs/core';
+import { KnowledgeModule } from '../knowledge.module';
 import { RagPipelineService } from './rag-pipeline.service';
+import { Logger } from '@nestjs/common';
 
 async function main() {
-    const service = new RagPipelineService();
+    const logger = new Logger('RagTestRunner');
 
-    console.log('--- Starting RAG Pipeline POC Test ---');
+    // Bootstrap Nest Context to inject dependencies
+    const app = await NestFactory.createApplicationContext(KnowledgeModule);
+    const service = app.get(RagPipelineService);
+
+    logger.log('--- Starting RAG Pipeline POC Test ---');
 
     // Mock Data: A financial report text
     const docId = 'report_2023_q1';
@@ -25,26 +32,32 @@ async function main() {
   CEO John Doe stated that "Innovation is our key driver."
   `;
 
-    // 1. Ingest
-    await service.ingest(docId, text);
+    try {
+        // 1. Ingest
+        await service.ingest(docId, text); // Note: returns chunk count now
 
-    // 2. Search specific data point (e.g. "Net Profit")
-    const query = "Net Profit";
-    console.log(`\nSearching for: "${query}"...`);
+        // 2. Search specific data point (e.g. "Net Profit")
+        const query = "Net Profit";
+        logger.log(`\nSearching for: "${query}"...`);
 
-    const results = await service.search(query);
+        const results = await service.search(query);
 
-    console.log('\nTop Results (Fused Score):');
-    results.forEach((r, i) => {
-        console.log(`[${i + 1}] Score: ${r.score.toFixed(4)} | Content: ${r.content?.replace(/\n/g, ' ').substring(0, 50)}...`);
-    });
+        logger.log('\nTop Results (Fused Score):');
+        results.forEach((r, i) => {
+            logger.log(`[${i + 1}] Score: ${r.score.toFixed(4)} | Content: ${r.content?.replace(/\n/g, ' ').substring(0, 50)}...`);
+        });
 
-    // Verification Logic
-    const topResult = results[0];
-    if (topResult && topResult.content && topResult.content.includes('Net Profit')) {
-        console.log('\n✅ SUCCESS: Retrieved the chunk containing "Net Profit" as the top result.');
-    } else {
-        console.log('\n❌ FAILURE: Top result did not contain expected keyword.');
+        // Verification Logic
+        const topResult = results[0];
+        if (topResult && topResult.content && topResult.content.includes('Net Profit')) {
+            logger.log('\n✅ SUCCESS: Retrieved the chunk containing "Net Profit" as the top result.');
+        } else {
+            logger.log('\n❌ FAILURE: Top result did not contain expected keyword.');
+        }
+    } catch (error) {
+        logger.error('Test failed', error);
+    } finally {
+        await app.close();
     }
 }
 

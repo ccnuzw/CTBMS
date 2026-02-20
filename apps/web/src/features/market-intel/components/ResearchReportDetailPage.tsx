@@ -107,8 +107,30 @@ export const ResearchReportDetailPage: React.FC = () => {
 
     if (isLoading) return <PageContainer><Spin size="large" /></PageContainer>;
     if (error || !report) return <PageContainer><div>加载失败或研报不存在</div></PageContainer>;
-    // Determine content: specific report summary > linked intel summary (redundancy)
-    const displayContent = report.summary || (report as any).intel?.summary;
+    // Smart content/summary resolution:
+    // New data: rawContent = body (long), summary = abstract (short)
+    // Legacy data: rawContent = summary = full body (same text)
+    const rawContent = (report as any).intel?.rawContent || '';
+    const reportSummary = report.summary || '';
+    const intelSummary = (report as any).intel?.summary || '';
+
+    // Body content: prefer the longest available text (most likely the actual full body)
+    const allTexts = [rawContent, reportSummary, intelSummary].filter(Boolean);
+    const longestText = allTexts.reduce((a, b) => (a.length >= b.length ? a : b), '');
+    const content = longestText || '暂无正文';
+
+    // Summary/Abstract: prefer reportSummary if it's shorter than rawContent (new behavior),
+    // otherwise pick the shortest non-empty text, fallback to truncated body
+    let summary: string;
+    if (reportSummary && rawContent && reportSummary.length < rawContent.length * 0.8) {
+        // New data pattern: summary is clearly shorter than body
+        summary = reportSummary;
+    } else if (reportSummary) {
+        // Legacy or same: use report summary, truncated if too long
+        summary = reportSummary.length > 500 ? reportSummary.substring(0, 300) + '...' : reportSummary;
+    } else {
+        summary = intelSummary || '暂无摘要';
+    }
 
 
 
@@ -167,6 +189,7 @@ export const ResearchReportDetailPage: React.FC = () => {
 
     const anchorItems = [
         linkedIntelId ? { key: 'source', href: '#report-source', title: '源文档' } : null,
+        { key: 'summary', href: '#report-summary', title: '摘要' },
         { key: 'highlights', href: '#report-highlights', title: '关键观点' },
         { key: 'reader', href: '#report-reader', title: '正文/原文' },
         { key: 'data', href: '#report-data', title: '关键数据' },
@@ -283,6 +306,14 @@ export const ResearchReportDetailPage: React.FC = () => {
                             </div>
                         )}
 
+                        <div id="report-summary">
+                            <Card title="摘要" bordered={false} className="shadow-sm">
+                                <Typography.Paragraph ellipsis={{ rows: 3, expandable: true, symbol: '展开' }}>
+                                    {summary}
+                                </Typography.Paragraph>
+                            </Card>
+                        </div>
+
                         <div id="report-highlights">
                             <AIAnalysisPanel report={report} mode="summary" />
                         </div>
@@ -290,7 +321,7 @@ export const ResearchReportDetailPage: React.FC = () => {
                         <div id="report-reader">
                             <DocumentPreview
                                 fileUrl={previewUrl}
-                                content={displayContent}
+                                content={content}
                                 fileName={selectedAttachment?.filename}
                                 mimeType={selectedAttachment?.mimeType}
                                 attachments={attachments}

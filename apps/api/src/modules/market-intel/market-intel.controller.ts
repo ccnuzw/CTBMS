@@ -41,6 +41,8 @@ import {
 import { IntelAttachmentService } from './intel-attachment.service';
 
 import { DocumentParserService } from './document-parser.service';
+import { PdfToMarkdownService } from './pdf-to-markdown.service';
+import { KnowledgeExtractionService } from '../knowledge/services/knowledge-extraction.service';
 
 @Controller('market-intel')
 export class MarketIntelController {
@@ -50,7 +52,9 @@ export class MarketIntelController {
     private readonly researchReportService: ResearchReportService,
     private readonly intelAttachmentService: IntelAttachmentService,
     private readonly documentParserService: DocumentParserService,
-  ) {}
+    private readonly pdfToMarkdownService: PdfToMarkdownService,
+    private readonly knowledgeExtractionService: KnowledgeExtractionService,
+  ) { }
 
   // =============================================
   // 静态路由 (必须在动态路由 :id 之前)
@@ -508,7 +512,7 @@ export class MarketIntelController {
 
   @Post('dashboard/briefing')
   async generateSmartBriefing(
-    @Body() body: { startDate?: string; endDate?: string; [key: string]: unknown },
+    @Body() body: { startDate?: string; endDate?: string;[key: string]: unknown },
   ) {
     return this.marketIntelService.generateSmartBriefing({
       ...body,
@@ -807,47 +811,41 @@ export class MarketIntelController {
         if (allowedMimes.includes(file.mimetype)) {
           callback(null, true);
         } else {
-          callback(new BadRequestException(`不支持的文件类型: ${file.mimetype}`), false);
+          callback(new BadRequestException('Unsupported file type'), false);
         }
       },
     }),
   )
   async uploadDocument(
     @UploadedFile() file: Express.Multer.File,
-    @Body('sourceType') sourceType?: string,
-    @Body('contentType') contentType?: string,
-    @Body('location') location?: string,
-    @Body('region') region?: string,
+    @Body() body: { sourceType?: string; contentType?: string; location?: string },
   ) {
     if (!file) {
-      throw new BadRequestException('请上传文件');
+      throw new BadRequestException('No file uploaded');
     }
 
-    // Fix Chinese filename encoding (Multer often defaults to latin1)
-    file.originalname = Buffer.from(file.originalname, 'latin1').toString('utf8');
-
+    const { sourceType, contentType, location } = body;
     const authorId = 'system-user-placeholder';
 
-    // 1. 解析文档内容
-    let extractedText = '';
-    let extractedHtml = '';
-    let parseError = '';
+    // 0. Handle filename encoding (Fix for mojibake)
+    // Multer often parses UTF-8 filenames as ISO-8859-1 (latin1)
+    file.originalname = Buffer.from(file.originalname, 'latin1').toString('utf8');
+
+    // 1. Convert to Markdown (using LLM if needed)
+    let markdownContent = '';
     try {
-      const parseResult = await this.documentParserService.parse(file.buffer, file.mimetype);
-      extractedText = parseResult.text || '';
-      extractedHtml = parseResult.html || '';
+      markdownContent = await this.pdfToMarkdownService.convertToMarkdown(
+        file.buffer,
+        file.mimetype,
+      );
     } catch (error) {
-      parseError = error instanceof Error ? error.message : '文档解析失败';
+      console.error('Failed to convert to Markdown:', error);
     }
 
-    // 2. 准备内容并创建 MarketIntel 记录
-    // 优先使用 HTML (保留排版)，否则使用纯文本。不再进行 5000 字符截断。
-    const contentToSave = extractedHtml || extractedText;
-    const rawContent = contentToSave
-      ? contentToSave
-      : `[文档上传] ${file.originalname}${parseError ? `\n\n[解析警告] ${parseError}` : ''}`;
+    // 2. Prepare data for creation
+    const rawContent = markdownContent || `[文档上传] ${file.originalname}`;
 
-    // Map ContentType to Category (Legacy Support)
+    // Map ContentType to Category (Legacy Support Logic)
     const inputContentType = (contentType as ContentType) || ContentType.DAILY_REPORT;
     let mappedCategory = IntelCategory.C_DOCUMENT;
     if (inputContentType === ContentType.DAILY_REPORT) {
@@ -860,6 +858,7 @@ export class MarketIntelController {
       ? (sourceType as IntelSourceType)
       : IntelSourceType.OFFICIAL;
 
+    // 3. Create MarketIntel record
     const intel = await this.marketIntelService.create(
       {
         category: mappedCategory,
@@ -868,18 +867,18 @@ export class MarketIntelController {
         rawContent,
         effectiveTime: new Date(),
         location: location || '未指定',
-        region: region ? region.split(',') : [],
+        region: [], // Default empty
         gpsVerified: false,
-        completenessScore: extractedText ? 70 : 50, // 解析成功得分更高
+        completenessScore: markdownContent ? 70 : 50,
         scarcityScore: 50,
         validationScore: 0,
-        totalScore: extractedText ? 60 : 50,
+        totalScore: markdownContent ? 60 : 50,
         isFlagged: false,
       },
       authorId,
     );
 
-    // 3. 保存文件并创建附件记录（关联 intelId）
+    // 4. Save file attachment
     const attachment = await this.intelAttachmentService.saveFile(
       {
         buffer: file.buffer,
@@ -887,9 +886,23 @@ export class MarketIntelController {
         mimetype: file.mimetype,
         size: file.size,
       },
-      intel.id, // 关联已创建的情报 ID
-      extractedText, // 存储提取的文本作为 ocrText
+      intel.id,
+      markdownContent, // Store extracted text/markdown for search
     );
+
+    // 5. Trigger Knowledge Graph Extraction
+    if (markdownContent && markdownContent.length > 50) {
+      // Fire and forget or await? For MVP, let's await to ensure it works, or use setImmediate
+      // Using setImmediate to avoid blocking response too long, but logging might get lost if context dies?
+      // NestJS controllers await response.
+      // Let's await it.
+      try {
+        await this.knowledgeExtractionService.processIntel(intel.id, markdownContent);
+      } catch (err) {
+        console.error('Knowledge extraction trigger failed:', err);
+        // Do not fail the upload
+      }
+    }
 
     return {
       success: true,
@@ -899,12 +912,11 @@ export class MarketIntelController {
         filename: attachment.filename,
         mimeType: attachment.mimeType,
         fileSize: attachment.fileSize,
+        storagePath: attachment.storagePath,
       },
-      extractedTextLength: extractedText.length,
-      parseError: parseError || undefined,
-      message: extractedText
-        ? `文档上传成功，已提取 ${extractedText.length} 字符`
-        : '文档上传成功，内容解析待处理',
+      message: markdownContent
+        ? `Document uploaded and converted to Markdown (${markdownContent.length} chars)`
+        : 'Document uploaded',
     };
   }
 

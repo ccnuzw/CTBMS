@@ -1,0 +1,14 @@
+FROM postgres:15-alpine
+
+WORKDIR /tmp
+RUN sed -i 's/dl-cdn.alpinelinux.org/mirrors.ustc.edu.cn/g' /etc/apk/repositories
+RUN apk add --no-cache git build-base clang llvm
+RUN mkdir -p /usr/lib/llvm19/bin && \
+    ln -s /usr/bin/clang /usr/bin/clang-19 && \
+    ln -s /usr/bin/llvm-lto /usr/lib/llvm19/bin/llvm-lto
+RUN git clone --branch v0.5.1 https://github.com/pgvector/pgvector.git \
+    && cd pgvector \
+    && make \
+    && make install \
+    && cd .. \
+    && rm -rf pgvector

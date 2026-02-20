@@ -1,4 +1,5 @@
 import { ArrowLeftOutlined, BarChartOutlined, ReloadOutlined } from '@ant-design/icons';
+import { MarkdownRenderer } from '@/components/MarkdownRenderer';
 import { PageContainer } from '@ant-design/pro-components';
 import {
   Breadcrumb,
@@ -229,9 +230,11 @@ export const KnowledgeDetailPage: React.FC = () => {
             )}
 
             <Card title="正文">
-              <Paragraph style={{ whiteSpace: 'pre-wrap', marginBottom: 0 }}>
-                {detail.contentPlain || detail.contentRich || '-'}
-              </Paragraph>
+              {(detail.contentPlain || detail.contentRich) ? (
+                <MarkdownRenderer content={detail.contentPlain || detail.contentRich || ''} />
+              ) : (
+                <Paragraph type="secondary" style={{ marginBottom: 0 }}>-</Paragraph>
+              )}
             </Card>
 
             <KnowledgeRelationGraph

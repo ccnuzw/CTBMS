@@ -12,6 +12,7 @@ import {
 import { ContentType } from '@packages/types';
 import { AIService } from '../ai/ai.service';
 import { PrismaService } from '../../prisma';
+import { RagPipelineService } from './rag/rag-pipeline.service';
 
 type KnowledgeListQuery = {
   type?: KnowledgeType;
@@ -68,6 +69,7 @@ export class KnowledgeService {
   constructor(
     private prisma: PrismaService,
     private aiService: AIService,
+    private ragPipelineService: RagPipelineService,
   ) { }
 
   async findAll(query: KnowledgeListQuery) {
@@ -149,7 +151,7 @@ export class KnowledgeService {
   }
 
   async create(input: CreateKnowledgeInput) {
-    return this.prisma.$transaction(async (tx) => {
+    const result = await this.prisma.$transaction(async (tx) => {
       const item = await tx.knowledgeItem.create({
         data: {
           type: input.type,
@@ -179,8 +181,12 @@ export class KnowledgeService {
         });
       }
 
-      return this.findOne(item.id);
+      return item;
     });
+
+    const fullItem = await this.findOne(result.id);
+    await this.ragPipelineService.ingest(fullItem.id, fullItem.contentPlain || fullItem.contentRich || '');
+    return fullItem;
   }
 
   /**
@@ -219,7 +225,7 @@ export class KnowledgeService {
       periodKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
     }
 
-    return this.prisma.$transaction(async (tx) => {
+    const result = await this.prisma.$transaction(async (tx) => {
       // 1. 创建 KnowledgeItem
       const item = await tx.knowledgeItem.create({
         data: {
@@ -262,8 +268,12 @@ export class KnowledgeService {
         });
       }
 
-      return this.findOne(item.id);
+      return item;
     });
+
+    const fullItem = await this.findOne(result.id);
+    await this.ragPipelineService.ingest(fullItem.id, fullItem.contentPlain || fullItem.contentRich || '');
+    return fullItem;
   }
 
   async update(id: string, input: UpdateKnowledgeInput) {
@@ -306,7 +316,11 @@ export class KnowledgeService {
       }
     });
 
-    return this.findOne(id);
+    const updated = await this.findOne(id);
+    if (input.contentPlain || input.contentRich) {
+      await this.ragPipelineService.ingest(updated.id, updated.contentPlain || updated.contentRich || '');
+    }
+    return updated;
   }
 
   async updateReport(id: string, input: {
@@ -354,7 +368,11 @@ export class KnowledgeService {
       console.warn(`[updateReport] AI re-analysis failed for ${id}:`, err.message);
     });
 
-    return this.findOne(id);
+    const updated = await this.findOne(id);
+    if (input.contentPlain || input.contentRich) {
+      await this.ragPipelineService.ingest(updated.id, updated.contentPlain || updated.contentRich || '');
+    }
+    return updated;
   }
 
   async getPendingReviewList(page = 1, pageSize = 20) {
@@ -586,6 +604,53 @@ export class KnowledgeService {
     return { outgoing, incoming };
   }
 
+  async getGraphData(options: { intelId?: string; limit?: number }) {
+    const limit = options.limit || 100;
+    const whereEdge: Prisma.KnowledgeEdgeWhereInput = {};
+
+    if (options.intelId) {
+      whereEdge.sourceIntelId = options.intelId;
+    }
+
+    // Get edges
+    const edges = await this.prisma.knowledgeEdge.findMany({
+      where: whereEdge,
+      take: limit,
+      include: {
+        source: true,
+        target: true
+      }
+    });
+
+    // Collect unique nodes from edges
+    const nodeMap = new Map<string, { id: string; name: string; type: string }>();
+
+    // Format for frontend (e.g., react-force-graph expects nodes and links)
+    const formattedEdges = edges.map(e => {
+      nodeMap.set(e.sourceId, e.source);
+      nodeMap.set(e.targetId, e.target);
+      return {
+        id: e.id,
+        source: e.sourceId,
+        target: e.targetId,
+        type: e.type,
+        weight: e.weight
+      };
+    });
+
+    const formattedNodes = Array.from(nodeMap.values()).map(n => ({
+      id: n.id,
+      name: n.name,
+      type: n.type,
+      group: n.type // For coloring
+    }));
+
+    return {
+      nodes: formattedNodes,
+      links: formattedEdges
+    };
+  }
+
   async getTrend(days = 30) {
     const startDate = new Date();
     startDate.setDate(startDate.getDate() - days);
@@ -734,7 +799,7 @@ export class KnowledgeService {
     };
   }
 
-  async syncFromMarketIntel(intelId: string) {
+  async syncFromMarketIntel(intelId: string, options?: { skipRecursiveReportSync?: boolean }) {
     const intel = await this.prisma.marketIntel.findUnique({
       where: { id: intelId },
       include: {
@@ -879,7 +944,13 @@ export class KnowledgeService {
       });
     }
 
-    if (intel.researchReport?.id) {
+    // Trigger Vectorization (RAG Ingest)
+    const content = item.contentPlain || item.contentRich || '';
+    if (content) {
+      await this.ragPipelineService.ingest(item.id, content);
+    }
+
+    if (intel.researchReport?.id && !options?.skipRecursiveReportSync) {
       await this.syncFromResearchReport(intel.researchReport.id);
     }
 
@@ -898,7 +969,7 @@ export class KnowledgeService {
       throw new NotFoundException(`ResearchReport ${reportId} 不存在`);
     }
 
-    const knowledgeId = await this.syncFromMarketIntel(report.intelId);
+    const knowledgeId = await this.syncFromMarketIntel(report.intelId, { skipRecursiveReportSync: true });
 
     await this.prisma.knowledgeItem.update({
       where: { id: knowledgeId },
