@@ -3,6 +3,7 @@ import { ConfigService } from '../../config/config.service';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { Prisma } from '@prisma/client';
 import { AIProviderFactory } from '../../ai/providers/provider.factory';
+import { PromptService } from '../../ai/prompt.service';
 
 export interface StructuredInsight {
     summary?: string;  // AI 生成的简短摘要
@@ -24,6 +25,7 @@ export class DeepAnalysisService {
         private readonly prisma: PrismaService,
         private readonly aiProviderFactory: AIProviderFactory,
         private readonly configService: ConfigService,
+        private readonly promptService: PromptService,
     ) { }
 
     /**
@@ -73,21 +75,15 @@ export class DeepAnalysisService {
 
         try {
             // Try to load prompt from database
-            const promptTemplate = await this.prisma.promptTemplate.findUnique({
-                where: { code: 'MARKET_INTEL_SUMMARY_GENERATOR' },
-            });
+            let systemPrompt = '你是一名资深的大宗商品市场研究员。请为研究报告生成一段 150-300 字的简洁摘要。涵盖研究主题、核心观点、关键数据和后市展望。纯文本输出，不使用 Markdown。';
+            let userPrompt = `请为以下研报内容生成摘要：\n\n${truncatedText}`;
 
-            let systemPrompt: string;
-            let userPrompt: string;
-
-            if (promptTemplate && promptTemplate.isActive) {
-                systemPrompt = promptTemplate.systemPrompt;
-                userPrompt = promptTemplate.userPrompt.replace('{{content}}', truncatedText);
+            const template = await this.promptService.getRenderedPrompt('MARKET_INTEL_SUMMARY_GENERATOR', { content: truncatedText });
+            if (template) {
+                systemPrompt = template.system;
+                userPrompt = template.user;
                 this.logger.log('Using database prompt template for summary generation');
             } else {
-                // Fallback to hardcoded prompt
-                systemPrompt = '你是一名资深的大宗商品市场研究员。请为研究报告生成一段 150-300 字的简洁摘要。涵盖研究主题、核心观点、关键数据和后市展望。纯文本输出，不使用 Markdown。';
-                userPrompt = `请为以下研报内容生成摘要：\n\n${truncatedText}`;
                 this.logger.warn('Prompt template MARKET_INTEL_SUMMARY_GENERATOR not found, using fallback');
             }
 
@@ -113,35 +109,21 @@ export class DeepAnalysisService {
 
         const truncatedText = text.slice(0, 20000); // Larger context for analysis
 
-        const prompt = `
-You are a Senior Commodity Analyst. 
-Analyze the following research report content and provide a structured Deep Analysis.
+        // Try to load prompt from database
+        let systemPrompt = 'You are a Senior Commodity Analyst. Analyze the following research report content and provide a structured Deep Analysis.';
+        let userPrompt = `**Content:**\n${truncatedText}`;
 
-**Output Schema (Strict JSON):**
-{
-  "drivers": ["Driver 1", "Driver 2", ...],
-  "risks": ["Risk 1", "Risk 2", ...],
-  "outlook": {
-    "shortTerm": "1-2 weeks view",
-    "mediumTerm": "1-3 months view",
-    "longTerm": "6+ months view"
-  },
-  "suggestions": ["Trading suggestion 1", "Risk management suggestion 2", ...]
-}
-
-**Instructions:**
-1. Identify the key market drivers (bullish/bearish factors).
-2. Highlight major risks (policy, weather, logistics, etc.).
-3. Formulate a clear market outlook for different time horizons.
-4. Provide actionable trading or risk management suggestions for industry players.
-5. JSON only. No markdown formatting.
-
-**Content:**
-${truncatedText}
-    `;
+        const template = await this.promptService.getRenderedPrompt('KNOWLEDGE_DEEP_ANALYSIS', { content: truncatedText });
+        if (template) {
+            systemPrompt = template.system;
+            userPrompt = template.user;
+            this.logger.log('Using database prompt template for deep analysis');
+        } else {
+            this.logger.warn('Prompt template KNOWLEDGE_DEEP_ANALYSIS not found, using fallback');
+        }
 
         try {
-            const response = await this.callLLM(prompt);
+            const response = await this.callLLM(userPrompt, systemPrompt);
             const cleanJson = response.replace(/```json/g, '').replace(/```/g, '').trim();
             return JSON.parse(cleanJson) as StructuredInsight;
         } catch (error) {

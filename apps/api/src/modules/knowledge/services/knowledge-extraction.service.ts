@@ -3,6 +3,7 @@ import { ConfigService } from '../../config/config.service';
 import { NodeType, RelationType } from '@prisma/client';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { AIProviderFactory } from '../../ai/providers/provider.factory';
+import { PromptService } from '../../ai/prompt.service';
 
 interface GraphStructure {
     nodes: {
@@ -28,6 +29,7 @@ export class KnowledgeExtractionService {
         private readonly prisma: PrismaService,
         private readonly aiProviderFactory: AIProviderFactory,
         private readonly configService: ConfigService,
+        private readonly promptService: PromptService,
     ) { }
 
     /**
@@ -65,48 +67,21 @@ export class KnowledgeExtractionService {
         // Truncate to avoid context limit (adjust based on model)
         const truncatedText = text.slice(0, 15000);
 
-        const prompt = `
-You are an expert Knowledge Graph Engineer in the Agricultural Commodity Trading domain.
-Your task is to extract structured Entities (Nodes) and Relationships (Edges) from the provided market intelligence text.
+        // Try to load prompt from database
+        let systemPrompt = 'You are a helpful assistant that extracts knowledge graph structures.';
+        let userPrompt = `**Input Text:**\n${truncatedText}`;
 
-**Entity Types (NodeType):**
-- COMMODITY: e.g., "Corn", "Soybean", "Palm Oil", "Urea", "Hog"
-- REGION: e.g., "Northeast China", "Brazil", "Hebei", "US", "Jinzhou Port"
-- ORGANIZATION: e.g., "USDA", "COFCO", "Muyuan Foods"
-- EVENT: e.g., "Drought", "Harvest", "Policy Release", "Strike", "War"
-- FACTOR: e.g., "supply", "demand", "inventory", "weather", "exchange rate", "logistics"
-- CONCEPT: e.g., "bullish", "bearish", "inflation", "arbitrage"
-
-**Relationship Types (RelationType):**
-- AFFECTS: Factor A influences Factor B (e.g., "Drought" AFFECTS "Yield")
-- CAUSES: Event A causes Event B (e.g., "Rain" CAUSES "Delay")
-- LOCATED_IN: Region containment (e.g., "Hebei" LOCATED_IN "China")
-- BELONGS_TO: Entity belongs to Group (e.g., "Muyuan" BELONGS_TO "Hog Industry")
-- HAS_RISK: Entity has risk Factor (e.g., "Port" HAS_RISK "Congestion")
-- MENTIONS: General association
-
-**Instructions:**
-1. Extract salient entities mentioned in the text. Normalize names (e.g., use "Corn" instead of "Maize" if possible, generalize specific prices to trends).
-2. Extract meaningful relationships between these entities.
-3. Be concise. Focus on the most important market drivers and facts.
-4. Output strictly in valid JSON format matching the schema below. do NOT include markdown 'json' code blocks.
-
-**Schema:**
-{
-  "nodes": [
-    { "name": "Name", "type": "TYPE", "description": "Optional brief description" } // Type must be one of the enums above
-  ],
-  "edges": [
-    { "source": "NodeName", "target": "NodeName", "type": "TYPE", "weight": 0.0-1.0 } // Type must be one of the enums above
-  ]
-}
-
-**Input Text:**
-${truncatedText}
-    `;
+        const template = await this.promptService.getRenderedPrompt('KNOWLEDGE_GRAPH_EXTRACTION', { content: truncatedText });
+        if (template) {
+            systemPrompt = template.system;
+            userPrompt = template.user;
+            this.logger.log('Using database prompt template for graph extraction');
+        } else {
+            this.logger.warn('Prompt template KNOWLEDGE_GRAPH_EXTRACTION not found, using fallback');
+        }
 
         try {
-            const response = await this.callLLM(prompt);
+            const response = await this.callLLM(userPrompt, systemPrompt);
             // Clean JSON string (remove potential Markdown blocks)
             const cleanJson = response.replace(/```json/g, '').replace(/```/g, '').trim();
             const result = JSON.parse(cleanJson);
@@ -182,7 +157,7 @@ ${truncatedText}
         }
     }
 
-    private async callLLM(prompt: string): Promise<string> {
+    private async callLLM(prompt: string, customSystemPrompt?: string): Promise<string> {
         const aiConfig = await this.configService.getDefaultAIConfig();
         const providerType = (aiConfig?.provider || 'google') as 'google' | 'openai' | 'sub2api';
 
@@ -197,8 +172,7 @@ ${truncatedText}
             maxTokens: 4000
         };
 
-        const systemPrompt = "You are a helpful assistant that extracts knowledge graph structures.";
-        const result = await provider.generateResponse(systemPrompt, prompt, options);
-        return result || '';
+        const systemPrompt = customSystemPrompt || "You are a helpful assistant that extracts knowledge graph structures.";
+        return await provider.generateResponse(systemPrompt, prompt, options);
     }
 }

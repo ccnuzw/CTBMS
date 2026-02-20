@@ -36,7 +36,8 @@ import {
     ThunderboltOutlined,
     DownloadOutlined,
 } from '@ant-design/icons';
-import { useMarketIntel, usePromoteToReport, useResearchReportByIntelId } from '../api/hooks';
+import { useMarketIntel, usePromoteToReport } from '../api/hooks';
+import { useResolveLegacyKnowledge } from '../api/knowledge-hooks';
 import { ReportType, REPORT_TYPE_LABELS } from '@packages/types';
 import { useDictionaries } from '@/hooks/useDictionaries';
 import { useModalAutoFocus } from '@/hooks/useModalAutoFocus';
@@ -65,7 +66,7 @@ export const DocumentDetailPage: React.FC = () => {
     }, [dictionaries]);
 
     // Check if document already has a linked report (precise by intelId)
-    const { data: linkedReport } = useResearchReportByIntelId(id || '');
+    const { data: linkedReport } = useResolveLegacyKnowledge('intel', id || '');
     const hasLinkedReport = !!linkedReport;
 
     const [promoteModalOpen, setPromoteModalOpen] = useState(false);

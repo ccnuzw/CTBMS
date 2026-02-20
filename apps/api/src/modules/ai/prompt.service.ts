@@ -215,6 +215,80 @@ export class PromptService implements OnModuleInit {
 - 使用 Markdown 格式排版，使用加粗强调关键数据。
 - 字数控制在 400-600 字之间。`,
                 user: `{{content}}`
+            },
+            {
+                code: 'KNOWLEDGE_GRAPH_EXTRACTION',
+                name: '知识图谱实体与关系抽取',
+                category: 'C_DOCUMENT' as IntelCategory,
+                system: `You are an expert Knowledge Graph Engineer in the Agricultural Commodity Trading domain.
+Your task is to extract structured Entities (Nodes) and Relationships (Edges) from the provided market intelligence text.
+
+**Entity Types (NodeType):**
+- COMMODITY: e.g., "Corn", "Soybean", "Palm Oil", "Urea", "Hog"
+- REGION: e.g., "Northeast China", "Brazil", "Hebei", "US", "Jinzhou Port"
+- ORGANIZATION: e.g., "USDA", "COFCO", "Muyuan Foods"
+- EVENT: e.g., "Drought", "Harvest", "Policy Release", "Strike", "War"
+- FACTOR: e.g., "supply", "demand", "inventory", "weather", "exchange rate", "logistics"
+- CONCEPT: e.g., "bullish", "bearish", "inflation", "arbitrage"
+
+**Relationship Types (RelationType):**
+- AFFECTS: Factor A influences Factor B (e.g., "Drought" AFFECTS "Yield")
+- CAUSES: Event A causes Event B (e.g., "Rain" CAUSES "Delay")
+- LOCATED_IN: Region containment (e.g., "Hebei" LOCATED_IN "China")
+- BELONGS_TO: Entity belongs to Group (e.g., "Muyuan" BELONGS_TO "Hog Industry")
+- HAS_RISK: Entity has risk Factor (e.g., "Port" HAS_RISK "Congestion")
+- MENTIONS: General association
+
+**Instructions:**
+1. Extract salient entities mentioned in the text. Normalize names (e.g., use "Corn" instead of "Maize" if possible, generalize specific prices to trends).
+2. Extract meaningful relationships between these entities.
+3. Be concise. Focus on the most important market drivers and facts.
+4. Output strictly in valid JSON format matching the schema below. do NOT include markdown 'json' code blocks.
+
+**Schema:**
+{
+  "nodes": [
+    { "name": "Name", "type": "TYPE", "description": "Optional brief description" } // Type must be one of the enums above
+  ],
+  "edges": [
+    { "source": "NodeName", "target": "NodeName", "type": "TYPE", "weight": 0.0-1.0 } // Type must be one of the enums above
+  ]
+}`,
+                user: `**Input Text:**\n{{content}}`
+            },
+            {
+                code: 'KNOWLEDGE_DEEP_ANALYSIS',
+                name: '研报深度结构化分析',
+                category: 'C_DOCUMENT' as IntelCategory,
+                system: `You are a Senior Commodity Analyst. 
+Analyze the following research report content and provide a structured Deep Analysis.
+
+**Output Schema (Strict JSON):**
+{
+  "drivers": ["Driver 1", "Driver 2", ...],
+  "risks": ["Risk 1", "Risk 2", ...],
+  "outlook": {
+    "shortTerm": "1-2 weeks view",
+    "mediumTerm": "1-3 months view",
+    "longTerm": "6+ months view"
+  },
+  "suggestions": ["Trading suggestion 1", "Risk management suggestion 2", ...]
+}
+
+**Instructions:**
+1. Identify the key market drivers (bullish/bearish factors).
+2. Highlight major risks (policy, weather, logistics, etc.).
+3. Formulate a clear market outlook for different time horizons.
+4. Provide actionable trading or risk management suggestions for industry players.
+5. JSON only. No markdown formatting.`,
+                user: `**Content:**\n{{content}}`
+            },
+            {
+                code: 'MARKET_INTEL_SUMMARY_GENERATOR',
+                name: '文章摘要生成器',
+                category: 'C_DOCUMENT' as IntelCategory,
+                system: `你是一名资深的大宗商品市场研究员。请为研究报告生成一段 150-300 字的简洁摘要。涵盖研究主题、核心观点、关键数据和后市展望。纯文本输出，不使用 Markdown。`,
+                user: `请为以下研报内容生成摘要：\n\n{{content}}`
             }
         ];
 

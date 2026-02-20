@@ -25,8 +25,8 @@ import {
     TagsOutlined,
 } from '@ant-design/icons';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { useMarketIntels, useBatchDeleteMarketIntel, useResearchReports, useBatchUpdateTags, useBatchDeleteResearchReports } from '../api/hooks';
-import { useGenerateWeeklyRollup } from '../api/knowledge-hooks';
+import { useMarketIntels, useBatchDeleteMarketIntel, useBatchUpdateTags } from '../api/hooks';
+import { useGenerateWeeklyRollup, useKnowledgeReports, useBatchDeleteKnowledgeReports } from '../api/knowledge-hooks';
 import { IntelCategory, IntelSourceType } from '@packages/types';
 import { FilterPanel, TimeRange } from './knowledge-base/FilterPanel';
 import { DocumentCardView, DocItem } from './knowledge-base/DocumentCardView';
@@ -74,7 +74,7 @@ export const UnifiedKnowledgeBase: React.FC = () => {
     const [pageSize, setPageSize] = useState(20);
 
     const batchDeleteMutation = useBatchDeleteMarketIntel();
-    const batchDeleteReportsMutation = useBatchDeleteResearchReports();
+    const batchDeleteReportsMutation = useBatchDeleteKnowledgeReports();
     const batchUpdateTagsMutation = useBatchUpdateTags();
     const weeklyRollupMutation = useGenerateWeeklyRollup();
 
@@ -133,12 +133,12 @@ export const UnifiedKnowledgeBase: React.FC = () => {
         sourceTypes: selectedSources.size > 0 ? (Array.from(selectedSources) as IntelSourceType[]) : undefined,
     });
 
-    const { data: reportsResult, isLoading: reportsLoading } = useResearchReports({
+    const { data: reportsResult, isLoading: reportsLoading } = useKnowledgeReports({
         page,
         pageSize: queryPageSize,
         keyword: searchTerm || undefined,
-        startDate: dateRange.startDate,
-        endDate: dateRange.endDate,
+        startDate: dateRange.startDate?.toISOString(),
+        endDate: dateRange.endDate?.toISOString(),
         // 显示所有研报，不限制审核状态
     });
 
@@ -160,16 +160,15 @@ export const UnifiedKnowledgeBase: React.FC = () => {
         }));
     }, [intelsResult]);
 
-    // Transform reports to doc-like items for unified display
     const allReports: DocItem[] = useMemo(() => {
-        return (reportsResult?.data || []).map((report) => ({
+        return (reportsResult?.data || []).map((report: any) => ({
             id: report.id,
             category: 'REPORT' as any,
-            sourceType: report.source || 'INTERNAL',
+            sourceType: report.sourceType || 'INTERNAL',
             rawContent: report.title || '',
-            summary: report.summary || null,
+            summary: report.analysis?.summary || report.contentPlain?.substring(0, 200) || null,
             aiAnalysis: { tags: report.commodities || [] },
-            effectiveTime: String(report.publishDate || report.createdAt),
+            effectiveTime: String(report.publishAt || report.createdAt),
             author: null,
             attachments: [],
             itemType: 'report' as const,

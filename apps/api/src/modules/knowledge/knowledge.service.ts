@@ -14,7 +14,8 @@ import { AIService } from '../ai/ai.service';
 import { PrismaService } from '../../prisma';
 import { RagPipelineService } from './rag/rag-pipeline.service';
 import { IntelTaskService } from '../intel-task/intel-task.service';
-import { forwardRef, Inject } from '@nestjs/common';
+import { DeepAnalysisService } from './services/deep-analysis.service';
+import { forwardRef, Inject, Logger } from '@nestjs/common';
 
 type KnowledgeListQuery = {
   type?: KnowledgeType;
@@ -68,11 +69,14 @@ type RelationQueryOptions = {
 
 @Injectable()
 export class KnowledgeService {
+  private readonly logger = new Logger(KnowledgeService.name);
+
   constructor(
     private prisma: PrismaService,
     private aiService: AIService,
     private ragPipelineService: RagPipelineService,
     @Inject(forwardRef(() => IntelTaskService)) private intelTaskService: IntelTaskService,
+    private deepAnalysisService: DeepAnalysisService,
   ) { }
 
   async findAll(query: KnowledgeListQuery) {
@@ -1356,6 +1360,7 @@ export class KnowledgeService {
     prediction?: unknown;
     dataPoints?: unknown;
     triggerAnalysis?: boolean;
+    intelId?: string;
   }) {
     const periodType = this.mapReportPeriodToKnowledgePeriodType(
       (input.reportPeriod as 'DAILY' | 'WEEKLY' | 'MONTHLY' | 'QUARTERLY' | 'ANNUAL' | 'ADHOC') || null,
@@ -1378,6 +1383,8 @@ export class KnowledgeService {
         region: input.region || [],
         status: 'DRAFT',
         authorId: input.authorId,
+        originLegacyType: input.intelId ? 'MARKET_INTEL' : undefined,
+        originLegacyId: input.intelId || undefined,
       },
     });
 
@@ -1408,6 +1415,21 @@ export class KnowledgeService {
     if (input.triggerAnalysis !== false && content.length > 50) {
       this.reanalyze(item.id, true).catch((err) => {
         console.error('[KnowledgeService.createResearchReport] AI analysis failed:', err);
+      });
+    }
+
+    // 异步调用 MARKET_INTEL_SUMMARY_GENERATOR 模板生成高质量摘要
+    if (content.length > 50 && !input.summary) {
+      this.deepAnalysisService.generateSummary(content).then(async (aiSummary) => {
+        if (aiSummary) {
+          await this.prisma.knowledgeAnalysis.updateMany({
+            where: { knowledgeId: item.id },
+            data: { summary: aiSummary },
+          });
+          this.logger.log(`[createResearchReport] AI 摘要已回填到 KnowledgeItem ${item.id}`);
+        }
+      }).catch((err) => {
+        this.logger.error('[createResearchReport] AI 摘要生成失败:', err);
       });
     }
 

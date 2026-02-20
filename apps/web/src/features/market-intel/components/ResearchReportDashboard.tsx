@@ -11,7 +11,7 @@ import {
     CompassOutlined,
     TagsOutlined
 } from '@ant-design/icons';
-import { useResearchReportStats } from '../api/hooks';
+import { useKnowledgeReportStats } from '../api/knowledge-hooks';
 import { ReportTrendChart } from './research-report-dashboard/ReportTrendChart';
 import { ReportDistributionCharts } from './research-report-dashboard/ReportDistributionCharts';
 import { RecentReportsList } from './research-report-dashboard/RecentReportsList';
@@ -23,7 +23,7 @@ export const ResearchReportDashboard: React.FC = () => {
     const { token } = theme.useToken();
     const navigate = useNavigate();
     const [days, setDays] = useState(30);
-    const { data: stats, isLoading, refetch } = useResearchReportStats({ days });
+    const { data: stats, isLoading, refetch } = useKnowledgeReportStats(days);
     const { data: dictionaries } = useDictionaries(['REPORT_TYPE']);
 
     const reportTypeLabels = useMemo(() => {
@@ -36,18 +36,18 @@ export const ResearchReportDashboard: React.FC = () => {
     }, [dictionaries]);
 
     // 转换类型数据为图表格式
-    const typeData = stats?.byType
-        ? Object.entries(stats.byType).map(([type, value]) => ({
+    const typeData = stats?.byReportType
+        ? Object.entries(stats.byReportType).map(([type, value]) => ({
             type: reportTypeLabels[type] || type,
             value: value as number,
         }))
         : [];
 
     // 转换来源数据
-    const sourceData = stats?.bySource || [];
+    const sourceData = (stats as any)?.bySource || [];
 
     // 趋势数据
-    const trendData = stats?.trend || [];
+    const trendData = (stats as any)?.trend || [];
 
     // 最近更新
     const recentReports = stats?.recent || [];
@@ -141,7 +141,7 @@ export const ResearchReportDashboard: React.FC = () => {
                 <Row gutter={[16, 16]}>
                     {/* 最近更新 */}
                     <Col xs={24} lg={10}>
-                        <RecentReportsList data={recentReports} loading={isLoading} />
+                        <RecentReportsList data={recentReports as any} loading={isLoading} />
                     </Col>
 
                     {/* 热门分析 */}

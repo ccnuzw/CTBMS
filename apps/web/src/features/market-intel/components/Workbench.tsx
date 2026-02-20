@@ -6,10 +6,8 @@ import { ReviewStatus } from '@packages/types';
 import {
   useDocumentStats,
   useHotTopics,
-  useResearchReportStats,
-  useResearchReports,
 } from '../api/hooks';
-import { useGenerateWeeklyRollup, useKnowledgeItems } from '../api/knowledge-hooks';
+import { useGenerateWeeklyRollup, useKnowledgeItems, useKnowledgeReportStats, useKnowledgeReports } from '../api/knowledge-hooks';
 import { AnalysisPreviewPanel } from './workbench/AnalysisPreviewPanel';
 import { PendingQueuePanel } from './workbench/PendingQueuePanel';
 import { QuickActionsPanel } from './workbench/QuickActionsPanel';
@@ -29,14 +27,14 @@ export const Workbench: React.FC = () => {
   const [days, setDays] = useState(30);
   const [showPreview, setShowPreview] = useState(initialMode === 'full');
 
-  const { data: reportStats, isLoading: reportLoading, refetch } = useResearchReportStats({ days });
+  const { data: reportStats, isLoading: reportLoading, refetch } = useKnowledgeReportStats(days);
   const { data: docStats, isLoading: docLoading } = useDocumentStats(days);
   const { data: hotTopics } = useHotTopics(12);
 
-  const { data: pendingReports, isLoading: pendingLoading } = useResearchReports({
+  const { data: pendingReports, isLoading: pendingLoading } = useKnowledgeReports({
     page: 1,
     pageSize: 5,
-    reviewStatus: ReviewStatus.PENDING,
+    status: 'PENDING_REVIEW',
   });
 
   const weeklyRollupMutation = useGenerateWeeklyRollup();
@@ -65,7 +63,7 @@ export const Workbench: React.FC = () => {
   const todayDocs =
     docStats?.trend?.length > 0 ? Number(docStats.trend[docStats.trend.length - 1]?.count || 0) : 0;
   const weeklyReports =
-    reportStats?.trend
+    (reportStats as any)?.trend
       ?.slice(-7)
       ?.reduce((sum: number, item: any) => sum + Number(item.count || 0), 0) || 0;
   const pendingCount = Number(reportStats?.byStatus?.PENDING || 0);
@@ -163,10 +161,10 @@ export const Workbench: React.FC = () => {
           <Col xs={24} lg={8}>
             <PendingQueuePanel
               loading={pendingLoading}
-              items={(pendingReports?.data || []).map((item) => ({
+              items={(pendingReports?.data || []).map((item: any) => ({
                 id: item.id,
                 title: item.title,
-                source: item.source,
+                source: item.sourceType || 'INTERNAL',
               }))}
               onOpen={(id) => navigate(`/intel/knowledge/items/${id}`)}
             />

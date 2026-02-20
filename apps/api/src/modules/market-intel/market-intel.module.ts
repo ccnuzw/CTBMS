@@ -7,7 +7,7 @@ import { IntelAttachmentService } from './intel-attachment.service';
 
 import { DocumentParserService } from './document-parser.service';
 import { PdfToMarkdownService } from './pdf-to-markdown.service';
-import { ResearchReportService } from './research-report.service';
+
 import { KnowledgeModule } from '../knowledge/knowledge.module';
 
 @Module({
@@ -21,7 +21,7 @@ import { KnowledgeModule } from '../knowledge/knowledge.module';
 
     DocumentParserService,
     PdfToMarkdownService,
-    ResearchReportService,
+    PdfToMarkdownService,
   ],
   exports: [
     MarketIntelService,
@@ -31,7 +31,7 @@ import { KnowledgeModule } from '../knowledge/knowledge.module';
 
     DocumentParserService,
     PdfToMarkdownService,
-    ResearchReportService,
+    PdfToMarkdownService,
   ],
 })
 export class MarketIntelModule { }

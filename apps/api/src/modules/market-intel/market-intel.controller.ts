@@ -18,13 +18,11 @@ import { FileInterceptor } from '@nestjs/platform-express';
 import { MarketIntelService } from './market-intel.service';
 import { PriceDataService } from './price-data.service';
 
-import { ResearchReportService } from './research-report.service';
 import {
   CreateMarketIntelRequest,
   UpdateMarketIntelRequest,
   MarketIntelQueryRequest,
   AnalyzeContentRequest,
-  CreateManualResearchReportRequest,
   PromoteToReportRequest,
 } from './dto';
 import {
@@ -33,10 +31,6 @@ import {
   ContentType,
   IntelCategory,
   IntelSourceType,
-  CreateResearchReportDto,
-  UpdateResearchReportDto,
-  ResearchReportQuery,
-  ReviewStatus,
 } from '@packages/types';
 import { IntelAttachmentService } from './intel-attachment.service';
 
@@ -49,7 +43,6 @@ export class MarketIntelController {
   constructor(
     private readonly marketIntelService: MarketIntelService,
     private readonly priceDataService: PriceDataService,
-    private readonly researchReportService: ResearchReportService,
     private readonly intelAttachmentService: IntelAttachmentService,
     private readonly documentParserService: DocumentParserService,
     private readonly pdfToMarkdownService: PdfToMarkdownService,
@@ -643,112 +636,11 @@ export class MarketIntelController {
     return this.marketIntelService.findInsightById(id);
   }
 
-  // --- C类增强：研究报告 ---
-
-  @Post('research-reports')
-  async createResearchReport(@Body() dto: CreateResearchReportDto) {
-    return this.researchReportService.create(dto);
-  }
-
-  @Get('research-reports')
-  async findAllResearchReports(@Query() query: ResearchReportQuery) {
-    // 转换日期字符串为 Date 对象
-    const options = {
-      ...query,
-      startDate: query.startDate ? new Date(query.startDate) : undefined,
-      endDate: query.endDate ? new Date(query.endDate) : undefined,
-      page: query.page ? Number(query.page) : 1,
-      pageSize: query.pageSize ? Number(query.pageSize) : 20,
-    };
-    return this.researchReportService.findAll(options);
-  }
-
-  @Post('research-reports/manual')
-  async createManualResearchReport(@Body() dto: CreateManualResearchReportRequest) {
-    return this.researchReportService.createManual(dto);
-  }
-
-  @Get('research-reports/stats')
-  async getResearchReportStats(@Query('days') days?: string) {
-    return this.researchReportService.getStats({ days: days ? parseInt(days, 10) : undefined });
-  }
-
-  @Get('research-reports/by-intel/:intelId')
-  async findResearchReportByIntelId(@Param('intelId') intelId: string) {
-    return this.researchReportService.findByIntelId(intelId);
-  }
-
-  @Get('research-reports/:id')
-  async findResearchReportById(@Param('id') id: string) {
-    return this.researchReportService.findOne(id);
-  }
-
-  @Put('research-reports/:id')
-  async updateResearchReport(@Param('id') id: string, @Body() dto: UpdateResearchReportDto) {
-    return this.researchReportService.update(id, dto);
-  }
-
-  @Delete('research-reports/:id')
-  async removeResearchReport(@Param('id') id: string) {
-    return this.researchReportService.remove(id);
-  }
-
-  @Post('research-reports/batch-delete')
-  async batchRemoveResearchReports(@Body() body: { ids: string[] }) {
-    return this.researchReportService.batchRemove(body.ids);
-  }
-
-  @Post('research-reports/batch-review')
-  async batchReviewResearchReports(
-    @Body() body: { ids: string[]; status: ReviewStatus; reviewerId: string },
-  ) {
-    if (!body.ids || !Array.isArray(body.ids)) {
-      throw new BadRequestException('ids array is required');
-    }
-    return this.researchReportService.batchUpdateReviewStatus(
-      body.ids,
-      body.status,
-      body.reviewerId,
-    );
-  }
-
-  @Post('research-reports/export')
-  async exportResearchReports(
-    @Body() body: { ids?: string[]; query?: ResearchReportQuery },
-    @Res() res: Response,
-  ) {
-    const buffer = await this.researchReportService.export(body.ids, body.query);
-    res.set({
-      'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-      'Content-Disposition': 'attachment; filename="research-reports-export.xlsx"',
-      'Content-Length': buffer.length,
-    });
-    res.end(buffer);
-  }
-
-  @Post('research-reports/:id/view')
-  async incrementResearchReportView(@Param('id') id: string) {
-    return this.researchReportService.incrementViewCount(id);
-  }
-
-  @Post('research-reports/:id/download')
-  async incrementResearchReportDownload(@Param('id') id: string) {
-    return this.researchReportService.incrementDownloadCount(id);
-  }
-
-  @Put('research-reports/:id/review')
-  async updateResearchReportReview(
-    @Param('id') id: string,
-    @Body() body: { status: 'PENDING' | 'APPROVED' | 'REJECTED'; reviewerId: string },
-  ) {
-    return this.researchReportService.updateReviewStatus(id, body.status, body.reviewerId);
-  }
-
   // --- 文档升级为研报 (Promote to Report) ---
 
   @Post(':id/promote-to-report')
   async promoteToReport(@Param('id') intelId: string, @Body() dto: PromoteToReportRequest) {
-    return this.researchReportService.promoteToReport(intelId, dto);
+    return this.marketIntelService.promoteToReport(intelId, dto);
   }
 
   // --- 综合情报流 ---

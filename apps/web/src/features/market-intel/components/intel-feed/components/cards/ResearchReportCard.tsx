@@ -20,7 +20,7 @@ import {
 import dayjs from 'dayjs';
 import { useNavigate } from 'react-router-dom';
 import { IntelItem } from '../../types';
-import { useIncrementViewCount, useIncrementDownloadCount } from '../../../../api/hooks';
+// 移除了遗留的浏览/下载统计钩子
 import { stripHtml } from '../../utils';
 
 const { Text, Paragraph, Title } = Typography;
@@ -40,8 +40,9 @@ export const ResearchReportCard: React.FC<ResearchReportCardProps> = ({
     const navigate = useNavigate();
     const [isFavorited, setIsFavorited] = useState(false);
 
-    const { mutate: incrementView } = useIncrementViewCount();
-    const { mutate: incrementDownload } = useIncrementDownloadCount();
+    // TODO: 新版 Knowledge 暂无独立浏览/下载计数 API
+    // const { mutate: incrementView } = useIncrementViewCount();
+    // const { mutate: incrementDownload } = useIncrementDownloadCount();
 
     // 获取研报关联数据
     const reportData = intel.researchReport || {};
@@ -56,7 +57,7 @@ export const ResearchReportCard: React.FC<ResearchReportCardProps> = ({
     const handlePreview = (e: React.MouseEvent) => {
         e.stopPropagation();
         if (reportId) {
-            incrementView(reportId);
+            // incrementView(reportId);
             navigate(`/intel/research-reports/${reportId}`);
         } else {
             message.warning('研报ID不存在,无法预览');
@@ -67,7 +68,7 @@ export const ResearchReportCard: React.FC<ResearchReportCardProps> = ({
     const handleDownload = (e: React.MouseEvent) => {
         e.stopPropagation();
         if (reportId) {
-            incrementDownload(reportId);
+            // incrementDownload(reportId);
             // TODO: 实际下载逻辑需要从后端获取文件URL
             message.info('下载功能开发中,请从详情页下载');
         } else {
