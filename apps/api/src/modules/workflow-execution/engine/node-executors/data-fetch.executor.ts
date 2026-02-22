@@ -260,7 +260,8 @@ export class DataFetchNodeExecutor implements WorkflowNodeExecutor {
             ? `WHERE ${whereConditions.join(' AND ')}`
             : '';
 
-        const limit = (config.limit as number) ?? 100;
+        const rawLimit = Number(config.limit);
+        const limit = Number.isSafeInteger(rawLimit) && rawLimit > 0 ? rawLimit : 100;
         const query = `SELECT * FROM "${tableName}" ${whereClause} ORDER BY "createdAt" DESC LIMIT ${limit}`;
 
         const data = await this.prisma.$queryRawUnsafe(query, ...params);

@@ -1,158 +1,170 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { OpenAIEmbeddings } from '@langchain/openai';
-import { GoogleGenerativeAIEmbeddings } from "@langchain/google-genai";
+import { GoogleGenerativeAIEmbeddings } from '@langchain/google-genai';
 import { ConfigService } from '../../config/config.service';
-import { AIModelConfig } from '@prisma/client';
+import { AIModelConfig, Prisma } from '@prisma/client';
 import { KnowledgeQueryExpansionService } from './knowledge-query-expansion.service';
 
 interface RetrievalResult {
-    id: string;
-    content: string;
-    score: number;
-    metadata: Record<string, unknown>;
-    sourceId: string;
+  id: string;
+  content: string;
+  score: number;
+  metadata: Record<string, unknown>;
+  sourceId: string;
 }
 
 interface SearchOptions {
-    topK?: number;
-    filters?: {
-        timeRange?: { start?: Date; end?: Date };
-        category?: string;
-        sourceType?: string;
-        // Generic metadata filters
-        [key: string]: unknown;
-    };
-    useQueryExpansion?: boolean;
+  topK?: number;
+  filters?: {
+    timeRange?: { start?: Date; end?: Date };
+    category?: string;
+    sourceType?: string;
+    // Generic metadata filters
+    [key: string]: unknown;
+  };
+  useQueryExpansion?: boolean;
 }
 
 @Injectable()
 export class KnowledgeRetrievalService {
-    private readonly logger = new Logger(KnowledgeRetrievalService.name);
+  private readonly logger = new Logger(KnowledgeRetrievalService.name);
 
-    constructor(
-        private prisma: PrismaService,
-        private configService: ConfigService,
-        private queryExpansionService: KnowledgeQueryExpansionService,
-    ) { }
+  constructor(
+    private prisma: PrismaService,
+    private configService: ConfigService,
+    private queryExpansionService: KnowledgeQueryExpansionService,
+  ) { }
 
-    private resolveApiKey(config?: AIModelConfig | null): string {
-        if (config?.apiKey) return config.apiKey;
-        if (config?.apiKeyEnvVar) return process.env[config.apiKeyEnvVar] || '';
-        return process.env.OPENAI_API_KEY || '';
-    }
 
-    private async getEmbeddings(): Promise<OpenAIEmbeddings | GoogleGenerativeAIEmbeddings> {
-        const configs = await this.configService.getAllAIModelConfigs();
-        const activeConfig = configs.find(c => c.isActive && c.configKey !== 'DEFAULT')
-            || await this.configService.getDefaultAIConfig();
 
-        if (!activeConfig) {
-            // Fallback to Env if no config in DB
-            if (process.env.GEMINI_API_KEY) {
-                return new GoogleGenerativeAIEmbeddings({
-                    modelName: 'text-embedding-004',
-                    apiKey: process.env.GEMINI_API_KEY
-                });
-            }
-            if (process.env.OPENAI_API_KEY) {
-                return new OpenAIEmbeddings({
-                    modelName: 'text-embedding-3-small',
-                    openAIApiKey: process.env.OPENAI_API_KEY
-                });
-            }
-            throw new Error('No active AI Model Configuration found and no ENV keys');
-        }
+  private resolveApiKey(config?: AIModelConfig | null): string {
+    if (config?.apiKey) return config.apiKey;
+    if (config?.apiKeyEnvVar) return process.env[config.apiKeyEnvVar] || '';
+    return process.env.OPENAI_API_KEY || '';
+  }
 
-        const apiKey = this.resolveApiKey(activeConfig);
-        if (!apiKey) {
-            throw new Error('No API Key found for Retrieval Service');
-        }
+  private async getEmbeddings(): Promise<OpenAIEmbeddings | GoogleGenerativeAIEmbeddings> {
+    const configs = await this.configService.getAllAIModelConfigs();
+    const activeConfig =
+      configs.find((c) => c.isActive && c.configKey !== 'DEFAULT') ||
+      (await this.configService.getDefaultAIConfig());
 
-        if (activeConfig.provider === 'google') {
-            return new GoogleGenerativeAIEmbeddings({
-                modelName: activeConfig.embeddingModel || 'text-embedding-004',
-                apiKey: apiKey,
-            });
-        }
-
-        const baseURL = activeConfig.apiUrl || undefined;
-        return new OpenAIEmbeddings({
-            modelName: activeConfig.embeddingModel || 'text-embedding-3-small',
-            openAIApiKey: apiKey,
-            configuration: { baseURL }
+    if (!activeConfig) {
+      // Fallback to Env if no config in DB
+      if (process.env.GEMINI_API_KEY) {
+        return new GoogleGenerativeAIEmbeddings({
+          modelName: 'text-embedding-004',
+          apiKey: process.env.GEMINI_API_KEY,
         });
+      }
+      if (process.env.OPENAI_API_KEY) {
+        return new OpenAIEmbeddings({
+          modelName: 'text-embedding-3-small',
+          openAIApiKey: process.env.OPENAI_API_KEY,
+        });
+      }
+      throw new Error('No active AI Model Configuration found and no ENV keys');
     }
 
-    private buildMetadataFilterClause(filters?: SearchOptions['filters']): string {
-        if (!filters || Object.keys(filters).length === 0) {
-            return '';
-        }
-
-        const conditions: string[] = [];
-
-        if (filters.timeRange) {
-            if (filters.timeRange.start) {
-                conditions.push(`(metadata->>'publishDate')::timestamp >= '${filters.timeRange.start.toISOString()}'::timestamp`);
-            }
-            if (filters.timeRange.end) {
-                conditions.push(`(metadata->>'publishDate')::timestamp <= '${filters.timeRange.end.toISOString()}'::timestamp`);
-            }
-        }
-
-        if (filters.category) {
-            conditions.push(`metadata->>'contentType' = '${filters.category}'`);
-        }
-
-        if (filters.sourceType) {
-            conditions.push(`metadata->>'sourceType' = '${filters.sourceType}'`);
-        }
-
-        if (conditions.length === 0) return '';
-        return 'AND ' + conditions.join(' AND ');
+    const apiKey = this.resolveApiKey(activeConfig);
+    if (!apiKey) {
+      throw new Error('No API Key found for Retrieval Service');
     }
 
-    /**
-     * Hybrid Search with RRF Fusion and Optional Query Expansion
-     */
-    async search(originalQuery: string, options: SearchOptions = {}): Promise<RetrievalResult[]> {
-        const topK = options.topK || 5;
-        let searchQueries = [originalQuery];
+    if (activeConfig.provider === 'google') {
+      return new GoogleGenerativeAIEmbeddings({
+        modelName: activeConfig.embeddingModel || 'text-embedding-004',
+        apiKey: apiKey,
+      });
+    }
 
-        // 1. Query Expansion (Optional)
-        if (options.useQueryExpansion) {
-            try {
-                const rewritten = await this.queryExpansionService.rewriteQuery(originalQuery);
-                this.logger.log(`Query Rewritten: "${originalQuery}" -> "${rewritten}"`);
-                searchQueries = [rewritten]; // Use rewritten query for search
-            } catch (e) {
-                this.logger.warn(`Query expansion failed, using original query`);
-            }
-        }
+    const baseURL = activeConfig.apiUrl || undefined;
+    return new OpenAIEmbeddings({
+      modelName: activeConfig.embeddingModel || 'text-embedding-3-small',
+      openAIApiKey: apiKey,
+      configuration: { baseURL },
+    });
+  }
 
-        const query = searchQueries[0];
-        this.logger.log(`Searching for: "${query}" with topK=${topK}`);
+  private buildMetadataFilterClause(filters?: SearchOptions['filters']): Prisma.Sql {
+    if (!filters || Object.keys(filters).length === 0) {
+      return Prisma.empty;
+    }
 
-        // 2. Generate Query Vector
-        try {
-            const embeddings = await this.getEmbeddings();
-            const queryVector = await embeddings.embedQuery(query);
-            const vectorStr = `[${queryVector.join(',')}]`;
+    const conditions: Prisma.Sql[] = [];
 
-            // 3. Build Filter Clause
-            const filterClause = this.buildMetadataFilterClause(options.filters);
+    if (filters.timeRange) {
+      if (filters.timeRange.start) {
+        conditions.push(
+          Prisma.sql`(metadata->>'publishDate')::timestamp >= ${filters.timeRange.start.toISOString()}::timestamp`,
+        );
+      }
+      if (filters.timeRange.end) {
+        conditions.push(
+          Prisma.sql`(metadata->>'publishDate')::timestamp <= ${filters.timeRange.end.toISOString()}::timestamp`,
+        );
+      }
+    }
 
-            // 4. Execute Hybrid Search via SQL
-            const sql = `
+    if (filters.category) {
+      conditions.push(
+        Prisma.sql`(metadata->>'contentType' = ${filters.category} OR metadata->>'type' = ${filters.category})`,
+      );
+    }
+
+    if (filters.sourceType) {
+      conditions.push(Prisma.sql`metadata->>'sourceType' = ${filters.sourceType}`);
+    }
+
+    if (conditions.length === 0) return Prisma.empty;
+    return Prisma.sql`AND ${Prisma.join(conditions, ' AND ')}`;
+  }
+
+  /**
+   * Hybrid Search with RRF Fusion and Optional Query Expansion
+   */
+  async search(originalQuery: string, options: SearchOptions = {}): Promise<RetrievalResult[]> {
+    const requestedTopK = options.topK || 5;
+    const topK = Number.isFinite(requestedTopK)
+      ? Math.min(50, Math.max(1, Math.floor(requestedTopK)))
+      : 5;
+    let searchQueries = [originalQuery];
+
+    // 1. Query Expansion (Optional)
+    if (options.useQueryExpansion) {
+      try {
+        const rewritten = await this.queryExpansionService.rewriteQuery(originalQuery);
+        this.logger.log(`Query Rewritten: "${originalQuery}" -> "${rewritten}"`);
+        searchQueries = [rewritten]; // Use rewritten query for search
+      } catch (e) {
+        this.logger.warn(`Query expansion failed, using original query`);
+      }
+    }
+
+    const query = searchQueries[0];
+    this.logger.log(`Searching for: "${query}" with topK=${topK}`);
+
+    // 2. Generate Query Vector
+    try {
+      const embeddings = await this.getEmbeddings();
+      const queryVector = await embeddings.embedQuery(query);
+      const vectorStr = `[${queryVector.join(',')}]`;
+
+      // 3. Build Filter Clause
+      const filterClause = this.buildMetadataFilterClause(options.filters);
+
+      // 4. Execute Hybrid Search via SQL
+      const sql = Prisma.sql`
             WITH keyword_search AS (
                 SELECT 
                     id, 
                     content, 
                     metadata, 
                     "knowledgeItemId",
-                    ts_rank_cd(to_tsvector('simple', content), plainto_tsquery('simple', '${query}')) as rank_score
+                    ts_rank_cd(to_tsvector('simple', content), plainto_tsquery('simple', ${query})) as rank_score
                 FROM "KnowledgeVector"
-                WHERE to_tsvector('simple', content) @@ plainto_tsquery('simple', '${query}')
+                WHERE to_tsvector('simple', content) @@ plainto_tsquery('simple', ${query})
                 ${filterClause}
                 ORDER BY rank_score DESC
                 LIMIT 20
@@ -163,7 +175,7 @@ export class KnowledgeRetrievalService {
                     content, 
                     metadata, 
                     "knowledgeItemId",
-                    (embedding <=> '${vectorStr}'::vector) as distance
+                    (embedding <=> ${vectorStr}::vector) as distance
                 FROM "KnowledgeVector"
                 WHERE 1=1 ${filterClause}
                 ORDER BY distance ASC
@@ -194,26 +206,27 @@ export class KnowledgeRetrievalService {
             LIMIT ${topK};
             `;
 
-            const results = await this.prisma.$queryRawUnsafe<Array<{
-                id: string;
-                content: string;
-                score: number;
-                metadata: Record<string, unknown>;
-                sourceId: string;
-            }>>(sql);
+      const results = await this.prisma.$queryRaw<
+        Array<{
+          id: string;
+          content: string;
+          score: number;
+          metadata: Record<string, unknown>;
+          sourceId: string;
+        }>
+      >(sql);
 
-            return results.map(r => ({
-                id: r.id,
-                content: r.content,
-                score: r.score,
-                metadata: r.metadata,
-                sourceId: r.sourceId
-            }));
-
-        } catch (error) {
-            this.logger.error(`Search failed`, error);
-            // Fallback if DB vector search fails
-            return [];
-        }
+      return results.map((r) => ({
+        id: r.id,
+        content: r.content,
+        score: r.score,
+        metadata: r.metadata,
+        sourceId: r.sourceId,
+      }));
+    } catch (error) {
+      this.logger.error(`Search failed`, error);
+      // Fallback if DB vector search fails
+      return [];
     }
+  }
 }

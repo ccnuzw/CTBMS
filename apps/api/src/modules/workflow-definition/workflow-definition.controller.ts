@@ -14,6 +14,7 @@ import {
 import { Request as ExpressRequest } from 'express';
 import { WorkflowDefinitionService } from './workflow-definition.service';
 import { WorkflowDefinitionValidatorService } from './workflow-definition-validator.service';
+import { WorkflowNodePreviewService } from './workflow-node-preview.service';
 import {
   CreateWorkflowDefinitionRequest,
   CreateWorkflowVersionRequest,
@@ -32,6 +33,7 @@ export class WorkflowDefinitionController {
   constructor(
     private readonly workflowDefinitionService: WorkflowDefinitionService,
     private readonly workflowDefinitionValidatorService: WorkflowDefinitionValidatorService,
+    private readonly workflowNodePreviewService: WorkflowNodePreviewService,
   ) { }
 
   @Post()
@@ -138,6 +140,6 @@ export class WorkflowDefinitionController {
 
   @Post('preview-node')
   previewNode(@Body() dto: ValidateWorkflowNodePreviewRequest) {
-    return this.workflowDefinitionValidatorService.previewNodeBindings(dto);
+    return this.workflowNodePreviewService.previewNodeBindings(dto);
   }
 }

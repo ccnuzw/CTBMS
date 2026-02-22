@@ -20,7 +20,8 @@ import { IntelTaskService } from '../intel-task/intel-task.service';
 import { IntelTaskStateService } from '../intel-task/intel-task-state.service';
 import { DeepAnalysisService } from './services/deep-analysis.service';
 import { forwardRef, Inject, Logger } from '@nestjs/common';
-import * as KnowledgeUtils from "./knowledge.utils";
+import * as KnowledgeUtils from './knowledge.utils';
+import { IngestResult } from './services/knowledge-ingestion.service';
 export type CreateKnowledgeInput = {
   type: KnowledgeType;
   title: string;
@@ -44,11 +45,42 @@ export type UpdateKnowledgeInput = Partial<CreateKnowledgeInput>;
 
 @Injectable()
 export class KnowledgeService {
+  private logIngestResult(context: string, knowledgeId: string, ingestResult: IngestResult): void {
+    if (ingestResult.errorCode) {
+      this.logger.warn(
+        `[${context}] RAG ingest issue for ${knowledgeId}: ${ingestResult.errorCode} (${ingestResult.errorMessage || 'no details'})`,
+      );
+      return;
+    }
+
+    this.logger.log(
+      `[${context}] RAG ingest success for ${knowledgeId}: ${ingestResult.storedChunks}/${ingestResult.requestedChunks}`,
+    );
+  }
+
+  private buildRagMetadata(item: {
+    publishAt?: Date | null;
+    type?: KnowledgeType | string;
+    sourceType?: string | null;
+    authorId?: string;
+    periodType?: KnowledgePeriodType | string;
+    periodKey?: string | null;
+  }): Record<string, unknown> {
+    return {
+      publishDate: item.publishAt?.toISOString(),
+      contentType: item.type,
+      type: item.type,
+      knowledgeType: item.type,
+      sourceType: item.sourceType || 'UNKNOWN',
+      authorId: item.authorId,
+      periodType: item.periodType,
+      periodKey: item.periodKey,
+    };
+  }
 
   async findOne(id: string) {
     return this.searchService.findOne(id);
   }
-
 
   async syncFromMarketIntel(intelId: string, options?: { skipRecursiveReportSync?: boolean }) {
     return this.syncService.syncFromMarketIntel(intelId, options);
@@ -61,15 +93,17 @@ export class KnowledgeService {
   private readonly logger = new Logger(KnowledgeService.name);
 
   constructor(
-    @Inject(forwardRef(() => KnowledgeSyncService)) private readonly syncService: KnowledgeSyncService,
-    @Inject(forwardRef(() => KnowledgeSearchService)) private readonly searchService: KnowledgeSearchService,
+    @Inject(forwardRef(() => KnowledgeSyncService))
+    private readonly syncService: KnowledgeSyncService,
+    @Inject(forwardRef(() => KnowledgeSearchService))
+    private readonly searchService: KnowledgeSearchService,
     private prisma: PrismaService,
     private aiService: AIService,
     private ragPipelineService: RagPipelineService,
     @Inject(forwardRef(() => IntelTaskService)) private intelTaskService: IntelTaskService,
-        private readonly intelTaskStateService: IntelTaskStateService,
+    private readonly intelTaskStateService: IntelTaskStateService,
     private deepAnalysisService: DeepAnalysisService,
-  ) { }
+  ) {}
 
   async create(input: CreateKnowledgeInput) {
     const result = await this.prisma.$transaction(async (tx) => {
@@ -106,7 +140,12 @@ export class KnowledgeService {
     });
 
     const fullItem = await this.findOne(result.id);
-    await this.ragPipelineService.ingest(fullItem.id, fullItem.contentPlain || fullItem.contentRich || '');
+    const ingestResult = await this.ragPipelineService.ingest(
+      fullItem.id,
+      fullItem.contentPlain || fullItem.contentRich || '',
+      this.buildRagMetadata(fullItem),
+    );
+    this.logIngestResult('create', fullItem.id, ingestResult);
     return fullItem;
   }
 
@@ -171,7 +210,10 @@ export class KnowledgeService {
         const task = await tx.intelTask.findUnique({
           where: { id: input.taskId },
         });
-        if (task && (task.status === 'PENDING' || task.status === 'RETURNED' || task.status === 'OVERDUE')) {
+        if (
+          task &&
+          (task.status === 'PENDING' || task.status === 'RETURNED' || task.status === 'OVERDUE')
+        ) {
           await tx.intelTask.update({
             where: { id: input.taskId },
             data: {
@@ -184,7 +226,9 @@ export class KnowledgeService {
 
       let weeklyKeyPoints: Prisma.InputJsonValue | undefined;
       if (input.type === 'WEEKLY') {
-        const parsed = KnowledgeUtils.parseWeeklyContent(input.contentRich || input.contentPlain || '');
+        const parsed = KnowledgeUtils.parseWeeklyContent(
+          input.contentRich || input.contentPlain || '',
+        );
         weeklyKeyPoints = {
           market: parsed.market,
           events: parsed.events,
@@ -221,7 +265,12 @@ export class KnowledgeService {
     });
 
     const fullItem = await this.findOne(result.id);
-    await this.ragPipelineService.ingest(fullItem.id, fullItem.contentPlain || fullItem.contentRich || '');
+    const ingestResult = await this.ragPipelineService.ingest(
+      fullItem.id,
+      fullItem.contentPlain || fullItem.contentRich || '',
+      this.buildRagMetadata(fullItem),
+    );
+    this.logIngestResult('submitReport', fullItem.id, ingestResult);
     return fullItem;
   }
 
@@ -267,19 +316,27 @@ export class KnowledgeService {
 
     const updated = await this.findOne(id);
     if (input.contentPlain || input.contentRich) {
-      await this.ragPipelineService.ingest(updated.id, updated.contentPlain || updated.contentRich || '');
+      const ingestResult = await this.ragPipelineService.ingest(
+        updated.id,
+        updated.contentPlain || updated.contentRich || '',
+        this.buildRagMetadata(updated),
+      );
+      this.logIngestResult('update', updated.id, ingestResult);
     }
     return updated;
   }
 
-  async updateReport(id: string, input: {
-    title?: string;
-    contentPlain?: string;
-    contentRich?: string;
-    commodities?: string[];
-    region?: string[];
-    authorId: string; // 用于校验权限
-  }) {
+  async updateReport(
+    id: string,
+    input: {
+      title?: string;
+      contentPlain?: string;
+      contentRich?: string;
+      commodities?: string[];
+      region?: string[];
+      authorId: string; // 用于校验权限
+    },
+  ) {
     const item = await this.prisma.knowledgeItem.findUnique({
       where: { id },
     });
@@ -313,7 +370,9 @@ export class KnowledgeService {
     });
 
     if (item.type === 'WEEKLY' && (input.contentRich || input.contentPlain)) {
-      const parsed = KnowledgeUtils.parseWeeklyContent(input.contentRich || input.contentPlain || '');
+      const parsed = KnowledgeUtils.parseWeeklyContent(
+        input.contentRich || input.contentPlain || '',
+      );
       const weeklyKeyPoints = {
         market: parsed.market,
         events: parsed.events,
@@ -344,7 +403,12 @@ export class KnowledgeService {
 
     const updated = await this.findOne(id);
     if (input.contentPlain || input.contentRich) {
-      await this.ragPipelineService.ingest(updated.id, updated.contentPlain || updated.contentRich || '');
+      const ingestResult = await this.ragPipelineService.ingest(
+        updated.id,
+        updated.contentPlain || updated.contentRich || '',
+        this.buildRagMetadata(updated),
+      );
+      this.logIngestResult('updateReport', updated.id, ingestResult);
     }
     return updated;
   }
@@ -430,7 +494,12 @@ export class KnowledgeService {
     const summary = triggerDeepAnalysis ? result.summary : (result.summary || '').slice(0, 200);
 
     let finalKeyPoints = result.keyPoints as Prisma.InputJsonValue;
-    if (item.type === 'WEEKLY' && item.analysis?.keyPoints && typeof item.analysis.keyPoints === 'object' && !Array.isArray(item.analysis.keyPoints)) {
+    if (
+      item.type === 'WEEKLY' &&
+      item.analysis?.keyPoints &&
+      typeof item.analysis.keyPoints === 'object' &&
+      !Array.isArray(item.analysis.keyPoints)
+    ) {
       finalKeyPoints = {
         ...(item.analysis.keyPoints as Record<string, unknown>),
         aiKeyPoints: result.keyPoints,
@@ -548,7 +617,8 @@ export class KnowledgeService {
     attachmentIds?: string[];
   }) {
     const periodType = KnowledgeUtils.mapReportPeriodToKnowledgePeriodType(
-      (input.reportPeriod as 'DAILY' | 'WEEKLY' | 'MONTHLY' | 'QUARTERLY' | 'ANNUAL' | 'ADHOC') || null,
+      (input.reportPeriod as 'DAILY' | 'WEEKLY' | 'MONTHLY' | 'QUARTERLY' | 'ANNUAL' | 'ADHOC') ||
+        null,
     );
     const publishAt = input.publishAt || new Date();
 
@@ -574,7 +644,13 @@ export class KnowledgeService {
     });
 
     // 创建分析记录
-    if (input.summary || input.keyPoints || input.prediction || input.dataPoints || input.reportType) {
+    if (
+      input.summary ||
+      input.keyPoints ||
+      input.prediction ||
+      input.dataPoints ||
+      input.reportType
+    ) {
       await this.prisma.knowledgeAnalysis.create({
         data: {
           knowledgeId: item.id,
@@ -592,9 +668,14 @@ export class KnowledgeService {
     // 触发向量化
     const content = input.contentPlain || input.contentRich || '';
     if (content.length > 50) {
-      this.ragPipelineService.ingest(item.id, content).catch((err) => {
-        this.logger.error('[KnowledgeService.createResearchReport] RAG ingest failed:', err);
-      });
+      this.ragPipelineService
+        .ingest(item.id, content, this.buildRagMetadata(item))
+        .then((ingestResult) => {
+          this.logIngestResult('createResearchReport', item.id, ingestResult);
+        })
+        .catch((err) => {
+          this.logger.error('[KnowledgeService.createResearchReport] RAG ingest failed:', err);
+        });
     }
 
     // 复制文档附件
@@ -624,17 +705,20 @@ export class KnowledgeService {
 
     // 异步调用 MARKET_INTEL_SUMMARY_GENERATOR 模板生成高质量摘要
     if (content.length > 50 && !input.summary) {
-      this.deepAnalysisService.generateSummary(content).then(async (aiSummary) => {
-        if (aiSummary) {
-          await this.prisma.knowledgeAnalysis.updateMany({
-            where: { knowledgeId: item.id },
-            data: { summary: aiSummary },
-          });
-          this.logger.log(`[createResearchReport] AI 摘要已回填到 KnowledgeItem ${item.id}`);
-        }
-      }).catch((err) => {
-        this.logger.error('[createResearchReport] AI 摘要生成失败:', err);
-      });
+      this.deepAnalysisService
+        .generateSummary(content)
+        .then(async (aiSummary) => {
+          if (aiSummary) {
+            await this.prisma.knowledgeAnalysis.updateMany({
+              where: { knowledgeId: item.id },
+              data: { summary: aiSummary },
+            });
+            this.logger.log(`[createResearchReport] AI 摘要已回填到 KnowledgeItem ${item.id}`);
+          }
+        })
+        .catch((err) => {
+          this.logger.error('[createResearchReport] AI 摘要生成失败:', err);
+        });
     }
 
     return this.findOne(item.id);
@@ -673,9 +757,13 @@ export class KnowledgeService {
       } else {
         try {
           // 调用任务的提交功能，将任务置于完成/待审状态
-          await this.intelTaskStateService.submitTask(taskId, authorId || item.authorId || 'system-user-placeholder', {
-            intelId: id,
-          });
+          await this.intelTaskStateService.submitTask(
+            taskId,
+            authorId || item.authorId || 'system-user-placeholder',
+            {
+              intelId: id,
+            },
+          );
         } catch (error) {
           this.logger.error(`Failed to submit task ${taskId} for report ${id}:`, error);
           // 这里可以考虑不要因此中断研报自己的提审流程，只打错误日志
@@ -689,23 +777,26 @@ export class KnowledgeService {
   /**
    * 更新研报
    */
-  async updateResearchReport(id: string, input: {
-    title?: string;
-    contentPlain?: string;
-    contentRich?: string;
-    reportType?: string;
-    reportPeriod?: string;
-    publishAt?: Date;
-    sourceType?: string;
-    commodities?: string[];
-    region?: string[];
-    summary?: string;
-    keyPoints?: unknown;
-    prediction?: unknown;
-    dataPoints?: unknown;
-    intelId?: string;
-    attachmentIds?: string[];
-  }) {
+  async updateResearchReport(
+    id: string,
+    input: {
+      title?: string;
+      contentPlain?: string;
+      contentRich?: string;
+      reportType?: string;
+      reportPeriod?: string;
+      publishAt?: Date;
+      sourceType?: string;
+      commodities?: string[];
+      region?: string[];
+      summary?: string;
+      keyPoints?: unknown;
+      prediction?: unknown;
+      dataPoints?: unknown;
+      intelId?: string;
+      attachmentIds?: string[];
+    },
+  ) {
     const data: Prisma.KnowledgeItemUpdateInput = {};
 
     if (input.title !== undefined) data.title = input.title;
@@ -729,9 +820,12 @@ export class KnowledgeService {
     if (input.summary !== undefined) analysisData.summary = input.summary;
     if (input.reportType !== undefined) analysisData.reportType = input.reportType;
     if (input.reportPeriod !== undefined) analysisData.reportPeriod = input.reportPeriod;
-    if (input.keyPoints !== undefined) analysisData.keyPoints = input.keyPoints as Prisma.InputJsonValue;
-    if (input.prediction !== undefined) analysisData.prediction = input.prediction as Prisma.InputJsonValue;
-    if (input.dataPoints !== undefined) analysisData.dataPoints = input.dataPoints as Prisma.InputJsonValue;
+    if (input.keyPoints !== undefined)
+      analysisData.keyPoints = input.keyPoints as Prisma.InputJsonValue;
+    if (input.prediction !== undefined)
+      analysisData.prediction = input.prediction as Prisma.InputJsonValue;
+    if (input.dataPoints !== undefined)
+      analysisData.dataPoints = input.dataPoints as Prisma.InputJsonValue;
 
     if (Object.keys(analysisData).length > 0) {
       await this.prisma.knowledgeAnalysis.upsert({
@@ -776,9 +870,14 @@ export class KnowledgeService {
     // 重新向量化
     const content = input.contentPlain || item.contentPlain;
     if (content && content.length > 50) {
-      this.ragPipelineService.ingest(item.id, content).catch((err) => {
-        this.logger.error('[KnowledgeService.updateResearchReport] RAG ingest failed:', err);
-      });
+      this.ragPipelineService
+        .ingest(item.id, content, this.buildRagMetadata(item))
+        .then((ingestResult) => {
+          this.logIngestResult('updateResearchReport', item.id, ingestResult);
+        })
+        .catch((err) => {
+          this.logger.error('[KnowledgeService.updateResearchReport] RAG ingest failed:', err);
+        });
     }
 
     return this.findOne(item.id);
@@ -831,7 +930,13 @@ export class KnowledgeService {
   private async extractToIntelTables(
     knowledgeId: string,
     result: AIAnalysisResult,
-    item: { authorId: string; effectiveAt?: Date | null; publishAt?: Date | null; commodities?: string[]; location?: string | null },
+    item: {
+      authorId: string;
+      effectiveAt?: Date | null;
+      publishAt?: Date | null;
+      commodities?: string[];
+      location?: string | null;
+    },
   ) {
     const effectiveDate = item.effectiveAt || item.publishAt || new Date();
 
@@ -845,14 +950,10 @@ export class KnowledgeService {
         )
           ? (point.sourceType as PriceSourceType)
           : PriceSourceType.REGIONAL;
-        const resolvedSubType = Object.values(PriceSubType).includes(
-          point.subType as PriceSubType,
-        )
+        const resolvedSubType = Object.values(PriceSubType).includes(point.subType as PriceSubType)
           ? (point.subType as PriceSubType)
           : PriceSubType.LISTED;
-        const resolvedGeoLevel = Object.values(GeoLevel).includes(
-          point.geoLevel as GeoLevel,
-        )
+        const resolvedGeoLevel = Object.values(GeoLevel).includes(point.geoLevel as GeoLevel)
           ? (point.geoLevel as GeoLevel)
           : GeoLevel.CITY;
 
@@ -909,7 +1010,9 @@ export class KnowledgeService {
         }
       }
 
-      this.logger.log(`[extractToIntelTables] Wrote ${result.pricePoints.length} price points for knowledge ${knowledgeId}`);
+      this.logger.log(
+        `[extractToIntelTables] Wrote ${result.pricePoints.length} price points for knowledge ${knowledgeId}`,
+      );
     }
 
     // ========== 2. 提取市场事件 → MarketEvent ==========
@@ -932,7 +1035,8 @@ export class KnowledgeService {
               eventTypeId,
               subject: event.subject || '未知主体',
               action: event.action || '未知动作',
-              content: event.content || event.sourceText || `${event.subject || ''}${event.action || ''}`,
+              content:
+                event.content || event.sourceText || `${event.subject || ''}${event.action || ''}`,
               impact: event.impact,
               impactLevel: event.impactLevel || 'MEDIUM',
               sentiment: event.sentiment || 'neutral',
@@ -946,7 +1050,9 @@ export class KnowledgeService {
           });
         }
 
-        this.logger.log(`[extractToIntelTables] Wrote ${result.events.length} events for knowledge ${knowledgeId}`);
+        this.logger.log(
+          `[extractToIntelTables] Wrote ${result.events.length} events for knowledge ${knowledgeId}`,
+        );
       }
     }
 
@@ -974,7 +1080,9 @@ export class KnowledgeService {
           },
         });
 
-        this.logger.log(`[extractToIntelTables] Wrote forecast insight for knowledge ${knowledgeId}`);
+        this.logger.log(
+          `[extractToIntelTables] Wrote forecast insight for knowledge ${knowledgeId}`,
+        );
       }
     }
   }

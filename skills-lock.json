@@ -5,6 +5,11 @@
       "source": "WHQ25/agent-canvas",
       "sourceType": "github",
       "computedHash": "30034b61442c30a475ac10127564d54f56c4d28af1ce0bad36b446c0b0ecd624"
+    },
+    "writing-prds": {
+      "source": "refoundai/lenny-skills",
+      "sourceType": "github",
+      "computedHash": "59f77c05d2e2fb9478b017f9cdd29951d1ceb53c6a6da93f27d2c9996e6403ca"
     }
   }
 }
