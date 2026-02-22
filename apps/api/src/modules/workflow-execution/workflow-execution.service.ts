@@ -28,34 +28,11 @@ import { ReplayAssembler, type ExecutionReplayBundle } from './engine/replay-ass
 import { WorkflowExperimentService } from '../workflow-experiment/workflow-experiment.service';
 import type { NodeExecutionResult } from './engine/node-executor.interface';
 import { ConfigService } from '../config/config.service';
-
-type WorkflowFailureCode =
-  | 'EXECUTION_TIMEOUT'
-  | 'EXECUTION_CANCELED'
-  | 'NODE_TIMEOUT'
-  | 'NODE_EXECUTOR_ERROR'
-  | 'NODE_RESULT_FAILED'
-  | 'EXECUTION_INTERNAL_ERROR';
-
-class WorkflowExecutionHandledError extends Error {
-  constructor(
-    message: string,
-    readonly failureCategory: WorkflowFailureCategory,
-    readonly failureCode: WorkflowFailureCode,
-    readonly targetStatus: 'FAILED' | 'CANCELED' = 'FAILED',
-  ) {
-    super(message);
-    this.name = 'WorkflowExecutionHandledError';
-  }
-}
-
-class WorkflowTimeoutError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = 'WorkflowTimeoutError';
-  }
-}
-
+import { ExecutionLogService } from "./execution-log.service";
+import { WorkflowExecutionQueryService } from "./workflow-execution-query.service";
+import { WorkflowExecutionReplayService } from "./workflow-execution-replay.service";
+import * as ExecutionUtils from "./workflow-execution.utils";
+import { WorkflowExecutionHandledError, WorkflowFailureCode } from './workflow-execution.utils';
 type ExperimentRoutingContext = {
   experimentId: string;
   variant: 'A' | 'B';
@@ -84,8 +61,8 @@ export class WorkflowExecutionService {
     private readonly replayAssembler: ReplayAssembler,
     private readonly dagScheduler: DagScheduler,
     private readonly workflowExperimentService: WorkflowExperimentService,
-    private readonly configService: ConfigService,
-  ) {}
+    private readonly configService: ConfigService, private readonly executionLogService: ExecutionLogService, private readonly executionQueryService: WorkflowExecutionQueryService, private readonly executionReplayService: WorkflowExecutionReplayService
+  ) { }
 
   async trigger(
     ownerUserId: string,
@@ -133,7 +110,7 @@ export class WorkflowExecutionService {
         },
       });
       if (existingExecution) {
-        await this.recordRuntimeEvent({
+        await this.executionLogService.recordRuntimeEvent({
           workflowExecutionId: existingExecution.id,
           eventType: 'EXECUTION_IDEMPOTENT_HIT',
           level: 'INFO',
@@ -160,18 +137,18 @@ export class WorkflowExecutionService {
 
     const version = targetWorkflowVersionId
       ? await this.prisma.workflowVersion.findFirst({
-          where: {
-            id: targetWorkflowVersionId,
-            workflowDefinitionId: definition.id,
-          },
-        })
+        where: {
+          id: targetWorkflowVersionId,
+          workflowDefinitionId: definition.id,
+        },
+      })
       : await this.prisma.workflowVersion.findFirst({
-          where: {
-            workflowDefinitionId: definition.id,
-            status: 'PUBLISHED',
-          },
-          orderBy: { createdAt: 'desc' },
-        });
+        where: {
+          workflowDefinitionId: definition.id,
+          status: 'PUBLISHED',
+        },
+        orderBy: { createdAt: 'desc' },
+      });
 
     if (!version) {
       throw new BadRequestException('未找到可执行版本，请先发布至少一个版本');
@@ -194,7 +171,7 @@ export class WorkflowExecutionService {
         },
       });
       if (existingExecution) {
-        await this.recordRuntimeEvent({
+        await this.executionLogService.recordRuntimeEvent({
           workflowExecutionId: existingExecution.id,
           eventType: 'EXECUTION_IDEMPOTENT_HIT',
           level: 'INFO',
@@ -230,11 +207,11 @@ export class WorkflowExecutionService {
           idempotencyKey,
           status: 'RUNNING',
           startedAt: new Date(),
-          paramSnapshot: mergedParamSnapshot ? this.toJsonValue(mergedParamSnapshot) : undefined,
+          paramSnapshot: mergedParamSnapshot ? ExecutionUtils.toJsonValue(mergedParamSnapshot) : undefined,
         },
       });
     } catch (error) {
-      if (idempotencyKey && this.isUniqueConstraintError(error)) {
+      if (idempotencyKey && ExecutionUtils.isUniqueConstraintError(error)) {
         const existingExecution = await this.prisma.workflowExecution.findFirst({
           where: {
             workflowVersionId: version.id,
@@ -256,23 +233,23 @@ export class WorkflowExecutionService {
       }
       throw error;
     }
-    await this.recordRuntimeEvent({
+    await this.executionLogService.recordRuntimeEvent({
       workflowExecutionId: execution.id,
       eventType: 'EXECUTION_STARTED',
       level: 'INFO',
       message: '执行开始',
-        detail: {
-          workflowDefinitionId: definition.id,
-          workflowVersionId: version.id,
-          triggerType: dto.triggerType,
-          sourceExecutionId: options?.sourceExecutionId ?? null,
-          subflowDepth,
-          subflowPath: nextSubflowPath,
-          idempotencyKey: idempotencyKey ?? null,
-          experimentId: experimentRouting?.experimentId ?? null,
-          experimentVariant: experimentRouting?.variant ?? null,
-        },
-      });
+      detail: {
+        workflowDefinitionId: definition.id,
+        workflowVersionId: version.id,
+        triggerType: dto.triggerType,
+        sourceExecutionId: options?.sourceExecutionId ?? null,
+        subflowDepth,
+        subflowPath: nextSubflowPath,
+        idempotencyKey: idempotencyKey ?? null,
+        experimentId: experimentRouting?.experimentId ?? null,
+        experimentVariant: experimentRouting?.variant ?? null,
+      },
+    });
 
     const workflowAgentStrictModeEnabled = await this.isWorkflowAgentStrictModeEnabled();
 
@@ -344,11 +321,11 @@ export class WorkflowExecutionService {
               completedAt: now,
               durationMs: 0,
               errorMessage: existingSkipReason,
-              inputSnapshot: this.toJsonValue({}),
-              outputSnapshot: this.toJsonValue(skippedOutput),
+              inputSnapshot: ExecutionUtils.toJsonValue({}),
+              outputSnapshot: ExecutionUtils.toJsonValue(skippedOutput),
             },
           });
-          await this.recordRuntimeEvent({
+          await this.executionLogService.recordRuntimeEvent({
             workflowExecutionId: execution.id,
             nodeExecutionId: skippedNodeExecution.id,
             eventType: 'NODE_SKIPPED',
@@ -393,11 +370,11 @@ export class WorkflowExecutionService {
               completedAt: now,
               durationMs: 0,
               errorMessage: skipReason,
-              inputSnapshot: this.toJsonValue({}),
-              outputSnapshot: this.toJsonValue(skippedOutput),
+              inputSnapshot: ExecutionUtils.toJsonValue({}),
+              outputSnapshot: ExecutionUtils.toJsonValue(skippedOutput),
             },
           });
-          await this.recordRuntimeEvent({
+          await this.executionLogService.recordRuntimeEvent({
             workflowExecutionId: execution.id,
             nodeExecutionId: skippedNodeExecution.id,
             eventType: 'NODE_SKIPPED',
@@ -440,7 +417,7 @@ export class WorkflowExecutionService {
         let attempts = 0;
         let failureCategory: WorkflowFailureCategory | null = null;
         let failureCode: WorkflowFailureCode | null = null;
-        await this.recordRuntimeEvent({
+        await this.executionLogService.recordRuntimeEvent({
           workflowExecutionId: execution.id,
           eventType: 'NODE_STARTED',
           level: 'INFO',
@@ -456,7 +433,7 @@ export class WorkflowExecutionService {
         for (let attempt = 0; attempt <= runtimePolicy.retryCount; attempt += 1) {
           attempts = attempt + 1;
           try {
-            const result = await this.executeWithTimeout(
+            const result = await ExecutionUtils.executeWithTimeout(
               async () => {
                 const customResult = await this.executeCustomNode({
                   ownerUserId,
@@ -506,7 +483,7 @@ export class WorkflowExecutionService {
             break;
           } catch (error) {
             status = 'FAILED';
-            const classifiedFailure = this.classifyFailure(error);
+            const classifiedFailure = ExecutionUtils.classifyFailure(error);
             errorMessage = classifiedFailure.message;
             failureCategory = classifiedFailure.failureCategory;
             failureCode = classifiedFailure.failureCode;
@@ -523,7 +500,7 @@ export class WorkflowExecutionService {
             };
 
             if (attempt < runtimePolicy.retryCount) {
-              await this.recordRuntimeEvent({
+              await this.executionLogService.recordRuntimeEvent({
                 workflowExecutionId: execution.id,
                 eventType: 'NODE_RETRY',
                 level: 'WARN',
@@ -537,7 +514,7 @@ export class WorkflowExecutionService {
                   errorMessage,
                 },
               });
-              await this.sleep(runtimePolicy.retryBackoffMs);
+              await ExecutionUtils.sleep(runtimePolicy.retryBackoffMs);
               continue;
             }
           }
@@ -547,7 +524,7 @@ export class WorkflowExecutionService {
           outputSnapshot = {
             ...outputSnapshot,
             _meta: {
-              ...this.readMeta(outputSnapshot),
+              ...ExecutionUtils.readMeta(outputSnapshot),
               onErrorRouting: 'ROUTE_TO_ERROR',
             },
           };
@@ -568,11 +545,11 @@ export class WorkflowExecutionService {
             errorMessage,
             failureCategory: status === 'FAILED' ? failureCategory : null,
             failureCode: status === 'FAILED' ? failureCode : null,
-            inputSnapshot: this.toJsonValue(inputSnapshot),
-            outputSnapshot: this.toJsonValue(outputSnapshot),
+            inputSnapshot: ExecutionUtils.toJsonValue(inputSnapshot),
+            outputSnapshot: ExecutionUtils.toJsonValue(outputSnapshot),
           },
         });
-        await this.recordRuntimeEvent({
+        await this.executionLogService.recordRuntimeEvent({
           workflowExecutionId: execution.id,
           nodeExecutionId: createdNodeExecution.id,
           eventType: status === 'SUCCESS' ? 'NODE_SUCCEEDED' : 'NODE_FAILED',
@@ -622,7 +599,7 @@ export class WorkflowExecutionService {
           errorMessage: null,
           failureCategory: null,
           failureCode: null,
-          outputSnapshot: this.toJsonValue(buildExecutionOutputSnapshot(sortedNodes.length)),
+          outputSnapshot: ExecutionUtils.toJsonValue(buildExecutionOutputSnapshot(sortedNodes.length)),
         },
         include: {
           nodeExecutions: {
@@ -630,7 +607,7 @@ export class WorkflowExecutionService {
           },
         },
       });
-      await this.recordRuntimeEvent({
+      await this.executionLogService.recordRuntimeEvent({
         workflowExecutionId: execution.id,
         eventType: 'EXECUTION_SUCCEEDED',
         level: 'INFO',
@@ -640,11 +617,11 @@ export class WorkflowExecutionService {
           softFailureCount,
         },
       });
-      const replayBundle = await this.persistReplayBundle(execution.id, dsl);
+      const replayBundle = await this.executionReplayService.persistReplayBundle(execution.id, dsl);
       await this.recordExperimentOutcome(experimentRouting, completed, replayBundle);
       return completed;
     } catch (error) {
-      const classifiedFailure = this.classifyFailure(error);
+      const classifiedFailure = ExecutionUtils.classifyFailure(error);
       const failureMessage = classifiedFailure.message;
       const isCanceled = classifiedFailure.failureCategory === 'CANCELED';
       const terminalStatus: 'FAILED' | 'CANCELED' = isCanceled ? 'CANCELED' : 'FAILED';
@@ -662,10 +639,10 @@ export class WorkflowExecutionService {
           errorMessage: failureMessage,
           failureCategory: classifiedFailure.failureCategory,
           failureCode: executionFailureCode,
-          outputSnapshot: this.toJsonValue(buildExecutionOutputSnapshot(outputsByNode.size)),
+          outputSnapshot: ExecutionUtils.toJsonValue(buildExecutionOutputSnapshot(outputsByNode.size)),
         },
       });
-      await this.recordRuntimeEvent({
+      await this.executionLogService.recordRuntimeEvent({
         workflowExecutionId: execution.id,
         eventType: isCanceled ? 'EXECUTION_CANCELED' : 'EXECUTION_FAILED',
         level: isCanceled ? 'WARN' : 'ERROR',
@@ -690,7 +667,7 @@ export class WorkflowExecutionService {
           },
         },
       });
-      const replayBundle = await this.persistReplayBundle(execution.id, dsl);
+      const replayBundle = await this.executionReplayService.persistReplayBundle(execution.id, dsl);
       await this.recordExperimentOutcome(experimentRouting, terminalExecution, replayBundle);
 
       if (isCanceled) {
@@ -698,117 +675,6 @@ export class WorkflowExecutionService {
       }
       throw error;
     }
-  }
-
-  async findAll(ownerUserId: string, query: WorkflowExecutionQueryDto) {
-    const page = query.page ?? 1;
-    const pageSize = query.pageSize ?? 20;
-    const where = this.buildAccessibleWhere(ownerUserId, query);
-
-    const [data, total] = await Promise.all([
-      this.prisma.workflowExecution.findMany({
-        where,
-        skip: (page - 1) * pageSize,
-        take: pageSize,
-        orderBy: [{ createdAt: 'desc' }],
-        include: {
-          workflowVersion: {
-            include: {
-              workflowDefinition: true,
-            },
-          },
-        },
-      }),
-      this.prisma.workflowExecution.count({ where }),
-    ]);
-
-    return {
-      data,
-      total,
-      page,
-      pageSize,
-      totalPages: Math.ceil(total / pageSize),
-    };
-  }
-
-  async findOne(ownerUserId: string, id: string) {
-    const execution = await this.prisma.workflowExecution.findFirst({
-      where: {
-        id,
-        ...this.buildExecutionReadableWhere(ownerUserId),
-      },
-      include: {
-        workflowVersion: {
-          include: {
-            workflowDefinition: true,
-          },
-        },
-        nodeExecutions: {
-          orderBy: [{ createdAt: 'asc' }],
-        },
-        runtimeEvents: {
-          orderBy: [{ occurredAt: 'asc' }, { createdAt: 'asc' }],
-        },
-      },
-    });
-
-    if (!execution) {
-      throw new NotFoundException('运行实例不存在或无权限访问');
-    }
-
-    return execution;
-  }
-
-  async timeline(ownerUserId: string, id: string, query: WorkflowRuntimeEventQueryDto) {
-    await this.ensureExecutionReadable(ownerUserId, id);
-
-    const page = query.page ?? 1;
-    const pageSize = query.pageSize ?? 50;
-    const where: Prisma.WorkflowRuntimeEventWhereInput = {
-      workflowExecutionId: id,
-      ...(query.eventType ? { eventType: query.eventType } : {}),
-      ...(query.level ? { level: query.level } : {}),
-    };
-
-    const [data, total] = await Promise.all([
-      this.prisma.workflowRuntimeEvent.findMany({
-        where,
-        skip: (page - 1) * pageSize,
-        take: pageSize,
-        orderBy: [{ occurredAt: 'asc' }, { createdAt: 'asc' }],
-      }),
-      this.prisma.workflowRuntimeEvent.count({ where }),
-    ]);
-
-    return {
-      data,
-      total,
-      page,
-      pageSize,
-      totalPages: Math.ceil(total / pageSize),
-    };
-  }
-
-  async debateTraces(ownerUserId: string, id: string, query: DebateReplayQueryDto) {
-    await this.ensureExecutionReadable(ownerUserId, id);
-    return this.debateTraceService.findByExecution({
-      workflowExecutionId: id,
-      roundNumber: query.roundNumber,
-      participantCode: query.participantCode,
-      participantRole: query.participantRole,
-      isJudgement: query.isJudgement,
-      keyword: query.keyword,
-    });
-  }
-
-  async debateTimeline(ownerUserId: string, id: string) {
-    await this.ensureExecutionReadable(ownerUserId, id);
-    return this.debateTraceService.getDebateTimeline(id);
-  }
-
-  async replay(ownerUserId: string, id: string) {
-    await this.ensureExecutionReadable(ownerUserId, id);
-    return this.assembleReplayBundle(id);
   }
 
   async rerun(ownerUserId: string, id: string) {
@@ -844,7 +710,7 @@ export class WorkflowExecutionService {
         workflowDefinitionId: sourceExecution.workflowVersion.workflowDefinitionId,
         workflowVersionId: sourceExecution.workflowVersionId,
         triggerType: 'MANUAL',
-        paramSnapshot: this.toRecord(sourceExecution.paramSnapshot),
+        paramSnapshot: ExecutionUtils.toRecord(sourceExecution.paramSnapshot),
       },
       {
         sourceExecutionId: sourceExecution.id,
@@ -889,7 +755,7 @@ export class WorkflowExecutionService {
     }
 
     const reason = dto.reason?.trim() || '手动取消执行';
-    await this.recordRuntimeEvent({
+    await this.executionLogService.recordRuntimeEvent({
       workflowExecutionId: id,
       eventType: 'EXECUTION_CANCEL_REQUESTED',
       level: 'WARN',
@@ -963,7 +829,7 @@ export class WorkflowExecutionService {
         callbacks: {
           throwIfCanceled: () => this.throwIfExecutionCanceled(params.executionId),
           recordEvent: (payload) =>
-            this.recordRuntimeEvent({
+            this.executionLogService.recordRuntimeEvent({
               workflowExecutionId: params.executionId,
               nodeExecutionId: payload.nodeExecutionId,
               eventType: payload.eventType,
@@ -987,16 +853,16 @@ export class WorkflowExecutionService {
                     ? (payload.failureCategory as WorkflowFailureCategory | null)
                     : null,
                 failureCode: payload.status === 'FAILED' ? payload.failureCode : null,
-                inputSnapshot: this.toJsonValue(payload.inputSnapshot),
-                outputSnapshot: this.toJsonValue(payload.outputSnapshot),
+                inputSnapshot: ExecutionUtils.toJsonValue(payload.inputSnapshot),
+                outputSnapshot: ExecutionUtils.toJsonValue(payload.outputSnapshot),
               },
             }),
           resolveRuntimePolicy: (node, runPolicy) =>
             this.resolveRuntimePolicy(node, runPolicy, params.strictModeEnabled),
           executeWithTimeout: (task, timeoutMs, timeoutMessage) =>
-            this.executeWithTimeout(task, timeoutMs, timeoutMessage),
-          sleep: (ms) => this.sleep(ms),
-          classifyFailure: (error) => this.classifyFailure(error),
+            ExecutionUtils.executeWithTimeout(task, timeoutMs, timeoutMessage),
+          sleep: (ms) => ExecutionUtils.sleep(ms),
+          classifyFailure: (error) => ExecutionUtils.classifyFailure(error),
           resolveNodeParamSnapshot: ({ node, baseParamSnapshot }) =>
             this.resolveNodeParamSnapshot(node, baseParamSnapshot),
           resolveNodeInput: ({ node, rawInput, outputsByNode, paramSnapshot }) =>
@@ -1035,7 +901,7 @@ export class WorkflowExecutionService {
           errorMessage: null,
           failureCategory: null,
           failureCode: null,
-          outputSnapshot: this.toJsonValue(
+          outputSnapshot: ExecutionUtils.toJsonValue(
             buildExecutionOutputSnapshot(params.dsl.nodes.length, dagResult.softFailureCount),
           ),
         },
@@ -1045,7 +911,7 @@ export class WorkflowExecutionService {
           },
         },
       });
-      await this.recordRuntimeEvent({
+      await this.executionLogService.recordRuntimeEvent({
         workflowExecutionId: params.executionId,
         eventType: 'EXECUTION_SUCCEEDED',
         level: 'INFO',
@@ -1057,11 +923,11 @@ export class WorkflowExecutionService {
         },
       });
 
-      const replayBundle = await this.persistReplayBundle(params.executionId, params.dsl);
+      const replayBundle = await this.executionReplayService.persistReplayBundle(params.executionId, params.dsl);
       await this.recordExperimentOutcome(params.experimentRouting, completed, replayBundle);
       return completed;
     } catch (error) {
-      const classifiedFailure = this.classifyFailure(error);
+      const classifiedFailure = ExecutionUtils.classifyFailure(error);
       const failureMessage = classifiedFailure.message;
       const isCanceled = classifiedFailure.failureCategory === 'CANCELED';
       const terminalStatus: 'FAILED' | 'CANCELED' = isCanceled ? 'CANCELED' : 'FAILED';
@@ -1079,10 +945,10 @@ export class WorkflowExecutionService {
           errorMessage: failureMessage,
           failureCategory: classifiedFailure.failureCategory,
           failureCode: executionFailureCode,
-          outputSnapshot: this.toJsonValue(buildExecutionOutputSnapshot(outputsByNode.size, 0)),
+          outputSnapshot: ExecutionUtils.toJsonValue(buildExecutionOutputSnapshot(outputsByNode.size, 0)),
         },
       });
-      await this.recordRuntimeEvent({
+      await this.executionLogService.recordRuntimeEvent({
         workflowExecutionId: params.executionId,
         eventType: isCanceled ? 'EXECUTION_CANCELED' : 'EXECUTION_FAILED',
         level: isCanceled ? 'WARN' : 'ERROR',
@@ -1106,7 +972,7 @@ export class WorkflowExecutionService {
           },
         },
       });
-      const replayBundle = await this.persistReplayBundle(params.executionId, params.dsl);
+      const replayBundle = await this.executionReplayService.persistReplayBundle(params.executionId, params.dsl);
       await this.recordExperimentOutcome(params.experimentRouting, terminalExecution, replayBundle);
       if (isCanceled) {
         return terminalExecution;
@@ -1115,107 +981,18 @@ export class WorkflowExecutionService {
     }
   }
 
-  private async assembleReplayBundle(
-    executionId: string,
-    dslOverride?: WorkflowDsl,
-  ): Promise<ExecutionReplayBundle> {
-    const execution = await this.prisma.workflowExecution.findUnique({
-      where: { id: executionId },
-      include: {
-        workflowVersion: {
-          select: {
-            id: true,
-            workflowDefinitionId: true,
-            dslSnapshot: true,
-          },
-        },
-        nodeExecutions: {
-          orderBy: [{ startedAt: 'asc' }, { createdAt: 'asc' }],
-        },
-      },
-    });
-
-    if (!execution) {
-      throw new NotFoundException('运行实例不存在');
-    }
-
-    const parsedDsl = dslOverride
-      ? { success: true as const, data: dslOverride }
-      : WorkflowDslSchema.safeParse(execution.workflowVersion.dslSnapshot);
-    if (!parsedDsl.success) {
-      throw new BadRequestException({
-        message: '流程 DSL 快照解析失败',
-        issues: parsedDsl.error.issues,
-      });
-    }
-    const dsl = canonicalizeWorkflowDsl(parsedDsl.data);
-
-    const outputsByNode = new Map<string, Record<string, unknown>>();
-    for (const nodeExecution of execution.nodeExecutions) {
-      outputsByNode.set(nodeExecution.nodeId, this.toRecord(nodeExecution.outputSnapshot) ?? {});
-    }
-
-    const evidenceBundle = this.evidenceCollector.collect(dsl.nodes, outputsByNode);
-    const dataLineage = this.variableResolver.buildLineageGraph(dsl.nodes, dsl.edges, outputsByNode);
-    const nodeSnapshots = this.replayAssembler.buildNodeSnapshots(execution.nodeExecutions, dsl.nodes);
-
-    return this.replayAssembler.assemble({
-      executionId: execution.id,
-      workflowDefinitionId: execution.workflowVersion.workflowDefinitionId,
-      workflowVersionId: execution.workflowVersion.id,
-      triggerType: execution.triggerType,
-      triggerUserId: execution.triggerUserId,
-      status: execution.status,
-      startedAt: execution.startedAt ?? execution.createdAt,
-      completedAt: execution.completedAt ?? execution.startedAt ?? execution.createdAt,
-      paramSnapshot: this.toRecord(execution.paramSnapshot),
-      dsl,
-      nodeSnapshots,
-      evidenceBundle,
-      dataLineage,
-    });
-  }
-
-  private async persistReplayBundle(
-    executionId: string,
-    dslOverride?: WorkflowDsl,
-  ): Promise<ExecutionReplayBundle | null> {
-    try {
-      const replayBundle = await this.assembleReplayBundle(executionId, dslOverride);
-      const execution = await this.prisma.workflowExecution.findUnique({
-        where: { id: executionId },
-        select: { outputSnapshot: true },
-      });
-      const existingOutput = this.toRecord(execution?.outputSnapshot);
-      await this.prisma.workflowExecution.update({
-        where: { id: executionId },
-        data: {
-          outputSnapshot: this.toJsonValue({
-            ...(existingOutput ?? {}),
-            evidenceBundle: replayBundle.evidenceBundle,
-            dataLineage: replayBundle.dataLineage,
-            replayBundle,
-          }),
-        },
-      });
-      return replayBundle;
-    } catch {
-      return null;
-    }
-  }
-
   private async recordExperimentOutcome(
     experimentRouting: ExperimentRoutingContext,
     execution:
       | {
-          id: string;
-          status: string;
-          startedAt: Date | null;
-          completedAt: Date | null;
-          failureCategory: WorkflowFailureCategory | null;
-          createdAt?: Date;
-          nodeExecutions?: Array<{ id: string }>;
-        }
+        id: string;
+        status: string;
+        startedAt: Date | null;
+        completedAt: Date | null;
+        failureCategory: WorkflowFailureCategory | null;
+        createdAt?: Date;
+        nodeExecutions?: Array<{ id: string }>;
+      }
       | null,
     replayBundle: ExecutionReplayBundle | null,
   ) {
@@ -1243,7 +1020,7 @@ export class WorkflowExecutionService {
           action: typeof decision?.action === 'string' ? decision.action : null,
           confidence: typeof decision?.confidence === 'number' ? decision.confidence : null,
           riskLevel: typeof decision?.riskLevel === 'string' ? decision.riskLevel : null,
-          metricsPayload: this.toJsonValue({
+          metricsPayload: ExecutionUtils.toJsonValue({
             executionStatus: execution.status,
             failureCategory: execution.failureCategory,
             decisionOutput: decision ?? null,
@@ -1261,7 +1038,7 @@ export class WorkflowExecutionService {
         failureCategory: execution.failureCategory ?? undefined,
       });
 
-      await this.recordRuntimeEvent({
+      await this.executionLogService.recordRuntimeEvent({
         workflowExecutionId: execution.id,
         eventType: 'EXPERIMENT_RUN_RECORDED',
         level: 'INFO',
@@ -1275,7 +1052,7 @@ export class WorkflowExecutionService {
       });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      await this.recordRuntimeEvent({
+      await this.executionLogService.recordRuntimeEvent({
         workflowExecutionId: execution.id,
         eventType: 'EXPERIMENT_METRICS_RECORD_FAILED',
         level: 'WARN',
@@ -1287,304 +1064,6 @@ export class WorkflowExecutionService {
         },
       });
     }
-  }
-
-  private async ensureExecutionReadable(ownerUserId: string, id: string) {
-    const execution = await this.prisma.workflowExecution.findFirst({
-      where: {
-        id,
-        ...this.buildExecutionReadableWhere(ownerUserId),
-      },
-      select: { id: true },
-    });
-
-    if (!execution) {
-      throw new NotFoundException('运行实例不存在或无权限访问');
-    }
-
-    return execution;
-  }
-
-  private buildAccessibleWhere(
-    ownerUserId: string,
-    query: WorkflowExecutionQueryDto,
-  ): Prisma.WorkflowExecutionWhereInput {
-    const conditions: Prisma.WorkflowExecutionWhereInput[] = [
-      this.buildExecutionReadableWhere(ownerUserId),
-    ];
-
-    if (query.workflowDefinitionId) {
-      conditions.push({
-        workflowVersion: {
-          workflowDefinition: {
-            id: query.workflowDefinitionId,
-          },
-        },
-      });
-    }
-
-    if (query.workflowVersionId) {
-      conditions.push({ workflowVersionId: query.workflowVersionId });
-    }
-    if (query.triggerType) {
-      conditions.push({ triggerType: query.triggerType });
-    }
-    if (query.status) {
-      conditions.push({ status: query.status });
-    }
-    if (query.failureCategory) {
-      conditions.push({ failureCategory: query.failureCategory });
-    }
-    const failureCode = query.failureCode?.trim();
-    if (failureCode) {
-      conditions.push({
-        failureCode: {
-          contains: failureCode,
-          mode: 'insensitive',
-        },
-      });
-    }
-    if (query.riskLevel) {
-      conditions.push({
-        OR: [
-          {
-            outputSnapshot: {
-              path: ['riskGate', 'riskLevel'],
-              equals: query.riskLevel,
-            },
-          },
-          {
-            nodeExecutions: {
-              some: {
-                nodeType: 'risk-gate',
-                outputSnapshot: {
-                  path: ['riskLevel'],
-                  equals: query.riskLevel,
-                },
-              },
-            },
-          },
-        ],
-      });
-    }
-    if (query.degradeAction) {
-      conditions.push({
-        OR: [
-          {
-            outputSnapshot: {
-              path: ['riskGate', 'degradeAction'],
-              equals: query.degradeAction,
-            },
-          },
-          {
-            nodeExecutions: {
-              some: {
-                nodeType: 'risk-gate',
-                outputSnapshot: {
-                  path: ['degradeAction'],
-                  equals: query.degradeAction,
-                },
-              },
-            },
-          },
-        ],
-      });
-    }
-    const riskProfileCode = query.riskProfileCode?.trim();
-    if (riskProfileCode) {
-      conditions.push({
-        OR: [
-          {
-            outputSnapshot: {
-              path: ['riskGate', 'riskProfileCode'],
-              string_contains: riskProfileCode,
-            },
-          },
-          {
-            nodeExecutions: {
-              some: {
-                nodeType: 'risk-gate',
-                outputSnapshot: {
-                  path: ['riskProfileCode'],
-                  string_contains: riskProfileCode,
-                },
-              },
-            },
-          },
-        ],
-      });
-    }
-    const riskReasonKeyword = query.riskReasonKeyword?.trim();
-    if (riskReasonKeyword) {
-      conditions.push({
-        OR: [
-          {
-            outputSnapshot: {
-              path: ['riskGate', 'blockReason'],
-              string_contains: riskReasonKeyword,
-            },
-          },
-          {
-            nodeExecutions: {
-              some: {
-                nodeType: 'risk-gate',
-                outputSnapshot: {
-                  path: ['blockReason'],
-                  string_contains: riskReasonKeyword,
-                },
-              },
-            },
-          },
-        ],
-      });
-    }
-    if (query.hasSoftFailure) {
-      conditions.push({
-        status: 'SUCCESS',
-        nodeExecutions: {
-          some: { status: 'FAILED' },
-        },
-      });
-    }
-    if (query.hasErrorRoute) {
-      conditions.push({
-        nodeExecutions: {
-          some: {
-            status: 'SKIPPED',
-            errorMessage: { contains: 'ROUTE_TO_ERROR', mode: 'insensitive' },
-          },
-        },
-      });
-    }
-    if (query.hasRiskBlocked) {
-      conditions.push({
-        OR: [
-          {
-            outputSnapshot: {
-              path: ['riskGate', 'riskGateBlocked'],
-              equals: true,
-            },
-          },
-          {
-            nodeExecutions: {
-              some: {
-                nodeType: 'risk-gate',
-                outputSnapshot: {
-                  path: ['riskGateBlocked'],
-                  equals: true,
-                },
-              },
-            },
-          },
-        ],
-      });
-    }
-    if (query.hasRiskGateNode !== undefined) {
-      conditions.push(
-        query.hasRiskGateNode
-          ? {
-              nodeExecutions: {
-                some: {
-                  nodeType: 'risk-gate',
-                },
-              },
-            }
-          : {
-              nodeExecutions: {
-                none: {
-                  nodeType: 'risk-gate',
-                },
-              },
-            },
-      );
-    }
-    if (query.hasRiskSummary !== undefined) {
-      const riskSummaryPath = ['riskGate', 'summarySchemaVersion'];
-      conditions.push(
-        query.hasRiskSummary
-          ? {
-              NOT: {
-                outputSnapshot: {
-                  path: riskSummaryPath,
-                  equals: Prisma.AnyNull,
-                },
-              },
-            }
-          : {
-              outputSnapshot: {
-                path: riskSummaryPath,
-                equals: Prisma.AnyNull,
-              },
-            },
-      );
-    }
-
-    const versionCode = query.versionCode?.trim();
-    if (versionCode) {
-      conditions.push({
-        workflowVersion: {
-          versionCode: { contains: versionCode, mode: 'insensitive' },
-        },
-      });
-    }
-
-    const keyword = query.keyword?.trim();
-    if (keyword) {
-      conditions.push({
-        OR: [
-          { id: { contains: keyword } },
-          {
-            workflowVersion: {
-              OR: [
-                { versionCode: { contains: keyword, mode: 'insensitive' } },
-                {
-                  workflowDefinition: {
-                    OR: [
-                      { name: { contains: keyword, mode: 'insensitive' } },
-                      { workflowId: { contains: keyword, mode: 'insensitive' } },
-                    ],
-                  },
-                },
-              ],
-            },
-          },
-        ],
-      });
-    }
-
-    if (query.startedAtFrom || query.startedAtTo) {
-      conditions.push({
-        startedAt: {
-          ...(query.startedAtFrom ? { gte: query.startedAtFrom } : {}),
-          ...(query.startedAtTo ? { lte: query.startedAtTo } : {}),
-        },
-      });
-    }
-
-    if (conditions.length === 1) {
-      return conditions[0];
-    }
-
-    return {
-      AND: conditions,
-    };
-  }
-
-  private buildExecutionReadableWhere(ownerUserId: string): Prisma.WorkflowExecutionWhereInput {
-    return {
-      OR: [
-        {
-          triggerUserId: ownerUserId,
-        },
-        {
-          workflowVersion: {
-            workflowDefinition: {
-              ownerUserId,
-            },
-          },
-        },
-      ],
-    };
   }
 
   private async throwIfExecutionCanceled(executionId: string): Promise<void> {
@@ -1609,82 +1088,6 @@ export class WorkflowExecutionService {
     }
   }
 
-  private classifyFailure(error: unknown): {
-    message: string;
-    failureCategory: WorkflowFailureCategory;
-    failureCode: WorkflowFailureCode;
-  } {
-    if (error instanceof WorkflowExecutionHandledError) {
-      return {
-        message: error.message,
-        failureCategory: error.failureCategory,
-        failureCode: error.failureCode,
-      };
-    }
-
-    if (error instanceof WorkflowTimeoutError) {
-      return {
-        message: error.message,
-        failureCategory: 'TIMEOUT',
-        failureCode: 'NODE_TIMEOUT',
-      };
-    }
-
-    if (error instanceof Error) {
-      return {
-        message: error.message,
-        failureCategory: 'EXECUTOR',
-        failureCode: 'NODE_EXECUTOR_ERROR',
-      };
-    }
-
-    return {
-      message: '执行失败',
-      failureCategory: 'INTERNAL',
-      failureCode: 'EXECUTION_INTERNAL_ERROR',
-    };
-  }
-
-  private isUniqueConstraintError(error: unknown): boolean {
-    if (!error || typeof error !== 'object') {
-      return false;
-    }
-    const code = (error as { code?: unknown }).code;
-    return code === 'P2002';
-  }
-
-  private async recordRuntimeEvent(payload: {
-    workflowExecutionId: string;
-    nodeExecutionId?: string;
-    eventType: string;
-    level: 'INFO' | 'WARN' | 'ERROR';
-    message: string;
-    detail?: Record<string, unknown> | null;
-  }): Promise<void> {
-    try {
-      await this.prisma.workflowRuntimeEvent.create({
-        data: {
-          workflowExecutionId: payload.workflowExecutionId,
-          nodeExecutionId: payload.nodeExecutionId,
-          eventType: payload.eventType,
-          level: payload.level,
-          message: payload.message,
-          detail: payload.detail ? this.toJsonValue(payload.detail) : undefined,
-        },
-      });
-    } catch {
-      // Runtime event is diagnostic metadata and must not block execution.
-    }
-  }
-
-  private readMeta(outputSnapshot: Record<string, unknown>): Record<string, unknown> {
-    const meta = outputSnapshot._meta;
-    if (!meta || typeof meta !== 'object' || Array.isArray(meta)) {
-      return {};
-    }
-    return meta as Record<string, unknown>;
-  }
-
   private extractRiskGateSummary(
     outputSnapshot?: Record<string, unknown>,
   ): Record<string, unknown> | null {
@@ -1692,71 +1095,32 @@ export class WorkflowExecutionService {
       return null;
     }
 
-    const meta = this.readMeta(outputSnapshot);
-    const riskGateMeta = this.readObject(meta.riskGate);
-    const blockers = this.readStringArray(outputSnapshot.blockers);
-    const blockerCount = this.readNumber(outputSnapshot.blockerCount);
+    const meta = ExecutionUtils.readMeta(outputSnapshot);
+    const riskGateMeta = ExecutionUtils.readObject(meta.riskGate);
+    const blockers = ExecutionUtils.readStringArray(outputSnapshot.blockers);
+    const blockerCount = ExecutionUtils.readNumber(outputSnapshot.blockerCount);
 
     return {
-      summarySchemaVersion: this.readString(outputSnapshot.summarySchemaVersion) ?? '1.0',
-      riskLevel: this.readString(outputSnapshot.riskLevel),
-      riskGatePassed: this.readBoolean(outputSnapshot.riskGatePassed),
-      riskGateBlocked: this.readBoolean(outputSnapshot.riskGateBlocked),
-      blockReason: this.readString(outputSnapshot.blockReason),
-      degradeAction: this.readString(outputSnapshot.degradeAction),
+      summarySchemaVersion: ExecutionUtils.readString(outputSnapshot.summarySchemaVersion) ?? '1.0',
+      riskLevel: ExecutionUtils.readString(outputSnapshot.riskLevel),
+      riskGatePassed: ExecutionUtils.readBoolean(outputSnapshot.riskGatePassed),
+      riskGateBlocked: ExecutionUtils.readBoolean(outputSnapshot.riskGateBlocked),
+      blockReason: ExecutionUtils.readString(outputSnapshot.blockReason),
+      degradeAction: ExecutionUtils.readString(outputSnapshot.degradeAction),
       blockers,
       blockerCount: blockerCount ?? blockers.length,
       riskProfileCode:
-        this.readString(outputSnapshot.riskProfileCode) ??
-        this.readString(riskGateMeta?.riskProfileCode),
+        ExecutionUtils.readString(outputSnapshot.riskProfileCode) ??
+        ExecutionUtils.readString(riskGateMeta?.riskProfileCode),
       threshold:
-        this.readString(outputSnapshot.threshold) ?? this.readString(riskGateMeta?.threshold),
+        ExecutionUtils.readString(outputSnapshot.threshold) ?? ExecutionUtils.readString(riskGateMeta?.threshold),
       blockedByRiskLevel:
-        this.readBoolean(outputSnapshot.blockedByRiskLevel) ??
-        this.readBoolean(riskGateMeta?.blockedByRiskLevel),
+        ExecutionUtils.readBoolean(outputSnapshot.blockedByRiskLevel) ??
+        ExecutionUtils.readBoolean(riskGateMeta?.blockedByRiskLevel),
       hardBlock:
-        this.readBoolean(outputSnapshot.hardBlock) ?? this.readBoolean(riskGateMeta?.hardBlock),
-      riskEvaluatedAt: this.readString(outputSnapshot.riskEvaluatedAt),
+        ExecutionUtils.readBoolean(outputSnapshot.hardBlock) ?? ExecutionUtils.readBoolean(riskGateMeta?.hardBlock),
+      riskEvaluatedAt: ExecutionUtils.readString(outputSnapshot.riskEvaluatedAt),
     };
-  }
-
-  private readObject(value: unknown): Record<string, unknown> | null {
-    if (!value || typeof value !== 'object' || Array.isArray(value)) {
-      return null;
-    }
-    return value as Record<string, unknown>;
-  }
-
-  private readString(value: unknown): string | null {
-    if (typeof value !== 'string') {
-      return null;
-    }
-    const normalized = value.trim();
-    return normalized ? normalized : null;
-  }
-
-  private readBoolean(value: unknown): boolean | null {
-    if (typeof value === 'boolean') {
-      return value;
-    }
-    return null;
-  }
-
-  private readNumber(value: unknown): number | null {
-    if (typeof value === 'number' && Number.isFinite(value)) {
-      return value;
-    }
-    return null;
-  }
-
-  private readStringArray(value: unknown): string[] {
-    if (!Array.isArray(value)) {
-      return [];
-    }
-
-    return value
-      .map((item) => this.readString(item))
-      .filter((item): item is string => Boolean(item));
   }
 
   private async buildBindingSnapshot(
@@ -1783,89 +1147,89 @@ export class WorkflowExecutionService {
     });
 
     const bindingTargetsByType = this.groupBindingTargetsByType(userConfigBindings);
-    const agentBindings = this.uniqueStringList([
-      ...this.uniqueStringList(dsl.agentBindings),
+    const agentBindings = ExecutionUtils.uniqueStringList([
+      ...ExecutionUtils.uniqueStringList(dsl.agentBindings),
       ...bindingTargetsByType.AGENT_PROFILE,
     ]);
-    const paramSetBindings = this.uniqueStringList([
-      ...this.uniqueStringList(dsl.paramSetBindings),
+    const paramSetBindings = ExecutionUtils.uniqueStringList([
+      ...ExecutionUtils.uniqueStringList(dsl.paramSetBindings),
       ...bindingTargetsByType.PARAMETER_SET,
     ]);
-    const rulePackBindings = this.uniqueStringList(bindingTargetsByType.DECISION_RULE_PACK);
-    const dataConnectorBindings = this.uniqueStringList(dsl.dataConnectorBindings);
+    const rulePackBindings = ExecutionUtils.uniqueStringList(bindingTargetsByType.DECISION_RULE_PACK);
+    const dataConnectorBindings = ExecutionUtils.uniqueStringList(dsl.dataConnectorBindings);
 
     const [agents, parameterSets, rulePacks, connectors] = await Promise.all([
       agentBindings.length > 0
         ? this.prisma.agentProfile.findMany({
-            where: {
-              isActive: true,
-              AND: [
-                { OR: [{ agentCode: { in: agentBindings } }, { id: { in: agentBindings } }] },
-                { OR: [{ ownerUserId }, { templateSource: 'PUBLIC' }] },
-              ],
-            },
-            select: {
-              id: true,
-              agentCode: true,
-              version: true,
-              roleType: true,
-              templateSource: true,
-            },
-          })
+          where: {
+            isActive: true,
+            AND: [
+              { OR: [{ agentCode: { in: agentBindings } }, { id: { in: agentBindings } }] },
+              { OR: [{ ownerUserId }, { templateSource: 'PUBLIC' }] },
+            ],
+          },
+          select: {
+            id: true,
+            agentCode: true,
+            version: true,
+            roleType: true,
+            templateSource: true,
+          },
+        })
         : Promise.resolve([]),
       paramSetBindings.length > 0
         ? this.prisma.parameterSet.findMany({
-            where: {
-              isActive: true,
-              AND: [
-                { OR: [{ setCode: { in: paramSetBindings } }, { id: { in: paramSetBindings } }] },
-                { OR: [{ ownerUserId }, { templateSource: 'PUBLIC' }] },
-              ],
-            },
-            select: {
-              id: true,
-              setCode: true,
-              version: true,
-              templateSource: true,
-              updatedAt: true,
-            },
-          })
+          where: {
+            isActive: true,
+            AND: [
+              { OR: [{ setCode: { in: paramSetBindings } }, { id: { in: paramSetBindings } }] },
+              { OR: [{ ownerUserId }, { templateSource: 'PUBLIC' }] },
+            ],
+          },
+          select: {
+            id: true,
+            setCode: true,
+            version: true,
+            templateSource: true,
+            updatedAt: true,
+          },
+        })
         : Promise.resolve([]),
       rulePackBindings.length > 0
         ? this.prisma.decisionRulePack.findMany({
-            where: {
-              isActive: true,
-              AND: [
-                {
-                  OR: [{ rulePackCode: { in: rulePackBindings } }, { id: { in: rulePackBindings } }],
-                },
-                { OR: [{ ownerUserId }, { templateSource: 'PUBLIC' }] },
-              ],
-            },
-            select: {
-              id: true,
-              rulePackCode: true,
-              version: true,
-              templateSource: true,
-            },
-          })
+          where: {
+            isActive: true,
+            AND: [
+              {
+                OR: [{ rulePackCode: { in: rulePackBindings } }, { id: { in: rulePackBindings } }],
+              },
+              { OR: [{ ownerUserId }, { templateSource: 'PUBLIC' }] },
+            ],
+          },
+          select: {
+            id: true,
+            rulePackCode: true,
+            version: true,
+            templateSource: true,
+          },
+        })
         : Promise.resolve([]),
       dataConnectorBindings.length > 0
         ? this.prisma.dataConnector.findMany({
-            where: {
-              OR: [
-                { connectorCode: { in: dataConnectorBindings } },
-                { id: { in: dataConnectorBindings } },
-              ],
-              isActive: true,
-            },
-            select: {
-              id: true,
-              connectorCode: true,
-              version: true,
-              connectorType: true,
-            },
-          })
+          where: {
+            OR: [
+              { connectorCode: { in: dataConnectorBindings } },
+              { id: { in: dataConnectorBindings } },
+            ],
+            isActive: true,
+          },
+          select: {
+            id: true,
+            connectorCode: true,
+            version: true,
+            connectorType: true,
+          },
+        })
         : Promise.resolve([]),
     ]);
 
@@ -1883,22 +1247,22 @@ export class WorkflowExecutionService {
     );
     const parameterItems = parameterSets.length > 0
       ? await this.prisma.parameterItem.findMany({
-          where: {
-            parameterSetId: { in: parameterSets.map((item) => item.id) },
-            isActive: true,
-          },
-          select: {
-            parameterSetId: true,
-            paramCode: true,
-            scopeLevel: true,
-            scopeValue: true,
-            value: true,
-            defaultValue: true,
-            effectiveFrom: true,
-            effectiveTo: true,
-            updatedAt: true,
-          },
-        })
+        where: {
+          parameterSetId: { in: parameterSets.map((item) => item.id) },
+          isActive: true,
+        },
+        select: {
+          parameterSetId: true,
+          paramCode: true,
+          scopeLevel: true,
+          scopeValue: true,
+          value: true,
+          defaultValue: true,
+          effectiveFrom: true,
+          effectiveTo: true,
+          updatedAt: true,
+        },
+      })
       : [];
     const scopeContext = this.extractParameterScopeContext(runtimeParamSnapshot);
     const resolvedParameters = this.resolveBoundParameterValues(
@@ -1938,8 +1302,8 @@ export class WorkflowExecutionService {
     bindingSnapshot: Record<string, unknown>,
   ): Record<string, unknown> {
     const base = paramSnapshot ? { ...paramSnapshot } : {};
-    const resolvedParameters = this.readObject(bindingSnapshot.resolvedParameters) ?? {};
-    const baseParams = this.readObject(base.params) ?? {};
+    const resolvedParameters = ExecutionUtils.readObject(bindingSnapshot.resolvedParameters) ?? {};
+    const baseParams = ExecutionUtils.readObject(base.params) ?? {};
     base.params = {
       ...baseParams,
       ...resolvedParameters,
@@ -1978,22 +1342,6 @@ export class WorkflowExecutionService {
     };
   }
 
-  private uniqueStringList(value: unknown): string[] {
-    const source = Array.isArray(value) ? value : [];
-    const set = new Set<string>();
-    for (const item of source) {
-      if (typeof item !== 'string') {
-        continue;
-      }
-      const normalized = item.trim();
-      if (!normalized) {
-        continue;
-      }
-      set.add(normalized);
-    }
-    return [...set];
-  }
-
   private groupBindingTargetsByType(
     bindings: Array<{
       bindingType: string;
@@ -2019,9 +1367,9 @@ export class WorkflowExecutionService {
     }
 
     return {
-      AGENT_PROFILE: this.uniqueStringList(grouped.AGENT_PROFILE),
-      PARAMETER_SET: this.uniqueStringList(grouped.PARAMETER_SET),
-      DECISION_RULE_PACK: this.uniqueStringList(grouped.DECISION_RULE_PACK),
+      AGENT_PROFILE: ExecutionUtils.uniqueStringList(grouped.AGENT_PROFILE),
+      PARAMETER_SET: ExecutionUtils.uniqueStringList(grouped.PARAMETER_SET),
+      DECISION_RULE_PACK: ExecutionUtils.uniqueStringList(grouped.DECISION_RULE_PACK),
     };
   }
 
@@ -2035,13 +1383,13 @@ export class WorkflowExecutionService {
     sessionOverrides: Record<string, unknown>;
   } {
     const snapshot = runtimeParamSnapshot ?? {};
-    const context = this.readObject(snapshot.context) ?? {};
-    const sessionOverrides = this.readObject(snapshot.sessionOverrides) ?? {};
+    const context = ExecutionUtils.readObject(snapshot.context) ?? {};
+    const sessionOverrides = ExecutionUtils.readObject(snapshot.sessionOverrides) ?? {};
     return {
-      commodity: this.readString(snapshot.commodity) ?? this.readString(context.commodity) ?? undefined,
-      region: this.readString(snapshot.region) ?? this.readString(context.region) ?? undefined,
-      route: this.readString(snapshot.route) ?? this.readString(context.route) ?? undefined,
-      strategy: this.readString(snapshot.strategy) ?? this.readString(context.strategy) ?? undefined,
+      commodity: ExecutionUtils.readString(snapshot.commodity) ?? ExecutionUtils.readString(context.commodity) ?? undefined,
+      region: ExecutionUtils.readString(snapshot.region) ?? ExecutionUtils.readString(context.region) ?? undefined,
+      route: ExecutionUtils.readString(snapshot.route) ?? ExecutionUtils.readString(context.route) ?? undefined,
+      strategy: ExecutionUtils.readString(snapshot.strategy) ?? ExecutionUtils.readString(context.strategy) ?? undefined,
       sessionOverrides,
     };
   }
@@ -2162,19 +1510,6 @@ export class WorkflowExecutionService {
     }
   }
 
-  private toJsonValue(value: unknown): Prisma.InputJsonValue {
-    return JSON.parse(JSON.stringify(value)) as Prisma.InputJsonValue;
-  }
-
-  private toRecord(
-    value: Prisma.JsonValue | null | undefined,
-  ): Record<string, unknown> | undefined {
-    if (!value || typeof value !== 'object' || Array.isArray(value)) {
-      return undefined;
-    }
-    return JSON.parse(JSON.stringify(value)) as Record<string, unknown>;
-  }
-
   private sortNodesByEdges(dsl: WorkflowDsl): WorkflowNode[] {
     const indexByNodeId = new Map<string, number>(dsl.nodes.map((node, index) => [node.id, index]));
     const nodeById = new Map<string, WorkflowNode>(dsl.nodes.map((node) => [node.id, node]));
@@ -2254,7 +1589,7 @@ export class WorkflowExecutionService {
         continue;
       }
       if (edge.edgeType === 'error-edge') {
-        const meta = this.readMeta(sourceOutput);
+        const meta = ExecutionUtils.readMeta(sourceOutput);
         if (meta.onErrorRouting === 'ROUTE_TO_ERROR') {
           activeEdges.push(edge);
         }
@@ -2342,7 +1677,7 @@ export class WorkflowExecutionService {
       throw new BadRequestException(`subflow-call 节点 ${params.node.name} 执行返回空结果`);
     }
 
-    const childOutput = this.toRecord(childExecution.outputSnapshot) ?? {};
+    const childOutput = ExecutionUtils.toRecord(childExecution.outputSnapshot) ?? {};
     const prefixOutput =
       outputKeyPrefix.length > 0 ? { [outputKeyPrefix]: childOutput } : {};
 
@@ -2444,8 +1779,8 @@ export class WorkflowExecutionService {
       if (!field || !operator) {
         return false;
       }
-      const actual = this.readValueByPath(sourceOutput, field);
-      return this.compareConditionValues(actual, expected, operator);
+      const actual = ExecutionUtils.readValueByPath(sourceOutput, field);
+      return ExecutionUtils.compareConditionValues(actual, expected, operator);
     }
     if (typeof condition !== 'string') {
       return false;
@@ -2462,151 +1797,31 @@ export class WorkflowExecutionService {
       return false;
     }
 
-      const resolvedExpression = expression.replace(/\{\{\s*([^}]+?)\s*\}\}/g, (_, rawRef: string) => {
-        const ref = rawRef.trim();
-        let value: unknown;
-        if (ref.startsWith('params.')) {
-          value = this.readValueByPath(paramSnapshot ?? {}, ref.slice('params.'.length));
-        } else {
-          const normalizedPath =
-            sourceNodeId && ref.startsWith(`${sourceNodeId}.`)
-              ? ref.slice(sourceNodeId.length + 1)
-              : ref;
-          value = this.readValueByPath(sourceOutput, normalizedPath);
-        }
-        return JSON.stringify(value);
-      });
+    const resolvedExpression = expression.replace(/\{\{\s*([^}]+?)\s*\}\}/g, (_, rawRef: string) => {
+      const ref = rawRef.trim();
+      let value: unknown;
+      if (ref.startsWith('params.')) {
+        value = ExecutionUtils.readValueByPath(paramSnapshot ?? {}, ref.slice('params.'.length));
+      } else {
+        const normalizedPath =
+          sourceNodeId && ref.startsWith(`${sourceNodeId}.`)
+            ? ref.slice(sourceNodeId.length + 1)
+            : ref;
+        value = ExecutionUtils.readValueByPath(sourceOutput, normalizedPath);
+      }
+      return JSON.stringify(value);
+    });
 
     const comparisonMatch = resolvedExpression.match(/^\s*(.+?)\s*(==|!=|>=|<=|>|<)\s*(.+)\s*$/);
     if (!comparisonMatch) {
-      const single = this.parseConditionLiteral(resolvedExpression);
+      const single = ExecutionUtils.parseConditionLiteral(resolvedExpression);
       return Boolean(single);
     }
 
-    const left = this.parseConditionLiteral(comparisonMatch[1]);
+    const left = ExecutionUtils.parseConditionLiteral(comparisonMatch[1]);
     const operator = comparisonMatch[2];
-    const right = this.parseConditionLiteral(comparisonMatch[3]);
-    return this.compareConditionValues(left, right, operator);
-  }
-
-  private parseConditionLiteral(raw: string): unknown {
-    const value = raw.trim();
-    if (!value) {
-      return '';
-    }
-    if (value === 'true') {
-      return true;
-    }
-    if (value === 'false') {
-      return false;
-    }
-    if (value === 'null') {
-      return null;
-    }
-    if (
-      (value.startsWith('"') && value.endsWith('"')) ||
-      (value.startsWith("'") && value.endsWith("'"))
-    ) {
-      return value.slice(1, -1);
-    }
-    const parsedNumber = Number(value);
-    if (Number.isFinite(parsedNumber)) {
-      return parsedNumber;
-    }
-    try {
-      return JSON.parse(value);
-    } catch {
-      return value;
-    }
-  }
-
-  private compareConditionValues(actual: unknown, expected: unknown, operator: string): boolean {
-    const normalizeOperator = operator.toLowerCase();
-    if (normalizeOperator === '==') {
-      return actual === expected;
-    }
-    if (normalizeOperator === '!=') {
-      return actual !== expected;
-    }
-    if (normalizeOperator === 'eq') {
-      return actual === expected;
-    }
-    if (normalizeOperator === 'neq') {
-      return actual !== expected;
-    }
-    if (normalizeOperator === 'in') {
-      return Array.isArray(expected) && expected.includes(actual);
-    }
-    if (normalizeOperator === 'not_in') {
-      return Array.isArray(expected) && !expected.includes(actual);
-    }
-    if (normalizeOperator === 'exists') {
-      return actual !== undefined && actual !== null;
-    }
-    if (normalizeOperator === 'not_exists') {
-      return actual === undefined || actual === null;
-    }
-
-    const actualNumber = this.toFiniteNumber(actual);
-    const expectedNumber = this.toFiniteNumber(expected);
-    if (actualNumber === null || expectedNumber === null) {
-      return false;
-    }
-
-    if (normalizeOperator === '>' || normalizeOperator === 'gt') {
-      return actualNumber > expectedNumber;
-    }
-    if (normalizeOperator === '>=' || normalizeOperator === 'gte') {
-      return actualNumber >= expectedNumber;
-    }
-    if (normalizeOperator === '<' || normalizeOperator === 'lt') {
-      return actualNumber < expectedNumber;
-    }
-    if (normalizeOperator === '<=' || normalizeOperator === 'lte') {
-      return actualNumber <= expectedNumber;
-    }
-    return false;
-  }
-
-  private toFiniteNumber(value: unknown): number | null {
-    if (typeof value === 'number' && Number.isFinite(value)) {
-      return value;
-    }
-    if (typeof value === 'string' && value.trim()) {
-      const parsed = Number(value);
-      return Number.isFinite(parsed) ? parsed : null;
-    }
-    return null;
-  }
-
-  private readValueByPath(source: Record<string, unknown>, path: string): unknown {
-    if (!path.trim()) {
-      return undefined;
-    }
-    const parts = path
-      .replace(/\[(\d+)\]/g, '.$1')
-      .split('.')
-      .map((item) => item.trim())
-      .filter(Boolean);
-    let current: unknown = source;
-    for (const part of parts) {
-      if (current === null || current === undefined) {
-        return undefined;
-      }
-      if (Array.isArray(current)) {
-        const index = Number(part);
-        if (!Number.isInteger(index) || index < 0 || index >= current.length) {
-          return undefined;
-        }
-        current = current[index];
-        continue;
-      }
-      if (typeof current !== 'object') {
-        return undefined;
-      }
-      current = (current as Record<string, unknown>)[part];
-    }
-    return current;
+    const right = ExecutionUtils.parseConditionLiteral(comparisonMatch[3]);
+    return ExecutionUtils.compareConditionValues(left, right, operator);
   }
 
   private resolveRuntimePolicy(
@@ -2637,9 +1852,9 @@ export class WorkflowExecutionService {
       : onErrorResolved;
 
     return {
-      timeoutMs: this.toInteger(timeoutMsSource, defaults.timeoutMs, 1_000, 120_000),
-      retryCount: this.toInteger(retryCountSource, defaults.retryCount, 0, 5),
-      retryBackoffMs: this.toInteger(retryBackoffMsSource, defaults.retryBackoffMs, 0, 60_000),
+      timeoutMs: ExecutionUtils.toInteger(timeoutMsSource, defaults.timeoutMs, 1_000, 120_000),
+      retryCount: ExecutionUtils.toInteger(retryCountSource, defaults.retryCount, 0, 5),
+      retryBackoffMs: ExecutionUtils.toInteger(retryBackoffMsSource, defaults.retryBackoffMs, 0, 60_000),
       onError,
     };
   }
@@ -2707,47 +1922,5 @@ export class WorkflowExecutionService {
         }
       }
     }
-  }
-
-  private toInteger(value: unknown, fallback: number, min: number, max: number): number {
-    let parsed = fallback;
-    if (typeof value === 'number' && Number.isFinite(value)) {
-      parsed = Math.trunc(value);
-    } else if (typeof value === 'string' && value.trim() !== '') {
-      const numeric = Number(value);
-      if (Number.isFinite(numeric)) {
-        parsed = Math.trunc(numeric);
-      }
-    }
-    return Math.max(min, Math.min(max, parsed));
-  }
-
-  private async executeWithTimeout<T>(
-    task: () => Promise<T>,
-    timeoutMs: number,
-    timeoutMessage: string,
-  ): Promise<T> {
-    return new Promise((resolve, reject) => {
-      const timer = setTimeout(() => {
-        reject(new WorkflowTimeoutError(timeoutMessage));
-      }, timeoutMs);
-
-      task()
-        .then((result) => {
-          clearTimeout(timer);
-          resolve(result);
-        })
-        .catch((error: unknown) => {
-          clearTimeout(timer);
-          reject(error);
-        });
-    });
-  }
-
-  private async sleep(ms: number): Promise<void> {
-    if (ms <= 0) {
-      return;
-    }
-    await new Promise((resolve) => setTimeout(resolve, ms));
   }
 }

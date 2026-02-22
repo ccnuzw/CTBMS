@@ -1,7 +1,12 @@
 import { Module } from '@nestjs/common';
 import { MarketIntelController } from './market-intel.controller';
-import { MarketIntelService } from './market-intel.service';
+import { IntelCrudService } from './intel-crud.service';
+import { IntelAnalysisService } from './intel-analysis.service';
+import { IntelSearchService } from './intel-search.service';
+import { IntelScoringService } from './intel-scoring.service';
 import { PriceDataService } from './price-data.service';
+import { PriceAggregationService } from './price-aggregation.service';
+import { PriceAlertService } from './price-alert.service';
 
 import { IntelAttachmentService } from './intel-attachment.service';
 
@@ -14,8 +19,13 @@ import { KnowledgeModule } from '../knowledge/knowledge.module';
   imports: [KnowledgeModule],
   controllers: [MarketIntelController],
   providers: [
-    MarketIntelService,
+    IntelCrudService,
+    IntelAnalysisService,
+    IntelSearchService,
+    IntelScoringService,
     PriceDataService,
+    PriceAggregationService,
+    PriceAlertService,
 
     IntelAttachmentService,
 
@@ -24,8 +34,13 @@ import { KnowledgeModule } from '../knowledge/knowledge.module';
     PdfToMarkdownService,
   ],
   exports: [
-    MarketIntelService,
+    IntelCrudService,
+    IntelAnalysisService,
+    IntelSearchService,
+    IntelScoringService,
     PriceDataService,
+    PriceAggregationService,
+    PriceAlertService,
 
     IntelAttachmentService,
 
