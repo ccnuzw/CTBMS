@@ -39,7 +39,7 @@ const WorkflowCanvasInner: React.FC<WorkflowCanvasProps> = (props) => {
 
   return (
     <div style={{ display: 'flex', width: '100%', height: '100%' }}>
-      {!props.isReadOnly && <NodePalette viewLevel={state.currentViewLevel} />}
+      {!props.isReadOnly && <NodePalette />}
 
       <div
         ref={refs.canvasRef}
@@ -63,11 +63,7 @@ const WorkflowCanvasInner: React.FC<WorkflowCanvasProps> = (props) => {
             onSelectionModeChange={setters.setSelectionMode}
             workflowMode={state.workflowMode}
             onWorkflowModeChange={setters.setWorkflowMode}
-            viewLevel={state.currentViewLevel}
-            onViewLevelChange={(level) => {
-              setters.setLocalViewLevel(level);
-              props.onViewLevelChange?.(level);
-            }}
+
             onUndo={actions.undo}
             onRedo={actions.redo}
             canUndo={computed.canUndo}
@@ -227,7 +223,7 @@ const WorkflowCanvasInner: React.FC<WorkflowCanvasProps> = (props) => {
           selectedEdge={computed.selectedEdge}
           onUpdateNode={actions.updateNodeData}
           onUpdateEdge={actions.updateEdgeData}
-          viewLevel={state.currentViewLevel}
+
           paramSetBindings={props.initialDsl?.paramSetBindings ?? []}
           currentDsl={computed.currentDslSnapshot}
           onFocusNode={actions.focusNode}

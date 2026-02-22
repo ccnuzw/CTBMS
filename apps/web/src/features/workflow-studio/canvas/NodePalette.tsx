@@ -12,9 +12,7 @@ import { removeNodeTemplate, useNodeTemplates } from './nodeTemplateStore';
 const { Text } = Typography;
 
 interface NodePaletteProps {
-    /** 画布容器 ref，用于计算拖拽落点 */
     style?: React.CSSProperties;
-    viewLevel?: 'business' | 'enhanced' | 'expert';
 }
 
 /**
@@ -41,7 +39,7 @@ const EXPERT_ONLY_NODE_TYPES = new Set([
     'group',
 ]);
 
-export const NodePalette: React.FC<NodePaletteProps> = ({ style, viewLevel = 'business' }) => {
+export const NodePalette: React.FC<NodePaletteProps> = ({ style }) => {
     const { token } = theme.useToken();
     const [search, setSearch] = useState('');
     const categories = useMemo(() => getNodesByCategory(), []);
@@ -51,14 +49,9 @@ export const NodePalette: React.FC<NodePaletteProps> = ({ style, viewLevel = 'bu
         .map(([category, configs]) => {
             const filtered = configs.filter(
                 (c) =>
-                    (viewLevel === 'expert'
-                        || (viewLevel === 'enhanced' && !EXPERT_ONLY_NODE_TYPES.has(c.type))
-                        || (viewLevel === 'business' && BUSINESS_NODE_TYPES.has(c.type)))
-                    && (
-                        !search ||
-                        c.label.toLowerCase().includes(search.toLowerCase()) ||
-                        c.type.toLowerCase().includes(search.toLowerCase())
-                    ),
+                    !search ||
+                    c.label.toLowerCase().includes(search.toLowerCase()) ||
+                    c.type.toLowerCase().includes(search.toLowerCase()),
             );
             return [category as NodeCategory, filtered] as [NodeCategory, NodeTypeConfig[]];
         })
@@ -138,13 +131,8 @@ export const NodePalette: React.FC<NodePaletteProps> = ({ style, viewLevel = 'bu
                                 >
                                     <Icon />
                                 </div>
-                                <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
+                                <div style={{ flex: 1, minWidth: 0 }}>
                                     <Text style={{ fontSize: 12 }} ellipsis>{config.label}</Text>
-                                    {viewLevel !== 'business' ? (
-                                        <Text type="secondary" style={{ fontSize: 10, lineHeight: '1.2' }} ellipsis>
-                                            {config.type}
-                                        </Text>
-                                    ) : null}
                                 </div>
                             </div>
                         </Tooltip>
@@ -168,18 +156,14 @@ export const NodePalette: React.FC<NodePaletteProps> = ({ style, viewLevel = 'bu
         >
             <div style={{ padding: '12px 12px 8px' }}>
                 <Text strong style={{ fontSize: 14 }}>
-                    节点库
+                    步骤工具箱
                 </Text>
                 <Text type="secondary" style={{ display: 'block', marginTop: 2, fontSize: 11 }}>
-                    {viewLevel === 'business'
-                        ? '业务视图：仅展示高频节点'
-                        : viewLevel === 'enhanced'
-                            ? '增强视图：展示常用与进阶节点'
-                            : '专家视图：展示全部节点'}
+                    拖拽步骤到画布中构建工作流
                 </Text>
                 <Input
                     prefix={<SearchOutlined />}
-                    placeholder="搜索节点..."
+                    placeholder="搜索步骤..."
                     size="small"
                     allowClear
                     value={search}

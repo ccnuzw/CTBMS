@@ -27,7 +27,7 @@ export const ExecutionSummaryCards: React.FC<ExecutionSummaryCardsProps> = ({
             <Col span={6}>
                 <Card bordered={false}>
                     <Statistic
-                        title="总执行次数"
+                        title="累计运行"
                         value={total}
                         prefix={<ClockCircleOutlined />}
                     />
@@ -47,7 +47,7 @@ export const ExecutionSummaryCards: React.FC<ExecutionSummaryCardsProps> = ({
             <Col span={6}>
                 <Card bordered={false}>
                     <Statistic
-                        title="风控阻断"
+                        title="异常拦截"
                         value={blockedCount ?? '-'}
                         valueStyle={{ color: token.colorError }}
                         prefix={<StopOutlined />}
@@ -57,7 +57,7 @@ export const ExecutionSummaryCards: React.FC<ExecutionSummaryCardsProps> = ({
             <Col span={6}>
                 <Card bordered={false}>
                     <Statistic
-                        title="平均耗时"
+                        title="平均用时"
                         value={avgDuration ? `${avgDuration}ms` : '-'}
                         prefix={<ExclamationCircleOutlined />}
                     />

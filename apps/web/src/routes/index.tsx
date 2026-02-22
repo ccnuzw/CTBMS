@@ -162,7 +162,7 @@ export const router = createBrowserRouter([
       },
       {
         path: 'workflow/decisions',
-        element: <DecisionReportHubPage />,
+        element: <Navigate to="/workflow/executions" replace />,
       },
       {
         path: 'workflow/exports',
@@ -170,7 +170,7 @@ export const router = createBrowserRouter([
       },
       {
         path: 'workflow/experiments',
-        element: <ExperimentAnalyticsHubPage />,
+        element: <Navigate to="/workflow/advanced?tab=analytics" replace />,
       },
       {
         path: 'workflow/analytics',

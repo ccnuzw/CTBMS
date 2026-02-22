@@ -72,37 +72,27 @@ export const MainLayout: React.FC = () => {
       {
         key: 'workflow-center',
         icon: <NodeIndexOutlined />,
-        label: '策略与编排',
+        label: '智能体工作流',
         children: [
           {
             key: '/workflow/workbench',
-            icon: <RocketOutlined />,
-            label: '工作台',
+            icon: <AppstoreOutlined />,
+            label: '应用中心',
           },
           {
             key: '/workflow/definitions',
-            icon: <SettingOutlined />,
-            label: '流程设计',
+            icon: <ApartmentOutlined />,
+            label: '工作流编排',
           },
           {
             key: '/workflow/executions',
             icon: <ScheduleOutlined />,
-            label: '运行与回放',
-          },
-          {
-            key: '/workflow/decisions',
-            icon: <AlertOutlined />,
-            label: '决策与报告',
-          },
-          {
-            key: '/workflow/experiments',
-            icon: <ExperimentOutlined />,
-            label: '实验与分析',
+            label: '运行记录',
           },
           {
             key: '/workflow/advanced',
-            icon: <AppstoreOutlined />,
-            label: '高级配置',
+            icon: <SettingOutlined />,
+            label: '高级管理',
           },
         ],
       },
@@ -589,7 +579,7 @@ export const MainLayout: React.FC = () => {
             {!isMobile && (
               <Input
                 prefix={<SearchOutlined style={{ color: token.colorTextPlaceholder }} />}
-                placeholder="搜索节点、规则..."
+                placeholder="搜索功能、应用..."
                 style={{
                   width: 200,
                   borderRadius: 8,

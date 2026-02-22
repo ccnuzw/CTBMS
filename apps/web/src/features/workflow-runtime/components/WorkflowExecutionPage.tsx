@@ -47,9 +47,9 @@ export const WorkflowExecutionPage: React.FC = () => {
       <Space direction="vertical" style={{ width: '100%' }} size={16}>
         <div>
           <Title level={4} style={{ marginBottom: 0 }}>
-            流程运行中心
+            运行记录
           </Title>
-          <Text type="secondary">查看流程运行实例、节点执行日志和失败原因。</Text>
+          <Text type="secondary">查看每次运行的状态与结果，支持回溯详情。</Text>
         </div>
 
         <ExecutionSummaryCards total={executionPage?.total || 0} />
@@ -128,7 +128,7 @@ export const WorkflowExecutionPage: React.FC = () => {
       <ExecutionDetailDrawer viewModel={viewModel} />
 
       <Drawer
-        title="执行回放与评估"
+        title="运行详情与回溯"
         width={1400}
         open={Boolean(selectedReplayExecutionId)}
         onClose={() => setSelectedReplayExecutionId(null)}

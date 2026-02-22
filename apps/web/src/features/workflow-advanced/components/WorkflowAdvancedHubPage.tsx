@@ -16,32 +16,28 @@ import { FuturesSimPage } from '../../futures-sim';
 
 const { Title, Text } = Typography;
 
+// ── 合并后的 6 个 Tab ──────────────────────────────────────────
+// 1. agents      → 智能体管理（含 Agent 配置 + 指令模板）
+// 2. rules       → 规则与参数（含 规则配置 + 参数配置）
+// 3. connectors  → 数据连接（含 连接器配置 + 自动触发）
+// 4. templates   → 模板市场（含 模板市场 + 应用绑定）
+// 5. analytics   → 运行分析（含 运行分析 + 效果回溯 + 报告导出）
+// 6. futures     → 模拟沙盘
+
 type AdvancedTabKey =
   | 'agents'
-  | 'prompts'
   | 'rules'
-  | 'parameters'
   | 'connectors'
-  | 'triggers'
   | 'templates'
-  | 'bindings'
   | 'analytics'
-  | 'exports'
-  | 'replay'
   | 'futures';
 
 const ADVANCED_TAB_KEYS: AdvancedTabKey[] = [
   'agents',
-  'prompts',
   'rules',
-  'parameters',
   'connectors',
-  'triggers',
   'templates',
-  'bindings',
   'analytics',
-  'exports',
-  'replay',
   'futures',
 ];
 
@@ -51,27 +47,41 @@ const isAdvancedTabKey = (value: string | null): value is AdvancedTabKey =>
 const renderAdvancedTab = (key: AdvancedTabKey): React.ReactNode => {
   switch (key) {
     case 'agents':
-      return <AgentProfilePage />;
-    case 'prompts':
-      return <AgentPromptTemplatePage />;
+      return (
+        <Space direction="vertical" size={24} style={{ width: '100%' }}>
+          <AgentProfilePage />
+          <AgentPromptTemplatePage />
+        </Space>
+      );
     case 'rules':
-      return <DecisionRulePackPage />;
-    case 'parameters':
-      return <ParameterSetPage />;
+      return (
+        <Space direction="vertical" size={24} style={{ width: '100%' }}>
+          <DecisionRulePackPage />
+          <ParameterSetPage />
+        </Space>
+      );
     case 'connectors':
-      return <DataConnectorPage />;
-    case 'triggers':
-      return <TriggerGatewayPage />;
+      return (
+        <Space direction="vertical" size={24} style={{ width: '100%' }}>
+          <DataConnectorPage />
+          <TriggerGatewayPage />
+        </Space>
+      );
     case 'templates':
-      return <TemplateMarketPage />;
-    case 'bindings':
-      return <UserConfigBindingPage />;
+      return (
+        <Space direction="vertical" size={24} style={{ width: '100%' }}>
+          <TemplateMarketPage />
+          <UserConfigBindingPage />
+        </Space>
+      );
     case 'analytics':
-      return <ExecutionAnalyticsDashboard />;
-    case 'exports':
-      return <ReportExportPage />;
-    case 'replay':
-      return <ReplayEvaluationPage />;
+      return (
+        <Space direction="vertical" size={24} style={{ width: '100%' }}>
+          <ExecutionAnalyticsDashboard />
+          <ReplayEvaluationPage />
+          <ReportExportPage />
+        </Space>
+      );
     case 'futures':
       return <FuturesSimPage />;
     default:
@@ -86,18 +96,12 @@ export const WorkflowAdvancedHubPage: React.FC = () => {
 
   const tabItems = useMemo<TabsProps['items']>(
     () => [
-      { key: 'agents', label: 'Agent配置' },
-      { key: 'prompts', label: 'Prompt模板' },
-      { key: 'rules', label: '规则配置' },
-      { key: 'parameters', label: '参数配置' },
-      { key: 'connectors', label: '连接器配置' },
-      { key: 'triggers', label: '触发配置' },
+      { key: 'agents', label: '智能体管理' },
+      { key: 'rules', label: '规则与参数' },
+      { key: 'connectors', label: '数据连接' },
       { key: 'templates', label: '模板市场' },
-      { key: 'bindings', label: '配置绑定' },
-      { key: 'analytics', label: '执行分析' },
-      { key: 'exports', label: '报告导出' },
-      { key: 'replay', label: '回放评估' },
-      { key: 'futures', label: '期货模拟' },
+      { key: 'analytics', label: '运行分析' },
+      { key: 'futures', label: '模拟沙盘' },
     ],
     [],
   );
@@ -117,9 +121,9 @@ export const WorkflowAdvancedHubPage: React.FC = () => {
       <Card>
         <Space direction="vertical" size={4}>
           <Title level={4} style={{ margin: 0 }}>
-            高级配置中心
+            高级管理
           </Title>
-          <Text type="secondary">低频能力集中管理，减少侧栏层级与切换成本。</Text>
+          <Text type="secondary">管理员专区 · 管理智能体、规则、数据连接等底层能力</Text>
         </Space>
       </Card>
 

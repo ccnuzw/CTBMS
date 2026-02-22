@@ -65,34 +65,34 @@ export const AgentWorkbenchPage: React.FC = () => {
     {
       title: '状态',
       dataIndex: 'status',
-      width: 100,
+      width: 90,
       render: (status: string) => {
         const cfg = statusConfig[status] ?? { color: 'default', label: status, icon: null };
         return <Tag color={cfg.color} icon={cfg.icon}>{cfg.label}</Tag>;
       },
     },
     {
-      title: '实例 ID',
+      title: '任务编号',
       dataIndex: 'id',
-      width: 240,
+      width: 130,
       ellipsis: true,
       render: (id: string) => <Text style={{ fontSize: 12 }}>{id.slice(0, 12)}...</Text>,
     },
     {
-      title: '触发方式',
+      title: '启动方式',
       dataIndex: 'triggerType',
-      width: 100,
-      render: (v: string) => <Tag>{v}</Tag>,
+      width: 90,
+      render: (v: string) => <Tag style={{ fontSize: 11 }}>{v}</Tag>,
     },
     {
       title: '开始时间',
       dataIndex: 'startedAt',
-      width: 160,
-      render: (v: string) => v ? new Date(v).toLocaleString('zh-CN') : '-',
+      width: 150,
+      render: (v: string) => <Text style={{ fontSize: 12 }}>{v ? new Date(v).toLocaleString('zh-CN') : '-'}</Text>,
     },
     {
       title: '操作',
-      width: 80,
+      width: 70,
       render: (_, record) => (
         <Button
           type="link"
@@ -110,25 +110,22 @@ export const AgentWorkbenchPage: React.FC = () => {
       {/* ── Header ── */}
       <Card>
         <Flex justify="space-between" align="center" wrap="wrap" gap={12}>
-          <Space>
-            <DashboardOutlined style={{ fontSize: 24, color: token.colorPrimary }} />
-            <Title level={3} style={{ margin: 0 }}>智能体工作台</Title>
+          <Space direction="vertical" size={0}>
+            <Space>
+              <DashboardOutlined style={{ fontSize: 24, color: token.colorPrimary }} />
+              <Title level={3} style={{ margin: 0 }}>应用中心</Title>
+            </Space>
+            <Text type="secondary" style={{ marginLeft: 38 }}>
+              选择一个应用，输入您的需求，即可获得 AI 为您生成的专业结果
+            </Text>
           </Space>
-          <Space>
-            <Button
-              type="primary"
-              icon={<RocketOutlined />}
-              onClick={() => navigate('/workflow/definitions')}
-            >
-              新建工作流
-            </Button>
-            <Button
-              icon={<ThunderboltOutlined />}
-              onClick={() => navigate('/workflow/triggers')}
-            >
-              触发管理
-            </Button>
-          </Space>
+          <Button
+            type="primary"
+            icon={<RocketOutlined />}
+            onClick={() => navigate('/workflow/definitions')}
+          >
+            编排新流程
+          </Button>
         </Flex>
       </Card>
 
@@ -280,7 +277,6 @@ export const AgentWorkbenchPage: React.FC = () => {
               columns={recentColumns}
               pagination={false}
               size="small"
-              scroll={{ x: 700 }}
             />
           </Card>
         </Col>
@@ -290,14 +286,12 @@ export const AgentWorkbenchPage: React.FC = () => {
       <Card title="快速入口" size="small">
         <Row gutter={[16, 16]}>
           {[
-            { label: '工作流设计', icon: <RocketOutlined />, path: '/workflow/definitions' },
-            { label: '执行监控', icon: <DashboardOutlined />, path: '/workflow/executions' },
-            { label: '执行分析', icon: <ThunderboltOutlined />, path: '/workflow/analytics' },
-            { label: '参数中心', icon: <ClockCircleOutlined />, path: '/workflow/parameters' },
-            { label: '规则中心', icon: <AlertOutlined />, path: '/workflow/rules' },
-            { label: '模板市场', icon: <ExperimentOutlined />, path: '/workflow/templates' },
+            { label: '编排新流程', icon: <RocketOutlined />, path: '/workflow/definitions' },
+            { label: '查看运行记录', icon: <DashboardOutlined />, path: '/workflow/executions' },
+            { label: '运行分析', icon: <ThunderboltOutlined />, path: '/workflow/advanced?tab=analytics' },
+            { label: '模板市场', icon: <ExperimentOutlined />, path: '/workflow/advanced?tab=templates' },
           ].map((item) => (
-            <Col key={item.path} xs={12} sm={8} md={4}>
+            <Col key={item.path} xs={12} sm={6}>
               <Card
                 size="small"
                 hoverable

@@ -129,10 +129,10 @@ export const ExecutionFilterBar: React.FC<ExecutionFilterProps> = (props) => {
                 activeKey={activeTabKey}
                 onChange={handleTabChange}
                 items={[
-                    { label: '全部实例', key: 'all' },
+                    { label: '全部记录', key: 'all' },
                     { label: '运行中', key: 'running' },
                     { label: '失败/异常', key: 'failed' },
-                    { label: '风控阻断', key: 'riskBlock' },
+                    { label: '异常拦截', key: 'riskBlock' },
                 ]}
                 style={{ marginBottom: 16 }}
             />
@@ -143,7 +143,7 @@ export const ExecutionFilterBar: React.FC<ExecutionFilterProps> = (props) => {
                     <Col md={8} lg={6} xl={5}>
                         <Input.Search
                             allowClear
-                            placeholder="关键词（ID/名称/版本）"
+                            placeholder="搜索名称或编号"
                             value={props.keywordInput}
                             onChange={(e) => {
                                 props.setKeywordInput(e.target.value);
@@ -162,7 +162,7 @@ export const ExecutionFilterBar: React.FC<ExecutionFilterProps> = (props) => {
                         <Select
                             allowClear
                             style={{ width: '100%' }}
-                            placeholder="所属流程"
+                            placeholder="所属工作流"
                             options={props.workflowDefinitionOptions}
                             value={props.selectedWorkflowDefinitionId}
                             onChange={(val) => {
@@ -179,7 +179,7 @@ export const ExecutionFilterBar: React.FC<ExecutionFilterProps> = (props) => {
                         <Select
                             allowClear
                             style={{ width: '100%' }}
-                            placeholder="触发类型"
+                            placeholder="启动方式"
                             options={props.triggerTypeOptions}
                             value={props.selectedTriggerType}
                             onChange={(val) => {
@@ -195,7 +195,7 @@ export const ExecutionFilterBar: React.FC<ExecutionFilterProps> = (props) => {
                             icon={expandAdvanced ? <CaretUpOutlined /> : <CaretDownOutlined />}
                             onClick={() => setExpandAdvanced(!expandAdvanced)}
                         >
-                            高级筛选 {advancedFiltersActive && <Tag color="blue" style={{ marginLeft: 8 }}>Active</Tag>}
+                            高级筛选 {advancedFiltersActive && <Tag color="blue" style={{ marginLeft: 8 }}>已启用</Tag>}
                         </Button>
                         <Button type="link" onClick={props.onReset} style={{ marginLeft: 8 }}>重置</Button>
                     </Col>
@@ -206,7 +206,7 @@ export const ExecutionFilterBar: React.FC<ExecutionFilterProps> = (props) => {
                     <div style={{ background: token.colorBgLayout, padding: 16, borderRadius: 8 }}>
                         <Row gutter={[16, 16]}>
                             <Col span={24}>
-                                <Text strong>风控筛选</Text>
+                                <Text strong>异常拦截筛选</Text>
                             </Col>
                             <Col span={4}>
                                 <Select
@@ -222,7 +222,7 @@ export const ExecutionFilterBar: React.FC<ExecutionFilterProps> = (props) => {
                                 <Select
                                     allowClear
                                     style={{ width: '100%' }}
-                                    placeholder="降级动作"
+                                    placeholder="处理方式"
                                     options={props.degradeActionOptions}
                                     value={props.selectedDegradeAction}
                                     onChange={(val) => { props.setSelectedDegradeAction(val); props.onPageReset(); }}
@@ -231,7 +231,7 @@ export const ExecutionFilterBar: React.FC<ExecutionFilterProps> = (props) => {
                             <Col span={4}>
                                 <Input
                                     allowClear
-                                    placeholder="风控模板编码"
+                                    placeholder="拦截规则编号"
                                     value={props.riskProfileCodeInput}
                                     onChange={(e) => {
                                         props.setRiskProfileCodeInput(e.target.value);
@@ -243,7 +243,7 @@ export const ExecutionFilterBar: React.FC<ExecutionFilterProps> = (props) => {
                             <Col span={4}>
                                 <Input
                                     allowClear
-                                    placeholder="阻断原因关键词"
+                                    placeholder="拦截原因关键词"
                                     value={props.riskReasonKeywordInput}
                                     onChange={(e) => {
                                         props.setRiskReasonKeywordInput(e.target.value);
@@ -254,13 +254,13 @@ export const ExecutionFilterBar: React.FC<ExecutionFilterProps> = (props) => {
                             </Col>
 
                             <Col span={24} style={{ marginTop: 8 }}>
-                                <Text strong>状态筛选</Text>
+                                <Text strong>运行状态筛选</Text>
                             </Col>
                             <Col span={4}>
                                 <Select
                                     allowClear
                                     style={{ width: '100%' }}
-                                    placeholder="执行状态" // Redundant with tabs but useful for specific combos
+                                    placeholder="运行状态"
                                     options={props.executionStatusOptions}
                                     value={props.selectedStatus}
                                     onChange={(val) => { props.setSelectedStatus(val); props.onPageReset(); }}
@@ -270,7 +270,7 @@ export const ExecutionFilterBar: React.FC<ExecutionFilterProps> = (props) => {
                                 <Select
                                     allowClear
                                     style={{ width: '100%' }}
-                                    placeholder="失败分类"
+                                    placeholder="失败类型"
                                     options={props.failureCategoryOptions}
                                     value={props.selectedFailureCategory}
                                     onChange={(val) => { props.setSelectedFailureCategory(val); props.onPageReset(); }}
@@ -279,7 +279,7 @@ export const ExecutionFilterBar: React.FC<ExecutionFilterProps> = (props) => {
                             <Col span={4}>
                                 <Input
                                     allowClear
-                                    placeholder="失败代码"
+                                    placeholder="失败编号"
                                     value={props.failureCodeInput}
                                     onChange={(e) => {
                                         props.setFailureCodeInput(e.target.value);
@@ -291,9 +291,9 @@ export const ExecutionFilterBar: React.FC<ExecutionFilterProps> = (props) => {
 
                             <Col span={24} style={{ marginTop: 8 }}>
                                 <Space size={16}>
-                                    <Checkbox checked={props.onlySoftFailure} onChange={(e) => { props.setOnlySoftFailure(e.target.checked); props.onPageReset(); }}>仅软失败</Checkbox>
-                                    <Checkbox checked={props.onlyErrorRoute} onChange={(e) => { props.setOnlyErrorRoute(e.target.checked); props.onPageReset(); }}>仅错误分支</Checkbox>
-                                    <Checkbox checked={props.onlyRiskBlocked} onChange={(e) => { props.setOnlyRiskBlocked(e.target.checked); props.onPageReset(); }}>仅风控阻断</Checkbox>
+                                    <Checkbox checked={props.onlySoftFailure} onChange={(e) => { props.setOnlySoftFailure(e.target.checked); props.onPageReset(); }}>仅部分异常</Checkbox>
+                                    <Checkbox checked={props.onlyErrorRoute} onChange={(e) => { props.setOnlyErrorRoute(e.target.checked); props.onPageReset(); }}>仅异常路径</Checkbox>
+                                    <Checkbox checked={props.onlyRiskBlocked} onChange={(e) => { props.setOnlyRiskBlocked(e.target.checked); props.onPageReset(); }}>仅被拦截</Checkbox>
                                 </Space>
                             </Col>
                         </Row>

@@ -9,6 +9,8 @@ import {
   Popconfirm,
   Select,
   Typography,
+  Dropdown,
+  type MenuProps,
 } from 'antd';
 import {
   UndoOutlined,
@@ -33,6 +35,8 @@ import {
   VerticalAlignBottomOutlined,
   TableOutlined,
   BarChartOutlined,
+  MoreOutlined,
+  SettingOutlined,
 } from '@ant-design/icons';
 import { useReactFlow } from '@xyflow/react';
 
@@ -55,8 +59,6 @@ interface CanvasToolbarProps {
   onToggleDebatePanel?: () => void;
   onPublish?: () => void;
   onApplyRuntimePreset?: (preset: 'FAST' | 'BALANCED' | 'ROBUST') => void;
-  viewLevel?: 'business' | 'enhanced' | 'expert';
-  onViewLevelChange?: (level: 'business' | 'enhanced' | 'expert') => void;
   onUndo?: () => void;
   onRedo?: () => void;
   canUndo?: boolean;
@@ -96,8 +98,7 @@ export const CanvasToolbar: React.FC<CanvasToolbarProps> = ({
   onToggleDebatePanel,
   onPublish,
   onApplyRuntimePreset,
-  viewLevel = 'business',
-  onViewLevelChange,
+
   onUndo,
   onRedo,
   canUndo = false,
@@ -148,30 +149,15 @@ export const CanvasToolbar: React.FC<CanvasToolbarProps> = ({
             onChange={onWorkflowModeChange}
             size="small"
             options={[
-              { value: 'linear', label: '线性流' },
-              { value: 'dag', label: 'DAG' },
-              { value: 'debate', label: '辩论模式' },
+              { value: 'linear', label: '顺序执行' },
+              { value: 'dag', label: '自由连接' },
+              { value: 'debate', label: '多方讨论' },
             ]}
             style={{ width: 100 }}
             bordered={false}
           />
         </Space>
 
-        <Space size={8} align="center">
-          <Text type="secondary" style={{ fontSize: 12 }}>
-            视图:
-          </Text>
-          <Segmented
-            size="small"
-            value={viewLevel}
-            onChange={(value) => onViewLevelChange?.(value as 'business' | 'enhanced' | 'expert')}
-            options={[
-              { label: '业务', value: 'business' },
-              { label: '增强', value: 'enhanced' },
-              { label: '专家', value: 'expert' },
-            ]}
-          />
-        </Space>
 
         <Divider type="vertical" />
 
@@ -193,7 +179,7 @@ export const CanvasToolbar: React.FC<CanvasToolbarProps> = ({
           size="small"
         />
 
-        <Tooltip title="自动布局 (Auto Layout)">
+        <Tooltip title="自动整理布局">
           <Button type="text" size="small" icon={<LayoutOutlined />} onClick={onAutoLayout} />
         </Tooltip>
 
@@ -213,60 +199,25 @@ export const CanvasToolbar: React.FC<CanvasToolbarProps> = ({
         {onAlign && (
           <>
             <Divider type="vertical" />
-            <Space size={2}>
-              <Tooltip title="左对齐">
-                <Button
-                  size="small"
-                  type="text"
-                  icon={<AlignLeftOutlined />}
-                  onClick={() => onAlign('left')}
-                />
-              </Tooltip>
-              <Tooltip title="水平居中">
-                <Button
-                  size="small"
-                  type="text"
-                  icon={<AlignCenterOutlined />}
-                  onClick={() => onAlign('center')}
-                />
-              </Tooltip>
-              <Tooltip title="右对齐">
-                <Button
-                  size="small"
-                  type="text"
-                  icon={<AlignRightOutlined />}
-                  onClick={() => onAlign('right')}
-                />
-              </Tooltip>
-              <Tooltip title="顶对齐">
-                <Button
-                  size="small"
-                  type="text"
-                  icon={<VerticalAlignTopOutlined />}
-                  onClick={() => onAlign('top')}
-                />
-              </Tooltip>
-              <Tooltip title="垂直居中">
-                <Button
-                  size="small"
-                  type="text"
-                  icon={<VerticalAlignMiddleOutlined />}
-                  onClick={() => onAlign('middle')}
-                />
-              </Tooltip>
-              <Tooltip title="底对齐">
-                <Button
-                  size="small"
-                  type="text"
-                  icon={<VerticalAlignBottomOutlined />}
-                  onClick={() => onAlign('bottom')}
-                />
-              </Tooltip>
-            </Space>
+            <Dropdown
+              menu={{
+                items: [
+                  { key: 'left', label: '左对齐', icon: <AlignLeftOutlined />, onClick: () => onAlign('left') },
+                  { key: 'center', label: '水平居中', icon: <AlignCenterOutlined />, onClick: () => onAlign('center') },
+                  { key: 'right', label: '右对齐', icon: <AlignRightOutlined />, onClick: () => onAlign('right') },
+                  { key: 'top', label: '顶对齐', icon: <VerticalAlignTopOutlined />, onClick: () => onAlign('top') },
+                  { key: 'middle', label: '垂直居中', icon: <VerticalAlignMiddleOutlined />, onClick: () => onAlign('middle') },
+                  { key: 'bottom', label: '底对齐', icon: <VerticalAlignBottomOutlined />, onClick: () => onAlign('bottom') },
+                ],
+              }}
+              placement="bottomRight"
+            >
+              <Button type="text" size="small" icon={<AlignCenterOutlined />} />
+            </Dropdown>
           </>
         )}
         <Divider type="vertical" />
-        <Tooltip title="撤销 (Undo)">
+        <Tooltip title="撤销">
           <Button
             type="text"
             size="small"
@@ -275,7 +226,7 @@ export const CanvasToolbar: React.FC<CanvasToolbarProps> = ({
             disabled={!canUndo}
           />
         </Tooltip>
-        <Tooltip title="重做 (Redo)">
+        <Tooltip title="重做">
           <Button
             type="text"
             size="small"
@@ -288,14 +239,14 @@ export const CanvasToolbar: React.FC<CanvasToolbarProps> = ({
         {onRun && (
           <>
             <Divider type="vertical" />
-            <Tooltip title="运行调试">
+            <Tooltip title="试运行">
               <Button type="text" size="small" icon={<PlayCircleOutlined />} onClick={onRun} />
             </Tooltip>
           </>
         )}
 
         {onToggleLogs && (
-          <Tooltip title="查看日志">
+          <Tooltip title="运行日志">
             <Button type="text" size="small" icon={<CodeOutlined />} onClick={onToggleLogs} />
           </Tooltip>
         )}
@@ -303,7 +254,7 @@ export const CanvasToolbar: React.FC<CanvasToolbarProps> = ({
         {workflowMode === 'debate' && onToggleDebatePanel && (
           <>
             <Divider type="vertical" />
-            <Tooltip title="辩论时间线">
+            <Tooltip title="讨论过程">
               <Button
                 type="text"
                 size="small"
@@ -314,72 +265,43 @@ export const CanvasToolbar: React.FC<CanvasToolbarProps> = ({
           </>
         )}
 
-        {viewLevel !== 'business' && onApplyRuntimePreset ? (
-          <>
-            <Divider type="vertical" />
-            <Space size={6} align="center">
-              <Text type="secondary" style={{ fontSize: 12 }}>
-                批量策略:
-              </Text>
-              <Select
-                size="small"
-                defaultValue="BALANCED"
-                options={[
-                  { label: '快速', value: 'FAST' },
-                  { label: '平衡', value: 'BALANCED' },
-                  { label: '稳健', value: 'ROBUST' },
-                ]}
-                onChange={(value) => onApplyRuntimePreset(value as 'FAST' | 'BALANCED' | 'ROBUST')}
-                style={{ width: 88 }}
-                bordered={false}
-              />
-            </Space>
-          </>
-        ) : null}
       </Space>
 
       <Space size={8} wrap>
-        <Tooltip title="撤销">
-          <Button
-            icon={<UndoOutlined />}
-            onClick={onUndo}
-            disabled={!canUndo}
-            size="small"
-            type="text"
-          />
-        </Tooltip>
-        <Tooltip title="重做">
-          <Button
-            icon={<RedoOutlined />}
-            onClick={onRedo}
-            disabled={!canRedo}
-            size="small"
-            type="text"
-          />
-        </Tooltip>
-        <Divider type="vertical" />
-        <Tooltip title="导出 DSL JSON">
-          <Button size="small" icon={<DownloadOutlined />} onClick={onExportDsl}>
-            导出
-          </Button>
-        </Tooltip>
-        <Tooltip title="试跑埋点总览">
-          <Button size="small" icon={<BarChartOutlined />} onClick={onOpenTelemetrySummary}>
-            埋点
-          </Button>
-        </Tooltip>
-
-        <Popconfirm
-          title="确定清空画布？"
-          description="此操作将删除所有节点和连线"
-          onConfirm={onClearCanvas}
-          okText="确定"
-          cancelText="取消"
+        <Dropdown
+          menu={{
+            items: [
+              onApplyRuntimePreset ? {
+                key: 'preset',
+                label: '运行方案 (当前: 平衡)',
+                icon: <SettingOutlined />,
+                children: [
+                  { key: 'FAST', label: '快速', onClick: () => onApplyRuntimePreset('FAST') },
+                  { key: 'BALANCED', label: '平衡', onClick: () => onApplyRuntimePreset('BALANCED') },
+                  { key: 'ROBUST', label: '稳健', onClick: () => onApplyRuntimePreset('ROBUST') },
+                ],
+              } : null,
+              { key: 'export', label: '导出配置', icon: <DownloadOutlined />, onClick: onExportDsl },
+              { key: 'telemetry', label: '运行统计', icon: <BarChartOutlined />, onClick: onOpenTelemetrySummary },
+              onPublish ? { key: 'publish', label: '存为模板', icon: <ApartmentOutlined />, onClick: onPublish } : null,
+              { type: 'divider' },
+              {
+                key: 'clear',
+                label: '清空画布',
+                icon: <DeleteOutlined />,
+                danger: true,
+                onClick: () => {
+                  if (window.confirm('确定清空画布？此操作将删除所有节点和连线')) {
+                    onClearCanvas?.();
+                  }
+                },
+              },
+            ].filter(Boolean) as MenuProps['items'],
+          }}
+          placement="bottomRight"
         >
-          <Tooltip title="清空画布">
-            <Button size="small" danger icon={<DeleteOutlined />} />
-          </Tooltip>
-        </Popconfirm>
+          <Button size="small" icon={<MoreOutlined />} />
+        </Dropdown>
 
         <Button
           type="primary"
@@ -390,13 +312,6 @@ export const CanvasToolbar: React.FC<CanvasToolbarProps> = ({
         >
           保存{hasUnsavedChanges ? ' *' : ''}
         </Button>
-        {onPublish && (
-          <Tooltip title="另存为模板">
-            <Button type="default" size="small" icon={<ApartmentOutlined />} onClick={onPublish}>
-              存为模板
-            </Button>
-          </Tooltip>
-        )}
       </Space>
     </div>
   );

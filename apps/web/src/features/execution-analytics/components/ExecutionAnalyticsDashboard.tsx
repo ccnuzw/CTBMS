@@ -239,7 +239,7 @@ export const ExecutionAnalyticsDashboard: React.FC = () => {
               columns={trendColumns}
               pagination={false}
               size="small"
-              scroll={{ x: 500, y: 300 }}
+              scroll={{ y: 300 }}
             />
           </Card>
         </Col>
@@ -320,7 +320,6 @@ export const ExecutionAnalyticsDashboard: React.FC = () => {
               columns={nodeColumns}
               pagination={false}
               size="small"
-              scroll={{ x: 700 }}
             />
           </Card>
         </Col>
@@ -334,7 +333,6 @@ export const ExecutionAnalyticsDashboard: React.FC = () => {
           columns={nodeColumns}
           pagination={false}
           size="small"
-          scroll={{ x: 700 }}
         />
       </Card>
     </Space>

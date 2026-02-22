@@ -35,7 +35,7 @@ interface PropertyPanelProps {
     edgeId: string,
     data: Partial<Record<string, unknown>> & { type?: string },
   ) => void;
-  viewLevel?: 'business' | 'enhanced' | 'expert';
+
   paramSetBindings?: string[];
   currentDsl?: WorkflowDsl;
   onFocusNode?: (nodeId: string) => void;
@@ -82,7 +82,7 @@ export const PropertyPanel: React.FC<PropertyPanelProps> = ({
   selectedEdge,
   onUpdateNode,
   onUpdateEdge,
-  viewLevel = 'business',
+
   paramSetBindings = [],
   currentDsl,
   onFocusNode,
@@ -97,11 +97,6 @@ export const PropertyPanel: React.FC<PropertyPanelProps> = ({
     setActiveTab('overview');
   }, [selectedNode?.id, selectedEdge?.id]);
 
-  React.useEffect(() => {
-    if (viewLevel === 'business' && viewMode !== 'ui') {
-      setViewMode('ui');
-    }
-  }, [viewLevel, viewMode]);
 
   if (selectedEdge && onUpdateEdge) {
     return (
@@ -127,8 +122,7 @@ export const PropertyPanel: React.FC<PropertyPanelProps> = ({
   const runtimePolicy = (nodeData.runtimePolicy as Record<string, unknown>) ?? EMPTY_RECORD;
   const isEnabled = (nodeData.enabled as boolean) ?? true;
   const nodeTags = (nodeData.tags as string[]) || [];
-  const isBusinessView = viewLevel === 'business';
-  const isExpertView = viewLevel === 'expert';
+
 
   const paramOverrideMode =
     (config.paramOverrideMode as 'INHERIT' | 'PRIVATE_OVERRIDE') ?? 'INHERIT';
@@ -203,7 +197,7 @@ export const PropertyPanel: React.FC<PropertyPanelProps> = ({
     const issues: Array<{ type: 'error' | 'warning' | 'info'; message: string }> = [];
 
     if (!nodeName.trim()) {
-      issues.push({ type: 'error', message: '节点名称不能为空。' });
+      issues.push({ type: 'error', message: '名称不能为空。' });
     }
 
     (nodeTypeConfig?.inputsSchema ?? []).forEach((inputField) => {
@@ -217,13 +211,13 @@ export const PropertyPanel: React.FC<PropertyPanelProps> = ({
       if (inputField.required && !hasBinding && !hasDefault) {
         issues.push({
           type: 'error',
-          message: `输入字段 ${inputField.name} 为必填，当前既未映射也未配置默认值。`,
+          message: `输入项 ${inputField.name} 为必填，请设置数据来源或默认值。`,
         });
       }
     });
 
     if (paramOverrideMode === 'PRIVATE_OVERRIDE' && Object.keys(paramOverrides).length === 0) {
-      issues.push({ type: 'warning', message: '当前启用了“节点私有覆盖”，但尚未配置任何覆盖项。' });
+      issues.push({ type: 'warning', message: '当前启用了“私有覆盖”，但尚未配置任何覆盖项。' });
     }
 
     if (currentTimeoutMs > 90000) {
@@ -231,11 +225,11 @@ export const PropertyPanel: React.FC<PropertyPanelProps> = ({
     }
 
     if (currentRetryCount >= 3) {
-      issues.push({ type: 'warning', message: '重试次数较高，可能增加下游服务压力与调用成本。' });
+      issues.push({ type: 'warning', message: '重试次数较高，可能增加运行时间和资源消耗。' });
     }
 
     if (!isEnabled) {
-      issues.push({ type: 'info', message: '节点当前处于禁用状态，流程执行时会跳过该节点。' });
+      issues.push({ type: 'info', message: '当前步骤已禁用，运行时会跳过。' });
     }
 
     return issues;
@@ -253,10 +247,10 @@ export const PropertyPanel: React.FC<PropertyPanelProps> = ({
 
   const capabilityContent = (
     <Space direction="vertical" size={12} style={{ width: '100%' }}>
-      {!isBusinessView ? (
+      {(
         <Space style={{ width: '100%', justifyContent: 'space-between' }}>
           <Text type="secondary" style={{ fontSize: 12 }}>
-            {isExpertView ? '专家视图：支持源码配置' : '增强视图：推荐使用可视化表单'}
+            支持可视化表单和源码配置
           </Text>
           <Segmented
             size="small"
@@ -268,9 +262,9 @@ export const PropertyPanel: React.FC<PropertyPanelProps> = ({
             onChange={(value) => setViewMode(value as 'ui' | 'json')}
           />
         </Space>
-      ) : null}
+      )}
 
-      {!isBusinessView && viewMode === 'json' ? (
+      {viewMode === 'json' ? (
         <Input.TextArea
           value={JSON.stringify(config, null, 2)}
           onChange={(event) => {
@@ -311,20 +305,22 @@ export const PropertyPanel: React.FC<PropertyPanelProps> = ({
         </>
       )}
 
-      {!isBusinessView ? (
-        <ParameterOverrideBuilder
-          paramOverrideMode={paramOverrideMode}
-          paramOverrides={paramOverrides}
-          defaultParameterSetCodes={paramSetBindings}
-          onModeChange={(mode) => {
+      <ParameterOverrideBuilder
+        paramOverrideMode={paramOverrideMode}
+        paramOverrides={paramOverrides}
+        defaultParameterSetCodes={paramSetBindings}
+        onModeChange={(mode) => {
+          if (mode === 'INHERIT') {
+            // 必须一次性更新两个字段，避免分两次调用导致 stale closure 覆盖
+            onUpdateNode?.(selectedNode.id, {
+              config: { ...config, paramOverrideMode: mode, paramOverrides: {} },
+            });
+          } else {
             handleConfigChange('paramOverrideMode', mode);
-            if (mode === 'INHERIT') {
-              handleConfigChange('paramOverrides', {});
-            }
-          }}
-          onOverridesChange={(overrides) => handleConfigChange('paramOverrides', overrides)}
-        />
-      ) : null}
+          }
+        }}
+        onOverridesChange={(overrides) => handleConfigChange('paramOverrides', overrides)}
+      />
     </Space>
   );
 
@@ -332,7 +328,7 @@ export const PropertyPanel: React.FC<PropertyPanelProps> = ({
     <Form layout="vertical" size="small">
       <Form.Item
         label="策略预设"
-        help="使用业务预设快速配置节点稳定性与性能；切到自定义可逐项调整。"
+        help="选择预设方案快速配置，也可自定义调整。"
         style={{ marginBottom: 16 }}
       >
         <RuntimePresetCardComponent
@@ -355,10 +351,10 @@ export const PropertyPanel: React.FC<PropertyPanelProps> = ({
         type="info"
         style={{ marginBottom: 12 }}
         message="当前策略摘要"
-        description={`超时 ${currentTimeoutMs}ms，重试 ${currentRetryCount} 次，重试间隔 ${currentRetryBackoffMs}ms，错误策略 ${currentOnError}`}
+        description={`超时 ${currentTimeoutMs / 1000} 秒，重试 ${currentRetryCount} 次，间隔 ${currentRetryBackoffMs / 1000} 秒，失败时“${currentOnError === 'FAIL_FAST' ? '立即停止' : currentOnError === 'CONTINUE' ? '继续执行' : '走异常路径'}”`}
       />
 
-      <Form.Item label="超时 (ms)" style={{ marginBottom: 12 }}>
+      <Form.Item label="超时时间（秒）" style={{ marginBottom: 12 }}>
         <InputNumber
           value={currentTimeoutMs}
           min={1000}
@@ -369,81 +365,76 @@ export const PropertyPanel: React.FC<PropertyPanelProps> = ({
         />
       </Form.Item>
 
-      {!isBusinessView ? (
-        <>
-          <Form.Item label="重试次数" style={{ marginBottom: 12 }}>
-            <InputNumber
-              value={currentRetryCount}
-              min={0}
-              max={5}
-              style={{ width: '100%' }}
-              onChange={(value) => handleRuntimePolicyChange('retryCount', value)}
-            />
-          </Form.Item>
+      <Form.Item label="重试次数" style={{ marginBottom: 12 }}>
+        <InputNumber
+          value={currentRetryCount}
+          min={0}
+          max={5}
+          style={{ width: '100%' }}
+          onChange={(value) => handleRuntimePolicyChange('retryCount', value)}
+        />
+      </Form.Item>
 
-          <Form.Item label="重试间隔 (ms)" style={{ marginBottom: 12 }}>
-            <InputNumber
-              value={currentRetryBackoffMs}
-              min={0}
-              max={60000}
-              step={1000}
-              style={{ width: '100%' }}
-              onChange={(value) => handleRuntimePolicyChange('retryBackoffMs', value)}
-            />
-          </Form.Item>
-        </>
-      ) : null}
+      <Form.Item label="重试间隔 (ms)" style={{ marginBottom: 12 }}>
+        <InputNumber
+          value={currentRetryBackoffMs}
+          min={0}
+          max={60000}
+          step={1000}
+          style={{ width: '100%' }}
+          onChange={(value) => handleRuntimePolicyChange('retryBackoffMs', value)}
+        />
+      </Form.Item>
 
-      <Form.Item label="错误策略" style={{ marginBottom: 12 }}>
+
+      <Form.Item label="失败处理" style={{ marginBottom: 12 }}>
         <Select
           value={currentOnError}
           onChange={(value) => handleRuntimePolicyChange('onError', value)}
           options={[
-            { label: '立即失败', value: 'FAIL_FAST' },
+            { label: '立即停止', value: 'FAIL_FAST' },
             { label: '继续执行', value: 'CONTINUE' },
-            { label: '错误路由', value: 'ROUTE_TO_ERROR' },
+            { label: '走异常路径', value: 'ROUTE_TO_ERROR' },
           ]}
         />
       </Form.Item>
 
-      {!isBusinessView ? (
-        <>
-          <Form.Item label="缓存策略" style={{ marginBottom: 12 }}>
-            <Select
-              value={currentCachePolicy}
-              onChange={(value) => handleRuntimePolicyChange('cachePolicy', value)}
-              options={[
-                { label: '不缓存', value: 'NONE' },
-                { label: '本地缓存', value: 'LOCAL' },
-                { label: '共享缓存', value: 'SHARED' },
-              ]}
+      <Form.Item label="缓存策略" style={{ marginBottom: 12 }}>
+        <Select
+          value={currentCachePolicy}
+          onChange={(value) => handleRuntimePolicyChange('cachePolicy', value)}
+          options={[
+            { label: '不缓存', value: 'NONE' },
+            { label: '本地缓存', value: 'LOCAL' },
+            { label: '共享缓存', value: 'SHARED' },
+          ]}
+        />
+      </Form.Item>
+
+      {
+        currentCachePolicy === 'LOCAL' || currentCachePolicy === 'SHARED' ? (
+          <Form.Item label="缓存时长 (秒)" style={{ marginBottom: 12 }}>
+            <InputNumber
+              value={(runtimePolicy.cacheTtlSec as number) ?? 300}
+              min={1}
+              style={{ width: '100%' }}
+              onChange={(value) => handleRuntimePolicyChange('cacheTtlSec', value)}
             />
           </Form.Item>
+        ) : null
+      }
 
-          {currentCachePolicy === 'LOCAL' || currentCachePolicy === 'SHARED' ? (
-            <Form.Item label="缓存时长 (秒)" style={{ marginBottom: 12 }}>
-              <InputNumber
-                value={(runtimePolicy.cacheTtlSec as number) ?? 300}
-                min={1}
-                style={{ width: '100%' }}
-                onChange={(value) => handleRuntimePolicyChange('cacheTtlSec', value)}
-              />
-            </Form.Item>
-          ) : null}
-
-          <Form.Item label="审计级别" style={{ marginBottom: 12 }}>
-            <Select
-              value={currentAuditLevel}
-              onChange={(value) => handleRuntimePolicyChange('auditLevel', value)}
-              options={[
-                { label: '无', value: 'NONE' },
-                { label: '基础', value: 'BASIC' },
-                { label: '完整', value: 'FULL' },
-              ]}
-            />
-          </Form.Item>
-        </>
-      ) : null}
+      <Form.Item label="审计级别" style={{ marginBottom: 12 }}>
+        <Select
+          value={currentAuditLevel}
+          onChange={(value) => handleRuntimePolicyChange('auditLevel', value)}
+          options={[
+            { label: '无', value: 'NONE' },
+            { label: '基础', value: 'BASIC' },
+            { label: '完整', value: 'FULL' },
+          ]}
+        />
+      </Form.Item>
     </Form>
   );
 
@@ -454,21 +445,19 @@ export const PropertyPanel: React.FC<PropertyPanelProps> = ({
       children: (
         <div style={{ paddingRight: 4 }}>
           <Form layout="vertical" size="small" style={{ marginBottom: 0 }}>
-            <Form.Item label="节点名称" style={{ marginBottom: 12 }}>
+            <Form.Item label="名称" style={{ marginBottom: 12 }}>
               <Input
                 value={nodeName}
                 onChange={(event) => handleFieldChange('name', event.target.value)}
               />
             </Form.Item>
 
-            <Form.Item label="节点类型" style={{ marginBottom: 12 }}>
+            <Form.Item label="类型" style={{ marginBottom: 12 }}>
               <Space>
                 <Tag color={nodeTypeConfig?.color}>{nodeTypeConfig?.label ?? nodeType}</Tag>
-                {!isBusinessView ? (
-                  <Text type="secondary" style={{ fontSize: 11 }}>
-                    {selectedNode.id}
-                  </Text>
-                ) : null}
+                <Text type="secondary" style={{ fontSize: 11 }}>
+                  {selectedNode.id}
+                </Text>
               </Space>
             </Form.Item>
 
@@ -485,29 +474,27 @@ export const PropertyPanel: React.FC<PropertyPanelProps> = ({
                 value={nodeData.description as string}
                 onChange={(event) => handleFieldChange('description', event.target.value)}
                 rows={2}
-                placeholder="节点描述..."
+                placeholder="步骤说明..."
               />
             </Form.Item>
 
-            {!isBusinessView ? (
-              <Form.Item label="标签 (Tags)" style={{ marginBottom: 12 }}>
-                <Select
-                  mode="tags"
-                  value={nodeTags}
-                  onChange={(value) => handleFieldChange('tags', value)}
-                  tokenSeparators={[',']}
-                  placeholder="添加标签..."
-                  size="small"
-                />
-              </Form.Item>
-            ) : null}
+            <Form.Item label="标签" style={{ marginBottom: 12 }}>
+              <Select
+                mode="tags"
+                value={nodeTags}
+                onChange={(value) => handleFieldChange('tags', value)}
+                tokenSeparators={[',']}
+                placeholder="添加标签..."
+                size="small"
+              />
+            </Form.Item>
           </Form>
         </div>
       ),
     },
     {
       key: 'inputs',
-      label: '输入',
+      label: '数据输入',
       children:
         nodeTypeConfig?.inputsSchema && nodeTypeConfig.inputsSchema.length > 0 ? (
           <div style={{ paddingRight: 4 }}>
@@ -525,13 +512,13 @@ export const PropertyPanel: React.FC<PropertyPanelProps> = ({
           </div>
         ) : (
           <div style={{ paddingRight: 4 }}>
-            <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="当前节点无输入字段" />
+            <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="当前步骤无需配置输入" />
           </div>
         ),
     },
     {
       key: 'capability',
-      label: '能力',
+      label: '功能配置',
       children: (
         <div style={{ paddingRight: 4 }}>
           {capabilityContent}
@@ -540,7 +527,7 @@ export const PropertyPanel: React.FC<PropertyPanelProps> = ({
     },
     {
       key: 'runtime',
-      label: '运行',
+      label: '运行策略',
       children: (
         <div style={{ paddingRight: 4 }}>
           {runtimeContent}
@@ -549,12 +536,12 @@ export const PropertyPanel: React.FC<PropertyPanelProps> = ({
     },
     {
       key: 'validation',
-      label: '校验',
+      label: '检查',
       children: (
         <div style={{ paddingRight: 4 }}>
           <Space direction="vertical" size={8} style={{ width: '100%' }}>
             {validationIssues.length === 0 ? (
-              <Alert type="success" showIcon message="当前配置通过基础校验" />
+              <Alert type="success" showIcon message="配置正常，可以运行" />
             ) : (
               validationIssues.map((issue, index) => (
                 <Alert
@@ -569,23 +556,21 @@ export const PropertyPanel: React.FC<PropertyPanelProps> = ({
             <Alert
               type="info"
               showIcon
-              message="配置摘要"
+              message="配置概览"
               description={[
-                `输入映射数: ${Object.keys(inputBindings).filter((key) => (inputBindings[key] ?? '').trim().length > 0).length}`,
-                `默认值数: ${Object.keys(defaultValues).length}`,
-                `参数覆盖模式: ${paramOverrideMode}`,
-                `参数覆盖项: ${Object.keys(paramOverrides).length}`,
+                `输入映射: ${Object.keys(inputBindings).filter((key) => (inputBindings[key] ?? '').trim().length > 0).length} 项`,
+                `默认值: ${Object.keys(defaultValues).length} 项`,
+                `参数模式: ${paramOverrideMode === 'INHERIT' ? '继承' : '私有覆盖'}`,
+                `覆盖项: ${Object.keys(paramOverrides).length} 个`,
               ].join(' | ')}
             />
 
-            {!isBusinessView ? (
-              <Alert
-                type="warning"
-                showIcon
-                message="调试信息"
-                description={`Node ${selectedNode.id} / Type ${nodeType}`}
-              />
-            ) : null}
+            <Alert
+              type="warning"
+              showIcon
+              message="调试信息"
+              description={`Node ${selectedNode.id} / Type ${nodeType}`}
+            />
 
             {currentDsl && nodeTypeConfig?.inputsSchema && nodeTypeConfig.inputsSchema.length > 0 ? (
               <NodeDryRunPreview
@@ -645,7 +630,7 @@ export const PropertyPanel: React.FC<PropertyPanelProps> = ({
             </div>
           ) : null}
           <Text strong style={{ fontSize: 14 }}>
-            节点属性
+            步骤设置
           </Text>
         </Space>
         <CloseOutlined
@@ -730,7 +715,7 @@ interface EdgePropertyPanelProps {
     data: Partial<Record<string, unknown>> & { type?: string },
   ) => void;
   onClose: () => void;
-   
+
   token: any;
 }
 
