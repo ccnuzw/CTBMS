@@ -39,7 +39,7 @@ export const DataSeeding: React.FC = () => {
             setLogs(prev => [...prev, { type: 'stdout', message: '✅ ' + data.message }]);
             message.success('数据清理完成，请重新初始化');
         } catch (error) {
-            console.error(error);
+            if (import.meta.env.DEV) console.error(error);
             setLogs(prev => [...prev, { type: 'stderr', message: '❌ Data cleanup failed.' }]);
             message.error('清理失败');
         } finally {
@@ -75,12 +75,12 @@ export const DataSeeding: React.FC = () => {
                     }
                 }
             } catch (e) {
-                console.error('Failed to parse log message', e);
+                if (import.meta.env.DEV) console.error('Failed to parse log message', e);
             }
         };
 
         es.onerror = (err) => {
-            console.error('EventSource failed:', err);
+            if (import.meta.env.DEV) console.error('EventSource failed:', err);
             // If it was already completed, this might be just the connection closing
             if (status !== 'completed') {
                 // Check if it was a normal closure (readyState 2 = CLOSED)

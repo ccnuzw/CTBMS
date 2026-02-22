@@ -15,7 +15,7 @@ const queryClient = new QueryClient({
                 const status = error?.response?.status;
                 // 如果不是 4xx 错误（如 500 服务器错误或网络故障），则打印日志
                 if (!status || status < 400 || status >= 500) {
-                    console.error('[Mutation Error]', error);
+                    if (import.meta.env.DEV) console.error('[Mutation Error]', error);
                 }
             },
         },

@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException , Logger } from '@nestjs/common';
 import { PrismaService } from '../../prisma';
 import { KnowledgeService } from '../knowledge/knowledge.service';
 import { IntelScoringService } from './intel-scoring.service';
@@ -19,6 +19,7 @@ import { normalizePriceSubType } from './market-intel.utils';
 
 @Injectable()
 export class IntelCrudService {
+  private readonly logger = new Logger(IntelCrudService.name);
     constructor(
         private prisma: PrismaService,
         private knowledgeService: KnowledgeService,
@@ -70,13 +71,13 @@ export class IntelCrudService {
                 try {
                     await this.knowledgeService.syncFromMarketIntel(intel.id);
                 } catch (syncError) {
-                    console.warn('[IntelCrudService.create] Knowledge V2 sync failed:', syncError);
+                    this.logger.warn('[IntelCrudService.create] Knowledge V2 sync failed:', syncError);
                 }
             }
 
             return intel;
         } catch (error) {
-            console.error('[IntelCrudService.create] FAILED', error);
+            this.logger.error('[IntelCrudService.create] FAILED', error);
             throw error;
         }
     }

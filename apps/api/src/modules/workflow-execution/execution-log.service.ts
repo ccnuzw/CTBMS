@@ -1,9 +1,10 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable , Logger } from '@nestjs/common';
 import { PrismaService } from '../../prisma';
 import { Prisma } from '@prisma/client';
 
 @Injectable()
 export class ExecutionLogService {
+  private readonly logger = new Logger(ExecutionLogService.name);
     constructor(private readonly prisma: PrismaService) { }
 
     async recordRuntimeEvent(payload: {
@@ -27,7 +28,7 @@ export class ExecutionLogService {
             });
         } catch (e) {
             // Runtime event is diagnostic metadata and must not block execution.
-            console.error('Failed to record runtime event', e);
+            this.logger.error('Failed to record runtime event', e);
         }
     }
 

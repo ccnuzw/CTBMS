@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, BadRequestException, forwardRef, Inject } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, forwardRef, Inject, Logger } from '@nestjs/common';
 import { PrismaService } from '../../prisma';
 import { ConfigService } from '../config/config.service';
 import { IntelTaskService } from './intel-task.service';
@@ -127,6 +127,7 @@ import { IntelTaskDispatchService } from "./intel-task-dispatch.service";
 
 @Injectable()
 export class IntelTaskTemplateService {
+  private readonly logger = new Logger(IntelTaskTemplateService.name);
     constructor(
         public prisma: PrismaService,
         public taskService: IntelTaskService,
@@ -851,7 +852,8 @@ export class IntelTaskTemplateService {
         if (typeof raw === 'string') {
             try {
                 return JSON.parse(raw) as ShiftConfig;
-            } catch {
+            } catch (e) {
+                this.logger.warn('Operation failed silently, returning null', e instanceof Error ? e.message : String(e));
                 return null;
             }
         }
@@ -1339,7 +1341,8 @@ export class IntelTaskTemplateService {
         if (typeof scopeQuery === 'string') {
             try {
                 return JSON.parse(scopeQuery) as RuleScopeQuery;
-            } catch {
+            } catch (e) {
+                this.logger.warn('Parse failed, returning empty object', e instanceof Error ? e.message : String(e));
                 return {};
             }
         }

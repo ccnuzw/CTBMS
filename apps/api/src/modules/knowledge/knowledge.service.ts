@@ -211,7 +211,7 @@ export class KnowledgeService {
       // 3. 触发 AI 分析（异步，不阻塞返回）
       if (input.triggerAnalysis !== false) {
         this.reanalyze(item.id, true).catch((err) => {
-          console.warn(`[submitReport] AI analysis failed for ${item.id}:`, err.message);
+          this.logger.warn(`[submitReport] AI analysis failed for ${item.id}:`, err.message);
         });
       }
 
@@ -337,7 +337,7 @@ export class KnowledgeService {
 
     // 触发重新分析（如果是被驳回修改的，可能需要重新分析）
     this.reanalyze(id, true).catch((err) => {
-      console.warn(`[updateReport] AI re-analysis failed for ${id}:`, err.message);
+      this.logger.warn(`[updateReport] AI re-analysis failed for ${id}:`, err.message);
     });
 
     const updated = await this.findOne(id);
@@ -402,7 +402,7 @@ export class KnowledgeService {
     if (input.action === 'APPROVE') {
       // 可以在这里触发后续逻辑，如积分计算、自动关联等
       this.reanalyze(id, false).catch((err) => {
-        console.warn(`[reviewReport] Post-approval analysis failed for ${id}:`, err.message);
+        this.logger.warn(`[reviewReport] Post-approval analysis failed for ${id}:`, err.message);
       });
     }
 
@@ -591,7 +591,7 @@ export class KnowledgeService {
     const content = input.contentPlain || input.contentRich || '';
     if (content.length > 50) {
       this.ragPipelineService.ingest(item.id, content).catch((err) => {
-        console.error('[KnowledgeService.createResearchReport] RAG ingest failed:', err);
+        this.logger.error('[KnowledgeService.createResearchReport] RAG ingest failed:', err);
       });
     }
 
@@ -616,7 +616,7 @@ export class KnowledgeService {
 
     if (input.triggerAnalysis !== false && content.length > 50) {
       this.reanalyze(item.id, true).catch((err) => {
-        console.error('[KnowledgeService.createResearchReport] AI analysis failed:', err);
+        this.logger.error('[KnowledgeService.createResearchReport] AI analysis failed:', err);
       });
     }
 
@@ -667,7 +667,7 @@ export class KnowledgeService {
     // 若传入了 taskId，触发任务联动提交
     if (taskId) {
       if (!this.intelTaskService) {
-        console.warn('IntelTaskService is not injected, task binding skipped.');
+        this.logger.warn('IntelTaskService is not injected, task binding skipped.');
       } else {
         try {
           // 调用任务的提交功能，将任务置于完成/待审状态
@@ -675,7 +675,7 @@ export class KnowledgeService {
             intelId: id,
           });
         } catch (error) {
-          console.error(`Failed to submit task ${taskId} for report ${id}:`, error);
+          this.logger.error(`Failed to submit task ${taskId} for report ${id}:`, error);
           // 这里可以考虑不要因此中断研报自己的提审流程，只打错误日志
         }
       }
@@ -775,7 +775,7 @@ export class KnowledgeService {
     const content = input.contentPlain || item.contentPlain;
     if (content && content.length > 50) {
       this.ragPipelineService.ingest(item.id, content).catch((err) => {
-        console.error('[KnowledgeService.updateResearchReport] RAG ingest failed:', err);
+        this.logger.error('[KnowledgeService.updateResearchReport] RAG ingest failed:', err);
       });
     }
 

@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
 import { PrismaService } from '../../prisma';
 import { WorkflowDsl, WorkflowDslSchema, canonicalizeWorkflowDsl } from '@packages/types';
 import { VariableResolver } from './engine/variable-resolver';
@@ -8,6 +8,7 @@ import { toRecord } from './workflow-execution.utils';
 
 @Injectable()
 export class WorkflowExecutionReplayService {
+  private readonly logger = new Logger(WorkflowExecutionReplayService.name);
     constructor(
         private readonly prisma: PrismaService,
         private readonly variableResolver: VariableResolver,
@@ -106,7 +107,8 @@ export class WorkflowExecutionReplayService {
                 },
             });
             return replayBundle;
-        } catch {
+        } catch (e) {
+            this.logger.warn('Operation failed silently, returning null', e instanceof Error ? e.message : String(e));
             return null;
         }
     }

@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable , Logger } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma';
 import { AIService } from '../ai/ai.service';
@@ -30,6 +30,7 @@ export type IntelligenceFeedQuery = {
 
 @Injectable()
 export class IntelAnalysisService {
+  private readonly logger = new Logger(IntelAnalysisService.name);
     private readonly hotTopicDomainPriority = [
         'COMMODITY',
         'INTEL_SOURCE_TYPE',
@@ -692,7 +693,7 @@ export class IntelAnalysisService {
             const summary = await this.aiService.generateBriefing(lines);
             return { summary };
         } catch (e) {
-            console.error('Smart Briefing Error:', e);
+            this.logger.error('Smart Briefing Error:', e);
             return { summary: '生成简报失败，请确保 AI 服务已连接。' };
         }
     }

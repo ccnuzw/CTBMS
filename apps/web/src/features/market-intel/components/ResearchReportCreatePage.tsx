@@ -383,7 +383,7 @@ export const ResearchReportCreatePage = () => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any -- error object from catch
       } catch (error: any) {
         message.error(error.response?.data?.message || '提交失败，请重试');
-        console.error(error);
+        if (import.meta.env.DEV) console.error(error);
       }
       return;
     }
@@ -428,7 +428,7 @@ export const ResearchReportCreatePage = () => {
       navigate('/intel/knowledge?tab=library&content=reports');
     } catch (error) {
       message.error(isEditMode ? '操作失败，请重试' : '操作失败，请重试');
-      console.error(error);
+      if (import.meta.env.DEV) console.error(error);
     }
   };
 
@@ -609,7 +609,7 @@ export const ResearchReportCreatePage = () => {
         }
       }
     } catch (error) {
-      console.error(error);
+      if (import.meta.env.DEV) console.error(error);
       message.error('AI 分析失败，请检查网络或重试');
     } finally {
       hide();

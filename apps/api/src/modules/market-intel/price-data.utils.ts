@@ -1,3 +1,7 @@
+import { Logger } from '@nestjs/common';
+
+const logger = new Logger('PriceDataUtils');
+
 import { BadRequestException } from "@nestjs/common";
 import { CollectionPointType, MarketAlertAction, MarketAlertRuleType, MarketAlertSeverity, MarketAlertStatus, PriceData, PriceInputMethod, PriceReviewStatus, PriceSubType, Prisma, PriceQualityTag as PrismaPriceQualityTag } from "@prisma/client";
 type CollectionPointSummary = {
@@ -268,7 +272,8 @@ export function parseAlertRulePayload(value: string): AlertRulePayload | null {
       return null;
     }
     return parsed;
-  } catch {
+  } catch (e) {
+    logger.warn('Price data parse failed', e instanceof Error ? e.message : String(e));
     return null;
   }
 }

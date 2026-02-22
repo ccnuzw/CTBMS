@@ -145,7 +145,7 @@ export const BatchPriceEntryTable: React.FC = () => {
             navigate('/price-reporting');
         } catch (error: unknown) {
             // Error handled globally usually, or display here
-            console.error(error);
+            if (import.meta.env.DEV) console.error(error);
         }
     };
 

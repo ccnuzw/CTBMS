@@ -12,6 +12,7 @@ import {
   UploadedFile,
   Res,
   BadRequestException,
+  Logger,
 } from '@nestjs/common';
 import { Response } from 'express';
 import { FileInterceptor } from '@nestjs/platform-express';
@@ -45,6 +46,7 @@ import { KnowledgeExtractionService } from '../knowledge/services/knowledge-extr
 
 @Controller('market-intel')
 export class MarketIntelController {
+  private readonly logger = new Logger(MarketIntelController.name);
   constructor(
     private readonly intelCrudService: IntelCrudService,
     private readonly intelAnalysisService: IntelAnalysisService,
@@ -764,7 +766,7 @@ export class MarketIntelController {
         file.mimetype,
       );
     } catch (error) {
-      console.error('Failed to convert to Markdown:', error);
+      this.logger.error('Failed to convert to Markdown:', error);
     }
 
     // 2. Prepare data for creation
@@ -825,7 +827,7 @@ export class MarketIntelController {
       try {
         await this.knowledgeExtractionService.processIntel(intel.id, markdownContent);
       } catch (err) {
-        console.error('Knowledge extraction trigger failed:', err);
+        this.logger.error('Knowledge extraction trigger failed:', err);
         // Do not fail the upload
       }
     }
@@ -884,7 +886,7 @@ export class MarketIntelController {
     return res.download(attachment.storagePath, attachment.filename, (err) => {
       if (err) {
         // Handle error, but response might have started
-        console.error('Download error:', err);
+        this.logger.error('Download error:', err);
         if (!res.headersSent) {
           res.status(500).send('Download failed');
         }

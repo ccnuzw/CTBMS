@@ -80,7 +80,7 @@ export const CategoryList: React.FC = () => {
       actionRef.current?.reload();
       return true;
     } catch (error) {
-      console.error(error);
+      if (import.meta.env.DEV) console.error(error);
       return false;
     }
   };

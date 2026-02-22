@@ -115,7 +115,7 @@ export const DataEntry: React.FC<DataEntryProps> = ({ onSuccess }) => {
       }
     } catch (error) {
       message.error('AI 分析失败');
-      console.error(error);
+      if (import.meta.env.DEV) console.error(error);
     }
   };
 
@@ -159,7 +159,7 @@ export const DataEntry: React.FC<DataEntryProps> = ({ onSuccess }) => {
       handleReset();
     } catch (error) {
       message.error('提交失败');
-      console.error(error);
+      if (import.meta.env.DEV) console.error(error);
     }
   };
 

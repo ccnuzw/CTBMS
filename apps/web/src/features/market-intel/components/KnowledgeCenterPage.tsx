@@ -111,7 +111,7 @@ export const KnowledgeCenterPage: React.FC = () => {
       }
     // eslint-disable-next-line @typescript-eslint/no-explicit-any -- error object from catch
     } catch (err: any) {
-      console.error(err);
+      if (import.meta.env.DEV) console.error(err);
       message.error(err.message || '由于可用数据不足或网络问题，生成失败');
     }
   };

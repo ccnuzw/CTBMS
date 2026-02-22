@@ -45,7 +45,7 @@ export const ParameterResolutionPreview: React.FC<ParameterResolutionPreviewProp
             setResults(res.resolved);
             message.success('Resolved successfully');
         } catch (error) {
-            console.error(error);
+            if (import.meta.env.DEV) console.error(error);
             message.error('Failed to resolve parameters');
         }
     };
