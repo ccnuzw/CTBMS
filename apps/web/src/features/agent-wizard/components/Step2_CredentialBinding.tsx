@@ -24,7 +24,7 @@ interface Step2Props {
     onSubmit: (keys: Record<string, string>) => void;
     onBack: () => void;
     currentKeys: Record<string, string>;
-    selectedPersona: any;
+    selectedPersona: Record<string, any> | null;
 }
 
 export const Step2_CredentialBinding = ({ onSubmit, onBack, currentKeys, selectedPersona }: Step2Props) => {

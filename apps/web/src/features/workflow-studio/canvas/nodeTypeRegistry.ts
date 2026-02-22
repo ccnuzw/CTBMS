@@ -28,6 +28,9 @@ import {
     BuildOutlined,
     SafetyCertificateOutlined,
 } from '@ant-design/icons';
+import { theme } from 'antd';
+const { getDesignToken } = theme;
+const token = getDesignToken();
 import {
     getWorkflowNodeContract,
     normalizeWorkflowNodeType,
@@ -70,15 +73,15 @@ interface NodeUiMeta {
 }
 
 export const NODE_CATEGORIES: Record<NodeCategory, { label: string; color: string; icon: React.ComponentType }> = {
-    TRIGGER: { label: '触发', color: '#722ED1', icon: ThunderboltOutlined },
-    DATA: { label: '数据', color: '#1677FF', icon: DatabaseOutlined },
-    COMPUTE: { label: '计算', color: '#FA8C16', icon: CalculatorOutlined },
-    RULE: { label: '规则', color: '#EB2F96', icon: SafetyOutlined },
-    AGENT: { label: '智能体', color: '#13C2C2', icon: RobotOutlined },
-    CONTROL: { label: '控制', color: '#8C8C8C', icon: BranchesOutlined },
-    DECISION: { label: '决策', color: '#F5222D', icon: SolutionOutlined },
-    OUTPUT: { label: '输出', color: '#52C41A', icon: BellOutlined },
-    GROUP: { label: '分组', color: '#FAFAFA', icon: GroupOutlined },
+    TRIGGER: { label: '触发', color: (token as any).purple || token.colorPrimary, icon: ThunderboltOutlined },
+    DATA: { label: '数据', color: token.blue, icon: DatabaseOutlined },
+    COMPUTE: { label: '计算', color: (token as any).orange || token.colorWarningActive, icon: CalculatorOutlined },
+    RULE: { label: '规则', color: token.magenta, icon: SafetyOutlined },
+    AGENT: { label: '智能体', color: token.cyan, icon: RobotOutlined },
+    CONTROL: { label: '控制', color: token.colorTextSecondary, icon: BranchesOutlined },
+    DECISION: { label: '决策', color: token.red, icon: SolutionOutlined },
+    OUTPUT: { label: '输出', color: token.green, icon: BellOutlined },
+    GROUP: { label: '分组', color: token.colorFillAlter, icon: GroupOutlined },
 };
 
 const NODE_UI_META: Record<WorkflowCanonicalNodeType, NodeUiMeta> = {
@@ -404,7 +407,7 @@ export const getNodesByCategory = (): Record<NodeCategory, NodeTypeConfig[]> => 
 };
 
 export const getCategoryConfig = (category: NodeCategory) => {
-    return NODE_CATEGORIES[category] || { label: category, color: '#999', icon: RobotOutlined };
+    return NODE_CATEGORIES[category] || { label: category, color: token.colorTextSecondary, icon: RobotOutlined };
 };
 
 export const CATEGORY_LABELS: Record<NodeCategory, string> = {

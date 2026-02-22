@@ -64,7 +64,9 @@ export const PriceMonitorWidget: React.FC<PriceMonitorWidgetProps> = ({
         const change = current - prev;
         const pct = (change / prev) * 100;
 
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- untyped API response iteration
         const min = Math.min(...data.map((d: any) => d.price));
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- untyped API response iteration
         const max = Math.max(...data.map((d: any) => d.price));
 
         return { current, change, pct, min, max };
@@ -165,6 +167,7 @@ export const PriceMonitorWidget: React.FC<PriceMonitorWidgetProps> = ({
                             />
                             <Tooltip
                                 labelFormatter={val => dayjs(val).format('YYYY-MM-DD')}
+                                // eslint-disable-next-line @typescript-eslint/no-explicit-any -- AntD onChange callback
                                 formatter={(val: any) => [`${val} 元/吨`, '价格']}
                             />
                             <Area

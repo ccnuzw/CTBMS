@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { WorkflowNode } from '@packages/types';
 import { Prisma } from '@prisma/client';
 import {
@@ -43,6 +43,7 @@ const RULE_LAYER_ORDER = ['DEFAULT', 'INDUSTRY', 'EXPERIENCE', 'RUNTIME_OVERRIDE
 @Injectable()
 export class RulePackEvalNodeExecutor implements WorkflowNodeExecutor {
     readonly name = 'RulePackEvalNodeExecutor';
+    private readonly logger = new Logger(RulePackEvalNodeExecutor.name);
     private readonly ruleNodeTypes = new Set(['rule-pack-eval', 'rule-eval', 'alert-check']);
 
     constructor(private readonly prisma: PrismaService) { }
@@ -623,7 +624,8 @@ export class RulePackEvalNodeExecutor implements WorkflowNodeExecutor {
         if (matchMode === 'REGEX') {
             try {
                 return new RegExp(pattern).test(actual);
-            } catch {
+            } catch (e) {
+                this.logger.warn('Condition check failed, returning false', e instanceof Error ? e.message : String(e));
                 return false;
             }
         }

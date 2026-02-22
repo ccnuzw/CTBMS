@@ -135,7 +135,7 @@ export const useIntelSmartBriefing = () => {
   return useMutation({
     mutationFn: async (query?: Partial<IntelligenceFeedQuery>) => {
       // Filter logic identical to feed query
-      const payload: any = {};
+      const payload: Record<string, unknown> = {};
       if (query) {
         Object.entries(query).forEach(([key, value]) => {
           if (value !== undefined && value !== null) {

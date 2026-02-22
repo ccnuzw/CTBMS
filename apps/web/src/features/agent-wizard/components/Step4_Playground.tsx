@@ -1,6 +1,6 @@
 
 import React, { useState, useRef, useEffect } from 'react';
-import { Input, Button, List, Typography, Avatar, Space, message, Card } from 'antd';
+import { Input, Button, List, Typography, Avatar, Space, message, Card, theme } from 'antd';
 import { UserOutlined, RobotOutlined, SendOutlined, CheckCircleOutlined } from '@ant-design/icons';
 import axios from 'axios';
 import { useMutation } from '@tanstack/react-query';
@@ -19,6 +19,7 @@ interface ChatMessage {
 }
 
 export const Step4_Playground = ({ sessionId, onReset }: Step4Props) => {
+    const { token } = theme.useToken();
     const [input, setInput] = useState('');
     const [messages, setMessages] = useState<ChatMessage[]>([
         { role: 'agent', content: 'Hello! I am your new agent. How can I help you today?', timestamp: new Date() }
@@ -107,9 +108,9 @@ export const Step4_Playground = ({ sessionId, onReset }: Step4Props) => {
                                     gap: 10
                                 }}>
                                     <Avatar icon={item.role === 'user' ? <UserOutlined /> : <RobotOutlined />}
-                                        style={{ backgroundColor: item.role === 'user' ? '#87d068' : '#1890ff' }} />
+                                        style={{ backgroundColor: item.role === 'user' ? token.colorSuccess : token.colorPrimary }} />
                                     <div style={{
-                                        background: item.role === 'user' ? '#e6f7ff' : '#f0f0f0',
+                                        background: item.role === 'user' ? token.colorPrimaryBg : token.colorFillAlter,
                                         padding: '10px 16px',
                                         borderRadius: 12,
                                         borderTopLeftRadius: item.role === 'agent' ? 2 : 12,
@@ -121,10 +122,10 @@ export const Step4_Playground = ({ sessionId, onReset }: Step4Props) => {
                             </List.Item>
                         )}
                     />
-                    {sendMessageMutation.isLoading && <div style={{ padding: '0 50px', color: '#999' }}>Agent is typing...</div>}
+                    {sendMessageMutation.isLoading && <div style={{ padding: '0 50px', color: token.colorTextSecondary }}>Agent is typing...</div>}
                 </div>
 
-                <div style={{ padding: 20, borderTop: '1px solid #f0f0f0', background: '#fff' }}>
+                <div style={{ padding: 20, borderTop: `1px solid ${token.colorBorderSecondary}`, background: token.colorBgContainer }}>
                     <Space.Compact style={{ width: '100%' }}>
                         <Input
                             value={input}

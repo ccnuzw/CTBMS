@@ -58,12 +58,12 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({ open, onCl
             title: stripHtml(intel.rawContent || '').split('\n')[0]?.substring(0, 50) || '未命名文档',
             summary: stripHtml(intel.summary || intel.aiAnalysis?.summary || '').substring(0, 100),
             type: 'document' as const,
-            date: intel.effectiveTime as unknown as string,
+            date: intel.effectiveTime as any as string,
             tags: intel.aiAnalysis?.tags || [],
             url: `/intel/knowledge?tab=library&content=documents`,
         }));
 
-        const reports: SearchResult[] = (reportsResult?.data || []).map((report: any) => ({
+        const reports: SearchResult[] = (reportsResult?.data || []).map((report: Record<string, any>) => ({
             id: report.id,
             title: report.title,
             summary: stripHtml(report.analysis?.summary || report.contentPlain?.substring(0, 200) || '').substring(0, 100),

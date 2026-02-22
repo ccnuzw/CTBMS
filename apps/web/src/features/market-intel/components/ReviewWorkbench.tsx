@@ -55,7 +55,7 @@ export const ReviewWorkbench: React.FC = () => {
     const [currentRejectId, setCurrentRejectId] = useState<string | null>(null);
     const [rejectReason, setRejectReason] = useState('');
 
-    const handleSearch = (values: any) => {
+    const handleSearch = (values: Record<string, any>) => {
         const newFilters: KnowledgeListQuery = {
             ...filters,
             page: 1,
@@ -170,6 +170,7 @@ export const ReviewWorkbench: React.FC = () => {
             title: '操作',
             key: 'action',
             width: 150,
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any -- AntD table column render callback
             render: (_: any, record: KnowledgeItem) => (
                 <Space>
                     <Tooltip title="查看详情">

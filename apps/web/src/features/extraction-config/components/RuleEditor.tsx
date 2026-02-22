@@ -41,14 +41,16 @@ import {
 const { Title, Text, Paragraph } = Typography;
 const { TextArea } = Input;
 
+const globalToken = theme.getDesignToken();
+
 // 条件类型选项
 const CONDITION_TYPE_OPTIONS = [
-  { label: '采集点名称', value: 'COLLECTION_POINT', color: '#1890ff' },
-  { label: '关键词', value: 'KEYWORD', color: '#52c41a' },
-  { label: '数字+单位', value: 'NUMBER', color: '#faad14' },
-  { label: '日期', value: 'DATE', color: '#722ed1' },
-  { label: '区域名称', value: 'REGION', color: '#13c2c2' },
-  { label: '品种名称', value: 'COMMODITY', color: '#eb2f96' },
+  { label: '采集点名称', value: 'COLLECTION_POINT', color: globalToken.blue },
+  { label: '关键词', value: 'KEYWORD', color: globalToken.colorSuccess },
+  { label: '数字+单位', value: 'NUMBER', color: globalToken.colorWarning },
+  { label: '日期', value: 'DATE', color: (globalToken as any).purple || globalToken.colorPrimary },
+  { label: '区域名称', value: 'REGION', color: globalToken.cyan },
+  { label: '品种名称', value: 'COMMODITY', color: (globalToken as any).magenta || globalToken.colorErrorActive },
 ];
 
 // 连接词选项
@@ -71,7 +73,7 @@ interface RuleEditorProps {
   rule?: ExtractionRule | null;
   onSave?: () => void;
   onCancel?: () => void;
-  autoFocusProps?: any;
+  autoFocusProps?: Record<string, any>;
 }
 
 export const RuleEditor: React.FC<RuleEditorProps> = ({
@@ -147,6 +149,7 @@ export const RuleEditor: React.FC<RuleEditorProps> = ({
     }
   };
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- dynamic form/parameter value
   const updateCondition = (id: string, field: string, value: any) => {
     setConditions(conditions.map((c) => (c.id === id ? { ...c, [field]: value } : c)));
   };
@@ -334,17 +337,17 @@ export const RuleEditor: React.FC<RuleEditorProps> = ({
                 value={
                   condition.extractFields
                     ? Object.entries(condition.extractFields)
-                        .filter(([_, v]) => v === 'LEFT')
-                        .map(([k]) => `left_${k}`)
-                        .concat(
-                          Object.entries(condition.extractFields)
-                            .filter(([_, v]) => v === 'RIGHT')
-                            .map(([k]) => `right_${k}`),
-                        )
+                      .filter(([_, v]) => v === 'LEFT')
+                      .map(([k]) => `left_${k}`)
+                      .concat(
+                        Object.entries(condition.extractFields)
+                          .filter(([_, v]) => v === 'RIGHT')
+                          .map(([k]) => `right_${k}`),
+                      )
                     : []
                 }
                 onChange={(values: string[]) => {
-                  const extractFields: any = {};
+                  const extractFields: Record<string, any> = {};
                   values.forEach((v) => {
                     const [side, field] = v.split('_');
                     extractFields[field] = side.toUpperCase();

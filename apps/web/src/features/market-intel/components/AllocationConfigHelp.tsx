@@ -58,7 +58,7 @@ export const AllocationConfigHelp: React.FC = () => {
                                 key: 'mode',
                                 label: (
                                     <Space>
-                                        <SwapOutlined style={{ color: '#1890ff' }} />
+                                        <SwapOutlined style={{ color: token.blue }} />
                                         <Text strong>两种分配模式</Text>
                                         <Tag color="blue">核心</Tag>
                                     </Space>
@@ -111,7 +111,7 @@ export const AllocationConfigHelp: React.FC = () => {
                                 key: 'byUser',
                                 label: (
                                     <Space>
-                                        <UserOutlined style={{ color: '#52c41a' }} />
+                                        <UserOutlined style={{ color: token.colorSuccess }} />
                                         <Text strong>按员工分配 - 详细指南</Text>
                                         <Tag color="green">推荐</Tag>
                                     </Space>
@@ -203,7 +203,7 @@ export const AllocationConfigHelp: React.FC = () => {
                                 key: 'byPoint',
                                 label: (
                                     <Space>
-                                        <EnvironmentOutlined style={{ color: '#fa541c' }} />
+                                        <EnvironmentOutlined style={{ color: (token as any).volcano || token.colorWarning }} />
                                         <Text strong>按采集点分配 - 详细指南</Text>
                                         <Tag color="volcano">补漏</Tag>
                                     </Space>
@@ -256,7 +256,7 @@ export const AllocationConfigHelp: React.FC = () => {
                                 key: 'commodity',
                                 label: (
                                     <Space>
-                                        <SettingOutlined style={{ color: '#722ed1' }} />
+                                        <SettingOutlined style={{ color: (token as any).purple || token.colorPrimary }} />
                                         <Text strong>品种分配说明</Text>
                                         <Tag color="purple">高级</Tag>
                                     </Space>
@@ -309,7 +309,7 @@ export const AllocationConfigHelp: React.FC = () => {
                                 key: 'stats',
                                 label: (
                                     <Space>
-                                        <TeamOutlined style={{ color: '#13c2c2' }} />
+                                        <TeamOutlined style={{ color: token.cyan }} />
                                         <Text strong>统计与监控</Text>
                                         <Tag color="cyan">监控</Tag>
                                     </Space>

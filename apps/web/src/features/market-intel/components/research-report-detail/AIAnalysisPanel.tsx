@@ -128,6 +128,7 @@ export const AIAnalysisPanel: React.FC<AIAnalysisPanelProps> = ({ report, mode =
   // Check types first. ResearchReportResponse (from types packages) defines:
   // keyPoints: any; prediction: any; dataPoints: any;
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- parsed AI analysis arrays
   let keyPoints: any[] = [];
   if (Array.isArray(report.analysis?.keyPoints)) {
     keyPoints = report.analysis.keyPoints;
@@ -167,6 +168,7 @@ export const AIAnalysisPanel: React.FC<AIAnalysisPanelProps> = ({ report, mode =
               gap: '12px',
             }}
           >
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any -- untyped API response iteration
             {dataPoints.map((dp: any, idx: number) => (
               <Card key={idx} size="small" type="inner">
                 <Statistic
@@ -204,7 +206,7 @@ export const AIAnalysisPanel: React.FC<AIAnalysisPanelProps> = ({ report, mode =
           {keyPoints.length > 0 ? (
             <List
               dataSource={keyPoints}
-              renderItem={(item: any) => (
+              renderItem={(item: Record<string, any>) => (
                 <List.Item>
                   <Space align="start">
                     <div style={{ marginTop: 4 }}>{getSentimentIcon(item.sentiment)}</div>

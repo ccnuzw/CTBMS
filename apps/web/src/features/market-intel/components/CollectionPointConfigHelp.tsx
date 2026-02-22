@@ -57,7 +57,7 @@ export const CollectionPointConfigHelp: React.FC = () => {
                                 key: 'basic',
                                 label: (
                                     <Space>
-                                        <ShopOutlined style={{ color: '#1890ff' }} />
+                                        <ShopOutlined style={{ color: token.blue }} />
                                         <Text strong>基本信息</Text>
                                         <Tag color="blue">必填</Tag>
                                     </Space>
@@ -211,7 +211,7 @@ export const CollectionPointConfigHelp: React.FC = () => {
                                 key: 'schedule',
                                 label: (
                                     <Space>
-                                        <ClockCircleOutlined style={{ color: '#52c41a' }} />
+                                        <ClockCircleOutlined style={{ color: token.colorSuccess }} />
                                         <Text strong>任务下发规则</Text>
                                         <Tag color="green">调度</Tag>
                                     </Space>
@@ -313,7 +313,7 @@ export const CollectionPointConfigHelp: React.FC = () => {
                                 key: 'geo',
                                 label: (
                                     <Space>
-                                        <EnvironmentOutlined style={{ color: '#fa541c' }} />
+                                        <EnvironmentOutlined style={{ color: (token as any).volcano || token.colorError }} />
                                         <Text strong>地理信息</Text>
                                         <Tag color="volcano">可选</Tag>
                                     </Space>
@@ -376,7 +376,7 @@ export const CollectionPointConfigHelp: React.FC = () => {
                                 key: 'business',
                                 label: (
                                     <Space>
-                                        <TagsOutlined style={{ color: '#722ed1' }} />
+                                        <TagsOutlined style={{ color: (token as any).purple || token.colorPrimary }} />
                                         <Text strong>品种与价格配置</Text>
                                         <Tag color="purple">核心</Tag>
                                     </Space>
@@ -485,7 +485,7 @@ export const CollectionPointConfigHelp: React.FC = () => {
                                 key: 'ai',
                                 label: (
                                     <Space>
-                                        <RobotOutlined style={{ color: '#13c2c2' }} />
+                                        <RobotOutlined style={{ color: token.cyan }} />
                                         <Text strong>AI 智能提取配置</Text>
                                         <Tag color="cyan">AI</Tag>
                                     </Space>
@@ -560,7 +560,7 @@ export const CollectionPointConfigHelp: React.FC = () => {
                                 key: 'control',
                                 label: (
                                     <Space>
-                                        <SettingOutlined style={{ color: '#eb2f96' }} />
+                                        <SettingOutlined style={{ color: (token as any).magenta || token.colorErrorActive }} />
                                         <Text strong>控制设置</Text>
                                         <Tag color="magenta">管理</Tag>
                                     </Space>
@@ -608,7 +608,7 @@ export const CollectionPointConfigHelp: React.FC = () => {
                                 key: 'allocation',
                                 label: (
                                     <Space>
-                                        <TeamOutlined style={{ color: '#fa8c16' }} />
+                                        <TeamOutlined style={{ color: token.colorWarning }} />
                                         <Text strong>人员分配</Text>
                                         <Tag color="orange">关联</Tag>
                                     </Space>

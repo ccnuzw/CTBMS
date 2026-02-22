@@ -1,6 +1,9 @@
 import { Module } from '@nestjs/common';
 import { WorkflowExecutionController } from './workflow-execution.controller';
 import { WorkflowExecutionService } from './workflow-execution.service';
+import { ExecutionLogService } from './execution-log.service';
+import { WorkflowExecutionQueryService } from './workflow-execution-query.service';
+import { WorkflowExecutionReplayService } from './workflow-execution-replay.service';
 import { NodeExecutorRegistry } from './engine/node-executor.registry';
 import { ManualTriggerNodeExecutor } from './engine/node-executors/manual-trigger.executor';
 import { NotifyNodeExecutor } from './engine/node-executors/notify-node.executor';
@@ -38,6 +41,9 @@ import { DecisionRecordModule } from '../decision-record/decision-record.module'
     controllers: [WorkflowExecutionController],
     providers: [
         WorkflowExecutionService,
+        ExecutionLogService,
+        WorkflowExecutionQueryService,
+        WorkflowExecutionReplayService,
         NodeExecutorRegistry,
         ManualTriggerNodeExecutor,
         RulePackEvalNodeExecutor,
@@ -64,6 +70,15 @@ import { DecisionRecordModule } from '../decision-record/decision-record.module'
         DagScheduler,
         AIProviderFactory,
     ],
-    exports: [WorkflowExecutionService, VariableResolver, EvidenceCollector, ReplayAssembler, DagScheduler],
+    exports: [
+        WorkflowExecutionService,
+        ExecutionLogService,
+        WorkflowExecutionQueryService,
+        WorkflowExecutionReplayService,
+        VariableResolver,
+        EvidenceCollector,
+        ReplayAssembler,
+        DagScheduler
+    ],
 })
 export class WorkflowExecutionModule { }

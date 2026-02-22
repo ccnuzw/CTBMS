@@ -46,18 +46,20 @@ const FALLBACK_SENTIMENT_LABELS: Record<string, string> = {
     mixed: '分歧',
 };
 
+const globalToken = theme.getDesignToken();
+
 const FALLBACK_SENTIMENT_COLORS: Record<string, string> = {
-    bullish: '#f5222d',
-    bearish: '#52c41a',
-    neutral: '#1890ff',
-    mixed: '#faad14',
+    bullish: globalToken.colorError,
+    bearish: globalToken.colorSuccess,
+    neutral: globalToken.colorPrimary,
+    mixed: globalToken.colorWarning,
 };
 
 // 洞察方向图标
-const getDirectionIcon = (direction?: string) => {
+const getDirectionIcon = (direction: string | undefined, token: Record<string, any>) => {
     switch (direction) {
-        case 'Bullish': return <RiseOutlined style={{ color: '#f5222d' }} />;
-        case 'Bearish': return <FallOutlined style={{ color: '#52c41a' }} />;
+        case 'Bullish': return <RiseOutlined style={{ color: token.colorError }} />;
+        case 'Bearish': return <FallOutlined style={{ color: token.colorSuccess }} />;
         default: return null;
     }
 };
@@ -93,6 +95,13 @@ export const MarketInsightCard: React.FC<MarketInsightCardProps> = ({
     }, [dictionaries]);
 
     const sentimentMeta = useMemo(() => {
+        const FALLBACK_SENTIMENT_COLORS: Record<string, string> = {
+            bullish: token.colorError,
+            bearish: token.colorSuccess,
+            neutral: token.colorPrimary,
+            mixed: token.colorWarning,
+        };
+
         const items = dictionaries?.MARKET_SENTIMENT?.filter((item) => item.isActive) || [];
         if (!items.length) {
             return {
@@ -103,7 +112,7 @@ export const MarketInsightCard: React.FC<MarketInsightCardProps> = ({
         return items.reduce<{ labels: Record<string, string>; colors: Record<string, string> }>(
             (acc, item) => {
                 acc.labels[item.code] = item.label;
-                const color = (item.meta as { color?: string } | null)?.color || FALLBACK_SENTIMENT_COLORS[item.code] || '#1890ff';
+                const color = (item.meta as { color?: string } | null)?.color || FALLBACK_SENTIMENT_COLORS[item.code] || token.colorPrimary;
                 acc.colors[item.code] = color;
                 return acc;
             },
@@ -131,7 +140,7 @@ export const MarketInsightCard: React.FC<MarketInsightCardProps> = ({
     }, [dictionaries]);
 
     const sourceInfo = sourceTypeMeta[intel.sourceType] || { label: '未知', color: 'default' };
-    const sentimentColor = sentimentMeta.colors[intel.marketSentiment?.overall || ''] || '#1890ff';
+    const sentimentColor = sentimentMeta.colors[intel.marketSentiment?.overall || ''] || token.colorPrimary;
     const sentimentLabel = sentimentMeta.labels[intel.marketSentiment?.overall || ''] || intel.marketSentiment?.overall || '未知';
 
     return (
@@ -141,7 +150,7 @@ export const MarketInsightCard: React.FC<MarketInsightCardProps> = ({
                 ...style,
                 borderLeftWidth: 3,
                 borderLeftStyle: 'solid',
-                borderLeftColor: '#722ed1', // 紫色标识洞察类
+                borderLeftColor: (token as any).purple || token.colorPrimary, // 紫色标识洞察类
             }}
             bodyStyle={{ padding: 16 }}
             onClick={onClick}
@@ -149,7 +158,7 @@ export const MarketInsightCard: React.FC<MarketInsightCardProps> = ({
             {/* 头部: 标题 + 标签 */}
             <Flex justify="space-between" align="start" style={{ marginBottom: 12 }}>
                 <Flex align="center" gap={8}>
-                    <BulbOutlined style={{ color: '#722ed1', fontSize: 18 }} />
+                    <BulbOutlined style={{ color: (token as any).purple || token.colorPrimary, fontSize: 18 }} />
                     <Text strong style={{ fontSize: 15 }}>{intel.title || '市场洞察'}</Text>
                     {intel.status === 'pending' && (
                         <Badge status="processing" text="待处理" />
@@ -166,7 +175,7 @@ export const MarketInsightCard: React.FC<MarketInsightCardProps> = ({
                 <Flex align="center" gap={8} style={{ marginBottom: 8, padding: '4px 8px', background: token.colorFillAlter, borderRadius: 4, width: 'fit-content' }}>
                     <Text type="secondary" style={{ fontSize: 12 }}>上报人:</Text>
                     <Flex align="center" gap={4}>
-                        <div style={{ width: 16, height: 16, borderRadius: '50%', background: '#722ed1', color: '#fff', fontSize: 10, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                        <div style={{ width: 16, height: 16, borderRadius: '50%', background: (token as any).purple || token.colorPrimary, color: token.colorTextLightSolid || '#fff', fontSize: 10, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                             {intel.author.name[0]}
                         </div>
                         <Text style={{ fontSize: 12 }}>{intel.author.name}</Text>
@@ -216,11 +225,11 @@ export const MarketInsightCard: React.FC<MarketInsightCardProps> = ({
                                 padding: 12,
                                 background: token.colorFillQuaternary,
                                 borderRadius: token.borderRadius,
-                                borderLeft: `3px solid ${getDirectionColor(insight.direction) === 'red' ? '#f5222d' : getDirectionColor(insight.direction) === 'green' ? '#52c41a' : '#1890ff'}`,
+                                borderLeft: `3px solid ${getDirectionColor(insight.direction) === 'red' ? token.colorError : getDirectionColor(insight.direction) === 'green' ? token.colorSuccess : token.colorPrimary}`,
                             }}
                         >
                             <Flex align="center" gap={6} style={{ marginBottom: 6 }}>
-                                {getDirectionIcon(insight.direction)}
+                                {getDirectionIcon(insight.direction, token)}
                                 <Text strong style={{ fontSize: 13 }}>{insight.title}</Text>
                                 {insight.direction && (
                                     <Tag color={getDirectionColor(insight.direction)} style={{ margin: 0 }}>

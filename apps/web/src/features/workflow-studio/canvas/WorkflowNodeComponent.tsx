@@ -154,7 +154,7 @@ export const WorkflowNodeComponent = memo(({ data, selected }: NodeProps) => {
                         width: 12,
                         height: 12,
                         borderRadius: '50%',
-                        background: '#ff4d4f',
+                        background: token.colorError,
                         border: '2px solid white',
                         boxShadow: '0 2px 4px rgba(0,0,0,0.2)',
                         zIndex: 10,

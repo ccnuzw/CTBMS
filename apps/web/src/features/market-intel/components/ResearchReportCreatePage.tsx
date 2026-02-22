@@ -189,7 +189,7 @@ export const ResearchReportCreatePage = () => {
 
   // Computed Options
   const commodityOptions =
-    stats?.topCommodities?.map((item: any) => ({
+    stats?.topCommodities?.map((item: Record<string, any>) => ({
       label: item.name,
       value: item.name,
     })) || [];
@@ -349,8 +349,6 @@ export const ResearchReportCreatePage = () => {
     const bodyContent = form.getFieldValue('content') || values.content;
     const summaryContent = form.getFieldValue('summary') || values.summary;
 
-    console.log('[handleFinish] content length:', bodyContent?.length, 'summary length:', summaryContent?.length);
-
     if (!bodyContent) {
       message.error(isPeriodicReport ? '请填写报告内容' : '研报正文不能为空');
       return;
@@ -382,9 +380,10 @@ export const ResearchReportCreatePage = () => {
           message.success(`${periodicMeta?.label}提交成功！等待审核...`);
         }
         navigate(taskId ? '/workstation' : '/intel/knowledge/items');
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- error object from catch
       } catch (error: any) {
         message.error(error.response?.data?.message || '提交失败，请重试');
-        console.error(error);
+        if (import.meta.env.DEV) console.error(error);
       }
       return;
     }
@@ -429,7 +428,7 @@ export const ResearchReportCreatePage = () => {
       navigate('/intel/knowledge?tab=library&content=reports');
     } catch (error) {
       message.error(isEditMode ? '操作失败，请重试' : '操作失败，请重试');
-      console.error(error);
+      if (import.meta.env.DEV) console.error(error);
     }
   };
 
@@ -437,6 +436,7 @@ export const ResearchReportCreatePage = () => {
   const [uploadedIntelId, setUploadedIntelId] = useState<string | null>(null);
   const [uploadedAttachment, setUploadedAttachment] = useState<any>(null);
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- complex dynamic type
   const handleUploadSuccess = (result: any) => {
     if (result.intel?.id) {
       setUploadedIntelId(result.intel.id);
@@ -609,7 +609,7 @@ export const ResearchReportCreatePage = () => {
         }
       }
     } catch (error) {
-      console.error(error);
+      if (import.meta.env.DEV) console.error(error);
       message.error('AI 分析失败，请检查网络或重试');
     } finally {
       hide();

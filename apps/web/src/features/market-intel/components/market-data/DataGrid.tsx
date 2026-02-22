@@ -27,13 +27,15 @@ import {
 
 const { Text } = Typography;
 
+const globalToken = theme.getDesignToken();
+
 // 采集点类型图标
 const POINT_TYPE_ICONS: Record<string, React.ReactNode> = {
-  PORT: <AimOutlined style={{ color: '#1890ff' }} />,
-  ENTERPRISE: <BankOutlined style={{ color: '#52c41a' }} />,
-  MARKET: <ShopOutlined style={{ color: '#faad14' }} />,
-  REGION: <GlobalOutlined style={{ color: '#722ed1' }} />,
-  STATION: <EnvironmentOutlined style={{ color: '#13c2c2' }} />,
+  PORT: <AimOutlined style={{ color: globalToken.blue }} />,
+  ENTERPRISE: <BankOutlined style={{ color: globalToken.colorSuccess }} />,
+  MARKET: <ShopOutlined style={{ color: globalToken.colorWarning }} />,
+  REGION: <GlobalOutlined style={{ color: (globalToken as any).purple || globalToken.colorPrimary }} />,
+  STATION: <EnvironmentOutlined style={{ color: globalToken.cyan }} />,
 };
 
 const POINT_TYPE_LABELS_FALLBACK: Record<string, string> = {
@@ -192,7 +194,7 @@ export const DataGrid: React.FC<DataGridProps> = ({
     };
   }, [filteredData, startDate, endDate]);
 
-  const csvEscape = (value: unknown) => {
+  const csvEscape = (value: any) => {
     const text = value === null || value === undefined ? '' : String(value);
     if (text.includes('"') || text.includes(',') || text.includes('\n')) {
       return `"${text.replace(/"/g, '""')}"`;
@@ -271,7 +273,7 @@ export const DataGrid: React.FC<DataGridProps> = ({
       dataIndex: 'location',
       key: 'location',
       width: 150,
-      render: (location: string, record: any) => {
+      render: (location: string, record: Record<string, any>) => {
         const pointType =
           record.collectionPoint?.type ||
           (record.sourceType === 'REGIONAL' ? 'REGION' : record.sourceType);

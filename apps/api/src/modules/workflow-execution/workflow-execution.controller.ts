@@ -11,6 +11,8 @@ import {
 } from '@nestjs/common';
 import { Request as ExpressRequest } from 'express';
 import { WorkflowExecutionService } from './workflow-execution.service';
+import { WorkflowExecutionQueryService } from './workflow-execution-query.service';
+import { WorkflowExecutionReplayService } from './workflow-execution-replay.service';
 import {
   CancelWorkflowExecutionRequest,
   TriggerWorkflowExecutionRequest,
@@ -23,7 +25,11 @@ type AuthRequest = ExpressRequest & { user?: { id?: string } };
 
 @Controller('workflow-executions')
 export class WorkflowExecutionController {
-  constructor(private readonly workflowExecutionService: WorkflowExecutionService) {}
+  constructor(
+    private readonly workflowExecutionService: WorkflowExecutionService,
+    private readonly workflowExecutionQueryService: WorkflowExecutionQueryService,
+    private readonly workflowExecutionReplayService: WorkflowExecutionReplayService,
+  ) { }
 
   @Post('trigger')
   trigger(@Body() dto: TriggerWorkflowExecutionRequest, @Request() req: AuthRequest) {
@@ -62,7 +68,7 @@ export class WorkflowExecutionController {
     if (!userId) {
       throw new UnauthorizedException('User not authenticated');
     }
-    return this.workflowExecutionService.findAll(userId, query);
+    return this.workflowExecutionQueryService.findAll(userId, query);
   }
 
   @Get(':id')
@@ -71,7 +77,7 @@ export class WorkflowExecutionController {
     if (!userId) {
       throw new UnauthorizedException('User not authenticated');
     }
-    return this.workflowExecutionService.findOne(userId, id);
+    return this.workflowExecutionQueryService.findOne(userId, id);
   }
 
   @Get(':id/timeline')
@@ -84,7 +90,7 @@ export class WorkflowExecutionController {
     if (!userId) {
       throw new UnauthorizedException('User not authenticated');
     }
-    return this.workflowExecutionService.timeline(userId, id, query);
+    return this.workflowExecutionQueryService.timeline(userId, id, query);
   }
 
   @Get(':id/debate-traces')
@@ -97,7 +103,7 @@ export class WorkflowExecutionController {
     if (!userId) {
       throw new UnauthorizedException('User not authenticated');
     }
-    return this.workflowExecutionService.debateTraces(userId, id, query);
+    return this.workflowExecutionQueryService.debateTraces(userId, id, query);
   }
 
   @Get(':id/debate-timeline')
@@ -106,7 +112,7 @@ export class WorkflowExecutionController {
     if (!userId) {
       throw new UnauthorizedException('User not authenticated');
     }
-    return this.workflowExecutionService.debateTimeline(userId, id);
+    return this.workflowExecutionQueryService.debateTimeline(userId, id);
   }
 
   @Get(':id/replay')
@@ -115,6 +121,6 @@ export class WorkflowExecutionController {
     if (!userId) {
       throw new UnauthorizedException('User not authenticated');
     }
-    return this.workflowExecutionService.replay(userId, id);
+    return this.workflowExecutionReplayService.replay(userId, id);
   }
 }

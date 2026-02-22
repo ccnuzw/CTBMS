@@ -90,7 +90,7 @@ export const DocumentDetailPage: React.FC = () => {
             navigate(`/intel/knowledge/reports/${result.reportId}`);
         } catch (error) {
             message.error('研报生成失败，请重试');
-            console.error(error);
+            if (import.meta.env.DEV) console.error(error);
         }
     };
 

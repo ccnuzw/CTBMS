@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Card, Form, Radio, Space, Switch, Typography, Divider, Input, Button, Row, Col, Tooltip } from 'antd';
+import { Card, Form, Radio, Space, Switch, Typography, Divider, Input, Button, Row, Col, Tooltip, theme } from 'antd';
 import { SafetyCertificateOutlined, PlusOutlined, DeleteOutlined, InfoCircleOutlined } from '@ant-design/icons';
 
 const { Text, Title } = Typography;
@@ -43,6 +43,7 @@ const PRESETS = {
 };
 
 export const VisualGuardrailsBuilder: React.FC<VisualGuardrailsBuilderProps> = ({ value = {}, onChange }) => {
+    const { token } = theme.useToken();
     const [preset, setPreset] = useState<'LOOSE' | 'MODERATE' | 'STRICT' | 'CUSTOM'>('CUSTOM');
 
     // Detect preset on mount or value change
@@ -68,6 +69,7 @@ export const VisualGuardrailsBuilder: React.FC<VisualGuardrailsBuilderProps> = (
         else setPreset('CUSTOM');
     }, [value]);
 
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const handlePresetChange = (e: any) => {
         const newPreset = e.target.value;
         setPreset(newPreset);
@@ -93,7 +95,7 @@ export const VisualGuardrailsBuilder: React.FC<VisualGuardrailsBuilderProps> = (
         onChange?.({ ...value, customRules: newRules });
     };
 
-    const updateCustomRule = (index: number, field: string, val: any) => {
+    const updateCustomRule = (index: number, field: string, val: unknown) => {
         const newRules = [...(value.customRules || [])];
         newRules[index] = { ...newRules[index], [field]: val };
         onChange?.({ ...value, customRules: newRules });
@@ -110,7 +112,7 @@ export const VisualGuardrailsBuilder: React.FC<VisualGuardrailsBuilderProps> = (
             size="small"
             title={
                 <Space>
-                    <SafetyCertificateOutlined style={{ color: '#52c41a' }} />
+                    <SafetyCertificateOutlined style={{ color: token.colorSuccess }} />
                     <span>安全防护规则 (Guardrails)</span>
                 </Space>
             }
@@ -144,7 +146,7 @@ export const VisualGuardrailsBuilder: React.FC<VisualGuardrailsBuilderProps> = (
                             <Space>
                                 <Text>防幻觉增强</Text>
                                 <Tooltip title="强制模型进行自我反思，减少捏造事实">
-                                    <InfoCircleOutlined style={{ color: '#999' }} />
+                                    <InfoCircleOutlined style={{ color: token.colorTextSecondary }} />
                                 </Tooltip>
                             </Space>
                             <Switch
@@ -160,7 +162,7 @@ export const VisualGuardrailsBuilder: React.FC<VisualGuardrailsBuilderProps> = (
                             <Space>
                                 <Text>强制证据引用</Text>
                                 <Tooltip title="要求回答必须引用上下文中的具体片段">
-                                    <InfoCircleOutlined style={{ color: '#999' }} />
+                                    <InfoCircleOutlined style={{ color: token.colorTextSecondary }} />
                                 </Tooltip>
                             </Space>
                             <Switch
@@ -176,7 +178,7 @@ export const VisualGuardrailsBuilder: React.FC<VisualGuardrailsBuilderProps> = (
                             <Space>
                                 <Text>PII 敏感信息过滤</Text>
                                 <Tooltip title="自动掩盖手机号、邮箱、身份证等个人信息">
-                                    <InfoCircleOutlined style={{ color: '#999' }} />
+                                    <InfoCircleOutlined style={{ color: token.colorTextSecondary }} />
                                 </Tooltip>
                             </Space>
                             <Switch
@@ -192,7 +194,7 @@ export const VisualGuardrailsBuilder: React.FC<VisualGuardrailsBuilderProps> = (
                             <Space>
                                 <Text>毒性/辱骂检测</Text>
                                 <Tooltip title="拦截不文明用语和攻击性言论">
-                                    <InfoCircleOutlined style={{ color: '#999' }} />
+                                    <InfoCircleOutlined style={{ color: token.colorTextSecondary }} />
                                 </Tooltip>
                             </Space>
                             <Switch
@@ -208,7 +210,7 @@ export const VisualGuardrailsBuilder: React.FC<VisualGuardrailsBuilderProps> = (
                             <Space>
                                 <Text>竞品提及屏蔽</Text>
                                 <Tooltip title="禁止在回答中提及竞争对手名称">
-                                    <InfoCircleOutlined style={{ color: '#999' }} />
+                                    <InfoCircleOutlined style={{ color: token.colorTextSecondary }} />
                                 </Tooltip>
                             </Space>
                             <Switch
@@ -269,7 +271,7 @@ export const VisualGuardrailsBuilder: React.FC<VisualGuardrailsBuilderProps> = (
                         </Row>
                     ))}
                     {(value.customRules || []).length === 0 && (
-                        <div style={{ textAlign: 'center', color: '#ccc', padding: '8px 0' }}>
+                        <div style={{ textAlign: 'center', color: token.colorTextQuaternary, padding: '8px 0' }}>
                             暂无自定义规则
                         </div>
                     )}

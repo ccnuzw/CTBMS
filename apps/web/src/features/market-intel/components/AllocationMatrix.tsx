@@ -103,7 +103,7 @@ export const AllocationMatrix: React.FC = () => {
   const debouncedPointKeyword = useDebounce(pointKeyword, 500);
 
   const matrixQuery = useMemo(() => {
-    const query: any = {};
+    const query: Record<string, any> = {};
     const hasUserFilter = !!orgFilter || !!debouncedUserKeyword;
     const hasPointFilter = !!pointTypeFilter || !!debouncedPointKeyword;
 
@@ -156,6 +156,7 @@ export const AllocationMatrix: React.FC = () => {
 
   const allocationIdByPointId = useMemo(() => {
     const map = new Map<string, string>();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- untyped API response iteration
     (userAllocations || []).forEach((allocation: any) => {
       if (allocation.collectionPointId) {
         map.set(allocation.collectionPointId, allocation.id);
@@ -332,6 +333,7 @@ export const AllocationMatrix: React.FC = () => {
       setSelectedCommodity([]);
       refetch();
       refetchUserAllocations();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- error object from catch
     } catch (err: any) {
       message.error(err?.response?.data?.message || '操作失败');
     }
@@ -347,6 +349,7 @@ export const AllocationMatrix: React.FC = () => {
     if (currentAllocated) {
       // 查找当前用户在该点的所有分配
       const allocations =
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- untyped API response iteration
         userAllocations?.filter((a: any) => a.collectionPointId === pointId) || [];
 
       if (allocations.length === 0) {
@@ -358,6 +361,7 @@ export const AllocationMatrix: React.FC = () => {
         title: '确认取消分配？',
         content:
           allocations.length > 1
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any -- untyped API response iteration
             ? `该用户在此采集点有 ${allocations.length} 项分配记录（${allocations.map((a: any) => a.commodity || '全品种').join(', ')}），将全部取消。`
             : '取消后该采集点将不再分配给当前负责人',
         okText: '确认',
@@ -365,10 +369,12 @@ export const AllocationMatrix: React.FC = () => {
         onOk: async () => {
           try {
             // 并行删除所有关联分配
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any -- untyped API response iteration
             await Promise.all(allocations.map((a: any) => deleteAllocation.mutateAsync(a.id)));
             message.success('已取消分配');
             refetch();
             refetchUserAllocations();
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any -- error object from catch
           } catch (err: any) {
             message.error(err?.response?.data?.message || '操作失败');
           }
@@ -398,6 +404,7 @@ export const AllocationMatrix: React.FC = () => {
         message.success('已分配');
         refetch();
         refetchUserAllocations();
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- error object from catch
       } catch (err: any) {
         message.error(err?.response?.data?.message || '操作失败');
       }
@@ -627,10 +634,12 @@ export const AllocationMatrix: React.FC = () => {
           // 获取当前选中用户在该点的分配详情
           const userAllocationsForPoint =
             selectedUserId && point.allocations
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any -- untyped API response iteration
               ? point.allocations.filter((a: any) => a.userId === selectedUserId)
               : [];
           const isAssignedToCurrentUser = userAllocationsForPoint.length > 0;
           const assignedCommodities = userAllocationsForPoint.map(
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any -- complex dynamic type
             (a: any) => a.commodity || '全品种',
           );
 
@@ -853,6 +862,7 @@ export const AllocationMatrix: React.FC = () => {
               <Space>
                 <Segmented
                   value={viewMode}
+                  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- AntD onChange callback
                   onChange={(val: any) => setViewMode(val)}
                   options={[
                     { label: '列表', value: 'list', icon: <BarsOutlined /> },
@@ -910,6 +920,7 @@ export const AllocationMatrix: React.FC = () => {
               <Space wrap>
                 <Segmented
                   value={pointStatusFilter}
+                  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- AntD onChange callback
                   onChange={(val: any) => setPointStatusFilter(val)}
                   options={pointStatusOptions}
                 />

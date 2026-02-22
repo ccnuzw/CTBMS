@@ -59,6 +59,7 @@ export const AgentPromptTemplateHistory: React.FC<AgentPromptTemplateHistoryProp
         {
             title: '操作',
             key: 'action',
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
             render: (_: any, record: any) => (
                 <Popconfirm
                     title={`确定回滚到版本 v${record.version}?`}
@@ -70,7 +71,7 @@ export const AgentPromptTemplateHistory: React.FC<AgentPromptTemplateHistoryProp
                     <Button type="link" danger disabled={rollbackMutation.isPending}>
                         回滚至此
                     </Button>
-                </Popconfirm>
+                </Popconfirm >
             ),
         },
     ];

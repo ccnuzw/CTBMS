@@ -12,11 +12,17 @@ import {
   UploadedFile,
   Res,
   BadRequestException,
+  Logger,
 } from '@nestjs/common';
 import { Response } from 'express';
 import { FileInterceptor } from '@nestjs/platform-express';
-import { MarketIntelService } from './market-intel.service';
+import { IntelCrudService } from './intel-crud.service';
+import { IntelAnalysisService } from './intel-analysis.service';
+import { IntelSearchService } from './intel-search.service';
+import { IntelScoringService } from './intel-scoring.service';
 import { PriceDataService } from './price-data.service';
+import { PriceAggregationService } from './price-aggregation.service';
+import { PriceAlertService } from './price-alert.service';
 
 import {
   CreateMarketIntelRequest,
@@ -40,9 +46,15 @@ import { KnowledgeExtractionService } from '../knowledge/services/knowledge-extr
 
 @Controller('market-intel')
 export class MarketIntelController {
+  private readonly logger = new Logger(MarketIntelController.name);
   constructor(
-    private readonly marketIntelService: MarketIntelService,
+    private readonly intelCrudService: IntelCrudService,
+    private readonly intelAnalysisService: IntelAnalysisService,
+    private readonly intelSearchService: IntelSearchService,
+    private readonly intelScoringService: IntelScoringService,
     private readonly priceDataService: PriceDataService,
+    private readonly priceAggregationService: PriceAggregationService,
+    private readonly priceAlertService: PriceAlertService,
     private readonly intelAttachmentService: IntelAttachmentService,
     private readonly documentParserService: DocumentParserService,
     private readonly pdfToMarkdownService: PdfToMarkdownService,
@@ -58,17 +70,17 @@ export class MarketIntelController {
   @Post()
   async create(@Body() dto: CreateMarketIntelRequest) {
     const authorId = 'system-user-placeholder';
-    return this.marketIntelService.create(dto, authorId);
+    return this.intelCrudService.create(dto, authorId);
   }
 
   @Get()
   async findAll(@Query() query: MarketIntelQueryRequest) {
-    return this.marketIntelService.findAll(query);
+    return this.intelCrudService.findAll(query);
   }
 
   @Get('stats')
   async getStats() {
-    return this.marketIntelService.getStats();
+    return this.intelScoringService.getStats();
   }
 
   @Get('leaderboard')
@@ -76,7 +88,7 @@ export class MarketIntelController {
     @Query('limit') limit = '10',
     @Query('timeframe') timeframe: 'day' | 'week' | 'month' | 'year' = 'month',
   ) {
-    return this.marketIntelService.getLeaderboard(parseInt(limit, 10), timeframe);
+    return this.intelScoringService.getLeaderboard(parseInt(limit, 10), timeframe);
   }
 
   @Post('parse-document')
@@ -103,7 +115,7 @@ export class MarketIntelController {
 
   @Post('analyze')
   async analyze(@Body() dto: AnalyzeContentRequest) {
-    return this.marketIntelService.analyze(
+    return this.intelAnalysisService.analyze(
       dto.content as string,
       dto.category as IntelCategory,
       dto.location,
@@ -115,12 +127,12 @@ export class MarketIntelController {
 
   @Post('generate-insight')
   async generateInsight(@Body() dto: { content: string }) {
-    return { summary: await this.marketIntelService.generateInsight(dto.content) };
+    return { summary: await this.intelAnalysisService.generateInsight(dto.content) };
   }
 
   @Get('test-ai')
   async testAI() {
-    return this.marketIntelService.testAI();
+    return this.intelAnalysisService.testAI();
   }
 
   /**
@@ -144,7 +156,7 @@ export class MarketIntelController {
       throw new BadRequestException('keyword is required');
     }
     const split = (s?: string) => (s ? s.split(',').filter(Boolean) : undefined);
-    return this.marketIntelService.universalSearch({
+    return this.intelSearchService.universalSearch({
       keyword: keyword.trim(),
       startDate: startDate ? new Date(startDate) : undefined,
       endDate: endDate ? new Date(endDate) : undefined,
@@ -163,7 +175,7 @@ export class MarketIntelController {
    */
   @Get('search-suggestions')
   async getSearchSuggestions(@Query('prefix') prefix: string, @Query('limit') limit = '10') {
-    return this.marketIntelService.getSearchSuggestions(prefix || '', parseInt(limit, 10));
+    return this.intelSearchService.getSearchSuggestions(prefix || '', parseInt(limit, 10));
   }
 
   /**
@@ -181,7 +193,7 @@ export class MarketIntelController {
     if (!keywords || !keywords.trim()) {
       throw new BadRequestException('keywords is required');
     }
-    return this.marketIntelService.fullTextSearch({
+    return this.intelSearchService.fullTextSearch({
       keywords: keywords.trim(),
       category: category as IntelCategory | undefined,
       startDate: startDate ? new Date(startDate) : undefined,
@@ -203,7 +215,7 @@ export class MarketIntelController {
     @Query('limit') limit = '10',
   ) {
     const split = (v?: string) => (v ? v.split(',').filter(Boolean) : []);
-    return this.marketIntelService.getRelatedContent({
+    return this.intelSearchService.getRelatedContent({
       intelId,
       tags: split(tags),
       commodities: split(commodities),
@@ -217,7 +229,7 @@ export class MarketIntelController {
     if (!body.ids || !Array.isArray(body.ids)) {
       throw new BadRequestException('ids array is required');
     }
-    return this.marketIntelService.batchDelete(body.ids);
+    return this.intelCrudService.batchDelete(body.ids);
   }
 
   @Post('documents/batch-tags')
@@ -227,7 +239,7 @@ export class MarketIntelController {
     if (!body.ids || !Array.isArray(body.ids)) {
       throw new BadRequestException('ids array is required');
     }
-    return this.marketIntelService.batchUpdateTags(
+    return this.intelCrudService.batchUpdateTags(
       body.ids,
       body.addTags || [],
       body.removeTags || [],
@@ -236,7 +248,7 @@ export class MarketIntelController {
 
   @Get('documents/stats')
   async getDocStats(@Query('days') days?: number) {
-    return this.marketIntelService.getDocStats(days ? Number(days) : 30);
+    return this.intelCrudService.getDocStats(days ? Number(days) : 30);
   }
 
   @Patch(':id/tags')
@@ -244,7 +256,7 @@ export class MarketIntelController {
     if (!body.tags || !Array.isArray(body.tags)) {
       throw new BadRequestException('tags array is required');
     }
-    return this.marketIntelService.updateTags(id, body.tags);
+    return this.intelCrudService.updateTags(id, body.tags);
   }
 
   // --- A类：价格数据 ---
@@ -262,12 +274,12 @@ export class MarketIntelController {
 
   @Get('price-data/continuity-health')
   async getPriceContinuityHealth(@Query() query: PriceDataQuery & { days?: string }) {
-    return this.priceDataService.getContinuityHealth(query);
+    return this.priceAggregationService.getContinuityHealth(query);
   }
 
   @Get('alerts/rules')
   async getAlertRules() {
-    return this.priceDataService.listAlertRules();
+    return this.priceAlertService.listAlertRules();
   }
 
   @Post('alerts/rules')
@@ -284,7 +296,7 @@ export class MarketIntelController {
       isActive?: boolean;
     },
   ) {
-    return this.priceDataService.createAlertRule(body);
+    return this.priceAlertService.createAlertRule(body);
   }
 
   @Put('alerts/rules/:id')
@@ -302,12 +314,12 @@ export class MarketIntelController {
       isActive?: boolean;
     },
   ) {
-    return this.priceDataService.updateAlertRule(id, body);
+    return this.priceAlertService.updateAlertRule(id, body);
   }
 
   @Delete('alerts/rules/:id')
   async deleteAlertRule(@Param('id') id: string) {
-    return this.priceDataService.removeAlertRule(id);
+    return this.priceAlertService.removeAlertRule(id);
   }
 
   @Post('alerts/evaluate')
@@ -318,7 +330,7 @@ export class MarketIntelController {
       limit?: string;
     },
   ) {
-    return this.priceDataService.evaluateAlerts(query);
+    return this.priceAlertService.evaluateAlerts(query);
   }
 
   @Get('alerts')
@@ -332,12 +344,12 @@ export class MarketIntelController {
       refresh?: string;
     },
   ) {
-    return this.priceDataService.getAlerts(query);
+    return this.priceAlertService.getAlerts(query);
   }
 
   @Get('alerts/:id/logs')
   async getAlertLogs(@Param('id') id: string) {
-    return this.priceDataService.listAlertLogs(id);
+    return this.priceAlertService.listAlertLogs(id);
   }
 
   @Patch('alerts/:id/status')
@@ -351,7 +363,7 @@ export class MarketIntelController {
       operator?: string;
     },
   ) {
-    return this.priceDataService.updateAlertStatus(
+    return this.priceAlertService.updateAlertStatus(
       id,
       body.status,
       body.note,
@@ -366,12 +378,12 @@ export class MarketIntelController {
     @Query('location') location: string,
     @Query('days') days = '30',
   ) {
-    return this.priceDataService.getTrend(commodity, location, parseInt(days, 10));
+    return this.priceAggregationService.getTrend(commodity, location, parseInt(days, 10));
   }
 
   @Get('price-data/heatmap')
   async getPriceHeatmap(@Query('commodity') commodity: string, @Query('date') date?: string) {
-    return this.priceDataService.getHeatmap(commodity, date ? new Date(date) : undefined);
+    return this.priceAggregationService.getHeatmap(commodity, date ? new Date(date) : undefined);
   }
 
   /**
@@ -388,7 +400,7 @@ export class MarketIntelController {
     @Query('reviewScope') reviewScope?: string,
     @Query('sourceScope') sourceScope?: string,
   ) {
-    return this.priceDataService.getByCollectionPoint(
+    return this.priceAggregationService.getByCollectionPoint(
       collectionPointId,
       commodity,
       parseInt(days, 10),
@@ -415,7 +427,7 @@ export class MarketIntelController {
     @Query('sourceScope') sourceScope?: string,
     @Query('includeData') includeData?: string,
   ) {
-    return this.priceDataService.getByRegion(
+    return this.priceAggregationService.getByRegion(
       regionCode,
       commodity,
       parseInt(days, 10),
@@ -443,7 +455,7 @@ export class MarketIntelController {
     @Query('sourceScope') sourceScope?: string,
   ) {
     const collectionPointIds = ids.split(',').filter((id) => id.trim());
-    return this.priceDataService.getMultiPointTrend(
+    return this.priceAggregationService.getMultiPointTrend(
       collectionPointIds,
       commodity,
       parseInt(days, 10),
@@ -474,7 +486,7 @@ export class MarketIntelController {
     @Query('regionWindow') regionWindow?: string,
   ) {
     const collectionPointIds = (ids || '').split(',').filter((id) => id.trim());
-    return this.priceDataService.getCompareAnalytics({
+    return this.priceAggregationService.getCompareAnalytics({
       collectionPointIds,
       commodity,
       days: parseInt(days, 10),
@@ -494,7 +506,7 @@ export class MarketIntelController {
 
   @Get('filter-options')
   async getFilterOptions() {
-    return this.marketIntelService.getFilterOptions();
+    return this.intelCrudService.getFilterOptions();
   }
 
   @Get('dashboard/stats')
@@ -511,7 +523,7 @@ export class MarketIntelController {
     @Query('maxScore') maxScore?: string,
   ) {
     const split = (s?: string) => (s ? s.split(',').filter(Boolean) : undefined);
-    return this.marketIntelService.getDashboardStats({
+    return this.intelAnalysisService.getDashboardStats({
       startDate: startDate ? new Date(startDate) : undefined,
       endDate: endDate ? new Date(endDate) : undefined,
       sourceTypes: split(sourceTypes),
@@ -529,7 +541,7 @@ export class MarketIntelController {
   async generateSmartBriefing(
     @Body() body: { startDate?: string; endDate?: string;[key: string]: unknown },
   ) {
-    return this.marketIntelService.generateSmartBriefing({
+    return this.intelAnalysisService.generateSmartBriefing({
       ...body,
       startDate: body.startDate ? new Date(body.startDate) : undefined,
       endDate: body.endDate ? new Date(body.endDate) : undefined,
@@ -543,7 +555,7 @@ export class MarketIntelController {
     @Query('commodities') commodities?: string,
     @Query('regions') regions?: string,
   ) {
-    return this.marketIntelService.getTrendAnalysis({
+    return this.intelAnalysisService.getTrendAnalysis({
       startDate: startDate ? new Date(startDate) : undefined,
       endDate: endDate ? new Date(endDate) : undefined,
       commodities: commodities ? commodities.split(',') : undefined,
@@ -565,7 +577,7 @@ export class MarketIntelController {
     @Query('page') page = '1',
     @Query('pageSize') pageSize = '20',
   ) {
-    return this.marketIntelService.findEvents({
+    return this.intelCrudService.findEvents({
       eventTypeId,
       collectionPointId,
       commodity,
@@ -586,7 +598,7 @@ export class MarketIntelController {
     @Query('commodities') commodities?: string,
     @Query('regions') regions?: string,
   ) {
-    return this.marketIntelService.getEventStats({
+    return this.intelCrudService.getEventStats({
       startDate: startDate ? new Date(startDate) : undefined,
       endDate: endDate ? new Date(endDate) : undefined,
       commodities: commodities ? commodities.split(',') : undefined,
@@ -596,7 +608,7 @@ export class MarketIntelController {
 
   @Get('events/:id')
   async findEventById(@Param('id') id: string) {
-    return this.marketIntelService.findEventById(id);
+    return this.intelCrudService.findEventById(id);
   }
 
   // --- C类增强：市场洞察 ---
@@ -613,7 +625,7 @@ export class MarketIntelController {
     @Query('page') page = '1',
     @Query('pageSize') pageSize = '20',
   ) {
-    return this.marketIntelService.findInsights({
+    return this.intelCrudService.findInsights({
       insightTypeId,
       direction,
       timeframe,
@@ -628,19 +640,19 @@ export class MarketIntelController {
 
   @Get('insights/stats')
   async getInsightStats() {
-    return this.marketIntelService.getInsightStats();
+    return this.intelCrudService.getInsightStats();
   }
 
   @Get('insights/:id')
   async findInsightById(@Param('id') id: string) {
-    return this.marketIntelService.findInsightById(id);
+    return this.intelCrudService.findInsightById(id);
   }
 
   // --- 文档升级为研报 (Promote to Report) ---
 
   @Post(':id/promote-to-report')
   async promoteToReport(@Param('id') intelId: string, @Body() dto: PromoteToReportRequest) {
-    return this.marketIntelService.promoteToReport(intelId, dto);
+    return this.intelCrudService.promoteToReport(intelId, dto);
   }
 
   // --- 综合情报流 ---
@@ -674,7 +686,7 @@ export class MarketIntelController {
       return arr.length > 0 ? arr : undefined;
     };
 
-    return this.marketIntelService.getIntelligenceFeed({
+    return this.intelAnalysisService.getIntelligenceFeed({
       startDate: startDate ? new Date(startDate) : undefined,
       endDate: endDate ? new Date(endDate) : undefined,
       eventTypeIds: splitOrUndefined(eventTypeIds),
@@ -695,7 +707,7 @@ export class MarketIntelController {
 
   @Get('hot-topics')
   async getHotTopics(@Query('limit') limit = '20') {
-    return this.marketIntelService.getHotTopics(parseInt(limit, 10));
+    return this.intelAnalysisService.getHotTopics(parseInt(limit, 10));
   }
 
   // --- 任务调度 --- (已迁移至 IntelTaskController)
@@ -754,7 +766,7 @@ export class MarketIntelController {
         file.mimetype,
       );
     } catch (error) {
-      console.error('Failed to convert to Markdown:', error);
+      this.logger.error('Failed to convert to Markdown:', error);
     }
 
     // 2. Prepare data for creation
@@ -774,7 +786,7 @@ export class MarketIntelController {
       : IntelSourceType.OFFICIAL;
 
     // 3. Create MarketIntel record
-    const intel = await this.marketIntelService.create(
+    const intel = await this.intelCrudService.create(
       {
         category: mappedCategory,
         contentType: inputContentType,
@@ -815,7 +827,7 @@ export class MarketIntelController {
       try {
         await this.knowledgeExtractionService.processIntel(intel.id, markdownContent);
       } catch (err) {
-        console.error('Knowledge extraction trigger failed:', err);
+        this.logger.error('Knowledge extraction trigger failed:', err);
         // Do not fail the upload
       }
     }
@@ -874,7 +886,7 @@ export class MarketIntelController {
     return res.download(attachment.storagePath, attachment.filename, (err) => {
       if (err) {
         // Handle error, but response might have started
-        console.error('Download error:', err);
+        this.logger.error('Download error:', err);
         if (!res.headersSent) {
           res.status(500).send('Download failed');
         }
@@ -888,22 +900,22 @@ export class MarketIntelController {
 
   @Get(':id/related')
   async getRelatedIntel(@Param('id') intelId: string, @Query('limit') limit = '8') {
-    return this.marketIntelService.getRelatedIntel(intelId, parseInt(limit, 10));
+    return this.intelSearchService.getRelatedIntel(intelId, parseInt(limit, 10));
   }
 
   @Get(':id')
   async findOne(@Param('id') id: string) {
-    return this.marketIntelService.findOne(id);
+    return this.intelCrudService.findOne(id);
   }
 
   @Put(':id')
   async update(@Param('id') id: string, @Body() dto: UpdateMarketIntelRequest) {
-    return this.marketIntelService.update(id, dto);
+    return this.intelCrudService.update(id, dto);
   }
 
   @Delete(':id')
   async remove(@Param('id') id: string) {
-    return this.marketIntelService.remove(id);
+    return this.intelCrudService.remove(id);
   }
 
   @Get(':id/attachments')

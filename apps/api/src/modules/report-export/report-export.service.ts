@@ -531,7 +531,8 @@ export class ReportExportService {
     try {
       await access(filePath, fsConstants.F_OK);
       return true;
-    } catch {
+    } catch (e) {
+      this.logger.warn('Operation check failed', e instanceof Error ? e.message : String(e));
       return false;
     }
   }

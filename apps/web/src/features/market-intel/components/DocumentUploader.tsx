@@ -62,18 +62,20 @@ export interface UploadResult {
   message?: string;
 }
 
+const globalToken = theme.getDesignToken();
+
 const MIME_TYPE_ICONS: Record<string, React.ReactNode> = {
-  'application/pdf': <FilePdfOutlined style={{ color: '#ff4d4f' }} />,
-  'application/msword': <FileWordOutlined style={{ color: '#1890ff' }} />,
+  'application/pdf': <FilePdfOutlined style={{ color: globalToken.colorError }} />,
+  'application/msword': <FileWordOutlined style={{ color: globalToken.blue }} />,
   'application/vnd.openxmlformats-officedocument.wordprocessingml.document': (
-    <FileWordOutlined style={{ color: '#1890ff' }} />
+    <FileWordOutlined style={{ color: globalToken.blue }} />
   ),
-  'application/vnd.ms-excel': <FileExcelOutlined style={{ color: '#52c41a' }} />,
+  'application/vnd.ms-excel': <FileExcelOutlined style={{ color: globalToken.colorSuccess }} />,
   'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': (
-    <FileExcelOutlined style={{ color: '#52c41a' }} />
+    <FileExcelOutlined style={{ color: globalToken.colorSuccess }} />
   ),
-  'image/jpeg': <PictureOutlined style={{ color: '#722ed1' }} />,
-  'image/png': <PictureOutlined style={{ color: '#722ed1' }} />,
+  'image/jpeg': <PictureOutlined style={{ color: (globalToken as any).purple || globalToken.colorPrimary }} />,
+  'image/png': <PictureOutlined style={{ color: (globalToken as any).purple || globalToken.colorPrimary }} />,
   'text/plain': <FileTextOutlined />,
 };
 

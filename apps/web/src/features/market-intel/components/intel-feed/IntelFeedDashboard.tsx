@@ -101,7 +101,7 @@ export const IntelFeedDashboard: React.FC = () => {
     // 数据映射
     const items = useMemo<IntelItem[]>(() => {
         if (!feedData) return [];
-        return feedData.map((item: any) => {
+        return feedData.map((item: Record<string, any>) => {
             const isEvent = item.type === 'EVENT';
             const isReport = item.type === 'RESEARCH_REPORT';
             const data = item.data;

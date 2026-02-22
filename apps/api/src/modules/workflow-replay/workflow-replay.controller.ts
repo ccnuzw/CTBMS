@@ -8,7 +8,7 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { Request as ExpressRequest } from 'express';
-import { WorkflowExecutionService } from '../workflow-execution';
+import { WorkflowExecutionQueryService, WorkflowExecutionReplayService } from '../workflow-execution';
 import {
   WorkflowDebateReplayQueryRequest,
   WorkflowRuntimeEventQueryRequest,
@@ -18,7 +18,10 @@ type AuthRequest = ExpressRequest & { user?: { id?: string } };
 
 @Controller('workflow-replays')
 export class WorkflowReplayController {
-  constructor(private readonly workflowExecutionService: WorkflowExecutionService) {}
+  constructor(
+    private readonly workflowExecutionQueryService: WorkflowExecutionQueryService,
+    private readonly workflowExecutionReplayService: WorkflowExecutionReplayService,
+  ) { }
 
   private getUserId(req: AuthRequest): string {
     const userId = req.user?.id;
@@ -30,7 +33,7 @@ export class WorkflowReplayController {
 
   @Get(':id')
   replay(@Param('id', ParseUUIDPipe) id: string, @Request() req: AuthRequest) {
-    return this.workflowExecutionService.replay(this.getUserId(req), id);
+    return this.workflowExecutionReplayService.replay(this.getUserId(req), id);
   }
 
   @Get(':id/timeline')
@@ -39,7 +42,7 @@ export class WorkflowReplayController {
     @Query() query: WorkflowRuntimeEventQueryRequest,
     @Request() req: AuthRequest,
   ) {
-    return this.workflowExecutionService.timeline(this.getUserId(req), id, query);
+    return this.workflowExecutionQueryService.timeline(this.getUserId(req), id, query);
   }
 
   @Get(':id/debate-traces')
@@ -48,11 +51,11 @@ export class WorkflowReplayController {
     @Query() query: WorkflowDebateReplayQueryRequest,
     @Request() req: AuthRequest,
   ) {
-    return this.workflowExecutionService.debateTraces(this.getUserId(req), id, query);
+    return this.workflowExecutionQueryService.debateTraces(this.getUserId(req), id, query);
   }
 
   @Get(':id/debate-timeline')
   debateTimeline(@Param('id', ParseUUIDPipe) id: string, @Request() req: AuthRequest) {
-    return this.workflowExecutionService.debateTimeline(this.getUserId(req), id);
+    return this.workflowExecutionQueryService.debateTimeline(this.getUserId(req), id);
   }
 }

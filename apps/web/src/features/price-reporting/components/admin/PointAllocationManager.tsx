@@ -143,6 +143,7 @@ export const PointAllocationManager: React.FC<PointAllocationManagerProps> = ({
 
       const res = await fetch(`/api/collection-points?${params}`);
       if (!res.ok) throw new Error('导出失败');
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- mutation payload
       const data = (await res.json()) as { data: any[] };
       const rows = data.data || [];
 
@@ -171,6 +172,7 @@ export const PointAllocationManager: React.FC<PointAllocationManagerProps> = ({
       link.remove();
       URL.revokeObjectURL(url);
       message.success(`已导出 ${rows.length} 条数据`);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- error object from catch
     } catch (err: any) {
       message.error(err?.message || '导出失败');
     }
@@ -193,9 +195,11 @@ export const PointAllocationManager: React.FC<PointAllocationManagerProps> = ({
     if (selectedOrgNode) {
       if (selectedOrgNode.type === 'org') {
         // 选中组织：匹配该组织及其下属部门的用户
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- untyped API response iteration
         result = result.filter((u: any) => u.organizationId === selectedOrgNode.id);
       } else {
         // 选中部门
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- untyped API response iteration
         result = result.filter((u: any) => u.departmentId === selectedOrgNode.id);
       }
     }
@@ -204,6 +208,7 @@ export const PointAllocationManager: React.FC<PointAllocationManagerProps> = ({
     if (searchUserKeyword) {
       const lowerKeyword = searchUserKeyword.toLowerCase();
       result = result.filter(
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- complex dynamic type
         (u: any) =>
           u.name?.toLowerCase().includes(lowerKeyword) ||
           u.username?.toLowerCase().includes(lowerKeyword),
@@ -219,6 +224,7 @@ export const PointAllocationManager: React.FC<PointAllocationManagerProps> = ({
   }, [users, pointAssignees, searchUserKeyword, selectedOrgNode]);
 
   // 打开分配抽屉
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- complex dynamic type
   const handleOpenDrawer = (point: any) => {
     setSelectedPoint(point);
     setDrawerVisible(true);
@@ -232,15 +238,18 @@ export const PointAllocationManager: React.FC<PointAllocationManagerProps> = ({
     if (!selectedPoint) return;
 
     // Check user's current allocations at this point
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- untyped API response iteration
     const userAllocations = pointAssignees?.filter((a: any) => a.userId === userId) || [];
 
     // CASE 1: Assigning a Specific Commodity
     if (assignCommodity) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- complex dynamic type
       const hasAll = userAllocations.some((a: any) => !a.commodity);
       if (hasAll) {
         message.warning('该用户已拥有全品种采集权限，无需重复分配');
         return;
       }
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- complex dynamic type
       const isDuplicate = userAllocations.some((a: any) => a.commodity === assignCommodity);
       if (isDuplicate) {
         message.warning('该用户已在当前采集点分配了同一种品种');
@@ -249,6 +258,7 @@ export const PointAllocationManager: React.FC<PointAllocationManagerProps> = ({
     }
     // CASE 2: Assigning "All Commodities" (Upgrade)
     else {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- complex dynamic type
       const hasAll = userAllocations.some((a: any) => !a.commodity);
       if (hasAll) {
         message.warning('该用户已拥有全品种采集权限');
@@ -258,6 +268,7 @@ export const PointAllocationManager: React.FC<PointAllocationManagerProps> = ({
       if (userAllocations.length > 0) {
         try {
           // Delete all existing specific allocations first
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any -- untyped API response iteration
           await Promise.all(userAllocations.map((a: any) => deleteAllocation.mutateAsync(a.id)));
           // Then create the "All" allocation
           await createAllocation.mutateAsync({
@@ -267,6 +278,7 @@ export const PointAllocationManager: React.FC<PointAllocationManagerProps> = ({
           });
           message.success('已升级为全品种权限，原有单一品种分配已清除');
           return;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- error object from catch
         } catch (err: any) {
           message.error('权限升级失败，请重试');
           return;
@@ -281,6 +293,7 @@ export const PointAllocationManager: React.FC<PointAllocationManagerProps> = ({
         commodity: assignCommodity, // [NEW]
       });
       message.success('分配成功');
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- error object from catch
     } catch (err: any) {
       if (err.response?.status === 409) {
         message.warning('该用户已在当前采集点分配了同一种品种');
@@ -321,7 +334,7 @@ export const PointAllocationManager: React.FC<PointAllocationManagerProps> = ({
       title: '采集点',
       dataIndex: 'name',
       key: 'name',
-      render: (name: string, record: any) => {
+      render: (name: string, record: Record<string, any>) => {
         const typeInfo = getPointTypeInfo(record.type);
         return (
           <Space>
@@ -351,7 +364,7 @@ export const PointAllocationManager: React.FC<PointAllocationManagerProps> = ({
       dataIndex: 'regionCode',
       key: 'regionCode',
       width: 120,
-      render: (code: string, record: any) => record.region?.name || code || '-',
+      render: (code: string, record: Record<string, any>) => record.region?.name || code || '-',
     },
     {
       title: '主要品种',
@@ -378,7 +391,9 @@ export const PointAllocationManager: React.FC<PointAllocationManagerProps> = ({
       title: '分配状态 / 负责人',
       key: 'allocationStatus',
       width: 250,
-      render: (_: any, record: any) => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- AntD table column render callback
+      render: (_: any, record: Record<string, any>) => {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- untyped API response iteration
         const activeAllocations = record.allocations?.filter((a: any) => a.isActive) || [];
 
         if (activeAllocations.length === 0) {
@@ -388,6 +403,7 @@ export const PointAllocationManager: React.FC<PointAllocationManagerProps> = ({
         return (
           <Space>
             <Avatar.Group maxCount={5} size="small">
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any -- untyped API response iteration
               {activeAllocations.map((a: any) => (
                 <Tooltip key={a.id} title={a.user?.name}>
                   <Avatar src={a.user?.avatar} style={{ backgroundColor: token.colorPrimary }}>
@@ -407,7 +423,8 @@ export const PointAllocationManager: React.FC<PointAllocationManagerProps> = ({
       title: '操作',
       key: 'action',
       width: 120,
-      render: (_: any, record: any) => (
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- AntD table column render callback
+      render: (_: any, record: Record<string, any>) => (
         <Button
           type="primary"
           size="small"
@@ -520,7 +537,7 @@ export const PointAllocationManager: React.FC<PointAllocationManagerProps> = ({
                   <List
                     grid={{ gutter: 16, column: 3 }}
                     dataSource={pointAssignees}
-                    renderItem={(item: any) => (
+                    renderItem={(item: Record<string, any>) => (
                       <List.Item>
                         <Card size="small" bodyStyle={{ padding: 12 }}>
                           <List.Item.Meta
@@ -633,6 +650,7 @@ export const PointAllocationManager: React.FC<PointAllocationManagerProps> = ({
                                 ? '未找到匹配用户'
                                 : '请搜索或选择部门',
                           }}
+                          // eslint-disable-next-line @typescript-eslint/no-explicit-any -- AntD List renderItem callback
                           renderItem={(user: any) => (
                             <List.Item>
                               <Card size="small" hoverable onClick={() => handleAssign(user.id)}>

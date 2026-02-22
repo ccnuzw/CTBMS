@@ -37,13 +37,15 @@ type Props = {
   onJump: (id: string) => void;
 };
 
+const globalToken = theme.getDesignToken();
+
 const RELATION_COLORS: Record<string, string> = {
-  WEEKLY_ROLLUP_OF: '#1677ff',
-  DERIVED_FROM: '#52c41a',
-  SAME_TOPIC: '#722ed1',
-  CITES: '#13c2c2',
-  FOLLOW_UP: '#fa8c16',
-  CONTRADICTS: '#f5222d',
+  WEEKLY_ROLLUP_OF: globalToken.blue,
+  DERIVED_FROM: globalToken.colorSuccess,
+  SAME_TOPIC: (globalToken as any).purple || globalToken.colorPrimary,
+  CITES: globalToken.cyan,
+  FOLLOW_UP: globalToken.colorWarning,
+  CONTRADICTS: globalToken.colorError,
 };
 
 const RELATION_LABELS = KNOWLEDGE_RELATION_LABELS;

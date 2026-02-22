@@ -236,7 +236,7 @@ export const IntelInsightPanel: React.FC<IntelInsightPanelProps> = ({
                 >
                     {(aiResult as any).traceLogs && (aiResult as any).traceLogs.length > 0 ? (
                         <Timeline
-                            items={(aiResult as any).traceLogs.map((log: any, index: number) => {
+                            items={(aiResult as any).traceLogs.map((log: Record<string, any>, index: number) => {
                                 const isError = log.level === 'error';
                                 const isWarn = log.level === 'warn';
                                 const color = isError ? 'red' : isWarn ? 'orange' : 'blue';

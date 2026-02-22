@@ -20,12 +20,14 @@ interface TimelineViewProps {
     selectedIntelId?: string;
 }
 
+const globalToken = theme.getDesignToken();
+
 const CONTENT_TYPE_CONFIG: Record<ContentType, { icon: React.ReactNode; color: string; label: string }> = {
-    [ContentType.DAILY_REPORT]: { icon: <FileTextOutlined />, color: '#1890ff', label: '日报' },
-    [ContentType.RESEARCH_REPORT]: { icon: <FilePdfOutlined />, color: '#52c41a', label: '研报' },
+    [ContentType.DAILY_REPORT]: { icon: <FileTextOutlined />, color: globalToken.blue, label: '日报' },
+    [ContentType.RESEARCH_REPORT]: { icon: <FilePdfOutlined />, color: globalToken.colorSuccess, label: '研报' },
 };
 
-const DEFAULT_CONTENT_CONFIG = { icon: <FileTextOutlined />, color: '#1890ff', label: '情报' };
+const DEFAULT_CONTENT_CONFIG = { icon: <FileTextOutlined />, color: globalToken.blue, label: '情报' };
 
 const STATUS_CONFIG: Record<string, { label: string; badgeStatus: 'processing' | 'success' | 'error' | 'default' }> =
 {
@@ -134,7 +136,7 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
                                             display: 'flex',
                                             alignItems: 'center',
                                             justifyContent: 'center',
-                                            color: '#fff',
+                                            color: token.colorTextLightSolid || '#fff',
                                             fontSize: 14,
                                         }}
                                     >

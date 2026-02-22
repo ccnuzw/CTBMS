@@ -98,6 +98,7 @@ export const RegionManager: React.FC = () => {
         try {
             await deleteMutation.mutateAsync(id);
             message.success('删除成功');
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- error object from catch
         } catch (error: any) {
             message.error(error.message || '删除失败');
         }
@@ -128,6 +129,7 @@ export const RegionManager: React.FC = () => {
             }
             setEditorOpen(false);
             setEditingRecord(null);
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- error object from catch
         } catch (error: any) {
             if (error.message) {
                 message.error(error.message);

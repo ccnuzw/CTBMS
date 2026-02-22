@@ -150,13 +150,13 @@ export const LogicRulesPage = () => {
         }
     };
 
-    const handleFinish = async (values: any) => {
+    const handleFinish = async (values: Record<string, any>) => {
         try {
             if (currentRow) {
                 await updateMutation.mutateAsync({ id: currentRow.id, data: values });
                 message.success('更新成功');
             } else {
-                await createMutation.mutateAsync(values);
+                await createMutation.mutateAsync(values as Parameters<typeof createMutation.mutateAsync>[0]);
                 message.success('创建成功');
             }
             setModalVisible(false);
@@ -331,70 +331,70 @@ export const LogicRulesPage = () => {
                         fieldProps={formAutoFocusFieldProps as any}
                     />
 
-                <ProFormSelect
-                    name="matchMode"
-                    label="匹配模式"
-                    valueEnum={{
-                        CONTAINS: '包含 (Contains)',
-                        EXACT: '精确 (Exact)',
-                        REGEX: '正则 (Regex)',
-                    }}
-                    rules={[{ required: true }]}
-                />
+                    <ProFormSelect
+                        name="matchMode"
+                        label="匹配模式"
+                        valueEnum={{
+                            CONTAINS: '包含 (Contains)',
+                            EXACT: '精确 (Exact)',
+                            REGEX: '正则 (Regex)',
+                        }}
+                        rules={[{ required: true }]}
+                    />
 
-                <ProFormText
-                    name="pattern"
-                    label="匹配范式 (Pattern)"
-                    tooltip="需要匹配的关键词或正则表达式"
-                    rules={[{ required: true }]}
-                />
+                    <ProFormText
+                        name="pattern"
+                        label="匹配范式 (Pattern)"
+                        tooltip="需要匹配的关键词或正则表达式"
+                        rules={[{ required: true }]}
+                    />
 
 
 
-                <ProFormDependency name={['domain']}>
-                    {({ domain }) => {
-                        const options = targetLabelMap[domain] || {};
-                        const isKnownDomain = Object.keys(options).length > 0;
+                    <ProFormDependency name={['domain']}>
+                        {({ domain }) => {
+                            const options = targetLabelMap[domain] || {};
+                            const isKnownDomain = Object.keys(options).length > 0;
 
-                        if (!isKnownDomain) {
+                            if (!isKnownDomain) {
+                                return (
+                                    <ProFormText
+                                        name="targetValue"
+                                        label="目标值 (Target)"
+                                        placeholder="请先选择业务域，系统将自动加载标准词库"
+                                        disabled
+                                        rules={[{ required: true }]}
+                                    />
+                                );
+                            }
+
                             return (
-                                <ProFormText
+                                <ProFormSelect
                                     name="targetValue"
                                     label="目标值 (Target)"
-                                    placeholder="请先选择业务域，系统将自动加载标准词库"
-                                    disabled
+                                    tooltip="请选择系统预定义的标准代码，确保下游统计准确。"
+                                    placeholder="请选择标准代码"
+                                    valueEnum={options}
                                     rules={[{ required: true }]}
                                 />
                             );
-                        }
-
-                        return (
-                            <ProFormSelect
-                                name="targetValue"
-                                label="目标值 (Target)"
-                                tooltip="请选择系统预定义的标准代码，确保下游统计准确。"
-                                placeholder="请选择标准代码"
-                                valueEnum={options}
-                                rules={[{ required: true }]}
-                            />
-                        );
-                    }}
-                </ProFormDependency>
+                        }}
+                    </ProFormDependency>
 
 
 
-                <ProFormDigit
-                    name="priority"
-                    label="优先级"
-                    tooltip="数值越大优先级越高"
-                    min={0}
-                    max={100}
-                />
+                    <ProFormDigit
+                        name="priority"
+                        label="优先级"
+                        tooltip="数值越大优先级越高"
+                        min={0}
+                        max={100}
+                    />
 
-                <ProFormSwitch
-                    name="isActive"
-                    label="启用状态"
-                />
+                    <ProFormSwitch
+                        name="isActive"
+                        label="启用状态"
+                    />
 
                 </div>
 
@@ -414,52 +414,52 @@ export const LogicRulesPage = () => {
             >
                 <div ref={helpContainerRef}>
                     <Typography>
-                    <Paragraph>
-                        业务映射规则用于将非结构化的市场信息（如“平舱价”、“看涨”）转换为系统标准代码。规则修改后即时生效。
-                    </Paragraph>
+                        <Paragraph>
+                            业务映射规则用于将非结构化的市场信息（如“平舱价”、“看涨”）转换为系统标准代码。规则修改后即时生效。
+                        </Paragraph>
 
-                    <Divider orientation="left">1. 业务域说明 (Business Domains)</Divider>
-                    <Paragraph>
-                        <ul>
-                            <li>
-                                <Text strong>价格来源 (PRICE_SOURCE_TYPE)</Text>: 识别价格是谁报出的。
-                                <br />示例: "港务" &rarr; <Tag>PORT</Tag>, "生物/化工/淀粉" &rarr; <Tag>ENTERPRISE</Tag>
-                            </li>
-                            <li>
-                                <Text strong>价格类型 (PRICE_SUB_TYPE)</Text>: 识别价格的交易属性。
-                                <br />示例: "平舱" &rarr; <Tag>FOB</Tag>, "到港/挂牌" &rarr; <Tag>ARRIVAL</Tag>
-                            </li>
-                            <li>
-                                <Text strong>情感倾向 (SENTIMENT)</Text>: 分析市场情绪（用于AI分析报告）。
-                                <br />示例: "坚挺/上行" &rarr; <Tag>positive</Tag>, "疲软/回落" &rarr; <Tag>negative</Tag>, "震荡/企稳" &rarr; <Tag>neutral</Tag>
-                            </li>
-                            <li>
-                                <Text strong>地理层级 (GEO_LEVEL)</Text>: 识别地名级别（用于地理标准化）。
-                                <br />示例: "市" &rarr; <Tag>CITY</Tag>, "港" &rarr; <Tag>PORT</Tag>
-                            </li>
-                        </ul>
-                    </Paragraph>
+                        <Divider orientation="left">1. 业务域说明 (Business Domains)</Divider>
+                        <Paragraph>
+                            <ul>
+                                <li>
+                                    <Text strong>价格来源 (PRICE_SOURCE_TYPE)</Text>: 识别价格是谁报出的。
+                                    <br />示例: "港务" &rarr; <Tag>PORT</Tag>, "生物/化工/淀粉" &rarr; <Tag>ENTERPRISE</Tag>
+                                </li>
+                                <li>
+                                    <Text strong>价格类型 (PRICE_SUB_TYPE)</Text>: 识别价格的交易属性。
+                                    <br />示例: "平舱" &rarr; <Tag>FOB</Tag>, "到港/挂牌" &rarr; <Tag>ARRIVAL</Tag>
+                                </li>
+                                <li>
+                                    <Text strong>情感倾向 (SENTIMENT)</Text>: 分析市场情绪（用于AI分析报告）。
+                                    <br />示例: "坚挺/上行" &rarr; <Tag>positive</Tag>, "疲软/回落" &rarr; <Tag>negative</Tag>, "震荡/企稳" &rarr; <Tag>neutral</Tag>
+                                </li>
+                                <li>
+                                    <Text strong>地理层级 (GEO_LEVEL)</Text>: 识别地名级别（用于地理标准化）。
+                                    <br />示例: "市" &rarr; <Tag>CITY</Tag>, "港" &rarr; <Tag>PORT</Tag>
+                                </li>
+                            </ul>
+                        </Paragraph>
 
-                    <Divider orientation="left">2. 匹配模式说明</Divider>
-                    <Descriptions column={1} bordered size="small">
-                        <Descriptions.Item label={<Tag color="cyan">包含 (CONTAINS)</Tag>}>
-                            目标文本中只要包含关键词即触发。例如 Pattern="平舱"，则 "鲅鱼圈平舱价" 会命中。是最常用的模式。
-                        </Descriptions.Item>
-                        <Descriptions.Item label={<Tag color="purple">精确 (EXACT)</Tag>}>
-                            目标文本必须完全等于关键词。例如 Pattern="FOB"，则 "FOB" 命中，但 "FOB价" 不命中。
-                        </Descriptions.Item>
-                        <Descriptions.Item label={<Tag color="red">正则 (REGEX)</Tag>}>
-                            高级模式，支持 JavaScript 正则表达式。例如 `\d{4}年` 匹配年份。请谨慎使用，错误的正则可能导致解析失败。
-                        </Descriptions.Item>
-                    </Descriptions>
+                        <Divider orientation="left">2. 匹配模式说明</Divider>
+                        <Descriptions column={1} bordered size="small">
+                            <Descriptions.Item label={<Tag color="cyan">包含 (CONTAINS)</Tag>}>
+                                目标文本中只要包含关键词即触发。例如 Pattern="平舱"，则 "鲅鱼圈平舱价" 会命中。是最常用的模式。
+                            </Descriptions.Item>
+                            <Descriptions.Item label={<Tag color="purple">精确 (EXACT)</Tag>}>
+                                目标文本必须完全等于关键词。例如 Pattern="FOB"，则 "FOB" 命中，但 "FOB价" 不命中。
+                            </Descriptions.Item>
+                            <Descriptions.Item label={<Tag color="red">正则 (REGEX)</Tag>}>
+                                高级模式，支持 JavaScript 正则表达式。例如 `\d{4}年` 匹配年份。请谨慎使用，错误的正则可能导致解析失败。
+                            </Descriptions.Item>
+                        </Descriptions>
 
-                    <Divider orientation="left">3. 常见问题</Divider>
-                    <Paragraph>
-                        <ul>
-                            <li><Text strong>优先级:</Text> 如果多个规则同时命中（例如“FOB”和“平舱”同时出现在一句话中），系统优先采用数字更大的规则。</li>
-                            <li><Text strong>目标值:</Text> 系统会自动根据业务域提供标准代码（如 FOB, ARRIVAL）及对应的中文说明，请在下拉菜单中直接选择。</li>
-                        </ul>
-                    </Paragraph>
+                        <Divider orientation="left">3. 常见问题</Divider>
+                        <Paragraph>
+                            <ul>
+                                <li><Text strong>优先级:</Text> 如果多个规则同时命中（例如“FOB”和“平舱”同时出现在一句话中），系统优先采用数字更大的规则。</li>
+                                <li><Text strong>目标值:</Text> 系统会自动根据业务域提供标准代码（如 FOB, ARRIVAL）及对应的中文说明，请在下拉菜单中直接选择。</li>
+                            </ul>
+                        </Paragraph>
                     </Typography>
                 </div>
             </Modal>

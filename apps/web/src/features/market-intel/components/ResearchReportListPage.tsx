@@ -95,9 +95,6 @@ export const ResearchReportListPage: React.FC = () => {
         colors: REVIEW_STATUS_COLORS,
     };
 
-    // Debug state
-    const [debugInfo, setDebugInfo] = useState<{ loaded: number; total: number }>({ loaded: 0, total: 0 });
-
     // Columns
     const columns: ProColumns<KnowledgeItem>[] = [
         {
@@ -332,13 +329,7 @@ export const ResearchReportListPage: React.FC = () => {
         <div style={{ padding: 24 }}>
             {contextHolder}
             {modalContextHolder}
-            <Alert
-                message="Debug Mode"
-                description={`Total Records from API: ${debugInfo.total} | Actually Loaded in Table: ${debugInfo.loaded} | Page Size: 50`}
-                type="warning"
-                showIcon
-                style={{ marginBottom: 16 }}
-            />
+
             <ProTable<KnowledgeItem>
                 headerTitle="研报列表"
                 actionRef={actionRef}
@@ -414,8 +405,7 @@ export const ResearchReportListPage: React.FC = () => {
 
                     try {
                         const res = await apiClient.get<any>(`/knowledge/reports?${queryParams.toString()}`);
-                        console.log('[ResearchReportList] Loaded:', res.data.data?.length, 'Total:', res.data.total, 'Data:', res.data.data);
-                        setDebugInfo({ loaded: res.data.data?.length || 0, total: res.data.total || 0 });
+
                         return {
                             data: res.data.data,
                             success: true,

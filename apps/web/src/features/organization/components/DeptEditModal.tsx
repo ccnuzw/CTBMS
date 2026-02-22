@@ -23,7 +23,7 @@ interface DeptEditModalProps {
 const convertToTreeSelectData = (
     nodes: DepartmentTreeNode[],
     excludeId?: string,
-): any[] => {
+): unknown[] => {
     return nodes
         .filter((node) => node.id !== excludeId)
         .map((node) => ({

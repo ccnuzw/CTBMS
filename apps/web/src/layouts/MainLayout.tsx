@@ -407,9 +407,10 @@ export const MainLayout: React.FC = () => {
     [],
   );
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Ant Design MenuItem recursive type
   const findMenuLabel = (items: any[], key: string): string | undefined => {
     for (const item of items) {
-      if (item.key === key) return item.label;
+      if (item.key === key) return item.label as string;
       if (item.children) {
         const found = findMenuLabel(item.children, key);
         if (found) return found;

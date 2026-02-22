@@ -220,10 +220,10 @@ export const UserDetailPanel: React.FC<UserDetailPanelProps> = ({
     // 获取组织类型图标
     const getOrgIcon = (type: string) => {
         switch (type as OrganizationType) {
-            case 'HEADQUARTERS': return <GlobalOutlined style={{ color: '#f5222d' }} />;
-            case 'REGION': return <ClusterOutlined style={{ color: '#fa8c16' }} />;
-            case 'BRANCH': return <ShopOutlined style={{ color: '#1890ff' }} />;
-            case 'SUBSIDIARY': return <HomeOutlined style={{ color: '#52c41a' }} />;
+            case 'HEADQUARTERS': return <GlobalOutlined style={{ color: token.colorError }} />;
+            case 'REGION': return <ClusterOutlined style={{ color: token.colorWarning }} />;
+            case 'BRANCH': return <ShopOutlined style={{ color: token.blue }} />;
+            case 'SUBSIDIARY': return <HomeOutlined style={{ color: token.colorSuccess }} />;
             default: return <BankOutlined />;
         }
     };
@@ -232,7 +232,7 @@ export const UserDetailPanel: React.FC<UserDetailPanelProps> = ({
     const orgTreeData = useMemo(() => {
         if (!orgTree) return [];
 
-        const buildNode = (org: any): any => ({
+        const buildNode = (org: Record<string, any>): Record<string, any> => ({
             value: org.id,
             title: (
                 <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
@@ -250,11 +250,11 @@ export const UserDetailPanel: React.FC<UserDetailPanelProps> = ({
     const deptTreeData = useMemo(() => {
         if (!deptTree) return [];
 
-        const buildNode = (dept: any): any => ({
+        const buildNode = (dept: Record<string, any>): Record<string, any> => ({
             value: dept.id,
             title: (
                 <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                    <TeamOutlined style={{ color: '#722ed1' }} />
+                    <TeamOutlined style={{ color: (token as any).purple || token.colorPrimary }} />
                     <span>{dept.name}</span>
                 </span>
             ),

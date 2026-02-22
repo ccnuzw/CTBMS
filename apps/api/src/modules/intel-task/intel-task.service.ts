@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException , Logger } from '@nestjs/common';
 import { PrismaService } from '../../prisma';
 import { ConfigService } from '../config/config.service';
 import { Prisma, IntelTask } from '@prisma/client';
@@ -18,6 +18,7 @@ import {
 
 @Injectable()
 export class IntelTaskService {
+  private readonly logger = new Logger(IntelTaskService.name);
     constructor(
         private prisma: PrismaService,
         private configService: ConfigService,
@@ -1107,7 +1108,7 @@ export class IntelTaskService {
                     const assignee = await this.prisma.user.findUnique({ where: { id: validOperatorId } });
                     if (!assignee) {
                         // 如果都不存在，跳过记录历史
-                        console.warn(`logHistory: 无法找到有效的操作人 ID (operatorId: ${operatorId}, assigneeId: ${task?.assigneeId})`);
+                        this.logger.warn(`logHistory: 无法找到有效的操作人 ID (operatorId: ${operatorId}, assigneeId: ${task?.assigneeId})`);
                         return null;
                     }
                 }

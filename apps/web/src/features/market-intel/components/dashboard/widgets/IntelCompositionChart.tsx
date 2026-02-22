@@ -1,5 +1,5 @@
 import React, { useMemo } from 'react';
-import { Card, Typography, Flex, Empty } from 'antd';
+import { Card, Typography, Flex, Empty, theme } from 'antd';
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 import { PieChartOutlined } from '@ant-design/icons';
 import { MarketIntelResponse } from '@packages/types';
@@ -10,7 +10,15 @@ interface IntelCompositionChartProps {
     loading?: boolean;
 }
 
-const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884d8', '#82ca9d'];
+const globalToken = theme.getDesignToken();
+const COLORS = [
+    globalToken.blue,
+    globalToken.colorSuccess,
+    globalToken.colorWarning,
+    (globalToken as any).volcano || globalToken.colorError,
+    (globalToken as any).purple || globalToken.colorPrimary,
+    globalToken.cyan
+];
 
 // Mapping source types to readable labels
 const SOURCE_LABEL_MAP: Record<string, string> = {
@@ -53,7 +61,7 @@ export const IntelCompositionChart: React.FC<IntelCompositionChartProps> = ({ da
         <Card
             title={
                 <Flex align="center" gap={8}>
-                    <PieChartOutlined style={{ color: '#1890ff' }} />
+                    <PieChartOutlined style={{ color: globalToken.colorPrimary }} />
                     <span>情报来源构成 (Source Composition)</span>
                 </Flex>
             }

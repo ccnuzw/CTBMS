@@ -71,7 +71,7 @@ export const AgentEditDrawer: React.FC<AgentEditDrawerProps> = ({
         })) || [];
     }, [aiConfigs]);
 
-    const memoryOptions = useMemo(() => ['none', 'short-term', 'windowed'].map((item: any) => ({
+    const memoryOptions = useMemo(() => ['none', 'short-term', 'windowed'].map((item) => ({
         label: getMemoryPolicyLabel(item),
         value: item,
     })), []);
@@ -108,7 +108,7 @@ export const AgentEditDrawer: React.FC<AgentEditDrawerProps> = ({
         try {
             const values = await form.validateFields();
 
-            const payload: any = {
+            const payload: Record<string, any> = {
                 agentName: values.agentName,
                 objective: values.objective,
                 isActive: values.isActive,

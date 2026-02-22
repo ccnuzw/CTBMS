@@ -32,8 +32,8 @@ export const Step3_Knowledge = ({ onSubmit, onBack, files }: Step3Props) => {
                 message.error(`${info.file.name} file upload failed.`);
             }
         },
-        onDrop(e) {
-            console.log('Dropped files', e.dataTransfer.files);
+        onDrop() {
+            // Drop handled by Upload component
         },
         showUploadList: false // We use custom list
     };

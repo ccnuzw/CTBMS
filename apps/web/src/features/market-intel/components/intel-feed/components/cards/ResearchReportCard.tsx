@@ -141,7 +141,7 @@ export const ResearchReportCard: React.FC<ResearchReportCardProps> = ({
             hoverable
             style={{
                 ...style,
-                borderLeft: `3px solid #52c41a`,
+                borderLeft: `3px solid ${token.colorSuccess}`,
             }}
             bodyStyle={{ padding: 16 }}
             onClick={onClick}
@@ -149,7 +149,7 @@ export const ResearchReportCard: React.FC<ResearchReportCardProps> = ({
             {/* 头部 */}
             <Flex justify="space-between" align="start" style={{ marginBottom: 12 }}>
                 <Flex align="center" gap={8}>
-                    <FilePdfOutlined style={{ color: '#52c41a', fontSize: 18 }} />
+                    <FilePdfOutlined style={{ color: token.colorSuccess, fontSize: 18 }} />
                     <Title level={5} style={{ margin: 0 }}>{reportData.title || intel.title || '无标题研报'}</Title>
                 </Flex>
                 <Tag color="green" bordered={false}>研报</Tag>
@@ -179,7 +179,7 @@ export const ResearchReportCard: React.FC<ResearchReportCardProps> = ({
                             percent={intel.qualityScore || 0}
                             size="small"
                             style={{ width: 80, marginBottom: 0 }}
-                            strokeColor={intel.qualityScore && intel.qualityScore >= 80 ? '#52c41a' : '#faad14'}
+                            strokeColor={intel.qualityScore && intel.qualityScore >= 80 ? token.colorSuccess : token.colorWarning}
                             format={(p) => `${p}`}
                         />
                     </Flex>
@@ -198,7 +198,7 @@ export const ResearchReportCard: React.FC<ResearchReportCardProps> = ({
             {keyPoints.length > 0 && (
                 <div style={{ marginBottom: 12, padding: 12, background: token.colorFillQuaternary, borderRadius: token.borderRadius }}>
                     <Flex align="center" gap={6} style={{ marginBottom: 8 }}>
-                        <FileTextOutlined style={{ color: '#52c41a' }} />
+                        <FileTextOutlined style={{ color: token.colorSuccess }} />
                         <Text type="secondary" style={{ fontSize: 12 }}>核心观点</Text>
                     </Flex>
                     <ul style={{ margin: 0, paddingLeft: 20 }}>
@@ -246,7 +246,7 @@ export const ResearchReportCard: React.FC<ResearchReportCardProps> = ({
                         <Button
                             type="text"
                             size="small"
-                            icon={isFavorited ? <StarFilled style={{ color: '#faad14' }} /> : <StarOutlined />}
+                            icon={isFavorited ? <StarFilled style={{ color: token.colorWarning }} /> : <StarOutlined />}
                             onClick={handleFavorite}
                         />
                     </Tooltip>

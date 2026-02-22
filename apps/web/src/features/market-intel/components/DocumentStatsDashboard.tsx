@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Row, Col, Card, Typography, Spin, Empty, Radio, Flex, Statistic } from 'antd';
+import { Row, Col, Card, Typography, Spin, Empty, Radio, Flex, Statistic, theme } from 'antd';
 import {
     FileTextOutlined,
     RiseOutlined,
@@ -13,6 +13,7 @@ import { useDocumentStats } from '../api/hooks';
 const { Title, Text } = Typography;
 
 export const DocumentStatsDashboard: React.FC = () => {
+    const { token } = theme.useToken();
     const [days, setDays] = useState(30);
     const { data: stats, isLoading } = useDocumentStats(days);
 
@@ -81,7 +82,7 @@ export const DocumentStatsDashboard: React.FC = () => {
                         title="文档总数"
                         value={stats.total}
                         icon={<FileTextOutlined />}
-                        color="#1890ff"
+                        color={token.colorPrimary}
                     />
                 </Col>
                 <Col xs={24} sm={12} lg={6}>
@@ -89,7 +90,7 @@ export const DocumentStatsDashboard: React.FC = () => {
                         title="本月新增"
                         value={stats.monthlyNew}
                         icon={<RiseOutlined />}
-                        color="#52c41a"
+                        color={token.colorSuccess}
                         trend={12.5} // Mock trend for now
                     />
                 </Col>
@@ -98,7 +99,7 @@ export const DocumentStatsDashboard: React.FC = () => {
                         title="来源渠道"
                         value={stats.bySource.length}
                         icon={<PieChartOutlined />}
-                        color="#faad14"
+                        color={token.colorWarning}
                         suffix="个"
                     />
                 </Col>
@@ -107,7 +108,7 @@ export const DocumentStatsDashboard: React.FC = () => {
                         title="热门标签"
                         value={stats.topTags.length}
                         icon={<TagsOutlined />}
-                        color="#eb2f96"
+                        color={(token as any).magenta || token.colorError}
                         suffix="个"
                     />
                 </Col>

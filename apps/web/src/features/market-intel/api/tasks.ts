@@ -23,22 +23,44 @@ import {
 
 const BASE_URL = '/intel-tasks';
 
+type TaskQueryWithDateFields = IntelTaskQuery & {
+    periodStart?: Date;
+    periodEnd?: Date;
+    dueStart?: Date;
+    dueEnd?: Date;
+    metricsStart?: Date;
+    metricsEnd?: Date;
+};
+
+const serializeTaskQuery = (query: IntelTaskQuery) => {
+    const source = query as TaskQueryWithDateFields;
+    const params: Record<string, unknown> = { ...source };
+    const dateKeys: Array<keyof TaskQueryWithDateFields> = [
+        'startDate',
+        'endDate',
+        'periodStart',
+        'periodEnd',
+        'dueStart',
+        'dueEnd',
+        'metricsStart',
+        'metricsEnd',
+    ];
+    dateKeys.forEach((key) => {
+        const value = source[key];
+        if (value instanceof Date) {
+            params[key] = value.toISOString();
+        }
+    });
+    return params;
+};
+
 // --- Tasks ---
 
 export const useTasks = (query: IntelTaskQuery, options?: { enabled?: boolean }) => {
     return useQuery({
         queryKey: ['intel-tasks', query],
         queryFn: async () => {
-            // Convert date objects to strings if needed by request utility
-            const params = { ...query };
-            if (params.startDate) (params as any).startDate = params.startDate.toISOString();
-            if (params.endDate) (params as any).endDate = params.endDate.toISOString();
-            if ((params as any).periodStart) (params as any).periodStart = (params as any).periodStart.toISOString();
-            if ((params as any).periodEnd) (params as any).periodEnd = (params as any).periodEnd.toISOString();
-            if ((params as any).dueStart) (params as any).dueStart = (params as any).dueStart.toISOString();
-            if ((params as any).dueEnd) (params as any).dueEnd = (params as any).dueEnd.toISOString();
-            if ((params as any).metricsStart) (params as any).metricsStart = (params as any).metricsStart.toISOString();
-            if ((params as any).metricsEnd) (params as any).metricsEnd = (params as any).metricsEnd.toISOString();
+            const params = serializeTaskQuery(query);
 
             const { data } = await apiClient.get<{
                 data: IntelTaskResponse[];
@@ -65,15 +87,7 @@ export const useTaskMetrics = (query: IntelTaskQuery) => {
     return useQuery({
         queryKey: ['intel-tasks-metrics', query],
         queryFn: async () => {
-            const params = { ...query };
-            if (params.startDate) (params as any).startDate = params.startDate.toISOString();
-            if (params.endDate) (params as any).endDate = params.endDate.toISOString();
-            if ((params as any).periodStart) (params as any).periodStart = (params as any).periodStart.toISOString();
-            if ((params as any).periodEnd) (params as any).periodEnd = (params as any).periodEnd.toISOString();
-            if ((params as any).dueStart) (params as any).dueStart = (params as any).dueStart.toISOString();
-            if ((params as any).dueEnd) (params as any).dueEnd = (params as any).dueEnd.toISOString();
-            if ((params as any).metricsStart) (params as any).metricsStart = (params as any).metricsStart.toISOString();
-            if ((params as any).metricsEnd) (params as any).metricsEnd = (params as any).metricsEnd.toISOString();
+            const params = serializeTaskQuery(query);
 
             const { data } = await apiClient.get<{
                 total: number;
@@ -94,15 +108,7 @@ export const useTaskMetricsByOrg = (query: IntelTaskQuery) => {
     return useQuery({
         queryKey: ['intel-tasks-metrics-org', query],
         queryFn: async () => {
-            const params = { ...query };
-            if (params.startDate) (params as any).startDate = params.startDate.toISOString();
-            if (params.endDate) (params as any).endDate = params.endDate.toISOString();
-            if ((params as any).periodStart) (params as any).periodStart = (params as any).periodStart.toISOString();
-            if ((params as any).periodEnd) (params as any).periodEnd = (params as any).periodEnd.toISOString();
-            if ((params as any).dueStart) (params as any).dueStart = (params as any).dueStart.toISOString();
-            if ((params as any).dueEnd) (params as any).dueEnd = (params as any).dueEnd.toISOString();
-            if ((params as any).metricsStart) (params as any).metricsStart = (params as any).metricsStart.toISOString();
-            if ((params as any).metricsEnd) (params as any).metricsEnd = (params as any).metricsEnd.toISOString();
+            const params = serializeTaskQuery(query);
 
             const { data } = await apiClient.get<Array<{
                 orgId: string;
@@ -125,15 +131,7 @@ export const useTaskMetricsByDept = (query: IntelTaskQuery) => {
     return useQuery({
         queryKey: ['intel-tasks-metrics-dept', query],
         queryFn: async () => {
-            const params = { ...query };
-            if (params.startDate) (params as any).startDate = params.startDate.toISOString();
-            if (params.endDate) (params as any).endDate = params.endDate.toISOString();
-            if ((params as any).periodStart) (params as any).periodStart = (params as any).periodStart.toISOString();
-            if ((params as any).periodEnd) (params as any).periodEnd = (params as any).periodEnd.toISOString();
-            if ((params as any).dueStart) (params as any).dueStart = (params as any).dueStart.toISOString();
-            if ((params as any).dueEnd) (params as any).dueEnd = (params as any).dueEnd.toISOString();
-            if ((params as any).metricsStart) (params as any).metricsStart = (params as any).metricsStart.toISOString();
-            if ((params as any).metricsEnd) (params as any).metricsEnd = (params as any).metricsEnd.toISOString();
+            const params = serializeTaskQuery(query);
 
             const { data } = await apiClient.get<Array<{
                 deptId: string;
@@ -156,15 +154,7 @@ export const useTaskPerformanceMetrics = (query: IntelTaskQuery) => {
     return useQuery({
         queryKey: ['intel-tasks-metrics-performance', query],
         queryFn: async () => {
-            const params = { ...query };
-            if (params.startDate) (params as any).startDate = params.startDate.toISOString();
-            if (params.endDate) (params as any).endDate = params.endDate.toISOString();
-            if ((params as any).periodStart) (params as any).periodStart = (params as any).periodStart.toISOString();
-            if ((params as any).periodEnd) (params as any).periodEnd = (params as any).periodEnd.toISOString();
-            if ((params as any).dueStart) (params as any).dueStart = (params as any).dueStart.toISOString();
-            if ((params as any).dueEnd) (params as any).dueEnd = (params as any).dueEnd.toISOString();
-            if ((params as any).metricsStart) (params as any).metricsStart = (params as any).metricsStart.toISOString();
-            if ((params as any).metricsEnd) (params as any).metricsEnd = (params as any).metricsEnd.toISOString();
+            const params = serializeTaskQuery(query);
 
             const { data } = await apiClient.get<Array<{
                 groupBy: string;
@@ -255,6 +245,7 @@ export const useDeleteTask = () => {
 export const useSubmitTask = () => {
     const queryClient = useQueryClient();
     return useMutation({
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- mutation payload
         mutationFn: async ({ id, operatorId, data }: { id: string; operatorId: string; data?: any }) => {
             const { data: res } = await apiClient.post<IntelTaskResponse>(`${BASE_URL}/${id}/submit`, { operatorId, data });
             return res;

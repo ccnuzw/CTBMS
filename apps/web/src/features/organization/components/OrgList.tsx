@@ -173,7 +173,7 @@ export const OrgList: React.FC = () => {
 
       if (currentRow) {
         const { name, type, description, parentId, sortOrder, status } = values;
-        const payload: Record<string, unknown> = {};
+        const payload: Record<string, any> = {};
         if (name !== undefined) payload.name = name;
         if (type !== undefined) payload.type = type;
         if (description !== undefined) payload.description = description || null;
@@ -323,7 +323,7 @@ export const OrgList: React.FC = () => {
 
     const [sortField, sortOrder] = Object.entries(sort || {}).find(([, order]) => !!order) || [];
     if (sortField && sortOrder) {
-      data = [...data].sort((a: any, b: any) => {
+      data = [...data].sort((a: Record<string, any>, b: Record<string, any>) => {
         const left = a[sortField];
         const right = b[sortField];
         if (left === right) return 0;

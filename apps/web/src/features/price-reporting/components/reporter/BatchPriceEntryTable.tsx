@@ -57,6 +57,7 @@ export const BatchPriceEntryTable: React.FC = () => {
         if (assignedPoints && assignedPoints.length > 0) {
             const rows: BatchEntryRow[] = [];
 
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any -- untyped API response iteration
             assignedPoints.forEach((allocation: any) => {
                 // Skip if already reported today (Granular check from backend)
                 if (allocation.todayReported) return;
@@ -142,9 +143,9 @@ export const BatchPriceEntryTable: React.FC = () => {
             });
             msg.success(`批量提交成功，共 ${validRows.length} 条`);
             navigate('/price-reporting');
-        } catch (error: any) {
+        } catch (error: unknown) {
             // Error handled globally usually, or display here
-            console.error(error);
+            if (import.meta.env.DEV) console.error(error);
         }
     };
 

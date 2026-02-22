@@ -162,7 +162,7 @@ export const EnterpriseEditor: React.FC<EnterpriseEditorProps> = ({
             setSelectedTypes(enterprise.types || []);
             // 设置已选标签
             if ((enterprise as any).tags) {
-                setSelectedTagIds((enterprise as any).tags.map((t: any) => t.id));
+                setSelectedTagIds((enterprise as any).tags.map((t: Record<string, any>) => t.id));
             }
         } else if (!isEdit && open) {
             form.resetFields();

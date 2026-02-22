@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Button, Modal, Typography, Table, Tag, Divider, Alert, Space, Descriptions, Collapse } from 'antd';
+import { Button, Modal, Typography, Table, Tag, Divider, Alert, Space, Descriptions, Collapse, theme } from 'antd';
 import { QuestionCircleOutlined, CheckCircleOutlined, ClockCircleOutlined, TeamOutlined, SettingOutlined } from '@ant-design/icons';
 
 const { Title, Paragraph, Text } = Typography;
@@ -10,6 +10,7 @@ const { Title, Paragraph, Text } = Typography;
  */
 export const TemplateConfigHelp: React.FC = () => {
     const [open, setOpen] = useState(false);
+    const { token } = theme.useToken();
 
     return (
         <>
@@ -46,7 +47,7 @@ export const TemplateConfigHelp: React.FC = () => {
                                 key: 'basic',
                                 label: (
                                     <Space>
-                                        <CheckCircleOutlined style={{ color: '#1890ff' }} />
+                                        <CheckCircleOutlined style={{ color: token.blue }} />
                                         <Text strong>基础信息</Text>
                                         <Tag color="blue">必填</Tag>
                                     </Space>
@@ -159,7 +160,7 @@ export const TemplateConfigHelp: React.FC = () => {
                                 key: 'cycle',
                                 label: (
                                     <Space>
-                                        <ClockCircleOutlined style={{ color: '#52c41a' }} />
+                                        <ClockCircleOutlined style={{ color: token.colorSuccess }} />
                                         <Text strong>周期配置</Text>
                                         <Tag color="green">调度</Tag>
                                     </Space>
@@ -285,7 +286,7 @@ export const TemplateConfigHelp: React.FC = () => {
                                 key: 'assign',
                                 label: (
                                     <Space>
-                                        <TeamOutlined style={{ color: '#fa8c16' }} />
+                                        <TeamOutlined style={{ color: token.colorWarning }} />
                                         <Text strong>分配范围</Text>
                                         <Tag color="orange">核心</Tag>
                                     </Space>
@@ -400,7 +401,7 @@ export const TemplateConfigHelp: React.FC = () => {
                                 key: 'advanced',
                                 label: (
                                     <Space>
-                                        <SettingOutlined style={{ color: '#722ed1' }} />
+                                        <SettingOutlined style={{ color: (token as any).purple || token.colorPrimary }} />
                                         <Text strong>高级配置</Text>
                                         <Tag color="purple">可选</Tag>
                                     </Space>
@@ -482,7 +483,7 @@ export const TemplateConfigHelp: React.FC = () => {
                                 key: 'rule',
                                 label: (
                                     <Space>
-                                        <SettingOutlined style={{ color: '#eb2f96' }} />
+                                        <SettingOutlined style={{ color: (token as any).magenta || token.colorErrorActive }} />
                                         <Text strong>分发规则（高级）</Text>
                                         <Tag color="magenta">精细控制</Tag>
                                     </Space>

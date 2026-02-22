@@ -437,7 +437,7 @@ export const SuperDashboard: React.FC = () => {
                         title="数据资产沉淀 (Assets)"
                         value={kpis.totalVolume}
                         icon={<DatabaseOutlined />}
-                        iconColor="#722ed1"
+                        iconColor={(token as any).purple || token.colorPrimary}
                         extra={<Text type="secondary">结构化记录总量</Text>}
                     />
                 </Col>
@@ -465,11 +465,11 @@ export const SuperDashboard: React.FC = () => {
                                     <ComposedChart data={chartData}>
                                         <defs>
                                             <linearGradient id="sentimentGradient" x1="0" y1="0" x2="0" y2="1">
-                                                <stop offset="5%" stopColor="#6366f1" stopOpacity={0.2} />
-                                                <stop offset="95%" stopColor="#6366f1" stopOpacity={0} />
+                                                <stop offset="5%" stopColor={token.colorPrimary} stopOpacity={0.2} />
+                                                <stop offset="95%" stopColor={token.colorPrimary} stopOpacity={0} />
                                             </linearGradient>
                                         </defs>
-                                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={token.colorBorderSecondary} />
                                         <XAxis dataKey="date" tick={{ fontSize: 10 }} axisLine={false} tickLine={false} />
                                         <YAxis yAxisId="left" domain={['auto', 'auto']} tick={{ fontSize: 10 }} axisLine={false} tickLine={false} width={40} />
                                         <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 10 }} axisLine={false} tickLine={false} width={40} />
@@ -487,7 +487,7 @@ export const SuperDashboard: React.FC = () => {
                                             dataKey="sentiment"
                                             name="情绪流"
                                             fill="url(#sentimentGradient)"
-                                            stroke="#818cf8"
+                                            stroke={token.colorPrimaryHover || token.blue}
                                             strokeWidth={1}
                                         />
                                         <Line
@@ -495,9 +495,9 @@ export const SuperDashboard: React.FC = () => {
                                             type="monotone"
                                             dataKey="price"
                                             name="价格"
-                                            stroke="#2563eb"
+                                            stroke={token.colorPrimaryActive || token.blue}
                                             strokeWidth={3}
-                                            dot={{ r: 3, strokeWidth: 2, fill: '#fff' }}
+                                            dot={{ r: 3, strokeWidth: 2, fill: token.colorBgContainer }}
                                             activeDot={{ r: 6 }}
                                             connectNulls
                                         />
@@ -583,7 +583,7 @@ export const SuperDashboard: React.FC = () => {
                     <Card
                         title={
                             <Flex align="center" gap={8}>
-                                <LineChartOutlined style={{ color: '#9333ea' }} />
+                                <LineChartOutlined style={{ color: (token as any).purple || token.colorPrimary }} />
                                 产销区套利窗口 (Arbitrage)
                             </Flex>
                         }
@@ -592,7 +592,7 @@ export const SuperDashboard: React.FC = () => {
                         <ChartContainer height={250}>
                             <ResponsiveContainer width="100%" height="100%" minWidth={100} minHeight={100}>
                                 <ComposedChart data={arbitrageData}>
-                                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={token.colorBorderSecondary} />
                                     <XAxis dataKey="date" tick={false} axisLine={false} />
                                     <YAxis domain={['auto', 'auto']} hide />
                                     <Tooltip />
@@ -604,7 +604,7 @@ export const SuperDashboard: React.FC = () => {
                         </ChartContainer>
                         <Card
                             size="small"
-                            style={{ background: '#9333ea10', borderColor: '#9333ea30', marginTop: 16 }}
+                            style={{ background: `${(token as any).purple || token.colorPrimary}10`, borderColor: `${(token as any).purple || token.colorPrimary}30`, marginTop: 16 }}
                         >
                             <Flex justify="space-between" align="center">
                                 <Text strong>当前窗口状态：</Text>
@@ -635,7 +635,7 @@ export const SuperDashboard: React.FC = () => {
                                         data={regionalData}
                                         dataKey="size"
                                         aspectRatio={4 / 3}
-                                        stroke="#fff"
+                                        stroke={token.colorBgContainer}
                                         fill={token.colorSuccess}
                                     >
                                         <Tooltip />

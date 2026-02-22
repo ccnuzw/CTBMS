@@ -51,10 +51,12 @@ const RELATION_TYPE_META_FALLBACK: Record<string, { label: string; color: string
     PRICE_FLUCTUATION: { label: '价格异动', color: 'red' },
 };
 
+const globalToken = theme.getDesignToken();
+
 const CONTENT_TYPE_ICONS: Record<string, React.ReactNode> = {
-    [ContentType.DAILY_REPORT]: <FileTextOutlined style={{ color: '#1890ff' }} />,
-    [ContentType.RESEARCH_REPORT]: <FileTextOutlined style={{ color: '#52c41a' }} />,
-    'PRICE_DATA': <RiseOutlined style={{ color: '#f5222d' }} />,
+    [ContentType.DAILY_REPORT]: <FileTextOutlined style={{ color: globalToken.blue }} />,
+    [ContentType.RESEARCH_REPORT]: <FileTextOutlined style={{ color: globalToken.colorSuccess }} />,
+    'PRICE_DATA': <RiseOutlined style={{ color: globalToken.colorError }} />,
 };
 
 const CONTENT_TYPE_META_FALLBACK: Record<string, { label: string; color: string }> = {
@@ -319,6 +321,7 @@ export const RelationPanel: React.FC<RelationPanelProps> = ({
 
                             <Timeline
                                 pending={isLoading ? '分析中...' : false}
+                                // eslint-disable-next-line @typescript-eslint/no-explicit-any -- untyped API response iteration
                                 items={relatedItems.map((related: any, idx: number) => ({
                                     color: relationTypeMeta[normalizeRelationType(related.relationType)]?.color || 'blue',
                                     children: (
@@ -386,7 +389,7 @@ export const RelationPanel: React.FC<RelationPanelProps> = ({
                                 </Text>
                                 <Card
                                     size="small"
-                                    style={{ marginTop: 8, background: token.colorFillQuaternary, borderColor: '#52c41a' }}
+                                    style={{ marginTop: 8, background: token.colorFillQuaternary, borderColor: token.colorSuccess }}
                                 >
                                     {selectedIntel.researchReport.prediction && (
                                         <div style={{ marginBottom: 12 }}>
@@ -404,6 +407,7 @@ export const RelationPanel: React.FC<RelationPanelProps> = ({
                                             <Text strong style={{ fontSize: 12 }}>关键点：</Text>
                                             <ul style={{ paddingLeft: 16, margin: '4px 0 0 0', fontSize: 12 }}>
                                                 {Array.isArray(selectedIntel.researchReport.keyPoints) &&
+                                                    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- untyped API response iteration
                                                     selectedIntel.researchReport.keyPoints.map((p: any, i: number) => (
                                                         <li key={i}>{stripHtml(typeof p === 'string' ? p : p.point)}</li>
                                                     ))}

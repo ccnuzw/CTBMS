@@ -43,7 +43,7 @@ export const Step3_Knowledge = ({ onUpload, onBack }: { onUpload: (files: string
     </div>
 );
 
-export const Step4_Playground = ({ context, onReset }: { context: any, onReset: () => void }) => (
+export const Step4_Playground = ({ context, onReset }: { context: Record<string, any>, onReset: () => void }) => (
     <div style={{ padding: 20 }}>
         <h2>Sandbox Playground</h2>
         <pre>{JSON.stringify(context, null, 2)}</pre>

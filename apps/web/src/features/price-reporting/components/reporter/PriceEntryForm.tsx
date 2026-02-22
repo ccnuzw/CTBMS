@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Card, Form, InputNumber, Input, Select, Button, Space, Row, Col, Divider, Typography, Spin, Alert, App } from 'antd';
+import { Card, Form, InputNumber, Input, Select, Button, Space, Row, Col, Divider, Typography, Spin, Alert, App, theme } from 'antd';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { ArrowLeftOutlined, CopyOutlined, SendOutlined, WarningOutlined, EditOutlined, DeleteOutlined } from '@ant-design/icons';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
@@ -46,6 +46,7 @@ export const PriceEntryForm: React.FC = () => {
   const navigate = useNavigate();
   const [form] = Form.useForm();
   const { message, modal } = App.useApp();
+  const { token } = theme.useToken();
   const { currentUser } = useVirtualUser();
 
   const queryClient = useQueryClient();
@@ -75,13 +76,14 @@ export const PriceEntryForm: React.FC = () => {
   }, [commodityOptions]);
 
   const { data: pointsData } = useCollectionPoints({ page: 1, pageSize: 100, isActive: true });
-  const currentPoint = pointsData?.data?.find((p: any) => p.id === pointId);
+  const currentPoint = pointsData?.data?.find((p: Record<string, any>) => p.id === pointId);
 
   // 查询任务详情（用于显示任务状态横幅）
   const { data: currentTask } = useTask(taskId || '');
 
   // [NEW] 获取当前用户的分配信息以确定品种权限
   const { data: myAssignedPoints } = useMyAssignedPoints(undefined, currentUser?.id);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- untyped API response iteration
   const myAllocations = myAssignedPoints?.filter((a: any) => a.collectionPointId === pointId);
 
   // [NEW] 计算允许填报的品种
@@ -98,6 +100,7 @@ export const PriceEntryForm: React.FC = () => {
     }
 
     // 1. 如果没有分配记录，或者分配记录包含"全品种"（commodity=null），则允许该点所有配置的品种
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- complex dynamic type
     const hasFullAccess = !myAllocations?.length || myAllocations.some((a: any) => !a.commodity);
 
     if (hasFullAccess) {
@@ -108,6 +111,7 @@ export const PriceEntryForm: React.FC = () => {
     }
 
     // 2. 如果只有特定品种分配，聚合所有分配的品种
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- untyped API response iteration
     const allocatedCommodities = [...new Set(myAllocations.map((a: any) => a.commodity).filter(Boolean))];
 
     if (allocatedCommodities.length > 0) {
@@ -140,7 +144,7 @@ export const PriceEntryForm: React.FC = () => {
     const allData = submission?.priceData || [];
     // 如果 URL 指定了品种（任务模式），只显示该品种的数据
     if (urlCommodity) {
-      return allData.filter((item: any) => item.commodity === urlCommodity);
+      return allData.filter((item: Record<string, any>) => item.commodity === urlCommodity);
     }
     return allData;
   }, [submission?.priceData, urlCommodity]);
@@ -156,6 +160,7 @@ export const PriceEntryForm: React.FC = () => {
         // Pre-populate the cache to avoid loading state
         queryClient.setQueryData(['price-submission', result.id], result);
         setSubmissionId(result.id);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- complex dynamic type
       }).catch((err: any) => {
         message.error(getErrorMessage(err));
       });
@@ -208,7 +213,8 @@ export const PriceEntryForm: React.FC = () => {
     }
   }, [priceDataList, taskId, allowedCommodities, allowedPriceTypes, form]);
 
-  const normalizeGrade = (value: unknown) => {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- dynamic form/parameter value
+  const normalizeGrade = (value: any) => {
     if (value === null || value === undefined) return undefined;
     const raw = String(value).trim();
     if (!raw) return undefined;
@@ -226,7 +232,7 @@ export const PriceEntryForm: React.FC = () => {
   const gradeOptions = React.useMemo(() => {
     const base = ['一等', '二等', '三等'];
     const historyGrades = (priceHistory || [])
-      .map((item: any) => normalizeGrade(item.grade))
+      .map((item: Record<string, any>) => normalizeGrade(item.grade))
       .filter(Boolean) as string[];
     return Array.from(new Set([...base, ...historyGrades])).map(value => ({ value, label: value }));
   }, [priceHistory]);
@@ -239,8 +245,8 @@ export const PriceEntryForm: React.FC = () => {
 
     // Find latest entry for current commodity
     const latestEntry = priceHistory
-      .filter((p: any) => p.commodity === commodity)
-      .sort((a: any, b: any) => new Date(b.effectiveDate).getTime() - new Date(a.effectiveDate).getTime())[0];
+      .filter((p: Record<string, any>) => p.commodity === commodity)
+      .sort((a: Record<string, any>, b: Record<string, any>) => new Date(b.effectiveDate).getTime() - new Date(a.effectiveDate).getTime())[0];
 
     if (!latestEntry) {
       message.warning(`未找到 ${commodity || ''} 的历史数据`);
@@ -253,7 +259,7 @@ export const PriceEntryForm: React.FC = () => {
       ? latestEntry.subType
       : (allowedPriceTypes[0]?.value || 'LISTED');
 
-    const nextValues: Record<string, unknown> = {
+    const nextValues: Record<string, any> = {
       price: latestEntry.price !== undefined && latestEntry.price !== null ? Number(latestEntry.price) : undefined,
       subType: validSubType,
       moisture: latestEntry.moisture !== undefined && latestEntry.moisture !== null ? Number(latestEntry.moisture) : undefined,
@@ -271,7 +277,7 @@ export const PriceEntryForm: React.FC = () => {
   const updateEntry = useUpdatePriceEntry();
   const deleteEntry = useDeletePriceEntry();
 
-  const handleAddEntry = async (values: any) => {
+  const handleAddEntry = async (values: Record<string, any>) => {
     if (!submissionId) return;
 
     try {
@@ -292,7 +298,7 @@ export const PriceEntryForm: React.FC = () => {
       // 对于驳回的任务，我们检查是否在更新现有数据
       if (taskId && priceDataList.length > 0) {
         // 查找匹配的现有条目（相同品种和价格类型）
-        const existingEntry = priceDataList.find((item: any) =>
+        const existingEntry = priceDataList.find((item: Record<string, any>) =>
           item.commodity === values.commodity &&
           item.subType === (values.subType || 'LISTED')
         );
@@ -326,6 +332,7 @@ export const PriceEntryForm: React.FC = () => {
       });
       message.success('添加成功');
       form.resetFields(['price', 'moisture', 'bulkDensity', 'inventory', 'note']);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- error object from catch
     } catch (err: any) {
       message.error(getErrorMessage(err));
     }
@@ -339,6 +346,7 @@ export const PriceEntryForm: React.FC = () => {
     }
 
     // [NEW] 检查是否填报了所有指定品种
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- untyped API response iteration
     const filledCommodities = priceDataList.map((i: any) => i.commodity);
     const missingCommodities = allowedCommodities
       .map(c => c.value)
@@ -350,7 +358,7 @@ export const PriceEntryForm: React.FC = () => {
         content: (
           <div>
             <p>您还有以下分配的品种尚未填报：</p>
-            <p style={{ color: '#ff4d4f', fontWeight: 'bold' }}>{missingCommodities.join('、')}</p>
+            <p style={{ color: token.colorError, fontWeight: 'bold' }}>{missingCommodities.join('、')}</p>
             <p>提交后任务将标记为完成。如需稍后继续，请点击“取消”并保存草稿。</p>
           </div>
         ),
@@ -388,6 +396,7 @@ export const PriceEntryForm: React.FC = () => {
 
       message.success(taskId ? '已提交审核' : '提交成功');
       navigate('/price-reporting');
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- error object from catch
     } catch (err: any) {
       message.error(getErrorMessage(err));
     }
@@ -521,6 +530,7 @@ export const PriceEntryForm: React.FC = () => {
                   const currentCommodity = getFieldValue('commodity');
 
                   // Find latest history price for comparison
+                  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- untyped API response iteration
                   const latestHistory = priceHistory?.filter((h: any) => h.commodity === currentCommodity)?.[0];
 
                   if (currentPrice && latestHistory && latestHistory.price) {
@@ -586,6 +596,7 @@ export const PriceEntryForm: React.FC = () => {
               <Text type="secondary">暂无数据，请添加价格</Text>
             ) : (
               <div>
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any -- untyped API response iteration
                 {priceDataList.map((item: any, index: number) => (
                   <div
                     key={item.id}
@@ -595,16 +606,16 @@ export const PriceEntryForm: React.FC = () => {
                       display: 'flex',
                       justifyContent: 'space-between',
                       alignItems: 'center',
-                      backgroundColor: currentTask?.status === 'RETURNED' ? '#f6ffed' : 'transparent',
+                      backgroundColor: currentTask?.status === 'RETURNED' ? token.colorSuccessBg : 'transparent',
                       borderRadius: 4,
                       marginBottom: index < priceDataList.length - 1 ? 4 : 0,
-                      border: taskId ? '1px solid #b7eb8f' : 'none',
+                      border: taskId ? `1px solid ${token.colorSuccessBorder}` : 'none',
                     }}
                   >
                     <Space>
                       <Text strong>{commodityLabels[item.commodity] || item.commodity}</Text>
                       <Text type="secondary">{priceSubTypeLabels[item.subType] || item.subType}</Text>
-                      <Text style={{ color: '#1890ff', fontWeight: 'bold' }}>
+                      <Text style={{ color: token.colorPrimary, fontWeight: 'bold' }}>
                         {Number(item.price).toLocaleString()} 元/吨
                       </Text>
                       {item.moisture && <Text type="secondary">水分 {item.moisture}%</Text>}
@@ -662,6 +673,7 @@ export const PriceEntryForm: React.FC = () => {
                                     entryId: item.id,
                                   });
                                   message.success('删除成功');
+                                // eslint-disable-next-line @typescript-eslint/no-explicit-any -- error object from catch
                                 } catch (err: any) {
                                   const errorMessage = getErrorMessage(err);
 
@@ -675,7 +687,7 @@ export const PriceEntryForm: React.FC = () => {
                                         content: (
                                           <div>
                                             <p>检测到重复数据：</p>
-                                            <p style={{ fontWeight: 'bold', color: '#ff4d4f' }}>
+                                            <p style={{ fontWeight: 'bold', color: token.colorError }}>
                                               {commodityLabels[commodity] || commodity} 在 {date} 已有 {priceSubTypeLabels[priceType] || priceType} 数据
                                             </p>
                                             <p>请选择以下操作：</p>
@@ -734,6 +746,7 @@ export const PriceEntryForm: React.FC = () => {
               <div style={{ width: '100%' }}>
                 <ResponsiveContainer width="100%" height={200}>
                   <AreaChart
+                    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- untyped API response iteration
                     data={priceHistory.slice().reverse().map((i: any) => ({
                       date: new Date(i.effectiveDate).toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric' }),
                       price: Number(i.price)
@@ -745,14 +758,15 @@ export const PriceEntryForm: React.FC = () => {
                     <YAxis domain={['auto', 'auto']} hide />
                     <Tooltip
                       contentStyle={{ fontSize: 12 }}
+                      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- dynamic form/parameter value
                       formatter={(value: any) => [`${value} 元/吨`, '价格']}
                     />
-                    <Area type="monotone" dataKey="price" stroke="#1890ff" fill="#e6f7ff" />
+                    <Area type="monotone" dataKey="price" stroke={token.colorPrimary} fill={token.colorPrimaryBg} />
                   </AreaChart>
                 </ResponsiveContainer>
                 <div style={{ textAlign: 'center', marginTop: 8 }}>
                   <Text type="secondary" style={{ fontSize: 12 }}>
-                    最近报价: <span style={{ color: '#1890ff', fontWeight: 'bold' }}>{Number(priceHistory[0].price).toLocaleString()}</span> 元/吨
+                    最近报价: <span style={{ color: token.colorPrimary, fontWeight: 'bold' }}>{Number(priceHistory[0].price).toLocaleString()}</span> 元/吨
                   </Text>
                 </div>
               </div>

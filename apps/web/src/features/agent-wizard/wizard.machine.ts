@@ -3,7 +3,7 @@ import { setup, assign, fromPromise } from 'xstate';
 import axios from 'axios';
 
 export interface WizardContext {
-    selectedPersona: any | null; // Full Persona Object
+    selectedPersona: string | null;
     sessionId: string | null;
     apiKeys: Record<string, string>;
     files: string[];
@@ -88,7 +88,7 @@ export const wizardMachine = setup({
             invoke: {
                 id: 'createSession',
                 src: 'createSession',
-                input: ({ context }) => ({ personaId: context.selectedPersona }),
+                input: ({ context }) => ({ personaId: context.selectedPersona ?? '' }),
                 onDone: {
                     target: 'credentialBinding',
                     actions: 'assignSession',
