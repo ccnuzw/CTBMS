@@ -4,6 +4,9 @@ import { AIModule } from '../ai/ai.module';
 import { ConfigModule } from '../config/config.module';
 import { KnowledgeController } from './knowledge.controller';
 import { KnowledgeService } from './knowledge.service';
+import { KnowledgeSyncService } from './knowledge-sync.service';
+import { KnowledgeSearchService } from './knowledge-search.service';
+import { KnowledgeAggregationService } from './knowledge-aggregation.service';
 import { KnowledgeWeeklyRollupJob } from './knowledge-weekly-rollup.job';
 
 import { IntelTaskModule } from '../intel-task/intel-task.module';
@@ -20,7 +23,7 @@ import { DeepAnalysisService } from './services/deep-analysis.service';
   imports: [PrismaModule, AIModule, ConfigModule, IntelTaskModule],
   controllers: [KnowledgeController, KnowledgeUploadController],
   providers: [
-    KnowledgeService,
+    KnowledgeService, KnowledgeSyncService, KnowledgeSearchService, KnowledgeAggregationService,
     KnowledgeWeeklyRollupJob,
     RagPipelineService,
     KnowledgeIngestionService,

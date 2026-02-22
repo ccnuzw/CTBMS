@@ -22,10 +22,13 @@ import {
   KnowledgeType,
 } from '@prisma/client';
 import { KnowledgeService, CreateKnowledgeInput, UpdateKnowledgeInput } from './knowledge.service';
+import { KnowledgeSyncService } from './knowledge-sync.service';
+import { KnowledgeSearchService } from './knowledge-search.service';
+import { KnowledgeAggregationService } from './knowledge-aggregation.service';
 
 @Controller('knowledge')
 export class KnowledgeController {
-  constructor(private readonly knowledgeService: KnowledgeService) { }
+  constructor(private readonly knowledgeService: KnowledgeService, private readonly syncService: KnowledgeSyncService, private readonly searchService: KnowledgeSearchService, private readonly aggService: KnowledgeAggregationService) { }
 
   @Get('items')
   findAll(
@@ -43,7 +46,7 @@ export class KnowledgeController {
     @Query('pageSize', new DefaultValuePipe(20), ParseIntPipe) pageSize?: number,
     @Query('authorId') authorId?: string,
   ) {
-    return this.knowledgeService.findAll({
+    return this.searchService.findAll({
       type,
       status,
       periodType,
@@ -70,7 +73,7 @@ export class KnowledgeController {
 
   @Get('items/:id')
   findOne(@Param('id') id: string) {
-    return this.knowledgeService.findOne(id);
+    return this.searchService.findOne(id);
   }
 
   @Post('items/submit-report')
@@ -203,7 +206,7 @@ export class KnowledgeController {
         )
       : undefined;
 
-    return this.knowledgeService.getRelations(id, {
+    return this.searchService.getRelations(id, {
       types: parsedTypes,
       minWeight,
       limit,
@@ -213,12 +216,12 @@ export class KnowledgeController {
 
   @Get('analytics/trend')
   getTrend(@Query('days', new DefaultValuePipe(30), ParseIntPipe) days: number) {
-    return this.knowledgeService.getTrend(days);
+    return this.aggService.getTrend(days);
   }
 
   @Get('analytics/weekly-overview')
   getWeeklyOverview(@Query('periodKey') periodKey?: string) {
-    return this.knowledgeService.getWeeklyOverview(periodKey);
+    return this.aggService.getWeeklyOverview(periodKey);
   }
 
   @Get('analytics/topic-evolution')
@@ -226,7 +229,7 @@ export class KnowledgeController {
     @Query('commodity') commodity?: string,
     @Query('weeks', new DefaultValuePipe(8), ParseIntPipe) weeks?: number,
   ) {
-    return this.knowledgeService.getTopicEvolution(commodity, weeks);
+    return this.aggService.getTopicEvolution(commodity, weeks);
   }
 
   @Get('search')
@@ -236,22 +239,22 @@ export class KnowledgeController {
     @Query('page', new DefaultValuePipe(1), ParseIntPipe) page?: number,
     @Query('pageSize', new DefaultValuePipe(20), ParseIntPipe) pageSize?: number,
   ) {
-    return this.knowledgeService.findAll({ keyword, type, page, pageSize });
+    return this.searchService.findAll({ keyword, type, page, pageSize });
   }
 
   @Post('admin/backfill')
   backfill(@Body('limit', new DefaultValuePipe(500), ParseIntPipe) limit: number) {
-    return this.knowledgeService.backfillFromLegacy(limit);
+    return this.syncService.backfillFromLegacy(limit);
   }
 
   @Get('admin/consistency')
   consistency(@Query('sampleSize', new DefaultValuePipe(50), ParseIntPipe) sampleSize: number) {
-    return this.knowledgeService.checkLegacyConsistency(sampleSize);
+    return this.syncService.checkLegacyConsistency(sampleSize);
   }
 
   @Get('legacy/:source/:id')
   resolveLegacy(@Param('source') source: 'intel' | 'report', @Param('id') id: string) {
-    return this.knowledgeService.resolveLegacy(source, id);
+    return this.syncService.resolveLegacy(source, id);
   }
 
   @Post('admin/weekly-rollup')
@@ -260,7 +263,7 @@ export class KnowledgeController {
     @Body('authorId') authorId?: string,
     @Body('triggerAnalysis', new DefaultValuePipe(true), ParseBoolPipe) triggerAnalysis?: boolean,
   ) {
-    return this.knowledgeService.generateWeeklyRollup({
+    return this.searchService.generateWeeklyRollup({
       targetDate: targetDate ? new Date(targetDate) : undefined,
       authorId,
       triggerAnalysis,
@@ -272,7 +275,7 @@ export class KnowledgeController {
     @Query('intelId') intelId?: string,
     @Query('limit', new DefaultValuePipe(100), ParseIntPipe) limit?: number,
   ) {
-    return this.knowledgeService.getGraphData({ intelId, limit });
+    return this.searchService.getGraphData({ intelId, limit });
   }
 
   // =============================================
@@ -321,7 +324,7 @@ export class KnowledgeController {
     @Query('page', new DefaultValuePipe(1), ParseIntPipe) page?: number,
     @Query('pageSize', new DefaultValuePipe(20), ParseIntPipe) pageSize?: number,
   ) {
-    return this.knowledgeService.findAllReports({
+    return this.searchService.findAllReports({
       reportType,
       status: reportStatus,
       commodity,
@@ -338,12 +341,12 @@ export class KnowledgeController {
 
   @Get('reports/stats')
   getReportStats(@Query('days') days?: string) {
-    return this.knowledgeService.getReportStats({ days: days ? parseInt(days, 10) : undefined });
+    return this.aggService.getReportStats({ days: days ? parseInt(days, 10) : undefined });
   }
 
   @Get('reports/:id')
   findOneReport(@Param('id') id: string) {
-    return this.knowledgeService.findOneReport(id);
+    return this.searchService.findOneReport(id);
   }
 
   @Patch('reports/:id')
@@ -416,7 +419,7 @@ export class KnowledgeController {
       startDate: body.query.startDate ? new Date(body.query.startDate) : undefined,
       endDate: body.query.endDate ? new Date(body.query.endDate) : undefined,
     } : undefined;
-    const buffer = await this.knowledgeService.exportReports(body.ids, query);
+    const buffer = await this.aggService.exportReports(body.ids, query);
     res.set({
       'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
       'Content-Disposition': 'attachment; filename="reports-export.xlsx"',
@@ -444,7 +447,7 @@ export class KnowledgeController {
     @Query('inline') inline: string,
     @Res() res: Response,
   ) {
-    const attachment = await this.knowledgeService.findAttachment(id);
+    const attachment = await this.searchService.findAttachment(id);
     if (!attachment) {
       throw new NotFoundException(`Attachment ID ${id} not found`);
     }
