@@ -15,6 +15,7 @@ import {
     Tag,
     Tooltip,
     Typography,
+    theme,
 } from 'antd';
 import {
     PageContainer,
@@ -85,6 +86,7 @@ const parseMetaInput = (input?: string) => {
 
 export const DataDictionaryPage = () => {
     const { message } = App.useApp();
+    const { token } = theme.useToken();
     const [selectedDomainCode, setSelectedDomainCode] = useState<string | null>(null);
     const [includeInactiveDomains, setIncludeInactiveDomains] = useState(true);
     const [includeInactiveItems, setIncludeInactiveItems] = useState(true);
@@ -307,7 +309,7 @@ export const DataDictionaryPage = () => {
                 onClick={() => setSelectedDomainCode(domain.code)}
                 style={{
                     marginBottom: 8,
-                    borderColor: isSelected ? '#1677ff' : undefined,
+                    borderColor: isSelected ? token.colorPrimary : undefined,
                     backgroundColor: isSelected ? 'rgba(22, 119, 255, 0.04)' : undefined,
                 }}
                 bodyStyle={{ padding: '12px' }}
@@ -320,7 +322,7 @@ export const DataDictionaryPage = () => {
                             </Text>
                             {domain.isSystemDomain && (
                                 <Tooltip title="系统域（不可删除）">
-                                    <LockOutlined style={{ color: '#999', fontSize: 12 }} />
+                                    <LockOutlined style={{ color: token.colorTextSecondary, fontSize: 12 }} />
                                 </Tooltip>
                             )}
                             {!domain.isActive && <Tag color="default">禁用</Tag>}

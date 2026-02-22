@@ -128,7 +128,7 @@ export const DocumentCardView: React.FC<DocumentCardViewProps> = ({
                                     type="text"
                                     size="small"
                                     icon={isFavorite(doc.id) ?
-                                        <StarFilled style={{ color: '#faad14' }} /> :
+                                        <StarFilled style={{ color: token.colorWarning }} /> :
                                         <StarOutlined style={{ color: token.colorTextSecondary }} />
                                     }
                                     onClick={(e) => {

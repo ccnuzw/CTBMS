@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Card, Form, Input, Button, Table, Tag, Typography, Space, Row, Col, DatePicker, message, Divider } from 'antd';
+import { Card, Form, Input, Button, Table, Tag, Typography, Space, Row, Col, DatePicker, message, Divider, theme } from 'antd';
 import { DeploymentUnitOutlined, GlobalOutlined, EnvironmentOutlined, ShopOutlined, RocketOutlined } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
 import type {
@@ -37,6 +37,7 @@ export const ParameterResolutionPreview: React.FC<ParameterResolutionPreviewProp
     const [form] = Form.useForm<ResolveParameterSetDto>();
     const resolveMutation = useResolveParameterSet();
     const [results, setResults] = useState<ResolvedItem[]>([]);
+    const { token } = theme.useToken();
 
     const handleResolve = async () => {
         try {
@@ -125,7 +126,7 @@ export const ParameterResolutionPreview: React.FC<ParameterResolutionPreviewProp
             {results.length > 0 && (
                 <Card title="Effective Parameters" size="small">
                     {/* Visual Hierarchy Summary */}
-                    <div style={{ marginBottom: 16, padding: 12, background: '#f5f5f5', borderRadius: 8 }}>
+                    <div style={{ marginBottom: 16, padding: 12, background: token.colorBgLayout, borderRadius: 8 }}>
                         <Space split={<Divider type="vertical" />}>
                             <Text type="secondary">Hierarchy Priority:</Text>
                             <Space size={4}>

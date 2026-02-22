@@ -10,7 +10,7 @@ import {
   ResponsiveContainer,
   ReferenceDot,
 } from 'recharts';
-import { Card, Empty } from 'antd';
+import { Card, Empty , theme } from 'antd';
 import type { FuturesQuoteSnapshotDto, VirtualTradeLedgerDto } from '@packages/types';
 import dayjs from 'dayjs';
 
@@ -23,6 +23,7 @@ interface KLineChartProps {
 const formatTime = (time: string | Date) => dayjs(time).format('HH:mm');
 
 export const KLineChart: React.FC<KLineChartProps> = ({ data, trades = [], height = 400 }) => {
+  const { token } = theme.useToken();
   if (!data || data.length === 0) {
     return (
       <Card>
@@ -54,7 +55,7 @@ export const KLineChart: React.FC<KLineChartProps> = ({ data, trades = [], heigh
       return {
         x: closest.timeStr,
         y: trade.price,
-        color: trade.action.includes('LONG') ? '#ff4d4f' : '#52c41a',
+        color: trade.action.includes('LONG') ? token.colorError : token.colorSuccess,
       };
     })
     .filter((item) => Number.isFinite(item.y));

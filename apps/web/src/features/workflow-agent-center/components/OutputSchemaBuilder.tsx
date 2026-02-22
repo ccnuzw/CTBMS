@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Button, Card, Col, Form, Input, Row, Select, Space, Table, Typography, Switch, Tooltip } from 'antd';
+import { Button, Card, Col, Form, Input, Row, Select, Space, Table, Typography, Switch, Tooltip, theme } from 'antd';
 import { PlusOutlined, DeleteOutlined, QuestionCircleOutlined, TableOutlined, CodeOutlined } from '@ant-design/icons';
 
 const { Text } = Typography;
@@ -26,6 +26,7 @@ const FIELD_TYPES = [
 
 export const OutputSchemaBuilder: React.FC<OutputSchemaBuilderProps> = ({ value, onChange }) => {
     const [isVisualMode, setIsVisualMode] = useState(true);
+    const { token } = theme.useToken();
     const [fields, setFields] = useState<SchemaField[]>([]);
     const [jsonError, setJsonError] = useState<string | null>(null);
 
@@ -187,7 +188,7 @@ export const OutputSchemaBuilder: React.FC<OutputSchemaBuilderProps> = ({ value,
                     {isVisualMode ? <TableOutlined /> : <CodeOutlined />}
                     <span>输出结构定义</span>
                     <Tooltip title="定义 Agent 输出的 JSON 结构">
-                        <QuestionCircleOutlined style={{ color: '#999' }} />
+                        <QuestionCircleOutlined style={{ color: token.colorTextSecondary }} />
                     </Tooltip>
                 </Space>
             }

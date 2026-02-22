@@ -11,6 +11,7 @@ import {
     Tabs,
     Tag,
     Typography,
+    theme,
 } from 'antd';
 import {
     CaretDownOutlined,
@@ -88,6 +89,7 @@ export interface ExecutionFilterProps {
 
 export const ExecutionFilterBar: React.FC<ExecutionFilterProps> = (props) => {
     const [expandAdvanced, setExpandAdvanced] = useState(false);
+    const { token } = theme.useToken();
 
     const handleTabChange = (key: string) => {
         props.onReset(); // Start fresh
@@ -201,7 +203,7 @@ export const ExecutionFilterBar: React.FC<ExecutionFilterProps> = (props) => {
 
                 {/* Advanced Filters */}
                 {expandAdvanced && (
-                    <div style={{ background: '#fafafa', padding: 16, borderRadius: 8 }}>
+                    <div style={{ background: token.colorBgLayout, padding: 16, borderRadius: 8 }}>
                         <Row gutter={[16, 16]}>
                             <Col span={24}>
                                 <Text strong>风控筛选</Text>

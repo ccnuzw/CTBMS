@@ -58,7 +58,7 @@ export const InsightTypeManager: React.FC = () => {
             if (editingItem) {
                 form.setFieldsValue({
                     ...editingItem,
-                    color: editingItem.color || '#1890ff',
+                    color: editingItem.color || token.colorPrimary,
                 });
             } else {
                 form.resetFields();

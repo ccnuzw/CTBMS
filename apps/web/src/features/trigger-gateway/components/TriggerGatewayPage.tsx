@@ -17,6 +17,7 @@ import {
   Tabs,
   Tag,
   Typography,
+    theme,
 } from 'antd';
 import type { TriggerConfigDto, CreateTriggerConfigDto } from '@packages/types';
 import { useSearchParams } from 'react-router-dom';
@@ -67,6 +68,7 @@ const parsePositiveInt = (value: string | null, fallback: number): number => {
 
 export const TriggerGatewayPage: React.FC = () => {
   const { message } = App.useApp();
+  const { token } = theme.useToken();
   const [form] = Form.useForm<CreateTriggerConfigDto>();
   const [searchParams, setSearchParams] = useSearchParams();
   const [activeTab, setActiveTab] = useState<string>(searchParams.get('tab') || 'configs');
@@ -189,7 +191,7 @@ export const TriggerGatewayPage: React.FC = () => {
           <Typography.Paragraph copyable={{ text: curlCommand }}>
             <pre
               style={{
-                background: '#f5f5f5',
+                background: token.colorBgLayout,
                 padding: 12,
                 borderRadius: 4,
                 overflowX: 'auto',

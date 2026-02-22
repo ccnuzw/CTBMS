@@ -1,6 +1,6 @@
 
 import React, { useState } from 'react';
-import { Upload, Button, message, List, Typography, Space, Card } from 'antd';
+import { Upload, Button, message, List, Typography, Space, Card, theme } from 'antd';
 import { InboxOutlined, FileTextOutlined, DeleteOutlined } from '@ant-design/icons';
 import type { UploadProps } from 'antd';
 
@@ -15,6 +15,7 @@ interface Step3Props {
 
 export const Step3_Knowledge = ({ onSubmit, onBack, files }: Step3Props) => {
     const [fileList, setFileList] = useState<string[]>(files || []);
+    const { token } = theme.useToken();
 
     const props: UploadProps = {
         name: 'file',
@@ -51,9 +52,9 @@ export const Step3_Knowledge = ({ onSubmit, onBack, files }: Step3Props) => {
                 </Paragraph>
             </div>
 
-            <Dragger {...props} style={{ padding: 40, background: '#fafafa', border: '2px dashed #d9d9d9' }}>
+            <Dragger {...props} style={{ padding: 40, background: token.colorBgLayout, border: '2px dashed #d9d9d9' }}>
                 <p className="ant-upload-drag-icon">
-                    <InboxOutlined style={{ fontSize: 48, color: '#1890ff' }} />
+                    <InboxOutlined style={{ fontSize: 48, color: token.colorPrimary }} />
                 </p>
                 <p className="ant-upload-text">Click or drag file to this area to upload</p>
                 <p className="ant-upload-hint">
@@ -71,7 +72,7 @@ export const Step3_Knowledge = ({ onSubmit, onBack, files }: Step3Props) => {
                             actions={[<Button type="text" danger icon={<DeleteOutlined />} onClick={() => handleRemove(item)} />]}
                         >
                             <List.Item.Meta
-                                avatar={<FileTextOutlined style={{ fontSize: 20, color: '#1890ff' }} />}
+                                avatar={<FileTextOutlined style={{ fontSize: 20, color: token.colorPrimary }} />}
                                 title={item}
                                 description="Processed & Indexed"
                             />

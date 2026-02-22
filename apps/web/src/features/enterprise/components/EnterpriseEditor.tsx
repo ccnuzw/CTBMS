@@ -313,7 +313,7 @@ export const EnterpriseEditor: React.FC<EnterpriseEditorProps> = ({
                                         <Space>
                                             <Tag color={tag.color || 'default'}>{tag.name}</Tag>
                                             {tag.description && (
-                                                <span style={{ color: '#999', fontSize: 12 }}>{tag.description}</span>
+                                                <span style={{ color: token.colorTextSecondary, fontSize: 12 }}>{tag.description}</span>
                                             )}
                                         </Space>
                                     </Select.Option>

@@ -781,7 +781,7 @@ export const ParameterSetPage: React.FC = () => {
             columns={setColumns}
             onRow={(record) =>
               record.id === highlightedSetId
-                ? { style: { backgroundColor: token.colorWarningBg || '#fffbe6' } }
+                ? { style: { backgroundColor: token.colorWarningBg || token.colorWarningBg } }
                 : {}
             }
             scroll={{ x: 1400 }}

@@ -1,5 +1,5 @@
-
 import React from 'react';
+import { theme } from 'antd';
 
 export const Step1_Persona = ({ onSelect }: { onSelect: (id: string) => void }) => (
     <div style={{ padding: 20 }}>
@@ -15,6 +15,7 @@ export const Step1_Persona = ({ onSelect }: { onSelect: (id: string) => void }) 
 );
 
 export const Step2_Credential = ({ onSubmit, onSkip, onBack }: { onSubmit: (k: string) => void, onSkip: () => void, onBack: () => void }) => {
+    const { token } = theme.useToken();
     const [key, setKey] = React.useState('');
     return (
         <div style={{ padding: 20 }}>
@@ -43,13 +44,16 @@ export const Step3_Knowledge = ({ onUpload, onBack }: { onUpload: (files: string
     </div>
 );
 
-export const Step4_Playground = ({ context, onReset }: { context: Record<string, any>, onReset: () => void }) => (
-    <div style={{ padding: 20 }}>
-        <h2>Sandbox Playground</h2>
-        <pre>{JSON.stringify(context, null, 2)}</pre>
-        <div style={{ marginTop: 20, padding: 20, background: '#f0f0f0' }}>
-            Bot: Hello! I am your {context.selectedPersona}. How can I help?
+export const Step4_Playground = ({ context, onReset }: { context: Record<string, any>, onReset: () => void }) => {
+    const { token } = theme.useToken();
+    return (
+        <div style={{ padding: 20 }}>
+            <h2>Sandbox Playground</h2>
+            <pre>{JSON.stringify(context, null, 2)}</pre>
+            <div style={{ marginTop: 20, padding: 20, background: token.colorBorderSecondary }}>
+                Bot: Hello! I am your {context.selectedPersona}. How can I help?
+            </div>
+            <button onClick={onReset} style={{ marginTop: 20 }}>Start Over</button>
         </div>
-        <button onClick={onReset} style={{ marginTop: 20 }}>Start Over</button>
-    </div>
-);
+    );
+};

@@ -95,7 +95,7 @@ export const GroupNode: React.FC<NodeProps> = memo(({ id, data, selected }) => {
                     height: collapsed ? '100%' : 'auto',
                     padding: collapsed ? '0 12px' : '2px 8px',
                     backgroundColor: selected || collapsed ? token.colorPrimary : token.colorFillSecondary,
-                    color: selected || collapsed ? '#fff' : token.colorTextSecondary,
+                    color: selected || collapsed ? token.colorBgContainer : token.colorTextSecondary,
                     borderRadius: token.borderRadiusSM,
                     fontSize: 12,
                     fontWeight: 500,

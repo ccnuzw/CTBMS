@@ -136,7 +136,7 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
                                             display: 'flex',
                                             alignItems: 'center',
                                             justifyContent: 'center',
-                                            color: token.colorTextLightSolid || '#fff',
+                                            color: token.colorTextLightSolid || token.colorBgContainer,
                                             fontSize: 14,
                                         }}
                                     >

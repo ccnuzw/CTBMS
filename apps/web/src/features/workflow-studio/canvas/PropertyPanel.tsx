@@ -780,11 +780,11 @@ const EdgePropertyPanel: React.FC<EdgePropertyPanelProps> = ({
               width: 24,
               height: 24,
               borderRadius: token.borderRadiusSM,
-              background: '#1677FF15',
+              background: token.colorPrimaryBg,
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              color: '#1677FF',
+              color: token.colorPrimary,
               fontSize: 12,
             }}
           >

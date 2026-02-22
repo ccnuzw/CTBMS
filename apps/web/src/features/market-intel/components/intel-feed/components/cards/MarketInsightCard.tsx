@@ -175,7 +175,7 @@ export const MarketInsightCard: React.FC<MarketInsightCardProps> = ({
                 <Flex align="center" gap={8} style={{ marginBottom: 8, padding: '4px 8px', background: token.colorFillAlter, borderRadius: 4, width: 'fit-content' }}>
                     <Text type="secondary" style={{ fontSize: 12 }}>上报人:</Text>
                     <Flex align="center" gap={4}>
-                        <div style={{ width: 16, height: 16, borderRadius: '50%', background: (token as any).purple || token.colorPrimary, color: token.colorTextLightSolid || '#fff', fontSize: 10, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                        <div style={{ width: 16, height: 16, borderRadius: '50%', background: (token as any).purple || token.colorPrimary, color: token.colorTextLightSolid || token.colorBgContainer, fontSize: 10, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                             {intel.author.name[0]}
                         </div>
                         <Text style={{ fontSize: 12 }}>{intel.author.name}</Text>

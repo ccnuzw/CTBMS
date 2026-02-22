@@ -23,6 +23,7 @@ import {
   Steps,
   Row,
   Col,
+  theme,
 } from 'antd';
 import { PlusOutlined } from '@ant-design/icons';
 import {
@@ -108,6 +109,7 @@ type CreateAgentProfileFormValues = Omit<
 
 export const AgentProfilePage: React.FC = () => {
   const { message } = App.useApp();
+  const { token } = theme.useToken();
   const [form] = Form.useForm<CreateAgentProfileFormValues>();
 
   const [searchParams, setSearchParams] = useSearchParams();
@@ -424,7 +426,7 @@ export const AgentProfilePage: React.FC = () => {
               record.id === highlightedAgentId
                 ? {
                   style: {
-                    backgroundColor: '#fffbe6',
+                    backgroundColor: token.colorWarningBg,
                   },
                 }
                 : {}

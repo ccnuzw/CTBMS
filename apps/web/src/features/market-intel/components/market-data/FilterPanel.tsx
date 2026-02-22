@@ -488,7 +488,7 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
                     }}
                 >
                     <Flex align="center" gap={6} style={{ marginBottom: 8 }}>
-                        <GlobalOutlined style={{ color: '#722ed1' }} />
+                        <GlobalOutlined style={{ color: token.colorPrimary }} />
                         <Text strong style={{ fontSize: 12 }}>区域参考</Text>
                     </Flex>
                     <Text type="secondary" style={{ fontSize: 11, display: 'block', marginBottom: 8 }}>

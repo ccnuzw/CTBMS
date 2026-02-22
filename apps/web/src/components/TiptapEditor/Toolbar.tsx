@@ -156,7 +156,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({ editor }) => {
                 {/* 颜色选择 */}
                 <ColorPicker
                     size="small"
-                    value={editor.getAttributes('textStyle').color || '#000000'}
+                    value={editor.getAttributes('textStyle').color || token.colorText}
                     onChange={handleColorChange}
                 />
 

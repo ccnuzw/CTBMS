@@ -59,7 +59,7 @@ export const ReportDistributionCharts: React.FC<ReportDistributionChartsProps> =
             },
             position: 'top' as const,
             style: {
-                fill: '#000000',
+                fill: '#000000' /* chart-label-color */,
                 opacity: 0.6,
             },
         },

@@ -37,9 +37,9 @@ const createColoredIcon = (color: string) => {
   });
 };
 
-const redIcon = createColoredIcon('#ff4d4f'); // Unassigned
-const blueIcon = createColoredIcon('#1890ff'); // Assigned
-const greenIcon = createColoredIcon('#52c41a'); // Assigned to current user
+const redIcon = createColoredIcon('#ff4d4f'); // Ant Design colorError default
+const blueIcon = createColoredIcon('#1677ff'); // Ant Design colorPrimary default
+const greenIcon = createColoredIcon('#52c41a'); // Ant Design colorSuccess default
 
 const POINT_TYPE_LABELS_FALLBACK: Record<string, string> = {
   PORT: '港口',

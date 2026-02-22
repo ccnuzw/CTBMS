@@ -1,5 +1,5 @@
 
-import { Button, App, Popconfirm, Tag, Space, Drawer } from 'antd';
+import { Button, App, Popconfirm, Tag, Space, Drawer , theme } from 'antd';
 import { useMemo, useState, useRef } from 'react';
 import { ActionType, ProColumns, ProTable, ModalForm, ProFormText, ProFormTextArea, ProFormSelect, ProFormSwitch } from '@ant-design/pro-components';
 import { usePrompts, useCreatePrompt, useUpdatePrompt, useDeletePrompt, usePreviewPrompt } from '../api';
@@ -17,6 +17,7 @@ const GENERIC_PROMPT_VARS = {
 
 export const PromptTemplatePage = () => {
     const { message } = App.useApp();
+    const { token } = theme.useToken();
     const actionRef = useRef<ActionType>();
     const { data: prompts, isLoading, refetch } = usePrompts();
     const createMutation = useCreatePrompt();
@@ -193,7 +194,7 @@ export const PromptTemplatePage = () => {
     ];
 
     return (
-        <div style={{ background: '#F5F7FA' }}>
+        <div style={{ background: token.colorBgLayout }}>
             <ProTable<PromptTemplate>
                 headerTitle="AI 提示词模板管理 (Prompt Templates)"
                 actionRef={actionRef}
@@ -294,13 +295,13 @@ export const PromptTemplatePage = () => {
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
                         <div>
                             <Tag color="blue">System Prompt</Tag>
-                            <pre style={{ background: '#f5f5f5', padding: 12, borderRadius: 6, marginTop: 8, whiteSpace: 'pre-wrap' }}>
+                            <pre style={{ background: token.colorBgLayout, padding: 12, borderRadius: 6, marginTop: 8, whiteSpace: 'pre-wrap' }}>
                                 {previewData.system}
                             </pre>
                         </div>
                         <div>
                             <Tag color="green">User Prompt</Tag>
-                            <pre style={{ background: '#f5f5f5', padding: 12, borderRadius: 6, marginTop: 8, whiteSpace: 'pre-wrap' }}>
+                            <pre style={{ background: token.colorBgLayout, padding: 12, borderRadius: 6, marginTop: 8, whiteSpace: 'pre-wrap' }}>
                                 {previewData.user}
                             </pre>
                         </div>

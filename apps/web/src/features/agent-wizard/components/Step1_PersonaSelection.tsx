@@ -64,7 +64,7 @@ export const Step1_PersonaSelection = ({ onSelect, selectedId, isLoading }: { on
                                     <div style={{
                                         width: 64, height: 64, borderRadius: '50%',
                                         background: isSelected ? token.colorPrimary : token.colorFillSecondary,
-                                        color: isSelected ? '#fff' : token.colorTextSecondary,
+                                        color: isSelected ? token.colorBgContainer : token.colorTextSecondary,
                                         display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto'
                                     }}>
                                         {getIcon(persona.icon)}

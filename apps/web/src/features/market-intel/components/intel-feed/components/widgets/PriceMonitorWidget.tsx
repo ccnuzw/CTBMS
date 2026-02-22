@@ -123,7 +123,7 @@ export const PriceMonitorWidget: React.FC<PriceMonitorWidgetProps> = ({
                         </div>
                         <div>
                             <Text type="secondary" style={{ fontSize: 12 }}>日涨跌</Text>
-                            <div style={{ color: stats.change >= 0 ? '#f5222d' : '#52c41a', fontSize: 16, display: 'flex', alignItems: 'center' }}>
+                            <div style={{ color: stats.change >= 0 ? token.colorError : token.colorSuccess, fontSize: 16, display: 'flex', alignItems: 'center' }}>
                                 {stats.change >= 0 ? <RiseOutlined /> : <FallOutlined />}
                                 <span style={{ marginLeft: 4 }}>{Math.abs(stats.change).toFixed(0)} ({Math.abs(stats.pct).toFixed(2)}%)</span>
                             </div>

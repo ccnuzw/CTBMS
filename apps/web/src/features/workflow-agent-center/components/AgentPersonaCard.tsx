@@ -1,5 +1,5 @@
 import React from 'react';
-import { Card, Typography, Space, Tag } from 'antd';
+import { Card, Typography, Space, Tag , theme } from 'antd';
 import { AgentPersona } from '../registry/AgentPersonaRegistry';
 
 const { Title, Paragraph } = Typography;
@@ -11,14 +11,15 @@ interface AgentPersonaCardProps {
 }
 
 export const AgentPersonaCard: React.FC<AgentPersonaCardProps> = ({ persona, selected, onClick }) => {
+  const { token } = theme.useToken();
     return (
         <Card
             hoverable
             onClick={onClick}
             style={{
                 height: '100%',
-                borderColor: selected ? '#1677ff' : undefined,
-                backgroundColor: selected ? '#e6f7ff' : undefined,
+                borderColor: selected ? token.colorPrimary : undefined,
+                backgroundColor: selected ? token.colorPrimaryBg : undefined,
                 borderWidth: selected ? 2 : 1,
                 transition: 'all 0.3s',
             }}

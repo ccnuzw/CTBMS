@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Input, Card, Space, Typography, Switch, Button, Tooltip } from 'antd';
+import { Input, Card, Space, Typography, Switch, Button, Tooltip, theme } from 'antd';
 import { QuestionCircleOutlined, BuildOutlined, EditOutlined } from '@ant-design/icons';
 
 const { Text } = Typography;
@@ -19,6 +19,7 @@ const SECTION_HEADERS = {
 
 export const StructuredPromptBuilder: React.FC<StructuredPromptBuilderProps> = ({ value = '', onChange }) => {
     const [isStructured, setIsStructured] = useState(false);
+    const { token } = theme.useToken();
     const [sections, setSections] = useState({
         role: '',
         task: '',
@@ -80,7 +81,7 @@ export const StructuredPromptBuilder: React.FC<StructuredPromptBuilderProps> = (
                     {isStructured ? <BuildOutlined /> : <EditOutlined />}
                     <span>系统提示词</span>
                     <Tooltip title="结构化模式可以帮助你更好地组织提示词逻辑">
-                        <QuestionCircleOutlined style={{ color: '#999' }} />
+                        <QuestionCircleOutlined style={{ color: token.colorTextSecondary }} />
                     </Tooltip>
                 </Space>
             }

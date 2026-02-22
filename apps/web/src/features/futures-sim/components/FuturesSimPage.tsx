@@ -84,7 +84,7 @@ const riskLevelConfig: Record<string, { color: string; label: string }> = {
   NORMAL: { color: 'success', label: '正常' },
   WARNING: { color: 'warning', label: '预警' },
   DANGER: { color: 'error', label: '危险' },
-  LIQUIDATION: { color: '#ff0000', label: '强平线' },
+  LIQUIDATION: { color: 'error', label: '强平线' },
 };
 
 const derivedFeatureLabelMap: Record<string, string> = {

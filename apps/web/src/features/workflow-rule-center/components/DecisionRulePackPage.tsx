@@ -16,6 +16,7 @@ import {
     Table,
     Tag,
     Typography,
+    theme,
 } from 'antd';
 import {
     CreateDecisionRuleDto,
@@ -148,6 +149,7 @@ const parsePositiveInt = (value: string | null, fallback: number): number => {
 
 export const DecisionRulePackPage: React.FC = () => {
     const { message } = App.useApp();
+    const { token } = theme.useToken();
     const [createForm] = Form.useForm<CreateDecisionRulePackDto>();
     const [updatePackForm] = Form.useForm<UpdateDecisionRulePackDto>();
     const [ruleForm] = Form.useForm<RuleFormValues>();
@@ -630,7 +632,7 @@ export const DecisionRulePackPage: React.FC = () => {
                             record.id === highlightedPackId
                                 ? {
                                     style: {
-                                        backgroundColor: '#fffbe6',
+                                        backgroundColor: token.colorWarningBg,
                                     },
                                 }
                                 : {}

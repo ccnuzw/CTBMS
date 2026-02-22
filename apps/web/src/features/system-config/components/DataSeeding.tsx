@@ -147,7 +147,7 @@ export const DataSeeding: React.FC = () => {
 
                 {/* Terminal View */}
                 <div style={{
-                    backgroundColor: '#1e1e1e',
+                    backgroundColor: token.colorBgElevated,
                     color: token.colorSuccess,
                     fontFamily: "'Fira Code', 'Courier New', monospace",
                     fontSize: '13px',

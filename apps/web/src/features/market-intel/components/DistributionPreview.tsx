@@ -103,7 +103,7 @@ export const DistributionPreview: React.FC<DistributionPreviewProps> = ({
     <Modal
       title={
         <Space>
-          <CheckCircleOutlined style={{ color: '#52c41a' }} />
+          <CheckCircleOutlined style={{ color: token.colorSuccess }} />
           <span>任务分发预览</span>
         </Space>
       }

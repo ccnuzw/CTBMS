@@ -205,7 +205,7 @@ export const Enterprise360: React.FC<Enterprise360Props> = ({
                         <Flex justify="space-between" align="start" style={{ marginBottom: analysis ? token.marginSM : 0 }}>
                             <div style={{ flex: 1 }}>
                                 <Space style={{ fontSize: token.fontSizeLG, fontWeight: 'bold', color: token.colorTextHeading, marginBottom: token.marginXS }}>
-                                    <ThunderboltOutlined style={{ color: '#722ED1' }} />
+                                    <ThunderboltOutlined style={{ color: token.colorPrimary }} />
                                     AI 智能风控 & 标签分析
                                 </Space>
                                 {!analysis && (

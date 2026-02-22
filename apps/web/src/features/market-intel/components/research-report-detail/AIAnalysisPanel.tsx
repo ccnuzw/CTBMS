@@ -141,8 +141,8 @@ export const AIAnalysisPanel: React.FC<AIAnalysisPanelProps> = ({ report, mode =
 
   const getSentimentIcon = (sentiment?: string) => {
     const sentimentCode = resolveSentimentCode(sentiment);
-    if (sentimentCode === 'BULLISH') return <RiseOutlined style={{ color: '#cf1322' }} />;
-    if (sentimentCode === 'BEARISH') return <FallOutlined style={{ color: '#3f8600' }} />;
+    if (sentimentCode === 'BULLISH') return <RiseOutlined style={{ color: token.colorError }} />;
+    if (sentimentCode === 'BEARISH') return <FallOutlined style={{ color: token.colorSuccess }} />;
     return <MinusOutlined style={{ color: token.colorTextTertiary }} />;
   };
 
@@ -199,7 +199,7 @@ export const AIAnalysisPanel: React.FC<AIAnalysisPanelProps> = ({ report, mode =
           className="shadow-sm"
           title={
             <Space>
-              <BulbOutlined style={{ color: '#faad14' }} /> 关键观点
+              <BulbOutlined style={{ color: token.colorWarning }} /> 关键观点
             </Space>
           }
         >

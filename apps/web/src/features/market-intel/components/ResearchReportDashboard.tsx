@@ -118,7 +118,7 @@ export const ResearchReportDashboard: React.FC = () => {
                         {renderOverviewCard("总下载量", stats?.totalDownloads || 0, <DownloadOutlined />, token.colorWarning, "次")}
                     </Col>
                     <Col xs={24} sm={12} lg={6}>
-                        {renderOverviewCard("待审核", stats?.byStatus?.PENDING || 0, <FileSearchOutlined />, '#faad14', "篇")}
+                        {renderOverviewCard("待审核", stats?.byStatus?.PENDING || 0, <FileSearchOutlined />, token.colorWarning, "篇")}
                     </Col>
                 </Row>
 

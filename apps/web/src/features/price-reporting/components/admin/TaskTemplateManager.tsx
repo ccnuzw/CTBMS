@@ -21,6 +21,7 @@ import {
   Alert,
   DatePicker,
   Segmented,
+    theme,
 } from 'antd';
 import {
   PlusOutlined,
@@ -147,6 +148,7 @@ export const TaskTemplateManager: React.FC = () => {
 
   const [form] = Form.useForm();
   const { message } = App.useApp();
+  const { token } = theme.useToken();
   const { containerRef, autoFocusFieldProps, modalProps } = useModalAutoFocus();
 
   // 数据查询
@@ -507,7 +509,7 @@ export const TaskTemplateManager: React.FC = () => {
           <Space>
             <CalendarOutlined />
             <span>任务模板管理</span>
-            <Badge count={templates?.filter((t) => t.isActive).length || 0} style={{ backgroundColor: '#52c41a' }} />
+            <Badge count={templates?.filter((t) => t.isActive).length || 0} style={{ backgroundColor: token.colorSuccess }} />
           </Space>
         }
         extra={
