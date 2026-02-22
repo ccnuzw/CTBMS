@@ -7,7 +7,12 @@ import { VariableResolver } from '../workflow-execution/engine/variable-resolver
 
 @Module({
   controllers: [WorkflowDefinitionController],
-  providers: [WorkflowDefinitionService, WorkflowDslValidator, VariableResolver],
+  providers: [
+    WorkflowDefinitionService,
+    WorkflowDefinitionValidatorService,
+    WorkflowDslValidator,
+    VariableResolver,
+  ],
   exports: [WorkflowDefinitionService, WorkflowDefinitionValidatorService],
 })
 export class WorkflowDefinitionModule {}

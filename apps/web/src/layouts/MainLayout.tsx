@@ -34,16 +34,9 @@ import {
   FormOutlined,
   AuditOutlined,
   NodeIndexOutlined,
-  ThunderboltOutlined,
-  DatabaseOutlined,
-  BarChartOutlined,
-  PlayCircleOutlined,
-  ExportOutlined,
   ExperimentOutlined,
-  FundOutlined,
   RocketOutlined,
   AlertOutlined,
-  StockOutlined,
 } from '@ant-design/icons';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { ThemeSwitcher } from '../components/ThemeSwitcher';
@@ -77,85 +70,39 @@ export const MainLayout: React.FC = () => {
         label: '仪表盘',
       },
       {
-        key: '/workflow/workbench',
-        icon: <RocketOutlined />,
-        label: '智能体工作台',
-      },
-      {
         key: 'workflow-center',
         icon: <NodeIndexOutlined />,
         label: '策略与编排',
         children: [
           {
+            key: '/workflow/workbench',
+            icon: <RocketOutlined />,
+            label: '工作台',
+          },
+          {
             key: '/workflow/definitions',
             icon: <SettingOutlined />,
-            label: '流程定义',
+            label: '流程设计',
           },
           {
             key: '/workflow/executions',
             icon: <ScheduleOutlined />,
-            label: '运行中心',
-          },
-          {
-            key: '/workflow/analytics',
-            icon: <BarChartOutlined />,
-            label: '执行分析',
-          },
-
-          {
-            key: '/workflow/rules',
-            icon: <DatabaseOutlined />,
-            label: '规则中心',
-          },
-          {
-            key: '/workflow/agents',
-            icon: <TeamOutlined />,
-            label: 'Agent中心',
-          },
-          {
-            key: '/workflow/parameters',
-            icon: <SettingOutlined />,
-            label: '参数中心',
-          },
-          {
-            key: '/workflow/bindings',
-            icon: <SettingOutlined />,
-            label: '配置绑定',
-          },
-          {
-            key: '/workflow/connectors',
-            icon: <CloudOutlined />,
-            label: '连接器中心',
-          },
-          {
-            key: '/workflow/triggers',
-            icon: <ThunderboltOutlined />,
-            label: '触发管理',
+            label: '运行与回放',
           },
           {
             key: '/workflow/decisions',
             icon: <AlertOutlined />,
-            label: '决策记录',
-          },
-          {
-            key: '/workflow/exports',
-            icon: <ExportOutlined />,
-            label: '报告导出',
+            label: '决策与报告',
           },
           {
             key: '/workflow/experiments',
             icon: <ExperimentOutlined />,
-            label: '灰度实验',
+            label: '实验与分析',
           },
           {
-            key: '/workflow/templates',
+            key: '/workflow/advanced',
             icon: <AppstoreOutlined />,
-            label: '模板市场',
-          },
-          {
-            key: '/workflow/futures',
-            icon: <StockOutlined />,
-            label: '期货模拟',
+            label: '高级配置',
           },
         ],
       },
@@ -407,7 +354,7 @@ export const MainLayout: React.FC = () => {
     [],
   );
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Ant Design MenuItem recursive type
+   
   const findMenuLabel = (items: any[], key: string): string | undefined => {
     for (const item of items) {
       if (item.key === key) return item.label as string;

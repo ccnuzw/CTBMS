@@ -88,7 +88,7 @@ export interface WorkflowCanvasProps {
     viewLevel?: WorkflowStudioViewLevel;
     onViewLevelChange?: (level: WorkflowStudioViewLevel) => void;
     viewMode?: 'edit' | 'replay';
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+     
     executionData?: any;
 }
 
@@ -227,7 +227,7 @@ export function useWorkflowCanvasViewModel(props: WorkflowCanvasProps) {
         }
         const statusMap = new Map<string, string>();
         const history = executionData.history || [];
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+         
         history.forEach((step: any) => {
             if (step.nodeId) {
                 statusMap.set(step.nodeId, step.status);
@@ -237,7 +237,7 @@ export function useWorkflowCanvasViewModel(props: WorkflowCanvasProps) {
     }, [viewMode, executionData]);
 
     const getEdgeStyle = useCallback(
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+         
         (edge: any) => {
             if (viewMode !== 'replay') return {};
             const sourceStatus = executionStatusMap.get(edge.source);

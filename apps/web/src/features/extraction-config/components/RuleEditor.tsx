@@ -149,7 +149,7 @@ export const RuleEditor: React.FC<RuleEditorProps> = ({
     }
   };
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- dynamic form/parameter value
+   
   const updateCondition = (id: string, field: string, value: any) => {
     setConditions(conditions.map((c) => (c.id === id ? { ...c, [field]: value } : c)));
   };

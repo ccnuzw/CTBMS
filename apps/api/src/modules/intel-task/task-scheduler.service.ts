@@ -1,6 +1,7 @@
 import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { PrismaService } from '../../prisma';
 import { IntelTaskTemplateService } from './intel-task-template.service';
+import { IntelTaskDispatchService } from './intel-task-dispatch.service';
 import { TaskCycleType, IntelTaskType, TaskScheduleMode } from '@packages/types';
 import { computeNextRunAt } from './intel-task-schedule.utils';
 import { IntelTaskTemplate } from '@prisma/client';
@@ -13,6 +14,7 @@ export class TaskSchedulerService implements OnModuleInit, OnModuleDestroy {
     private readonly intervalMs = Number(process.env.TASK_SCHEDULER_INTERVAL_MS || 300000);
 
     constructor(
+        public readonly dispatchService: IntelTaskDispatchService,
         private prisma: PrismaService,
         private templateService: IntelTaskTemplateService,
     ) { }
@@ -62,7 +64,7 @@ export class TaskSchedulerService implements OnModuleInit, OnModuleDestroy {
 
         if (isCollection && scheduleMode === TaskScheduleMode.POINT_DEFAULT) {
             if (targetPointTypes.length > 0) {
-                await this.templateService.executeTemplateByPointType(template.id, undefined);
+                await this.dispatchService.executeTemplateByPointType(template.id, undefined);
             } else {
                 await this.templateService.createTasksFromTemplate(template, {
                     runAt: now,
@@ -117,7 +119,7 @@ export class TaskSchedulerService implements OnModuleInit, OnModuleDestroy {
             // 使用统一的执行入口，支持按采集点类型批量生成
             if (targetPointTypes.length > 0) {
                 // 按采集点类型批量生成任务
-                await this.templateService.executeTemplateByPointType(template.id, undefined);
+                await this.dispatchService.executeTemplateByPointType(template.id, undefined);
             } else {
                 // 原有逻辑：按分配规则生成任务
                 await this.templateService.createTasksFromTemplate(template, {

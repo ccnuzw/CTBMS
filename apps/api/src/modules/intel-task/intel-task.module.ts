@@ -12,12 +12,16 @@ import { TaskSchedulerService } from './task-scheduler.service';
     controllers: [IntelTaskController],
     providers: [
     IntelTaskService,
+    IntelTaskStateService,
+    IntelTaskMetricsService,
     IntelTaskTemplateService,
     IntelTaskDispatchService,
         TaskSchedulerService,
     ],
     exports: [
     IntelTaskService,
+    IntelTaskStateService,
+    IntelTaskMetricsService,
     IntelTaskTemplateService,
     IntelTaskDispatchService,
     ],

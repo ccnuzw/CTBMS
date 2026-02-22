@@ -169,9 +169,9 @@ export function useParameterSetViewModel() {
         paramType?: string;
         scopeLevel?: ParameterScopeLevel;
         scopeValue?: string;
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+         
         value?: any;
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+         
         defaultValue?: any;
         minValueText?: string;
         maxValueText?: string;

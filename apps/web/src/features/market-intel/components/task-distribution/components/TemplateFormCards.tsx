@@ -183,14 +183,14 @@ const CollectionPointPicker: React.FC<CollectionPointPickerProps> = ({ value = [
             title: '区域',
             dataIndex: 'region',
             width: 140,
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any -- AntD table column render callback
+             
             render: (_: any, record: Record<string, any>) => record.region?.name || record.regionCode || '--',
         },
         {
             title: '负责人',
             dataIndex: 'allocations',
             width: 90,
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any -- dynamic form/parameter value
+             
             render: (value: any[]) => value?.length ?? 0,
         },
     ];
@@ -396,14 +396,14 @@ const UserPicker: React.FC<UserPickerProps> = ({ value = [], onChange }) => {
             title: '组织',
             dataIndex: 'organization',
             width: 160,
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any -- AntD table column render callback
+             
             render: (_: any, record: Record<string, any>) => record.organization?.name || '--',
         },
         {
             title: '部门',
             dataIndex: 'department',
             width: 160,
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any -- AntD table column render callback
+             
             render: (_: any, record: Record<string, any>) => record.department?.name || '--',
         },
     ];

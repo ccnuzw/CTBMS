@@ -128,7 +128,7 @@ export const AIAnalysisPanel: React.FC<AIAnalysisPanelProps> = ({ report, mode =
   // Check types first. ResearchReportResponse (from types packages) defines:
   // keyPoints: any; prediction: any; dataPoints: any;
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- parsed AI analysis arrays
+   
   let keyPoints: any[] = [];
   if (Array.isArray(report.analysis?.keyPoints)) {
     keyPoints = report.analysis.keyPoints;

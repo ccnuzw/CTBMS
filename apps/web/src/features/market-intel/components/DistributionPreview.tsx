@@ -51,7 +51,7 @@ export const DistributionPreview: React.FC<DistributionPreviewProps> = ({
     {
       title: '所属部门/组织',
       key: 'org',
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- AntD table column render callback
+       
       render: (_: any, record: Record<string, any>) => (
         <Space direction="vertical" size={0}>
           {record.organizationName && (
@@ -67,7 +67,7 @@ export const DistributionPreview: React.FC<DistributionPreviewProps> = ({
       title: '分配采集点',
       dataIndex: 'collectionPoints',
       key: 'collectionPoints',
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- map points data
+       
       render: (points: any[]) => {
         if (!points || points.length === 0) return <Text type="secondary">-</Text>;
         // 如果数量太多，只显示前几个

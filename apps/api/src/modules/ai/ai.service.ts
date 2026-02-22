@@ -1,7 +1,6 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import {
     AIAnalysisResult,
-    CollectionPointForRecognition,
     ContentType,
     AIProvider,
 } from '@packages/types';
@@ -17,8 +16,11 @@ import { RuleEngineService } from './rule-engine.service';
 import { ConfigService } from '../config/config.service';
 import { AIProviderFactory } from './providers/provider.factory';
 import { AIRequestOptions } from './providers/base.provider';
+import { AIModelService } from './ai-model.service';
+import { AIPromptService } from './ai-prompt.service';
+import { AIEntityExtractorService } from './ai-entity-extractor.service';
 
-import { TraceLog, TraceLogger } from './ai-shared.types';
+import { TraceLogger } from './ai-shared.types';
 
 /**
  * AI 分析服务
@@ -42,9 +44,9 @@ export class AIService implements OnModuleInit {
         private readonly ruleEngineService: RuleEngineService,
         private readonly configService: ConfigService,
         private readonly aiProviderFactory: AIProviderFactory,
-        private readonly aiModelService: import('./ai-model.service').AIModelService,
-        private readonly aiPromptService: import('./ai-prompt.service').AIPromptService,
-        private readonly aiEntityExtractorService: import('./ai-entity-extractor.service').AIEntityExtractorService,
+        private readonly aiModelService: AIModelService,
+        private readonly aiPromptService: AIPromptService,
+        private readonly aiEntityExtractorService: AIEntityExtractorService,
     ) {
         // AI API 配置 - 优先从数据库 ConfigService 获取，此处仅初始化默认环境变量
         this.apiKey = process.env.GEMINI_API_KEY || '';

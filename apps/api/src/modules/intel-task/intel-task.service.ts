@@ -4,7 +4,6 @@ import { ConfigService } from '../config/config.service';
 import { forwardRef, Inject } from '@nestjs/common';
 import { IntelTaskStateService } from './intel-task-state.service';
 import { isMissingReturnReasonColumnError, buildIntelTaskWhere } from './intel-task.utils';
-import { Prisma, IntelTask } from '@prisma/client';
 import {
     CreateIntelTaskDto,
     UpdateIntelTaskDto,
@@ -12,11 +11,7 @@ import {
     IntelTaskStatus,
     IntelTaskPriority,
     IntelTaskType,
-    IntelTaskCompletionPolicy,
     INTEL_TASK_TYPE_LABELS,
-    GetCalendarSummaryDto,
-    CalendarSummaryResponse,
-    CalendarPreviewTask,
 } from '@packages/types';
 
 @Injectable()

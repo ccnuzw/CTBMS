@@ -14,7 +14,7 @@ export interface WorkflowDefinitionPublishWizardModalProps {
     publishWizardUnpublishedCount: number;
     publishWizardUnavailableCount: number;
     publishWizardValidationLoading: boolean;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- validation result structure
+     
     publishWizardValidationResult: any;
     publishWizardHasValidationBlock: boolean;
     publishWizardCurrentStep: number;

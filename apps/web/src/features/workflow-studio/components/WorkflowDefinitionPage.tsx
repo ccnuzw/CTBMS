@@ -119,11 +119,11 @@ export const WorkflowDefinitionPage: React.FC = () => {
     [queries, actions, mutations, state]
   );
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- API response typing deferred
+   
   const versionCodeMap = useMemo(() => new Map((queries.versions || []).map((item: any) => [item.id, item.versionCode])), [queries.versions]);
 
   const auditVersionOptions = useMemo(
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- API response typing deferred
+     
     () => (queries.versions || []).map((item: any) => ({ label: item.versionCode, value: item.id })),
     [queries.versions]
   );
@@ -140,7 +140,7 @@ export const WorkflowDefinitionPage: React.FC = () => {
     [versionCodeMap]
   );
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- API response typing deferred
+   
   const latestDraftVersion = useMemo(() => (queries.versions || []).find((item: any) => item.status === 'DRAFT'), [queries.versions]);
   const latestDraftDependencyResult = latestDraftVersion && !queries.dependencyCatalogLoading ? actions.checkPublishDependencies(latestDraftVersion.dslSnapshot) : null;
   const latestDraftUnpublishedCount = latestDraftDependencyResult ? countDependencyIssues(latestDraftDependencyResult.unpublished) : 0;

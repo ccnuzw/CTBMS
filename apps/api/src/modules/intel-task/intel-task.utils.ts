@@ -10,7 +10,10 @@ export function isMissingReturnReasonColumnError(error: unknown) {
     return normalize(column).includes('returnreason') || normalize(message).includes('returnreason');
 }
 
-export function buildIntelTaskWhere(query: any, mode: 'list' | 'metrics'): Prisma.IntelTaskWhereInput {
+export function buildIntelTaskWhere(
+    query: Partial<IntelTaskQuery> & Record<string, unknown>,
+    _mode: 'list' | 'metrics',
+): Prisma.IntelTaskWhereInput {
     const {
         assigneeId, assigneeOrgId, assigneeDeptId,
         createdById, templateId, ruleId, taskGroupId, collectionPointId,
@@ -32,11 +35,12 @@ export function buildIntelTaskWhere(query: any, mode: 'list' | 'metrics'): Prism
     if (priority) where.priority = priority;
     if (commodity) where.commodity = commodity;
     if (isLate !== undefined) where.isLate = isLate === 'true' || isLate === true;
-    
-    if (keyword) {
+
+    const keywordValue = typeof keyword === 'string' ? keyword : undefined;
+    if (keywordValue) {
         where.OR = [
-            { title: { contains: keyword, mode: 'insensitive' } },
-            { description: { contains: keyword, mode: 'insensitive' } },
+            { title: { contains: keywordValue, mode: 'insensitive' } },
+            { description: { contains: keywordValue, mode: 'insensitive' } },
         ];
     }
     return where;

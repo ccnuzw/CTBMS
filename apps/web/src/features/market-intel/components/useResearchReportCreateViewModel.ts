@@ -90,11 +90,11 @@ export function useResearchReportCreateViewModel() {
 
     const [isPreviewModalOpen, setIsPreviewModalOpen] = useState(false);
     const [uploadedIntelId, setUploadedIntelId] = useState<string | null>(null);
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+     
     const [uploadedAttachment, setUploadedAttachment] = useState<any>(null);
 
     const commodityOptions =
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+         
         stats?.topCommodities?.map((item: Record<string, any>) => ({
             label: item.name,
             value: item.name,
@@ -213,7 +213,7 @@ export function useResearchReportCreateViewModel() {
 
     useEffect(() => {
         if (isEditMode && existingReport) {
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+             
             const existingPrediction = (existingReport.analysis?.prediction || {}) as any;
             const bodyContent = existingReport.contentRich || existingReport.contentPlain || existingReport.analysis?.summary;
             form.setFieldsValue({
@@ -225,26 +225,25 @@ export function useResearchReportCreateViewModel() {
                 region: existingReport.region,
                 summary: existingReport.analysis?.summary || undefined,
                 content: bodyContent || undefined,
-                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                 
                 keyPoints: existingReport.analysis?.keyPoints as any,
                 prediction: {
                     ...existingPrediction,
                     direction: normalizePredictionDirection(existingPrediction.direction),
                     timeframe: normalizePredictionTimeframe(existingPrediction.timeframe),
                 },
-                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                 
                 dataPoints: existingReport.analysis?.dataPoints as any,
             });
         }
-        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [isEditMode, existingReport, form, predictionDirectionValueMap, predictionTimeframeValueMap]);
 
     const hasAiData =
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+         
         ((keyPointsWatch as any[])?.length || 0) > 0 ||
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+         
         (predictionWatch as any)?.direction ||
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+         
         ((dataPointsWatch as any[])?.length || 0) > 0;
 
     const autoTitle = useMemo(() => {
@@ -290,7 +289,7 @@ export function useResearchReportCreateViewModel() {
                 }
                 navigate(taskId ? '/workstation' : '/intel/knowledge/items');
             } catch (error: unknown) {
-                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                 
                 message.error((error as any).response?.data?.message || '提交失败，请重试');
                 if (import.meta.env.DEV) console.error(error);
             }
@@ -337,7 +336,7 @@ export function useResearchReportCreateViewModel() {
         }
     };
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+     
     const handleUploadSuccess = (result: any) => {
         if (result.intel?.id) {
             setUploadedIntelId(result.intel.id);
@@ -478,7 +477,7 @@ export function useResearchReportCreateViewModel() {
                     extractedFields.push('摘要');
                 }
 
-                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                 
                 form.setFieldsValue(updates as any);
                 setAiSectionCollapsed(false);
                 setAiResult(result);

@@ -1,17 +1,14 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { CollectionPointForRecognition } from '@packages/types';
 import { PrismaService } from '../../prisma/prisma.service';
+import { TraceLogger } from './ai-shared.types';
+import { ConfigService } from '../config/config.service';
 
 type EventTypeSnapshot = {
     code: string;
     name: string;
     description: string | null;
 };
-
-// We will need TraceLogger. Since it's in ai.service, let's export it from ai.service.ts or duplicate.
-// Actually, TraceLogger is just a class. I can copy it here or we'll deal with it later. For now, let's use 'any' or dup it.
-import { TraceLog, TraceLogger } from './ai-shared.types';
-import { ConfigService } from '../config/config.service';
 
 @Injectable()
 export class AIEntityExtractorService implements OnModuleInit {

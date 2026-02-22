@@ -11,9 +11,8 @@ import {
     CalendarPreviewTask,
 } from '@packages/types';
 import { Prisma } from '@prisma/client';
-
-@Injectable()
 import { buildIntelTaskWhere } from './intel-task.utils';
+
 @Injectable()
 export class IntelTaskMetricsService {
     constructor(private prisma: PrismaService) {}

@@ -156,7 +156,7 @@ export const InfoEditor: React.FC = () => {
                 message.success('创建成功');
             }
             navigate('/market/info');
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- error object from catch
+         
         } catch (error: any) {
             // 提取并显示后端返回的具体错误信息
             const errorMsg = error.response?.data?.message;

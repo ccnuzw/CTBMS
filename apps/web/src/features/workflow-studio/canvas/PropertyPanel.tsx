@@ -730,7 +730,7 @@ interface EdgePropertyPanelProps {
     data: Partial<Record<string, unknown>> & { type?: string },
   ) => void;
   onClose: () => void;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+   
   token: any;
 }
 

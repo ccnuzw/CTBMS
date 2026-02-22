@@ -170,7 +170,7 @@ export const ReviewWorkbench: React.FC = () => {
             title: '操作',
             key: 'action',
             width: 150,
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any -- AntD table column render callback
+             
             render: (_: any, record: KnowledgeItem) => (
                 <Space>
                     <Tooltip title="查看详情">

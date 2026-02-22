@@ -276,7 +276,7 @@ export const TaskTemplateManager: React.FC = () => {
         message.success('模板创建成功');
       }
       setModalVisible(false);
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- error object from catch
+     
     } catch (err: any) {
       message.error(err.response?.data?.message || '操作失败');
     }
@@ -298,7 +298,7 @@ export const TaskTemplateManager: React.FC = () => {
       const result = await executeTemplate.mutateAsync(id);
       message.success(result.message || `成功创建 ${result.count} 个任务`);
       setPreviewVisible(false); // Close preview if open
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- error object from catch
+     
     } catch (err: any) {
       message.error(err.response?.data?.message || '执行失败');
     }
@@ -311,7 +311,7 @@ export const TaskTemplateManager: React.FC = () => {
       const data = await previewDistribution.mutateAsync(id);
       setPreviewData(data);
       setPreviewVisible(true);
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- error object from catch
+     
     } catch (err: any) {
       message.error('获取预览数据失败');
     }
@@ -376,7 +376,7 @@ export const TaskTemplateManager: React.FC = () => {
       title: '分配范围',
       key: 'scope',
       width: 180,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- AntD table column render callback
+       
       render: (_: any, record: TaskTemplate) => {
         if (record.assigneeMode === 'BY_COLLECTION_POINT') {
           if (record.targetPointType) {
@@ -429,7 +429,7 @@ export const TaskTemplateManager: React.FC = () => {
       title: '执行时间',
       key: 'schedule',
       width: 150,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- AntD table column render callback
+       
       render: (_: any, record: TaskTemplate) => (
         <div>
           <div>
@@ -460,7 +460,7 @@ export const TaskTemplateManager: React.FC = () => {
       title: '操作',
       key: 'action',
       width: 180,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- AntD table column render callback
+       
       render: (_: any, record: TaskTemplate) => (
         <Space>
           <Tooltip title="预览分发结果">

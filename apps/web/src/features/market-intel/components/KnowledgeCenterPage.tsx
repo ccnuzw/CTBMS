@@ -109,7 +109,7 @@ export const KnowledgeCenterPage: React.FC = () => {
       if (res.reportId) {
         navigate(`/intel/knowledge/items/${res.reportId}`);
       }
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- error object from catch
+     
     } catch (err: any) {
       if (import.meta.env.DEV) console.error(err);
       message.error(err.message || '由于可用数据不足或网络问题，生成失败');
@@ -199,7 +199,7 @@ export const KnowledgeCenterPage: React.FC = () => {
         title: '周期',
         key: 'period',
         width: 180,
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- AntD table column render callback
+         
         render: (_: any, record: Record<string, any>) => (
           <Text type="secondary" style={{ whiteSpace: 'nowrap' }}>
             {record.periodTypeLabel || record.periodType}

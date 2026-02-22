@@ -11,8 +11,24 @@ import { AIProviderFactory } from './providers/provider.factory';
 
 @Global()
 @Module({
-    providers: [AIService, RuleEngineService, PromptService, AIProviderFactory],
-    exports: [AIService, RuleEngineService, PromptService, AIProviderFactory],
+    providers: [
+        AIService,
+        AIModelService,
+        AIPromptService,
+        AIEntityExtractorService,
+        RuleEngineService,
+        PromptService,
+        AIProviderFactory,
+    ],
+    exports: [
+        AIService,
+        AIModelService,
+        AIPromptService,
+        AIEntityExtractorService,
+        RuleEngineService,
+        PromptService,
+        AIProviderFactory,
+    ],
     controllers: [PromptController, AIController],
 })
 export class AIModule { }

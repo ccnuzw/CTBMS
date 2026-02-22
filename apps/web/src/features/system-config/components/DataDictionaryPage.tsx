@@ -69,7 +69,7 @@ type DictionaryDomainWithCount = DictionaryDomainModel & {
     isSystemDomain?: boolean;
 };
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any -- JSON parsed value
+ 
 const formatMetaText = (meta: any) => {
     if (meta === null || meta === undefined) return '';
     try {
@@ -200,7 +200,7 @@ export const DataDictionaryPage = () => {
             return false;
         }
 
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- JSON parsed value
+         
         let metaValue: any | null = null;
         try {
             metaValue = parseMetaInput(values.metaText);
@@ -282,7 +282,7 @@ export const DataDictionaryPage = () => {
             refetchItems();
             refetchDomains();
             message.success('字典项已删除');
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- error object from catch
+         
         } catch (error: any) {
             // 后端返回的引用检查错误
             const errorMsg = error?.message || '删除失败';

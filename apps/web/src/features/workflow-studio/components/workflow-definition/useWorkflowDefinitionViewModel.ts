@@ -110,20 +110,20 @@ export const useWorkflowDefinitionViewModel = () => {
     const { data: strictModeSetting, isLoading: strictModeLoading } = useWorkflowAgentStrictMode();
     const updateStrictModeMutation = useUpdateWorkflowAgentStrictMode();
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- untyped API response iteration
+     
     const rulePackOptions = useMemo(() => (rulePackCatalog?.data || []).filter((pack: any) => pack.isActive).map((pack: any) => ({ label: `${pack.name} (${pack.rulePackCode})`, value: pack.rulePackCode })), [rulePackCatalog?.data]);
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- untyped API response iteration
+     
     const agentBindingOptions = useMemo(() => (agentProfileCatalog?.data || []).filter((item: any) => item.isActive).map((item: any) => ({ label: `${item.agentName} (${item.agentCode})`, value: item.agentCode })), [agentProfileCatalog?.data]);
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- untyped API response iteration
+     
     const parameterBindingOptions = useMemo(() => (parameterSetCatalog?.data || []).filter((item: any) => item.isActive).map((item: any) => ({ label: `${item.name} (${item.setCode})`, value: item.setCode })), [parameterSetCatalog?.data]);
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- untyped API response iteration
+     
     const dataConnectorBindingOptions = useMemo(() => (dataConnectorCatalog?.data || []).filter((item: any) => item.isActive).map((item: any) => ({ label: `${item.connectorName} (${item.connectorCode})`, value: item.connectorCode })), [dataConnectorCatalog?.data]);
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- untyped API response iteration
+     
     const rulePackCodeMap = useMemo(() => new Map((rulePackCatalog?.data || []).map((item: any) => [item.rulePackCode, item])), [rulePackCatalog?.data]);
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- untyped API response iteration
+     
     const parameterSetCodeMap = useMemo(() => new Map((parameterSetCatalog?.data || []).map((item: any) => [item.setCode, item])), [parameterSetCatalog?.data]);
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- untyped API response iteration
+     
     const agentProfileCodeMap = useMemo(() => new Map((agentProfileCatalog?.data || []).map((item: any) => [item.agentCode, item])), [agentProfileCatalog?.data]);
 
     const dependencyCatalogLoading = isRulePackLoading || isParameterSetLoading || isAgentProfileLoading;
@@ -210,11 +210,11 @@ export const useWorkflowDefinitionViewModel = () => {
             const nextDependencyResult = checkPublishDependenciesByLookups(
                 publishWizardVersion.dslSnapshot,
                 {
-                    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- untyped API response iteration
+                     
                     rulePacks: new Map((rulePackResult.data?.data || []).map((item: any) => [item.rulePackCode, item])) as Map<string, DependencyLookupItem>,
-                    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- untyped API response iteration
+                     
                     parameterSets: new Map((parameterSetResult.data?.data || []).map((item: any) => [item.setCode, item])) as Map<string, DependencyLookupItem>,
-                    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- untyped API response iteration
+                     
                     agentProfiles: new Map((agentProfileResult.data?.data || []).map((item: any) => [item.agentCode, item])) as Map<string, DependencyLookupItem>,
                 },
             );

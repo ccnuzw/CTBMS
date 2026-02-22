@@ -1,12 +1,16 @@
+import { Prisma } from "@prisma/client";
+import * as PriceDataUtils from './price-data.utils';
+import type { PricePointGroup } from './price-data.utils';
 import { Injectable, Logger } from "@nestjs/common";
 import { PrismaService } from "../../prisma";
-import { Prisma } from "@prisma/client";
 
 @Injectable()
 export class PriceTimeseriesService {
     private readonly logger = new Logger(PriceTimeseriesService.name);
 
     constructor(private prisma: PrismaService) {}
+
+    private logPerf(method: string, startedAt: number, metadata: Record<string, unknown> = {}) { this.logger.debug(`[PERF] ${method} ${Date.now() - startedAt}ms`, metadata); }
 
 
 

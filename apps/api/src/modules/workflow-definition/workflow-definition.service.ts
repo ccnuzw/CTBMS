@@ -4,28 +4,17 @@ import {
   canonicalizeWorkflowDsl,
   CreateWorkflowDefinitionDto,
   CreateWorkflowVersionDto,
-  getWorkflowNodeContract,
-  normalizeWorkflowNodeType,
   PublishWorkflowVersionDto,
   UpdateWorkflowDefinitionDto,
-  ValidateWorkflowNodePreviewDto,
   WorkflowDefinitionQueryDto,
   WorkflowPublishAuditQueryDto,
   WorkflowDsl,
   WorkflowDslSchema,
-  WorkflowValidationIssue,
-  WorkflowNodePreviewField,
-  WorkflowNodePreviewInputField,
-  WorkflowNodePreviewResult,
-  WorkflowValidationStage,
-  WorkflowValidationResult,
 } from '@packages/types';
 import { PrismaService } from '../../prisma';
 import { WorkflowDslValidator } from './workflow-dsl-validator';
-import {
-  VariableResolutionContext,
-  VariableResolver,
-} from '../workflow-execution/engine/variable-resolver';
+import { WorkflowDefinitionValidatorService } from './workflow-definition-validator.service';
+import { VariableResolver } from '../workflow-execution/engine/variable-resolver';
 
 @Injectable()
 export class WorkflowDefinitionService {
@@ -33,7 +22,7 @@ export class WorkflowDefinitionService {
     private readonly prisma: PrismaService,
     private readonly dslValidator: WorkflowDslValidator,
     private readonly variableResolver: VariableResolver,
-    private readonly validatorService: import('./workflow-definition-validator.service').WorkflowDefinitionValidatorService,
+    private readonly validatorService: WorkflowDefinitionValidatorService,
   ) {}
 
   async create(ownerUserId: string, dto: CreateWorkflowDefinitionDto) {

@@ -12,6 +12,7 @@ import { IntelTaskService } from './intel-task.service';
 import { IntelTaskStateService } from './intel-task-state.service';
 import { IntelTaskMetricsService } from './intel-task-metrics.service';
 import { IntelTaskTemplateService } from './intel-task-template.service';
+import { IntelTaskDispatchService } from './intel-task-dispatch.service';
 import { Prisma } from '@prisma/client';
 import {
     CreateIntelTaskDto,
@@ -32,6 +33,7 @@ export class IntelTaskController {
     constructor(
         private readonly itemTaskService: IntelTaskService,
         private readonly templateService: IntelTaskTemplateService,
+        private readonly dispatchService: IntelTaskDispatchService,
         private readonly taskStateService: IntelTaskStateService,
         private readonly taskMetricsService: IntelTaskMetricsService,
     ) { }
@@ -136,7 +138,7 @@ export class IntelTaskController {
 
     @Get('calendar-preview')
     async getCalendarPreview(@Query() query: GetCalendarPreviewDto) {
-        return this.templateService.getCalendarPreview(query);
+        return this.dispatchService.getCalendarPreview(query);
     }
 
     @Get('calendar-summary')
@@ -148,7 +150,7 @@ export class IntelTaskController {
         if (query.status) {
             return summary;
         }
-        const previewTasks = await this.templateService.getCalendarPreview({
+        const previewTasks = await this.dispatchService.getCalendarPreview({
             startDate: query.startDate,
             endDate: query.endDate,
             assigneeId: query.assigneeId,
@@ -191,18 +193,18 @@ export class IntelTaskController {
     @Post('distribute')
     async distributeTasks(@Body() dto: BatchDistributeTasksDto) {
         const triggerUserId = 'system-user-placeholder';
-        return this.templateService.distributeTasks(dto, triggerUserId);
+        return this.dispatchService.distributeTasks(dto, triggerUserId);
     }
 
     @Post('templates/:id/preview')
     async previewDistribution(@Param('id') id: string) {
-        return this.templateService.previewDistribution(id);
+        return this.dispatchService.previewDistribution(id);
     }
 
     @Post('templates/:id/execute')
     async executeTemplate(@Param('id') id: string) {
         const triggerUserId = 'system-user-placeholder';
-        return this.templateService.executeTemplate(id, triggerUserId);
+        return this.dispatchService.executeTemplate(id, triggerUserId);
     }
 
     // ========================

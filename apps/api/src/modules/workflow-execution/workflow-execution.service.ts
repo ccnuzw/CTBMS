@@ -1,19 +1,12 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
 import {
   CancelWorkflowExecutionDto,
   canonicalizeWorkflowDsl,
   TriggerWorkflowExecutionDto,
   WorkflowDsl,
-  WorkflowRunPolicy,
-  WorkflowEdge,
   WorkflowDslSchema,
   WorkflowNode,
-  WorkflowNodeOnErrorPolicyEnum,
-  WorkflowNodeRuntimePolicy,
-  WorkflowNodeRuntimePolicySchema,
   WorkflowFailureCategory,
-  type ParameterScopeLevel,
 } from '@packages/types';
 import { PrismaService } from '../../prisma';
 import { NodeExecutorRegistry } from './engine/node-executor.registry';
@@ -38,16 +31,6 @@ type ExperimentRoutingContext = {
 } | null;
 
 const MAX_SUBFLOW_DEPTH = 4;
-const WORKFLOW_PARAM_SCOPE_PRIORITY: ParameterScopeLevel[] = [
-  'PUBLIC_TEMPLATE',
-  'USER_TEMPLATE',
-  'GLOBAL',
-  'COMMODITY',
-  'REGION',
-  'ROUTE',
-  'STRATEGY',
-  'SESSION',
-];
 
 @Injectable()
 export class WorkflowExecutionService {

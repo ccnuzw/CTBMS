@@ -178,7 +178,7 @@ export class IntelTaskStateService {
 
 
 
-    private async handleGroupCompletion(taskId: string, operatorId?: string) {
+    public async handleGroupCompletion(taskId: string, operatorId?: string) {
         const task = await this.prisma.intelTask.findUnique({
             where: { id: taskId },
             select: { taskGroupId: true },
