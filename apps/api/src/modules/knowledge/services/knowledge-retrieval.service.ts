@@ -36,9 +36,7 @@ export class KnowledgeRetrievalService {
     private configService: ConfigService,
     private queryExpansionService: KnowledgeQueryExpansionService,
     private aiProviderFactory: AIProviderFactory,
-  ) { }
-
-
+  ) {}
 
   private resolveApiKey(config?: AIModelConfig | null): string {
     if (config?.apiKey) return config.apiKey;
@@ -228,26 +226,26 @@ export class KnowledgeRetrievalService {
         const configs = await this.configService.getAllAIModelConfigs();
         // Look for a specific config that acts as our Reranker, or default to sub2api if active
         // Simplification: We use the active 'sub2api' provider if available (SiliconFlow compatible)
-        const rerankConfig = configs.find(c => c.isActive && c.provider === 'sub2api');
+        const rerankConfig = configs.find((c) => c.isActive && c.provider === 'sub2api');
 
         if (rerankConfig && rerankConfig.apiUrl && rerankConfig.embeddingModel) {
           this.logger.log(`Performing Rerank using ${rerankConfig.provider}`);
-          const providerInfo = this.aiProviderFactory.getProvider(rerankConfig.provider as any);
+          const providerInfo = this.aiProviderFactory.getProvider('sub2api');
           if (providerInfo.rerank) {
-            const documents = candidates.map(c => c.content);
+            const documents = candidates.map((c) => c.content);
             const rerankedScores = await providerInfo.rerank(query, documents, {
               modelName: rerankConfig.embeddingModel, // or a specific rerankModel field if added
               apiKey: this.resolveApiKey(rerankConfig),
-              apiUrl: rerankConfig.apiUrl
+              apiUrl: rerankConfig.apiUrl,
             });
 
             if (rerankedScores && rerankedScores.length > 0) {
               // Map new scores
-              const rerankedResults = rerankedScores.map(rs => {
+              const rerankedResults = rerankedScores.map((rs) => {
                 const originalCandidate = candidates[rs.index];
                 return {
                   ...originalCandidate,
-                  score: rs.score // Override with the highly accurate cross-encoder score
+                  score: rs.score, // Override with the highly accurate cross-encoder score
                 };
               });
 
@@ -255,12 +253,12 @@ export class KnowledgeRetrievalService {
               return rerankedResults
                 .sort((a, b) => b.score - a.score)
                 .slice(0, topK)
-                .map(r => ({
+                .map((r) => ({
                   id: r.id,
                   content: r.content,
                   score: r.score,
                   metadata: r.metadata,
-                  sourceId: r.sourceId
+                  sourceId: r.sourceId,
                 }));
             }
           }
