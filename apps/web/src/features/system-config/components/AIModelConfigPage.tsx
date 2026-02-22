@@ -119,7 +119,8 @@ export const AIModelConfigPage = () => {
         return JSON.stringify(value, null, 2);
     };
 
-    const parseJsonField = (value: unknown, label: string) => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- dynamic form/parameter value
+    const parseJsonField = (value: any, label: string) => {
         if (value === undefined || value === null || value === '') return undefined;
         if (typeof value === 'object') return value as Record<string, string>;
         if (typeof value === 'string') {
@@ -226,18 +227,19 @@ export const AIModelConfigPage = () => {
         });
     };
 
-    const handleFinish = async (values: any) => {
+    const handleFinish = async (values: Record<string, any>) => {
         try {
             // Include id if editing
             const { __template, showAdvanced, ...restValues } = values;
-            const payload = {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const payload: Record<string, any> = {
                 ...restValues,
                 headers: parseJsonField(values.headers, 'Headers'),
                 queryParams: parseJsonField(values.queryParams, 'Query Params'),
                 pathOverrides: parseJsonField(values.pathOverrides, 'Path Overrides'),
             };
-            if (currentRow?.id) {
-                payload.id = currentRow.id;
+            if ((currentRow as any)?.id) {
+                payload.id = (currentRow as any).id;
             }
 
             await updateMutation.mutateAsync(payload);
@@ -252,7 +254,7 @@ export const AIModelConfigPage = () => {
         }
     };
 
-    const handleFetchModels = async (form: any) => {
+    const handleFetchModels = async (form: Record<string, any>) => {
         const provider = form.getFieldValue('provider');
         const configKey = form.getFieldValue('configKey');
         const apiKey = form.getFieldValue('apiKey');
@@ -309,6 +311,7 @@ export const AIModelConfigPage = () => {
                 message.info(`已使用 ${result.provider} 模式获取模型列表`);
             }
             message.success(`成功获取 ${models.length} 个模型，请从列表选择添加`);
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- error object from catch
         } catch (error: any) {
             message.error(`获取失败: ${error.message}`);
         } finally {

@@ -131,7 +131,7 @@ export class IntelScoringService {
         const leaderboard = groups.map((g) => {
             const user = users.find((u) => u.id === g.authorId);
             const score = g._sum?.totalScore || 0;
-            const submissionCount = (g._count as any)?.id || 0;
+            const submissionCount = g._count.id || 0;
             const avgScore = Math.round(g._avg?.totalScore || 0);
 
             return {
@@ -139,9 +139,9 @@ export class IntelScoringService {
                 name: user?.name || 'Unknown',
                 avatar: user?.avatar || null,
                 role: user?.position || null,
-                region: (user as any)?.organization?.name || null,
-                organizationName: (user as any)?.organization?.name,
-                departmentName: (user as any)?.department?.name,
+                region: user?.organization?.name || null,
+                organizationName: user?.organization?.name,
+                departmentName: user?.department?.name,
 
                 // 核心指标
                 score,

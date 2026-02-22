@@ -211,7 +211,9 @@ export const ParameterSetPage: React.FC = () => {
     paramType?: string;
     scopeLevel?: ParameterScopeLevel;
     scopeValue?: string;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     value?: any;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     defaultValue?: any;
     minValueText?: string;
     maxValueText?: string;
@@ -535,7 +537,7 @@ export const ParameterSetPage: React.FC = () => {
         title: '当前值',
         dataIndex: 'currentValue',
         width: 150,
-        render: (value: unknown, record: any) => (
+        render: (value: unknown, record: Record<string, unknown>) => (
           <span style={{ color: record.isOverridden ? token.colorWarning : undefined, fontWeight: record.isOverridden ? 600 : undefined }}>
             {formatValue(value)}
           </span>

@@ -107,7 +107,7 @@ export const InfoEditor: React.FC = () => {
 
             return {
                 ...data,
-                tagIds: data.tags?.map((t: any) => t.id)
+                tagIds: data.tags?.map((t: Record<string, any>) => t.id)
             };
         } catch (e) {
             message.error('加载失败');
@@ -115,7 +115,7 @@ export const InfoEditor: React.FC = () => {
         }
     };
 
-    const handleFinish = async (values: any) => {
+    const handleFinish = async (values: Record<string, any>) => {
         // 前端互斥标签校验
         if (values.tagIds && values.tagIds.length > 0 && tags) {
             const selectedTags = tags.filter(t => values.tagIds.includes(t.id));
@@ -156,6 +156,7 @@ export const InfoEditor: React.FC = () => {
                 message.success('创建成功');
             }
             navigate('/market/info');
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- error object from catch
         } catch (error: any) {
             // 提取并显示后端返回的具体错误信息
             const errorMsg = error.response?.data?.message;

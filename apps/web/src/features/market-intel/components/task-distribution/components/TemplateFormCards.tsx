@@ -164,7 +164,7 @@ const CollectionPointPicker: React.FC<CollectionPointPickerProps> = ({ value = [
         {
             title: '采集点',
             dataIndex: 'name',
-            render: (_: string, record: any) => (
+            render: (_: string, record: Record<string, any>) => (
                 <Space direction="vertical" size={0}>
                     <span>{record.name}</span>
                     <Text type="secondary" style={{ fontSize: 12 }}>
@@ -183,12 +183,14 @@ const CollectionPointPicker: React.FC<CollectionPointPickerProps> = ({ value = [
             title: '区域',
             dataIndex: 'region',
             width: 140,
-            render: (_: any, record: any) => record.region?.name || record.regionCode || '--',
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any -- AntD table column render callback
+            render: (_: any, record: Record<string, any>) => record.region?.name || record.regionCode || '--',
         },
         {
             title: '负责人',
             dataIndex: 'allocations',
             width: 90,
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any -- dynamic form/parameter value
             render: (value: any[]) => value?.length ?? 0,
         },
     ];
@@ -381,7 +383,7 @@ const UserPicker: React.FC<UserPickerProps> = ({ value = [], onChange }) => {
         {
             title: '姓名',
             dataIndex: 'name',
-            render: (_: string, record: any) => (
+            render: (_: string, record: Record<string, any>) => (
                 <Space direction="vertical" size={0}>
                     <span>{record.name}</span>
                     <Text type="secondary" style={{ fontSize: 12 }}>
@@ -394,13 +396,15 @@ const UserPicker: React.FC<UserPickerProps> = ({ value = [], onChange }) => {
             title: '组织',
             dataIndex: 'organization',
             width: 160,
-            render: (_: any, record: any) => record.organization?.name || '--',
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any -- AntD table column render callback
+            render: (_: any, record: Record<string, any>) => record.organization?.name || '--',
         },
         {
             title: '部门',
             dataIndex: 'department',
             width: 160,
-            render: (_: any, record: any) => record.department?.name || '--',
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any -- AntD table column render callback
+            render: (_: any, record: Record<string, any>) => record.department?.name || '--',
         },
     ];
 

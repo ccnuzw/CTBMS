@@ -249,12 +249,12 @@ export const TrendChart: React.FC<TrendChartProps> = ({
     );
   };
 
-  const renderLegend = (props: any) => {
+  const renderLegend = (props: Record<string, any>) => {
     const { payload } = props;
     if (!payload || payload.length === 0) return null;
     return (
       <Flex wrap="wrap" gap={12} style={{ fontSize: 12 }}>
-        {payload.map((entry: any) => {
+        {payload.map((entry: Record<string, any>) => {
           const dataKey = entry.dataKey as string;
           const latest = latestMap.get(dataKey);
           const isHidden = hiddenKeys.includes(dataKey);
@@ -460,6 +460,7 @@ export const TrendChart: React.FC<TrendChartProps> = ({
                     boxShadow: '0 4px 12px rgba(0,0,0,0.1)',
                     background: token.colorBgElevated,
                   }}
+                  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- dynamic form/parameter value
                   formatter={(value: any) => `${Number(value).toLocaleString()} 元/吨`}
                 />
                 <Legend content={renderLegend} wrapperStyle={{ paddingTop: 10 }} />

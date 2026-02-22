@@ -8,7 +8,8 @@ import {
     IntelTaskType,
     INTEL_TASK_PRIORITY_LABELS,
     INTEL_TASK_TYPE_LABELS,
-    IntelTaskResponse
+    IntelTaskResponse,
+    CreateIntelTaskDto,
 } from '@packages/types';
 import { INTEL_TASK_STATUS_LABELS } from '@/constants';
 import { useCompleteTask, useTaskMetrics, useTaskMetricsByOrg, useTaskMetricsByDept } from '../../../api/tasks';
@@ -248,9 +249,9 @@ export const TaskList: React.FC = () => {
         },
     ];
 
-    const requestTasks = async (params: any, sort: any, filter: any) => {
+    const requestTasks = async (params: Record<string, any>, sort: Record<string, any>, filter: Record<string, any>) => {
         // Construct query
-        const query: any = {
+        const query: Record<string, any> = {
             page: params.current,
             pageSize: params.pageSize,
             status: params.status,
@@ -273,8 +274,8 @@ export const TaskList: React.FC = () => {
         };
     };
 
-    const handleCreateTask = async (values: any) => {
-        await createMutation.mutateAsync(values);
+    const handleCreateTask = async (values: Record<string, any>) => {
+        await createMutation.mutateAsync(values as CreateIntelTaskDto);
         message.success('任务创建成功');
         setIsCreateModalOpen(false);
         actionRef.current?.reload();

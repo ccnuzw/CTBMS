@@ -2,8 +2,8 @@ import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma';
 import { RagPipelineService } from './rag/rag-pipeline.service';
 import * as KnowledgeUtils from './knowledge.utils';
-import { BackfillResult, CreateKnowledgeInput } from './knowledge.utils';
-import { KnowledgeStatus, KnowledgeType, Prisma } from '@prisma/client';
+import { BackfillResult } from './knowledge.utils';
+import { Prisma } from '@prisma/client';
 
 @Injectable()
 export class KnowledgeSyncService {

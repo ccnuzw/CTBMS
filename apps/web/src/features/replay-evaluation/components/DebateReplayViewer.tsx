@@ -88,7 +88,7 @@ const formatConfidence = (v: number | null | undefined): string => {
   return `${(v * 100).toFixed(1)}%`;
 };
 
-const confidenceChangeColor = (delta: number | null | undefined, token: any): string => {
+const confidenceChangeColor = (delta: number | null | undefined, token: Record<string, any>): string => {
   if (delta === null || delta === undefined || delta === 0) return '';
   return delta > 0 ? token.colorSuccess : token.colorError;
 };

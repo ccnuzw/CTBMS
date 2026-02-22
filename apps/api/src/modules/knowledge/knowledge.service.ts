@@ -2,12 +2,10 @@ import { KnowledgeSyncService } from './knowledge-sync.service';
 import { KnowledgeSearchService } from './knowledge-search.service';
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import {
-  ContentType as PrismaContentType,
   IntelCategory,
   KnowledgePeriodType,
   KnowledgeRelationType,
   KnowledgeStatus,
-  ReviewStatus,
   KnowledgeType,
   PriceSourceType,
   PriceSubType,
@@ -424,7 +422,7 @@ export class KnowledgeService {
       item.location || undefined,
       undefined,
       undefined,
-      contentType as any,
+      contentType as unknown as ContentType,
     );
 
     const summary = triggerDeepAnalysis ? result.summary : (result.summary || '').slice(0, 200);

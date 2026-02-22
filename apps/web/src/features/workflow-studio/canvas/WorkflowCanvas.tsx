@@ -124,6 +124,7 @@ interface WorkflowCanvasProps {
   viewLevel?: WorkflowStudioViewLevel;
   onViewLevelChange?: (level: WorkflowStudioViewLevel) => void;
   viewMode?: 'edit' | 'replay';
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   executionData?: any; // We'll refine this type later
 }
 
@@ -274,6 +275,7 @@ const WorkflowCanvasInner: React.FC<WorkflowCanvasProps> = ({
     const history = executionData.history || [];
 
     // Mark executed nodes
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- untyped API response iteration
     history.forEach((step: any) => {
       if (step.nodeId) {
         statusMap.set(step.nodeId, step.status);
@@ -284,6 +286,7 @@ const WorkflowCanvasInner: React.FC<WorkflowCanvasProps> = ({
   }, [viewMode, executionData]);
 
   const getEdgeStyle = useCallback(
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ReactFlow graph element
     (edge: any) => {
       if (viewMode !== 'replay') return {};
       const sourceStatus = executionStatusMap.get(edge.source);
@@ -818,13 +821,14 @@ const WorkflowCanvasInner: React.FC<WorkflowCanvasProps> = ({
   }, [onRun, buildCurrentDsl, runValidation, workflowMode]);
 
   const onConnectStart = useCallback(
-    (_: any, { nodeId, handleId }: { nodeId: string | null; handleId: string | null }) => {
+    (_: unknown, { nodeId, handleId }: { nodeId: string | null; handleId: string | null }) => {
       connectingNodeId.current = nodeId;
       connectingHandleId.current = handleId;
     },
     [],
   );
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const onConnectEnd = useCallback((event: any) => {
     if (!connectingNodeId.current) {
       return;

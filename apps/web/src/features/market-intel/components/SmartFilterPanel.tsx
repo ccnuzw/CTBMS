@@ -53,6 +53,7 @@ export const SmartFilterPanel: React.FC<SmartFilterPanelProps> = ({
     onChange({ ...filterState, timeRange: value as any });
   };
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- AntD DatePicker callback
   const handleDateRangeChange = (dates: any) => {
     onChange({
       ...filterState,

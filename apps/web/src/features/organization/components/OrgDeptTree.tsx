@@ -69,7 +69,7 @@ const ORG_TYPE_OPTIONS_FALLBACK = [
 ];
 
 // 组织类型对应的图标
-const getOrgIcon = (type: OrganizationType, token: any) => {
+const getOrgIcon = (type: OrganizationType, token: Record<string, any>) => {
   const iconStyle = { fontSize: 16 };
   switch (type) {
     case 'HEADQUARTERS':
@@ -86,7 +86,7 @@ const getOrgIcon = (type: OrganizationType, token: any) => {
 };
 
 // 部门图标
-const getDeptIcon = (token: any) => (
+const getDeptIcon = (token: Record<string, any>) => (
   <TeamOutlined style={{ fontSize: 14, color: token.colorTextSecondary }} />
 );
 
@@ -137,14 +137,15 @@ export const OrgDeptTree: React.FC<OrgDeptTreeProps> = ({
 
   // 按组织预计算部门层级，避免构树时重复 filter
   const deptTreeMetaByOrg = useMemo(() => {
-    const byOrg = new Map<string, { roots: any[]; childrenByParent: Map<string, any[]> }>();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- recursive tree structure
+    const byOrg = new Map<string, { roots: any[]; childrenByParent: Map<string, unknown[]> }>();
     if (!allDepartments) return byOrg;
 
     for (const dept of allDepartments) {
       if (!byOrg.has(dept.organizationId)) {
         byOrg.set(dept.organizationId, {
           roots: [],
-          childrenByParent: new Map<string, any[]>(),
+          childrenByParent: new Map<string, unknown[]>(),
         });
       }
 
@@ -171,6 +172,7 @@ export const OrgDeptTree: React.FC<OrgDeptTreeProps> = ({
       const orgMeta = deptTreeMetaByOrg.get(orgId);
       if (!orgMeta) return [];
 
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- recursive department tree node
       const buildDeptTree = (dept: any): DataNode => {
         const childDepts = orgMeta.childrenByParent.get(dept.id) || [];
         return {
@@ -253,7 +255,7 @@ export const OrgDeptTree: React.FC<OrgDeptTreeProps> = ({
   }, [treeData, searchValue]);
 
   // 处理节点选择 - 始终触发选择和展开/收缩
-  const handleSelect = (selectedKeys: React.Key[], info: any) => {
+  const handleSelect = (selectedKeys: React.Key[], info: Record<string, any>) => {
     const key = info.node.key as string;
     // 只在第一个 '-' 处分割，保留完整的 UUID
     const dashIndex = key.indexOf('-');
@@ -328,6 +330,7 @@ export const OrgDeptTree: React.FC<OrgDeptTreeProps> = ({
 
     const buildSelectNode = (
       org: OrganizationTreeNode,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- dynamic form/parameter value
     ): { value: string; title: string; children?: any[] } => ({
       value: org.id,
       title: org.name,

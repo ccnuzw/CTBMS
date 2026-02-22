@@ -195,7 +195,7 @@ export const InfoList: React.FC = () => {
         return result;
     };
 
-    const request = async (params: any) => {
+    const request = async (params: Record<string, unknown>) => {
         // 等待数据加载完成
         if (!infos) {
             return { data: [], success: true };

@@ -228,8 +228,8 @@ export const TaskMonitor: React.FC = () => {
     },
   ];
 
-  const requestTasks = async (params: any, sort: any) => {
-    const query: any = {
+  const requestTasks = async (params: Record<string, any>, sort: Record<string, any>) => {
+    const query: Record<string, any> = {
       page: params.current,
       pageSize: params.pageSize,
       status: params.status,

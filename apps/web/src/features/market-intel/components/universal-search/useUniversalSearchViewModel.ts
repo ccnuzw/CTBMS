@@ -41,7 +41,9 @@ export const useUniversalSearchViewModel = () => {
         try {
             if (expandedSection) localStorage.setItem(EXPANDED_KEY, expandedSection);
             else localStorage.removeItem(EXPANDED_KEY);
-        } catch { }
+        } catch {
+            // ignore localStorage failures
+        }
     }, [expandedSection]);
 
     const debouncedQuery = useDebounce(query, 300);
@@ -63,7 +65,9 @@ export const useUniversalSearchViewModel = () => {
             if (!term || term.length < 2) return prev;
             if (prev.length > 0 && prev[0] === term.trim()) return prev;
             const updated = [term.trim(), ...prev.filter((h) => h !== term.trim())].slice(0, 10);
-            try { localStorage.setItem(SEARCH_HISTORY_KEY, JSON.stringify(updated)); } catch { }
+            try { localStorage.setItem(SEARCH_HISTORY_KEY, JSON.stringify(updated)); } catch {
+                // ignore localStorage failures
+            }
             return updated;
         });
     }, []);
@@ -95,13 +99,17 @@ export const useUniversalSearchViewModel = () => {
         };
         const updated = [newSearch, ...savedSearches.filter((s) => s.keyword !== debouncedQuery)].slice(0, 10);
         setSavedSearches(updated);
-        try { localStorage.setItem(SAVED_SEARCHES_KEY, JSON.stringify(updated)); } catch { }
+        try { localStorage.setItem(SAVED_SEARCHES_KEY, JSON.stringify(updated)); } catch {
+            // ignore localStorage failures
+        }
     }, [debouncedQuery, dateRange, sentimentFilter, savedSearches]);
 
     const deleteSavedSearch = useCallback((id: string) => {
         const updated = savedSearches.filter((s) => s.id !== id);
         setSavedSearches(updated);
-        try { localStorage.setItem(SAVED_SEARCHES_KEY, JSON.stringify(updated)); } catch { }
+        try { localStorage.setItem(SAVED_SEARCHES_KEY, JSON.stringify(updated)); } catch {
+            // ignore localStorage failures
+        }
     }, [savedSearches]);
 
     const loadSavedSearch = useCallback((search: SavedSearch) => {

@@ -54,6 +54,7 @@ export const ExecutionDetailDrawer: React.FC<ExecutionDetailDrawerProps> = ({ vi
 
     const debateRoundCollapseItems = useMemo(
         () =>
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any -- untyped API response iteration
             debateRounds.map((round: any) => ({
                 key: String(round.roundNumber),
                 label: `第 ${round.roundNumber} 轮 · 参与者 ${round.roundSummary.participantCount} · 裁决 ${round.roundSummary.hasJudgement ? '是' : '否'
@@ -315,6 +316,7 @@ export const ExecutionDetailDrawer: React.FC<ExecutionDetailDrawerProps> = ({ vi
 
                                 <Collapse
                                     items={debateRoundCollapseItems}
+                                    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- untyped API response iteration
                                     defaultActiveKey={debateRoundCollapseItems.slice(0, 1).map((item: any) => item.key)}
                                 />
 

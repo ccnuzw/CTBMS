@@ -194,7 +194,7 @@ export const DataGrid: React.FC<DataGridProps> = ({
     };
   }, [filteredData, startDate, endDate]);
 
-  const csvEscape = (value: unknown) => {
+  const csvEscape = (value: any) => {
     const text = value === null || value === undefined ? '' : String(value);
     if (text.includes('"') || text.includes(',') || text.includes('\n')) {
       return `"${text.replace(/"/g, '""')}"`;
@@ -273,7 +273,7 @@ export const DataGrid: React.FC<DataGridProps> = ({
       dataIndex: 'location',
       key: 'location',
       width: 150,
-      render: (location: string, record: any) => {
+      render: (location: string, record: Record<string, any>) => {
         const pointType =
           record.collectionPoint?.type ||
           (record.sourceType === 'REGIONAL' ? 'REGION' : record.sourceType);

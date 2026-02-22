@@ -14,6 +14,7 @@ export interface WorkflowDefinitionPublishWizardModalProps {
     publishWizardUnpublishedCount: number;
     publishWizardUnavailableCount: number;
     publishWizardValidationLoading: boolean;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- validation result structure
     publishWizardValidationResult: any;
     publishWizardHasValidationBlock: boolean;
     publishWizardCurrentStep: number;
@@ -202,6 +203,7 @@ export const WorkflowDefinitionPublishWizardModal: React.FC<WorkflowDefinitionPu
                                 />
                                 {!publishWizardValidationResult.valid && (
                                     <Space direction="vertical" size={4}>
+                                        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- untyped API response iteration
                                         {publishWizardValidationResult.issues.slice(0, 8).map((issue: any) => (
                                             <Text key={`${issue.code}-${issue.message}`} type="secondary">
                                                 {issue.code}: {issue.message}

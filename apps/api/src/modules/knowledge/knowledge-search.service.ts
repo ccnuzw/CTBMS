@@ -4,7 +4,7 @@ import { PrismaService } from '../../prisma';
 import * as KnowledgeUtils from './knowledge.utils';
 import { KnowledgeService } from './knowledge.service';
 import { KnowledgeListQuery, RelationQueryOptions } from './knowledge.utils';
-import { KnowledgeStatus, KnowledgeType, KnowledgePeriodType, Prisma } from '@prisma/client';
+import { KnowledgeStatus, Prisma } from '@prisma/client';
 import { AIService } from '../ai/ai.service';
 
 @Injectable()

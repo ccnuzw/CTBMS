@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma';
 import { AIService } from '../ai/ai.service';
 import { IntelCategory } from '@prisma/client';
@@ -84,7 +85,7 @@ export class IntelAnalysisService {
         regions?: string[];
     }) {
         const { startDate, endDate, commodities, regions } = query;
-        const where: any = {};
+        const where: Prisma.MarketEventWhereInput = {};
 
         if (startDate || endDate) {
             where.eventDate = {};
@@ -225,7 +226,7 @@ export class IntelAnalysisService {
         });
 
         recentIntels.forEach((intel) => {
-            const analysis: any = intel.aiAnalysis;
+            const analysis = intel.aiAnalysis as { tags?: string[]; entities?: string[]; commodities?: string[]; summary?: string; sentiment?: string; [key: string]: unknown } | null;
             if (analysis?.tags) {
                 analysis.tags.forEach((tag: string) => {
                     const cleanTag = tag.replace(/^#/, '');
@@ -271,7 +272,7 @@ export class IntelAnalysisService {
             contentTypes,
         } = query;
 
-        const intelWhere: any = {};
+        const intelWhere: Prisma.MarketIntelWhereInput = {};
 
         const resolvedSourceTypes = resolveIntelSourceTypes(sourceTypes);
         if (resolvedSourceTypes.length > 0) {
@@ -291,10 +292,10 @@ export class IntelAnalysisService {
             if (maxScore !== undefined) intelWhere.totalScore.lte = maxScore;
         }
 
-        const intelAndConditions: any[] = [];
+        const intelAndConditions: Prisma.MarketIntelWhereInput[] = [];
 
         if (processingStatus && processingStatus.length > 0) {
-            const statusOR: any[] = [];
+            const statusOR: Prisma.MarketIntelWhereInput[] = [];
             if (processingStatus.includes('flagged')) statusOR.push({ isFlagged: true });
             if (processingStatus.includes('confirmed')) statusOR.push({ isFlagged: false });
             if (processingStatus.includes('pending')) statusOR.push({ isFlagged: false });
@@ -305,7 +306,7 @@ export class IntelAnalysisService {
         }
 
         if (qualityLevel && qualityLevel.length > 0) {
-            const qualityOR: any[] = [];
+            const qualityOR: Prisma.MarketIntelWhereInput[] = [];
             if (qualityLevel.includes('high')) qualityOR.push({ totalScore: { gte: 80 } });
             if (qualityLevel.includes('medium')) qualityOR.push({ totalScore: { gte: 50, lt: 80 } });
             if (qualityLevel.includes('low')) qualityOR.push({ totalScore: { lt: 50 } });
@@ -319,9 +320,9 @@ export class IntelAnalysisService {
             intelWhere.AND = intelAndConditions;
         }
 
-        const eventWhere: any = {};
-        const insightWhere: any = {};
-        const reportWhere: any = {};
+        const eventWhere: Prisma.MarketEventWhereInput = {};
+        const insightWhere: Prisma.MarketInsightWhereInput = {};
+        const reportWhere: Prisma.ResearchReportWhereInput = {};
 
         if (startDate || endDate) {
             eventWhere.createdAt = {};
@@ -498,7 +499,7 @@ export class IntelAnalysisService {
     async getDashboardStats(query: IntelligenceFeedQuery) {
         const { startDate, endDate } = query;
 
-        const intelWhere: any = {};
+        const intelWhere: Prisma.MarketIntelWhereInput = {};
         const dashboardSourceTypes = resolveIntelSourceTypes(query.sourceTypes);
         const dashboardContentTypes = resolveContentTypes(query.contentTypes);
 
@@ -511,15 +512,15 @@ export class IntelAnalysisService {
             if (query.maxScore !== undefined) intelWhere.totalScore.lte = query.maxScore;
         }
 
-        const intelAndConditions: any[] = [];
+        const intelAndConditions: Prisma.MarketIntelWhereInput[] = [];
         if (query.processingStatus?.length) {
-            const statusOR: any[] = [];
+            const statusOR: Prisma.MarketIntelWhereInput[] = [];
             if (query.processingStatus.includes('flagged')) statusOR.push({ isFlagged: true });
             if (query.processingStatus.includes('confirmed')) statusOR.push({ isFlagged: false });
             if (statusOR.length) intelAndConditions.push({ OR: statusOR });
         }
         if (query.qualityLevel?.length) {
-            const qualityOR: any[] = [];
+            const qualityOR: Prisma.MarketIntelWhereInput[] = [];
             if (query.qualityLevel.includes('high')) qualityOR.push({ totalScore: { gte: 80 } });
             if (query.qualityLevel.includes('medium'))
                 qualityOR.push({ totalScore: { gte: 50, lt: 80 } });
@@ -551,8 +552,8 @@ export class IntelAnalysisService {
             }),
         ]);
 
-        const eventWhere: any = { intel: intelWhere };
-        const insightWhere: any = { intel: intelWhere };
+        const eventWhere: Prisma.MarketEventWhereInput = { intel: intelWhere };
+        const insightWhere: Prisma.MarketInsightWhereInput = { intel: intelWhere };
 
         if (query.commodities?.length) {
             eventWhere.commodity = { in: query.commodities };
@@ -625,14 +626,14 @@ export class IntelAnalysisService {
             d ? new Date(d).toISOString().split('T')[0] : '';
 
         eventTrend.forEach((e) => {
-            const d = formatDate(e.eventDate as any);
+            const d = formatDate(e.eventDate as Date | string | null);
             if (!d) return;
             const item = trendMap.get(d) || { date: d, daily: 0, research: 0, policy: 0 };
             item.daily += e._count.id;
             trendMap.set(d, item);
         });
         insightTrend.forEach((i) => {
-            const d = formatDate(i.createdAt as any);
+            const d = formatDate(i.createdAt as Date | string | null);
             if (!d) return;
             const item = trendMap.get(d) || { date: d, daily: 0, research: 0, policy: 0 };
             item.research += i._count.id;

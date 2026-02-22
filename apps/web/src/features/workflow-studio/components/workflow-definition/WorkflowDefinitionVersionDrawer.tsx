@@ -22,6 +22,7 @@ export interface WorkflowDefinitionVersionDrawerProps {
     definition: WorkflowDefinitionDto | null;
     versions: WorkflowVersionDto[];
     isVersionLoading: boolean;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- paginated API response
     publishAuditPage: any;
     isPublishAuditLoading: boolean;
     validationResult: WorkflowValidationResult | null;

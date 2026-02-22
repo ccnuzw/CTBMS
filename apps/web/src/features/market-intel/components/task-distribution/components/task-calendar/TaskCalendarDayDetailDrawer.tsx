@@ -24,7 +24,7 @@ export const TaskCalendarDayDetailDrawer: React.FC<Props> = ({ viewModel }) => {
         computed: { drawerCounts, sortedDrawerTasks, groupedDrawerTasks, selectableTaskIds, selectedTask, totalDayTasks, loadedRealTasks }
     } = viewModel;
 
-    const renderTaskItem = (item: any) => {
+    const renderTaskItem = (item: Record<string, any>) => {
         const isPreview = item.isPreview;
         const isCompleted = item.status === IntelTaskStatus.COMPLETED;
         const isSelected = selectedTaskIds.includes(item.id);
@@ -175,7 +175,8 @@ export const TaskCalendarDayDetailDrawer: React.FC<Props> = ({ viewModel }) => {
                                         groupedDrawerTasks.map(group => (
                                             <div key={group.key} style={{ marginBottom: 12 }}>
                                                 <Divider orientation="left">{group.label} <Tag>{group.tasks.length}</Tag></Divider>
-                                                <List dataSource={group.tasks} locale={{ emptyText: '无匹配任务' }} renderItem={(item) => renderTaskItem(item)} />
+                                                // eslint-disable-next-line @typescript-eslint/no-explicit-any -- AntD List renderItem callback
+                                                <List dataSource={group.tasks} locale={{ emptyText: '无匹配任务' }} renderItem={(item: any) => renderTaskItem(item)} />
                                             </div>
                                         ))
                                     )}

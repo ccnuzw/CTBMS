@@ -82,8 +82,8 @@ export const UniversalSearchColumns: React.FC<Props> = ({ viewModel }) => {
                     >
                         {sortedDocs.length > 0 ? (
                             <div style={{ maxHeight: expandedSection === 'doc' ? 800 : 400, overflow: 'auto', transition: 'max-height 0.3s' }}>
-                                {sortedDocs.map((c: any) => (
-                                    <Card key={c.id} size="small" hoverable style={{ marginBottom: 12, cursor: 'pointer' }} onClick={() => setSelectedItem(c)}>
+                                {sortedDocs.map((c: Record<string, any>) => (
+                                    <Card key={c.id} size="small" hoverable style={{ marginBottom: 12, cursor: 'pointer' }} onClick={() => setSelectedItem(c as any)}>
                                         <Flex gap={8} align="flex-start">
                                             <FileTextOutlined style={{ color: token.colorWarning, marginTop: 4 }} />
                                             <div style={{ flex: 1, minWidth: 0 }}>
@@ -120,10 +120,10 @@ export const UniversalSearchColumns: React.FC<Props> = ({ viewModel }) => {
                     >
                         {intels.length > 0 ? (
                             <div style={{ maxHeight: 800, overflow: 'auto', borderLeft: `2px solid ${token.colorBorderSecondary}`, paddingLeft: 16, marginLeft: 8 }}>
-                                {sortedIntels.map((c: any) => (
+                                {sortedIntels.map((c: Record<string, any>) => (
                                     <div key={c.id} style={{ position: 'relative', marginBottom: 16 }}>
                                         <div style={{ position: 'absolute', left: -22, top: 8, width: 10, height: 10, borderRadius: '50%', background: token.colorBgContainer, border: `2px solid ${c.aiAnalysis?.sentiment === 'positive' ? token.colorSuccess : c.aiAnalysis?.sentiment === 'negative' ? token.colorError : ((token as any).purple || token.colorPrimary)}` }} />
-                                        <Card size="small" hoverable style={{ cursor: 'pointer' }} onClick={() => setSelectedItem(c)}>
+                                        <Card size="small" hoverable style={{ cursor: 'pointer' }} onClick={() => setSelectedItem(c as any)}>
                                             <Flex justify="space-between" align="center" style={{ marginBottom: 4 }}>
                                                 <Text type="secondary" style={{ fontSize: 11 }}>{new Date(c.effectiveTime).toLocaleDateString()}</Text>
                                                 {c.isFlagged && <AlertOutlined style={{ color: token.colorError, fontSize: 12 }} />}

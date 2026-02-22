@@ -3,7 +3,7 @@ import { PrismaService } from "../../prisma";
 import { PriceDataQuery } from "@packages/types";
 import { CollectionPointType, PriceSourceType, Prisma } from "@prisma/client";
 import * as PriceDataUtils from './price-data.utils';
-import { CollectionPointSummary, PricePointGroup, PriceDataRecord, PriceQualityTag, AlertRulePayload, AlertRuleInput, AlertHit, RegionAnalyticsLevel, RegionAnalyticsWindow, PRICE_QUALITY_TAGS } from './price-data.utils';
+import type { PricePointGroup } from './price-data.utils';
 
 @Injectable()
 export class PriceAggregationService {

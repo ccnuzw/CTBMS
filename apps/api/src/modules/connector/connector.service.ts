@@ -111,9 +111,9 @@ export class ConnectorService {
             return result;
 
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        } catch (error: any) { // axios error often has specific structure, keeping any for now but adding comment or using unknown + cast
+        } catch (error: unknown) { // axios error often has specific structure, keeping any for now but adding comment or using unknown + cast
             const message = error instanceof Error ? error.message : String(error);
-            this.logger.error(`Connector execution failed: ${message}`, error.response?.data);
+            this.logger.error(`Connector execution failed: ${message}`, (error as Record<string, unknown>)?.response);
             throw new BadRequestException(`Connector execution failed: ${message}`);
         }
     }
@@ -122,7 +122,7 @@ export class ConnectorService {
      * Apply ETL Pipeline
      */
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    private async applyETL(data: any, pipeline: ETLProcess[], originalParams: Record<string, unknown>): Promise<any> {
+    private async applyETL(data: unknown, pipeline: ETLProcess[], originalParams: Record<string, unknown>): Promise<unknown> {
         let current = data;
 
         for (const step of pipeline) {

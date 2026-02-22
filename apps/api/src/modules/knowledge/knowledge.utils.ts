@@ -1,5 +1,5 @@
 import { ContentType, ContentType as PrismaContentType, KnowledgePeriodType, KnowledgeStatus, ReviewStatus, KnowledgeType, Prisma } from '@prisma/client';
-import { IntelCategory, KnowledgeRelationType } from '@prisma/client';
+import { KnowledgeRelationType } from '@prisma/client';
 
 type KnowledgeListQuery = {
   type?: KnowledgeType;
@@ -318,4 +318,3 @@ export function parseWeeklyContent(content: string) {
 
     return { market, events, risks, outlook };
   }
-

@@ -49,13 +49,13 @@ export const AgentPromptTemplateCreateDrawer: React.FC<AgentPromptTemplateCreate
             const formValues = values as any;
 
             // Transform Variables List to Object
-            const variables = (formValues.variablesList || []).reduce((acc: any, curr: { key: string; description: string }) => {
+            const variables = (formValues.variablesList || []).reduce((acc: Record<string, unknown>, curr: { key: string; description: string }) => {
                 acc[curr.key] = curr.description;
                 return acc;
             }, {});
 
             // Transform Guardrails to Object
-            const guardrails: any = {};
+            const guardrails: Record<string, unknown> = {};
             if (formValues.guardrailsConfig?.noHallucination) guardrails.noHallucination = true;
             if (formValues.guardrailsConfig?.requireEvidence) guardrails.requireEvidence = true;
             (formValues.guardrailsConfig?.customRules || []).forEach((rule: { key: string; value: string }) => {

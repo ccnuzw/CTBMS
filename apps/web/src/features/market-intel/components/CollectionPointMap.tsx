@@ -50,12 +50,14 @@ const POINT_TYPE_LABELS_FALLBACK: Record<string, string> = {
 };
 
 interface CollectionPointMapProps {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- map points data
   points: any[];
   selectedUserId: string | null;
   onAssign: (pointId: string) => void;
   onUnassign: (pointId: string) => void;
 }
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- map points data
 const FitBounds = ({ points }: { points: any[] }) => {
   const map = useMap();
 

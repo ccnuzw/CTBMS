@@ -30,6 +30,7 @@ export const DailyReportInsight: React.FC<DailyReportInsightProps> = ({ aiResult
         {
             title: '品种 & 等级',
             key: 'commodity',
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any -- AntD table column render
             render: (text: any, record: ExtractedPricePoint) => (
                 <div>
                     <Text strong>{record.commodity || '未识别'}</Text>
@@ -40,6 +41,7 @@ export const DailyReportInsight: React.FC<DailyReportInsightProps> = ({ aiResult
         {
             title: '价格',
             key: 'price',
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any -- AntD table column render
             render: (text: any, record: ExtractedPricePoint) => (
                 <Text strong style={{ color: token.colorPrimary }}>
                     {record.price} <span style={{ fontSize: 12, color: token.colorTextSecondary }}>{record.unit}</span>
@@ -49,6 +51,7 @@ export const DailyReportInsight: React.FC<DailyReportInsightProps> = ({ aiResult
         {
             title: '涨跌',
             key: 'change',
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any -- AntD table column render
             render: (text: any, record: ExtractedPricePoint) => {
                 const change = record.change || 0;
                 let color = token.colorTextSecondary;

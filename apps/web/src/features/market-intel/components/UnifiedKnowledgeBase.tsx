@@ -153,7 +153,7 @@ export const UnifiedKnowledgeBase: React.FC = () => {
             rawContent: intel.rawContent,
             summary: intel.summary || null,
             aiAnalysis: intel.aiAnalysis || {},
-            effectiveTime: intel.effectiveTime as unknown as string,
+            effectiveTime: intel.effectiveTime as any as string,
             author: intel.author || null,
             attachments: (intel as any).attachments || [],
             itemType: 'document' as const,
@@ -161,7 +161,7 @@ export const UnifiedKnowledgeBase: React.FC = () => {
     }, [intelsResult]);
 
     const allReports: DocItem[] = useMemo(() => {
-        return (reportsResult?.data || []).map((report: any) => ({
+        return (reportsResult?.data || []).map((report: Record<string, any>) => ({
             id: report.id,
             category: 'REPORT' as any,
             sourceType: report.sourceType || 'INTERNAL',

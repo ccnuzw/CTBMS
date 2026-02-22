@@ -1,25 +1,15 @@
-import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma';
 import { CreatePriceDataDto, PriceDataQuery } from '@packages/types';
 import { Decimal } from '@prisma/client/runtime/library';
 import {
   CollectionPointType,
   GeoLevel,
-  MarketAlertAction,
-  MarketAlertRuleType,
-  MarketAlertSeverity,
-  MarketAlertStatus,
-  PriceData,
-  PriceInputMethod,
-  PriceQualityTag as PrismaPriceQualityTag,
-  PriceReviewStatus,
   PriceSourceType,
-  PriceSubType,
   Prisma,
 } from '@prisma/client';
 import * as PriceDataUtils from './price-data.utils';
-import { CollectionPointSummary, PricePointGroup, PriceDataRecord, PriceQualityTag, AlertRulePayload, AlertRuleInput, AlertHit, RegionAnalyticsLevel, RegionAnalyticsWindow, PRICE_QUALITY_TAGS } from './price-data.utils';
-const ALERT_RULE_DOMAIN = 'MARKET_ALERT_RULE';
+import { PriceDataRecord, PriceQualityTag, PRICE_QUALITY_TAGS } from './price-data.utils';
 
 @Injectable()
 export class PriceDataService {

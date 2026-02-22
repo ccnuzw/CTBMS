@@ -109,6 +109,7 @@ export const KnowledgeCenterPage: React.FC = () => {
       if (res.reportId) {
         navigate(`/intel/knowledge/items/${res.reportId}`);
       }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- error object from catch
     } catch (err: any) {
       console.error(err);
       message.error(err.message || '由于可用数据不足或网络问题，生成失败');
@@ -125,7 +126,7 @@ export const KnowledgeCenterPage: React.FC = () => {
     const startOfWeek = dayjs().startOf('isoWeek');
     const endOfWeek = dayjs().endOf('isoWeek');
 
-    const isCurrentWeekReport = (item: any) => {
+    const isCurrentWeekReport = (item: Record<string, any>) => {
       if (item.type !== 'WEEKLY') return false;
       // 匹配 periodKey 包含 W08 （格式可能为 2026-W08 或前端默认的 W08）
       if (item.periodKey && item.periodKey.includes(`W${currentWeekIso}`)) {
@@ -157,7 +158,7 @@ export const KnowledgeCenterPage: React.FC = () => {
         dataIndex: 'title',
         key: 'title',
         width: 520,
-        render: (_: string, record: any) => (
+        render: (_: string, record: Record<string, any>) => (
           <Button
             type="link"
             onClick={() =>
@@ -192,13 +193,14 @@ export const KnowledgeCenterPage: React.FC = () => {
         dataIndex: 'type',
         key: 'type',
         width: 110,
-        render: (_value: string, record: any) => <Tag>{record.typeLabel || record.type}</Tag>,
+        render: (_value: string, record: Record<string, any>) => <Tag>{record.typeLabel || record.type}</Tag>,
       },
       {
         title: '周期',
         key: 'period',
         width: 180,
-        render: (_: unknown, record: any) => (
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- AntD table column render callback
+        render: (_: any, record: Record<string, any>) => (
           <Text type="secondary" style={{ whiteSpace: 'nowrap' }}>
             {record.periodTypeLabel || record.periodType}
             {record.periodKey ? ` / ${record.periodKey}` : ''}
@@ -210,7 +212,7 @@ export const KnowledgeCenterPage: React.FC = () => {
         dataIndex: 'status',
         key: 'status',
         width: 120,
-        render: (_value: string, record: any) => (
+        render: (_value: string, record: Record<string, any>) => (
           <Tag color={record.statusColor || 'default'}>{record.statusLabel || record.status}</Tag>
         ),
       },

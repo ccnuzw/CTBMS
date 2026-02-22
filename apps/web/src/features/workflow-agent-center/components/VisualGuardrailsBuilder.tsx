@@ -69,6 +69,7 @@ export const VisualGuardrailsBuilder: React.FC<VisualGuardrailsBuilderProps> = (
         else setPreset('CUSTOM');
     }, [value]);
 
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const handlePresetChange = (e: any) => {
         const newPreset = e.target.value;
         setPreset(newPreset);
@@ -94,7 +95,7 @@ export const VisualGuardrailsBuilder: React.FC<VisualGuardrailsBuilderProps> = (
         onChange?.({ ...value, customRules: newRules });
     };
 
-    const updateCustomRule = (index: number, field: string, val: any) => {
+    const updateCustomRule = (index: number, field: string, val: unknown) => {
         const newRules = [...(value.customRules || [])];
         newRules[index] = { ...newRules[index], [field]: val };
         onChange?.({ ...value, customRules: newRules });

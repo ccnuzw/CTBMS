@@ -18,6 +18,8 @@ import {
     IntelTaskAssigneeStrategy,
     IntelTaskCompletionPolicy,
     IntelTaskRuleResponse,
+    CreateIntelTaskTemplateDto,
+    UpdateIntelTaskTemplateDto,
 } from '@packages/types';
 import { useTaskTemplates, useCreateTaskTemplate, useUpdateTaskTemplate, useDeleteTaskTemplate, useDistributeTasks, usePreviewDistribution, useTaskRules, useCreateTaskRule, useUpdateTaskRule, useDeleteTaskRule, useRuleMetrics } from '../../../api/tasks';
 import { useCollectionPoints } from '../../../api/collection-point';
@@ -82,7 +84,7 @@ const SCHEDULE_MODE_LABELS: Record<TaskScheduleMode, string> = {
     [TaskScheduleMode.TEMPLATE_OVERRIDE]: '模板覆盖',
 };
 
-const normalizeTemplateForForm = (template: any) => {
+const normalizeTemplateForForm = (template: Record<string, any>) => {
     // 确保数组存在
     const assigneeIds = template.assigneeIds || [];
     const departmentIds = template.departmentIds || [];
@@ -250,7 +252,7 @@ export const TaskTemplateList: React.FC = () => {
     }, [ruleMetrics]);
 
     const ruleDailyMap = useMemo(() => {
-        const map = new Map<string, any[]>();
+        const map = new Map<string, unknown[]>();
         if (ruleMetrics?.daily) {
             ruleMetrics.daily.forEach((item) => {
                 if (!map.has(item.ruleId)) {
@@ -389,6 +391,7 @@ export const TaskTemplateList: React.FC = () => {
         },
         {
             title: '监控(30天)',
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any -- AntD table column render callback
             render: (_: any, record: IntelTaskRuleResponse) => {
                 const metrics = ruleMetricsMap.get(record.id);
                 if (!metrics) return '--';
@@ -411,6 +414,7 @@ export const TaskTemplateList: React.FC = () => {
         },
         {
             title: '操作',
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any -- AntD table column render callback
             render: (_: any, record: IntelTaskRuleResponse) => (
                 <Space size="small">
                     <Button size="small" onClick={() => {
@@ -462,7 +466,7 @@ export const TaskTemplateList: React.FC = () => {
         setEditingRule(rule || null);
         const minute = rule?.dispatchAtMinute ?? 540;
         const rawScope = rule?.scopeQuery;
-        let parsedScope: any = {};
+        let parsedScope: Record<string, any> = {};
         if (typeof rawScope === 'string') {
             try {
                 parsedScope = JSON.parse(rawScope);
@@ -481,7 +485,7 @@ export const TaskTemplateList: React.FC = () => {
         setRulePointScope(pointMode);
         setUseAdvancedScope(false);
 
-        let duePolicy: any = rule?.duePolicy;
+        let duePolicy: Record<string, any> | undefined = rule?.duePolicy;
         if (typeof duePolicy === 'string') {
             try {
                 duePolicy = JSON.parse(duePolicy);
@@ -532,7 +536,7 @@ export const TaskTemplateList: React.FC = () => {
             ...rest
         } = values;
 
-        let parsedScopeQuery: any = undefined;
+        let parsedScopeQuery: Record<string, any> | undefined = undefined;
         if (useAdvancedScope) {
             if (typeof scopeQueryJson === 'string' && scopeQueryJson.trim().length > 0) {
                 try {
@@ -575,7 +579,7 @@ export const TaskTemplateList: React.FC = () => {
             }
         }
 
-        let duePolicy: any = undefined;
+        let duePolicy: Record<string, any> | undefined = undefined;
         if (rest.completionPolicy === IntelTaskCompletionPolicy.QUORUM) {
             if (quorumCount) {
                 duePolicy = { quorum: Number(quorumCount) };
@@ -601,7 +605,7 @@ export const TaskTemplateList: React.FC = () => {
         ruleForm.resetFields();
     };
 
-    const normalizeTemplatePayload = (values: any) => {
+    const normalizeTemplatePayload = (values: Record<string, any>) => {
         // 剔除 UI 辅助字段 placeholder，防止 Prisma 报错
         const {
             placeholder,
@@ -650,16 +654,19 @@ export const TaskTemplateList: React.FC = () => {
         };
     };
 
-    const handleCreate = async (values: any) => {
-        await createMutation.mutateAsync(normalizeTemplatePayload(values));
+    const handleCreate = async (values: Record<string, any>) => {
+        await createMutation.mutateAsync(normalizeTemplatePayload(values) as CreateIntelTaskTemplateDto);
         message.success('模板创建成功');
         actionRef.current?.reload();
         return true;
     };
 
-    const handleUpdate = async (values: any) => {
+    const handleUpdate = async (values: Record<string, any>) => {
         if (!currentTemplate) return false;
-        await updateMutation.mutateAsync({ id: currentTemplate.id, data: normalizeTemplatePayload(values) });
+        await updateMutation.mutateAsync({
+            id: currentTemplate.id,
+            data: normalizeTemplatePayload(values) as UpdateIntelTaskTemplateDto,
+        });
         message.success('模板更新成功');
         actionRef.current?.reload();
         return true;
@@ -1391,7 +1398,8 @@ export const TaskTemplateList: React.FC = () => {
                             }
                             return (
                                 <Timeline
-                                    items={logs.slice(0, 30).map((item) => ({
+                                    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- untyped API response iteration
+                                    items={logs.slice(0, 30).map((item: any) => ({
                                         color: item.overdue > 0 ? 'red' : item.completed > 0 ? 'green' : 'blue',
                                         children: `${item.date} 生成 ${item.total} 完成 ${item.completed} 逾期 ${item.overdue}`,
                                     }))}

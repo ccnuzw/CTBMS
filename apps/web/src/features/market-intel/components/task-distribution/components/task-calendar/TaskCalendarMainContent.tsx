@@ -20,7 +20,7 @@ export const TaskCalendarMainContent: React.FC<Props> = ({ viewModel }) => {
         queries: { summaryList, typeStats, summaryMap, summaryLoading, getSummaryCounts }
     } = viewModel;
 
-    const filteredTypeStats = useMemo(() => typeStats.filter((row: any) => row.total > 0), [typeStats]);
+    const filteredTypeStats = useMemo(() => typeStats.filter((row: Record<string, any>) => row.total > 0), [typeStats]);
 
     const typeStatsColumns = useMemo(() => [
         { title: '类型', dataIndex: 'type', key: 'type', render: (value: IntelTaskType) => INTEL_TASK_TYPE_LABELS[value] || value },
@@ -75,7 +75,7 @@ export const TaskCalendarMainContent: React.FC<Props> = ({ viewModel }) => {
         );
     };
 
-    const fullCellRender = (value: dayjs.Dayjs, info: any) => {
+    const fullCellRender = (value: dayjs.Dayjs, info: Record<string, any>) => {
         if (info.type !== 'date') return info.originNode;
         return (
             <div className="ant-picker-cell-inner ant-picker-calendar-date">

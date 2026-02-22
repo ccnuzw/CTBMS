@@ -11,8 +11,10 @@ import { useDictionary } from '@/hooks/useDictionaries';
 interface DeptFormFieldsProps {
     isEdit: boolean;
     orgOptions?: { value: string; label: string }[];
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- recursive tree structure
     treeData?: any[];
     orgIdForTree?: string;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- DOM ref props
     autoFocusFieldProps?: any;
     /** 隐藏组织选择器（统一管理场景下组织已确定） */
     hideOrgSelect?: boolean;

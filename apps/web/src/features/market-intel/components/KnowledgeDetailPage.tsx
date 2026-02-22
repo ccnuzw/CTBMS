@@ -302,6 +302,7 @@ export const KnowledgeDetailPage: React.FC = () => {
                 <div style={{ marginTop: 16 }}>
                   <Text type="secondary" style={{ display: 'block', marginBottom: 8 }}>附件列表</Text>
                   <Space direction="vertical" style={{ width: '100%' }}>
+                    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- untyped API response iteration
                     {detail.attachments.map((att: any) => (
                       <Card
                         key={att.id}

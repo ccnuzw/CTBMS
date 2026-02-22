@@ -319,7 +319,7 @@ export const useTaskCalendarViewModel = () => {
     const daySummaryCounts = daySummary ? getSummaryCounts(daySummary) : undefined;
 
     const filteredDrawerTasks = useMemo(() => {
-        return selectedDateTasks.filter((task: any) => {
+        return selectedDateTasks.filter((task: Record<string, any>) => {
             const isPreview = task.isPreview;
             if (drawerFilter === 'PREVIEW') return isPreview;
             if (drawerFilter === 'COMPLETED') return !isPreview && task.status === IntelTaskStatus.COMPLETED;
@@ -331,13 +331,13 @@ export const useTaskCalendarViewModel = () => {
 
     const selectableTaskIds = useMemo(() => {
         return filteredDrawerTasks
-            .filter((item: any) => !item.isPreview && item.status !== IntelTaskStatus.COMPLETED)
+            .filter((item: Record<string, any>) => !item.isPreview && item.status !== IntelTaskStatus.COMPLETED)
             .map(item => item.id);
     }, [filteredDrawerTasks]);
 
     const sortedDrawerTasks = useMemo(() => {
         const items = [...filteredDrawerTasks];
-        const getDueTime = (task: any) => dayjs(task.dueAt || task.deadline).valueOf();
+        const getDueTime = (task: Record<string, any>) => dayjs(task.dueAt || task.deadline).valueOf();
         items.sort((a, b) => {
             if (drawerSort === 'PRIORITY') {
                 const rankDiff = (PRIORITY_RANK[a.priority as IntelTaskPriority] ?? 99) - (PRIORITY_RANK[b.priority as IntelTaskPriority] ?? 99);
@@ -407,7 +407,7 @@ export const useTaskCalendarViewModel = () => {
             loadedRealTasks: dayTasksData?.data?.length || 0,
             drawerCounts: (() => {
                 const counts = { all: selectedDateTasks.length, pending: 0, completed: 0, overdue: 0, preview: 0 };
-                selectedDateTasks.forEach((task: any) => {
+                selectedDateTasks.forEach((task: Record<string, any>) => {
                     if (task.isPreview) counts.preview++;
                     else if (task.status === IntelTaskStatus.COMPLETED) counts.completed++;
                     else if (task.status === IntelTaskStatus.OVERDUE) counts.overdue++;
@@ -419,7 +419,7 @@ export const useTaskCalendarViewModel = () => {
                 if (drawerGroup === 'NONE') return [{ key: 'all', label: '全部任务', tasks: sortedDrawerTasks }];
                 const groupMap = new Map();
                 sortedDrawerTasks.forEach((task) => {
-                    let key = drawerGroup === 'ASSIGNEE' ? (task.assignee?.name || '未分配') : task.type;
+                    const key = drawerGroup === 'ASSIGNEE' ? (task.assignee?.name || '未分配') : task.type;
                     if (!groupMap.has(key)) groupMap.set(key, { key, label: key, tasks: [] });
                     groupMap.get(key)?.tasks.push(task);
                 });

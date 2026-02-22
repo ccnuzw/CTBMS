@@ -1,9 +1,7 @@
-import { Injectable, Logger, BadRequestException } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../../prisma';
 import * as KnowledgeUtils from './knowledge.utils';
-import { KnowledgeListQuery } from './knowledge.utils';
-import { KnowledgeStatus, KnowledgeType, KnowledgePeriodType, Prisma } from '@prisma/client';
-const ExcelJS = require('exceljs');
+import { KnowledgeStatus, Prisma } from '@prisma/client';
 
 @Injectable()
 export class KnowledgeAggregationService {

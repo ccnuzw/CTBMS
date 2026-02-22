@@ -189,7 +189,7 @@ export const ResearchReportCreatePage = () => {
 
   // Computed Options
   const commodityOptions =
-    stats?.topCommodities?.map((item: any) => ({
+    stats?.topCommodities?.map((item: Record<string, any>) => ({
       label: item.name,
       value: item.name,
     })) || [];
@@ -380,6 +380,7 @@ export const ResearchReportCreatePage = () => {
           message.success(`${periodicMeta?.label}提交成功！等待审核...`);
         }
         navigate(taskId ? '/workstation' : '/intel/knowledge/items');
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- error object from catch
       } catch (error: any) {
         message.error(error.response?.data?.message || '提交失败，请重试');
         console.error(error);
@@ -435,6 +436,7 @@ export const ResearchReportCreatePage = () => {
   const [uploadedIntelId, setUploadedIntelId] = useState<string | null>(null);
   const [uploadedAttachment, setUploadedAttachment] = useState<any>(null);
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- complex dynamic type
   const handleUploadSuccess = (result: any) => {
     if (result.intel?.id) {
       setUploadedIntelId(result.intel.id);

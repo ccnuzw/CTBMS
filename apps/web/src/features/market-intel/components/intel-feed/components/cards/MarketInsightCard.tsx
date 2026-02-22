@@ -56,7 +56,7 @@ const FALLBACK_SENTIMENT_COLORS: Record<string, string> = {
 };
 
 // 洞察方向图标
-const getDirectionIcon = (direction: string | undefined, token: any) => {
+const getDirectionIcon = (direction: string | undefined, token: Record<string, any>) => {
     switch (direction) {
         case 'Bullish': return <RiseOutlined style={{ color: token.colorError }} />;
         case 'Bearish': return <FallOutlined style={{ color: token.colorSuccess }} />;

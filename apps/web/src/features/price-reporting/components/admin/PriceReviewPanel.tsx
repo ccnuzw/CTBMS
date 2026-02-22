@@ -112,7 +112,8 @@ export const PriceReviewPanel: React.FC = () => {
     {
       title: '操作',
       key: 'action',
-      render: (_: any, record: any) => (
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- AntD table column render callback
+      render: (_: any, record: Record<string, any>) => (
         <Space>
           <Button
             type="primary"
@@ -137,7 +138,7 @@ export const PriceReviewPanel: React.FC = () => {
     },
   ];
 
-  const expandedRowRender = (record: any) => {
+  const expandedRowRender = (record: Record<string, any>) => {
     const priceColumns = [
       { title: '品种', dataIndex: 'commodity', key: 'commodity' },
       {

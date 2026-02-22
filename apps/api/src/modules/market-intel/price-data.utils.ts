@@ -1,5 +1,5 @@
 import { BadRequestException } from "@nestjs/common";
-import { CollectionPointType, GeoLevel, MarketAlertAction, MarketAlertRuleType, MarketAlertSeverity, MarketAlertStatus, PriceData, PriceInputMethod, PriceReviewStatus, PriceSourceType, PriceSubType, Prisma, PriceQualityTag as PrismaPriceQualityTag } from "@prisma/client";
+import { CollectionPointType, MarketAlertAction, MarketAlertRuleType, MarketAlertSeverity, MarketAlertStatus, PriceData, PriceInputMethod, PriceReviewStatus, PriceSubType, Prisma, PriceQualityTag as PrismaPriceQualityTag } from "@prisma/client";
 type CollectionPointSummary = {
   id: string;
   code: string;

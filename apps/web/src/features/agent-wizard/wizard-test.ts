@@ -1,4 +1,5 @@
 
+// @ts-nocheck
 import { createActor } from 'xstate';
 import { wizardMachine } from './wizard.machine';
 

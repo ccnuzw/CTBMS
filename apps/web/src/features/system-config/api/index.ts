@@ -80,7 +80,7 @@ export const useDeletePrompt = () => {
 
 export const usePreviewPrompt = () => {
     return useMutation({
-        mutationFn: async ({ code, variables }: { code: string; variables: any }) => {
+        mutationFn: async ({ code, variables }: { code: string; variables: Record<string, any> }) => {
             const res = await fetch(`${PROMPT_API_BASE}/preview`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -192,6 +192,7 @@ export const useAIConfig = (key: string = 'DEFAULT') => {
 export const useUpdateAIConfig = () => {
     const queryClient = useQueryClient();
     return useMutation({
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- mutation payload
         mutationFn: async (data: any) => {
             const res = await fetch(`${API_BASE}/ai-models`, {
                 method: 'POST',

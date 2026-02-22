@@ -477,7 +477,7 @@ export const ComparisonPanel: React.FC<ComparisonPanelProps> = ({
         const padding = Math.max(1, (maxValue - minValue) * 0.05);
         const yDomain: [number, number] = [minValue - padding, maxValue + padding];
 
-        const TooltipContent = ({ active, payload }: any) => {
+        const TooltipContent = ({ active, payload }: Record<string, any>) => {
             if (!active || !payload?.length) return null;
             const data = payload[0].payload as DistributionItem;
             return (
@@ -619,7 +619,7 @@ export const ComparisonPanel: React.FC<ComparisonPanelProps> = ({
 
         const shouldRotateTicks = distributionItems.length > 6;
 
-        const renderXAxisTick = (props: any) => {
+        const renderXAxisTick = (props: Record<string, any>) => {
             const { x, y, payload } = props;
             const rawValue = String(payload?.value ?? '');
             const maxLen = 6;

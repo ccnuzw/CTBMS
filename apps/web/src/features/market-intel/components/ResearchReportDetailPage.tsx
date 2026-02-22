@@ -353,7 +353,7 @@ export const ResearchReportDetailPage: React.FC = () => {
                                     <List
                                         rowKey="id"
                                         dataSource={attachments}
-                                        renderItem={(item: any) => (
+                                        renderItem={(item: Record<string, any>) => (
                                             <List.Item
                                                 actions={[
                                                     <Button key="preview" size="small" type="link" onClick={() => {

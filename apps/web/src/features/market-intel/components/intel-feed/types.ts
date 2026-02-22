@@ -172,6 +172,7 @@ export interface IntelItem {
 
     // AI 分析
     confidence?: number;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- complex dynamic type
     events?: any[];
     insights?: Insight[];
 
@@ -198,6 +199,7 @@ export interface IntelItem {
     relatedIntelIds?: string[];
 
     // 研报数据
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- complex dynamic type
     researchReport?: any;
 }
 

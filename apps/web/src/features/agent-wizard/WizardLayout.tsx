@@ -11,6 +11,7 @@ import { Step2_CredentialBinding } from './components/Step2_CredentialBinding';
 
 export const WizardLayout = () => {
     const [state, send] = useMachine(wizardMachine);
+    const stateSnapshot = state as any;
     const { data: personas } = useQuery(['agent-personas'], async () => {
         const res = await axios.get<any[]>('/api/agent-personas');
         return res.data;
@@ -23,34 +24,34 @@ export const WizardLayout = () => {
             </div>
 
             <div style={{ minHeight: 400 }}>
-                {(state.matches('personaSelection') || state.matches('creatingSession')) && (
+                {(stateSnapshot.matches('personaSelection') || stateSnapshot.matches('creatingSession')) && (
                     <Step1_PersonaSelection
-                        selectedId={state.context.selectedPersona}
+                        selectedId={stateSnapshot.context.selectedPersona}
                         onSelect={(id) => send({ type: 'SELECT_PERSONA', personaId: id })}
-                        isLoading={state.matches('creatingSession')}
+                        isLoading={stateSnapshot.matches('creatingSession')}
                     />
                 )}
 
-                {state.matches('credentialBinding') && (
+                {stateSnapshot.matches('credentialBinding') && (
                     <Step2_CredentialBinding
-                        selectedPersona={personas?.find(p => p.personaCode === state.context.selectedPersona)}
-                        currentKeys={state.context.apiKeys || {}}
+                        selectedPersona={personas?.find(p => p.personaCode === stateSnapshot.context.selectedPersona)}
+                        currentKeys={stateSnapshot.context.apiKeys || {}}
                         onBack={() => send({ type: 'BACK' })}
                         onSubmit={(keys) => send({ type: 'SUBMIT_KEY', keys })} // Will update machine to accept object
                     />
                 )}
 
-                {state.matches('knowledgeUpload') && (
+                {stateSnapshot.matches('knowledgeUpload') && (
                     <Step3_Knowledge
-                        files={state.context.files}
+                        files={stateSnapshot.context.files}
                         onBack={() => send({ type: 'BACK' })}
                         onSubmit={(files) => send({ type: 'UPLOAD_FILES', files })}
                     />
                 )}
 
-                {(state.matches('creatingAgent') || state.matches('playground')) && (
+                {(stateSnapshot.matches('creatingAgent') || stateSnapshot.matches('playground')) && (
                     <Step4_Playground
-                        sessionId={state.context.sessionId!}
+                        sessionId={stateSnapshot.context.sessionId!}
                         onReset={() => send({ type: 'RESET' })}
                     />
                 )}

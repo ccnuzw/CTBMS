@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, forwardRef, Inject } from '@nestjs/common';
 import { PrismaService } from '../../prisma';
 import { ConfigService } from '../config/config.service';
 import { IntelTaskService } from './intel-task.service';
@@ -17,8 +17,8 @@ import {
     IntelTaskAssigneeStrategy,
     IntelTaskCompletionPolicy,
     IntelTaskStatus,
-    CalendarPreviewTask,
 } from '@packages/types';
+import type { CalendarPreviewTask } from '@packages/types';
 import {
     CollectionPoint,
     CollectionPointType as PrismaCollectionPointType,
@@ -29,10 +29,10 @@ import {
     Prisma,
 } from '@prisma/client';
 
-type TemplateRecord = IntelTaskTemplate;
-type RuleRecord = IntelTaskRule;
+export type TemplateRecord = IntelTaskTemplate;
+export type RuleRecord = IntelTaskRule;
 
-type TaskKeyInput = {
+export type TaskKeyInput = {
     templateId?: string | null;
     periodKey?: string | null;
     assigneeId?: string | null;
@@ -40,7 +40,7 @@ type TaskKeyInput = {
     commodity?: string | null;
 };
 
-type TaskCreatePayload = CreateIntelTaskDto & {
+export type TaskCreatePayload = CreateIntelTaskDto & {
     createdById?: string;
     templateId?: string;
     ruleId?: string | null;
@@ -57,7 +57,7 @@ type TaskCreatePayload = CreateIntelTaskDto & {
     workflowId?: string | null;
 };
 
-type RuleScopeQuery = {
+export type RuleScopeQuery = {
     userIds?: string[];
     departmentIds?: string[];
     organizationIds?: string[];
@@ -68,7 +68,7 @@ type RuleScopeQuery = {
     targetPointType?: string | string[];
 };
 
-type ShiftConfig = {
+export type ShiftConfig = {
     dates?: string[];
     weekdays?: number[];
     monthDays?: number[];
@@ -76,17 +76,17 @@ type ShiftConfig = {
     startDate?: string;
 };
 
-type AllocationLike = {
+export type AllocationLike = {
     userId: string;
     commodity?: string | null;
 };
 
-type PointScheduleLike = Pick<
+export type PointScheduleLike = Pick<
     CollectionPoint,
     'dispatchAtMinute' | 'frequencyType' | 'weekdays' | 'monthDays' | 'shiftConfig'
 >;
 
-type AllocationWithUser = AllocationLike & {
+export type AllocationWithUser = AllocationLike & {
     user?: {
         id: string;
         name?: string | null;
@@ -95,12 +95,12 @@ type AllocationWithUser = AllocationLike & {
     };
 };
 
-type PointWithAllocations = CollectionPoint & {
+export type PointWithAllocations = CollectionPoint & {
     allocations: AllocationWithUser[];
     commodities?: string[] | null;
 };
 
-type PreviewAssignee = {
+export type PreviewAssignee = {
     userId: string;
     userName?: string | null;
     departmentName?: string | null;
@@ -115,39 +115,40 @@ type PreviewAssignee = {
     taskCount: number;
 };
 
-type PreviewResult = {
+export type PreviewResult = {
     totalTasks: number;
     totalAssignees: number;
     assignees: PreviewAssignee[];
     unassignedPoints: Array<{ id: string; name: string; type: string }>;
 };
 import { GetCalendarPreviewDto, UpdateIntelTaskRuleDto } from './dto';
-import { computePeriodInfo, computeNextRunAt } from './intel-task-schedule.utils';
+import { computePeriodInfo } from './intel-task-schedule.utils';
+import { IntelTaskDispatchService } from "./intel-task-dispatch.service";
 
 @Injectable()
 export class IntelTaskTemplateService {
     constructor(
-        private prisma: PrismaService,
-        private taskService: IntelTaskService,
-        private configService: ConfigService,
+        public prisma: PrismaService,
+        public taskService: IntelTaskService,
+        public configService: ConfigService,
     ) { }
 
-    private toPrismaTaskType(value: IntelTaskType) {
+    public toPrismaTaskType(value: IntelTaskType) {
         return value as unknown as PrismaIntelTaskType;
     }
 
-    private toPrismaTaskPriority(value: IntelTaskPriority) {
+    public toPrismaTaskPriority(value: IntelTaskPriority) {
         return value as unknown as PrismaIntelTaskPriority;
     }
 
-    private resolvePointTypes(input?: string | string[]) {
+    public resolvePointTypes(input?: string | string[]) {
         const values = Array.isArray(input) ? input : input ? [input] : [];
         return values.filter((value): value is PrismaCollectionPointType =>
             Object.values(PrismaCollectionPointType).includes(value as PrismaCollectionPointType),
         );
     }
 
-    private async resolveTaskTypeBinding(taskType: IntelTaskType) {
+    public async resolveTaskTypeBinding(taskType: IntelTaskType) {
         const items = await this.configService.getDictionary('INTEL_TASK_TYPE');
         const item = items.find(i => i.code === taskType);
         if (!item) {
@@ -517,7 +518,7 @@ export class IntelTaskTemplateService {
     /**
      * 解析分发规则，获取目标用户 ID 列表
      */
-    private async resolveAssignees(template: TemplateRecord): Promise<string[]> {
+    public async resolveAssignees(template: TemplateRecord): Promise<string[]> {
         const { assigneeMode, assigneeIds, departmentIds, organizationIds, collectionPointId, collectionPointIds } = template;
 
         // 简单去重集合
@@ -584,14 +585,14 @@ export class IntelTaskTemplateService {
         return Array.from(targetIds);
     }
 
-    private async resolveAssigneesWithOverride(template: TemplateRecord, assigneeIdsOverride?: string[]) {
+    public async resolveAssigneesWithOverride(template: TemplateRecord, assigneeIdsOverride?: string[]) {
         if (assigneeIdsOverride && assigneeIdsOverride.length > 0) {
             return assigneeIdsOverride;
         }
         return this.resolveAssignees(template);
     }
 
-    private buildTaskKey(task: TaskKeyInput) {
+    public buildTaskKey(task: TaskKeyInput) {
         const templateId = task.templateId || 'NO_TEMPLATE';
         const periodKey = task.periodKey || 'NO_PERIOD';
         const assigneeId = task.assigneeId || 'NO_ASSIGNEE';
@@ -600,7 +601,7 @@ export class IntelTaskTemplateService {
         return `${templateId}|${periodKey}|${assigneeId}|${collectionPointId}|${commodity}`;
     }
 
-    private dedupeTasks<T extends TaskKeyInput>(tasks: T[]) {
+    public dedupeTasks<T extends TaskKeyInput>(tasks: T[]) {
         const map = new Map<string, T>();
         for (const task of tasks) {
             const key = this.buildTaskKey(task);
@@ -611,7 +612,7 @@ export class IntelTaskTemplateService {
         return Array.from(map.values());
     }
 
-    private async filterDuplicateTasks(tasks: TaskCreatePayload[]) {
+    public async filterDuplicateTasks(tasks: TaskCreatePayload[]) {
         if (!tasks.length) return tasks;
         const groups = new Map<string, TaskCreatePayload[]>();
         for (const task of tasks) {
@@ -692,7 +693,7 @@ export class IntelTaskTemplateService {
         return filtered;
     }
 
-    private hashString(value: string) {
+    public hashString(value: string) {
         let hash = 0;
         for (let i = 0; i < value.length; i += 1) {
             hash = ((hash << 5) - hash) + value.charCodeAt(i);
@@ -701,7 +702,7 @@ export class IntelTaskTemplateService {
         return Math.abs(hash);
     }
 
-    private selectAssigneesByStrategy(
+    public selectAssigneesByStrategy(
         candidateIds: string[],
         strategy: string,
         seed: string,
@@ -731,7 +732,7 @@ export class IntelTaskTemplateService {
         return unique;
     }
 
-    private async getAssigneeLoadMap(userIds: string[]) {
+    public async getAssigneeLoadMap(userIds: string[]) {
         if (!userIds.length) return new Map<string, number>();
         const activeStatuses = [
             IntelTaskStatus.PENDING,
@@ -750,7 +751,7 @@ export class IntelTaskTemplateService {
         return new Map(rows.map(row => [row.assigneeId, row._count._all]));
     }
 
-    private async resolveUsersByRole(scopeQuery: RuleScopeQuery) {
+    public async resolveUsersByRole(scopeQuery: RuleScopeQuery) {
         const roleIds = Array.isArray(scopeQuery?.roleIds) ? scopeQuery.roleIds : [];
         const roleCodes = Array.isArray(scopeQuery?.roleCodes) ? scopeQuery.roleCodes : [];
 
@@ -772,7 +773,7 @@ export class IntelTaskTemplateService {
         return Array.from(new Set(userRoles.map(item => item.userId)));
     }
 
-    private async resolveUsersByQuery(scopeQuery: RuleScopeQuery) {
+    public async resolveUsersByQuery(scopeQuery: RuleScopeQuery) {
         const targetIds = new Set<string>();
         const userIds = Array.isArray(scopeQuery?.userIds) ? scopeQuery.userIds : [];
         userIds.forEach((id: string) => targetIds.add(id));
@@ -801,7 +802,7 @@ export class IntelTaskTemplateService {
         return Array.from(targetIds);
     }
 
-    private async resolvePointsByQuery(scopeQuery: RuleScopeQuery, opts?: { includeUser?: boolean }): Promise<PointWithAllocations[]> {
+    public async resolvePointsByQuery(scopeQuery: RuleScopeQuery, opts?: { includeUser?: boolean }): Promise<PointWithAllocations[]> {
         const pointIds = Array.isArray(scopeQuery?.collectionPointIds) ? scopeQuery.collectionPointIds : [];
         if (scopeQuery?.collectionPointId) {
             pointIds.push(scopeQuery.collectionPointId);
@@ -845,7 +846,7 @@ export class IntelTaskTemplateService {
         return points as PointWithAllocations[];
     }
 
-    private parseShiftConfig(raw: unknown): ShiftConfig | null {
+    public parseShiftConfig(raw: unknown): ShiftConfig | null {
         if (!raw) return null;
         if (typeof raw === 'string') {
             try {
@@ -857,7 +858,7 @@ export class IntelTaskTemplateService {
         return raw as ShiftConfig;
     }
 
-    private computeRuleRunDates(
+    public computeRuleRunDates(
         rule: Pick<RuleRecord, 'dispatchAtMinute' | 'frequencyType' | 'weekdays' | 'monthDays'>,
         start: Date,
         end: Date,
@@ -895,7 +896,7 @@ export class IntelTaskTemplateService {
         return dates;
     }
 
-    private async hasPointAllocation(userId: string, scopeQuery: RuleScopeQuery) {
+    public async hasPointAllocation(userId: string, scopeQuery: RuleScopeQuery) {
         const pointIds = Array.isArray(scopeQuery?.collectionPointIds) ? scopeQuery.collectionPointIds : [];
         if (scopeQuery?.collectionPointId) {
             pointIds.push(scopeQuery.collectionPointId);
@@ -920,7 +921,7 @@ export class IntelTaskTemplateService {
         return !!allocation;
     }
 
-    private async isAssigneeInRuleScope(
+    public async isAssigneeInRuleScope(
         rule: Pick<RuleRecord, 'scopeType'>,
         scopeQuery: RuleScopeQuery,
         assignee: { id: string; departmentId?: string | null; organizationId?: string | null },
@@ -976,7 +977,7 @@ export class IntelTaskTemplateService {
         return true;
     }
 
-    private async createTasksFromRules(
+    public async createTasksFromRules(
         template: TemplateRecord,
         rules: RuleRecord[],
         opts: { assigneeIds?: string[]; overrideDeadline?: Date; triggeredById?: string; runAt: Date },
@@ -1237,17 +1238,17 @@ export class IntelTaskTemplateService {
         };
     }
 
-    private generateTaskTitle(templateName: string, periodKey?: string): string {
+    public generateTaskTitle(templateName: string, periodKey?: string): string {
         const dateStr = periodKey || new Date().toLocaleDateString();
         return `${templateName} [${dateStr}]`;
     }
 
-    private isPointSchedule(template: TemplateRecord) {
+    public isPointSchedule(template: TemplateRecord) {
         return template.taskType === PrismaIntelTaskType.COLLECTION
             && (template.scheduleMode ?? TaskScheduleMode.TEMPLATE_OVERRIDE) === TaskScheduleMode.POINT_DEFAULT;
     }
 
-    private getTemplateTargetPointTypes(template: TemplateRecord): PrismaCollectionPointType[] {
+    public getTemplateTargetPointTypes(template: TemplateRecord): PrismaCollectionPointType[] {
         const types = Array.isArray(template.targetPointTypes)
             ? template.targetPointTypes.filter(Boolean)
             : [];
@@ -1256,16 +1257,16 @@ export class IntelTaskTemplateService {
         return [];
     }
 
-    private getWeekday1(date: Date) {
+    public getWeekday1(date: Date) {
         const day = date.getDay(); // 0=Sun..6=Sat
         return day === 0 ? 7 : day; // 1=Mon..7=Sun
     }
 
-    private getLastDayOfMonth(date: Date) {
+    public getLastDayOfMonth(date: Date) {
         return new Date(date.getFullYear(), date.getMonth() + 1, 0).getDate();
     }
 
-    private isPointDue(point: PointScheduleLike, runAt: Date) {
+    public isPointDue(point: PointScheduleLike, runAt: Date) {
         const minuteNow = runAt.getHours() * 60 + runAt.getMinutes();
         const dispatchAt = point.dispatchAtMinute ?? 0;
         if (minuteNow < dispatchAt) return false;
@@ -1333,7 +1334,7 @@ export class IntelTaskTemplateService {
         return true;
     }
 
-    private parseScopeQuery(scopeQuery: unknown): RuleScopeQuery {
+    public parseScopeQuery(scopeQuery: unknown): RuleScopeQuery {
         if (!scopeQuery) return {};
         if (typeof scopeQuery === 'string') {
             try {
@@ -1345,7 +1346,7 @@ export class IntelTaskTemplateService {
         return scopeQuery as RuleScopeQuery;
     }
 
-    private isRuleDue(
+    public isRuleDue(
         rule: Pick<RuleRecord, 'dispatchAtMinute' | 'frequencyType' | 'weekdays' | 'monthDays'>,
         runAt: Date,
     ) {
@@ -1596,7 +1597,7 @@ export class IntelTaskTemplateService {
         return this.prisma.intelTaskRule.delete({ where: { id } });
     }
 
-    private async previewRulesDistribution(template: TemplateRecord, rules: RuleRecord[], previewRunAt: Date) {
+    public async previewRulesDistribution(template: TemplateRecord, rules: RuleRecord[], previewRunAt: Date) {
         const result: PreviewResult = {
             totalTasks: 0,
             totalAssignees: 0,
@@ -1769,385 +1770,14 @@ export class IntelTaskTemplateService {
         return result;
     }
 
-    /**
-     * 预览任务分发
-     */
+    @Inject(forwardRef(() => IntelTaskDispatchService))
+    public readonly dispatchService!: IntelTaskDispatchService;
+
     async previewDistribution(templateId: string) {
-        const template = await this.prisma.intelTaskTemplate.findUnique({
-            where: { id: templateId },
-        });
-
-        if (!template) {
-            throw new NotFoundException('任务模板不存在');
-        }
-
-        const usePointSchedule = this.isPointSchedule(template);
-        const result: PreviewResult = {
-            totalTasks: 0,
-            totalAssignees: 0,
-            assignees: [],
-            unassignedPoints: [],
-        };
-
-        const previewRunAt = new Date();
-
-        const rules = await this.prisma.intelTaskRule.findMany({
-            where: { templateId: template.id, isActive: true },
-            orderBy: { createdAt: 'asc' },
-        });
-        if (rules.length > 0) {
-            return this.previewRulesDistribution(template, rules, previewRunAt);
-        }
-
-        // Case 1: 按采集点类型分发
-        const targetPointTypes = this.getTemplateTargetPointTypes(template);
-        if (targetPointTypes.length > 0) {
-            // 查找该类型的所有活跃采集点
-            const points = await this.prisma.collectionPoint.findMany({
-                where: {
-                    type: { in: targetPointTypes },
-                    isActive: true,
-                },
-                include: {
-                    allocations: {
-                        where: { isActive: true },
-                        include: {
-                            user: {
-                                include: {
-                                    department: true,
-                                    organization: true,
-                                }
-                            }
-                        }
-                    },
-                },
-            });
-
-            const duePoints = usePointSchedule
-                ? points.filter(point => this.isPointDue(point, previewRunAt))
-                : points;
-            const assigneeMap = new Map<string, PreviewAssignee>();
-
-            for (const point of duePoints) {
-                if (point.allocations.length === 0) {
-                    result.unassignedPoints.push({
-                        id: point.id,
-                        name: point.name,
-                        type: point.type,
-                    });
-                    continue;
-                }
-
-                for (const allocation of point.allocations) {
-                    const user = allocation.user;
-                    if (!assigneeMap.has(user.id)) {
-                        assigneeMap.set(user.id, {
-                            userId: user.id,
-                            userName: user.name,
-                            departmentName: user.department?.name,
-                            organizationName: user.organization?.name,
-                            collectionPoints: [],
-                            taskCount: 0,
-                        });
-                    }
-                    const assigneeEntry = assigneeMap.get(user.id);
-                    if (!assigneeEntry) continue;
-
-                    // Task Count Calculation (Granular)
-                    const commoditiesCount = allocation.commodity
-                        ? 1
-                        : (point.commodities && point.commodities.length > 0 ? point.commodities.length : 1);
-
-                    assigneeEntry.collectionPoints.push({
-                        id: point.id,
-                        name: point.name,
-                        type: point.type,
-                        commodity: allocation.commodity || 'All',
-                        count: commoditiesCount
-                    });
-                    assigneeEntry.taskCount += commoditiesCount;
-                }
-            }
-
-            result.assignees = Array.from(assigneeMap.values());
-            result.totalTasks = result.assignees.reduce((sum, a) => sum + a.taskCount, 0);
-            result.totalAssignees = result.assignees.length;
-
-            return result;
-        }
-
-        // Case 2: 标准模式分发 (MANUAL, BY_DEPARTMENT, BY_ORGANIZATION)
-        if (
-            template.assigneeMode === 'BY_COLLECTION_POINT' &&
-            (template.collectionPointId || (template.collectionPointIds && template.collectionPointIds.length > 0))
-        ) {
-            const pointIds = template.collectionPointId
-                ? [template.collectionPointId]
-                : template.collectionPointIds;
-
-            const points = await this.prisma.collectionPoint.findMany({
-                where: {
-                    id: { in: pointIds },
-                    isActive: true,
-                },
-                include: {
-                    allocations: {
-                        where: { isActive: true },
-                        include: {
-                            user: {
-                                include: {
-                                    department: true,
-                                    organization: true,
-                                }
-                            }
-                        }
-                    },
-                },
-            });
-
-            const duePoints = usePointSchedule
-                ? points.filter(point => this.isPointDue(point, previewRunAt))
-                : points;
-            const assigneeMap = new Map<string, PreviewAssignee>();
-
-            for (const point of duePoints) {
-                if (point.allocations.length === 0) {
-                    result.unassignedPoints.push({
-                        id: point.id,
-                        name: point.name,
-                        type: point.type,
-                    });
-                    continue;
-                }
-
-                for (const allocation of point.allocations) {
-                    const user = allocation.user;
-                    if (!assigneeMap.has(user.id)) {
-                        assigneeMap.set(user.id, {
-                            userId: user.id,
-                            userName: user.name,
-                            departmentName: user.department?.name,
-                            organizationName: user.organization?.name,
-                            collectionPoints: [],
-                            taskCount: 0,
-                        });
-                    }
-                    const assigneeEntry = assigneeMap.get(user.id);
-                    if (!assigneeEntry) continue;
-
-                    // Task Count Calculation (Granular)
-                    const commoditiesCount = allocation.commodity
-                        ? 1
-                        : (point.commodities && point.commodities.length > 0 ? point.commodities.length : 1);
-
-                    assigneeEntry.collectionPoints.push({
-                        id: point.id,
-                        name: point.name,
-                        type: point.type,
-                        commodity: allocation.commodity || 'All',
-                        count: commoditiesCount
-                    });
-                    assigneeEntry.taskCount += commoditiesCount;
-                }
-            }
-
-            result.assignees = Array.from(assigneeMap.values());
-            result.totalTasks = result.assignees.reduce((sum, a) => sum + a.taskCount, 0);
-            result.totalAssignees = result.assignees.length;
-
-            return result;
-        }
-
-        const targetAssigneeIds = await this.resolveAssignees(template);
-
-        if (targetAssigneeIds.length > 0) {
-            const users = await this.prisma.user.findMany({
-                where: { id: { in: targetAssigneeIds } },
-                include: {
-                    department: true,
-                    organization: true,
-                },
-            });
-
-            result.assignees = users.map(user => ({
-                userId: user.id,
-                userName: user.name,
-                departmentName: user.department?.name,
-                organizationName: user.organization?.name,
-                collectionPoints: [],
-                taskCount: 1, // 标准模式每人一个任务
-            }));
-
-            result.totalTasks = result.assignees.length;
-            result.totalAssignees = result.assignees.length;
-        }
-
-        return result;
+        return this.dispatchService.previewDistribution(templateId);
     }
 
-    /**
-     * 获取日历任务预览
-     */
-    async getCalendarPreview(query: GetCalendarPreviewDto) {
-        const { startDate, endDate, assigneeId } = query;
-        const start = new Date(startDate);
-        const end = new Date(endDate);
-        const assigneeSnapshot = assigneeId
-            ? await this.prisma.user.findUnique({
-                where: { id: assigneeId },
-                select: { id: true, departmentId: true, organizationId: true },
-            })
-            : null;
-        let assigneeRoleIds: string[] = [];
-        let assigneeRoleCodes: string[] = [];
-        if (assigneeId) {
-            const roles = await this.prisma.userRole.findMany({
-                where: { userId: assigneeId },
-                select: { roleId: true, role: { select: { code: true } } },
-            });
-            assigneeRoleIds = roles.map(r => r.roleId);
-            assigneeRoleCodes = roles.map(r => r.role?.code).filter(Boolean) as string[];
-        }
-
-        // 1. 获取所有在时间范围内有效的模板
-        const templates = await this.prisma.intelTaskTemplate.findMany({
-            where: {
-                isActive: true,
-                activeFrom: { lte: end },
-                OR: [
-                    { activeUntil: null },
-                    { activeUntil: { gte: start } }
-                ]
-            },
-        });
-
-        const previewTasks: CalendarPreviewTask[] = [];
-
-        for (const template of templates) {
-            const rules = await this.prisma.intelTaskRule.findMany({
-                where: { templateId: template.id, isActive: true },
-                orderBy: { createdAt: 'asc' },
-            });
-
-            if (rules.length > 0) {
-                for (const rule of rules) {
-                    const scopeQuery = this.parseScopeQuery(rule.scopeQuery);
-                    if (assigneeId && assigneeSnapshot) {
-                        const inScope = await this.isAssigneeInRuleScope(
-                            rule,
-                            scopeQuery,
-                            assigneeSnapshot,
-                            assigneeRoleIds,
-                            assigneeRoleCodes,
-                        );
-                        if (!inScope) continue;
-                    } else if (assigneeId && !assigneeSnapshot) {
-                        continue;
-                    }
-
-                    const runDates = this.computeRuleRunDates(rule, start, end);
-                    for (const runAt of runDates) {
-                        if (template.activeFrom && runAt < template.activeFrom) continue;
-                        if (template.activeUntil && runAt > template.activeUntil) continue;
-
-                        const ruleLike = {
-                            ...template,
-                            cycleType: rule.frequencyType,
-                            runAtMinute: rule.dispatchAtMinute,
-                        };
-                        const periodInfo = computePeriodInfo(ruleLike, runAt, undefined);
-                        const deadline = new Date(runAt);
-                        deadline.setHours(deadline.getHours() + template.deadlineOffset);
-                        const effectiveDeadline = periodInfo.dueAt || deadline;
-
-                        previewTasks.push({
-                            id: `preview-${template.id}-${rule.id}-${runAt.getTime()}`,
-                            title: this.generateTaskTitle(template.name, periodInfo.periodKey || undefined),
-                            type: template.taskType as unknown as IntelTaskType,
-                            priority: template.priority as unknown as IntelTaskPriority,
-                            status: 'PREVIEW',
-                            deadline: effectiveDeadline,
-                            dueAt: effectiveDeadline,
-                            isPreview: true,
-                            templateId: template.id,
-                            assigneeId: assigneeId || undefined,
-                        });
-                    }
-                }
-                continue;
-            }
-
-            // 2. 检查权限/归属
-            let isRelevant = true;
-
-            if (assigneeId) {
-                // 判断 assigneeId 是否在这个模板的覆盖范围内
-                if (!assigneeSnapshot) {
-                    isRelevant = false;
-                } else {
-                const targetUserIds = await this.resolveAssignees(template);
-                if (!targetUserIds.includes(assigneeId)) {
-                    isRelevant = false;
-                }
-                }
-            }
-
-            if (!isRelevant) continue;
-
-            // 3. 计算在 start ~ end 之间的所有生成点
-            let baseDate = new Date(template.activeFrom);
-            if (baseDate < start) {
-                // 优化：不要从 activeFrom 开始遍历，而是从 start 附近开始
-                baseDate = new Date(start.getTime() - 1);
-            } else {
-                if (baseDate.getTime() > start.getTime()) {
-                    baseDate = new Date(baseDate.getTime() - 1);
-                } else {
-                    baseDate = new Date(start.getTime() - 1);
-                }
-            }
-            // Ensure baseDate is valid
-            if (isNaN(baseDate.getTime())) baseDate = new Date(start.getTime() - 1);
-
-            let simDate = baseDate;
-            let loops = 0;
-            const MAX_LOOPS = 100;
-
-            while (loops < MAX_LOOPS) {
-                const nextRun = computeNextRunAt(template, simDate);
-
-                if (!nextRun) break;
-                if (nextRun > end) break;
-                if (template.activeUntil && nextRun > template.activeUntil) break;
-
-                // 只有 >= start 的才加入结果
-                if (nextRun >= start) {
-                    const periodInfo = computePeriodInfo(template, nextRun, undefined);
-                    const deadline = new Date(nextRun);
-                    deadline.setHours(deadline.getHours() + template.deadlineOffset);
-                    const effectiveDeadline = periodInfo.dueAt || deadline;
-
-                    previewTasks.push({
-                        id: `preview-${template.id}-${nextRun.getTime()}`,
-                        title: this.generateTaskTitle(template.name, periodInfo.periodKey || undefined),
-                        type: template.taskType as unknown as IntelTaskType,
-                        priority: template.priority as unknown as IntelTaskPriority,
-                        status: 'PREVIEW',
-                        deadline: effectiveDeadline,
-                        dueAt: effectiveDeadline,
-                        isPreview: true,
-                        templateId: template.id,
-                        assigneeId: assigneeId || undefined,
-                    });
-
-                    if (template.cycleType === 'ONE_TIME') break;
-                }
-
-                simDate = nextRun;
-                loops++;
-            }
-        }
-
-        return previewTasks;
+    async getCalendarPreview(query: GetCalendarPreviewDto): Promise<CalendarPreviewTask[]> {
+        return this.dispatchService.getCalendarPreview(query);
     }
 }

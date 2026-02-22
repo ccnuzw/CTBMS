@@ -94,13 +94,13 @@ export const PromptTemplatePage = () => {
         }
     };
 
-    const handleFinish = async (values: any) => {
+    const handleFinish = async (values: Record<string, any>) => {
         try {
             if (currentRow) {
                 await updateMutation.mutateAsync({ id: currentRow.id, data: values });
                 message.success('更新成功');
             } else {
-                await createMutation.mutateAsync(values);
+                await createMutation.mutateAsync(values as Parameters<typeof createMutation.mutateAsync>[0]);
                 message.success('创建成功');
             }
             setModalVisible(false);

@@ -75,14 +75,15 @@ export const OrgDeptTreeSelect: React.FC<OrgDeptTreeSelectProps> = ({
 
   // 按组织预计算部门层级，避免构树时重复 filter
   const deptTreeMetaByOrg = useMemo(() => {
-    const byOrg = new Map<string, { roots: any[]; childrenByParent: Map<string, any[]> }>();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- recursive tree structure
+    const byOrg = new Map<string, { roots: any[]; childrenByParent: Map<string, unknown[]> }>();
     if (!allDepartments) return byOrg;
 
     for (const dept of allDepartments) {
       if (!byOrg.has(dept.organizationId)) {
         byOrg.set(dept.organizationId, {
           roots: [],
-          childrenByParent: new Map<string, any[]>(),
+          childrenByParent: new Map<string, unknown[]>(),
         });
       }
 
@@ -128,6 +129,7 @@ export const OrgDeptTreeSelect: React.FC<OrgDeptTreeSelectProps> = ({
       const orgMeta = deptTreeMetaByOrg.get(orgId);
       if (!orgMeta) return [];
 
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- recursive department tree node
       const buildDeptTree = (dept: any): DefaultOptionType => {
         const childDepts = orgMeta.childrenByParent.get(dept.id) || [];
         const userCount = userCountMap.depts.get(dept.id) || 0;

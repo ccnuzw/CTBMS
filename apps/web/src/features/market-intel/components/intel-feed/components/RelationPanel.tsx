@@ -321,6 +321,7 @@ export const RelationPanel: React.FC<RelationPanelProps> = ({
 
                             <Timeline
                                 pending={isLoading ? '分析中...' : false}
+                                // eslint-disable-next-line @typescript-eslint/no-explicit-any -- untyped API response iteration
                                 items={relatedItems.map((related: any, idx: number) => ({
                                     color: relationTypeMeta[normalizeRelationType(related.relationType)]?.color || 'blue',
                                     children: (
@@ -406,6 +407,7 @@ export const RelationPanel: React.FC<RelationPanelProps> = ({
                                             <Text strong style={{ fontSize: 12 }}>关键点：</Text>
                                             <ul style={{ paddingLeft: 16, margin: '4px 0 0 0', fontSize: 12 }}>
                                                 {Array.isArray(selectedIntel.researchReport.keyPoints) &&
+                                                    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- untyped API response iteration
                                                     selectedIntel.researchReport.keyPoints.map((p: any, i: number) => (
                                                         <li key={i}>{stripHtml(typeof p === 'string' ? p : p.point)}</li>
                                                     ))}

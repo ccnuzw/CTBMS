@@ -102,7 +102,8 @@ export const CollectionPointEditor: React.FC<CollectionPointEditorProps> = ({
     // Convert region tree to Cascader options
     const regionOptions = useMemo(() => {
         if (!regionTree) return [];
-        const convertNode = (node: any): any => ({
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- object with dynamic keys
+        const convertNode = (node: any): Record<string, any> => ({
             value: node.code,
             label: node.name,
             children: node.children?.map(convertNode),
@@ -128,7 +129,8 @@ export const CollectionPointEditor: React.FC<CollectionPointEditorProps> = ({
         }
     }, [open, editData, editId, form]);
 
-    const normalizeShiftConfig = (raw?: unknown): ShiftConfig | undefined => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- complex dynamic type
+    const normalizeShiftConfig = (raw?: any): ShiftConfig | undefined => {
         if (!raw) return undefined;
         let cfg = raw as ShiftConfig | undefined;
         if (typeof raw === 'string') {
@@ -225,6 +227,7 @@ export const CollectionPointEditor: React.FC<CollectionPointEditorProps> = ({
                 message.success('创建成功');
             }
             onClose(true);
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- error object from catch
         } catch (error: any) {
             if (error.message) {
                 message.error(error.message);
@@ -451,6 +454,7 @@ export const CollectionPointEditor: React.FC<CollectionPointEditorProps> = ({
                                 getValueProps={(value) => {
                                     // 将单个 regionCode 转换为完整路径用于显示
                                     if (!value || !regionTree) return { value: undefined };
+                                    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- complex dynamic type
                                     const findPath = (nodes: any[], target: string, path: string[] = []): string[] | null => {
                                         for (const node of nodes) {
                                             const currentPath = [...path, node.code];

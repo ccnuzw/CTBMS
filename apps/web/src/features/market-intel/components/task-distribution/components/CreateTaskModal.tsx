@@ -19,7 +19,7 @@ import { useModalAutoFocus } from '@/hooks/useModalAutoFocus';
 interface CreateTaskModalProps {
     open: boolean;
     onCancel: () => void;
-    onCreate: (values: any) => void;
+    onCreate: (values: Record<string, unknown>) => void;
     onGoTemplates?: () => void;
 }
 

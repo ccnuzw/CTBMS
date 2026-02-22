@@ -344,7 +344,7 @@ export class IntelSearchService {
         let negativeCount = 0;
 
         combinedIntels.forEach((intel) => {
-            const analysis: any = intel.aiAnalysis;
+            const analysis = intel.aiAnalysis as { tags?: string[]; entities?: string[]; commodities?: string[]; summary?: string; sentiment?: string; [key: string]: unknown } | null;
             if (analysis?.tags) allTags.push(...analysis.tags);
             if (analysis?.entities) allEntities.push(...analysis.entities);
             if (analysis?.sentiment === 'positive') positiveCount++;
@@ -470,7 +470,7 @@ export class IntelSearchService {
 
         const tagCounts = new Map<string, number>();
         recentTags.forEach((intel) => {
-            const analysis: any = intel.aiAnalysis;
+            const analysis = intel.aiAnalysis as { tags?: string[]; entities?: string[]; commodities?: string[]; summary?: string; sentiment?: string; [key: string]: unknown } | null;
             if (analysis?.tags) {
                 analysis.tags.forEach((tag: string) => {
                     if (tag.toLowerCase().includes(prefixLower)) {
@@ -648,7 +648,7 @@ export class IntelSearchService {
             });
 
             if (sourceIntel) {
-                const analysis: any = sourceIntel.aiAnalysis;
+                const analysis = sourceIntel.aiAnalysis as { tags?: string[]; entities?: string[]; commodities?: string[]; summary?: string; sentiment?: string; [key: string]: unknown } | null;
                 if (analysis?.tags) sourceTags = [...new Set([...sourceTags, ...analysis.tags])];
                 if (analysis?.commodities)
                     sourceCommodities = [...new Set([...sourceCommodities, ...analysis.commodities])];
@@ -732,7 +732,7 @@ export class IntelSearchService {
 
         const scoredIntels = relatedIntels.map((intel) => {
             let score = 0;
-            const analysis: any = intel.aiAnalysis;
+            const analysis = intel.aiAnalysis as { tags?: string[]; entities?: string[]; commodities?: string[]; summary?: string; sentiment?: string; [key: string]: unknown } | null;
             if (analysis?.tags) {
                 score += analysis.tags.filter((t: string) => sourceTags.includes(t)).length * 20;
             }

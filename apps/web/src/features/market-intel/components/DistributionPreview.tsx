@@ -51,7 +51,8 @@ export const DistributionPreview: React.FC<DistributionPreviewProps> = ({
     {
       title: '所属部门/组织',
       key: 'org',
-      render: (_: any, record: any) => (
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- AntD table column render callback
+      render: (_: any, record: Record<string, any>) => (
         <Space direction="vertical" size={0}>
           {record.organizationName && (
             <Tag icon={<BankOutlined />} color="blue">{record.organizationName}</Tag>
@@ -66,13 +67,14 @@ export const DistributionPreview: React.FC<DistributionPreviewProps> = ({
       title: '分配采集点',
       dataIndex: 'collectionPoints',
       key: 'collectionPoints',
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- map points data
       render: (points: any[]) => {
         if (!points || points.length === 0) return <Text type="secondary">-</Text>;
         // 如果数量太多，只显示前几个
         if (points.length > 3) {
           return (
             <div style={{ maxWidth: 300 }}>
-              {points.slice(0, 3).map((p: any) => (
+              {points.slice(0, 3).map((p: Record<string, any>) => (
                 <Tag key={p.id}>{p.name}</Tag>
               ))}
               <Tag>+{points.length - 3} ...</Tag>
@@ -81,7 +83,7 @@ export const DistributionPreview: React.FC<DistributionPreviewProps> = ({
         }
         return (
           <div style={{ maxWidth: 300 }}>
-            {points.map((p: any) => (
+            {points.map((p: Record<string, any>) => (
               <Tag key={p.id}>{p.name}</Tag>
             ))}
           </div>

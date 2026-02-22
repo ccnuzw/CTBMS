@@ -122,7 +122,7 @@ export const PriceReportingDashboard: React.FC = () => {
   const handleNavigateTask = (taskId: string) => {
     // 查找任务，如果是 REPORT 类型则跳转到报告填写页面
     const allTasks = allPendingTasks || [];
-    const task = allTasks.find((t: any) => t.id === taskId);
+    const task = allTasks.find((t) => t.id === taskId);
     if (task && task.type === IntelTaskType.REPORT) {
       // 根据 periodKey 格式推断报告类型，默认 daily
       let reportType = 'daily';
@@ -214,10 +214,10 @@ export const PriceReportingDashboard: React.FC = () => {
             <List
               grid={{ gutter: 16, xs: 1, sm: 2, md: 2, lg: 3 }}
               dataSource={urgentTasks}
-              renderItem={(task: any) => (
+              renderItem={(task) => (
                 <List.Item>
                   <TaskCard
-                    task={task}
+                    task={task as any}
                     onExecute={handleReport}
                     onNavigate={handleNavigateTask}
                   />
@@ -257,10 +257,10 @@ export const PriceReportingDashboard: React.FC = () => {
           <List
             grid={{ gutter: 16, xs: 1, sm: 2, md: 3, lg: 4 }}
             dataSource={todayTasks}
-            renderItem={(task: any) => (
+            renderItem={(task) => (
               <List.Item>
                 <TaskCard
-                  task={task}
+                  task={task as any}
                   onExecute={handleReport}
                   onNavigate={handleNavigateTask}
                 />
@@ -288,10 +288,10 @@ export const PriceReportingDashboard: React.FC = () => {
               <List
                 grid={{ gutter: 16, xs: 1, sm: 2, md: 3, lg: 4 }}
                 dataSource={historicalTasks}
-                renderItem={(task: any) => (
+                renderItem={(task) => (
                   <List.Item>
                     <TaskCard
-                      task={task}
+                      task={task as any}
                       onExecute={handleReport}
                       onNavigate={handleNavigateTask}
                       compact
@@ -451,7 +451,7 @@ export const PriceReportingDashboard: React.FC = () => {
             grid={{ gutter: 16, xs: 1, sm: 2, md: 3, lg: 4 }}
             dataSource={assignedPoints}
             className={styles.pointsList}
-            renderItem={(item: any) => (
+            renderItem={(item) => (
               <List.Item>
                 <Card hoverable className={styles.pointCard}>
                   <div className={styles.pointHeader}>

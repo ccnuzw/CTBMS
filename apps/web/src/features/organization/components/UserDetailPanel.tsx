@@ -232,7 +232,7 @@ export const UserDetailPanel: React.FC<UserDetailPanelProps> = ({
     const orgTreeData = useMemo(() => {
         if (!orgTree) return [];
 
-        const buildNode = (org: any): any => ({
+        const buildNode = (org: Record<string, any>): Record<string, any> => ({
             value: org.id,
             title: (
                 <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
@@ -250,7 +250,7 @@ export const UserDetailPanel: React.FC<UserDetailPanelProps> = ({
     const deptTreeData = useMemo(() => {
         if (!deptTree) return [];
 
-        const buildNode = (dept: any): any => ({
+        const buildNode = (dept: Record<string, any>): Record<string, any> => ({
             value: dept.id,
             title: (
                 <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>

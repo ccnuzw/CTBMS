@@ -68,7 +68,8 @@ type DictionaryDomainWithCount = DictionaryDomainModel & {
     isSystemDomain?: boolean;
 };
 
-const formatMetaText = (meta: unknown) => {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- JSON parsed value
+const formatMetaText = (meta: any) => {
     if (meta === null || meta === undefined) return '';
     try {
         return JSON.stringify(meta, null, 2);
@@ -79,7 +80,7 @@ const formatMetaText = (meta: unknown) => {
 
 const parseMetaInput = (input?: string) => {
     if (!input || !input.trim()) return null;
-    return JSON.parse(input) as unknown;
+    return JSON.parse(input) as any;
 };
 
 export const DataDictionaryPage = () => {
@@ -197,7 +198,8 @@ export const DataDictionaryPage = () => {
             return false;
         }
 
-        let metaValue: unknown | null = null;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- JSON parsed value
+        let metaValue: any | null = null;
         try {
             metaValue = parseMetaInput(values.metaText);
         } catch {
@@ -278,6 +280,7 @@ export const DataDictionaryPage = () => {
             refetchItems();
             refetchDomains();
             message.success('字典项已删除');
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- error object from catch
         } catch (error: any) {
             // 后端返回的引用检查错误
             const errorMsg = error?.message || '删除失败';
@@ -414,7 +417,7 @@ export const DataDictionaryPage = () => {
             ellipsis: true,
             render: (_, record) => {
                 if (!record.meta) return '-';
-                const meta = record.meta as Record<string, unknown>;
+                const meta = record.meta as Record<string, any>;
 
                 // 颜色预览
                 const colorValue = meta.color as string | undefined;

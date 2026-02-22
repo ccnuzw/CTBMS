@@ -228,7 +228,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ filterState }) => 
                                                 outerRadius={70}
                                                 paddingAngle={2}
                                                 dataKey="value"
-                                                label={({ name, percent }: any) => `${name} ${((percent ?? 0) * 100).toFixed(0)}%`}
+                                                label={({ name, percent }: Record<string, any>) => `${name} ${((percent ?? 0) * 100).toFixed(0)}%`}
                                             >
                                                 {sourceData.map((entry, index) => (
                                                     <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />

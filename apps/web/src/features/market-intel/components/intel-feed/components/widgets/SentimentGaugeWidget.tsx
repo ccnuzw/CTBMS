@@ -29,7 +29,7 @@ export const SentimentGaugeWidget: React.FC = () => {
         let neutral = 0;
         let total = 0;
 
-        feedData.forEach((item: any) => {
+        feedData.forEach((item: Record<string, any>) => {
             if (!item?.aiAnalysis) return;
             const sentiment = item.aiAnalysis.sentiment;
             if (sentiment === 'positive') positive++;

@@ -72,7 +72,7 @@ export const OutputSchemaBuilder: React.FC<OutputSchemaBuilderProps> = ({ value,
         currentFields.forEach(field => {
             if (!field.name) return;
 
-            const propSchema: any = { description: field.description };
+            const propSchema: Record<string, unknown> = { description: field.description };
             if (field.type === 'array-string') {
                 propSchema.type = 'array';
                 propSchema.items = { type: 'string' };
@@ -95,7 +95,7 @@ export const OutputSchemaBuilder: React.FC<OutputSchemaBuilderProps> = ({ value,
         onChange?.(JSON.stringify(schema, null, 2));
     };
 
-    const handleFieldChange = (index: number, key: keyof SchemaField, val: any) => {
+    const handleFieldChange = (index: number, key: keyof SchemaField, val: unknown) => {
         const newFields = [...fields];
         newFields[index] = { ...newFields[index], [key]: val };
         setFields(newFields);
@@ -168,7 +168,7 @@ export const OutputSchemaBuilder: React.FC<OutputSchemaBuilderProps> = ({ value,
         {
             title: '',
             width: 40,
-            render: (_: any, __: any, index: number) => (
+            render: (_: unknown, __: unknown, index: number) => (
                 <Button
                     type="text"
                     danger

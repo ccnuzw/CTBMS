@@ -73,7 +73,7 @@ interface RuleEditorProps {
   rule?: ExtractionRule | null;
   onSave?: () => void;
   onCancel?: () => void;
-  autoFocusProps?: any;
+  autoFocusProps?: Record<string, any>;
 }
 
 export const RuleEditor: React.FC<RuleEditorProps> = ({
@@ -149,6 +149,7 @@ export const RuleEditor: React.FC<RuleEditorProps> = ({
     }
   };
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- dynamic form/parameter value
   const updateCondition = (id: string, field: string, value: any) => {
     setConditions(conditions.map((c) => (c.id === id ? { ...c, [field]: value } : c)));
   };
@@ -346,7 +347,7 @@ export const RuleEditor: React.FC<RuleEditorProps> = ({
                     : []
                 }
                 onChange={(values: string[]) => {
-                  const extractFields: any = {};
+                  const extractFields: Record<string, any> = {};
                   values.forEach((v) => {
                     const [side, field] = v.split('_');
                     extractFields[field] = side.toUpperCase();
