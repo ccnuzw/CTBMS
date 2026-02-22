@@ -119,9 +119,29 @@ export const KnowledgeCenterPage: React.FC = () => {
   const total = data?.total || 0;
 
   const statusStats = useMemo(() => {
-    const currentWeekKey = `W${dayjs().isoWeek().toString().padStart(2, '0')}`;
-    const weeklyReady = rows.some((item) => item.type === 'WEEKLY' && item.periodKey && item.periodKey === currentWeekKey);
-    const weeklyReportId = rows.find((item) => item.type === 'WEEKLY' && item.periodKey && item.periodKey === currentWeekKey)?.id;
+    // 获取当周编号，例如 08 
+    const currentWeekIso = dayjs().isoWeek().toString().padStart(2, '0');
+    // 获取当周开头和结尾时间，用于辅助判定
+    const startOfWeek = dayjs().startOf('isoWeek');
+    const endOfWeek = dayjs().endOf('isoWeek');
+
+    const isCurrentWeekReport = (item: any) => {
+      if (item.type !== 'WEEKLY') return false;
+      // 匹配 periodKey 包含 W08 （格式可能为 2026-W08 或前端默认的 W08）
+      if (item.periodKey && item.periodKey.includes(`W${currentWeekIso}`)) {
+        return true;
+      }
+      // 降级判断：如果在 periodKey 缺失或是不规范格式如 2026-02-16_W，则通过 publishAt 验证是否为本周发布的周报
+      if (item.publishAt) {
+        const pubDate = dayjs(item.publishAt);
+        return pubDate.isAfter(startOfWeek) && pubDate.isBefore(endOfWeek);
+      }
+      return false;
+    };
+
+    const weeklyReady = rows.some(isCurrentWeekReport);
+    const weeklyReportId = rows.find(isCurrentWeekReport)?.id;
+
     return { weeklyReady, weeklyReportId };
   }, [rows]);
 

@@ -1,4 +1,4 @@
-import { createBrowserRouter, Navigate } from 'react-router-dom';
+import { createBrowserRouter, Navigate, useParams, useSearchParams } from 'react-router-dom';
 import { MainLayout } from '../layouts/MainLayout';
 import { UserList } from '../features/users/components/UserList';
 import { RoleList } from '../features/users/components/RoleList';
@@ -33,7 +33,6 @@ import {
   KnowledgeDetailPage,
   ComprehensiveDashboard,
   LegacyKnowledgeRedirectPage,
-  ReportEntryForm,
   ReviewWorkbench,
 } from '../features/market-intel';
 import { ExtractionConfigPage } from '../features/extraction-config';
@@ -61,6 +60,21 @@ import { TemplateMarketPage } from '../features/template-market';
 import { FuturesSimPage } from '../features/futures-sim';
 import { UserConfigBindingPage } from '../features/user-config-binding';
 import { ReplayEvaluationPage } from '../features/replay-evaluation';
+
+// Backward-compatible redirect: /workstation/report/:type -> unified editor
+const WorkstationReportRedirect = () => {
+  const { type } = useParams<{ type: string }>();
+  const [searchParams] = useSearchParams();
+  const knowledgeType = (type || 'daily').toUpperCase();
+  const taskId = searchParams.get('taskId');
+  const reportId = searchParams.get('reportId');
+
+  let target = `/intel/knowledge/reports/create?knowledgeType=${knowledgeType}`;
+  if (taskId) target += `&taskId=${taskId}`;
+  if (reportId) target += `&reportId=${reportId}`;
+
+  return <Navigate to={target} replace />;
+};
 
 export const router = createBrowserRouter([
   {
@@ -264,7 +278,10 @@ export const router = createBrowserRouter([
           { path: 'bulk', element: <BatchPriceEntryTable /> },
           { path: 'submit/:pointId', element: <PriceEntryForm /> },
           { path: 'review', element: <Navigate to="/review/price" replace /> },
-          { path: 'report/:type', element: <ReportEntryForm /> },
+          {
+            path: 'report/:type',
+            element: <WorkstationReportRedirect />,
+          },
         ],
       },
       // 价格填报模块路由（兼容旧路径，重定向到 /workstation）

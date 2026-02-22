@@ -34,6 +34,6 @@ export * from './DocumentStatsDashboard';
 export { AllocationMatrix } from './AllocationMatrix';
 export { CollectionPointAllocationCenter } from './CollectionPointAllocationCenter';
 export { DistributionPreview } from './DistributionPreview';
-export { ReportEntryForm } from './ReportEntryForm';
+// ReportEntryForm removed - merged into ResearchReportCreatePage
 export { ReviewWorkbench } from './ReviewWorkbench';
 

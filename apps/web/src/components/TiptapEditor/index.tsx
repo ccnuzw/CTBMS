@@ -64,7 +64,9 @@ function safeMarkdownToEditorHtml(content: string): string {
     if (content.trim().startsWith('<')) {
         html = content;
     } else {
-        html = marked.parse(content, { gfm: true, breaks: true }) as string;
+        // Fix broken markdown tables separated by extra blank lines before parsing
+        const sanitizedContent = content.replace(/(\|\s*)\n[\s\n]+(\|)/g, '$1\n$2');
+        html = marked.parse(sanitizedContent, { gfm: true, breaks: true }) as string;
     }
     // 表格特殊处理：移除 tiptap 原生 table 不认识的 tbody / thead，这极大可能导致表格被无视
     return html.replace(/<\/?t(head|body|foot)[^>]*>/gi, '');

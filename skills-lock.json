@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "skills": {
+    "agent-canvas": {
+      "source": "WHQ25/agent-canvas",
+      "sourceType": "github",
+      "computedHash": "30034b61442c30a475ac10127564d54f56c4d28af1ce0bad36b446c0b0ecd624"
+    }
+  }
+}

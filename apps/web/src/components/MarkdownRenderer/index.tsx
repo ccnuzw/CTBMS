@@ -32,8 +32,11 @@ export const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({ content, cla
     } as React.CSSProperties;
 
     // Ensure content is a string and normalize weird characters (NBSP, etc) that break Markdown parsing
+    // Additionally, fix broken markdown tables separated by extra blank lines
     const safeContent = typeof content === 'string'
-        ? content.replace(/[\u00A0\u2000-\u200B\u3000]/g, ' ')
+        ? content
+            .replace(/[\u00A0\u2000-\u200B\u3000]/g, ' ')
+            .replace(/(\|\s*)\n[\s\n]+(\|)/g, '$1\n$2')
         : String(content || '');
 
     return (

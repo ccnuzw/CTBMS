@@ -40,6 +40,7 @@ interface DocumentUploaderProps {
   onViewDetail?: (intelId: string) => void;
   onCancel?: () => void;
   isAnalyzing?: boolean;
+  skipKnowledgeSync?: boolean;
 }
 
 export interface UploadResult {
@@ -92,6 +93,7 @@ export const DocumentUploader: React.FC<DocumentUploaderProps> = ({
   onViewDetail,
   onCancel,
   isAnalyzing = false,
+  skipKnowledgeSync = false,
 }) => {
   const { token } = theme.useToken();
   const { message } = App.useApp();
@@ -111,6 +113,7 @@ export const DocumentUploader: React.FC<DocumentUploaderProps> = ({
     if (sourceType) formData.append('sourceType', sourceType);
     if (contentType) formData.append('contentType', contentType);
     formData.append('location', location || '文档上传');
+    if (skipKnowledgeSync) formData.append('skipKnowledgeSync', 'true');
 
     setUploading(true);
 

@@ -1,4 +1,14 @@
-import { ArrowLeftOutlined, BarChartOutlined, ReloadOutlined } from '@ant-design/icons';
+import {
+  ArrowLeftOutlined,
+  BarChartOutlined,
+  ReloadOutlined,
+  FilePdfOutlined,
+  FileWordOutlined,
+  FileExcelOutlined,
+  PictureOutlined,
+  FileTextOutlined,
+  DownloadOutlined,
+} from '@ant-design/icons';
 import { MarkdownRenderer } from '@/components/MarkdownRenderer';
 import { PageContainer } from '@ant-design/pro-components';
 import {
@@ -50,6 +60,27 @@ const RELATION_LABEL_MAP = KNOWLEDGE_RELATION_LABELS;
 const SENTIMENT_LABEL_MAP = KNOWLEDGE_SENTIMENT_LABELS;
 
 const formatTagLabel = formatKnowledgeTagLabel;
+
+const MIME_TYPE_ICONS: Record<string, React.ReactNode> = {
+  'application/pdf': <FilePdfOutlined style={{ color: '#ff4d4f' }} />,
+  'application/msword': <FileWordOutlined style={{ color: '#1890ff' }} />,
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document': (
+    <FileWordOutlined style={{ color: '#1890ff' }} />
+  ),
+  'application/vnd.ms-excel': <FileExcelOutlined style={{ color: '#52c41a' }} />,
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': (
+    <FileExcelOutlined style={{ color: '#52c41a' }} />
+  ),
+  'image/jpeg': <PictureOutlined style={{ color: '#722ed1' }} />,
+  'image/png': <PictureOutlined style={{ color: '#722ed1' }} />,
+  'text/plain': <FileTextOutlined />,
+};
+
+const formatFileSize = (bytes: number): string => {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
+};
 
 type WeeklySections = {
   market?: string[];
@@ -190,8 +221,8 @@ export const KnowledgeDetailPage: React.FC = () => {
             )}
 
             <Card title="正文">
-              {(detail.contentPlain || detail.contentRich) ? (
-                <MarkdownRenderer content={detail.contentPlain || detail.contentRich || ''} />
+              {(detail.contentRich || detail.contentPlain) ? (
+                <MarkdownRenderer content={detail.contentRich || detail.contentPlain || ''} />
               ) : (
                 <Paragraph type="secondary" style={{ marginBottom: 0 }}>-</Paragraph>
               )}
@@ -261,10 +292,46 @@ export const KnowledgeDetailPage: React.FC = () => {
                       ? SOURCE_LABEL_MAP[detail.sourceType] || detail.sourceType
                       : '-')}
                 </Descriptions.Item>
-                <Descriptions.Item label="附件数">
-                  {detail.attachments?.length || 0}
-                </Descriptions.Item>
               </Descriptions>
+
+              {detail.attachments && detail.attachments.length > 0 && (
+                <div style={{ marginTop: 16 }}>
+                  <Text type="secondary" style={{ display: 'block', marginBottom: 8 }}>附件列表</Text>
+                  <Space direction="vertical" style={{ width: '100%' }}>
+                    {detail.attachments.map((att: any) => (
+                      <Card
+                        key={att.id}
+                        size="small"
+                        style={{ background: '#fafafa' }}
+                        bodyStyle={{ padding: 12 }}
+                      >
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0, flex: 1 }}>
+                            <div style={{ fontSize: 24, flexShrink: 0 }}>
+                              {MIME_TYPE_ICONS[att.mimeType || ''] || <FileTextOutlined />}
+                            </div>
+                            <div style={{ minWidth: 0, flex: 1 }}>
+                              <Text strong ellipsis style={{ display: 'block', fontSize: 13 }}>
+                                {att.filename}
+                              </Text>
+                              <Text type="secondary" style={{ fontSize: 11 }}>
+                                {formatFileSize(att.fileSize || 0)}
+                              </Text>
+                            </div>
+                          </div>
+                          <Button
+                            type="text"
+                            icon={<DownloadOutlined />}
+                            onClick={() => {
+                              window.open(`/api/knowledge/attachments/${att.id}/download`, '_blank');
+                            }}
+                          />
+                        </div>
+                      </Card>
+                    ))}
+                  </Space>
+                </div>
+              )}
             </Card>
 
             {detail.type === 'WEEKLY' && (

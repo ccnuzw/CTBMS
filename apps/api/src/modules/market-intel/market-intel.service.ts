@@ -196,7 +196,7 @@ export class MarketIntelService {
    * 创建商情情报
    * 支持从 C 类日报自动提取 A 类价格数据
    */
-  async create(dto: CreateMarketIntelDto, authorId: string) {
+  async create(dto: CreateMarketIntelDto, authorId: string, skipKnowledgeSync = false) {
     // 计算总分
     const totalScore = Math.round(
       (dto.completenessScore || 0) * 0.4 +
@@ -236,10 +236,12 @@ export class MarketIntelService {
       await this.updateAuthorStats(authorId);
 
       // Knowledge V2 双写（失败不影响主流程）
-      try {
-        await this.knowledgeService.syncFromMarketIntel(intel.id);
-      } catch (syncError) {
-        console.warn('[MarketIntelService.create] Knowledge V2 sync failed:', syncError);
+      if (!skipKnowledgeSync) {
+        try {
+          await this.knowledgeService.syncFromMarketIntel(intel.id);
+        } catch (syncError) {
+          console.warn('[MarketIntelService.create] Knowledge V2 sync failed:', syncError);
+        }
       }
 
       return intel;

@@ -732,14 +732,15 @@ export class MarketIntelController {
   )
   async uploadDocument(
     @UploadedFile() file: Express.Multer.File,
-    @Body() body: { sourceType?: string; contentType?: string; location?: string },
+    @Body() body: { sourceType?: string; contentType?: string; location?: string; skipKnowledgeSync?: string | boolean },
   ) {
     if (!file) {
       throw new BadRequestException('No file uploaded');
     }
 
-    const { sourceType, contentType, location } = body;
+    const { sourceType, contentType, location, skipKnowledgeSync } = body;
     const authorId = 'system-user-placeholder';
+    const skipSync = skipKnowledgeSync === 'true' || skipKnowledgeSync === true;
 
     // 0. Handle filename encoding (Fix for mojibake)
     // Multer often parses UTF-8 filenames as ISO-8859-1 (latin1)
@@ -790,6 +791,7 @@ export class MarketIntelController {
         isFlagged: false,
       },
       authorId,
+      skipSync,
     );
 
     // 4. Save file attachment

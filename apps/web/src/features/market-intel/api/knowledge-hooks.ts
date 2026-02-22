@@ -495,6 +495,8 @@ export interface CreateReportPayload {
   prediction?: unknown;
   dataPoints?: unknown;
   triggerAnalysis?: boolean;
+  intelId?: string;
+  attachmentIds?: string[];
 }
 
 export interface UpdateReportPayload {

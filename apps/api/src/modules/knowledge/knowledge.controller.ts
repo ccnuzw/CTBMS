@@ -12,6 +12,7 @@ import {
   Post,
   Query,
   Res,
+  NotFoundException,
 } from '@nestjs/common';
 import { Response } from 'express';
 import {
@@ -293,8 +294,9 @@ export class KnowledgeController {
     summary?: string;
     keyPoints?: unknown;
     prediction?: unknown;
-    dataPoints?: unknown;
     triggerAnalysis?: boolean;
+    intelId?: string;
+    attachmentIds?: string[];
   }) {
     if (!body.title || !body.contentPlain || !body.authorId) {
       throw new BadRequestException('title, contentPlain, authorId are required');
@@ -361,6 +363,8 @@ export class KnowledgeController {
       keyPoints?: unknown;
       prediction?: unknown;
       dataPoints?: unknown;
+      intelId?: string;
+      attachmentIds?: string[];
     },
   ) {
     return this.knowledgeService.updateResearchReport(id, {
@@ -432,5 +436,30 @@ export class KnowledgeController {
       throw new BadRequestException('action and reviewerId are required');
     }
     return this.knowledgeService.reviewReport(id, { action, reviewerId, rejectReason });
+  }
+
+  @Get('attachments/:id/download')
+  async downloadAttachment(
+    @Param('id') id: string,
+    @Query('inline') inline: string,
+    @Res() res: Response,
+  ) {
+    const attachment = await this.knowledgeService.findAttachment(id);
+    if (!attachment) {
+      throw new NotFoundException(`Attachment ID ${id} not found`);
+    }
+
+    const disposition = inline === 'true' ? 'inline' : 'attachment';
+
+    if (inline === 'true') {
+      res.setHeader('Content-Type', attachment.mimeType);
+      res.setHeader(
+        'Content-Disposition',
+        `${disposition}; filename="${encodeURIComponent(attachment.filename)}"`,
+      );
+      return res.sendFile(attachment.storagePath);
+    }
+
+    res.download(attachment.storagePath, attachment.filename);
   }
 }

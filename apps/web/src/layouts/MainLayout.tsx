@@ -345,8 +345,12 @@ export const MainLayout: React.FC = () => {
             label: '配置中心',
             children: [
               {
+                key: '/system/config/mapping-rules',
+                label: '通用映射规则',
+              },
+              {
                 key: '/system/config/rules',
-                label: '业务规则',
+                label: '业务逻辑规则',
               },
               {
                 key: '/system/config/ai-models',

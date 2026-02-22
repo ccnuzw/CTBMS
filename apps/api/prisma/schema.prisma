@@ -899,6 +899,11 @@ model KnowledgeItem {
   relationsTo   KnowledgeRelation[]   @relation("KnowledgeRelationTo")
   tagMaps       KnowledgeTagMap[]
 
+  // B类子表反向关联（日报提取数据）
+  priceData      PriceData[]
+  marketEvents   MarketEvent[]
+  marketInsights MarketInsight[]
+
   @@index([type, publishAt])
   @@index([periodType, periodKey])
   @@index([status, publishAt])
@@ -1148,6 +1153,10 @@ model PriceData {
   // ===== 关联 =====
   intelId  String?
   intel    MarketIntel? @relation(fields: [intelId], references: [id])
+
+  // ===== 知识库关联（日报提取数据） =====
+  knowledgeId String?
+  knowledge   KnowledgeItem? @relation(fields: [knowledgeId], references: [id])
   authorId String
 
   // ===== [NEW] 填报来源追踪 =====
@@ -1186,6 +1195,7 @@ model PriceData {
   @@index([submissionId]) // 按填报批次查询
   @@index([collectionPointId, commodity, effectiveDate, reviewStatus, inputMethod, subType], map: "price_data_point_analytics_idx")
   @@index([regionCode, commodity, effectiveDate, reviewStatus, inputMethod, subType], map: "price_data_region_analytics_idx")
+  @@index([knowledgeId]) // 按知识库条目查询
 }
 
 // =============================================
@@ -1727,8 +1737,12 @@ model MarketEvent {
   id String @id @default(uuid())
 
   // 来源关联
-  intelId String
-  intel   MarketIntel @relation(fields: [intelId], references: [id], onDelete: Cascade)
+  intelId String?
+  intel   MarketIntel? @relation(fields: [intelId], references: [id], onDelete: Cascade)
+
+  // 知识库关联（日报提取数据）
+  knowledgeId String?
+  knowledge   KnowledgeItem? @relation(fields: [knowledgeId], references: [id])
 
   // 原文追溯
   sourceText   String @db.Text // 提取的原文片段
@@ -1765,6 +1779,7 @@ model MarketEvent {
   @@index([intelId])
   // @@index([enterpriseId])
   @@index([collectionPointId])
+  @@index([knowledgeId]) // 按知识库条目查询
 }
 
 // =============================================
@@ -1775,8 +1790,12 @@ model MarketInsight {
   id String @id @default(uuid())
 
   // 来源关联
-  intelId String
-  intel   MarketIntel @relation(fields: [intelId], references: [id], onDelete: Cascade)
+  intelId String?
+  intel   MarketIntel? @relation(fields: [intelId], references: [id], onDelete: Cascade)
+
+  // 知识库关联（日报提取数据）
+  knowledgeId String?
+  knowledge   KnowledgeItem? @relation(fields: [knowledgeId], references: [id])
 
   // 原文追溯
   sourceText   String  @db.Text // 提取的原文片段
@@ -1807,6 +1826,7 @@ model MarketInsight {
   @@index([insightTypeId])
   @@index([intelId])
   @@index([commodity])
+  @@index([knowledgeId]) // 按知识库条目查询
 }
 
 // =============================================

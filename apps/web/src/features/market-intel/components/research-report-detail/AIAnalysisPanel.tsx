@@ -128,7 +128,13 @@ export const AIAnalysisPanel: React.FC<AIAnalysisPanelProps> = ({ report, mode =
   // Check types first. ResearchReportResponse (from types packages) defines:
   // keyPoints: any; prediction: any; dataPoints: any;
 
-  const keyPoints = (report.analysis?.keyPoints as any[]) || [];
+  let keyPoints: any[] = [];
+  if (Array.isArray(report.analysis?.keyPoints)) {
+    keyPoints = report.analysis.keyPoints;
+  } else if (report.analysis?.keyPoints && typeof report.analysis.keyPoints === 'object') {
+    const kpObj = report.analysis.keyPoints as Record<string, any>;
+    keyPoints = Array.isArray(kpObj.aiKeyPoints) ? kpObj.aiKeyPoints : [];
+  }
   const prediction = report.analysis?.prediction as any;
   const dataPoints = (report.analysis?.dataPoints as any[]) || [];
 
