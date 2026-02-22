@@ -169,9 +169,9 @@ export function useParameterSetViewModel() {
         paramType?: string;
         scopeLevel?: ParameterScopeLevel;
         scopeValue?: string;
-         
+
         value?: any;
-         
+
         defaultValue?: any;
         minValueText?: string;
         maxValueText?: string;
@@ -184,13 +184,15 @@ export function useParameterSetViewModel() {
     const setTableContainerRef = useRef<HTMLDivElement | null>(null);
 
     useEffect(() => {
-        const next = new URLSearchParams();
+        const next = new URLSearchParams(searchParams);
         if (keyword) next.set('keyword', keyword);
+        else next.delete('keyword');
         if (isActiveFilter !== undefined) next.set('isActive', String(isActiveFilter));
+        else next.delete('isActive');
         next.set('page', String(page));
         next.set('pageSize', String(pageSize));
         setSearchParams(next, { replace: true });
-    }, [isActiveFilter, keyword, page, pageSize, setSearchParams]);
+    }, [isActiveFilter, keyword, page, pageSize, searchParams, setSearchParams]);
 
     useEffect(() => {
         if (!itemVisible) {

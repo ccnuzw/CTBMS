@@ -67,13 +67,15 @@ export const AgentPromptTemplatePage: React.FC = () => {
 
     // Sync state to URL
     useEffect(() => {
-        const nextParams = new URLSearchParams();
+        const nextParams = new URLSearchParams(urlSearchParams);
         if (searchParams.keyword) nextParams.set('keyword', searchParams.keyword);
+        else nextParams.delete('keyword');
         if (searchParams.isActive !== undefined) nextParams.set('isActive', String(searchParams.isActive));
+        else nextParams.delete('isActive');
         nextParams.set('page', String(searchParams.page));
         nextParams.set('pageSize', String(searchParams.pageSize));
         setUrlSearchParams(nextParams, { replace: true });
-    }, [searchParams, setUrlSearchParams]);
+    }, [searchParams, urlSearchParams, setUrlSearchParams]);
 
     const { data, isLoading, refetch } = useAgentPromptTemplates({ ...searchParams, includePublic: true });
 

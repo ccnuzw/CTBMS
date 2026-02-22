@@ -206,17 +206,21 @@ export const DecisionRulePackPage: React.FC = () => {
     }, [selectedPack, updatePackForm]);
 
     useEffect(() => {
-        const next = new URLSearchParams();
+        const next = new URLSearchParams(searchParams);
         if (keyword) {
             next.set('keyword', keyword);
+        } else {
+            next.delete('keyword');
         }
         if (isActiveFilter !== undefined) {
             next.set('isActive', String(isActiveFilter));
+        } else {
+            next.delete('isActive');
         }
         next.set('page', String(page));
         next.set('pageSize', String(pageSize));
         setSearchParams(next, { replace: true });
-    }, [isActiveFilter, keyword, page, pageSize, setSearchParams]);
+    }, [isActiveFilter, keyword, page, pageSize, searchParams, setSearchParams]);
 
     const normalizedKeyword = keyword?.trim().toLowerCase() || '';
     const highlightedPackId = useMemo(() => {

@@ -200,17 +200,21 @@ export const AgentProfilePage: React.FC = () => {
 
 
   React.useEffect(() => {
-    const next = new URLSearchParams();
+    const next = new URLSearchParams(searchParams);
     if (keyword) {
       next.set('keyword', keyword);
+    } else {
+      next.delete('keyword');
     }
     if (isActiveFilter !== undefined) {
       next.set('isActive', String(isActiveFilter));
+    } else {
+      next.delete('isActive');
     }
     next.set('page', String(page));
     next.set('pageSize', String(pageSize));
     setSearchParams(next, { replace: true });
-  }, [isActiveFilter, keyword, page, pageSize, setSearchParams]);
+  }, [isActiveFilter, keyword, page, pageSize, searchParams, setSearchParams]);
 
   React.useEffect(() => {
     if (!highlightedAgentId || !agentTableContainerRef.current) {
