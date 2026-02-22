@@ -1,4 +1,15 @@
-import { ArrowLeftOutlined, BarChartOutlined, ReloadOutlined } from '@ant-design/icons';
+import {
+  ArrowLeftOutlined,
+  BarChartOutlined,
+  ReloadOutlined,
+  FilePdfOutlined,
+  FileWordOutlined,
+  FileExcelOutlined,
+  PictureOutlined,
+  FileTextOutlined,
+  DownloadOutlined,
+} from '@ant-design/icons';
+import { MarkdownRenderer } from '@/components/MarkdownRenderer';
 import { PageContainer } from '@ant-design/pro-components';
 import {
   Breadcrumb,
@@ -19,7 +30,6 @@ import {
 import { useMemo } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import {
-  useGenerateWeeklyRollup,
   useKnowledgeItem,
   useKnowledgeRelations,
   useReanalyzeKnowledge,
@@ -34,7 +44,6 @@ import {
   KNOWLEDGE_TYPE_LABELS,
 } from '../constants/knowledge-labels';
 import { KnowledgeRelationGraph } from './KnowledgeRelationGraph';
-import { KnowledgeTopActionsBar } from './knowledge/KnowledgeTopActionsBar';
 
 const { Paragraph, Text, Title } = Typography;
 
@@ -51,6 +60,27 @@ const RELATION_LABEL_MAP = KNOWLEDGE_RELATION_LABELS;
 const SENTIMENT_LABEL_MAP = KNOWLEDGE_SENTIMENT_LABELS;
 
 const formatTagLabel = formatKnowledgeTagLabel;
+
+const MIME_TYPE_ICONS: Record<string, React.ReactNode> = {
+  'application/pdf': <FilePdfOutlined style={{ color: '#ff4d4f' }} />,
+  'application/msword': <FileWordOutlined style={{ color: '#1890ff' }} />,
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document': (
+    <FileWordOutlined style={{ color: '#1890ff' }} />
+  ),
+  'application/vnd.ms-excel': <FileExcelOutlined style={{ color: '#52c41a' }} />,
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': (
+    <FileExcelOutlined style={{ color: '#52c41a' }} />
+  ),
+  'image/jpeg': <PictureOutlined style={{ color: '#722ed1' }} />,
+  'image/png': <PictureOutlined style={{ color: '#722ed1' }} />,
+  'text/plain': <FileTextOutlined />,
+};
+
+const formatFileSize = (bytes: number): string => {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
+};
 
 type WeeklySections = {
   market?: string[];
@@ -74,7 +104,6 @@ export const KnowledgeDetailPage: React.FC = () => {
   const { data: detail, isLoading } = useKnowledgeItem(id);
   const { data: relations } = useKnowledgeRelations(id);
   const reanalyzeMutation = useReanalyzeKnowledge();
-  const weeklyRollupMutation = useGenerateWeeklyRollup();
 
   const weeklySections: WeeklySections = useMemo(() => {
     const keyPoints = detail?.analysis?.keyPoints as any;
@@ -93,18 +122,14 @@ export const KnowledgeDetailPage: React.FC = () => {
   const returnTo = (location.state as { returnTo?: string } | null)?.returnTo;
   const backTo =
     returnTo ||
-    (fromState === 'workbench'
-      ? '/intel/knowledge?tab=workbench'
-      : fromState === 'dashboard'
-        ? '/intel/knowledge/dashboard'
-        : '/intel/knowledge?tab=library');
+    (fromState === 'dashboard'
+      ? '/intel/knowledge/dashboard'
+      : '/intel/knowledge?tab=library');
 
   const navPath =
-    fromState === 'workbench'
-      ? ['工作台', '知识详情']
-      : fromState === 'dashboard'
-        ? ['分析看板', '知识详情']
-        : ['知识库', '知识详情'];
+    fromState === 'dashboard'
+      ? ['综合看板', '知识详情']
+      : ['知识库', '知识详情'];
 
   if (isLoading) {
     return (
@@ -157,18 +182,14 @@ export const KnowledgeDetailPage: React.FC = () => {
       }
       extra={[
         <Button key="back" icon={<ArrowLeftOutlined />} onClick={() => navigate(backTo)}>
-          {backTo.includes('workbench')
-            ? '返回工作台'
-            : backTo.includes('/dashboard')
-              ? '返回看板'
-              : '返回列表'}
+          {backTo.includes('/dashboard') ? '返回看板' : '返回列表'}
         </Button>,
         <Button
           key="dashboard"
           icon={<BarChartOutlined />}
           onClick={() => navigate('/intel/knowledge/dashboard')}
         >
-          分析看板
+          综合看板
         </Button>,
         <Button
           key="reanalyze"
@@ -181,35 +202,6 @@ export const KnowledgeDetailPage: React.FC = () => {
         </Button>,
       ]}
     >
-      <KnowledgeTopActionsBar
-        contextBackLabel={
-          backTo.includes('workbench')
-            ? '返回工作台'
-            : backTo.includes('/dashboard')
-              ? '返回看板'
-              : undefined
-        }
-        onContextBack={
-          backTo.includes('workbench') || backTo.includes('/dashboard')
-            ? () => navigate(backTo)
-            : undefined
-        }
-        onBackLibrary={() => navigate('/intel/knowledge?tab=library')}
-        onQuickEntry={() => navigate('/intel/entry')}
-        onOpenDashboard={() => navigate('/intel/knowledge/dashboard?from=library')}
-        onCreateReport={() => navigate('/intel/knowledge/reports/create')}
-        generatingWeekly={weeklyRollupMutation.isPending}
-        onGenerateWeekly={async () => {
-          try {
-            await weeklyRollupMutation.mutateAsync({ triggerAnalysis: true });
-            message.success('已生成本周周报');
-          } catch (error) {
-            message.error('周报生成失败，请稍后重试');
-            console.error(error);
-          }
-        }}
-      />
-
       <Row gutter={[16, 16]}>
         <Col xs={24} lg={16}>
           <Space direction="vertical" style={{ width: '100%' }} size={16}>
@@ -229,9 +221,11 @@ export const KnowledgeDetailPage: React.FC = () => {
             )}
 
             <Card title="正文">
-              <Paragraph style={{ whiteSpace: 'pre-wrap', marginBottom: 0 }}>
-                {detail.contentPlain || detail.contentRich || '-'}
-              </Paragraph>
+              {(detail.contentRich || detail.contentPlain) ? (
+                <MarkdownRenderer content={detail.contentRich || detail.contentPlain || ''} />
+              ) : (
+                <Paragraph type="secondary" style={{ marginBottom: 0 }}>-</Paragraph>
+              )}
             </Card>
 
             <KnowledgeRelationGraph
@@ -298,10 +292,46 @@ export const KnowledgeDetailPage: React.FC = () => {
                       ? SOURCE_LABEL_MAP[detail.sourceType] || detail.sourceType
                       : '-')}
                 </Descriptions.Item>
-                <Descriptions.Item label="附件数">
-                  {detail.attachments?.length || 0}
-                </Descriptions.Item>
               </Descriptions>
+
+              {detail.attachments && detail.attachments.length > 0 && (
+                <div style={{ marginTop: 16 }}>
+                  <Text type="secondary" style={{ display: 'block', marginBottom: 8 }}>附件列表</Text>
+                  <Space direction="vertical" style={{ width: '100%' }}>
+                    {detail.attachments.map((att: any) => (
+                      <Card
+                        key={att.id}
+                        size="small"
+                        style={{ background: '#fafafa' }}
+                        bodyStyle={{ padding: 12 }}
+                      >
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0, flex: 1 }}>
+                            <div style={{ fontSize: 24, flexShrink: 0 }}>
+                              {MIME_TYPE_ICONS[att.mimeType || ''] || <FileTextOutlined />}
+                            </div>
+                            <div style={{ minWidth: 0, flex: 1 }}>
+                              <Text strong ellipsis style={{ display: 'block', fontSize: 13 }}>
+                                {att.filename}
+                              </Text>
+                              <Text type="secondary" style={{ fontSize: 11 }}>
+                                {formatFileSize(att.fileSize || 0)}
+                              </Text>
+                            </div>
+                          </div>
+                          <Button
+                            type="text"
+                            icon={<DownloadOutlined />}
+                            onClick={() => {
+                              window.open(`/api/knowledge/attachments/${att.id}/download`, '_blank');
+                            }}
+                          />
+                        </div>
+                      </Card>
+                    ))}
+                  </Space>
+                </div>
+              )}
             </Card>
 
             {detail.type === 'WEEKLY' && (

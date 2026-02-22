@@ -129,7 +129,7 @@ export const PriceReportingDashboard: React.FC = () => {
       const pk = task.periodKey || '';
       if (pk.includes('_W')) reportType = 'weekly';
       else if (/^\d{4}-\d{2}$/.test(pk)) reportType = 'monthly';
-      navigate(`/workstation/report/${reportType}?taskId=${taskId}`);
+      navigate(`/intel/knowledge/reports/create?knowledgeType=${reportType.toUpperCase()}&taskId=${taskId}`);
       return;
     }
     navigate(`/market-intel/tasks/${taskId}`);
@@ -321,21 +321,21 @@ export const PriceReportingDashboard: React.FC = () => {
           <Button
             type="primary"
             ghost
-            onClick={() => navigate('/workstation/report/daily')}
+            onClick={() => navigate('/intel/knowledge/reports/create?knowledgeType=DAILY')}
           >
             📋 撰写日报
           </Button>
           <Button
             type="primary"
             ghost
-            onClick={() => navigate('/workstation/report/weekly')}
+            onClick={() => navigate('/intel/knowledge/reports/create?knowledgeType=WEEKLY')}
           >
             📊 撰写周报
           </Button>
           <Button
             type="primary"
             ghost
-            onClick={() => navigate('/workstation/report/monthly')}
+            onClick={() => navigate('/intel/knowledge/reports/create?knowledgeType=MONTHLY')}
           >
             📑 撰写月报
           </Button>
@@ -366,7 +366,7 @@ export const PriceReportingDashboard: React.FC = () => {
                     查看
                   </Button>
                 ) : (
-                  <Button type="link" size="small" onClick={() => navigate(`/workstation/report/${item.periodType}?reportId=${item.id}`)}>
+                  <Button type="link" size="small" onClick={() => navigate(`/intel/knowledge/reports/create?knowledgeType=${(item.type || item.periodType || 'DAILY').toUpperCase()}&reportId=${item.id}`)}>
                     编辑
                   </Button>
                 ),

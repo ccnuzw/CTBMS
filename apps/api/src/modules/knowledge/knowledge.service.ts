@@ -7,11 +7,18 @@ import {
   KnowledgeStatus,
   ReviewStatus,
   KnowledgeType,
+  PriceSourceType,
+  PriceSubType,
+  GeoLevel,
   Prisma,
 } from '@prisma/client';
-import { ContentType } from '@packages/types';
+import { ContentType, AIAnalysisResult } from '@packages/types';
 import { AIService } from '../ai/ai.service';
 import { PrismaService } from '../../prisma';
+import { RagPipelineService } from './rag/rag-pipeline.service';
+import { IntelTaskService } from '../intel-task/intel-task.service';
+import { DeepAnalysisService } from './services/deep-analysis.service';
+import { forwardRef, Inject, Logger } from '@nestjs/common';
 
 type KnowledgeListQuery = {
   type?: KnowledgeType;
@@ -65,9 +72,14 @@ type RelationQueryOptions = {
 
 @Injectable()
 export class KnowledgeService {
+  private readonly logger = new Logger(KnowledgeService.name);
+
   constructor(
     private prisma: PrismaService,
     private aiService: AIService,
+    private ragPipelineService: RagPipelineService,
+    @Inject(forwardRef(() => IntelTaskService)) private intelTaskService: IntelTaskService,
+    private deepAnalysisService: DeepAnalysisService,
   ) { }
 
   async findAll(query: KnowledgeListQuery) {
@@ -149,7 +161,7 @@ export class KnowledgeService {
   }
 
   async create(input: CreateKnowledgeInput) {
-    return this.prisma.$transaction(async (tx) => {
+    const result = await this.prisma.$transaction(async (tx) => {
       const item = await tx.knowledgeItem.create({
         data: {
           type: input.type,
@@ -179,8 +191,12 @@ export class KnowledgeService {
         });
       }
 
-      return this.findOne(item.id);
+      return item;
     });
+
+    const fullItem = await this.findOne(result.id);
+    await this.ragPipelineService.ingest(fullItem.id, fullItem.contentPlain || fullItem.contentRich || '');
+    return fullItem;
   }
 
   /**
@@ -219,7 +235,7 @@ export class KnowledgeService {
       periodKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
     }
 
-    return this.prisma.$transaction(async (tx) => {
+    const result = await this.prisma.$transaction(async (tx) => {
       // 1. 创建 KnowledgeItem
       const item = await tx.knowledgeItem.create({
         data: {
@@ -255,6 +271,34 @@ export class KnowledgeService {
         }
       }
 
+      let weeklyKeyPoints: Prisma.InputJsonValue | undefined;
+      if (input.type === 'WEEKLY') {
+        const parsed = this.parseWeeklyContent(input.contentRich || input.contentPlain || '');
+        weeklyKeyPoints = {
+          market: parsed.market,
+          events: parsed.events,
+          risks: parsed.risks,
+          outlook: parsed.outlook,
+        } as Prisma.InputJsonValue;
+
+        await tx.knowledgeAnalysis.upsert({
+          where: { knowledgeId: item.id },
+          create: {
+            knowledgeId: item.id,
+            reportType: 'MARKET',
+            reportPeriod: 'WEEKLY',
+            keyPoints: weeklyKeyPoints,
+            tags: input.commodities || [],
+          },
+          update: {
+            reportType: 'MARKET',
+            reportPeriod: 'WEEKLY',
+            keyPoints: weeklyKeyPoints,
+            tags: input.commodities || [],
+          },
+        });
+      }
+
       // 3. 触发 AI 分析（异步，不阻塞返回）
       if (input.triggerAnalysis !== false) {
         this.reanalyze(item.id, true).catch((err) => {
@@ -262,8 +306,12 @@ export class KnowledgeService {
         });
       }
 
-      return this.findOne(item.id);
+      return item;
     });
+
+    const fullItem = await this.findOne(result.id);
+    await this.ragPipelineService.ingest(fullItem.id, fullItem.contentPlain || fullItem.contentRich || '');
+    return fullItem;
   }
 
   async update(id: string, input: UpdateKnowledgeInput) {
@@ -306,7 +354,11 @@ export class KnowledgeService {
       }
     });
 
-    return this.findOne(id);
+    const updated = await this.findOne(id);
+    if (input.contentPlain || input.contentRich) {
+      await this.ragPipelineService.ingest(updated.id, updated.contentPlain || updated.contentRich || '');
+    }
+    return updated;
   }
 
   async updateReport(id: string, input: {
@@ -349,12 +401,41 @@ export class KnowledgeService {
       },
     });
 
+    if (item.type === 'WEEKLY' && (input.contentRich || input.contentPlain)) {
+      const parsed = this.parseWeeklyContent(input.contentRich || input.contentPlain || '');
+      const weeklyKeyPoints = {
+        market: parsed.market,
+        events: parsed.events,
+        risks: parsed.risks,
+        outlook: parsed.outlook,
+      } as Prisma.InputJsonValue;
+
+      await this.prisma.knowledgeAnalysis.upsert({
+        where: { knowledgeId: item.id },
+        create: {
+          knowledgeId: item.id,
+          reportType: 'MARKET',
+          reportPeriod: 'WEEKLY',
+          keyPoints: weeklyKeyPoints,
+          tags: input.commodities || item.commodities || [],
+        },
+        update: {
+          keyPoints: weeklyKeyPoints,
+          ...(input.commodities ? { tags: input.commodities } : {}),
+        },
+      });
+    }
+
     // 触发重新分析（如果是被驳回修改的，可能需要重新分析）
     this.reanalyze(id, true).catch((err) => {
       console.warn(`[updateReport] AI re-analysis failed for ${id}:`, err.message);
     });
 
-    return this.findOne(id);
+    const updated = await this.findOne(id);
+    if (input.contentPlain || input.contentRich) {
+      await this.ragPipelineService.ingest(updated.id, updated.contentPlain || updated.contentRich || '');
+    }
+    return updated;
   }
 
   async getPendingReviewList(page = 1, pageSize = 20) {
@@ -437,6 +518,14 @@ export class KnowledgeService {
 
     const summary = triggerDeepAnalysis ? result.summary : (result.summary || '').slice(0, 200);
 
+    let finalKeyPoints = result.keyPoints as Prisma.InputJsonValue;
+    if (item.type === 'WEEKLY' && item.analysis?.keyPoints && typeof item.analysis.keyPoints === 'object' && !Array.isArray(item.analysis.keyPoints)) {
+      finalKeyPoints = {
+        ...(item.analysis.keyPoints as Record<string, unknown>),
+        aiKeyPoints: result.keyPoints,
+      } as Prisma.InputJsonValue;
+    }
+
     await this.prisma.knowledgeAnalysis.upsert({
       where: { knowledgeId: id },
       create: {
@@ -446,7 +535,7 @@ export class KnowledgeService {
         confidenceScore: result.confidenceScore,
         reportType: result.reportType,
         reportPeriod: result.reportPeriod,
-        keyPoints: result.keyPoints as Prisma.InputJsonValue,
+        keyPoints: finalKeyPoints,
         prediction: result.prediction as Prisma.InputJsonValue,
         dataPoints: result.dataPoints as Prisma.InputJsonValue,
         events: result.events as Prisma.InputJsonValue,
@@ -461,7 +550,7 @@ export class KnowledgeService {
         confidenceScore: result.confidenceScore,
         reportType: result.reportType,
         reportPeriod: result.reportPeriod,
-        keyPoints: result.keyPoints as Prisma.InputJsonValue,
+        keyPoints: finalKeyPoints,
         prediction: result.prediction as Prisma.InputJsonValue,
         dataPoints: result.dataPoints as Prisma.InputJsonValue,
         events: result.events as Prisma.InputJsonValue,
@@ -471,6 +560,13 @@ export class KnowledgeService {
         traceLogs: result.traceLogs as Prisma.InputJsonValue,
       },
     });
+
+    // 仅日报触发 B 类子表提取（周报/月报/研报等汇总性内容不提取）
+    if (item.type === 'DAILY') {
+      this.extractToIntelTables(id, result, item).catch((err) =>
+        this.logger.warn(`[reanalyze] extractToIntelTables failed for ${id}: ${err.message}`),
+      );
+    }
 
     return this.findOne(id);
   }
@@ -586,6 +682,53 @@ export class KnowledgeService {
     return { outgoing, incoming };
   }
 
+  async getGraphData(options: { intelId?: string; limit?: number }) {
+    const limit = options.limit || 100;
+    const whereEdge: Prisma.KnowledgeEdgeWhereInput = {};
+
+    if (options.intelId) {
+      whereEdge.sourceIntelId = options.intelId;
+    }
+
+    // Get edges
+    const edges = await this.prisma.knowledgeEdge.findMany({
+      where: whereEdge,
+      take: limit,
+      include: {
+        source: true,
+        target: true
+      }
+    });
+
+    // Collect unique nodes from edges
+    const nodeMap = new Map<string, { id: string; name: string; type: string }>();
+
+    // Format for frontend (e.g., react-force-graph expects nodes and links)
+    const formattedEdges = edges.map(e => {
+      nodeMap.set(e.sourceId, e.source);
+      nodeMap.set(e.targetId, e.target);
+      return {
+        id: e.id,
+        source: e.sourceId,
+        target: e.targetId,
+        type: e.type,
+        weight: e.weight
+      };
+    });
+
+    const formattedNodes = Array.from(nodeMap.values()).map(n => ({
+      id: n.id,
+      name: n.name,
+      type: n.type,
+      group: n.type // For coloring
+    }));
+
+    return {
+      nodes: formattedNodes,
+      links: formattedEdges
+    };
+  }
+
   async getTrend(days = 30) {
     const startDate = new Date();
     startDate.setDate(startDate.getDate() - days);
@@ -638,11 +781,45 @@ export class KnowledgeService {
     });
 
     if (!weekly) {
+      const fallbackStartDate = new Date();
+      fallbackStartDate.setDate(fallbackStartDate.getDate() - 7);
+
+      const fallbackDocs = await this.prisma.knowledgeItem.findMany({
+        where: {
+          type: { in: ['RESEARCH', 'THIRD_PARTY', 'FLASH'] },
+          createdAt: { gte: fallbackStartDate },
+        },
+        include: { analysis: true },
+        orderBy: { publishAt: 'desc' },
+      });
+
+      const fallbackByType: Record<string, number> = {};
+      let totalConf = 0;
+      let confCount = 0;
+      for (const doc of fallbackDocs) {
+        fallbackByType[doc.type] = (fallbackByType[doc.type] || 0) + 1;
+        if (doc.analysis?.confidenceScore) {
+          totalConf += doc.analysis.confidenceScore;
+          confCount++;
+        }
+      }
+
       return {
         periodKey: target,
         found: false,
-        metrics: null,
-        sourceStats: { totalSources: 0, byType: {} as Record<string, number> },
+        weekly: null,
+        metrics: {
+          riskLevel: 'MEDIUM',
+          sentiment: 'NEUTRAL',
+          confidence: confCount > 0 ? Math.round(totalConf / confCount) : 80,
+        },
+        sourceStats: { totalSources: fallbackDocs.length, byType: fallbackByType },
+        topSources: fallbackDocs.slice(0, 10).map((item) => ({
+          id: item.id,
+          type: item.type,
+          title: item.title,
+          publishAt: item.publishAt,
+        })),
       };
     }
 
@@ -694,9 +871,9 @@ export class KnowledgeService {
   async getTopicEvolution(commodity?: string, weeks = 8) {
     const take = Math.max(1, Math.min(52, weeks));
 
+    // 兼容普通研报作为周度话题演化的基础数据
     const where: Prisma.KnowledgeItemWhereInput = {
-      type: 'WEEKLY',
-      periodType: 'WEEK',
+      type: { in: ['WEEKLY', 'RESEARCH'] },
     };
 
     if (commodity) {
@@ -734,7 +911,7 @@ export class KnowledgeService {
     };
   }
 
-  async syncFromMarketIntel(intelId: string) {
+  async syncFromMarketIntel(intelId: string, options?: { skipRecursiveReportSync?: boolean }) {
     const intel = await this.prisma.marketIntel.findUnique({
       where: { id: intelId },
       include: {
@@ -879,7 +1056,13 @@ export class KnowledgeService {
       });
     }
 
-    if (intel.researchReport?.id) {
+    // Trigger Vectorization (RAG Ingest)
+    const content = item.contentPlain || item.contentRich || '';
+    if (content) {
+      await this.ragPipelineService.ingest(item.id, content);
+    }
+
+    if (intel.researchReport?.id && !options?.skipRecursiveReportSync) {
       await this.syncFromResearchReport(intel.researchReport.id);
     }
 
@@ -898,7 +1081,7 @@ export class KnowledgeService {
       throw new NotFoundException(`ResearchReport ${reportId} 不存在`);
     }
 
-    const knowledgeId = await this.syncFromMarketIntel(report.intelId);
+    const knowledgeId = await this.syncFromMarketIntel(report.intelId, { skipRecursiveReportSync: true });
 
     await this.prisma.knowledgeItem.update({
       where: { id: knowledgeId },
@@ -1259,6 +1442,591 @@ export class KnowledgeService {
     return this.findOne(weekly.id);
   }
 
+  // =============================================
+  // 研报专用方法（统一到 KnowledgeItem）
+  // =============================================
+
+  /**
+   * 创建研报（直接写入 KnowledgeItem，不经过 MarketIntel）
+   */
+  async createResearchReport(input: {
+    title: string;
+    contentPlain: string;
+    contentRich?: string;
+    reportType?: string;
+    reportPeriod?: string;
+    publishAt?: Date;
+    sourceType?: string;
+    commodities?: string[];
+    region?: string[];
+    authorId: string;
+    summary?: string;
+    keyPoints?: unknown;
+    prediction?: unknown;
+    dataPoints?: unknown;
+    triggerAnalysis?: boolean;
+    intelId?: string;
+    attachmentIds?: string[];
+  }) {
+    const periodType = this.mapReportPeriodToKnowledgePeriodType(
+      (input.reportPeriod as 'DAILY' | 'WEEKLY' | 'MONTHLY' | 'QUARTERLY' | 'ANNUAL' | 'ADHOC') || null,
+    );
+    const publishAt = input.publishAt || new Date();
+
+    const item = await this.prisma.knowledgeItem.create({
+      data: {
+        type: 'RESEARCH',
+        title: input.title,
+        contentFormat: 'MARKDOWN',
+        contentPlain: input.contentPlain,
+        contentRich: input.contentRich,
+        sourceType: input.sourceType || 'INTERNAL_REPORT',
+        publishAt,
+        effectiveAt: publishAt,
+        periodType,
+        periodKey: this.toPeriodKey(publishAt, periodType),
+        commodities: input.commodities || [],
+        region: input.region || [],
+        status: 'DRAFT',
+        authorId: input.authorId,
+        originLegacyType: input.intelId ? 'MARKET_INTEL' : undefined,
+        originLegacyId: input.intelId || undefined,
+      },
+    });
+
+    // 创建分析记录
+    if (input.summary || input.keyPoints || input.prediction || input.dataPoints || input.reportType) {
+      await this.prisma.knowledgeAnalysis.create({
+        data: {
+          knowledgeId: item.id,
+          summary: input.summary || input.contentPlain.slice(0, 500),
+          reportType: input.reportType,
+          reportPeriod: input.reportPeriod,
+          keyPoints: input.keyPoints as Prisma.InputJsonValue,
+          prediction: input.prediction as Prisma.InputJsonValue,
+          dataPoints: input.dataPoints as Prisma.InputJsonValue,
+          tags: input.commodities || [],
+        },
+      });
+    }
+
+    // 触发向量化
+    const content = input.contentPlain || input.contentRich || '';
+    if (content.length > 50) {
+      this.ragPipelineService.ingest(item.id, content).catch((err) => {
+        console.error('[KnowledgeService.createResearchReport] RAG ingest failed:', err);
+      });
+    }
+
+    // 复制文档附件
+    if (input.attachmentIds && input.attachmentIds.length > 0) {
+      const intelAttachments = await this.prisma.intelAttachment.findMany({
+        where: { id: { in: input.attachmentIds } },
+      });
+      if (intelAttachments.length > 0) {
+        await this.prisma.knowledgeAttachment.createMany({
+          data: intelAttachments.map((att) => ({
+            knowledgeId: item.id,
+            filename: att.filename,
+            mimeType: att.mimeType,
+            fileSize: att.fileSize,
+            storagePath: att.storagePath,
+            ocrText: att.ocrText,
+          })),
+        });
+      }
+    }
+
+    if (input.triggerAnalysis !== false && content.length > 50) {
+      this.reanalyze(item.id, true).catch((err) => {
+        console.error('[KnowledgeService.createResearchReport] AI analysis failed:', err);
+      });
+    }
+
+    // 异步调用 MARKET_INTEL_SUMMARY_GENERATOR 模板生成高质量摘要
+    if (content.length > 50 && !input.summary) {
+      this.deepAnalysisService.generateSummary(content).then(async (aiSummary) => {
+        if (aiSummary) {
+          await this.prisma.knowledgeAnalysis.updateMany({
+            where: { knowledgeId: item.id },
+            data: { summary: aiSummary },
+          });
+          this.logger.log(`[createResearchReport] AI 摘要已回填到 KnowledgeItem ${item.id}`);
+        }
+      }).catch((err) => {
+        this.logger.error('[createResearchReport] AI 摘要生成失败:', err);
+      });
+    }
+
+    return this.findOne(item.id);
+  }
+
+  /**
+   * 将草稿研报提交审核
+   */
+  async submitDraftReport(id: string, taskId?: string, authorId?: string) {
+    const item = await this.prisma.knowledgeItem.findUnique({
+      where: { id },
+    });
+
+    if (!item) {
+      throw new NotFoundException(`Knowledge items with id ${id} not found`);
+    }
+
+    if (item.type !== 'RESEARCH') {
+      throw new BadRequestException('Only RESEARCH reports can be submitted');
+    }
+
+    if (item.status !== 'DRAFT') {
+      throw new BadRequestException(`Report is currently ${item.status}, expected DRAFT`);
+    }
+
+    // 更新研报状态为待审核
+    const updatedReport = await this.prisma.knowledgeItem.update({
+      where: { id },
+      data: { status: 'PENDING_REVIEW' },
+    });
+
+    // 若传入了 taskId，触发任务联动提交
+    if (taskId) {
+      if (!this.intelTaskService) {
+        console.warn('IntelTaskService is not injected, task binding skipped.');
+      } else {
+        try {
+          // 调用任务的提交功能，将任务置于完成/待审状态
+          await this.intelTaskService.submitTask(taskId, authorId || item.authorId || 'system-user-placeholder', {
+            intelId: id,
+          });
+        } catch (error) {
+          console.error(`Failed to submit task ${taskId} for report ${id}:`, error);
+          // 这里可以考虑不要因此中断研报自己的提审流程，只打错误日志
+        }
+      }
+    }
+
+    return updatedReport;
+  }
+
+  /**
+   * 查询研报列表（type=RESEARCH 的 KnowledgeItem）
+   */
+  async findAllReports(query?: {
+    reportType?: string;
+    status?: KnowledgeStatus;
+    commodity?: string;
+    region?: string;
+    startDate?: Date;
+    endDate?: Date;
+    keyword?: string;
+    title?: string;
+    sourceType?: string;
+    page?: number;
+    pageSize?: number;
+  }) {
+    const {
+      reportType,
+      status,
+      commodity,
+      region,
+      startDate,
+      endDate,
+      keyword,
+      title,
+      sourceType,
+      page = 1,
+      pageSize = 20,
+    } = query || {};
+
+    const where: Prisma.KnowledgeItemWhereInput = {
+      type: 'RESEARCH',
+    };
+
+    if (status) where.status = status;
+    if (commodity) where.commodities = { has: commodity };
+    if (region) where.region = { has: region };
+    if (sourceType) where.sourceType = sourceType;
+
+    if (startDate || endDate) {
+      where.publishAt = {};
+      if (startDate) where.publishAt.gte = startDate;
+      if (endDate) where.publishAt.lte = endDate;
+    }
+
+    if (title) where.title = { contains: title, mode: 'insensitive' };
+
+    if (keyword) {
+      where.OR = [
+        { title: { contains: keyword, mode: 'insensitive' } },
+        { contentPlain: { contains: keyword, mode: 'insensitive' } },
+      ];
+    }
+
+    // 按 reportType 过滤（通过 analysis 子查询）
+    if (reportType) {
+      where.analysis = { reportType };
+    }
+
+    const [data, total] = await Promise.all([
+      this.prisma.knowledgeItem.findMany({
+        where,
+        skip: (page - 1) * pageSize,
+        take: pageSize,
+        orderBy: { publishAt: 'desc' },
+        include: {
+          analysis: {
+            select: {
+              summary: true,
+              reportType: true,
+              reportPeriod: true,
+              keyPoints: true,
+              prediction: true,
+              dataPoints: true,
+            },
+          },
+        },
+      }),
+      this.prisma.knowledgeItem.count({ where }),
+    ]);
+
+    return { data, total, page, pageSize };
+  }
+
+  /**
+   * 获取单个研报详情
+   */
+  async findOneReport(id: string) {
+    const item = await this.prisma.knowledgeItem.findUnique({
+      where: { id },
+      include: {
+        analysis: true,
+        attachments: true,
+        tagMaps: true,
+        relationsFrom: {
+          include: {
+            toKnowledge: { select: { id: true, title: true, type: true } },
+          },
+          take: 10,
+        },
+        relationsTo: {
+          include: {
+            fromKnowledge: { select: { id: true, title: true, type: true } },
+          },
+          take: 10,
+        },
+      },
+    });
+
+    if (!item) {
+      throw new NotFoundException(`研报 ID ${id} 不存在`);
+    }
+
+    // 自动增加浏览次数
+    await this.prisma.knowledgeItem.update({
+      where: { id },
+      data: { viewCount: { increment: 1 } },
+    });
+
+    return item;
+  }
+
+  async findAttachment(id: string) {
+    return this.prisma.knowledgeAttachment.findUnique({ where: { id } });
+  }
+
+  /**
+   * 更新研报
+   */
+  async updateResearchReport(id: string, input: {
+    title?: string;
+    contentPlain?: string;
+    contentRich?: string;
+    reportType?: string;
+    reportPeriod?: string;
+    publishAt?: Date;
+    sourceType?: string;
+    commodities?: string[];
+    region?: string[];
+    summary?: string;
+    keyPoints?: unknown;
+    prediction?: unknown;
+    dataPoints?: unknown;
+    intelId?: string;
+    attachmentIds?: string[];
+  }) {
+    const data: Prisma.KnowledgeItemUpdateInput = {};
+
+    if (input.title !== undefined) data.title = input.title;
+    if (input.contentPlain !== undefined) data.contentPlain = input.contentPlain;
+    if (input.contentRich !== undefined) data.contentRich = input.contentRich;
+    if (input.sourceType !== undefined) data.sourceType = input.sourceType;
+    if (input.commodities !== undefined) data.commodities = input.commodities;
+    if (input.region !== undefined) data.region = input.region;
+    if (input.publishAt !== undefined) {
+      data.publishAt = input.publishAt;
+      data.effectiveAt = input.publishAt;
+    }
+
+    const item = await this.prisma.knowledgeItem.update({
+      where: { id },
+      data,
+    });
+
+    // 同步更新分析记录
+    const analysisData: Prisma.KnowledgeAnalysisUpdateInput = {};
+    if (input.summary !== undefined) analysisData.summary = input.summary;
+    if (input.reportType !== undefined) analysisData.reportType = input.reportType;
+    if (input.reportPeriod !== undefined) analysisData.reportPeriod = input.reportPeriod;
+    if (input.keyPoints !== undefined) analysisData.keyPoints = input.keyPoints as Prisma.InputJsonValue;
+    if (input.prediction !== undefined) analysisData.prediction = input.prediction as Prisma.InputJsonValue;
+    if (input.dataPoints !== undefined) analysisData.dataPoints = input.dataPoints as Prisma.InputJsonValue;
+
+    if (Object.keys(analysisData).length > 0) {
+      await this.prisma.knowledgeAnalysis.upsert({
+        where: { knowledgeId: id },
+        create: {
+          knowledgeId: id,
+          ...analysisData,
+          tags: input.commodities || [],
+        } as Prisma.KnowledgeAnalysisCreateInput,
+        update: analysisData,
+      });
+    }
+
+    if (input.attachmentIds && input.attachmentIds.length > 0) {
+      const intelAttachments = await this.prisma.intelAttachment.findMany({
+        where: { id: { in: input.attachmentIds } },
+      });
+      if (intelAttachments.length > 0) {
+        const existing = await this.prisma.knowledgeAttachment.findMany({
+          where: { knowledgeId: id },
+        });
+        const existingPaths = new Set(existing.map((e) => e.storagePath));
+        const newAttachments = intelAttachments
+          .filter((att) => !existingPaths.has(att.storagePath))
+          .map((att) => ({
+            knowledgeId: item.id,
+            filename: att.filename,
+            mimeType: att.mimeType,
+            fileSize: att.fileSize,
+            storagePath: att.storagePath,
+            ocrText: att.ocrText,
+          }));
+
+        if (newAttachments.length > 0) {
+          await this.prisma.knowledgeAttachment.createMany({
+            data: newAttachments,
+          });
+        }
+      }
+    }
+
+    // 重新向量化
+    const content = input.contentPlain || item.contentPlain;
+    if (content && content.length > 50) {
+      this.ragPipelineService.ingest(item.id, content).catch((err) => {
+        console.error('[KnowledgeService.updateResearchReport] RAG ingest failed:', err);
+      });
+    }
+
+    return this.findOne(item.id);
+  }
+
+  /**
+   * 删除研报
+   */
+  async deleteReport(id: string) {
+    await this.prisma.knowledgeItem.delete({ where: { id } });
+    return { success: true };
+  }
+
+  /**
+   * 批量删除研报
+   */
+  async batchDeleteReports(ids: string[]) {
+    const result = await this.prisma.knowledgeItem.deleteMany({
+      where: { id: { in: ids }, type: 'RESEARCH' },
+    });
+    return { success: true, deletedCount: result.count };
+  }
+
+  /**
+   * 增加浏览次数
+   */
+  async incrementReportViewCount(id: string) {
+    return this.prisma.knowledgeItem.update({
+      where: { id },
+      data: { viewCount: { increment: 1 } },
+      select: { id: true, viewCount: true },
+    });
+  }
+
+  /**
+   * 增加下载次数
+   */
+  async incrementReportDownloadCount(id: string) {
+    return this.prisma.knowledgeItem.update({
+      where: { id },
+      data: { downloadCount: { increment: 1 } },
+      select: { id: true, downloadCount: true },
+    });
+  }
+
+  /**
+   * 研报统计
+   */
+  async getReportStats(options?: { days?: number }) {
+    const days = options?.days || 30;
+    const startDate = new Date();
+    startDate.setDate(startDate.getDate() - days);
+
+    const where: Prisma.KnowledgeItemWhereInput = { type: 'RESEARCH' };
+
+    // 对于本周研报，改为查询所有 RESEARCH 类型（不受 reportType 影响）
+    const weeklyReportsCount = await this.prisma.knowledgeItem.count({
+      where: {
+        type: 'RESEARCH',
+        createdAt: { gte: startDate },
+      },
+    });
+
+    const [total, totalViews, totalDownloads, byStatus, recent] =
+      await Promise.all([
+        this.prisma.knowledgeItem.count({ where }),
+        this.prisma.knowledgeItem.aggregate({
+          where,
+          _sum: { viewCount: true },
+        }),
+        this.prisma.knowledgeItem.aggregate({
+          where,
+          _sum: { downloadCount: true },
+        }),
+        this.prisma.knowledgeItem.groupBy({
+          by: ['status'],
+          where,
+          _count: true,
+        }),
+        this.prisma.knowledgeItem.findMany({
+          where,
+          take: 10,
+          orderBy: { createdAt: 'desc' },
+          select: {
+            id: true,
+            title: true,
+            sourceType: true,
+            createdAt: true,
+            viewCount: true,
+            status: true,
+          },
+        }),
+      ]);
+
+    // 按 reportType 统计（通过 analysis）
+    const byReportType = await this.prisma.knowledgeAnalysis.groupBy({
+      by: ['reportType'],
+      where: {
+        knowledge: { type: 'RESEARCH' },
+        reportType: { not: null },
+      },
+      _count: true,
+    });
+
+    // 品种/区域热度
+    const allReports = await this.prisma.knowledgeItem.findMany({
+      where,
+      select: { commodities: true, region: true },
+    });
+
+    const commodityCount: Record<string, number> = {};
+    const regionCount: Record<string, number> = {};
+    allReports.forEach((r) => {
+      r.commodities.forEach((c) => { commodityCount[c] = (commodityCount[c] || 0) + 1; });
+      r.region.forEach((reg) => { regionCount[reg] = (regionCount[reg] || 0) + 1; });
+    });
+
+    const topCommodities = Object.entries(commodityCount)
+      .sort((a, b) => b[1] - a[1]).slice(0, 10)
+      .map(([name, count]) => ({ name, count }));
+
+    const topRegions = Object.entries(regionCount)
+      .sort((a, b) => b[1] - a[1]).slice(0, 10)
+      .map(([name, count]) => ({ name, count }));
+
+    return {
+      total,
+      weeklyReportsCount,
+      totalViews: totalViews._sum.viewCount || 0,
+      totalDownloads: totalDownloads._sum.downloadCount || 0,
+      byStatus: byStatus.reduce(
+        (acc, item) => { acc[item.status] = item._count; return acc; },
+        {} as Record<string, number>,
+      ),
+      byReportType: byReportType.reduce(
+        (acc, item) => { if (item.reportType) acc[item.reportType] = item._count; return acc; },
+        {} as Record<string, number>,
+      ),
+      topCommodities,
+      topRegions,
+      recent,
+    };
+  }
+
+  /**
+   * 导出研报（Excel）
+   */
+  async exportReports(ids?: string[], query?: {
+    reportType?: string;
+    status?: KnowledgeStatus;
+    commodity?: string;
+    region?: string;
+    startDate?: Date;
+    endDate?: Date;
+  }) {
+    const where: Prisma.KnowledgeItemWhereInput = { type: 'RESEARCH' };
+
+    if (ids && ids.length > 0) {
+      where.id = { in: ids };
+    } else {
+      if (query?.status) where.status = query.status;
+      if (query?.commodity) where.commodities = { has: query.commodity };
+      if (query?.region) where.region = { has: query.region };
+      if (query?.startDate || query?.endDate) {
+        where.publishAt = {};
+        if (query?.startDate) where.publishAt.gte = query.startDate;
+        if (query?.endDate) where.publishAt.lte = query.endDate;
+      }
+      if (query?.reportType) {
+        where.analysis = { reportType: query.reportType };
+      }
+    }
+
+    const items = await this.prisma.knowledgeItem.findMany({
+      where,
+      include: { analysis: true },
+      orderBy: { publishAt: 'desc' },
+      take: 500,
+    });
+
+    // 动态导入 xlsx
+    const XLSX = await import('xlsx');
+    const worksheetData = items.map((item) => ({
+      '标题': item.title,
+      '类型': item.analysis?.reportType || '-',
+      '来源': item.sourceType || '-',
+      '品种': item.commodities.join(', '),
+      '区域': item.region.join(', '),
+      '状态': item.status,
+      '发布日期': item.publishAt ? new Date(item.publishAt).toISOString().split('T')[0] : '-',
+      '浏览次数': item.viewCount,
+      '下载次数': item.downloadCount,
+      '摘要': (item.analysis?.summary || item.contentPlain || '').slice(0, 200),
+    }));
+
+    const worksheet = XLSX.utils.json_to_sheet(worksheetData);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, '研报列表');
+    return Buffer.from(XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' }) as ArrayBuffer);
+  }
+
   private toContentType(type: KnowledgeType): ContentType {
     if (type === 'DAILY') return ContentType.DAILY_REPORT;
     return ContentType.RESEARCH_REPORT;
@@ -1478,5 +2246,207 @@ export class KnowledgeService {
       sentiment,
       confidence,
     };
+  }
+
+  /**
+   * 从 AI 分析结果中提取结构化数据，写入 B 类子表（PriceData / MarketEvent / MarketInsight）
+   * 使用 knowledgeId 关联，不依赖 MarketIntel 主表
+   */
+  private async extractToIntelTables(
+    knowledgeId: string,
+    result: AIAnalysisResult,
+    item: { authorId: string; effectiveAt?: Date | null; publishAt?: Date | null; commodities?: string[]; location?: string | null },
+  ) {
+    const effectiveDate = item.effectiveAt || item.publishAt || new Date();
+
+    // ========== 1. 提取价格数据 → PriceData ==========
+    if (result.pricePoints && result.pricePoints.length > 0) {
+      for (const point of result.pricePoints) {
+        if (!point.location || !point.price) continue;
+
+        const resolvedSourceType = Object.values(PriceSourceType).includes(
+          point.sourceType as PriceSourceType,
+        )
+          ? (point.sourceType as PriceSourceType)
+          : PriceSourceType.REGIONAL;
+        const resolvedSubType = Object.values(PriceSubType).includes(
+          point.subType as PriceSubType,
+        )
+          ? (point.subType as PriceSubType)
+          : PriceSubType.LISTED;
+        const resolvedGeoLevel = Object.values(GeoLevel).includes(
+          point.geoLevel as GeoLevel,
+        )
+          ? (point.geoLevel as GeoLevel)
+          : GeoLevel.CITY;
+
+        const priceDate = new Date(effectiveDate);
+        priceDate.setHours(0, 0, 0, 0);
+
+        const priceData = {
+          sourceType: resolvedSourceType,
+          subType: resolvedSubType,
+          geoLevel: resolvedGeoLevel,
+          location: point.location,
+          province: point.province || null,
+          city: point.city || null,
+          region: result.reportMeta?.region ? [result.reportMeta.region] : [],
+          longitude: point.longitude || null,
+          latitude: point.latitude || null,
+          collectionPointId: point.collectionPointId || null,
+          regionCode: point.regionCode || null,
+          effectiveDate: priceDate,
+          commodity: point.commodity || result.reportMeta?.commodity || '玉米',
+          grade: point.grade || null,
+          price: point.price,
+          dayChange: point.change ?? null,
+          note: point.note || null,
+          knowledgeId,
+          authorId: item.authorId,
+        };
+
+        // 查找是否已存在同一来源的价格数据
+        const existing = await this.prisma.priceData.findFirst({
+          where: {
+            effectiveDate: priceData.effectiveDate,
+            commodity: priceData.commodity,
+            location: priceData.location,
+            sourceType: priceData.sourceType,
+            subType: priceData.subType,
+          },
+        });
+
+        if (existing) {
+          await this.prisma.priceData.update({
+            where: { id: existing.id },
+            data: {
+              price: priceData.price,
+              dayChange: priceData.dayChange,
+              knowledgeId: priceData.knowledgeId,
+              collectionPointId: priceData.collectionPointId,
+              regionCode: priceData.regionCode,
+              note: priceData.note,
+            },
+          });
+        } else {
+          await this.prisma.priceData.create({ data: priceData });
+        }
+      }
+
+      this.logger.log(`[extractToIntelTables] Wrote ${result.pricePoints.length} price points for knowledge ${knowledgeId}`);
+    }
+
+    // ========== 2. 提取市场事件 → MarketEvent ==========
+    if (result.events && result.events.length > 0) {
+      // 获取默认事件类型
+      const defaultEventType = await this.prisma.eventTypeConfig.findFirst();
+      if (defaultEventType) {
+        for (const event of result.events) {
+          let eventTypeId = defaultEventType.id;
+          if (event.eventTypeCode) {
+            const matched = await this.prisma.eventTypeConfig.findUnique({
+              where: { code: event.eventTypeCode },
+            });
+            if (matched) eventTypeId = matched.id;
+          }
+
+          await this.prisma.marketEvent.create({
+            data: {
+              knowledgeId,
+              eventTypeId,
+              subject: event.subject || '未知主体',
+              action: event.action || '未知动作',
+              content: event.content || event.sourceText || `${event.subject || ''}${event.action || ''}`,
+              impact: event.impact,
+              impactLevel: event.impactLevel || 'MEDIUM',
+              sentiment: event.sentiment || 'neutral',
+              commodity: event.commodity || result.reportMeta?.commodity,
+              regionCode: event.regionCode || result.reportMeta?.region,
+              sourceText: event.sourceText || '',
+              sourceStart: event.sourceStart,
+              sourceEnd: event.sourceEnd,
+              eventDate: new Date(effectiveDate),
+            },
+          });
+        }
+
+        this.logger.log(`[extractToIntelTables] Wrote ${result.events.length} events for knowledge ${knowledgeId}`);
+      }
+    }
+
+    // ========== 3. 提取后市预判 → MarketInsight ==========
+    if (result.forecast && result.forecast.shortTerm) {
+      const forecastType = await this.prisma.insightTypeConfig.findUnique({
+        where: { code: 'FORECAST' },
+      });
+      const typeId = forecastType?.id || (await this.prisma.insightTypeConfig.findFirst())?.id;
+
+      if (typeId) {
+        await this.prisma.marketInsight.create({
+          data: {
+            knowledgeId,
+            insightTypeId: typeId,
+            title: '短期后市预判',
+            content: result.forecast.shortTerm,
+            timeframe: 'SHORT_TERM',
+            direction: 'STABLE',
+            confidence: 80,
+            factors: result.forecast.keyFactors || [],
+            commodity: result.reportMeta?.commodity,
+            regionCode: result.reportMeta?.region,
+            sourceText: result.forecast.shortTerm,
+          },
+        });
+
+        this.logger.log(`[extractToIntelTables] Wrote forecast insight for knowledge ${knowledgeId}`);
+      }
+    }
+  }
+
+  public parseWeeklyContent(content: string) {
+    const market: string[] = [];
+    const events: string[] = [];
+    const risks: string[] = [];
+    const outlook: string[] = [];
+
+    // Normalize HTML: replace block tags with newlines
+    const normalizedContent = content
+      .replace(/<\/(p|div|h[1-6]|li|tr)>/gi, '\n')
+      .replace(/<br\s*\/?>/gi, '\n')
+      .replace(/<[^>]*>?/gm, '') // Remove remaining tags
+      .replace(/(?:\r\n|\r|\n)+/g, '\n') // Collapse multiple newlines
+      .trim();
+
+    // Helper to extract lines under a specific header
+    const extractSection = (headerRegex: RegExp, targetArray: string[]) => {
+      const lines = normalizedContent.split('\n');
+      let inSection = false;
+      for (const line of lines) {
+        // If we hit a line that could be a new main header
+        const isHeaderLine = /^(#+\s*|一、|二、|三、|四、|五、|六、|【)/.test(line.trim());
+
+        if (headerRegex.test(line) && isHeaderLine) {
+          inSection = true;
+          continue;
+        }
+
+        // If we hit another main header, we stop
+        if (inSection && isHeaderLine && !headerRegex.test(line)) {
+          inSection = false;
+          continue;
+        }
+        if (inSection) {
+          const text = line.replace(/^[-*]\s*/, '').trim();
+          if (text) targetArray.push(text);
+        }
+      }
+    };
+
+    extractSection(/行情|回顾|走势/, market);
+    extractSection(/事件|政策|消息|供需/, events);
+    extractSection(/风险|预警/, risks);
+    extractSection(/展望|后市|预判/, outlook);
+
+    return { market, events, risks, outlook };
   }
 }

@@ -29,12 +29,15 @@ import {
     useCreateAgentPromptTemplate,
     useUpdateAgentPromptTemplate,
 } from '../api';
-import { AGENT_ROLE_OPTIONS, getAgentRoleLabel, getAgentStatusLabel } from '../constants';
+import { AGENT_ROLE_OPTIONS, getAgentRoleLabel, getAgentStatusLabel, OUTPUT_SCHEMA_OPTIONS } from '../constants';
 import { AgentPromptTemplateHistory } from './AgentPromptTemplateHistory';
 
 import { VariablesEditor } from './VariablesEditor';
 import { GuardrailsEditor } from './GuardrailsEditor';
 import { AgentPromptTemplateCreateDrawer } from './AgentPromptTemplateCreateDrawer';
+import { StructuredPromptBuilder } from './StructuredPromptBuilder';
+import { OutputSchemaBuilder } from './OutputSchemaBuilder';
+import { VisualGuardrailsBuilder } from './VisualGuardrailsBuilder';
 
 const { Title } = Typography;
 
@@ -116,6 +119,9 @@ export const AgentPromptTemplatePage: React.FC = () => {
                     ...values,
                     variables,
                     guardrails,
+                    outputSchema: formValues.outputSchemaCode === 'CUSTOM' && formValues.outputSchemaString
+                        ? JSON.parse(formValues.outputSchemaString)
+                        : undefined,
                 }
             });
             message.success('更新成功');
@@ -187,10 +193,12 @@ export const AgentPromptTemplatePage: React.FC = () => {
                                 systemPrompt: record.systemPrompt,
                                 userPromptTemplate: record.userPromptTemplate,
                                 outputFormat: record.outputFormat,
-                                outputSchemaCode: record.outputSchemaCode,
+
                                 isActive: record.isActive,
                                 variablesList,
                                 guardrailsConfig,
+                                outputSchemaString: record.outputSchema ? JSON.stringify(record.outputSchema, null, 2) : undefined,
+                                outputSchemaCode: record.outputSchema ? 'CUSTOM' : record.outputSchemaCode,
                             });
                             setEditVisible(true);
                         }}>编辑</Button>
@@ -269,19 +277,33 @@ export const AgentPromptTemplatePage: React.FC = () => {
                                         <Select options={AGENT_ROLE_OPTIONS.map((r) => ({ label: getAgentRoleLabel(r), value: r }))} />
                                     </Form.Item>
                                     <Form.Item name="systemPrompt" label="系统提示词" rules={[{ required: true }]}>
-                                        <Input.TextArea rows={6} />
+                                        <StructuredPromptBuilder />
                                     </Form.Item>
                                     <Form.Item name="userPromptTemplate" label="用户提示模板" rules={[{ required: true }]}>
                                         <Input.TextArea rows={6} />
                                     </Form.Item>
                                     <Form.Item name="outputSchemaCode" label="输出 Schema 编码">
-                                        <Input />
+                                        <Select options={OUTPUT_SCHEMA_OPTIONS} placeholder="选择或自定义输出结构" />
+                                    </Form.Item>
+                                    <Form.Item
+                                        noStyle
+                                        shouldUpdate={(prev, curr) => prev.outputSchemaCode !== curr.outputSchemaCode}
+                                    >
+                                        {({ getFieldValue }) =>
+                                            getFieldValue('outputSchemaCode') === 'CUSTOM' ? (
+                                                <Form.Item name="outputSchemaString" label="自定义输出结构">
+                                                    <OutputSchemaBuilder />
+                                                </Form.Item>
+                                            ) : null
+                                        }
                                     </Form.Item>
                                     <Form.Item name="isActive" label="启用状态" valuePropName="checked">
                                         <Switch checkedChildren="启用" unCheckedChildren="停用" />
                                     </Form.Item>
                                     <VariablesEditor name="variablesList" />
-                                    <GuardrailsEditor name="guardrailsConfig" />
+                                    <Form.Item name="guardrailsConfig" label="防护规则">
+                                        <VisualGuardrailsBuilder />
+                                    </Form.Item>
                                 </Form>
                             ),
                         },

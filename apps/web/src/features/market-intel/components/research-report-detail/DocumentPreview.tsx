@@ -7,7 +7,7 @@ import {
   FileExcelOutlined,
   DownloadOutlined,
 } from '@ant-design/icons';
-import TiptapEditor from '@/components/TiptapEditor';
+import { MarkdownRenderer } from '@/components/MarkdownRenderer';
 
 interface PreviewAttachment {
   id: string;
@@ -130,9 +130,9 @@ export const DocumentPreview: React.FC<DocumentPreviewProps> = ({
         </div>
       </div>
       {activeView === 'content' && (
-        <div style={{ padding: 24, height: '60vh', minHeight: 420, maxHeight: 720 }}>
+        <div style={{ padding: 24, minHeight: 420, maxHeight: 720, overflow: 'auto' }}>
           {content ? (
-            <TiptapEditor value={content} readOnly={true} minHeight={0} />
+            <MarkdownRenderer content={content} />
           ) : (
             <Empty
               description={

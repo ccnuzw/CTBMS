@@ -18,8 +18,14 @@ import {
 } from 'antd';
 import { useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
-import { useGenerateWeeklyRollup, useKnowledgeItems } from '../api/knowledge-hooks';
+import dayjs from 'dayjs';
+import isoWeek from 'dayjs/plugin/isoWeek';
+import { useGenerateWeeklyRollup, useKnowledgeItems, useKnowledgeReportStats } from '../api/knowledge-hooks';
+import { useDocumentStats } from '../api/hooks';
 import { KNOWLEDGE_TYPE_LABELS } from '../constants/knowledge-labels';
+import { StatsOverviewBar } from './StatsOverviewBar';
+
+dayjs.extend(isoWeek);
 
 const { Text } = Typography;
 const FILTER_STORAGE_KEY = 'knowledge-center-filters-v1';
@@ -45,7 +51,7 @@ export const KnowledgeCenterPage: React.FC = () => {
   const initialType = content === 'reports' ? 'RESEARCH' : undefined;
 
   const [type, setType] = useState<string | undefined>(initialType || stored?.type);
-  const [status, setStatus] = useState<string | undefined>(stored?.status || 'PUBLISHED');
+  const [status, setStatus] = useState<string | undefined>(stored?.status || undefined);
   const [quickRange, setQuickRange] = useState<'ALL' | 'THIS_WEEK' | 'THIS_MONTH'>(
     stored?.quickRange || 'ALL',
   );
@@ -93,12 +99,50 @@ export const KnowledgeCenterPage: React.FC = () => {
   });
   const weeklyRollupMutation = useGenerateWeeklyRollup();
 
+  const { data: docStats } = useDocumentStats(1); // 传入 1 获取今日数据
+  const { data: reportStats } = useKnowledgeReportStats();
+
+  const handleGenerateWeekly = async () => {
+    try {
+      const res = await weeklyRollupMutation.mutateAsync({});
+      message.success('后台已开始尝试生成周报，请稍后刷新列表查看。');
+      if (res.reportId) {
+        navigate(`/intel/knowledge/items/${res.reportId}`);
+      }
+    } catch (err: any) {
+      console.error(err);
+      message.error(err.message || '由于可用数据不足或网络问题，生成失败');
+    }
+  };
+
   const rows = data?.data || [];
   const total = data?.total || 0;
 
   const statusStats = useMemo(() => {
-    const weekly = rows.filter((item) => item.type === 'WEEKLY').length;
-    return { weekly };
+    // 获取当周编号，例如 08 
+    const currentWeekIso = dayjs().isoWeek().toString().padStart(2, '0');
+    // 获取当周开头和结尾时间，用于辅助判定
+    const startOfWeek = dayjs().startOf('isoWeek');
+    const endOfWeek = dayjs().endOf('isoWeek');
+
+    const isCurrentWeekReport = (item: any) => {
+      if (item.type !== 'WEEKLY') return false;
+      // 匹配 periodKey 包含 W08 （格式可能为 2026-W08 或前端默认的 W08）
+      if (item.periodKey && item.periodKey.includes(`W${currentWeekIso}`)) {
+        return true;
+      }
+      // 降级判断：如果在 periodKey 缺失或是不规范格式如 2026-02-16_W，则通过 publishAt 验证是否为本周发布的周报
+      if (item.publishAt) {
+        const pubDate = dayjs(item.publishAt);
+        return pubDate.isAfter(startOfWeek) && pubDate.isBefore(endOfWeek);
+      }
+      return false;
+    };
+
+    const weeklyReady = rows.some(isCurrentWeekReport);
+    const weeklyReportId = rows.find(isCurrentWeekReport)?.id;
+
+    return { weeklyReady, weeklyReportId };
   }, [rows]);
 
   const activeTypeLabel = useMemo(() => {
@@ -188,7 +232,7 @@ export const KnowledgeCenterPage: React.FC = () => {
 
   const resetFilters = () => {
     setType(initialType);
-    setStatus('PUBLISHED');
+    setStatus(undefined);
     setQuickRange('ALL');
     setKeywordInput('');
     setKeyword('');
@@ -199,6 +243,14 @@ export const KnowledgeCenterPage: React.FC = () => {
 
   return (
     <PageContainer title={false}>
+      <StatsOverviewBar
+        todayDocs={docStats?.daily || 0}
+        weeklyReports={reportStats?.weeklyReportsCount || reportStats?.byReportType?.WEEKLY || 0}
+        weeklyReady={statusStats.weeklyReady}
+        weeklyReportId={statusStats.weeklyReportId}
+        generatingWeekly={weeklyRollupMutation.isPending}
+        onGenerateWeekly={handleGenerateWeekly}
+      />
       <Card bodyStyle={{ paddingBottom: 12 }}>
         <Space direction="vertical" style={{ width: '100%' }} size={16}>
           <div style={{ display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: 16 }}>
@@ -237,7 +289,6 @@ export const KnowledgeCenterPage: React.FC = () => {
                   }}
                   options={[
                     { label: '已发布', value: 'PUBLISHED' },
-                    { label: '审核中', value: 'PENDING_REVIEW' },
                     { label: '草稿', value: 'DRAFT' },
                   ]}
                 />

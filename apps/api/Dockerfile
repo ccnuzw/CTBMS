@@ -66,5 +66,5 @@ COPY --from=installer /app/apps/api/prisma/seed.sql ./apps/api/dist/prisma/seed.
 
 EXPOSE 3000
 
-# Auto-run migrations before starting the app (Force Prisma v5 to avoid v7 breaking changes)
-CMD ["/bin/sh", "-c", "npx prisma@5.22.0 migrate deploy --schema=apps/api/prisma/schema.prisma && node apps/api/dist/src/main.js"]
+# Auto-run migrations before starting the app
+CMD ["/bin/sh", "-c", "npx prisma migrate deploy --schema=apps/api/prisma/schema.prisma && node apps/api/dist/src/main.js"]

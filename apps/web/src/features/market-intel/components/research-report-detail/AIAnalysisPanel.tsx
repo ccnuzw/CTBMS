@@ -12,7 +12,7 @@ import {
   Col,
   theme,
 } from 'antd';
-import { ResearchReportResponse } from '@packages/types';
+import { KnowledgeItem } from '../../api/knowledge-hooks';
 import {
   RobotOutlined,
   RiseOutlined,
@@ -28,7 +28,7 @@ import { MARKET_SENTIMENT_LABELS, PREDICTION_TIMEFRAME_LABELS } from '../../cons
 const { Text } = Typography;
 
 interface AIAnalysisPanelProps {
-  report: ResearchReportResponse;
+  report: KnowledgeItem;
   mode?: 'summary' | 'data';
 }
 
@@ -128,9 +128,15 @@ export const AIAnalysisPanel: React.FC<AIAnalysisPanelProps> = ({ report, mode =
   // Check types first. ResearchReportResponse (from types packages) defines:
   // keyPoints: any; prediction: any; dataPoints: any;
 
-  const keyPoints = (report.keyPoints as any[]) || [];
-  const prediction = report.prediction as any;
-  const dataPoints = (report.dataPoints as any[]) || [];
+  let keyPoints: any[] = [];
+  if (Array.isArray(report.analysis?.keyPoints)) {
+    keyPoints = report.analysis.keyPoints;
+  } else if (report.analysis?.keyPoints && typeof report.analysis.keyPoints === 'object') {
+    const kpObj = report.analysis.keyPoints as Record<string, any>;
+    keyPoints = Array.isArray(kpObj.aiKeyPoints) ? kpObj.aiKeyPoints : [];
+  }
+  const prediction = report.analysis?.prediction as any;
+  const dataPoints = (report.analysis?.dataPoints as any[]) || [];
 
   const getSentimentIcon = (sentiment?: string) => {
     const sentimentCode = resolveSentimentCode(sentiment);
@@ -138,6 +144,8 @@ export const AIAnalysisPanel: React.FC<AIAnalysisPanelProps> = ({ report, mode =
     if (sentimentCode === 'BEARISH') return <FallOutlined style={{ color: '#3f8600' }} />;
     return <MinusOutlined style={{ color: token.colorTextTertiary }} />;
   };
+
+  const structuredAnalysis = (report as any).analysis?.structuredAnalysis;
 
   if (mode === 'data') {
     return (
@@ -248,6 +256,55 @@ export const AIAnalysisPanel: React.FC<AIAnalysisPanelProps> = ({ report, mode =
           )}
         </Card>
       </Col>
+
+      {/* Structured Analysis (Deep Analysis) */}
+      {structuredAnalysis && (
+        <Col span={24}>
+          <Card
+            bordered={false}
+            className="shadow-sm"
+            title={
+              <Space>
+                <LineChartOutlined /> 深度分析 (Deep Analysis)
+              </Space>
+            }
+          >
+            <Row gutter={[16, 16]}>
+              <Col xs={24} md={8}>
+                <Card size="small" title="关键驱动因素 (Drivers)" type="inner">
+                  <ul>
+                    {(structuredAnalysis.drivers || []).map((d: string, i: number) => <li key={i}>{d}</li>)}
+                  </ul>
+                </Card>
+              </Col>
+              <Col xs={24} md={8}>
+                <Card size="small" title="风险因素 (Risks)" type="inner">
+                  <ul>
+                    {(structuredAnalysis.risks || []).map((r: string, i: number) => <li key={i}>{r}</li>)}
+                  </ul>
+                </Card>
+              </Col>
+              <Col xs={24} md={8}>
+                <Card size="small" title="操作建议 (Suggestions)" type="inner">
+                  <ul>
+                    {(structuredAnalysis.suggestions || []).map((s: string, i: number) => <li key={i}>{s}</li>)}
+                  </ul>
+                </Card>
+              </Col>
+
+              {structuredAnalysis.outlook && (
+                <Col span={24}>
+                  <Descriptions title="市场展望 (Outlook)" bordered size="small">
+                    <Descriptions.Item label="短期 (Short Term)">{structuredAnalysis.outlook.shortTerm || '-'}</Descriptions.Item>
+                    <Descriptions.Item label="中期 (Medium Term)">{structuredAnalysis.outlook.mediumTerm || '-'}</Descriptions.Item>
+                    <Descriptions.Item label="长期 (Long Term)">{structuredAnalysis.outlook.longTerm || '-'}</Descriptions.Item>
+                  </Descriptions>
+                </Col>
+              )}
+            </Row>
+          </Card>
+        </Col>
+      )}
     </Row>
   );
 };

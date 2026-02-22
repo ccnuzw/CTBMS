@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { IAIProvider } from './base.provider';
 import { GoogleProvider } from './google.provider';
+import { Sub2ApiProvider } from './sub2api.provider';
 import { OpenAIProvider } from './openai.provider';
 import { AIProvider } from '@packages/types';
 
@@ -11,6 +12,7 @@ export class AIProviderFactory {
   constructor() {
     this.providers.set('google', new GoogleProvider());
     this.providers.set('openai', new OpenAIProvider());
+    this.providers.set('sub2api' as AIProvider, new Sub2ApiProvider());
     // initialize other providers here
   }
 

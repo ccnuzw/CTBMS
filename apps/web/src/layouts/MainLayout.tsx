@@ -249,31 +249,9 @@ export const MainLayout: React.FC = () => {
             label: 'B类情报流',
           },
           {
-            key: 'intel-knowledge',
+            key: '/intel/knowledge/items',
             icon: <FileTextOutlined />,
             label: '商情知识库',
-            children: [
-              {
-                key: '/intel/knowledge/workbench',
-                icon: <ThunderboltOutlined />,
-                label: '知识工作台',
-              },
-              {
-                key: '/intel/knowledge/items',
-                icon: <DatabaseOutlined />,
-                label: '知识列表',
-              },
-              {
-                key: '/intel/knowledge/dashboard',
-                icon: <BarChartOutlined />,
-                label: '分析看板',
-              },
-              {
-                key: '/intel/knowledge/reports/create',
-                icon: <FormOutlined />,
-                label: '新建研报',
-              },
-            ],
           },
           {
             key: '/intel/extraction-config',
@@ -367,8 +345,12 @@ export const MainLayout: React.FC = () => {
             label: '配置中心',
             children: [
               {
+                key: '/system/config/mapping-rules',
+                label: '通用映射规则',
+              },
+              {
                 key: '/system/config/rules',
-                label: '业务规则',
+                label: '业务逻辑规则',
               },
               {
                 key: '/system/config/ai-models',

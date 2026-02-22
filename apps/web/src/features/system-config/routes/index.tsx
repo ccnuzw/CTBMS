@@ -5,11 +5,16 @@ import { AIModelConfigPage } from '../components/AIModelConfigPage';
 import { PromptTemplatePage } from '../components/PromptTemplatePage';
 import { DataSeeding } from '../components/DataSeeding';
 import { DataDictionaryPage } from '../components/DataDictionaryPage';
+import { MappingRuleCenter } from '../MappingRuleCenter';
 
 export const systemConfigRoutes: RouteObject[] = [
     {
         path: 'config',
         children: [
+            {
+                path: 'mapping-rules',
+                element: <MappingRuleCenter />,
+            },
             {
                 path: 'rules',
                 element: <LogicRulesPage />,

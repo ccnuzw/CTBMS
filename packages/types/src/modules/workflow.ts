@@ -7,14 +7,18 @@ export const WorkflowVersionStatusEnum = z.enum(['DRAFT', 'PUBLISHED', 'ARCHIVED
 export const WorkflowTemplateSourceEnum = z.enum(['PUBLIC', 'PRIVATE', 'COPIED']);
 
 export const WORKFLOW_MODE_UI_ENUM = z.enum(['linear', 'dag', 'debate']);
-export const WORKFLOW_MODE_UI_TO_DSL: Record<z.infer<typeof WORKFLOW_MODE_UI_ENUM>, z.infer<typeof WorkflowModeEnum>> =
-{
+export const WORKFLOW_MODE_UI_TO_DSL: Record<
+  z.infer<typeof WORKFLOW_MODE_UI_ENUM>,
+  z.infer<typeof WorkflowModeEnum>
+> = {
   linear: 'LINEAR',
   dag: 'DAG',
   debate: 'DEBATE',
 };
-export const WORKFLOW_MODE_DSL_TO_UI: Record<z.infer<typeof WorkflowModeEnum>, z.infer<typeof WORKFLOW_MODE_UI_ENUM>> =
-{
+export const WORKFLOW_MODE_DSL_TO_UI: Record<
+  z.infer<typeof WorkflowModeEnum>,
+  z.infer<typeof WORKFLOW_MODE_UI_ENUM>
+> = {
   LINEAR: 'linear',
   DAG: 'dag',
   DEBATE: 'debate',
@@ -457,6 +461,51 @@ export const ValidateWorkflowDslSchema = z.object({
   stage: WorkflowValidationStageEnum.default('SAVE'),
 });
 
+export const WorkflowNodePreviewFieldStatusEnum = z.enum([
+  'resolved',
+  'default',
+  'expression',
+  'missing',
+  'skipped',
+  'empty',
+]);
+
+export const WorkflowNodePreviewInputFieldSchema = z.object({
+  name: z.string().min(1),
+  type: z.string().min(1),
+  required: z.boolean().optional(),
+});
+
+export const ValidateWorkflowNodePreviewSchema = z.object({
+  dslSnapshot: WorkflowDslSchema,
+  nodeId: z.string().min(1),
+  sampleInput: z.record(z.unknown()).default({}),
+  inputBindings: z.record(z.string()).default({}),
+  defaultValues: z.record(z.unknown()).default({}),
+  nullPolicies: z.record(z.string()).default({}),
+  inputsSchema: z.array(WorkflowNodePreviewInputFieldSchema).default([]),
+  stage: WorkflowValidationStageEnum.default('SAVE'),
+});
+
+export const WorkflowNodePreviewFieldSchema = z.object({
+  field: z.string(),
+  expectedType: z.string(),
+  actualType: z.string().optional(),
+  typeCompatible: z.boolean().optional(),
+  status: WorkflowNodePreviewFieldStatusEnum,
+  source: z.string(),
+  value: z.unknown().optional(),
+  note: z.string().optional(),
+});
+
+export const WorkflowNodePreviewResultSchema = z.object({
+  nodeId: z.string(),
+  validation: WorkflowValidationResultSchema,
+  nodeIssues: z.array(WorkflowValidationIssueSchema),
+  rows: z.array(WorkflowNodePreviewFieldSchema),
+  resolvedPayload: z.record(z.unknown()),
+});
+
 export const WorkflowDefinitionPageSchema = z.object({
   data: z.array(WorkflowDefinitionSchema),
   total: z.number().int(),
@@ -544,6 +593,11 @@ export type WorkflowValidationIssue = z.infer<typeof WorkflowValidationIssueSche
 export type WorkflowValidationResult = z.infer<typeof WorkflowValidationResultSchema>;
 export type ValidateWorkflowDslDto = z.infer<typeof ValidateWorkflowDslSchema>;
 export type WorkflowValidationStage = z.infer<typeof WorkflowValidationStageEnum>;
+export type WorkflowNodePreviewFieldStatus = z.infer<typeof WorkflowNodePreviewFieldStatusEnum>;
+export type WorkflowNodePreviewInputField = z.infer<typeof WorkflowNodePreviewInputFieldSchema>;
+export type ValidateWorkflowNodePreviewDto = z.infer<typeof ValidateWorkflowNodePreviewSchema>;
+export type WorkflowNodePreviewField = z.infer<typeof WorkflowNodePreviewFieldSchema>;
+export type WorkflowNodePreviewResult = z.infer<typeof WorkflowNodePreviewResultSchema>;
 
 export type WorkflowModeUi = z.infer<typeof WORKFLOW_MODE_UI_ENUM>;
 export type WorkflowCanonicalNodeType = (typeof WORKFLOW_CANONICAL_NODE_TYPES)[number];

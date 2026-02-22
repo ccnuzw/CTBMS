@@ -974,9 +974,12 @@ export const CreateResearchReportSchema = z.object({
 // 手工创建研报 Schema
 export const CreateManualResearchReportSchema = CreateResearchReportSchema.omit({ intelId: true }).extend({
   intelId: z.string().optional(),
+  content: z.string().optional(), // 研报正文（Markdown），与 summary（摘要）分离
 });
 
-export const UpdateResearchReportSchema = CreateResearchReportSchema.partial().omit({ intelId: true });
+export const UpdateResearchReportSchema = CreateResearchReportSchema.partial().omit({ intelId: true }).extend({
+  intelId: z.string().optional(),
+});
 
 export const ResearchReportResponseSchema = z.object({
   id: z.string(),

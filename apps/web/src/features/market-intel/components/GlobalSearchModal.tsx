@@ -8,7 +8,8 @@ import {
     EnterOutlined,
 } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
-import { useMarketIntels, useResearchReports } from '../api/hooks';
+import { useMarketIntels } from '../api/hooks';
+import { useKnowledgeReports } from '../api/knowledge-hooks';
 import { IntelCategory, ReviewStatus } from '@packages/types';
 import { stripHtml } from '@packages/utils';
 import { useModalAutoFocus } from '@/hooks/useModalAutoFocus';
@@ -43,9 +44,9 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({ open, onCl
         pageSize: 100,
     });
 
-    const { data: reportsResult, isLoading: reportsLoading } = useResearchReports({
+    const { data: reportsResult, isLoading: reportsLoading } = useKnowledgeReports({
         pageSize: 100,
-        reviewStatus: ReviewStatus.APPROVED,
+        status: 'PUBLISHED',
     });
 
     const isLoading = docsLoading || reportsLoading;
@@ -62,12 +63,12 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({ open, onCl
             url: `/intel/knowledge?tab=library&content=documents`,
         }));
 
-        const reports: SearchResult[] = (reportsResult?.data || []).map((report) => ({
+        const reports: SearchResult[] = (reportsResult?.data || []).map((report: any) => ({
             id: report.id,
             title: report.title,
-            summary: stripHtml(report.summary || '').substring(0, 100),
+            summary: stripHtml(report.analysis?.summary || report.contentPlain?.substring(0, 200) || '').substring(0, 100),
             type: 'report' as const,
-            date: String(report.publishDate || report.createdAt),
+            date: String(report.publishAt || report.createdAt),
             tags: report.commodities || [],
             url: `/intel/knowledge/reports/${report.id}`,
         }));

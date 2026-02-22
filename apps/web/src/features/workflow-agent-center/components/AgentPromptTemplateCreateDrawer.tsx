@@ -15,9 +15,12 @@ import { getErrorMessage } from '../../../api/client';
 import {
     useCreateAgentPromptTemplate,
 } from '../api';
-import { AGENT_ROLE_OPTIONS, getAgentRoleLabel } from '../constants';
+import { AGENT_ROLE_OPTIONS, getAgentRoleLabel, OUTPUT_SCHEMA_OPTIONS } from '../constants';
 import { VariablesEditor } from './VariablesEditor';
 import { GuardrailsEditor } from './GuardrailsEditor';
+import { StructuredPromptBuilder } from './StructuredPromptBuilder';
+import { OutputSchemaBuilder } from './OutputSchemaBuilder';
+import { VisualGuardrailsBuilder } from './VisualGuardrailsBuilder';
 
 interface AgentPromptTemplateCreateDrawerProps {
     open: boolean;
@@ -71,6 +74,9 @@ export const AgentPromptTemplateCreateDrawer: React.FC<AgentPromptTemplateCreate
                 ...formValues,
                 variables,
                 guardrails,
+                outputSchema: formValues.outputSchemaCode === 'CUSTOM' && formValues.outputSchemaString
+                    ? JSON.parse(formValues.outputSchemaString)
+                    : undefined,
             });
             message.success('创建成功');
             onClose();
@@ -113,17 +119,31 @@ export const AgentPromptTemplateCreateDrawer: React.FC<AgentPromptTemplateCreate
                     <Select options={AGENT_ROLE_OPTIONS.map((r) => ({ label: getAgentRoleLabel(r), value: r }))} />
                 </Form.Item>
                 <Form.Item name="systemPrompt" label="系统提示词" rules={[{ required: true }]}>
-                    <Input.TextArea rows={6} />
+                    <StructuredPromptBuilder />
                 </Form.Item>
                 <Form.Item name="userPromptTemplate" label="用户提示模板" rules={[{ required: true }]}>
                     <Input.TextArea rows={6} />
                 </Form.Item>
                 <Form.Item name="outputSchemaCode" label="输出 Schema 编码">
-                    <Input placeholder="关联的输出 Schema 编码" />
+                    <Select options={OUTPUT_SCHEMA_OPTIONS} placeholder="选择或自定义输出结构" />
+                </Form.Item>
+                <Form.Item
+                    noStyle
+                    shouldUpdate={(prev, curr) => prev.outputSchemaCode !== curr.outputSchemaCode}
+                >
+                    {({ getFieldValue }) =>
+                        getFieldValue('outputSchemaCode') === 'CUSTOM' ? (
+                            <Form.Item name="outputSchemaString" label="自定义输出结构">
+                                <OutputSchemaBuilder />
+                            </Form.Item>
+                        ) : null
+                    }
                 </Form.Item>
 
                 <VariablesEditor name="variablesList" />
-                <GuardrailsEditor name="guardrailsConfig" />
+                <Form.Item name="guardrailsConfig" label="防护规则">
+                    <VisualGuardrailsBuilder />
+                </Form.Item>
                 <Form.Item name="templateSource" label="来源" hidden>
                     <Input />
                 </Form.Item>

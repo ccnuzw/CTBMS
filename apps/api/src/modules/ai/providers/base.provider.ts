@@ -2,6 +2,7 @@ export interface AIRequestOptions {
   modelName: string;
   apiKey: string;
   apiUrl?: string;
+  wireApi?: string; // [NEW] 'responses' | 'chat'
   authType?: 'bearer' | 'api-key' | 'custom' | 'none';
   headers?: Record<string, string>;
   queryParams?: Record<string, string>;

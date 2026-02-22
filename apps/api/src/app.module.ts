@@ -42,6 +42,9 @@ import { ExecutionAnalyticsModule } from './modules/execution-analytics';
 import { TemplateCatalogModule } from './modules/template-catalog';
 import { FuturesSimModule } from './modules/futures-sim';
 import { UserConfigBindingModule } from './modules/user-config-binding';
+import { ConnectorModule } from './modules/connector/connector.module';
+import { AgentPersonaModule } from './modules/agent-persona/agent-persona.module';
+import { WizardModule } from './modules/wizard/wizard.module';
 
 @Module({
   imports: [
@@ -85,6 +88,9 @@ import { UserConfigBindingModule } from './modules/user-config-binding';
     TemplateCatalogModule,
     FuturesSimModule,
     UserConfigBindingModule,
+    ConnectorModule,
+    AgentPersonaModule,
+    WizardModule,
   ],
   controllers: [AppController],
   providers: [],

@@ -13,7 +13,7 @@ export const KnowledgeDefaultRedirect: React.FC = () => {
         const tab = searchParams.get('tab');
 
         if (tab === 'workbench') {
-            navigate('/intel/knowledge/workbench', { replace: true });
+            navigate('/intel/knowledge/items', { replace: true });
         } else if (tab === 'library') {
             // Preserve other params like content=reports
             const newParams = new URLSearchParams(searchParams);
@@ -24,7 +24,7 @@ export const KnowledgeDefaultRedirect: React.FC = () => {
             navigate('/intel/knowledge/dashboard', { replace: true });
         } else {
             // Default fallback
-            navigate('/intel/knowledge/workbench', { replace: true });
+            navigate('/intel/knowledge/items', { replace: true });
         }
     }, [navigate, searchParams]);
 

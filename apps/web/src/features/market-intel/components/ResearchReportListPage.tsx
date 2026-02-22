@@ -1,7 +1,7 @@
 
 import React, { useMemo, useRef, useState } from 'react';
 import { PageContainer, ProTable, ActionType, ProColumns } from '@ant-design/pro-components';
-import { Button, message, Tag, Space, Popconfirm, Dropdown, MenuProps, Modal } from 'antd';
+import { Button, message, Tag, Space, Popconfirm, Dropdown, MenuProps, Modal, Alert } from 'antd';
 import {
     FileTextOutlined,
     DeleteOutlined,
@@ -14,19 +14,27 @@ import {
     CloseCircleOutlined,
     DownOutlined,
 } from '@ant-design/icons';
-import { ResearchReportResponse, ReportType, ReviewStatus } from '@packages/types';
+import { ReportType } from '@packages/types';
 import { REVIEW_STATUS_LABELS, REVIEW_STATUS_COLORS } from '@/constants';
 import { useDictionaries } from '@/hooks/useDictionaries';
 import {
-    useResearchReports,
-    useBatchDeleteResearchReports,
-    useBatchReviewResearchReports,
-    useExportResearchReports,
-    useUpdateReviewStatus,
-    useDeleteResearchReport
-} from '../api/hooks';
+    useKnowledgeReports,
+    useBatchDeleteKnowledgeReports,
+    useExportKnowledgeReports,
+    useDeleteKnowledgeReport,
+    useReviewKnowledgeReport,
+    KnowledgeItem
+} from '../api/knowledge-hooks';
 import { apiClient } from '../../../api/client';
 import { useNavigate } from 'react-router-dom';
+
+// 兼容旧枚举
+const ReviewStatus = {
+    PENDING: 'PENDING_REVIEW',
+    APPROVED: 'PUBLISHED',
+    REJECTED: 'REJECTED',
+    ARCHIVED: 'ARCHIVED'
+};
 
 export const ResearchReportListPage: React.FC = () => {
     const actionRef = useRef<ActionType>();
@@ -39,11 +47,10 @@ export const ResearchReportListPage: React.FC = () => {
     const [modal, modalContextHolder] = Modal.useModal();
 
     // Hooks
-    const { mutateAsync: batchDelete, isPending: isBatchDeleting } = useBatchDeleteResearchReports();
-    const { mutateAsync: batchReview } = useBatchReviewResearchReports();
-    const { mutateAsync: exportReports, isPending: isExporting } = useExportResearchReports();
-    const { mutateAsync: updateReviewStatus } = useUpdateReviewStatus();
-    const { mutateAsync: deleteReport } = useDeleteResearchReport();
+    const { mutateAsync: batchDelete, isPending: isBatchDeleting } = useBatchDeleteKnowledgeReports();
+    const { mutateAsync: exportReports, isPending: isExporting } = useExportKnowledgeReports();
+    const { mutateAsync: reviewReport } = useReviewKnowledgeReport();
+    const { mutateAsync: deleteReport } = useDeleteKnowledgeReport();
     const { data: dictionaries } = useDictionaries(['REPORT_TYPE']);
 
     const reportTypeValueEnum = useMemo(() => {
@@ -88,8 +95,11 @@ export const ResearchReportListPage: React.FC = () => {
         colors: REVIEW_STATUS_COLORS,
     };
 
+    // Debug state
+    const [debugInfo, setDebugInfo] = useState<{ loaded: number; total: number }>({ loaded: 0, total: 0 });
+
     // Columns
-    const columns: ProColumns<ResearchReportResponse>[] = [
+    const columns: ProColumns<KnowledgeItem>[] = [
         {
             title: '标题',
             dataIndex: 'title',
@@ -103,33 +113,36 @@ export const ResearchReportListPage: React.FC = () => {
         {
             title: '类型',
             dataIndex: 'reportType',
-            valueType: 'select',
-            valueEnum: reportTypeValueEnum,
             width: 100,
+            render: (_, record) => record.analysis?.reportType || '-',
         },
         {
             title: '来源',
-            dataIndex: 'source',
+            dataIndex: 'sourceType',
             width: 120,
             tooltip: '发布机构或来源',
         },
         {
             title: '审核状态',
-            dataIndex: 'reviewStatus',
+            dataIndex: 'status',
             width: 100,
-            valueType: 'select',
-            valueEnum: reviewStatusValueEnum,
             render: (_, record) => {
+                // Map new status back to old REVIEW_STATUS for UI colors
+                let uiStatusKey = 'PENDING';
+                if (record.status === 'PUBLISHED') uiStatusKey = 'APPROVED';
+                else if (record.status === 'REJECTED') uiStatusKey = 'REJECTED';
+                else if (record.status === 'ARCHIVED') uiStatusKey = 'ARCHIVED';
+
                 return (
-                    <Tag color={reviewStatusMeta.colors[record.reviewStatus] || 'default'}>
-                        {reviewStatusMeta.labels[record.reviewStatus] || record.reviewStatus}
+                    <Tag color={reviewStatusMeta.colors[uiStatusKey] || 'default'}>
+                        {reviewStatusMeta.labels[uiStatusKey] || record.status}
                     </Tag>
                 );
             }
         },
         {
             title: '发布日期',
-            dataIndex: 'publishDate',
+            dataIndex: 'publishAt',
             valueType: 'date',
             sorter: true,
             width: 120,
@@ -153,14 +166,14 @@ export const ResearchReportListPage: React.FC = () => {
             width: 220,
             render: (_, record) => {
                 const renderQuickAudit = () => {
-                    if (record.reviewStatus !== ReviewStatus.PENDING) return null;
+                    if (record.status !== 'PENDING_REVIEW') return null;
                     return (
                         <Space size={4}>
                             <Button
                                 size="small"
                                 type="link"
                                 onClick={async () => {
-                                    await updateReviewStatus({ id: record.id, status: ReviewStatus.APPROVED, reviewerId: 'current-user' });
+                                    await reviewReport({ id: record.id, action: 'APPROVE', reviewerId: 'current-user' });
                                     messageApi.success('已通过审核');
                                     actionRef.current?.reload();
                                 }}
@@ -172,7 +185,7 @@ export const ResearchReportListPage: React.FC = () => {
                                 type="link"
                                 danger
                                 onClick={async () => {
-                                    await updateReviewStatus({ id: record.id, status: ReviewStatus.REJECTED, reviewerId: 'current-user' });
+                                    await reviewReport({ id: record.id, action: 'REJECT', reviewerId: 'current-user' });
                                     messageApi.success('已驳回');
                                     actionRef.current?.reload();
                                 }}
@@ -188,9 +201,9 @@ export const ResearchReportListPage: React.FC = () => {
                         key: 'approve',
                         label: '通过审核',
                         icon: <CheckCircleOutlined />,
-                        disabled: record.reviewStatus === ReviewStatus.APPROVED,
+                        disabled: record.status === 'PUBLISHED',
                         onClick: async () => {
-                            await updateReviewStatus({ id: record.id, status: ReviewStatus.APPROVED, reviewerId: 'current-user' });
+                            await reviewReport({ id: record.id, action: 'APPROVE', reviewerId: 'current-user' });
                             messageApi.success('已通过审核');
                             actionRef.current?.reload();
                         }
@@ -199,9 +212,9 @@ export const ResearchReportListPage: React.FC = () => {
                         key: 'reject',
                         label: '驳回审核',
                         icon: <CloseCircleOutlined />,
-                        disabled: record.reviewStatus === ReviewStatus.REJECTED,
+                        disabled: record.status === 'REJECTED',
                         onClick: async () => {
-                            await updateReviewStatus({ id: record.id, status: ReviewStatus.REJECTED, reviewerId: 'current-user' });
+                            await reviewReport({ id: record.id, action: 'REJECT', reviewerId: 'current-user' });
                             messageApi.success('已驳回');
                             actionRef.current?.reload();
                         }
@@ -223,13 +236,13 @@ export const ResearchReportListPage: React.FC = () => {
                 return (
                     <Space>
                         {renderQuickAudit()}
-                        <a onClick={() => navigate(`/intel/knowledge/reports/${record.id}`)}>查看</a>
+                        <a onClick={() => navigate(`/intel/research-reports/${record.id}`)}>查看</a>
                         <Dropdown menu={{
                             items: [
                                 {
                                     key: 'edit',
                                     label: '编辑',
-                                    onClick: () => navigate(`/intel/knowledge/reports/${record.id}?action=edit`)
+                                    onClick: () => navigate(`/intel/knowledge/reports/${record.id}/edit`)
                                 },
                                 ...menuItems // Spread existing menu items
                             ],
@@ -285,16 +298,17 @@ export const ResearchReportListPage: React.FC = () => {
         }
     };
 
-    const handleBatchReview = async (status: ReviewStatus) => {
+    const handleBatchReview = async (status: string) => {
         if (!selectedRowKeys.length) return;
         const actionText = status === ReviewStatus.APPROVED ? '通过' : '驳回';
+        const actionType = status === ReviewStatus.APPROVED ? 'APPROVE' : 'REJECT';
         modal.confirm({
             title: `确认${actionText}审核?`,
             content: `确定要${actionText}选中的 ${selectedRowKeys.length} 条研报吗?`,
             onOk: async () => {
                 try {
                     setBatchReviewLoading(true);
-                    await batchReview({ ids: selectedRowKeys as string[], status, reviewerId: 'current-user' });
+                    await Promise.all(selectedRowKeys.map(id => reviewReport({ id: id as string, action: actionType, reviewerId: 'current-user' })));
                     messageApi.success(`已${actionText} ${selectedRowKeys.length} 条研报`);
                     setSelectedRowKeys([]);
                     actionRef.current?.reload();
@@ -318,7 +332,14 @@ export const ResearchReportListPage: React.FC = () => {
         <div style={{ padding: 24 }}>
             {contextHolder}
             {modalContextHolder}
-            <ProTable<ResearchReportResponse>
+            <Alert
+                message="Debug Mode"
+                description={`Total Records from API: ${debugInfo.total} | Actually Loaded in Table: ${debugInfo.loaded} | Page Size: 50`}
+                type="warning"
+                showIcon
+                style={{ marginBottom: 16 }}
+            />
+            <ProTable<KnowledgeItem>
                 headerTitle="研报列表"
                 actionRef={actionRef}
                 rowKey="id"
@@ -377,7 +398,7 @@ export const ResearchReportListPage: React.FC = () => {
                     // Construct query params
                     const queryParams = new URLSearchParams();
                     queryParams.append('page', String(current || 1));
-                    queryParams.append('pageSize', String(pageSize || 20));
+                    queryParams.append('pageSize', String(pageSize || 50));
 
                     Object.entries(searchParams).forEach(([key, value]) => {
                         if (value) queryParams.append(key, String(value));
@@ -388,16 +409,13 @@ export const ResearchReportListPage: React.FC = () => {
                         queryParams.append('reportType', filter.reportType.join(','));
                     }
                     if (filter.reviewStatus) {
-                        queryParams.append('reviewStatus', filter.reviewStatus.join(','));
+                        queryParams.append('status', filter.reviewStatus.join(','));
                     }
 
-                    // Add sort
-                    // Backend might expect `sortBy` and `sortOrder`
-                    // ProTable sort format: { field: "ascend" | "descend" }
-                    // Let's assume backend supports `orderBy`
-
                     try {
-                        const res = await apiClient.get<any>(`/market-intel/research-reports?${queryParams.toString()}`);
+                        const res = await apiClient.get<any>(`/knowledge/reports?${queryParams.toString()}`);
+                        console.log('[ResearchReportList] Loaded:', res.data.data?.length, 'Total:', res.data.total, 'Data:', res.data.data);
+                        setDebugInfo({ loaded: res.data.data?.length || 0, total: res.data.total || 0 });
                         return {
                             data: res.data.data,
                             success: true,

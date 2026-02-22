@@ -69,8 +69,35 @@ export class DocumentParserService {
      * 解析 PDF 文档
      */
     private async parsePdf(buffer: Buffer): Promise<ParseResult> {
+        // Suppress specific harmless PDFJS TrueType font warnings
+        // PDF.js emits these async during font processing, so we keep suppression
+        // active until all processing is done.
+        const originalWarn = console.warn;
+        const originalLog = console.log;
+        const ttWarningPattern = /Warning: TT: undefined function/;
+
+        console.warn = (...args: unknown[]) => {
+            if (args.length > 0 && typeof args[0] === 'string' && ttWarningPattern.test(args[0])) {
+                return;
+            }
+            originalWarn.apply(console, args);
+        };
+        console.log = (...args: unknown[]) => {
+            if (args.length > 0 && typeof args[0] === 'string' && ttWarningPattern.test(args[0])) {
+                return;
+            }
+            originalLog.apply(console, args);
+        };
+
+        const restore = () => {
+            console.warn = originalWarn;
+            console.log = originalLog;
+        };
+
         try {
             const data = await pdfParse(buffer);
+            // Delay restoration to catch async font processing warnings
+            setTimeout(restore, 2000);
 
             return {
                 text: data.text,
@@ -82,6 +109,7 @@ export class DocumentParserService {
                 },
             };
         } catch (error) {
+            restore(); // Restore immediately on error
             this.logger.error('Failed to parse PDF', error);
             throw new Error(`PDF 解析失败: ${error instanceof Error ? error.message : 'unknown error'}`);
         }

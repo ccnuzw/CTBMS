@@ -69,7 +69,7 @@ export class MarketIntelService {
     private prisma: PrismaService,
     private aiService: AIService,
     private knowledgeService: KnowledgeService,
-  ) {}
+  ) { }
 
   private resolveIntelSourceTypes(values?: string[]) {
     if (!values) return [];
@@ -196,12 +196,12 @@ export class MarketIntelService {
    * 创建商情情报
    * 支持从 C 类日报自动提取 A 类价格数据
    */
-  async create(dto: CreateMarketIntelDto, authorId: string) {
+  async create(dto: CreateMarketIntelDto, authorId: string, skipKnowledgeSync = false) {
     // 计算总分
     const totalScore = Math.round(
       (dto.completenessScore || 0) * 0.4 +
-        (dto.scarcityScore || 0) * 0.3 +
-        (dto.validationScore || 0) * 0.3,
+      (dto.scarcityScore || 0) * 0.3 +
+      (dto.validationScore || 0) * 0.3,
     );
 
     try {
@@ -236,10 +236,12 @@ export class MarketIntelService {
       await this.updateAuthorStats(authorId);
 
       // Knowledge V2 双写（失败不影响主流程）
-      try {
-        await this.knowledgeService.syncFromMarketIntel(intel.id);
-      } catch (syncError) {
-        console.warn('[MarketIntelService.create] Knowledge V2 sync failed:', syncError);
+      if (!skipKnowledgeSync) {
+        try {
+          await this.knowledgeService.syncFromMarketIntel(intel.id);
+        } catch (syncError) {
+          console.warn('[MarketIntelService.create] Knowledge V2 sync failed:', syncError);
+        }
       }
 
       return intel;
@@ -2339,10 +2341,10 @@ export class MarketIntelService {
           ...(commodities?.length ? { commodity: { in: commodities } } : {}),
           OR: keyword
             ? [
-                { location: { contains: keyword, mode: 'insensitive' } },
-                { commodity: { contains: keyword, mode: 'insensitive' } },
-                { note: { contains: keyword, mode: 'insensitive' } },
-              ]
+              { location: { contains: keyword, mode: 'insensitive' } },
+              { commodity: { contains: keyword, mode: 'insensitive' } },
+              { note: { contains: keyword, mode: 'insensitive' } },
+            ]
             : undefined,
         },
         take: pricePageSize,
@@ -2360,10 +2362,10 @@ export class MarketIntelService {
           ...dateFilter,
           OR: keyword
             ? [
-                { rawContent: { contains: keyword, mode: 'insensitive' } },
-                { summary: { contains: keyword, mode: 'insensitive' } },
-                { location: { contains: keyword, mode: 'insensitive' } },
-              ]
+              { rawContent: { contains: keyword, mode: 'insensitive' } },
+              { summary: { contains: keyword, mode: 'insensitive' } },
+              { location: { contains: keyword, mode: 'insensitive' } },
+            ]
             : undefined,
         },
         take: intelPageSize,
@@ -2380,10 +2382,10 @@ export class MarketIntelService {
           ...dateFilter,
           OR: keyword
             ? [
-                { rawContent: { contains: keyword, mode: 'insensitive' } },
-                { summary: { contains: keyword, mode: 'insensitive' } },
-                { location: { contains: keyword, mode: 'insensitive' } },
-              ]
+              { rawContent: { contains: keyword, mode: 'insensitive' } },
+              { summary: { contains: keyword, mode: 'insensitive' } },
+              { location: { contains: keyword, mode: 'insensitive' } },
+            ]
             : undefined,
         },
         take: docPageSize,
@@ -2460,9 +2462,9 @@ export class MarketIntelService {
           ...(commodities?.length ? { commodity: { in: commodities } } : {}),
           OR: keyword
             ? [
-                { location: { contains: keyword, mode: 'insensitive' } },
-                { commodity: { contains: keyword, mode: 'insensitive' } },
-              ]
+              { location: { contains: keyword, mode: 'insensitive' } },
+              { commodity: { contains: keyword, mode: 'insensitive' } },
+            ]
             : undefined,
         },
       }),
@@ -2472,9 +2474,9 @@ export class MarketIntelService {
           ...dateFilter,
           OR: keyword
             ? [
-                { rawContent: { contains: keyword, mode: 'insensitive' } },
-                { summary: { contains: keyword, mode: 'insensitive' } },
-              ]
+              { rawContent: { contains: keyword, mode: 'insensitive' } },
+              { summary: { contains: keyword, mode: 'insensitive' } },
+            ]
             : undefined,
         },
       }),
@@ -2484,9 +2486,9 @@ export class MarketIntelService {
           ...dateFilter,
           OR: keyword
             ? [
-                { rawContent: { contains: keyword, mode: 'insensitive' } },
-                { summary: { contains: keyword, mode: 'insensitive' } },
-              ]
+              { rawContent: { contains: keyword, mode: 'insensitive' } },
+              { summary: { contains: keyword, mode: 'insensitive' } },
+            ]
             : undefined,
         },
       }),
@@ -2782,8 +2784,8 @@ export class MarketIntelService {
             // 标签匹配
             ...(sourceTags.length > 0
               ? sourceTags.map((tag) => ({
-                  aiAnalysis: { path: ['tags'], array_contains: tag },
-                }))
+                aiAnalysis: { path: ['tags'], array_contains: tag },
+              }))
               : []),
             // 区域匹配
             ...(sourceRegions.length > 0 ? [{ region: { hasSome: sourceRegions } }] : []),
@@ -2828,23 +2830,23 @@ export class MarketIntelService {
       // 3. 关联价格数据
       sourceCommodities.length > 0
         ? this.prisma.priceData.findMany({
-            where: {
-              commodity: { in: sourceCommodities },
-              effectiveDate: { gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) }, // 最近 7 天
+          where: {
+            commodity: { in: sourceCommodities },
+            effectiveDate: { gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) }, // 最近 7 天
+          },
+          take: limit,
+          orderBy: { effectiveDate: 'desc' },
+          select: {
+            id: true,
+            commodity: true,
+            price: true,
+            location: true,
+            effectiveDate: true,
+            collectionPoint: {
+              select: { name: true, shortName: true },
             },
-            take: limit,
-            orderBy: { effectiveDate: 'desc' },
-            select: {
-              id: true,
-              commodity: true,
-              price: true,
-              location: true,
-              effectiveDate: true,
-              collectionPoint: {
-                select: { name: true, shortName: true },
-              },
-            },
-          })
+          },
+        })
         : Promise.resolve([]),
     ]);
 
@@ -2870,6 +2872,73 @@ export class MarketIntelService {
       sourceTags,
       sourceCommodities,
       sourceRegions,
+    };
+  }
+
+  /**
+   * 将文档升级为研报 (Promote to Report)
+   * 从已有的 MarketIntel 文档生成结构化 KnowledgeItem(RESEARCH)
+   */
+  async promoteToReport(intelId: string, dto: { reportType: string; triggerDeepAnalysis?: boolean }) {
+    // 1. 查找源文档
+    const intel = await this.prisma.marketIntel.findUnique({
+      where: { id: intelId },
+    });
+
+    if (!intel) {
+      throw new NotFoundException(`文档 ID ${intelId} 不存在`);
+    }
+
+    // 2. 检查是否已有关联的新版研报
+    const existingKnowledge = await this.prisma.knowledgeItem.findFirst({
+      where: {
+        originLegacyType: 'MARKET_INTEL',
+        originLegacyId: intelId,
+        type: 'RESEARCH',
+      },
+    });
+
+    if (existingKnowledge) {
+      return {
+        success: true,
+        reportId: existingKnowledge.id,
+        report: existingKnowledge,
+      };
+    }
+
+    // 3. 从 AI 分析结果中提取结构化数据
+    const aiAnalysis = (intel.aiAnalysis ?? {}) as AIAnalysisResult;
+
+    const title =
+      aiAnalysis.extractedData?.title ||
+      aiAnalysis.summary?.substring(0, 50) ||
+      intel.summary?.substring(0, 50) ||
+      '未命名研报';
+
+    const commodities =
+      aiAnalysis.commodities ||
+      (aiAnalysis.reportMeta?.commodity ? [aiAnalysis.reportMeta.commodity] : []);
+    const regions = aiAnalysis.regions || intel.region || [];
+
+    // 4. 调用 KnowledgeService 创建新版研报
+    const report = await this.knowledgeService.createResearchReport({
+      title,
+      contentPlain: intel.rawContent || intel.summary || '',
+      reportType: dto.reportType,
+      publishAt: intel.effectiveTime || new Date(),
+      sourceType: intel.sourceType || 'INTERNAL_REPORT',
+      commodities,
+      region: regions,
+      authorId: intel.authorId || 'system',
+      triggerAnalysis: dto.triggerDeepAnalysis,
+      intelId: intel.id,
+      summary: intel.summary || '',
+    });
+
+    return {
+      success: true,
+      reportId: report.id,
+      report,
     };
   }
 }

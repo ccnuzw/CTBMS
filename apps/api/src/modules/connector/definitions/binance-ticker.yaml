@@ -1,0 +1,26 @@
+meta:
+  id: binance-ticker
+  name: Binance Ticker
+  description: Get real-time crypto price from Binance Public API.
+  version: 1.0.0
+  icon: StockOutlined
+  auth:
+    type: NONE
+
+endpoints:
+  - id: getPrice
+    method: GET
+    url: https://api.binance.com/api/v3/ticker/price
+    params:
+      - name: symbol
+        in: QUERY
+        required: true
+        default: BTCUSDT
+
+transform:
+  - op: json_pick
+    args:
+      path: $.price
+  - op: template_render
+    args:
+      tmpl: "The current price of {{symbol}} is {{result}}"

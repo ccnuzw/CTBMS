@@ -22,11 +22,15 @@ export type KnowledgeItem = {
   title: string;
   contentPlain: string;
   contentRich?: string | null;
+  contentFormat?: string | null;
   sourceType?: string | null;
   publishAt?: string | null;
   periodType: string;
   periodKey?: string | null;
   status: string;
+  authorId: string;
+  viewCount: number;
+  downloadCount: number;
   typeLabel?: string;
   statusLabel?: string;
   statusColor?: string;
@@ -38,8 +42,14 @@ export type KnowledgeItem = {
     summary?: string | null;
     tags?: string[];
     keyPoints?: unknown;
+    prediction?: unknown;
+    dataPoints?: unknown;
+    reportType?: string | null;
+    reportPeriod?: string | null;
   } | null;
   attachments?: Array<{ id: string; filename: string }>;
+  createdAt?: string;
+  updatedAt?: string;
 };
 
 export type KnowledgeRelation = {
@@ -428,6 +438,316 @@ export const useReviewReport = () => {
       queryClient.invalidateQueries({ queryKey: ['knowledge', 'list'] });
       queryClient.invalidateQueries({ queryKey: ['knowledge', 'pending-reviews'] });
       queryClient.invalidateQueries({ queryKey: ['knowledge', 'my-reports'] });
+    },
+  });
+};
+
+// =============================================
+// 研报专用 Hooks（统一到 Knowledge 域）
+// =============================================
+
+export type ReportListQuery = {
+  reportType?: string;
+  status?: string;
+  commodity?: string;
+  region?: string;
+  startDate?: string;
+  endDate?: string;
+  keyword?: string;
+  title?: string;
+  sourceType?: string;
+  page?: number;
+  pageSize?: number;
+};
+
+export type ReportStatsResponse = {
+  total: number;
+  weeklyReportsCount?: number;
+  totalViews: number;
+  totalDownloads: number;
+  byStatus: Record<string, number>;
+  byReportType: Record<string, number>;
+  topCommodities: Array<{ name: string; count: number }>;
+  topRegions: Array<{ name: string; count: number }>;
+  recent: Array<{
+    id: string;
+    title: string;
+    sourceType: string | null;
+    createdAt: string;
+    viewCount: number;
+    status: string;
+  }>;
+};
+
+export interface CreateReportPayload {
+  title: string;
+  contentPlain: string;
+  contentRich?: string;
+  reportType?: string;
+  reportPeriod?: string;
+  publishAt?: string;
+  sourceType?: string;
+  commodities?: string[];
+  region?: string[];
+  authorId: string;
+  summary?: string;
+  keyPoints?: unknown;
+  prediction?: unknown;
+  dataPoints?: unknown;
+  triggerAnalysis?: boolean;
+  intelId?: string;
+  attachmentIds?: string[];
+}
+
+export interface UpdateReportPayload {
+  title?: string;
+  contentPlain?: string;
+  contentRich?: string;
+  reportType?: string;
+  reportPeriod?: string;
+  publishAt?: string;
+  sourceType?: string;
+  commodities?: string[];
+  region?: string[];
+  summary?: string;
+  keyPoints?: unknown;
+  prediction?: unknown;
+  dataPoints?: unknown;
+}
+
+/**
+ * 查询研报列表
+ */
+export const useKnowledgeReports = (query?: ReportListQuery) => {
+  return useQuery<PaginatedResponse<KnowledgeItem>>({
+    queryKey: ['knowledge', 'reports', query],
+    queryFn: async () => {
+      const params = new URLSearchParams();
+      if (query) {
+        Object.entries(query).forEach(([key, value]) => {
+          if (value !== undefined && value !== null && value !== '') {
+            params.append(key, String(value));
+          }
+        });
+      }
+      const res = await apiClient.get<PaginatedResponse<KnowledgeItem>>(
+        `/knowledge/reports?${params.toString()}`,
+      );
+      return {
+        ...res.data,
+        data: res.data.data.map(mapKnowledgeItem),
+      };
+    },
+  });
+};
+
+/**
+ * 获取单个研报详情
+ */
+export const useKnowledgeReport = (id?: string) => {
+  return useQuery<KnowledgeItem>({
+    queryKey: ['knowledge', 'report', id],
+    queryFn: async () => {
+      const res = await apiClient.get<KnowledgeItem>(`/knowledge/reports/${id}`);
+      return mapKnowledgeItem(res.data);
+    },
+    enabled: !!id,
+  });
+};
+
+/**
+ * 创建研报
+ */
+export const useCreateKnowledgeReport = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (payload: CreateReportPayload) => {
+      const res = await apiClient.post<KnowledgeItem>('/knowledge/reports', payload);
+      return mapKnowledgeItem(res.data);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['knowledge', 'reports'] });
+      queryClient.invalidateQueries({ queryKey: ['knowledge', 'list'] });
+    },
+  });
+};
+
+/**
+ * 更新研报
+ */
+export const useUpdateKnowledgeReport = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({ id, ...payload }: UpdateReportPayload & { id: string }) => {
+      const res = await apiClient.patch<KnowledgeItem>(`/knowledge/reports/${id}`, payload);
+      return mapKnowledgeItem(res.data);
+    },
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: ['knowledge', 'reports'] });
+      queryClient.invalidateQueries({ queryKey: ['knowledge', 'report', variables.id] });
+      queryClient.invalidateQueries({ queryKey: ['knowledge', 'list'] });
+    },
+  });
+};
+
+/**
+ * 提交草稿研报至审核区并联动任务
+ */
+export const useSubmitDraftReport = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({ id, taskId, authorId }: { id: string; taskId?: string; authorId?: string }) => {
+      const res = await apiClient.post<KnowledgeItem>(`/knowledge/reports/${id}/submit`, { taskId, authorId });
+      return mapKnowledgeItem(res.data);
+    },
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: ['knowledge', 'reports'] });
+      queryClient.invalidateQueries({ queryKey: ['knowledge', 'report', variables.id] });
+      queryClient.invalidateQueries({ queryKey: ['knowledge', 'list'] });
+      // 如果联动了任务，也一并刷新相关任务列表
+      if (variables.taskId) {
+        queryClient.invalidateQueries({ queryKey: ['intel-tasks'] });
+      }
+    },
+  });
+};
+
+/**
+ * 删除研报
+ */
+export const useDeleteKnowledgeReport = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (id: string) => {
+      const res = await apiClient.delete(`/knowledge/reports/${id}`);
+      return res.data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['knowledge', 'reports'] });
+      queryClient.invalidateQueries({ queryKey: ['knowledge', 'list'] });
+    },
+  });
+};
+
+/**
+ * 批量删除研报
+ */
+export const useBatchDeleteKnowledgeReports = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (ids: string[]) => {
+      const res = await apiClient.post('/knowledge/reports/batch-delete', { ids });
+      return res.data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['knowledge', 'reports'] });
+      queryClient.invalidateQueries({ queryKey: ['knowledge', 'list'] });
+    },
+  });
+};
+
+/**
+ * 研报统计
+ */
+export const useKnowledgeReportStats = (days?: number) => {
+  return useQuery<ReportStatsResponse>({
+    queryKey: ['knowledge', 'report-stats', days],
+    queryFn: async () => {
+      const params = days ? `?days=${days}` : '';
+      const res = await apiClient.get<ReportStatsResponse>(`/knowledge/reports/stats${params}`);
+      return res.data;
+    },
+  });
+};
+
+/**
+ * 增加浏览次数
+ */
+export const useIncrementReportView = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (id: string) => {
+      const res = await apiClient.post(`/knowledge/reports/${id}/view`);
+      return res.data;
+    },
+    onSuccess: (_, id) => {
+      queryClient.invalidateQueries({ queryKey: ['knowledge', 'report', id] });
+    },
+  });
+};
+
+/**
+ * 增加下载次数
+ */
+export const useIncrementReportDownload = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (id: string) => {
+      const res = await apiClient.post(`/knowledge/reports/${id}/download`);
+      return res.data;
+    },
+    onSuccess: (_, id) => {
+      queryClient.invalidateQueries({ queryKey: ['knowledge', 'report', id] });
+    },
+  });
+};
+
+/**
+ * 导出研报
+ */
+export const useExportKnowledgeReports = () => {
+  return useMutation({
+    mutationFn: async (body: { ids?: string[]; query?: ReportListQuery }) => {
+      const res = await apiClient.post('/knowledge/reports/export', body, {
+        responseType: 'blob',
+      });
+      const blob = new Blob([res.data as BlobPart], {
+        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      });
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(blob);
+      link.setAttribute('download', `reports-export-${new Date().getTime()}.xlsx`);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      return true;
+    },
+  });
+};
+
+/**
+ * 审核研报
+ */
+export const useReviewKnowledgeReport = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (payload: {
+      id: string;
+      action: 'APPROVE' | 'REJECT';
+      reviewerId: string;
+      rejectReason?: string;
+    }) => {
+      const res = await apiClient.post<KnowledgeItem>(
+        `/knowledge/reports/${payload.id}/review`,
+        {
+          action: payload.action,
+          reviewerId: payload.reviewerId,
+          rejectReason: payload.rejectReason,
+        },
+      );
+      return mapKnowledgeItem(res.data);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['knowledge', 'reports'] });
+      queryClient.invalidateQueries({ queryKey: ['knowledge', 'list'] });
     },
   });
 };

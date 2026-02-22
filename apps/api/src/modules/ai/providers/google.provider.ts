@@ -348,6 +348,8 @@ export class GoogleProvider implements IAIProvider {
         'gemini-1.0-pro',
         'gemini-pro',
         'gemini-pro-vision',
+        'text-embedding-004',
+        'text-multilingual-embedding-002',
       ],
     };
   }

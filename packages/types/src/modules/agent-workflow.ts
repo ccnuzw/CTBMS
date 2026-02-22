@@ -35,6 +35,7 @@ export const AgentProfileSchema = z.object({
   toolPolicy: z.record(z.unknown()),
   guardrails: z.record(z.unknown()),
   outputSchemaCode: z.string(),
+  outputSchema: z.record(z.unknown()).nullable().optional(),
   timeoutMs: z.number().int(),
   retryPolicy: z.record(z.unknown()),
   isActive: z.boolean(),
@@ -56,6 +57,7 @@ export const CreateAgentProfileSchema = z.object({
   toolPolicy: z.record(z.unknown()).default({}),
   guardrails: z.record(z.unknown()).default({}),
   outputSchemaCode: z.string().min(1).max(120),
+  outputSchema: z.record(z.unknown()).optional(),
   timeoutMs: z.coerce.number().int().min(1000).max(120000).default(30000),
   retryPolicy: z.record(z.unknown()).default({ retryCount: 1, retryBackoffMs: 2000 }),
   templateSource: WorkflowTemplateSourceEnum.default('PRIVATE'),
@@ -71,6 +73,7 @@ export const UpdateAgentProfileSchema = z.object({
   toolPolicy: z.record(z.unknown()).optional(),
   guardrails: z.record(z.unknown()).optional(),
   outputSchemaCode: z.string().min(1).max(120).optional(),
+  outputSchema: z.record(z.unknown()).optional(),
   timeoutMs: z.coerce.number().int().min(1000).max(120000).optional(),
   retryPolicy: z.record(z.unknown()).optional(),
   isActive: z.boolean().optional(),
@@ -113,6 +116,7 @@ export const AgentPromptTemplateSchema = z.object({
   variables: z.record(z.unknown()).nullable().optional(),
   guardrails: z.record(z.unknown()).nullable().optional(),
   outputSchemaCode: z.string().nullable().optional(),
+  outputSchema: z.record(z.unknown()).nullable().optional(),
   version: z.number().int(),
   previousVersionId: z.string().nullable().optional(),
   ownerUserId: z.string().nullable().optional(),
@@ -133,6 +137,7 @@ export const CreateAgentPromptTemplateSchema = z.object({
   variables: z.any().optional(), // Allow any structure for visual editor
   guardrails: z.any().optional(), // Allow any structure for visual editor
   outputSchemaCode: z.string().max(120).optional(),
+  outputSchema: z.record(z.unknown()).optional(),
   templateSource: WorkflowTemplateSourceEnum.default('PRIVATE'),
 });
 
@@ -146,6 +151,7 @@ export const UpdateAgentPromptTemplateSchema = z.object({
   variables: z.any().optional(), // Allow any structure for visual editor
   guardrails: z.any().optional(), // Allow any structure for visual editor
   outputSchemaCode: z.string().max(120).optional(),
+  outputSchema: z.record(z.unknown()).optional(),
   isActive: z.boolean().optional(),
 });
 

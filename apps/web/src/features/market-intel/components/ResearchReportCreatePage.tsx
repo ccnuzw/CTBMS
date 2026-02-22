@@ -26,6 +26,7 @@ import {
   theme,
   Progress,
   Modal,
+  Alert,
 } from 'antd';
 import {
   FileWordOutlined,
@@ -38,23 +39,28 @@ import {
   BarChartOutlined,
   ExpandAltOutlined,
 } from '@ant-design/icons';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import {
   ReportType,
   REPORT_TYPE_LABELS,
   REPORT_PERIOD_LABELS,
-  CreateManualResearchReportDto,
   IntelCategory,
   ContentType,
   type AIAnalysisResult,
 } from '@packages/types';
 import {
-  useCreateManualResearchReport,
-  useUpdateResearchReport,
-  useResearchReport,
-  useResearchReportStats,
   useAnalyzeContent,
 } from '../api/hooks';
+import {
+  useCreateKnowledgeReport,
+  useUpdateKnowledgeReport,
+  useKnowledgeReport,
+  useKnowledgeReportStats,
+  useSubmitDraftReport,
+  useSubmitReport,
+  useUpdateReport,
+  CreateReportPayload,
+} from '../api/knowledge-hooks';
 import { useProvinces } from '../api/region';
 import TiptapEditor from '@/components/TiptapEditor';
 import { DocumentUploader } from './DocumentUploader';
@@ -63,6 +69,19 @@ import { useDictionaries } from '@/hooks/useDictionaries';
 import dayjs from 'dayjs';
 
 const { Text } = Typography;
+
+// ========== Periodic report (daily/weekly/monthly) simplified mode constants ==========
+const PERIODIC_REPORT_META: Record<string, { label: string; color: string; icon: string }> = {
+  DAILY: { label: '日报', color: 'blue', icon: '📋' },
+  WEEKLY: { label: '周报', color: 'cyan', icon: '📊' },
+  MONTHLY: { label: '月报', color: 'purple', icon: '📑' },
+};
+
+const getPeriodicReportTemplates = (): Record<string, string> => ({
+  DAILY: `## 一、市场概况\n\n今日市场整体表现平稳/波动，主要品种价格...\n\n## 二、重点品种分析\n\n### 1. [品种名]\n- 现货价格：\n- 涨跌幅：\n- 成交情况：\n\n## 三、市场要闻\n\n1. \n2. \n\n## 四、后市展望\n\n根据当前市场情况分析...`,
+  WEEKLY: `## 一、本周市场回顾\n\n本周（${dayjs().startOf('week').add(1, 'day').format('MM/DD')}-${dayjs().endOf('week').add(1, 'day').format('MM/DD')}）市场...\n\n## 二、价格走势分析\n\n| 品种 | 周初价 | 周末价 | 涨跌幅 |\n|------|--------|--------|--------|\n|      |        |        |        |\n\n## 三、供需分析\n\n### 供应端\n- \n\n### 需求端\n- \n\n## 四、政策与消息面\n\n1. \n2. \n\n## 五、下周展望\n\n`,
+  MONTHLY: `## 一、${dayjs().format('YYYY年M月')}市场总结\n\n本月市场整体运行情况...\n\n## 二、价格月度走势\n\n### 主要品种月度表现\n| 品种 | 月初价 | 月末价 | 月涨跌幅 | 均价 |\n|------|--------|--------|----------|------|\n|      |        |        |          |      |\n\n## 三、月度供需平衡分析\n\n### 供应分析\n- \n\n### 需求分析\n- \n\n### 库存变化\n- \n\n## 四、政策环境\n\n1. \n2. \n\n## 五、下月展望\n\n`,
+});
 
 const cssStyles = `
 .fullHeightItem {
@@ -112,18 +131,35 @@ const cssStyles = `
 export const ResearchReportCreatePage = () => {
   const { message } = App.useApp();
   const navigate = useNavigate();
-  const { id: editId } = useParams<{ id?: string }>();
+  const { id: routeEditId } = useParams<{ id?: string }>();
+  const [searchParams] = useSearchParams();
+  const taskId = searchParams.get('taskId');
+
+  // Simplified mode: read knowledgeType from URL param
+  const knowledgeType = searchParams.get('knowledgeType') || 'RESEARCH';
+  const isPeriodicReport = ['DAILY', 'WEEKLY', 'MONTHLY'].includes(knowledgeType);
+  const periodicMeta = PERIODIC_REPORT_META[knowledgeType];
+
+  // Backward compat: old route passes ?reportId=xxx for edit
+  const reportIdFromQuery = searchParams.get('reportId');
+  const editId = routeEditId || reportIdFromQuery || undefined;
   const isEditMode = Boolean(editId);
 
-  const [form] = Form.useForm<CreateManualResearchReportDto>();
+  const [form] = Form.useForm<CreateReportPayload & { content?: string }>();
   const keyPointsWatch = Form.useWatch('keyPoints', form);
   const predictionWatch = Form.useWatch('prediction', form);
   const dataPointsWatch = Form.useWatch('dataPoints', form);
-  const createMutation = useCreateManualResearchReport();
-  const updateMutation = useUpdateResearchReport();
+  const createMutation = useCreateKnowledgeReport();
+  const updateMutation = useUpdateKnowledgeReport();
+  const submitReportMutation = useSubmitDraftReport();
+  const analyzeMutation = useAnalyzeContent();
+
+  // Periodic report specific hooks
+  const submitPeriodicReport = useSubmitReport();
+  const updatePeriodicReport = useUpdateReport();
 
   // Fetch existing report for edit mode
-  const { data: existingReport, isLoading: isLoadingReport } = useResearchReport(editId || '');
+  const { data: existingReport, isLoading: isLoadingReport } = useKnowledgeReport(editId || '');
 
   // Theme
   const { token } = theme.useToken();
@@ -140,7 +176,7 @@ export const ResearchReportCreatePage = () => {
   }>({});
 
   // Data Fetching
-  const { data: stats } = useResearchReportStats();
+  const { data: stats } = useKnowledgeReportStats();
   const { data: provinces } = useProvinces();
   const { data: dictionaries } = useDictionaries([
     'REPORT_TYPE',
@@ -153,9 +189,9 @@ export const ResearchReportCreatePage = () => {
 
   // Computed Options
   const commodityOptions =
-    stats?.commodityDistribution?.map((item: any) => ({
-      label: item.type,
-      value: item.type,
+    stats?.topCommodities?.map((item: any) => ({
+      label: item.name,
+      value: item.name,
     })) || [];
 
   const regionOptions =
@@ -272,66 +308,130 @@ export const ResearchReportCreatePage = () => {
   // Pre-fill form in edit mode
   useEffect(() => {
     if (isEditMode && existingReport) {
-      const existingPrediction = (existingReport.prediction || {}) as any;
+      const existingPrediction = (existingReport.analysis?.prediction || {}) as any;
+      const bodyContent = existingReport.contentRich || existingReport.contentPlain || existingReport.analysis?.summary;
       form.setFieldsValue({
         title: existingReport.title,
-        reportType: existingReport.reportType,
-        publishDate: existingReport.publishDate || undefined,
-        source: existingReport.source || undefined,
+        reportType: existingReport.analysis?.reportType || existingReport.type,
+        publishAt: existingReport.publishAt ? existingReport.publishAt : undefined,
+        sourceType: existingReport.sourceType || undefined,
         commodities: existingReport.commodities,
-        regions: existingReport.regions,
-        summary: existingReport.summary,
-        keyPoints: existingReport.keyPoints,
+        region: existingReport.region,
+        summary: existingReport.analysis?.summary || undefined,
+        content: bodyContent || undefined,
+        keyPoints: existingReport.analysis?.keyPoints as any,
         prediction: {
           ...existingPrediction,
           direction: normalizePredictionDirection(existingPrediction.direction),
           timeframe: normalizePredictionTimeframe(existingPrediction.timeframe),
         },
-        dataPoints: existingReport.dataPoints,
+        dataPoints: existingReport.analysis?.dataPoints as any,
       });
     }
   }, [isEditMode, existingReport, form, predictionDirectionValueMap, predictionTimeframeValueMap]);
 
   // Check if has AI analysis data
   const hasAiData =
-    (keyPointsWatch?.length || 0) > 0 ||
-    predictionWatch?.direction ||
-    (dataPointsWatch?.length || 0) > 0;
+    ((keyPointsWatch as any[])?.length || 0) > 0 ||
+    (predictionWatch as any)?.direction ||
+    ((dataPointsWatch as any[])?.length || 0) > 0;
+  // Simplified mode: auto-generate title
+  const autoTitle = useMemo(() => {
+    if (!isPeriodicReport) return '';
+    const dateStr = dayjs().format('YYYY-MM-DD');
+    const formCommodities = form.getFieldValue('commodities') || [];
+    const commodityStr = formCommodities.length > 0 ? formCommodities.join('/') : '综合';
+    return `${dateStr} ${commodityStr}市场${periodicMeta?.label || '报告'}`;
+  }, [isPeriodicReport, knowledgeType, periodicMeta]);
 
-  const handleFinish = async (values: CreateManualResearchReportDto) => {
-    // Ensure summary is physically present in the values
-    if (!values.summary) {
-      const currentSummary = form.getFieldValue('summary');
-      if (currentSummary) {
-        values.summary = currentSummary;
-      } else {
-        message.error('研报正文不能为空');
-        return;
-      }
+  const handleFinish = async (values: CreateReportPayload & { content?: string }, submitAction?: 'save' | 'submit') => {
+    // Force-read content from form (ProFormItem with custom TiptapEditor may not include it in values)
+    const bodyContent = form.getFieldValue('content') || values.content;
+    const summaryContent = form.getFieldValue('summary') || values.summary;
+
+    console.log('[handleFinish] content length:', bodyContent?.length, 'summary length:', summaryContent?.length);
+
+    if (!bodyContent) {
+      message.error(isPeriodicReport ? '请填写报告内容' : '研报正文不能为空');
+      return;
     }
 
+    const stripped = bodyContent.replace(/<[^>]*>?/gm, '');
+
+    // ======== Periodic report (daily/weekly/monthly) submit path ========
+    if (isPeriodicReport) {
+      const finalTitle = (values.title || '').trim() || autoTitle;
+      const reportPayload = {
+        type: knowledgeType as 'DAILY' | 'WEEKLY' | 'MONTHLY',
+        title: finalTitle,
+        contentPlain: stripped,
+        contentRich: bodyContent,
+        commodities: values.commodities,
+        region: values.region,
+        authorId: 'current-user',
+        taskId: taskId || undefined,
+        triggerAnalysis: true,
+      };
+
+      try {
+        if (isEditMode && editId) {
+          await updatePeriodicReport.mutateAsync({ id: editId, ...reportPayload });
+          message.success(`${periodicMeta?.label}修改成功！`);
+        } else {
+          await submitPeriodicReport.mutateAsync(reportPayload);
+          message.success(`${periodicMeta?.label}提交成功！等待审核...`);
+        }
+        navigate(taskId ? '/workstation' : '/intel/knowledge/items');
+      } catch (error: any) {
+        message.error(error.response?.data?.message || '提交失败，请重试');
+        console.error(error);
+      }
+      return;
+    }
+
+    // ======== Research report submit path (unchanged) ========
+
+    // Build the final payload with explicit content field
+    const payload: CreateReportPayload = {
+      ...values,
+      contentRich: bodyContent,
+      contentPlain: stripped,
+      summary: summaryContent || stripped.slice(0, 300) + '...',
+      authorId: 'current-user', // Required by new API
+      intelId: uploadedIntelId || undefined,
+      attachmentIds: uploadedAttachment ? [uploadedAttachment.id] : undefined,
+    };
+
     try {
+      let currentReportId = editId;
       if (isEditMode && editId) {
         await updateMutation.mutateAsync({
           id: editId,
-          data: values,
+          ...payload,
         });
-        message.success('研报更新成功');
       } else {
-        await createMutation.mutateAsync({
-          ...values,
-          intelId: uploadedIntelId || undefined,
-        });
-        message.success('研报创建成功');
+        const createRes = await createMutation.mutateAsync(payload);
+        currentReportId = createRes.id;
       }
+
+      // 如果是通过“提交审核并完成任务”按钮进来的，额外调用 submitDraftReport
+      if (submitAction === 'submit' && currentReportId) {
+        await submitReportMutation.mutateAsync({
+          id: currentReportId,
+          taskId: taskId || undefined,
+          authorId: payload.authorId,
+        });
+        message.success(taskId ? '已提交审核并标记任务为待审核' : '研报已提交审核');
+      } else {
+        message.success(isEditMode ? '研报草稿更新成功' : '研报草稿保存成功');
+      }
+
       navigate('/intel/knowledge?tab=library&content=reports');
     } catch (error) {
-      message.error(isEditMode ? '更新失败，请重试' : '创建失败，请重试');
+      message.error(isEditMode ? '操作失败，请重试' : '操作失败，请重试');
       console.error(error);
     }
   };
-
-  const analyzeMutation = useAnalyzeContent();
 
   // Track if an existing MarketIntel was created via upload
   const [uploadedIntelId, setUploadedIntelId] = useState<string | null>(null);
@@ -346,23 +446,30 @@ export const ResearchReportCreatePage = () => {
       setUploadedAttachment(result.attachment);
     }
 
-    const content = result.intel?.rawContent;
+    const content = result.intel?.rawContent || result.content;
     if (content) {
-      const currentContent = form.getFieldValue('summary') || '';
+      const currentContent = form.getFieldValue('content') || '';
       const isHtml = /^\s*<.*>/.test(content) || /<br\/>|<p>|<div>/i.test(content);
 
+      // Markdown reform: Treat content as Markdown or plain text.
+      // If plain text, ensure paragraphs are separated by blank lines.
       const processedContent = isHtml
         ? content
         : content
-            .split('\n')
-            .map((line: string) => line.trim())
-            .filter((line: string) => line.length > 0)
-            .map((line: string) => `<p>${line}</p>`)
-            .join('');
+          .split('\n')
+          .map((line: string) => {
+            const trimmed = line.trim();
+            // Heuristic for Chinese headers
+            if (/^[一二三四五六七八九十]+、/.test(trimmed)) return `### ${trimmed}`;
+            if (/^[(（][一二三四五六七八九十]+[)）]/.test(trimmed)) return `#### ${trimmed}`;
+            return trimmed;
+          })
+          .filter((line: string) => line.length > 0)
+          .join('\n\n'); // Markdown uses double newline for paragraphs
 
       const newContent = currentContent ? `${currentContent}${processedContent}` : processedContent;
 
-      form.setFieldValue('summary', newContent);
+      form.setFieldValue('content', newContent);
       message.success('文档解析成功，内容已自动填入');
     } else {
       message.warning({
@@ -377,7 +484,7 @@ export const ResearchReportCreatePage = () => {
   const handleAnalyzeEditorContent = async (targets: AnalysisTarget[] = ['all']) => {
     if (analyzeMutation.isPending) return;
 
-    const content = form.getFieldValue('summary');
+    const content = form.getFieldValue('content');
     if (!content || content.replace(/<[^>]*>?/gm, '').trim().length === 0) {
       message.warning('编辑器内容为空，无法分析');
       return;
@@ -402,7 +509,7 @@ export const ResearchReportCreatePage = () => {
         const applyAll = targets.includes('all');
         const shouldApply = (target: AnalysisTarget) => applyAll || targets.includes(target);
 
-        const updates: Partial<CreateManualResearchReportDto> = {};
+        const updates: Partial<CreateReportPayload> = {};
         const extractedFields: string[] = [];
 
         if (shouldApply('meta')) {
@@ -416,7 +523,7 @@ export const ResearchReportCreatePage = () => {
             extractedFields.push('关联品种');
           }
           if (result.regions?.length) {
-            updates.regions = result.regions;
+            updates.region = result.regions;
             extractedFields.push('关联区域');
           }
 
@@ -481,7 +588,13 @@ export const ResearchReportCreatePage = () => {
           }));
         }
 
-        form.setFieldsValue(updates);
+        // AI 分析可能返回 summary，用于填充摘要字段
+        if (result.summary && typeof result.summary === 'string' && result.summary.length > 20) {
+          updates.summary = result.summary;
+          extractedFields.push('摘要');
+        }
+
+        form.setFieldsValue(updates as any);
         setAiSectionCollapsed(false); // 展开 AI 分析区
         setAiResult(result);
         setAiSectionMeta((prev) => ({
@@ -512,6 +625,7 @@ export const ResearchReportCreatePage = () => {
       reportType: ReportType.MARKET,
       publishDate: new Date(),
       summary: '',
+      content: '',
     }),
     [],
   );
@@ -607,8 +721,12 @@ export const ResearchReportCreatePage = () => {
       <style>{cssStyles}</style>
       <PageContainer
         header={{
-          title: '智能研报工作台',
-          subTitle: 'Intelligent Research Workbench',
+          title: isPeriodicReport
+            ? `${isEditMode ? '编辑' : '填写'}${periodicMeta?.label || '报告'}`
+            : '智能研报工作台',
+          subTitle: isPeriodicReport
+            ? `${periodicMeta?.label} Report Entry`
+            : 'Intelligent Research Workbench',
           onBack: () => navigate(-1),
           extra: [
             <Button
@@ -622,10 +740,23 @@ export const ResearchReportCreatePage = () => {
             </Button>,
           ],
         }}
+        content={
+          taskId && (
+            <Alert
+              message="任务正在进行中"
+              description={isPeriodicReport
+                ? `该${periodicMeta?.label}关联到您的采编任务。提交后任务将自动标记为已完成。`
+                : '该研究报告直接关联到您的采编任务。保存草稿后，请务必点击【提交审核】以完成任务上报。'}
+              type="info"
+              showIcon
+              style={{ marginBottom: 16 }}
+            />
+          )
+        }
       >
-        <ProForm<CreateManualResearchReportDto>
+        <ProForm<CreateReportPayload & { content?: string }>
           form={form}
-          onFinish={handleFinish}
+          onFinish={(values) => handleFinish(values, 'save')}
           layout="vertical"
           submitter={{
             render: () => (
@@ -645,14 +776,33 @@ export const ResearchReportCreatePage = () => {
                 }}
               >
                 <Button onClick={() => form.resetFields()}>重置</Button>
+                {!isPeriodicReport && (
+                  <Button
+                    onClick={() => form.submit()} // ProForm 默认回调为 onFinish -> handleFinish(values, 'save')
+                    loading={createMutation.isPending || updateMutation.isPending}
+                    size="large"
+                  >
+                    保存草稿
+                  </Button>
+                )}
                 <Button
                   type="primary"
-                  onClick={() => form.submit()}
-                  loading={createMutation.isPending}
+                  onClick={() => {
+                    form.validateFields().then((values) => {
+                      handleFinish(values as CreateReportPayload, 'submit');
+                    });
+                  }}
+                  loading={
+                    isPeriodicReport
+                      ? submitPeriodicReport.isPending || updatePeriodicReport.isPending
+                      : createMutation.isPending || updateMutation.isPending || submitReportMutation.isPending
+                  }
                   icon={<CheckCircleOutlined />}
                   size="large"
                 >
-                  保存研报
+                  {isPeriodicReport
+                    ? `提交${periodicMeta?.label}`
+                    : taskId ? '提交审核并完成任务' : '提交审核'}
                 </Button>
               </div>
             ),
@@ -661,56 +811,69 @@ export const ResearchReportCreatePage = () => {
         >
           {/* ============ 上层：输入工作区 ============ */}
           <Row gutter={[16, 16]} align="stretch" style={{ minHeight: 'calc(100vh - 140px)' }}>
-            {/* 左侧元数据栏 (20%) - 自然高度，决定页面高度 */}
+            {/* Left sidebar - simplified in periodic mode */}
             <Col xs={24} lg={5} style={{ display: 'flex', flexDirection: 'column' }}>
               <div style={{ display: 'flex', flexDirection: 'column', width: '100%', gap: 16 }}>
-                {/* 情报来源 */}
-                <ProCard
-                  title={
-                    <Space>
-                      <FileSearchOutlined />
-                      情报来源
-                    </Space>
-                  }
-                  bordered
-                  headerBordered
-                  size="small"
-                >
-                  <DocumentUploader
-                    contentType={ContentType.RESEARCH_REPORT}
-                    onUploadSuccess={handleUploadSuccess}
-                    onStartAnalysis={handleUploadAnalysisTrigger}
-                    isAnalyzing={analyzeMutation.isPending}
-                  />
-                </ProCard>
+                {/* 情报来源 - only in full mode */}
+                {!isPeriodicReport && (
+                  <ProCard
+                    title={
+                      <Space>
+                        <FileSearchOutlined />
+                        情报来源
+                      </Space>
+                    }
+                    bordered
+                    headerBordered
+                    size="small"
+                  >
+                    <DocumentUploader
+                      uploadMode="save"
+                      contentType={ContentType.RESEARCH_REPORT}
+                      skipKnowledgeSync={true}
+                      onUploadSuccess={handleUploadSuccess}
+                      onStartAnalysis={handleUploadAnalysisTrigger}
+                      isAnalyzing={analyzeMutation.isPending}
+                    />
+                  </ProCard>
+                )}
 
                 {/* 基础信息 */}
                 <ProCard title="基础信息" bordered headerBordered size="small">
                   <ProFormText
                     name="title"
                     label="报告标题"
-                    rules={[{ required: true, message: '请输入标题' }]}
-                    placeholder="请输入研报标题"
+                    rules={[{ required: !isPeriodicReport, message: '请输入标题' }]}
+                    placeholder={isPeriodicReport ? autoTitle : '请输入研报标题'}
                   />
-                  <Row gutter={8}>
-                    <Col span={12}>
-                      <ProFormSelect
-                        name="reportType"
-                        label="类型"
-                        options={reportTypeOptions}
-                        rules={[{ required: true }]}
-                      />
-                    </Col>
-                    <Col span={12}>
-                      <ProFormSelect
-                        name="reportPeriod"
-                        label="周期"
-                        options={reportPeriodOptions}
-                      />
-                    </Col>
-                  </Row>
-                  <ProFormDatePicker name="publishDate" label="发布日期" width="100%" />
-                  <ProFormText name="source" label="来源机构" placeholder="如：中信期货" />
+                  {isPeriodicReport && (
+                    <Text type="secondary" style={{ fontSize: 12, display: 'block', marginTop: -16, marginBottom: 16 }}>
+                      留空将自动生成标题
+                    </Text>
+                  )}
+                  {!isPeriodicReport && (
+                    <>
+                      <Row gutter={8}>
+                        <Col span={12}>
+                          <ProFormSelect
+                            name="reportType"
+                            label="类型"
+                            options={reportTypeOptions}
+                            rules={[{ required: true }]}
+                          />
+                        </Col>
+                        <Col span={12}>
+                          <ProFormSelect
+                            name="reportPeriod"
+                            label="周期"
+                            options={reportPeriodOptions}
+                          />
+                        </Col>
+                      </Row>
+                      <ProFormDatePicker name="publishAt" label="发布日期" width="100%" />
+                      <ProFormText name="sourceType" label="来源机构" placeholder="如：中信期货" />
+                    </>
+                  )}
                 </ProCard>
 
                 {/* 分类标签 */}
@@ -723,7 +886,7 @@ export const ResearchReportCreatePage = () => {
                     placeholder="选择或输入品种"
                   />
                   <ProFormSelect
-                    name="regions"
+                    name="region"
                     label="关联区域"
                     mode="tags"
                     options={regionOptions}
@@ -733,11 +896,11 @@ export const ResearchReportCreatePage = () => {
               </div>
             </Col>
 
-            {/* 中间编辑区 (约 55%) - 绝对定位填充，实现内部滚动且不撑开父容器 */}
-            <Col xs={24} lg={13} style={{ display: 'flex', flexDirection: 'column' }}>
+            {/* 中间编辑区 - 简洁模式下占据更大宽度 */}
+            <Col xs={24} lg={isPeriodicReport ? 19 : 13} style={{ display: 'flex', flexDirection: 'column' }}>
               <div style={{ position: 'relative', width: '100%', flex: 1, minHeight: 600 }}>
                 <ProCard
-                  title="研报正文"
+                  title={isPeriodicReport ? `${periodicMeta?.label}正文` : '研报正文'}
                   bordered
                   headerBordered
                   style={{
@@ -766,120 +929,151 @@ export const ResearchReportCreatePage = () => {
                     </Space>
                   }
                 >
-                  <ProFormItem
+                  <ProFormTextArea
                     name="summary"
+                    label="摘要（可由 AI 自动生成，也可手动编辑）"
+                    placeholder="点击上方 'AI 深度分析' 按钮自动生成摘要，或手动输入..."
+                    fieldProps={{
+                      rows: 3,
+                      maxLength: 500,
+                      showCount: true,
+                    }}
+                  />
+                  {/* Template loader for periodic reports */}
+                  {isPeriodicReport && (
+                    <div style={{ marginBottom: 12 }}>
+                      <Button
+                        type="dashed"
+                        onClick={() => {
+                          const templates = getPeriodicReportTemplates();
+                          const template = templates[knowledgeType];
+                          if (template) form.setFieldValue('content', template);
+                        }}
+                      >
+                        📝 加载{periodicMeta?.label}模板
+                      </Button>
+                    </div>
+                  )}
+                  <ProFormItem
+                    name="content"
                     rules={[{ required: true, message: '请输入正文内容' }]}
                     style={{ marginBottom: 0, flex: 1, display: 'flex', flexDirection: 'column' }}
                     className="fullHeightItem"
                   >
                     <TiptapEditor
-                      minHeight={580}
-                      placeholder="在此输入研报内容，或从左侧上传文档自动导入..."
+                      minHeight={isPeriodicReport ? 400 : 480}
+                      placeholder={isPeriodicReport
+                        ? `请输入${periodicMeta?.label}内容...
+
+支持 Markdown 格式，可使用标题、列表、表格等。也可点击上方按钮加载模板。`
+                        : '在此输入研报内容，或从左侧上传文档自动导入...'}
                     />
                   </ProFormItem>
                 </ProCard>
               </div>
             </Col>
-            {/* 右侧上下文面板 (约 25%) */}
-            <Col xs={24} lg={6} style={{ display: 'flex', flexDirection: 'column' }}>
-              <div
-                style={{
-                  position: 'sticky',
-                  top: 60,
-                  marginTop: 0,
-                  display: 'flex',
-                  flexDirection: 'column',
-                  gap: 16,
-                }}
-              >
-                <ProCard
-                  title={
-                    <Space>
-                      <FileSearchOutlined />
-                      原文资料
-                    </Space>
-                  }
-                  bordered
-                  headerBordered
-                  size="small"
-                  style={{ maxHeight: 520, overflow: 'hidden' }}
-                  bodyStyle={{ padding: 12 }}
-                  extra={
-                    <Button
-                      type="text"
-                      icon={<ExpandAltOutlined />}
-                      onClick={() => setIsPreviewModalOpen(true)}
-                      disabled={!uploadedAttachment}
-                      title="放大预览"
-                    />
-                  }
+            {/* 右侧上下文面板 - 仅完整模式 */}
+            {!isPeriodicReport && (
+              <Col xs={24} lg={6} style={{ display: 'flex', flexDirection: 'column' }}>
+                <div
+                  style={{
+                    position: 'sticky',
+                    top: 60,
+                    marginTop: 0,
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: 16,
+                  }}
                 >
-                  <div style={{ maxHeight: 420, overflow: 'auto' }}>{renderDocumentPreview()}</div>
-                  {uploadedAttachment && (
-                    <Button
-                      type="link"
-                      size="small"
-                      href={`/api/market-intel/attachments/${uploadedAttachment.id}/download`}
-                      target="_blank"
-                      style={{ padding: 0, marginTop: 8 }}
-                    >
-                      下载原件
-                    </Button>
-                  )}
-                </ProCard>
-
-                <ProCard
-                  title={
-                    <Space>
-                      <RobotOutlined style={{ color: token.colorPrimary }} />
-                      AI 提示
-                    </Space>
-                  }
-                  bordered
-                  headerBordered
-                  size="small"
-                >
-                  <Space direction="vertical" size={8} style={{ width: '100%' }}>
-                    <div>
-                      <Text type="secondary">整体置信度</Text>
-                      <Progress
-                        percent={aiResult?.confidenceScore || 0}
-                        size="small"
-                        status={(aiResult?.confidenceScore || 0) >= 70 ? 'success' : 'active'}
+                  <ProCard
+                    title={
+                      <Space>
+                        <FileSearchOutlined />
+                        原文资料
+                      </Space>
+                    }
+                    bordered
+                    headerBordered
+                    size="small"
+                    style={{ maxHeight: 520, overflow: 'hidden' }}
+                    bodyStyle={{ padding: 12 }}
+                    extra={
+                      <Button
+                        type="text"
+                        icon={<ExpandAltOutlined />}
+                        onClick={() => setIsPreviewModalOpen(true)}
+                        disabled={!uploadedAttachment}
+                        title="放大预览"
                       />
-                    </div>
-                    <div>
-                      <Text type="secondary">最近分析</Text>
-                      <div style={{ marginTop: 4 }}>
-                        <Tag color="blue">
-                          {aiSectionMeta.overall?.updatedAt
-                            ? dayjs(aiSectionMeta.overall.updatedAt).format('YYYY-MM-DD HH:mm')
-                            : '尚未分析'}
-                        </Tag>
+                    }
+                  >
+                    <div style={{ maxHeight: 420, overflow: 'auto' }}>{renderDocumentPreview()}</div>
+                    {uploadedAttachment && (
+                      <Button
+                        type="link"
+                        size="small"
+                        href={`/api/market-intel/attachments/${uploadedAttachment.id}/download`}
+                        target="_blank"
+                        style={{ padding: 0, marginTop: 8 }}
+                      >
+                        下载原件
+                      </Button>
+                    )}
+                  </ProCard>
+
+                  <ProCard
+                    title={
+                      <Space>
+                        <RobotOutlined style={{ color: token.colorPrimary }} />
+                        AI 提示
+                      </Space>
+                    }
+                    bordered
+                    headerBordered
+                    size="small"
+                  >
+                    <Space direction="vertical" size={8} style={{ width: '100%' }}>
+                      <div>
+                        <Text type="secondary">整体置信度</Text>
+                        <Progress
+                          percent={aiResult?.confidenceScore || 0}
+                          size="small"
+                          status={(aiResult?.confidenceScore || 0) >= 70 ? 'success' : 'active'}
+                        />
                       </div>
-                    </div>
-                    <div>
-                      <Text type="secondary">已提取</Text>
-                      <div style={{ marginTop: 6 }}>
-                        <Space wrap>
-                          <Tag>观点 {keyPointsWatch?.length || 0}</Tag>
-                          <Tag>数据 {dataPointsWatch?.length || 0}</Tag>
-                          <Tag>预测 {predictionWatch?.direction ? 1 : 0}</Tag>
-                        </Space>
+                      <div>
+                        <Text type="secondary">最近分析</Text>
+                        <div style={{ marginTop: 4 }}>
+                          <Tag color="blue">
+                            {aiSectionMeta.overall?.updatedAt
+                              ? dayjs(aiSectionMeta.overall.updatedAt).format('YYYY-MM-DD HH:mm')
+                              : '尚未分析'}
+                          </Tag>
+                        </div>
                       </div>
-                    </div>
-                    <Button
-                      type="primary"
-                      icon={<ThunderboltOutlined />}
-                      onClick={() => handleAnalyzeEditorContent(['all'])}
-                      loading={analyzeMutation.isPending}
-                    >
-                      重新分析全部
-                    </Button>
-                  </Space>
-                </ProCard>
-              </div>
-            </Col>
+                      <div>
+                        <Text type="secondary">已提取</Text>
+                        <div style={{ marginTop: 6 }}>
+                          <Space wrap>
+                            <Tag>观点 {((keyPointsWatch as any[])?.length) || 0}</Tag>
+                            <Tag>数据 {((dataPointsWatch as any[])?.length) || 0}</Tag>
+                            <Tag>预测 {((predictionWatch as any)?.direction) ? 1 : 0}</Tag>
+                          </Space>
+                        </div>
+                      </div>
+                      <Button
+                        type="primary"
+                        icon={<ThunderboltOutlined />}
+                        onClick={() => handleAnalyzeEditorContent(['all'])}
+                        loading={analyzeMutation.isPending}
+                      >
+                        重新分析全部
+                      </Button>
+                    </Space>
+                  </ProCard>
+                </div>
+              </Col>
+            )}
           </Row>
 
           {/* ============ 下层：AI 智能分析结果区 ============ */}
@@ -916,7 +1110,7 @@ export const ResearchReportCreatePage = () => {
                     <Space>
                       <BulbOutlined style={{ color: token.colorWarning }} />
                       <span>核心观点</span>
-                      <Badge count={keyPointsWatch?.length || 0} showZero={false} />
+                      <Badge count={((keyPointsWatch as any[])?.length) || 0} showZero={false} />
                     </Space>
                   }
                   bordered
@@ -1016,7 +1210,7 @@ export const ResearchReportCreatePage = () => {
                     <Space>
                       <LineChartOutlined style={{ color: token.colorInfo }} />
                       <span>后市预判</span>
-                      {predictionWatch?.direction && <Tag color="processing">已设置</Tag>}
+                      {((predictionWatch as any)?.direction) && <Tag color="processing">已设置</Tag>}
                     </Space>
                   }
                   bordered
@@ -1064,7 +1258,7 @@ export const ResearchReportCreatePage = () => {
                     <Space>
                       <BarChartOutlined style={{ color: token.colorSuccess }} />
                       <span>关键数据</span>
-                      <Badge count={dataPointsWatch?.length || 0} showZero={false} />
+                      <Badge count={((dataPointsWatch as any[])?.length) || 0} showZero={false} />
                     </Space>
                   }
                   bordered

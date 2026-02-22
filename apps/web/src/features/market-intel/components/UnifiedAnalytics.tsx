@@ -14,7 +14,8 @@ import {
 } from '@ant-design/icons';
 import { Pie, Area, WordCloud } from '@ant-design/plots';
 import { StatCard } from './StatCard';
-import { useDocumentStats, useResearchReportStats } from '../api/hooks';
+import { useDocumentStats } from '../api/hooks';
+import { useKnowledgeReportStats } from '../api/knowledge-hooks';
 import { ReportTrendChart } from './research-report-dashboard/ReportTrendChart';
 import { ReportDistributionCharts } from './research-report-dashboard/ReportDistributionCharts';
 import { RecentReportsList } from './research-report-dashboard/RecentReportsList';
@@ -35,7 +36,7 @@ export const UnifiedAnalytics: React.FC = () => {
 
     // Fetch both stats
     const { data: docStats, isLoading: docLoading } = useDocumentStats(days);
-    const { data: reportStats, isLoading: reportLoading, refetch: refetchReports } = useResearchReportStats({ days });
+    const { data: reportStats, isLoading: reportLoading, refetch: refetchReports } = useKnowledgeReportStats(days);
 
     const isLoading = docLoading || reportLoading;
 
@@ -49,15 +50,15 @@ export const UnifiedAnalytics: React.FC = () => {
         }, {});
     }, [dictionaries]);
 
-    const typeData = reportStats?.byType
-        ? Object.entries(reportStats.byType).map(([type, value]) => ({
+    const typeData = reportStats?.byReportType
+        ? Object.entries(reportStats.byReportType).map(([type, value]) => ({
             type: reportTypeLabels[type] || type,
             value: value as number,
         }))
         : [];
 
-    const sourceData = reportStats?.bySource || [];
-    const trendData = reportStats?.trend || [];
+    const sourceData = (reportStats as any)?.bySource || [];
+    const trendData = (reportStats as any)?.trend || [];
     const recentReports = reportStats?.recent || [];
     const topRegions = reportStats?.topRegions || [];
 
@@ -335,7 +336,7 @@ export const UnifiedAnalytics: React.FC = () => {
 
             <Row gutter={[16, 16]}>
                 <Col xs={24} lg={10}>
-                    <RecentReportsList data={recentReports} loading={isLoading} />
+                    <RecentReportsList data={recentReports as any} loading={isLoading} />
                 </Col>
                 <Col xs={24} lg={14}>
                     <Row gutter={[16, 16]}>
@@ -458,7 +459,7 @@ export const UnifiedAnalytics: React.FC = () => {
                     </Card>
                 </Col>
                 <Col xs={24} lg={12}>
-                    <RecentReportsList data={recentReports} loading={isLoading} />
+                    <RecentReportsList data={recentReports as any} loading={isLoading} />
                 </Col>
             </Row>
         </>

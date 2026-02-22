@@ -383,268 +383,7 @@ export const useTestAI = () => {
   });
 };
 
-// =============================================
-// C类增强：研究报告 hooks
-// =============================================
 
-export const useResearchReports = (query?: Partial<ResearchReportQuery>) => {
-  return useQuery<PaginatedResponse<ResearchReportResponse>>({
-    queryKey: ['research-reports', query],
-    queryFn: async () => {
-      const params = new URLSearchParams();
-      if (query) {
-        Object.entries(query).forEach(([key, value]) => {
-          if (value !== undefined && value !== null) {
-            if (value instanceof Date) {
-              params.append(key, value.toISOString());
-            } else if (Array.isArray(value)) {
-              value.forEach((item) => params.append(key, String(item)));
-            } else {
-              params.append(key, String(value));
-            }
-          }
-        });
-      }
-      const res = await apiClient.get<PaginatedResponse<ResearchReportResponse>>(
-        `/market-intel/research-reports?${params.toString()}`,
-      );
-      return res.data;
-    },
-  });
-};
-
-export const useResearchReport = (id: string) => {
-  return useQuery<ResearchReportResponse>({
-    queryKey: ['research-reports', id],
-    queryFn: async () => {
-      const res = await apiClient.get<ResearchReportResponse>(
-        `/market-intel/research-reports/${id}`,
-      );
-      return res.data;
-    },
-    enabled: !!id,
-  });
-};
-
-export const useResearchReportByIntelId = (intelId: string) => {
-  return useQuery<ResearchReportResponse | null>({
-    queryKey: ['research-reports-by-intel', intelId],
-    queryFn: async () => {
-      const res = await apiClient.get<ResearchReportResponse | null>(
-        `/market-intel/research-reports/by-intel/${intelId}`,
-      );
-      return res.data || null;
-    },
-    enabled: !!intelId,
-  });
-};
-
-export const useCreateResearchReport = () => {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: async (data: CreateResearchReportDto) => {
-      const res = await apiClient.post<ResearchReportResponse>(
-        '/market-intel/research-reports',
-        data,
-      );
-      return res.data;
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['research-reports'] });
-      queryClient.invalidateQueries({ queryKey: ['research-report-stats'] });
-    },
-  });
-};
-
-export const useCreateManualResearchReport = () => {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: async (data: CreateManualResearchReportDto) => {
-      const res = await apiClient.post<ResearchReportResponse>(
-        '/market-intel/research-reports/manual',
-        data,
-      );
-      return res.data;
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['research-reports'] });
-      queryClient.invalidateQueries({ queryKey: ['research-report-stats'] });
-    },
-  });
-};
-
-export const useUpdateResearchReport = () => {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: async ({ id, data }: { id: string; data: UpdateResearchReportDto }) => {
-      const res = await apiClient.put<ResearchReportResponse>(
-        `/market-intel/research-reports/${id}`,
-        data,
-      );
-      return res.data;
-    },
-    onSuccess: (_, variables) => {
-      queryClient.invalidateQueries({ queryKey: ['research-reports'] });
-      queryClient.invalidateQueries({ queryKey: ['research-reports', variables.id] });
-    },
-  });
-};
-
-export const useDeleteResearchReport = () => {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: async (id: string) => {
-      const res = await apiClient.delete(`/market-intel/research-reports/${id}`);
-      return res.data;
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['research-reports'] });
-      queryClient.invalidateQueries({ queryKey: ['research-report-stats'] });
-    },
-  });
-};
-
-export const useResearchReportStats = (options?: { days?: number }) => {
-  return useQuery<any>({
-    queryKey: ['research-report-stats', options?.days],
-    queryFn: async () => {
-      const params = new URLSearchParams();
-      if (options?.days) {
-        params.append('days', String(options.days));
-      }
-      const res = await apiClient.get<any>(
-        `/market-intel/research-reports/stats?${params.toString()}`,
-      );
-      return res.data;
-    },
-  });
-};
-
-export const useIncrementViewCount = () => {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: async (id: string) => {
-      const res = await apiClient.post<any>(`/market-intel/research-reports/${id}/view`);
-      return res.data;
-    },
-    onSuccess: (_, id) => {
-      queryClient.invalidateQueries({ queryKey: ['research-reports', id] });
-    },
-  });
-};
-
-export const useIncrementDownloadCount = () => {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: async (id: string) => {
-      const res = await apiClient.post<any>(`/market-intel/research-reports/${id}/download`);
-      return res.data;
-    },
-    onSuccess: (_, id) => {
-      queryClient.invalidateQueries({ queryKey: ['research-reports', id] });
-    },
-  });
-};
-
-export const useUpdateReviewStatus = () => {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: async ({
-      id,
-      status,
-      reviewerId,
-    }: {
-      id: string;
-      status: 'PENDING' | 'APPROVED' | 'REJECTED';
-      reviewerId: string;
-    }) => {
-      const res = await apiClient.put<any>(`/market-intel/research-reports/${id}/review`, {
-        status,
-        reviewerId,
-      });
-      return res.data;
-    },
-    onSuccess: (_, variables) => {
-      queryClient.invalidateQueries({ queryKey: ['research-reports'] });
-      queryClient.invalidateQueries({ queryKey: ['research-reports', variables.id] });
-      queryClient.invalidateQueries({ queryKey: ['research-report-stats'] });
-    },
-  });
-};
-
-export const useBatchDeleteResearchReports = () => {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: async (ids: string[]) => {
-      const res = await apiClient.post('/market-intel/research-reports/batch-delete', { ids });
-      return res.data;
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['research-reports'] });
-      queryClient.invalidateQueries({ queryKey: ['research-report-stats'] });
-    },
-  });
-};
-
-export const useBatchReviewResearchReports = () => {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: async ({
-      ids,
-      status,
-      reviewerId,
-    }: {
-      ids: string[];
-      status: 'PENDING' | 'APPROVED' | 'REJECTED' | 'ARCHIVED';
-      reviewerId: string;
-    }) => {
-      const res = await apiClient.post('/market-intel/research-reports/batch-review', {
-        ids,
-        status,
-        reviewerId,
-      });
-      return res.data;
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['research-reports'] });
-      queryClient.invalidateQueries({ queryKey: ['research-report-stats'] });
-    },
-  });
-};
-
-export const useExportResearchReports = () => {
-  return useMutation({
-    mutationFn: async ({ ids, query }: { ids?: string[]; query?: any }) => {
-      const res = await apiClient.post(
-        '/market-intel/research-reports/export',
-        { ids, query },
-        {
-          responseType: 'blob',
-        },
-      );
-
-      // 自动触发下载
-      const url = window.URL.createObjectURL(new Blob([res.data]));
-      const link = document.createElement('a');
-      link.href = url;
-      link.setAttribute('download', `research-reports-export-${new Date().getTime()}.xlsx`);
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-
-      return true;
-    },
-  });
-};
 
 // =============================================
 // 文档升级为研报 (Promote to Report)
@@ -1145,13 +884,13 @@ export const usePriceByCollectionPoint = (
   daysOrParams:
     | number
     | {
-        startDate?: Date;
-        endDate?: Date;
-        days?: number;
-        subTypes?: string[];
-        reviewScope?: string;
-        sourceScope?: string;
-      } = 30,
+      startDate?: Date;
+      endDate?: Date;
+      days?: number;
+      subTypes?: string[];
+      reviewScope?: string;
+      sourceScope?: string;
+    } = 30,
 ) => {
   const paramsValue = typeof daysOrParams === 'number' ? { days: daysOrParams } : daysOrParams;
   const normalizedSubTypes = normalizePriceSubTypeList(paramsValue?.subTypes);
@@ -1227,14 +966,14 @@ export const usePriceByRegion = (
   daysOrParams:
     | number
     | {
-        startDate?: Date;
-        endDate?: Date;
-        days?: number;
-        subTypes?: string[];
-        reviewScope?: string;
-        sourceScope?: string;
-        includeData?: boolean;
-      } = 30,
+      startDate?: Date;
+      endDate?: Date;
+      days?: number;
+      subTypes?: string[];
+      reviewScope?: string;
+      sourceScope?: string;
+      includeData?: boolean;
+    } = 30,
 ) => {
   const paramsValue = typeof daysOrParams === 'number' ? { days: daysOrParams } : daysOrParams;
   const normalizedSubTypes = normalizePriceSubTypeList(paramsValue?.subTypes);
@@ -1302,13 +1041,13 @@ export const useMultiPointCompare = (
   daysOrParams:
     | number
     | {
-        startDate?: Date;
-        endDate?: Date;
-        days?: number;
-        subTypes?: string[];
-        reviewScope?: string;
-        sourceScope?: string;
-      } = 30,
+      startDate?: Date;
+      endDate?: Date;
+      days?: number;
+      subTypes?: string[];
+      reviewScope?: string;
+      sourceScope?: string;
+    } = 30,
 ) => {
   const paramsValue = typeof daysOrParams === 'number' ? { days: daysOrParams } : daysOrParams;
   const normalizedSubTypes = normalizePriceSubTypeList(paramsValue?.subTypes);

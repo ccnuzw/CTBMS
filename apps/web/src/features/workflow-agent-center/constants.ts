@@ -101,3 +101,22 @@ export const getTemplateSourceLabel = (source?: string | null): string => {
   }
   return TEMPLATE_SOURCE_LABEL_MAP[source] || source;
 };
+
+export const OUTPUT_SCHEMA_OPTIONS = [
+  { label: '市场分析报告 (MARKET_ANALYSIS_V1)', value: 'MARKET_ANALYSIS_V1' },
+  { label: '风险评估报告 (RISK_ASSESSMENT_V1)', value: 'RISK_ASSESSMENT_V1' },
+  { label: '交易建议 (TRADE_SUGGESTION_V1)', value: 'TRADE_SUGGESTION_V1' },
+  { label: 'Agent 通用输出 (agent_output_v1)', value: 'agent_output_v1' },
+  { label: '自定义 (Custom)', value: 'CUSTOM' },
+];
+
+export const AVAILABLE_TOOLS = [
+  { label: '网络搜索 (search_web)', value: 'search_web', description: '搜索互联网信息，支持 Google/Bing' },
+  { label: '科学计算器 (calculator)', value: 'calculator', description: '执行复杂的数学运算' },
+  { label: '数据库查询 (database_query)', value: 'database_query', description: '执行 SQL 查询获取业务数据' },
+  { label: '发送邮件 (send_email)', value: 'send_email', description: '发送电子邮件通知' },
+  { label: '读取文件 (read_file)', value: 'read_file', description: '读取本地或远程文件内容' },
+  { label: '写入文件 (write_file)', value: 'write_file', description: '写入内容到文件系统' },
+  { label: '代码解释器 (code_interpreter)', value: 'code_interpreter', description: '执行 Python 代码分析数据' },
+  { label: '知识库检索 (knowledge_retrieval)', value: 'knowledge_retrieval', description: '检索企业内部知识库文档' },
+];

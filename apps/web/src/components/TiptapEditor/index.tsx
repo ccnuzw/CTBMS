@@ -4,7 +4,6 @@ import { theme } from 'antd';
 import StarterKit from '@tiptap/starter-kit';
 import TextAlign from '@tiptap/extension-text-align';
 import Image from '@tiptap/extension-image';
-// Tiptap table extensions
 import { Table } from '@tiptap/extension-table';
 import { TableRow } from '@tiptap/extension-table-row';
 import { TableCell } from '@tiptap/extension-table-cell';
@@ -13,6 +12,8 @@ import Placeholder from '@tiptap/extension-placeholder';
 import { Color } from '@tiptap/extension-color';
 import { TextStyle } from '@tiptap/extension-text-style';
 import CharacterCount from '@tiptap/extension-character-count';
+import { Markdown } from 'tiptap-markdown';
+import { marked } from 'marked';
 import { Toolbar } from './Toolbar';
 import { MobileToolbar } from './MobileToolbar';
 import './styles.css';
@@ -26,6 +27,51 @@ export interface TiptapEditorProps {
     readOnly?: boolean;
 }
 
+function createExtensions(placeholderText: string) {
+    return [
+        StarterKit.configure({
+            heading: { levels: [1, 2, 3, 4] },
+        }),
+        TextStyle,
+        Color,
+        TextAlign.configure({ types: ['heading', 'paragraph'] }),
+        Image.configure({ HTMLAttributes: { class: 'tiptap-image' } }),
+        Table.configure({
+            resizable: true,
+            HTMLAttributes: { class: 'tiptap-table' },
+        }),
+        TableRow,
+        TableHeader,
+        TableCell,
+        CharacterCount.configure({ limit: null }),
+        Placeholder.configure({ placeholder: placeholderText }),
+        Markdown.configure({
+            html: true,
+            tightLists: false,
+            transformPastedText: true,
+            transformCopiedText: true,
+        }),
+    ];
+}
+
+/**
+ * 安全地将外部获取的 Markdown 转换回 ProseMirror 可以识别的合法 HTML
+ * 以避免 tiptap-markdown 在解析含有各种复杂格式/Thead表格时直接丢弃节点导致变成纯文本的问题
+ */
+function safeMarkdownToEditorHtml(content: string): string {
+    if (!content || content.trim().length === 0) return '';
+    let html: string;
+    if (content.trim().startsWith('<')) {
+        html = content;
+    } else {
+        // Fix broken markdown tables separated by extra blank lines before parsing
+        const sanitizedContent = content.replace(/(\|\s*)\n[\s\n]+(\|)/g, '$1\n$2');
+        html = marked.parse(sanitizedContent, { gfm: true, breaks: true }) as string;
+    }
+    // 表格特殊处理：移除 tiptap 原生 table 不认识的 tbody / thead，这极大可能导致表格被无视
+    return html.replace(/<\/?t(head|body|foot)[^>]*>/gi, '');
+}
+
 export const TiptapEditor: React.FC<TiptapEditorProps> = ({
     value,
     onChange,
@@ -36,94 +82,52 @@ export const TiptapEditor: React.FC<TiptapEditorProps> = ({
 }) => {
     const { token } = theme.useToken();
     const [counts, setCounts] = React.useState({ words: 0, characters: 0 });
+    const lastEmittedValueRef = React.useRef<string>('');
 
-    const extensions = React.useMemo(
-        () => [
-            StarterKit.configure({
-                heading: {
-                    levels: [1, 2, 3, 4],
-                },
-                // Tiptap v3 StarterKit already includes link/underline.
-                // Configure link here to avoid duplicate extension registration warnings.
-                link: {
-                    openOnClick: false,
-                    HTMLAttributes: {
-                        class: 'tiptap-link',
-                    },
-                },
-            }),
-            TextStyle,
-            Color,
-            TextAlign.configure({
-                types: ['heading', 'paragraph'],
-            }),
-            Image.configure({
-                HTMLAttributes: {
-                    class: 'tiptap-image',
-                },
-            }),
-            Table.configure({
-                resizable: true,
-                HTMLAttributes: {
-                    class: 'tiptap-table',
-                },
-            }),
-            TableRow,
-            TableHeader,
-            TableCell,
-            CharacterCount.configure({
-                limit: null,
-            }),
-            Placeholder.configure({
-                placeholder,
-            }),
-        ],
-        [],
-    );
+    const extensions = React.useMemo(() => createExtensions(placeholder), [placeholder]);
+
+    const initialContent = React.useMemo(() => {
+        return safeMarkdownToEditorHtml(value || '');
+    }, []);
 
     const editor = useEditor(
         {
             extensions,
-            content: value,
+            content: initialContent,
             immediatelyRender: false,
             shouldRerenderOnTransaction: false,
             editorProps: {
-                attributes: {
-                    class: 'tiptap-editor',
-                },
+                attributes: { class: 'tiptap tiptap-editor' },
             },
             editable: !readOnly,
-            onUpdate: ({ editor }) => {
+            onUpdate: ({ editor: ed }) => {
                 setCounts({
-                    words: editor.storage.characterCount.words(),
-                    characters: editor.storage.characterCount.characters(),
+                    words: ed.storage.characterCount.words(),
+                    characters: ed.storage.characterCount.characters(),
                 });
-                onChange?.(editor.getHTML()); // Safe call
+                const md = (ed.storage as any).markdown.getMarkdown();
+                lastEmittedValueRef.current = md;
+                onChange?.(md);
             },
         },
-        [readOnly],
+        [readOnly, extensions],
     );
 
-    // 更新 placeholder (如果需要)
     React.useEffect(() => {
-        if (editor && placeholder) {
-            editor.extensionManager.extensions.forEach((ext) => {
-                if (ext.name === 'placeholder') {
-                    ext.options.placeholder = placeholder;
-                }
-            });
-        }
-    }, [editor, placeholder]);
+        if (!editor || value === undefined) return;
 
-    // Sync external value changes
-    React.useEffect(() => {
-        if (editor && value !== undefined && value !== editor.getHTML()) {
-
-            editor.commands.setContent(value, { emitUpdate: false });
+        if (value !== lastEmittedValueRef.current) {
+            if (value) {
+                const safeHtml = safeMarkdownToEditorHtml(value);
+                editor.commands.setContent(safeHtml, { emitUpdate: false });
+            } else {
+                editor.commands.clearContent();
+            }
+            lastEmittedValueRef.current = value;
         }
     }, [value, editor]);
 
-    // Initial counts
+    // 显示最初的计数
     React.useEffect(() => {
         if (editor) {
             setCounts({
@@ -131,13 +135,10 @@ export const TiptapEditor: React.FC<TiptapEditorProps> = ({
                 characters: editor.storage.characterCount.characters(),
             });
         }
-    }, [editor, value]);
+    }, [editor]);
 
-    if (!editor) {
-        return null;
-    }
+    if (!editor) return null;
 
-    // 容器样式 - 使用 theme token
     const wrapperStyle: React.CSSProperties = {
         minHeight,
         height: '100%',
@@ -150,40 +151,22 @@ export const TiptapEditor: React.FC<TiptapEditorProps> = ({
         transition: 'border-color 0.3s',
     };
 
-    const wrapperFocusStyle: React.CSSProperties = {
-        ...wrapperStyle,
-        borderColor: token.colorPrimary,
-        boxShadow: `0 0 0 2px ${token.colorPrimaryBg}`,
-    };
-
-
-
-    // Footer component
     const EditorFooter = () => (
         <div
             className="tiptap-footer"
             style={{
                 borderTop: `1px solid ${token.colorBorderSecondary}`,
                 color: token.colorTextSecondary,
-                background: token.colorBgContainer
+                background: token.colorBgContainer,
             }}
         >
             {counts.characters} 字符 | {counts.words} 词
         </div>
     );
 
-    // 移动端布局：工具栏在底部
     if (isMobile) {
         return (
-            <div
-                className="tiptap-editor-wrapper tiptap-mobile"
-                style={{
-                    ...wrapperStyle,
-                    display: 'flex',
-                    flexDirection: 'column',
-                    borderRadius: isMobile ? 12 : token.borderRadius,
-                }}
-            >
+            <div className="tiptap-editor-wrapper tiptap-mobile" style={{ ...wrapperStyle, borderRadius: 12 }}>
                 <EditorContent editor={editor} className="tiptap-editor-content tiptap-mobile-content" />
                 <EditorFooter />
                 <MobileToolbar editor={editor} />
@@ -191,7 +174,6 @@ export const TiptapEditor: React.FC<TiptapEditorProps> = ({
         );
     }
 
-    // 桌面端布局：工具栏在顶部
     return (
         <div className="tiptap-editor-wrapper" style={wrapperStyle}>
             {!readOnly && <Toolbar editor={editor} />}

@@ -20,6 +20,9 @@ import {
   Tag,
   Typography,
   Tooltip,
+  Steps,
+  Row,
+  Col,
 } from 'antd';
 import { PlusOutlined } from '@ant-design/icons';
 import {
@@ -46,9 +49,18 @@ import {
   getMemoryPolicyLabel,
   getAgentStatusLabel,
   getTemplateSourceLabel,
+  OUTPUT_SCHEMA_OPTIONS,
 } from '../constants';
-import { GuardrailsForm, RetryPolicyForm, ToolPolicyForm } from './index';
+import { RetryPolicyForm } from './index';
 import { AgentPromptTemplateCreateDrawer } from './AgentPromptTemplateCreateDrawer';
+import { OutputSchemaBuilder } from './OutputSchemaBuilder';
+import { VisualToolPolicyBuilder } from './VisualToolPolicyBuilder';
+
+import { VisualGuardrailsBuilder } from './VisualGuardrailsBuilder';
+import { AGENT_PERSONAS, AgentPersona } from '../registry/AgentPersonaRegistry';
+
+import { AgentPersonaCard } from './AgentPersonaCard';
+import { AgentEditDrawer } from './AgentEditDrawer';
 
 
 const { Title } = Typography;
@@ -97,16 +109,7 @@ type CreateAgentProfileFormValues = Omit<
 export const AgentProfilePage: React.FC = () => {
   const { message } = App.useApp();
   const [form] = Form.useForm<CreateAgentProfileFormValues>();
-  const [editForm] = Form.useForm<{
-    agentName: string;
-    modelConfigKey: string;
-    agentPromptCode: string;
-    timeoutMs: number;
-    isActive: boolean;
-    toolPolicy: Record<string, unknown>;
-    guardrails: Record<string, unknown>;
-    retryPolicy: Record<string, unknown>;
-  }>();
+
   const [searchParams, setSearchParams] = useSearchParams();
   const [keywordInput, setKeywordInput] = useState(searchParams.get('keyword')?.trim() || '');
   const [keyword, setKeyword] = useState<string | undefined>(
@@ -120,11 +123,14 @@ export const AgentProfilePage: React.FC = () => {
         : undefined,
   );
   const [visible, setVisible] = useState(false);
+
   const [editVisible, setEditVisible] = useState(false);
   const [promptCreateVisible, setPromptCreateVisible] = useState(false);
   const [isAgentCodeCustomized, setIsAgentCodeCustomized] = useState(false);
   const [editingAgent, setEditingAgent] = useState<AgentProfileDto | null>(null);
   const [selectedAgent, setSelectedAgent] = useState<AgentProfileDto | null>(null);
+  const [creationStep, setCreationStep] = useState(0);
+  const [selectedPersona, setSelectedPersona] = useState<AgentPersona | null>(null);
   const [page, setPage] = useState(parsePositiveInt(searchParams.get('page'), 1));
   const [pageSize, setPageSize] = useState(parsePositiveInt(searchParams.get('pageSize'), 20));
   const agentTableContainerRef = React.useRef<HTMLDivElement | null>(null);
@@ -149,10 +155,6 @@ export const AgentProfilePage: React.FC = () => {
     // If we are in create mode
     if (visible) {
       form.setFieldsValue({ agentPromptCode: newPromptCode });
-    }
-    // If we are in edit mode
-    if (editVisible) {
-      editForm.setFieldsValue({ agentPromptCode: newPromptCode });
     }
   };
 
@@ -193,7 +195,7 @@ export const AgentProfilePage: React.FC = () => {
   const createMutation = useCreateAgentProfile();
   const publishMutation = usePublishAgentProfile();
   const deleteMutation = useDeleteAgentProfile();
-  const updateMutation = useUpdateAgentProfile();
+
 
   React.useEffect(() => {
     const next = new URLSearchParams();
@@ -224,6 +226,8 @@ export const AgentProfilePage: React.FC = () => {
   React.useEffect(() => {
     if (!visible) {
       setIsAgentCodeCustomized(false);
+      setCreationStep(0);
+      setSelectedPersona(null);
     }
   }, [visible]);
 
@@ -276,16 +280,6 @@ export const AgentProfilePage: React.FC = () => {
               type="link"
               onClick={() => {
                 setEditingAgent(record);
-                editForm.setFieldsValue({
-                  agentName: record.agentName,
-                  modelConfigKey: record.modelConfigKey,
-                  agentPromptCode: record.agentPromptCode,
-                  timeoutMs: record.timeoutMs,
-                  isActive: record.isActive,
-                  toolPolicy: (record.toolPolicy || {}) as any,
-                  guardrails: (record.guardrails || {}) as any,
-                  retryPolicy: (record.retryPolicy || {}) as any,
-                });
                 setEditVisible(true);
               }}
             >
@@ -323,37 +317,10 @@ export const AgentProfilePage: React.FC = () => {
         ),
       },
     ],
-    [deleteMutation, editForm, message, publishMutation],
+    [deleteMutation, message, publishMutation],
   );
 
-  const handleEdit = async () => {
-    if (!editingAgent) {
-      return;
-    }
 
-    try {
-      const values = await editForm.validateFields();
-
-      await updateMutation.mutateAsync({
-        id: editingAgent.id,
-        payload: {
-          agentName: values.agentName,
-          modelConfigKey: values.modelConfigKey,
-          agentPromptCode: values.agentPromptCode,
-          timeoutMs: values.timeoutMs,
-          isActive: values.isActive,
-          toolPolicy: values.toolPolicy,
-          guardrails: values.guardrails,
-          retryPolicy: values.retryPolicy,
-        },
-      });
-      message.success('更新成功');
-      setEditVisible(false);
-      setEditingAgent(null);
-    } catch (error) {
-      message.error(getErrorMessage(error) || '更新失败');
-    }
-  };
 
   const handleCreate = async () => {
     try {
@@ -373,6 +340,9 @@ export const AgentProfilePage: React.FC = () => {
         toolPolicy: values.toolPolicy,
         guardrails: values.guardrails,
         retryPolicy: values.retryPolicy,
+        outputSchema: values.outputSchemaCode === 'CUSTOM' && (values as any).outputSchemaString
+          ? JSON.parse((values as any).outputSchemaString)
+          : undefined,
       };
       await createMutation.mutateAsync(payload);
       message.success('创建成功');
@@ -481,208 +451,244 @@ export const AgentProfilePage: React.FC = () => {
           setVisible(false);
           setIsAgentCodeCustomized(false);
         }}
-        onOk={handleCreate}
+        onOk={creationStep === 0 ? () => { } : handleCreate}
         confirmLoading={createMutation.isPending}
-        width={760}
+        width={creationStep === 0 ? 900 : 760}
+        footer={
+          creationStep === 0
+            ? null
+            : [
+              <Button key="back" onClick={() => setCreationStep(0)}>
+                上一步
+              </Button>,
+              <Button key="cancel" onClick={() => setVisible(false)}>
+                取消
+              </Button>,
+              <Button key="submit" type="primary" loading={createMutation.isPending} onClick={handleCreate}>
+                创建
+              </Button>,
+            ]
+        }
       >
-        <Form<CreateAgentProfileFormValues>
-          layout="vertical"
-          form={form}
-          initialValues={{
-            roleType: 'ANALYST',
-            outputSchemaCode: defaultOutputSchemaByRole('ANALYST'),
-            memoryPolicy: 'none',
-            timeoutMs: 30000,
-            templateSource: 'PRIVATE',
-            toolPolicy: {},
-            guardrails: { requireEvidence: true, noHallucination: true },
-            retryPolicy: { retryCount: 1, retryBackoffMs: 2000 },
-          }}
-          onValuesChange={(changedValues, allValues) => {
-            const changedName = changedValues.agentName as string | undefined;
-            if (changedName !== undefined && !isAgentCodeCustomized) {
-              const generatedCode = slugifyAgentCode(changedName);
-              form.setFieldsValue({ agentCode: generatedCode || undefined });
-            }
+        <Steps
+          current={creationStep}
+          items={[
+            { title: '选择角色 (Persona)' },
+            { title: '配置详情 (Configuration)' },
+          ]}
+          style={{ marginBottom: 24 }}
+        />
 
-            const changedAgentCode = changedValues.agentCode as string | undefined;
-            if (changedAgentCode !== undefined) {
-              const generatedCode = slugifyAgentCode(allValues.agentName as string | undefined);
-              const normalized = changedAgentCode.trim();
-              if (!normalized) {
-                setIsAgentCodeCustomized(false);
-              } else {
-                setIsAgentCodeCustomized(Boolean(generatedCode && normalized !== generatedCode));
-              }
-            }
-
-            const changedRoleType = changedValues.roleType as AgentRoleType | undefined;
-            if (changedRoleType !== undefined) {
-              const currentSchema = form.getFieldValue('outputSchemaCode') as string | undefined;
-              const currentSchemaNormalized = currentSchema?.trim();
-              const defaultSchema = defaultOutputSchemaByRole(allValues.roleType as AgentRoleType | undefined);
-              if (!currentSchemaNormalized || currentSchemaNormalized.endsWith('_output_v1')) {
-                form.setFieldsValue({ outputSchemaCode: defaultSchema });
-              }
-            }
-          }}
-        >
-          <Form.Item name="agentCode" label="编码" rules={[{ required: true }]}>
-            <Input
-              placeholder="如 MARKET_ANALYST_V1"
-              addonAfter={(
-                <Button
-                  type="link"
-                  size="small"
+        {creationStep === 0 && (
+          <Row gutter={[16, 16]}>
+            {AGENT_PERSONAS.map((persona) => (
+              <Col span={6} key={persona.key}>
+                <AgentPersonaCard
+                  persona={persona}
                   onClick={() => {
-                    const generatedCode = slugifyAgentCode(form.getFieldValue('agentName'));
-                    form.setFieldsValue({ agentCode: generatedCode || undefined });
-                    setIsAgentCodeCustomized(false);
+                    setSelectedPersona(persona);
+                    const defaultConfig = persona.defaultConfig;
+
+                    const toolPolicy = {
+                      allowedTools: defaultConfig.tools,
+                      blockedTools: [], // Default empty
+                    };
+
+                    form.setFieldsValue({
+                      roleType: persona.roleType,
+                      modelConfigKey: defaultConfig.modelConfigKey || 'deepseek-r1', // Default
+                      outputSchemaCode: defaultConfig.outputSchemaCode,
+                      toolPolicy,
+                      guardrails: defaultConfig.guardrails,
+                      // Map temperature to something if needed, or just specific logic
+                      // For now we don't have a direct temperature field in the form exposed as top level slider yet (from Phase 1 plan it was suggested but maybe not fully implemented in this form state)
+                      // checking form... it has modelConfigKey but not raw temperature.
+                      // We will implicitly trust model config key or add partial overrides if supported.
+                    });
+                    // Trigger schema update logic manually if needed or let effect handle it
+                    // The form onValuesChange handles some of this, but setFieldsValue might not trigger it?
+                    // Actually let's just set step to 1
+                    setCreationStep(1);
                   }}
+                />
+              </Col>
+            ))}
+          </Row>
+        )}
+
+        <div style={{ display: creationStep === 1 ? 'block' : 'none' }}>
+          <Form<CreateAgentProfileFormValues>
+            layout="vertical"
+            form={form}
+            initialValues={{
+              roleType: 'ANALYST',
+              outputSchemaCode: defaultOutputSchemaByRole('ANALYST'),
+              memoryPolicy: 'none',
+              timeoutMs: 30000,
+              templateSource: 'PRIVATE',
+              toolPolicy: {},
+              guardrails: { requireEvidence: true, noHallucination: true },
+              retryPolicy: { retryCount: 1, retryBackoffMs: 2000 },
+            }}
+            onValuesChange={(changedValues, allValues) => {
+              const changedName = changedValues.agentName as string | undefined;
+              if (changedName !== undefined && !isAgentCodeCustomized) {
+                const generatedCode = slugifyAgentCode(changedName);
+                form.setFieldsValue({ agentCode: generatedCode || undefined });
+              }
+
+              const changedAgentCode = changedValues.agentCode as string | undefined;
+              if (changedAgentCode !== undefined) {
+                const generatedCode = slugifyAgentCode(allValues.agentName as string | undefined);
+                const normalized = changedAgentCode.trim();
+                if (!normalized) {
+                  setIsAgentCodeCustomized(false);
+                } else {
+                  setIsAgentCodeCustomized(Boolean(generatedCode && normalized !== generatedCode));
+                }
+              }
+
+              const changedRoleType = changedValues.roleType as AgentRoleType | undefined;
+              if (changedRoleType !== undefined) {
+                const currentSchema = form.getFieldValue('outputSchemaCode') as string | undefined;
+                const currentSchemaNormalized = currentSchema?.trim();
+                const defaultSchema = defaultOutputSchemaByRole(allValues.roleType as AgentRoleType | undefined);
+                if (!currentSchemaNormalized || currentSchemaNormalized.endsWith('_output_v1')) {
+                  form.setFieldsValue({ outputSchemaCode: defaultSchema });
+                }
+              }
+            }}
+          >
+            <Form.Item name="agentCode" label="编码" rules={[{ required: true }]}>
+              <Input
+                placeholder="如 MARKET_ANALYST_V1"
+                addonAfter={(
+                  <Button
+                    type="link"
+                    size="small"
+                    onClick={() => {
+                      const generatedCode = slugifyAgentCode(form.getFieldValue('agentName'));
+                      form.setFieldsValue({ agentCode: generatedCode || undefined });
+                      setIsAgentCodeCustomized(false);
+                    }}
+                  >
+                    自动生成
+                  </Button>
+                )}
+              />
+            </Form.Item>
+            <Form.Item name="agentName" label="名称" rules={[{ required: true }]}>
+              <Input />
+            </Form.Item>
+            <Form.Item name="roleType" label="角色" rules={[{ required: true }]}>
+              <Select
+                options={AGENT_ROLE_OPTIONS.map((item) => ({ label: getAgentRoleLabel(item), value: item }))}
+              />
+            </Form.Item>
+            <Form.Item name="objective" label="目标">
+              <Input.TextArea rows={2} />
+            </Form.Item>
+            <Form.Item label="提示词模板" required>
+              <Space style={{ display: 'flex' }} align="start">
+                <Form.Item
+                  name="agentPromptCode"
+                  rules={[{ required: true }]}
+                  noStyle
                 >
-                  自动生成
-                </Button>
-              )}
+                  <Select
+                    showSearch
+                    placeholder="选择提示词模板"
+                    options={promptOptions}
+                    filterOption={(input, option) =>
+                      (option?.label ?? '').toLowerCase().includes(input.toLowerCase()) ||
+                      (option?.value ?? '').toLowerCase().includes(input.toLowerCase())
+                    }
+                    style={{ width: 440 }}
+                  />
+                </Form.Item>
+                <Tooltip title="新建提示词模板">
+                  <Button
+                    icon={<PlusOutlined />}
+                    onClick={() => setPromptCreateVisible(true)}
+                  />
+                </Tooltip>
+              </Space>
+            </Form.Item>
+
+            <Collapse
+              size="small"
+              items={[
+                {
+                  key: 'advanced-agent',
+                  label: '高级设置 (模型、记忆、超时、工具与防护)',
+                  children: (
+                    <Space direction="vertical" style={{ width: '100%' }} size={0}>
+                      <Form.Item name="modelConfigKey" label="AI 模型配置" rules={[{ required: true }]}>
+                        <Select
+                          options={modelConfigOptions}
+                          placeholder="选择 AI 模型配置"
+                          showSearch
+                        />
+                      </Form.Item>
+                      <div style={{ marginBottom: 24 }}>
+                        <Form.Item name="outputSchemaCode" label="输出结构模板 (Schema)" rules={[{ required: true }]}>
+                          <Select options={OUTPUT_SCHEMA_OPTIONS} placeholder="选择或自定义输出结构" />
+                        </Form.Item>
+                        <Form.Item
+                          noStyle
+                          shouldUpdate={(prev, curr) => prev.outputSchemaCode !== curr.outputSchemaCode}
+                        >
+                          {({ getFieldValue }) =>
+                            getFieldValue('outputSchemaCode') === 'CUSTOM' ? (
+                              <Form.Item name="outputSchemaString" label="自定义输出结构" rules={[{ required: true }]}>
+                                <OutputSchemaBuilder />
+                              </Form.Item>
+                            ) : null
+                          }
+                        </Form.Item>
+                      </div>
+                      <Form.Item name="memoryPolicy" label="记忆策略" rules={[{ required: true }]}>
+                        <Select options={memoryOptions.map((item) => ({ label: getMemoryPolicyLabel(item), value: item }))} />
+                      </Form.Item>
+                      <Form.Item name="timeoutMs" label="超时控制 (ms)" rules={[{ required: true }]}>
+                        <InputNumber min={1000} max={120000} style={{ width: '100%' }} />
+                      </Form.Item>
+                      <Form.Item name="toolPolicy" label="工具策略">
+                        <VisualToolPolicyBuilder />
+                      </Form.Item>
+                      <Form.Item name="guardrails" label="防护规则">
+                        <VisualGuardrailsBuilder />
+                      </Form.Item>
+                      <RetryPolicyForm name="retryPolicy" />
+                      <Form.Item name="templateSource" label="模板来源" rules={[{ required: true }]}>
+                        <Select
+                          options={[
+                            { label: '私有', value: 'PRIVATE' },
+                            { label: '公共', value: 'PUBLIC' },
+                          ]}
+                        />
+                      </Form.Item>
+                    </Space>
+                  ),
+                },
+              ]}
             />
-          </Form.Item>
-          <Form.Item name="agentName" label="名称" rules={[{ required: true }]}>
-            <Input />
-          </Form.Item>
-          <Form.Item name="roleType" label="角色" rules={[{ required: true }]}>
-            <Select
-              options={AGENT_ROLE_OPTIONS.map((item) => ({ label: getAgentRoleLabel(item), value: item }))}
-            />
-          </Form.Item>
-          <Form.Item name="objective" label="目标">
-            <Input.TextArea rows={2} />
-          </Form.Item>
-          <Form.Item name="modelConfigKey" label="模型配置Key" rules={[{ required: true }]}>
-            <Select
-              options={modelConfigOptions}
-              placeholder="选择 AI 模型配置"
-              showSearch
-            />
-          </Form.Item>
-          <Form.Item label="提示词编码" required>
-            <Space style={{ display: 'flex' }} align="start">
-              <Form.Item
-                name="agentPromptCode"
-                rules={[{ required: true }]}
-                noStyle
-              >
-                <Select
-                  showSearch
-                  placeholder="选择提示词模板"
-                  options={promptOptions}
-                  filterOption={(input, option) =>
-                    (option?.label ?? '').toLowerCase().includes(input.toLowerCase()) ||
-                    (option?.value ?? '').toLowerCase().includes(input.toLowerCase())
-                  }
-                  style={{ width: 440 }}
-                />
-              </Form.Item>
-              <Tooltip title="新建提示词模板">
-                <Button
-                  icon={<PlusOutlined />}
-                  onClick={() => setPromptCreateVisible(true)}
-                />
-              </Tooltip>
-            </Space>
-          </Form.Item>
-          <Form.Item name="outputSchemaCode" label="输出 Schema 编码" rules={[{ required: true }]}>
-            <Input />
-          </Form.Item>
-          <Collapse
-            size="small"
-            items={[
-              {
-                key: 'advanced-agent',
-                label: '高级设置（记忆、超时、工具与防护）',
-                children: (
-                  <Space direction="vertical" style={{ width: '100%' }} size={0}>
-                    <Form.Item name="memoryPolicy" label="记忆策略" rules={[{ required: true }]}>
-                      <Select options={memoryOptions.map((item) => ({ label: getMemoryPolicyLabel(item), value: item }))} />
-                    </Form.Item>
-                    <Form.Item name="timeoutMs" label="超时(ms)" rules={[{ required: true }]}>
-                      <InputNumber min={1000} max={120000} style={{ width: '100%' }} />
-                    </Form.Item>
-                    <ToolPolicyForm name="toolPolicy" />
-                    <GuardrailsForm name="guardrails" />
-                    <RetryPolicyForm name="retryPolicy" />
-                    <Form.Item name="templateSource" label="模板来源" rules={[{ required: true }]}>
-                      <Select
-                        options={[
-                          { label: '私有', value: 'PRIVATE' },
-                          { label: '公共', value: 'PUBLIC' },
-                        ]}
-                      />
-                    </Form.Item>
-                  </Space>
-                ),
-              },
-            ]}
-          />
-        </Form>
+          </Form>
+        </div>
       </Modal>
 
-      <Modal
-        title={`编辑智能体 - ${editingAgent?.agentCode || ''}`}
+
+      <AgentEditDrawer
         open={editVisible}
-        onCancel={() => {
+        onClose={() => {
           setEditVisible(false);
           setEditingAgent(null);
         }}
-        onOk={handleEdit}
-        confirmLoading={updateMutation.isPending}
-      >
-        <Form layout="vertical" form={editForm}>
-          <Form.Item name="agentName" label="名称" rules={[{ required: true }]}>
-            <Input />
-          </Form.Item>
-          <Form.Item name="modelConfigKey" label="模型配置Key" rules={[{ required: true }]}>
-            <Select
-              options={modelConfigOptions}
-              placeholder="选择 AI 模型配置"
-              showSearch
-            />
-          </Form.Item>
-          <Form.Item label="提示词编码" required>
-            <Space style={{ display: 'flex' }} align="start">
-              <Form.Item
-                name="agentPromptCode"
-                rules={[{ required: true }]}
-                noStyle
-              >
-                <Select
-                  showSearch
-                  placeholder="选择提示词模板"
-                  options={promptOptions}
-                  filterOption={(input, option) =>
-                    (option?.label ?? '').toLowerCase().includes(input.toLowerCase()) ||
-                    (option?.value ?? '').toLowerCase().includes(input.toLowerCase())
-                  }
-                  style={{ width: 440 }}
-                />
-              </Form.Item>
-              <Tooltip title="新建提示词模板">
-                <Button
-                  icon={<PlusOutlined />}
-                  onClick={() => setPromptCreateVisible(true)}
-                />
-              </Tooltip>
-            </Space>
-          </Form.Item>
-          <Form.Item name="timeoutMs" label="超时(ms)" rules={[{ required: true }]}>
-            <InputNumber min={1000} max={120000} style={{ width: '100%' }} />
-          </Form.Item>
-          <Form.Item name="isActive" label="是否启用" valuePropName="checked">
-            <Switch checkedChildren="启用" unCheckedChildren="停用" />
-          </Form.Item>
-          <ToolPolicyForm name="toolPolicy" />
-          <GuardrailsForm name="guardrails" />
-          <RetryPolicyForm name="retryPolicy" />
-        </Form>
-      </Modal>
+        agent={editingAgent}
+        onSuccess={() => {
+          // Refresh list if needed, currently react-query handles it via invalidation
+        }}
+      />
       <Drawer
         title="智能体详情"
         width={1000}

@@ -1,7 +1,9 @@
 version: '3.8'
 services:
   postgres:
-    image: postgres:15-alpine
+    build:
+      context: .
+      dockerfile: Dockerfile.pgvector
     container_name: ctbms_postgres
     ports:
       - "5433:5432"
@@ -13,7 +15,7 @@ services:
       - postgres_data:/var/lib/postgresql/data
     restart: always
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ctbms -d ctbms_dev"]
+      test: [ "CMD-SHELL", "pg_isready -U ctbms -d ctbms_dev" ]
       interval: 5s
       timeout: 3s
       retries: 10

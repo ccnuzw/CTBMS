@@ -18,13 +18,11 @@ import { FileInterceptor } from '@nestjs/platform-express';
 import { MarketIntelService } from './market-intel.service';
 import { PriceDataService } from './price-data.service';
 
-import { ResearchReportService } from './research-report.service';
 import {
   CreateMarketIntelRequest,
   UpdateMarketIntelRequest,
   MarketIntelQueryRequest,
   AnalyzeContentRequest,
-  CreateManualResearchReportRequest,
   PromoteToReportRequest,
 } from './dto';
 import {
@@ -33,24 +31,23 @@ import {
   ContentType,
   IntelCategory,
   IntelSourceType,
-  CreateResearchReportDto,
-  UpdateResearchReportDto,
-  ResearchReportQuery,
-  ReviewStatus,
 } from '@packages/types';
 import { IntelAttachmentService } from './intel-attachment.service';
 
 import { DocumentParserService } from './document-parser.service';
+import { PdfToMarkdownService } from './pdf-to-markdown.service';
+import { KnowledgeExtractionService } from '../knowledge/services/knowledge-extraction.service';
 
 @Controller('market-intel')
 export class MarketIntelController {
   constructor(
     private readonly marketIntelService: MarketIntelService,
     private readonly priceDataService: PriceDataService,
-    private readonly researchReportService: ResearchReportService,
     private readonly intelAttachmentService: IntelAttachmentService,
     private readonly documentParserService: DocumentParserService,
-  ) {}
+    private readonly pdfToMarkdownService: PdfToMarkdownService,
+    private readonly knowledgeExtractionService: KnowledgeExtractionService,
+  ) { }
 
   // =============================================
   // 静态路由 (必须在动态路由 :id 之前)
@@ -80,6 +77,28 @@ export class MarketIntelController {
     @Query('timeframe') timeframe: 'day' | 'week' | 'month' | 'year' = 'month',
   ) {
     return this.marketIntelService.getLeaderboard(parseInt(limit, 10), timeframe);
+  }
+
+  @Post('parse-document')
+  @UseInterceptors(FileInterceptor('file'))
+  async parseDocument(@UploadedFile() file: Express.Multer.File) {
+    if (!file) {
+      throw new BadRequestException('No file uploaded');
+    }
+    // Convert filename encoding specifically for originalname handling
+    file.originalname = Buffer.from(file.originalname, 'latin1').toString('utf8');
+
+    // 只提取为 Markdown 不做进一步建档和关联
+    const markdownContent = await this.pdfToMarkdownService.convertToMarkdown(
+      file.buffer,
+      file.mimetype,
+    );
+
+    return {
+      success: true,
+      content: markdownContent,
+      filename: file.originalname,
+    };
   }
 
   @Post('analyze')
@@ -508,7 +527,7 @@ export class MarketIntelController {
 
   @Post('dashboard/briefing')
   async generateSmartBriefing(
-    @Body() body: { startDate?: string; endDate?: string; [key: string]: unknown },
+    @Body() body: { startDate?: string; endDate?: string;[key: string]: unknown },
   ) {
     return this.marketIntelService.generateSmartBriefing({
       ...body,
@@ -617,112 +636,11 @@ export class MarketIntelController {
     return this.marketIntelService.findInsightById(id);
   }
 
-  // --- C类增强：研究报告 ---
-
-  @Post('research-reports')
-  async createResearchReport(@Body() dto: CreateResearchReportDto) {
-    return this.researchReportService.create(dto);
-  }
-
-  @Get('research-reports')
-  async findAllResearchReports(@Query() query: ResearchReportQuery) {
-    // 转换日期字符串为 Date 对象
-    const options = {
-      ...query,
-      startDate: query.startDate ? new Date(query.startDate) : undefined,
-      endDate: query.endDate ? new Date(query.endDate) : undefined,
-      page: query.page ? Number(query.page) : 1,
-      pageSize: query.pageSize ? Number(query.pageSize) : 20,
-    };
-    return this.researchReportService.findAll(options);
-  }
-
-  @Post('research-reports/manual')
-  async createManualResearchReport(@Body() dto: CreateManualResearchReportRequest) {
-    return this.researchReportService.createManual(dto);
-  }
-
-  @Get('research-reports/stats')
-  async getResearchReportStats(@Query('days') days?: string) {
-    return this.researchReportService.getStats({ days: days ? parseInt(days, 10) : undefined });
-  }
-
-  @Get('research-reports/by-intel/:intelId')
-  async findResearchReportByIntelId(@Param('intelId') intelId: string) {
-    return this.researchReportService.findByIntelId(intelId);
-  }
-
-  @Get('research-reports/:id')
-  async findResearchReportById(@Param('id') id: string) {
-    return this.researchReportService.findOne(id);
-  }
-
-  @Put('research-reports/:id')
-  async updateResearchReport(@Param('id') id: string, @Body() dto: UpdateResearchReportDto) {
-    return this.researchReportService.update(id, dto);
-  }
-
-  @Delete('research-reports/:id')
-  async removeResearchReport(@Param('id') id: string) {
-    return this.researchReportService.remove(id);
-  }
-
-  @Post('research-reports/batch-delete')
-  async batchRemoveResearchReports(@Body() body: { ids: string[] }) {
-    return this.researchReportService.batchRemove(body.ids);
-  }
-
-  @Post('research-reports/batch-review')
-  async batchReviewResearchReports(
-    @Body() body: { ids: string[]; status: ReviewStatus; reviewerId: string },
-  ) {
-    if (!body.ids || !Array.isArray(body.ids)) {
-      throw new BadRequestException('ids array is required');
-    }
-    return this.researchReportService.batchUpdateReviewStatus(
-      body.ids,
-      body.status,
-      body.reviewerId,
-    );
-  }
-
-  @Post('research-reports/export')
-  async exportResearchReports(
-    @Body() body: { ids?: string[]; query?: ResearchReportQuery },
-    @Res() res: Response,
-  ) {
-    const buffer = await this.researchReportService.export(body.ids, body.query);
-    res.set({
-      'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-      'Content-Disposition': 'attachment; filename="research-reports-export.xlsx"',
-      'Content-Length': buffer.length,
-    });
-    res.end(buffer);
-  }
-
-  @Post('research-reports/:id/view')
-  async incrementResearchReportView(@Param('id') id: string) {
-    return this.researchReportService.incrementViewCount(id);
-  }
-
-  @Post('research-reports/:id/download')
-  async incrementResearchReportDownload(@Param('id') id: string) {
-    return this.researchReportService.incrementDownloadCount(id);
-  }
-
-  @Put('research-reports/:id/review')
-  async updateResearchReportReview(
-    @Param('id') id: string,
-    @Body() body: { status: 'PENDING' | 'APPROVED' | 'REJECTED'; reviewerId: string },
-  ) {
-    return this.researchReportService.updateReviewStatus(id, body.status, body.reviewerId);
-  }
-
   // --- 文档升级为研报 (Promote to Report) ---
 
   @Post(':id/promote-to-report')
   async promoteToReport(@Param('id') intelId: string, @Body() dto: PromoteToReportRequest) {
-    return this.researchReportService.promoteToReport(intelId, dto);
+    return this.marketIntelService.promoteToReport(intelId, dto);
   }
 
   // --- 综合情报流 ---
@@ -807,47 +725,42 @@ export class MarketIntelController {
         if (allowedMimes.includes(file.mimetype)) {
           callback(null, true);
         } else {
-          callback(new BadRequestException(`不支持的文件类型: ${file.mimetype}`), false);
+          callback(new BadRequestException('Unsupported file type'), false);
         }
       },
     }),
   )
   async uploadDocument(
     @UploadedFile() file: Express.Multer.File,
-    @Body('sourceType') sourceType?: string,
-    @Body('contentType') contentType?: string,
-    @Body('location') location?: string,
-    @Body('region') region?: string,
+    @Body() body: { sourceType?: string; contentType?: string; location?: string; skipKnowledgeSync?: string | boolean },
   ) {
     if (!file) {
-      throw new BadRequestException('请上传文件');
+      throw new BadRequestException('No file uploaded');
     }
 
-    // Fix Chinese filename encoding (Multer often defaults to latin1)
+    const { sourceType, contentType, location, skipKnowledgeSync } = body;
+    const authorId = 'system-user-placeholder';
+    const skipSync = skipKnowledgeSync === 'true' || skipKnowledgeSync === true;
+
+    // 0. Handle filename encoding (Fix for mojibake)
+    // Multer often parses UTF-8 filenames as ISO-8859-1 (latin1)
     file.originalname = Buffer.from(file.originalname, 'latin1').toString('utf8');
 
-    const authorId = 'system-user-placeholder';
-
-    // 1. 解析文档内容
-    let extractedText = '';
-    let extractedHtml = '';
-    let parseError = '';
+    // 1. Convert to Markdown (using LLM if needed)
+    let markdownContent = '';
     try {
-      const parseResult = await this.documentParserService.parse(file.buffer, file.mimetype);
-      extractedText = parseResult.text || '';
-      extractedHtml = parseResult.html || '';
+      markdownContent = await this.pdfToMarkdownService.convertToMarkdown(
+        file.buffer,
+        file.mimetype,
+      );
     } catch (error) {
-      parseError = error instanceof Error ? error.message : '文档解析失败';
+      console.error('Failed to convert to Markdown:', error);
     }
 
-    // 2. 准备内容并创建 MarketIntel 记录
-    // 优先使用 HTML (保留排版)，否则使用纯文本。不再进行 5000 字符截断。
-    const contentToSave = extractedHtml || extractedText;
-    const rawContent = contentToSave
-      ? contentToSave
-      : `[文档上传] ${file.originalname}${parseError ? `\n\n[解析警告] ${parseError}` : ''}`;
+    // 2. Prepare data for creation
+    const rawContent = markdownContent || `[文档上传] ${file.originalname}`;
 
-    // Map ContentType to Category (Legacy Support)
+    // Map ContentType to Category (Legacy Support Logic)
     const inputContentType = (contentType as ContentType) || ContentType.DAILY_REPORT;
     let mappedCategory = IntelCategory.C_DOCUMENT;
     if (inputContentType === ContentType.DAILY_REPORT) {
@@ -860,6 +773,7 @@ export class MarketIntelController {
       ? (sourceType as IntelSourceType)
       : IntelSourceType.OFFICIAL;
 
+    // 3. Create MarketIntel record
     const intel = await this.marketIntelService.create(
       {
         category: mappedCategory,
@@ -868,18 +782,19 @@ export class MarketIntelController {
         rawContent,
         effectiveTime: new Date(),
         location: location || '未指定',
-        region: region ? region.split(',') : [],
+        region: [], // Default empty
         gpsVerified: false,
-        completenessScore: extractedText ? 70 : 50, // 解析成功得分更高
+        completenessScore: markdownContent ? 70 : 50,
         scarcityScore: 50,
         validationScore: 0,
-        totalScore: extractedText ? 60 : 50,
+        totalScore: markdownContent ? 60 : 50,
         isFlagged: false,
       },
       authorId,
+      skipSync,
     );
 
-    // 3. 保存文件并创建附件记录（关联 intelId）
+    // 4. Save file attachment
     const attachment = await this.intelAttachmentService.saveFile(
       {
         buffer: file.buffer,
@@ -887,9 +802,23 @@ export class MarketIntelController {
         mimetype: file.mimetype,
         size: file.size,
       },
-      intel.id, // 关联已创建的情报 ID
-      extractedText, // 存储提取的文本作为 ocrText
+      intel.id,
+      markdownContent, // Store extracted text/markdown for search
     );
+
+    // 5. Trigger Knowledge Graph Extraction
+    if (markdownContent && markdownContent.length > 50) {
+      // Fire and forget or await? For MVP, let's await to ensure it works, or use setImmediate
+      // Using setImmediate to avoid blocking response too long, but logging might get lost if context dies?
+      // NestJS controllers await response.
+      // Let's await it.
+      try {
+        await this.knowledgeExtractionService.processIntel(intel.id, markdownContent);
+      } catch (err) {
+        console.error('Knowledge extraction trigger failed:', err);
+        // Do not fail the upload
+      }
+    }
 
     return {
       success: true,
@@ -899,12 +828,11 @@ export class MarketIntelController {
         filename: attachment.filename,
         mimeType: attachment.mimeType,
         fileSize: attachment.fileSize,
+        storagePath: attachment.storagePath,
       },
-      extractedTextLength: extractedText.length,
-      parseError: parseError || undefined,
-      message: extractedText
-        ? `文档上传成功，已提取 ${extractedText.length} 字符`
-        : '文档上传成功，内容解析待处理',
+      message: markdownContent
+        ? `Document uploaded and converted to Markdown (${markdownContent.length} chars)`
+        : 'Document uploaded',
     };
   }
 

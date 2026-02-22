@@ -21,11 +21,10 @@ export { ResearchReportDetailPage } from './ResearchReportDetailPage';
 export { ResearchReportDashboard } from './ResearchReportDashboard';
 export { ResearchReportCreatePage } from './ResearchReportCreatePage';
 export { AlertCenterPage } from './AlertCenterPage';
-export { Workbench } from './Workbench';
-export { DocumentDetailPage } from './DocumentDetailPage';
 export { KnowledgeCenterPage } from './KnowledgeCenterPage';
 export { KnowledgeDetailPage } from './KnowledgeDetailPage';
-export { KnowledgeDashboardPage } from './KnowledgeDashboardPage';
+export { ComprehensiveDashboard } from './ComprehensiveDashboard';
+export { StatsOverviewBar } from './StatsOverviewBar';
 export { LegacyKnowledgeRedirectPage } from './LegacyKnowledgeRedirectPage';
 export { KnowledgeRelationGraph } from './KnowledgeRelationGraph';
 export * from './task-distribution';
@@ -35,6 +34,6 @@ export * from './DocumentStatsDashboard';
 export { AllocationMatrix } from './AllocationMatrix';
 export { CollectionPointAllocationCenter } from './CollectionPointAllocationCenter';
 export { DistributionPreview } from './DistributionPreview';
-export { ReportEntryForm } from './ReportEntryForm';
+// ReportEntryForm removed - merged into ResearchReportCreatePage
 export { ReviewWorkbench } from './ReviewWorkbench';
 

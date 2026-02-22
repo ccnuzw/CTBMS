@@ -17,7 +17,7 @@ services:
     networks:
       - ctbms_network
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-ctbms} -d ${POSTGRES_DB:-ctbms_prod}"]
+      test: [ "CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-ctbms} -d ${POSTGRES_DB:-ctbms_prod}" ]
       interval: 5s
       timeout: 3s
       retries: 10
@@ -27,7 +27,7 @@ services:
     build:
       context: .
       dockerfile: apps/api/Dockerfile
-    container_name: ctbms_api
+    container_name: ctbms_api_prod
     restart: always
     depends_on:
       postgres:
@@ -35,8 +35,8 @@ services:
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER:-ctbms}:${POSTGRES_PASSWORD:-ctbms_password}@postgres:5432/${POSTGRES_DB:-ctbms_prod}?schema=public
       PORT: 3000
-      # Add other necessary env vars here, passed from .env
       GEMINI_API_KEY: ${GEMINI_API_KEY}
+      NODE_ENV: production
     volumes:
       - uploads_data:/app/uploads
     networks:
@@ -49,13 +49,9 @@ services:
       dockerfile: apps/web/Dockerfile
       args:
         VITE_GOOGLE_GENAI_API_KEY: ${VITE_GOOGLE_GENAI_API_KEY}
-    container_name: ctbms_web
+        VITE_API_URL: ${VITE_API_URL:-/api}
+    container_name: ctbms_web_prod
     restart: always
-    environment:
-      # If the frontend needs build-time env vars, they must be build args or injected here if the app supports runtime config
-      # For Vite/React, they are usually build-time, so we might need ARGS in Dockerfile if we want to change them.
-      # However, if we reverse proxy /api, we can rely on relative paths.
-      VITE_GOOGLE_GENAI_API_KEY: ${VITE_GOOGLE_GENAI_API_KEY}
     networks:
       - ctbms_network
 
