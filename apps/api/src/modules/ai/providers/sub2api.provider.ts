@@ -236,4 +236,47 @@ export class Sub2ApiProvider implements IAIProvider {
             throw error;
         }
     }
+
+    async rerank(
+        query: string,
+        documents: string[],
+        options: AIRequestOptions,
+    ): Promise<{ index: number; score: number }[]> {
+        const baseUrl = (options.apiUrl || 'https://api.siliconflow.cn/v1').replace(/\/+$/, '');
+        const url = `${baseUrl}/rerank`;
+
+        try {
+            const headers = this.buildHeaders(options);
+            const response = await fetch(url, {
+                method: 'POST',
+                headers,
+                body: JSON.stringify({
+                    model: options.modelName,
+                    query: query,
+                    texts: documents,
+                    top_n: documents.length,
+                    return_documents: false
+                })
+            });
+
+            if (!response.ok) {
+                const errorText = await response.text();
+                throw new Error(`Rerank Error (${response.status}): ${errorText}`);
+            }
+
+            const data = await response.json() as { results?: Array<{ index: number; relevance_score: number }> };
+
+            if (!data.results) {
+                return [];
+            }
+
+            return data.results.map(r => ({
+                index: r.index,
+                score: r.relevance_score
+            }));
+        } catch (error) {
+            this.logger.error('Rerank API call failed', error);
+            return [];
+        }
+    }
 }

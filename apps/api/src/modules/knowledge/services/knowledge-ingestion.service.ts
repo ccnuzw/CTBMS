@@ -31,6 +31,7 @@ export class KnowledgeIngestionService {
     this.splitter = new RecursiveCharacterTextSplitter({
       chunkSize: 800,
       chunkOverlap: 100,
+      separators: ['\n\n', '。\n', '。', '！', '？', '\n', ' ', ''],
     });
   }
 

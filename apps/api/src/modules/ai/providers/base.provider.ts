@@ -53,4 +53,17 @@ export interface IAIProvider {
    * @param options 请求配置选项
    */
   getModels(options: AIRequestOptions): Promise<{ models: string[]; activeUrl?: string }>;
+
+  /**
+   * 文本重排 (Rerank)
+   * 将候选文档依据与 Query 的相关性重新打分并排序
+   * @param query 用户查询
+   * @param documents 候选文档列表
+   * @param options 请求配置选项
+   */
+  rerank?(
+    query: string,
+    documents: string[],
+    options: AIRequestOptions,
+  ): Promise<{ index: number; score: number }[]>;
 }

@@ -5,6 +5,7 @@ import { GoogleGenerativeAIEmbeddings } from '@langchain/google-genai';
 import { ConfigService } from '../../config/config.service';
 import { AIModelConfig, Prisma } from '@prisma/client';
 import { KnowledgeQueryExpansionService } from './knowledge-query-expansion.service';
+import { AIProviderFactory } from '../../ai/providers/provider.factory';
 
 interface RetrievalResult {
   id: string;
@@ -34,6 +35,7 @@ export class KnowledgeRetrievalService {
     private prisma: PrismaService,
     private configService: ConfigService,
     private queryExpansionService: KnowledgeQueryExpansionService,
+    private aiProviderFactory: AIProviderFactory,
   ) { }
 
 
@@ -162,12 +164,13 @@ export class KnowledgeRetrievalService {
                     content, 
                     metadata, 
                     "knowledgeItemId",
+                    -- [RAG 优化] 若已按照 setup-rag-indexes.sql 配置了 zhcfg，可将下方三处的 'simple' 替换为 'zhcfg'
                     ts_rank_cd(to_tsvector('simple', content), plainto_tsquery('simple', ${query})) as rank_score
                 FROM "KnowledgeVector"
                 WHERE to_tsvector('simple', content) @@ plainto_tsquery('simple', ${query})
                 ${filterClause}
                 ORDER BY rank_score DESC
-                LIMIT 20
+                LIMIT 30
             ),
             vector_search AS (
                 SELECT 
@@ -179,7 +182,7 @@ export class KnowledgeRetrievalService {
                 FROM "KnowledgeVector"
                 WHERE 1=1 ${filterClause}
                 ORDER BY distance ASC
-                LIMIT 20
+                LIMIT 30
             ),
             -- RRF Fusion
             fusion AS (
@@ -203,10 +206,10 @@ export class KnowledgeRetrievalService {
                 f.knowledge_item_id as "sourceId"
             FROM fusion f
             ORDER BY f.rrf_score DESC
-            LIMIT ${topK};
+            LIMIT 20;
             `;
 
-      const results = await this.prisma.$queryRaw<
+      const candidates = await this.prisma.$queryRaw<
         Array<{
           id: string;
           content: string;
@@ -216,7 +219,58 @@ export class KnowledgeRetrievalService {
         }>
       >(sql);
 
-      return results.map((r) => ({
+      if (!candidates || candidates.length === 0) {
+        return [];
+      }
+
+      // 5. Reranking (Secondary Scoring)
+      try {
+        const configs = await this.configService.getAllAIModelConfigs();
+        // Look for a specific config that acts as our Reranker, or default to sub2api if active
+        // Simplification: We use the active 'sub2api' provider if available (SiliconFlow compatible)
+        const rerankConfig = configs.find(c => c.isActive && c.provider === 'sub2api');
+
+        if (rerankConfig && rerankConfig.apiUrl && rerankConfig.embeddingModel) {
+          this.logger.log(`Performing Rerank using ${rerankConfig.provider}`);
+          const providerInfo = this.aiProviderFactory.getProvider(rerankConfig.provider as any);
+          if (providerInfo.rerank) {
+            const documents = candidates.map(c => c.content);
+            const rerankedScores = await providerInfo.rerank(query, documents, {
+              modelName: rerankConfig.embeddingModel, // or a specific rerankModel field if added
+              apiKey: this.resolveApiKey(rerankConfig),
+              apiUrl: rerankConfig.apiUrl
+            });
+
+            if (rerankedScores && rerankedScores.length > 0) {
+              // Map new scores
+              const rerankedResults = rerankedScores.map(rs => {
+                const originalCandidate = candidates[rs.index];
+                return {
+                  ...originalCandidate,
+                  score: rs.score // Override with the highly accurate cross-encoder score
+                };
+              });
+
+              // Sort by new score descending and slice to topK
+              return rerankedResults
+                .sort((a, b) => b.score - a.score)
+                .slice(0, topK)
+                .map(r => ({
+                  id: r.id,
+                  content: r.content,
+                  score: r.score,
+                  metadata: r.metadata,
+                  sourceId: r.sourceId
+                }));
+            }
+          }
+        }
+      } catch (rerankError) {
+        this.logger.warn(`Reranking failed, falling back to RRF fusion scores:`, rerankError);
+      }
+
+      // Fallback: Just return RRF topK results
+      return candidates.slice(0, topK).map((r) => ({
         id: r.id,
         content: r.content,
         score: r.score,
