@@ -13,6 +13,7 @@ import {
 } from '@nestjs/common';
 import { Request as ExpressRequest } from 'express';
 import { WorkflowDefinitionService } from './workflow-definition.service';
+import { WorkflowDefinitionValidatorService } from './workflow-definition-validator.service';
 import {
   CreateWorkflowDefinitionRequest,
   CreateWorkflowVersionRequest,
@@ -28,7 +29,10 @@ type AuthRequest = ExpressRequest & { user?: { id?: string } };
 
 @Controller('workflow-definitions')
 export class WorkflowDefinitionController {
-  constructor(private readonly workflowDefinitionService: WorkflowDefinitionService) {}
+  constructor(
+    private readonly workflowDefinitionService: WorkflowDefinitionService,
+    private readonly workflowDefinitionValidatorService: WorkflowDefinitionValidatorService,
+  ) { }
 
   @Post()
   create(@Body() dto: CreateWorkflowDefinitionRequest, @Request() req: AuthRequest) {
@@ -129,11 +133,11 @@ export class WorkflowDefinitionController {
 
   @Post('validate-dsl')
   validateDsl(@Body() dto: ValidateWorkflowDslRequest) {
-    return this.workflowDefinitionService.validateDsl(dto.dslSnapshot, dto.stage);
+    return this.workflowDefinitionValidatorService.validateDsl(dto.dslSnapshot, dto.stage);
   }
 
   @Post('preview-node')
   previewNode(@Body() dto: ValidateWorkflowNodePreviewRequest) {
-    return this.workflowDefinitionService.previewNodeBindings(dto);
+    return this.workflowDefinitionValidatorService.previewNodeBindings(dto);
   }
 }

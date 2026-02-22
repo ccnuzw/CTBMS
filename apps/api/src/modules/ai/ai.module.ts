@@ -1,5 +1,8 @@
 import { Module, Global } from '@nestjs/common';
 import { AIService } from './ai.service';
+import { AIModelService } from './ai-model.service';
+import { AIPromptService } from './ai-prompt.service';
+import { AIEntityExtractorService } from './ai-entity-extractor.service';
 import { RuleEngineService } from './rule-engine.service';
 import { PromptService } from './prompt.service';
 import { PromptController } from './prompt.controller';

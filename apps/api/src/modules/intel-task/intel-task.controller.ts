@@ -9,6 +9,8 @@ import {
     Query,
 } from '@nestjs/common';
 import { IntelTaskService } from './intel-task.service';
+import { IntelTaskStateService } from './intel-task-state.service';
+import { IntelTaskMetricsService } from './intel-task-metrics.service';
 import { IntelTaskTemplateService } from './intel-task-template.service';
 import { Prisma } from '@prisma/client';
 import {
@@ -30,6 +32,8 @@ export class IntelTaskController {
     constructor(
         private readonly itemTaskService: IntelTaskService,
         private readonly templateService: IntelTaskTemplateService,
+        private readonly taskStateService: IntelTaskStateService,
+        private readonly taskMetricsService: IntelTaskMetricsService,
     ) { }
 
     // ========================
@@ -49,27 +53,27 @@ export class IntelTaskController {
 
     @Get('metrics')
     async getMetrics(@Query() query: IntelTaskQueryDto) {
-        return this.itemTaskService.getMetrics(query);
+        return this.taskMetricsService.getMetrics(query);
     }
 
     @Get('metrics/org')
     async getOrgMetrics(@Query() query: IntelTaskQueryDto) {
-        return this.itemTaskService.getOrgMetrics(query);
+        return this.taskMetricsService.getOrgMetrics(query);
     }
 
     @Get('metrics/dept')
     async getDeptMetrics(@Query() query: IntelTaskQueryDto) {
-        return this.itemTaskService.getDeptMetrics(query);
+        return this.taskMetricsService.getDeptMetrics(query);
     }
 
     @Get('metrics/performance')
     async getPerformanceMetrics(@Query() query: IntelTaskQueryDto) {
-        return this.itemTaskService.getPerformanceMetrics(query);
+        return this.taskMetricsService.getPerformanceMetrics(query);
     }
 
     @Get('templates/:id/rule-metrics')
     async getRuleMetrics(@Param('id') id: string, @Query() query: GetRuleMetricsDto) {
-        return this.itemTaskService.getRuleMetrics(id, query);
+        return this.taskMetricsService.getRuleMetrics(id, query);
     }
 
     @Get('my')
@@ -81,7 +85,7 @@ export class IntelTaskController {
 
     @Post('check-overdue')
     async checkOverdueTasks() {
-        return this.itemTaskService.checkOverdueTasks();
+        return this.taskStateService.checkOverdueTasks();
     }
 
     @Put(':id')
@@ -96,7 +100,7 @@ export class IntelTaskController {
     ) {
         // In real app, operatorId comes from JWT
         const operatorId = body.operatorId || 'system-user-placeholder';
-        return this.itemTaskService.submitTask(id, operatorId, body.data);
+        return this.taskStateService.submitTask(id, operatorId, body.data);
     }
 
     @Post(':id/review')
@@ -105,7 +109,7 @@ export class IntelTaskController {
         @Body() body: { operatorId: string; approved: boolean; reason?: string }
     ) {
         const operatorId = body.operatorId || 'system-user-placeholder';
-        return this.itemTaskService.reviewTask(id, operatorId, body.approved, body.reason);
+        return this.taskStateService.reviewTask(id, operatorId, body.approved, body.reason);
     }
 
     @Post(':id/complete')
@@ -113,7 +117,7 @@ export class IntelTaskController {
         @Param('id') id: string,
         @Body('intelId') intelId?: string,
     ) {
-        return this.itemTaskService.complete(id, intelId);
+        return this.taskStateService.complete(id, intelId);
     }
 
     @Post(':id/cancel')
@@ -122,7 +126,7 @@ export class IntelTaskController {
         @Body() body: { operatorId?: string; reason?: string }
     ) {
         const operatorId = body.operatorId || 'system-user-placeholder';
-        return this.itemTaskService.cancelTask(id, operatorId, body.reason);
+        return this.taskStateService.cancelTask(id, operatorId, body.reason);
     }
 
     @Delete(':id')
@@ -137,7 +141,7 @@ export class IntelTaskController {
 
     @Get('calendar-summary')
     async getCalendarSummary(@Query() query: GetCalendarSummaryDto) {
-        const summary = await this.itemTaskService.getCalendarSummary(query);
+        const summary = await this.taskMetricsService.getCalendarSummary(query);
         if (!query.includePreview) {
             return summary;
         }
@@ -151,7 +155,7 @@ export class IntelTaskController {
             assigneeOrgId: query.assigneeOrgId,
             assigneeDeptId: query.assigneeDeptId,
         });
-        return this.itemTaskService.attachPreviewSummary(summary, previewTasks, query);
+        return this.taskMetricsService.attachPreviewSummary(summary, previewTasks, query);
     }
 
     // ========================

@@ -17,6 +17,7 @@ import { AIService } from '../ai/ai.service';
 import { PrismaService } from '../../prisma';
 import { RagPipelineService } from './rag/rag-pipeline.service';
 import { IntelTaskService } from '../intel-task/intel-task.service';
+import { IntelTaskStateService } from '../intel-task/intel-task-state.service';
 import { DeepAnalysisService } from './services/deep-analysis.service';
 import { forwardRef, Inject, Logger } from '@nestjs/common';
 import * as KnowledgeUtils from "./knowledge.utils";
@@ -66,6 +67,7 @@ export class KnowledgeService {
     private aiService: AIService,
     private ragPipelineService: RagPipelineService,
     @Inject(forwardRef(() => IntelTaskService)) private intelTaskService: IntelTaskService,
+        private readonly intelTaskStateService: IntelTaskStateService,
     private deepAnalysisService: DeepAnalysisService,
   ) { }
 
@@ -671,7 +673,7 @@ export class KnowledgeService {
       } else {
         try {
           // 调用任务的提交功能，将任务置于完成/待审状态
-          await this.intelTaskService.submitTask(taskId, authorId || item.authorId || 'system-user-placeholder', {
+          await this.intelTaskStateService.submitTask(taskId, authorId || item.authorId || 'system-user-placeholder', {
             intelId: id,
           });
         } catch (error) {

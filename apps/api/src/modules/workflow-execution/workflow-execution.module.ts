@@ -4,6 +4,8 @@ import { WorkflowExecutionService } from './workflow-execution.service';
 import { ExecutionLogService } from './execution-log.service';
 import { WorkflowExecutionQueryService } from './workflow-execution-query.service';
 import { WorkflowExecutionReplayService } from './workflow-execution-replay.service';
+import { WorkflowExecutionContextService } from './workflow-execution-context.service';
+import { WorkflowExecutionDagService } from './workflow-execution-dag.service';
 import { NodeExecutorRegistry } from './engine/node-executor.registry';
 import { ManualTriggerNodeExecutor } from './engine/node-executors/manual-trigger.executor';
 import { NotifyNodeExecutor } from './engine/node-executors/notify-node.executor';
@@ -44,6 +46,8 @@ import { DecisionRecordModule } from '../decision-record/decision-record.module'
         ExecutionLogService,
         WorkflowExecutionQueryService,
         WorkflowExecutionReplayService,
+        WorkflowExecutionContextService,
+        WorkflowExecutionDagService,
         NodeExecutorRegistry,
         ManualTriggerNodeExecutor,
         RulePackEvalNodeExecutor,
@@ -75,6 +79,8 @@ import { DecisionRecordModule } from '../decision-record/decision-record.module'
         ExecutionLogService,
         WorkflowExecutionQueryService,
         WorkflowExecutionReplayService,
+        WorkflowExecutionContextService,
+        WorkflowExecutionDagService,
         VariableResolver,
         EvidenceCollector,
         ReplayAssembler,

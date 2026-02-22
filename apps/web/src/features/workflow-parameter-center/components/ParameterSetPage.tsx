@@ -1,8 +1,7 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo } from 'react';
 import dayjs from 'dayjs';
 import type { ColumnsType } from 'antd/es/table';
 import {
-  App,
   Badge,
   Button,
   Card,
@@ -46,319 +45,28 @@ import type {
   ParameterOverrideDiffItemDto,
   ParameterScopeLevel,
   ParameterSetDto,
-  UpdateParameterItemDto,
   WorkflowTemplateSource,
 } from '@packages/types';
-import { useSearchParams } from 'react-router-dom';
-import { getErrorMessage } from '../../../api/client';
-import {
-  useBatchResetParameterItems,
-  useCreateParameterItem,
-  useCreateParameterSet,
-  useDeleteParameterSet,
-  useParameterChangeLogs,
-  useParameterImpactPreview,
-  useParameterOverrideDiff,
-  useParameterSetDetail,
-  useParameterSets,
-  usePublishParameterSet,
-  useResetParameterItemToDefault,
-  useUpdateParameterItem,
-} from '../api';
 import { ParameterDiffView, ParameterInheritanceStatus, ParameterResolutionPreview } from './index';
+import {
+  useParameterSetViewModel,
+  scopeOptions,
+  paramTypeOptions,
+  scopeColorMap,
+  operationColorMap,
+  getTemplateSourceLabel,
+  getScopeLabel,
+  getActiveStatusLabel,
+  isPublished,
+  formatValue,
+  slugifyParamCode,
+} from './useParameterSetViewModel';
 
 const { Title } = Typography;
 
-const scopeOptions: ParameterScopeLevel[] = [
-  'PUBLIC_TEMPLATE',
-  'USER_TEMPLATE',
-  'GLOBAL',
-  'COMMODITY',
-  'REGION',
-  'ROUTE',
-  'STRATEGY',
-  'SESSION',
-];
-
-const paramTypeOptions = ['number', 'string', 'boolean', 'enum', 'json', 'expression'];
-
-const scopeColorMap: Record<string, string> = {
-  PUBLIC_TEMPLATE: 'blue',
-  USER_TEMPLATE: 'cyan',
-  GLOBAL: 'green',
-  COMMODITY: 'orange',
-  REGION: 'purple',
-  ROUTE: 'magenta',
-  STRATEGY: 'geekblue',
-  SESSION: 'red',
-};
-
-const operationColorMap: Record<string, string> = {
-  CREATE: 'green',
-  UPDATE: 'blue',
-  DELETE: 'red',
-  RESET_TO_DEFAULT: 'orange',
-  BATCH_RESET: 'volcano',
-  PUBLISH: 'purple',
-};
-
-const templateSourceLabelMap: Record<WorkflowTemplateSource, string> = {
-  PUBLIC: '公共',
-  PRIVATE: '私有',
-  COPIED: '复制',
-};
-
-const getTemplateSourceLabel = (value?: WorkflowTemplateSource | null): string => {
-  if (!value) return '-';
-  return templateSourceLabelMap[value] ?? value;
-};
-
-const scopeLabelMap: Record<ParameterScopeLevel, string> = {
-  PUBLIC_TEMPLATE: '公共模板',
-  USER_TEMPLATE: '用户模板',
-  GLOBAL: '全局',
-  COMMODITY: '品种',
-  REGION: '区域',
-  ROUTE: '航线',
-  STRATEGY: '策略',
-  SESSION: '会话',
-};
-
-const getScopeLabel = (value?: ParameterScopeLevel | string): string => {
-  if (!value) return '-';
-  return scopeLabelMap[value as ParameterScopeLevel] ?? value;
-};
-
-const getActiveStatusLabel = (value?: boolean): string => (value ? '启用' : '停用');
-
-const parsePositiveInt = (value: string | null, fallback: number): number => {
-  if (!value) return fallback;
-  const parsed = Number(value);
-  if (!Number.isFinite(parsed) || parsed <= 0) return fallback;
-  return Math.floor(parsed);
-};
-
-const isPublished = (version?: number): boolean =>
-  Number.isInteger(version) && Number(version) >= 2;
-
-const formatValue = (value: unknown): string => {
-  if (value === null || value === undefined) return '-';
-  if (typeof value === 'string') return value;
-  return JSON.stringify(value);
-};
-
-const parseMaybeJsonText = (value: unknown): unknown => {
-  if (value === null || value === undefined) {
-    return undefined;
-  }
-  if (typeof value !== 'string') {
-    return value;
-  }
-  const raw = value.trim();
-  if (!raw) return undefined;
-  try {
-    return JSON.parse(raw);
-  } catch {
-    return raw;
-  }
-};
-
-const slugifyParamCode = (name?: string): string => {
-  const normalized = (name || '')
-    .trim()
-    .toUpperCase()
-    .replace(/[\s/\\]+/g, '_')
-    .replace(/[^\w-]+/g, '')
-    .replace(/_+/g, '_')
-    .replace(/^_+|_+$/g, '');
-  return normalized;
-};
-
 export const ParameterSetPage: React.FC = () => {
   const { token } = theme.useToken();
-  const { message } = App.useApp();
-  const [setForm] = Form.useForm<CreateParameterSetDto>();
-  const [itemForm] = Form.useForm<CreateParameterItemDto>();
-  const [searchParams, setSearchParams] = useSearchParams();
-  const [keywordInput, setKeywordInput] = useState(searchParams.get('keyword')?.trim() || '');
-  const [keyword, setKeyword] = useState<string | undefined>(
-    searchParams.get('keyword')?.trim() || undefined,
-  );
-  const [isActiveFilter, setIsActiveFilter] = useState<boolean | undefined>(
-    searchParams.get('isActive') === 'true'
-      ? true
-      : searchParams.get('isActive') === 'false'
-        ? false
-        : undefined,
-  );
-  const [createVisible, setCreateVisible] = useState(false);
-  const [compareVisible, setCompareVisible] = useState(false);
-  const [selectedSetId, setSelectedSetId] = useState<string | null>(null);
-  const [publishingSetId, setPublishingSetId] = useState<string | null>(null);
-  const [itemVisible, setItemVisible] = useState(false);
-  const [isParamCodeCustomized, setIsParamCodeCustomized] = useState(false);
-  const [editItemVisible, setEditItemVisible] = useState(false);
-  const [editingItem, setEditingItem] = useState<ParameterItemDto | null>(null);
-  const [detailTab, setDetailTab] = useState('items');
-  const [selectedItemIds, setSelectedItemIds] = useState<string[]>([]);
-  const [scopeResetLevel, setScopeResetLevel] = useState<ParameterScopeLevel | undefined>(undefined);
-  const [scopeResetValue, setScopeResetValue] = useState('');
-  const [page, setPage] = useState(parsePositiveInt(searchParams.get('page'), 1));
-  const [pageSize, setPageSize] = useState(parsePositiveInt(searchParams.get('pageSize'), 20));
-  const [logPage, setLogPage] = useState(1);
-  const [editItemForm] = Form.useForm<{
-    paramName?: string;
-    paramType?: string;
-    scopeLevel?: ParameterScopeLevel;
-    scopeValue?: string;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    value?: any;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    defaultValue?: any;
-    minValueText?: string;
-    maxValueText?: string;
-    unit?: string;
-    source?: string;
-    changeReason?: string;
-    isActive?: boolean;
-  }>();
-  const setTableContainerRef = React.useRef<HTMLDivElement | null>(null);
-
-  React.useEffect(() => {
-    const next = new URLSearchParams();
-    if (keyword) next.set('keyword', keyword);
-    if (isActiveFilter !== undefined) next.set('isActive', String(isActiveFilter));
-    next.set('page', String(page));
-    next.set('pageSize', String(pageSize));
-    setSearchParams(next, { replace: true });
-  }, [isActiveFilter, keyword, page, pageSize, setSearchParams]);
-
-  React.useEffect(() => {
-    if (!itemVisible) {
-      setIsParamCodeCustomized(false);
-    }
-  }, [itemVisible]);
-
-  const { data, isLoading } = useParameterSets({
-    includePublic: true,
-    keyword,
-    isActive: isActiveFilter,
-    page,
-    pageSize,
-  });
-  const { data: setDetail, isLoading: isDetailLoading } = useParameterSetDetail(
-    selectedSetId || undefined,
-  );
-  const { data: overrideDiff, isLoading: isDiffLoading } = useParameterOverrideDiff(
-    detailTab === 'diff' ? selectedSetId || undefined : undefined,
-  );
-  const { data: changeLogs, isLoading: isLogsLoading } = useParameterChangeLogs(
-    detailTab === 'audit' ? selectedSetId || undefined : undefined,
-    { page: logPage, pageSize: 20 },
-  );
-  const { data: impactPreview, isLoading: isImpactLoading } = useParameterImpactPreview(
-    detailTab === 'impact' ? selectedSetId || undefined : undefined,
-  );
-
-  const normalizedKeyword = keyword?.trim().toLowerCase() || '';
-  const highlightedSetId = useMemo(() => {
-    if (!normalizedKeyword) return null;
-    const rows = data?.data || [];
-    const exactMatch = rows.find((item) => item.setCode.trim().toLowerCase() === normalizedKeyword);
-    if (exactMatch) return exactMatch.id;
-    const fuzzyMatch = rows.find((item) => {
-      const code = item.setCode.trim().toLowerCase();
-      const name = item.name.trim().toLowerCase();
-      return code.includes(normalizedKeyword) || name.includes(normalizedKeyword);
-    });
-    return fuzzyMatch?.id || null;
-  }, [data?.data, normalizedKeyword]);
-
-  React.useEffect(() => {
-    if (!highlightedSetId || !setTableContainerRef.current) return;
-    const timer = window.setTimeout(() => {
-      const row = setTableContainerRef.current?.querySelector<HTMLElement>(
-        `tr[data-row-key="${highlightedSetId}"]`,
-      );
-      row?.scrollIntoView({ block: 'center', behavior: 'smooth' });
-    }, 0);
-    return () => window.clearTimeout(timer);
-  }, [highlightedSetId]);
-
-  const createSetMutation = useCreateParameterSet();
-  const deleteSetMutation = useDeleteParameterSet();
-  const createItemMutation = useCreateParameterItem();
-  const publishSetMutation = usePublishParameterSet();
-  const resetItemMutation = useResetParameterItemToDefault();
-  const batchResetMutation = useBatchResetParameterItems();
-  const updateItemMutation = useUpdateParameterItem();
-
-  const handlePublishSet = async (record: ParameterSetDto) => {
-    if (!record.isActive) {
-      message.warning('参数包未启用，无法发布');
-      return;
-    }
-    if (isPublished(record.version)) {
-      message.info('参数包已发布');
-      return;
-    }
-    try {
-      setPublishingSetId(record.id);
-      await publishSetMutation.mutateAsync({ id: record.id });
-      message.success(`参数包 ${record.setCode} 发布成功`);
-    } catch (error) {
-      message.error(getErrorMessage(error) || '发布失败');
-    } finally {
-      setPublishingSetId(null);
-    }
-  };
-
-  const handleResetItem = async (itemId: string) => {
-    if (!selectedSetId) return;
-    try {
-      await resetItemMutation.mutateAsync({ setId: selectedSetId, itemId });
-      message.success('已重置到默认值');
-    } catch (error) {
-      message.error(getErrorMessage(error) || '重置失败');
-    }
-  };
-
-  const handleBatchReset = async () => {
-    if (!selectedSetId || selectedItemIds.length === 0) return;
-    try {
-      const result = await batchResetMutation.mutateAsync({
-        setId: selectedSetId,
-        dto: { itemIds: selectedItemIds },
-      });
-      message.success(`已重置 ${result.resetCount} 个参数项`);
-      setSelectedItemIds([]);
-    } catch (error) {
-      message.error(getErrorMessage(error) || '批量重置失败');
-    }
-  };
-
-  const handleScopeBatchReset = async () => {
-    if (!selectedSetId || !scopeResetLevel) {
-      message.warning('请选择作用域后再执行批量重置');
-      return;
-    }
-    try {
-      const result = await batchResetMutation.mutateAsync({
-        setId: selectedSetId,
-        dto: {
-          scopeLevel: scopeResetLevel,
-          scopeValue: scopeResetValue.trim() || undefined,
-          reason: '按作用域批量重置',
-        },
-      });
-      message.success(`按作用域重置完成，影响 ${result.resetCount} 个参数项`);
-      setScopeResetLevel(undefined);
-      setScopeResetValue('');
-      setSelectedItemIds([]);
-    } catch (error) {
-      message.error(getErrorMessage(error) || '按作用域批量重置失败');
-    }
-  };
+  const vm = useParameterSetViewModel();
 
   const setColumns = useMemo<ColumnsType<ParameterSetDto>>(
     () => [
@@ -401,18 +109,18 @@ export const ParameterSetPage: React.FC = () => {
         width: 260,
         render: (_, record) => (
           <Space size={4}>
-            <Button type="link" onClick={() => { setSelectedSetId(record.id); setDetailTab('items'); }}>
+            <Button type="link" onClick={() => { vm.setters.setSelectedSetId(record.id); vm.setters.setDetailTab('items'); }}>
               查看详情
             </Button>
             <Popconfirm
               title="确认发布该参数包?"
-              onConfirm={() => handlePublishSet(record)}
+              onConfirm={() => vm.actions.handlePublishSet(record)}
               disabled={!record.isActive || isPublished(record.version)}
             >
               <Button
                 type="link"
                 disabled={!record.isActive || isPublished(record.version)}
-                loading={publishSetMutation.isPending && publishingSetId === record.id}
+                loading={vm.mutations.publishSetMutation.isPending && vm.state.publishingSetId === record.id}
               >
                 {isPublished(record.version) ? '已发布' : '发布'}
               </Button>
@@ -420,12 +128,7 @@ export const ParameterSetPage: React.FC = () => {
             <Popconfirm
               title="确认停用该参数包?"
               onConfirm={async () => {
-                try {
-                  await deleteSetMutation.mutateAsync(record.id);
-                  message.success('停用成功');
-                } catch (error) {
-                  message.error(getErrorMessage(error) || '停用失败');
-                }
+                await vm.mutations.deleteSetMutation.mutateAsync(record.id);
               }}
               disabled={!record.isActive}
             >
@@ -437,7 +140,7 @@ export const ParameterSetPage: React.FC = () => {
         ),
       },
     ],
-    [deleteSetMutation, message, publishSetMutation.isPending, publishingSetId],
+    [vm.actions, vm.mutations.deleteSetMutation, vm.mutations.publishSetMutation.isPending, vm.setters, vm.state.publishingSetId],
   );
 
   const itemColumns = useMemo<ColumnsType<ParameterItemDto>>(
@@ -498,12 +201,12 @@ export const ParameterSetPage: React.FC = () => {
             JSON.stringify(record.value) !== JSON.stringify(record.defaultValue);
           return (
             <Space size={4}>
-              <Button type="link" size="small" onClick={() => openEditItem(record)}>
+              <Button type="link" size="small" onClick={() => vm.actions.openEditItem(record)}>
                 编辑
               </Button>
               <Popconfirm
                 title="确认重置到默认值?"
-                onConfirm={() => handleResetItem(record.id)}
+                onConfirm={() => vm.actions.handleResetItem(record.id)}
                 disabled={!isOverridden}
               >
                 <Button type="link" size="small" disabled={!isOverridden}>
@@ -515,7 +218,7 @@ export const ParameterSetPage: React.FC = () => {
         },
       },
     ],
-    [selectedSetId],
+    [vm.actions],
   );
 
   const diffColumns = useMemo<ColumnsType<ParameterOverrideDiffItemDto>>(
@@ -558,7 +261,7 @@ export const ParameterSetPage: React.FC = () => {
         render: (value?: string) => value || '-',
       },
     ],
-    [],
+    [token.colorWarning],
   );
 
   const auditColumns = useMemo<ColumnsType<ParameterChangeLogDto>>(
@@ -596,125 +299,6 @@ export const ParameterSetPage: React.FC = () => {
     [],
   );
 
-  const overrideSummary = useMemo(() => {
-    const items = setDetail?.items ?? [];
-    const total = items.length;
-    let inherited = 0;
-    let overridden = 0;
-    let noTemplate = 0;
-    for (const item of items) {
-      const hasDefault = item.defaultValue !== null && item.defaultValue !== undefined;
-      if (!hasDefault) {
-        noTemplate++;
-        continue;
-      }
-      const hasValue = item.value !== null && item.value !== undefined;
-      if (!hasValue || JSON.stringify(item.value) === JSON.stringify(item.defaultValue)) {
-        inherited++;
-      } else {
-        overridden++;
-      }
-    }
-    const overrideRate = total > 0 ? Math.round((overridden / total) * 100) : 0;
-    return { total, inherited, overridden, noTemplate, overrideRate };
-  }, [setDetail?.items]);
-
-  const [auditViewMode, setAuditViewMode] = useState<'table' | 'timeline'>('table');
-
-  const handleCreateSet = async () => {
-    try {
-      const values = await setForm.validateFields();
-      await createSetMutation.mutateAsync(values);
-      message.success('参数包创建成功');
-      setCreateVisible(false);
-      setForm.resetFields();
-    } catch (error) {
-      message.error(getErrorMessage(error) || '参数包创建失败');
-    }
-  };
-
-  const handleCreateItem = async () => {
-    if (!selectedSetId) return;
-    try {
-      const values = await itemForm.validateFields();
-      const payload: CreateParameterItemDto = {
-        ...values,
-        value: parseMaybeJsonText(values.value),
-        defaultValue: parseMaybeJsonText(values.defaultValue),
-      };
-      await createItemMutation.mutateAsync({ setId: selectedSetId, payload });
-      message.success('参数项创建成功');
-      setItemVisible(false);
-      itemForm.resetFields();
-    } catch (error) {
-      message.error(getErrorMessage(error) || '参数项创建失败');
-    }
-  };
-
-  const openEditItem = (record: ParameterItemDto) => {
-    setEditingItem(record);
-    const isJsonOrText = record.paramType === 'json' || record.paramType === 'expression';
-
-    editItemForm.setFieldsValue({
-      paramName: record.paramName,
-      paramType: record.paramType,
-      scopeLevel: record.scopeLevel,
-      scopeValue: record.scopeValue || undefined,
-      value: isJsonOrText
-        ? (record.value === null || record.value === undefined ? '' : JSON.stringify(record.value, null, 2))
-        : record.value,
-      defaultValue: isJsonOrText
-        ? (record.defaultValue === null || record.defaultValue === undefined ? '' : JSON.stringify(record.defaultValue, null, 2))
-        : record.defaultValue,
-      minValueText:
-        record.minValue === null || record.minValue === undefined
-          ? ''
-          : JSON.stringify(record.minValue, null, 2),
-      maxValueText:
-        record.maxValue === null || record.maxValue === undefined
-          ? ''
-          : JSON.stringify(record.maxValue, null, 2),
-      unit: record.unit || undefined,
-      source: record.source || undefined,
-      isActive: record.isActive,
-    });
-    setEditItemVisible(true);
-  };
-
-  const handleUpdateItem = async () => {
-    if (!selectedSetId || !editingItem) return;
-    try {
-      const values = await editItemForm.validateFields();
-      const isJsonOrText = values.paramType === 'json' || values.paramType === 'expression';
-
-      const payload: UpdateParameterItemDto = {
-        paramName: values.paramName,
-        paramType: values.paramType as UpdateParameterItemDto['paramType'],
-        scopeLevel: values.scopeLevel,
-        scopeValue: values.scopeValue,
-        value: isJsonOrText ? parseMaybeJsonText(values.value) : values.value,
-        defaultValue: isJsonOrText ? parseMaybeJsonText(values.defaultValue) : values.defaultValue,
-        minValue: parseMaybeJsonText(values.minValueText),
-        maxValue: parseMaybeJsonText(values.maxValueText),
-        unit: values.unit,
-        source: values.source,
-        changeReason: values.changeReason || '更新参数项',
-        isActive: values.isActive,
-      };
-      await updateItemMutation.mutateAsync({
-        setId: selectedSetId,
-        itemId: editingItem.id,
-        payload,
-      });
-      message.success('参数项更新成功');
-      setEditItemVisible(false);
-      setEditingItem(null);
-      editItemForm.resetFields();
-    } catch (error) {
-      message.error(getErrorMessage(error) || '参数项更新失败');
-    }
-  };
-
   const renderDynamicInput = (type?: string, placeholder?: string) => {
     if (type === 'boolean') {
       return <Switch checkedChildren="True" unCheckedChildren="False" />;
@@ -739,17 +323,17 @@ export const ParameterSetPage: React.FC = () => {
             <Input.Search
               allowClear
               placeholder="按编码/名称搜索"
-              value={keywordInput}
+              value={vm.state.keywordInput}
               onChange={(event) => {
                 const nextValue = event.target.value;
-                setKeywordInput(nextValue);
-                if (!nextValue.trim()) { setKeyword(undefined); setPage(1); }
+                vm.setters.setKeywordInput(nextValue);
+                if (!nextValue.trim()) { vm.setters.setKeyword(undefined); vm.setters.setPage(1); }
               }}
               onSearch={(value) => {
                 const normalized = value?.trim() || '';
-                setKeywordInput(normalized);
-                setKeyword(normalized || undefined);
-                setPage(1);
+                vm.setters.setKeywordInput(normalized);
+                vm.setters.setKeyword(normalized || undefined);
+                vm.setters.setPage(1);
               }}
               style={{ width: 260 }}
             />
@@ -761,36 +345,36 @@ export const ParameterSetPage: React.FC = () => {
                 { label: getActiveStatusLabel(true), value: true },
                 { label: getActiveStatusLabel(false), value: false },
               ]}
-              value={isActiveFilter}
-              onChange={(value) => { setIsActiveFilter(value); setPage(1); }}
+              value={vm.state.isActiveFilter}
+              onChange={(value) => { vm.setters.setIsActiveFilter(value); vm.setters.setPage(1); }}
             />
-            <Button onClick={() => setCompareVisible(true)}>
+            <Button onClick={() => vm.setters.setCompareVisible(true)}>
               版本对比
             </Button>
-            <Button type="primary" onClick={() => setCreateVisible(true)}>
+            <Button type="primary" onClick={() => vm.setters.setCreateVisible(true)}>
               新建参数包
             </Button>
           </Space>
         </Space>
 
-        <div ref={setTableContainerRef}>
+        <div ref={vm.refs.setTableContainerRef}>
           <Table<ParameterSetDto>
             rowKey="id"
-            loading={isLoading}
-            dataSource={data?.data ?? []}
+            loading={vm.data.isLoading}
+            dataSource={vm.data.data?.data ?? []}
             columns={setColumns}
             onRow={(record) =>
-              record.id === highlightedSetId
+              record.id === vm.computed.highlightedSetId
                 ? { style: { backgroundColor: token.colorWarningBg || token.colorWarningBg } }
                 : {}
             }
             scroll={{ x: 1400 }}
             pagination={{
-              current: data?.page ?? page,
-              pageSize: data?.pageSize ?? pageSize,
-              total: data?.total ?? 0,
+              current: vm.data.data?.page ?? vm.state.page,
+              pageSize: vm.data.data?.pageSize ?? vm.state.pageSize,
+              total: vm.data.data?.total ?? 0,
               showSizeChanger: true,
-              onChange: (nextPage, nextPageSize) => { setPage(nextPage); setPageSize(nextPageSize); },
+              onChange: (nextPage, nextPageSize) => { vm.setters.setPage(nextPage); vm.setters.setPageSize(nextPageSize); },
             }}
           />
         </div>
@@ -798,14 +382,14 @@ export const ParameterSetPage: React.FC = () => {
 
       <Modal
         title="新建参数包"
-        open={createVisible}
-        onCancel={() => setCreateVisible(false)}
-        onOk={handleCreateSet}
-        confirmLoading={createSetMutation.isPending}
+        open={vm.state.createVisible}
+        onCancel={() => vm.setters.setCreateVisible(false)}
+        onOk={vm.actions.handleCreateSet}
+        confirmLoading={vm.mutations.createSetMutation.isPending}
       >
         <Form<CreateParameterSetDto>
           layout="vertical"
-          form={setForm}
+          form={vm.state.setForm}
           initialValues={{ templateSource: 'PRIVATE' }}
         >
           <Form.Item name="setCode" label="参数包编码" rules={[{ required: true }]}>
@@ -831,38 +415,38 @@ export const ParameterSetPage: React.FC = () => {
       <Drawer
         title="参数包详情"
         width="85%"
-        open={Boolean(selectedSetId)}
-        onClose={() => { setSelectedSetId(null); setSelectedItemIds([]); }}
+        open={Boolean(vm.state.selectedSetId)}
+        onClose={() => { vm.setters.setSelectedSetId(null); vm.setters.setSelectedItemIds([]); }}
       >
         <Space direction="vertical" style={{ width: '100%' }} size={16}>
           <Space style={{ justifyContent: 'space-between', width: '100%' }}>
             <Space>
-              <Typography.Title level={4} style={{ margin: 0 }}>{setDetail?.name || '-'}</Typography.Title>
-              <Tag color={setDetail?.isActive ? 'green' : 'red'}>
-                {getActiveStatusLabel(setDetail?.isActive)}
+              <Typography.Title level={4} style={{ margin: 0 }}>{vm.data.setDetail?.name || '-'}</Typography.Title>
+              <Tag color={vm.data.setDetail?.isActive ? 'green' : 'red'}>
+                {getActiveStatusLabel(vm.data.setDetail?.isActive)}
               </Tag>
-              <Tag color={isPublished(setDetail?.version) ? 'green' : 'orange'}>
-                {isPublished(setDetail?.version) ? '已发布' : '未发布'}
+              <Tag color={isPublished(vm.data.setDetail?.version) ? 'green' : 'orange'}>
+                {isPublished(vm.data.setDetail?.version) ? '已发布' : '未发布'}
               </Tag>
-              <Tag>版本 {setDetail?.version ?? '-'}</Tag>
-              {setDetail?.templateSource === 'PUBLIC' && (
+              <Tag>版本 {vm.data.setDetail?.version ?? '-'}</Tag>
+              {vm.data.setDetail?.templateSource === 'PUBLIC' && (
                 <Tooltip title="继承自公共模板">
                   <Tag color="blue" icon={<CheckCircleOutlined />}>公共模板</Tag>
                 </Tooltip>
               )}
             </Space>
             <Space>
-              {selectedItemIds.length > 0 && (
+              {vm.state.selectedItemIds.length > 0 && (
                 <Popconfirm
-                  title={`确认批量重置 ${selectedItemIds.length} 个参数项到默认值?`}
-                  onConfirm={handleBatchReset}
+                  title={`确认批量重置 ${vm.state.selectedItemIds.length} 个参数项到默认值?`}
+                  onConfirm={vm.actions.handleBatchReset}
                 >
-                  <Button danger loading={batchResetMutation.isPending}>
-                    批量重置 ({selectedItemIds.length})
+                  <Button danger loading={vm.mutations.batchResetMutation.isPending}>
+                    批量重置 ({vm.state.selectedItemIds.length})
                   </Button>
                 </Popconfirm>
               )}
-              <Button type="primary" onClick={() => setItemVisible(true)}>
+              <Button type="primary" onClick={() => vm.setters.setItemVisible(true)}>
                 新建参数项
               </Button>
             </Space>
@@ -873,40 +457,40 @@ export const ParameterSetPage: React.FC = () => {
               allowClear
               style={{ width: 220 }}
               placeholder="按作用域批量重置"
-              value={scopeResetLevel}
+              value={vm.state.scopeResetLevel}
               options={scopeOptions.map((item) => ({ label: getScopeLabel(item), value: item }))}
-              onChange={(value) => setScopeResetLevel(value)}
+              onChange={(value) => vm.setters.setScopeResetLevel(value)}
             />
             <Input
               style={{ width: 220 }}
               placeholder="作用域值(可选)"
-              value={scopeResetValue}
-              onChange={(event) => setScopeResetValue(event.target.value)}
+              value={vm.state.scopeResetValue}
+              onChange={(event) => vm.setters.setScopeResetValue(event.target.value)}
             />
             <Popconfirm
               title="确认按当前作用域批量重置到默认值?"
-              onConfirm={handleScopeBatchReset}
-              disabled={!scopeResetLevel}
+              onConfirm={vm.actions.handleScopeBatchReset}
+              disabled={!vm.state.scopeResetLevel}
             >
-              <Button disabled={!scopeResetLevel} loading={batchResetMutation.isPending}>
+              <Button disabled={!vm.state.scopeResetLevel} loading={vm.mutations.batchResetMutation.isPending}>
                 按作用域批量重置
               </Button>
             </Popconfirm>
           </Space>
 
           {/* Override Impact Summary */}
-          {setDetail && (
+          {vm.data.setDetail && (
             <Row gutter={[16, 16]}>
               <Col xs={12} sm={6}>
                 <Card size="small">
-                  <Statistic title="参数总数" value={overrideSummary.total} />
+                  <Statistic title="参数总数" value={vm.computed.overrideSummary.total} />
                 </Card>
               </Col>
               <Col xs={12} sm={6}>
                 <Card size="small">
                   <Statistic
                     title="继承模板"
-                    value={overrideSummary.inherited}
+                    value={vm.computed.overrideSummary.inherited}
                     valueStyle={{ color: token.colorSuccess }}
                     prefix={<CheckCircleOutlined />}
                   />
@@ -916,7 +500,7 @@ export const ParameterSetPage: React.FC = () => {
                 <Card size="small">
                   <Statistic
                     title="已覆盖"
-                    value={overrideSummary.overridden}
+                    value={vm.computed.overrideSummary.overridden}
                     valueStyle={{ color: token.colorWarning }}
                     prefix={<WarningOutlined />}
                   />
@@ -927,9 +511,9 @@ export const ParameterSetPage: React.FC = () => {
                   <Tooltip title="已覆盖参数项占比">
                     <Statistic
                       title="覆盖率"
-                      value={overrideSummary.overrideRate}
+                      value={vm.computed.overrideSummary.overrideRate}
                       suffix="%"
-                      valueStyle={{ color: overrideSummary.overrideRate > 50 ? token.colorWarning : token.colorSuccess }}
+                      valueStyle={{ color: vm.computed.overrideSummary.overrideRate > 50 ? token.colorWarning : token.colorSuccess }}
                     />
                   </Tooltip>
                 </Card>
@@ -938,8 +522,8 @@ export const ParameterSetPage: React.FC = () => {
           )}
 
           <Tabs
-            activeKey={detailTab}
-            onChange={setDetailTab}
+            activeKey={vm.state.detailTab}
+            onChange={vm.setters.setDetailTab}
             items={[
               {
                 key: 'items',
@@ -947,14 +531,14 @@ export const ParameterSetPage: React.FC = () => {
                 children: (
                   <Table<ParameterItemDto>
                     rowKey="id"
-                    loading={isDetailLoading}
-                    dataSource={setDetail?.items ?? []}
+                    loading={vm.data.isDetailLoading}
+                    dataSource={vm.data.setDetail?.items ?? []}
                     columns={itemColumns}
                     pagination={false}
                     scroll={{ x: 1400 }}
                     rowSelection={{
-                      selectedRowKeys: selectedItemIds,
-                      onChange: (keys) => setSelectedItemIds(keys as string[]),
+                      selectedRowKeys: vm.state.selectedItemIds,
+                      onChange: (keys) => vm.setters.setSelectedItemIds(keys as string[]),
                       getCheckboxProps: (record) => ({
                         disabled: !(
                           record.defaultValue !== null &&
@@ -970,12 +554,12 @@ export const ParameterSetPage: React.FC = () => {
               },
               {
                 key: 'diff',
-                label: `覆盖对比${overrideDiff ? ` (${overrideDiff.overriddenCount}/${overrideDiff.totalCount})` : ''}`,
+                label: `覆盖对比${vm.data.overrideDiff ? ` (${vm.data.overrideDiff.overriddenCount}/${vm.data.overrideDiff.totalCount})` : ''}`,
                 children: (
                   <Table<ParameterOverrideDiffItemDto>
                     rowKey="paramCode"
-                    loading={isDiffLoading}
-                    dataSource={overrideDiff?.items ?? []}
+                    loading={vm.data.isDiffLoading}
+                    dataSource={vm.data.overrideDiff?.items ?? []}
                     columns={diffColumns}
                     pagination={false}
                     scroll={{ x: 1100 }}
@@ -992,8 +576,8 @@ export const ParameterSetPage: React.FC = () => {
                         <Card size="small">
                           <Statistic
                             title="受影响流程"
-                            value={impactPreview?.workflowCount ?? 0}
-                            loading={isImpactLoading}
+                            value={vm.data.impactPreview?.workflowCount ?? 0}
+                            loading={vm.data.isImpactLoading}
                           />
                         </Card>
                       </Col>
@@ -1001,8 +585,8 @@ export const ParameterSetPage: React.FC = () => {
                         <Card size="small">
                           <Statistic
                             title="受影响 Agent"
-                            value={impactPreview?.agentCount ?? 0}
-                            loading={isImpactLoading}
+                            value={vm.data.impactPreview?.agentCount ?? 0}
+                            loading={vm.data.isImpactLoading}
                           />
                         </Card>
                       </Col>
@@ -1011,8 +595,8 @@ export const ParameterSetPage: React.FC = () => {
                     <Card size="small" title="流程影响列表">
                       <Table<ParameterImpactPreviewDto['workflows'][number]>
                         rowKey="workflowVersionId"
-                        loading={isImpactLoading}
-                        dataSource={impactPreview?.workflows ?? []}
+                        loading={vm.data.isImpactLoading}
+                        dataSource={vm.data.impactPreview?.workflows ?? []}
                         pagination={{ pageSize: 8 }}
                         columns={[
                           { title: '流程编码', dataIndex: 'workflowCode', width: 180 },
@@ -1025,8 +609,8 @@ export const ParameterSetPage: React.FC = () => {
                     <Card size="small" title="Agent 影响列表">
                       <Table<ParameterImpactPreviewDto['agents'][number]>
                         rowKey="id"
-                        loading={isImpactLoading}
-                        dataSource={impactPreview?.agents ?? []}
+                        loading={vm.data.isImpactLoading}
+                        dataSource={vm.data.impactPreview?.agents ?? []}
                         pagination={{ pageSize: 8 }}
                         columns={[
                           { title: 'Agent 编码', dataIndex: 'agentCode', width: 200 },
@@ -1041,8 +625,8 @@ export const ParameterSetPage: React.FC = () => {
               {
                 key: 'simulator',
                 label: '继承模拟',
-                children: selectedSetId ? (
-                  <ParameterResolutionPreview parameterSetId={selectedSetId} />
+                children: vm.state.selectedSetId ? (
+                  <ParameterResolutionPreview parameterSetId={vm.state.selectedSetId} />
                 ) : null,
               },
               {
@@ -1053,32 +637,32 @@ export const ParameterSetPage: React.FC = () => {
                     <Flex justify="flex-end">
                       <Select
                         style={{ width: 120 }}
-                        value={auditViewMode}
-                        onChange={setAuditViewMode}
+                        value={vm.state.auditViewMode}
+                        onChange={vm.setters.setAuditViewMode}
                         options={[
                           { label: '表格视图', value: 'table' },
                           { label: '时间线', value: 'timeline' },
                         ]}
                       />
                     </Flex>
-                    {auditViewMode === 'table' ? (
+                    {vm.state.auditViewMode === 'table' ? (
                       <Table<ParameterChangeLogDto>
                         rowKey="id"
-                        loading={isLogsLoading}
-                        dataSource={changeLogs?.data ?? []}
+                        loading={vm.data.isLogsLoading}
+                        dataSource={vm.data.changeLogs?.data ?? []}
                         columns={auditColumns}
                         scroll={{ x: 1100 }}
                         pagination={{
-                          current: changeLogs?.page ?? logPage,
+                          current: vm.data.changeLogs?.page ?? vm.state.logPage,
                           pageSize: 20,
-                          total: changeLogs?.total ?? 0,
-                          onChange: (nextPage) => setLogPage(nextPage),
+                          total: vm.data.changeLogs?.total ?? 0,
+                          onChange: (nextPage) => vm.setters.setLogPage(nextPage),
                         }}
                       />
                     ) : (
                       <>
                         <Timeline
-                          items={(changeLogs?.data ?? []).map((log) => ({
+                          items={(vm.data.changeLogs?.data ?? []).map((log) => ({
                             key: log.id,
                             color: operationColorMap[log.operation] === 'green'
                               ? 'green'
@@ -1136,18 +720,18 @@ export const ParameterSetPage: React.FC = () => {
                         <Flex justify="center">
                           <Button
                             type="link"
-                            disabled={logPage <= 1}
-                            onClick={() => setLogPage((prev) => Math.max(prev - 1, 1))}
+                            disabled={vm.state.logPage <= 1}
+                            onClick={() => vm.setters.setLogPage((prev) => Math.max(prev - 1, 1))}
                           >
                             上一页
                           </Button>
                           <Typography.Text type="secondary" style={{ lineHeight: '32px' }}>
-                            {changeLogs?.page ?? logPage} / {Math.ceil((changeLogs?.total ?? 0) / 20) || 1}
+                            {vm.data.changeLogs?.page ?? vm.state.logPage} / {Math.ceil((vm.data.changeLogs?.total ?? 0) / 20) || 1}
                           </Typography.Text>
                           <Button
                             type="link"
-                            disabled={(changeLogs?.page ?? logPage) >= Math.ceil((changeLogs?.total ?? 0) / 20)}
-                            onClick={() => setLogPage((prev) => prev + 1)}
+                            disabled={(vm.data.changeLogs?.page ?? vm.state.logPage) >= Math.ceil((vm.data.changeLogs?.total ?? 0) / 20)}
+                            onClick={() => vm.setters.setLogPage((prev) => prev + 1)}
                           >
                             下一页
                           </Button>
@@ -1164,30 +748,30 @@ export const ParameterSetPage: React.FC = () => {
 
       <Modal
         title="参数版本/集合对比"
-        open={compareVisible}
-        onCancel={() => setCompareVisible(false)}
+        open={vm.state.compareVisible}
+        onCancel={() => vm.setters.setCompareVisible(false)}
         width={1100}
         footer={null}
         destroyOnClose
       >
         <ParameterDiffView
-          initialLeftId={selectedSetId || undefined}
-          parameterSets={data?.data || []}
+          initialLeftId={vm.state.selectedSetId || undefined}
+          parameterSets={vm.data.data?.data || []}
         />
       </Modal>
 
       <Modal
-        title={`编辑参数项${editingItem ? ` - ${editingItem.paramCode}` : ''}`}
-        open={editItemVisible}
+        title={`编辑参数项${vm.state.editingItem ? ` - ${vm.state.editingItem.paramCode}` : ''}`}
+        open={vm.state.editItemVisible}
         onCancel={() => {
-          setEditItemVisible(false);
-          setEditingItem(null);
+          vm.setters.setEditItemVisible(false);
+          vm.setters.setEditingItem(null);
         }}
-        onOk={handleUpdateItem}
-        confirmLoading={updateItemMutation.isPending}
+        onOk={vm.actions.handleUpdateItem}
+        confirmLoading={vm.mutations.updateItemMutation.isPending}
         width={720}
       >
-        <Form layout="vertical" form={editItemForm}>
+        <Form layout="vertical" form={vm.state.editItemForm}>
           <Typography.Title level={5}>基本信息</Typography.Title>
           <Row gutter={16}>
             <Col span={12}>
@@ -1288,32 +872,32 @@ export const ParameterSetPage: React.FC = () => {
 
       <Modal
         title="新建参数项"
-        open={itemVisible}
+        open={vm.state.itemVisible}
         onCancel={() => {
-          setItemVisible(false);
-          setIsParamCodeCustomized(false);
+          vm.setters.setItemVisible(false);
+          vm.setters.setIsParamCodeCustomized(false);
         }}
-        onOk={handleCreateItem}
-        confirmLoading={createItemMutation.isPending}
+        onOk={vm.actions.handleCreateItem}
+        confirmLoading={vm.mutations.createItemMutation.isPending}
       >
         <Form<CreateParameterItemDto>
           layout="vertical"
-          form={itemForm}
+          form={vm.state.itemForm}
           initialValues={{ scopeLevel: 'GLOBAL', paramType: 'number' }}
           onValuesChange={(changedValues, allValues) => {
             const changedName = changedValues.paramName as string | undefined;
-            if (changedName !== undefined && !isParamCodeCustomized) {
+            if (changedName !== undefined && !vm.state.isParamCodeCustomized) {
               const generatedCode = slugifyParamCode(changedName);
-              itemForm.setFieldsValue({ paramCode: generatedCode || undefined });
+              vm.state.itemForm.setFieldsValue({ paramCode: generatedCode || undefined });
             }
             const changedCode = changedValues.paramCode as string | undefined;
             if (changedCode !== undefined) {
               const generatedCode = slugifyParamCode(allValues.paramName as string | undefined);
               const normalized = changedCode.trim();
               if (!normalized) {
-                setIsParamCodeCustomized(false);
+                vm.setters.setIsParamCodeCustomized(false);
               } else {
-                setIsParamCodeCustomized(Boolean(generatedCode && normalized !== generatedCode));
+                vm.setters.setIsParamCodeCustomized(Boolean(generatedCode && normalized !== generatedCode));
               }
             }
           }}
@@ -1325,9 +909,9 @@ export const ParameterSetPage: React.FC = () => {
                   type="link"
                   size="small"
                   onClick={() => {
-                    const generatedCode = slugifyParamCode(itemForm.getFieldValue('paramName'));
-                    itemForm.setFieldsValue({ paramCode: generatedCode || undefined });
-                    setIsParamCodeCustomized(false);
+                    const generatedCode = slugifyParamCode(vm.state.itemForm.getFieldValue('paramName'));
+                    vm.state.itemForm.setFieldsValue({ paramCode: generatedCode || undefined });
+                    vm.setters.setIsParamCodeCustomized(false);
                   }}
                 >
                   自动生成
