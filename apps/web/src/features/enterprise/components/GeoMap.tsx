@@ -851,7 +851,7 @@ export const GeoMap: React.FC<GeoMapProps> = ({ enterprises, onSelectEnterprise,
                         key={conn.id}
                         positions={[conn.from, conn.to]}
                         pathOptions={{
-                            color: '#722ED1',
+                            color: (token as any).purple || token.colorPrimary,
                             weight: 2,
                             opacity: 0.6,
                             dashArray: '5, 5',
@@ -915,7 +915,7 @@ export const GeoMap: React.FC<GeoMapProps> = ({ enterprises, onSelectEnterprise,
                             <Tooltip direction="top" offset={[0, -10]} opacity={1}>
                                 <div style={{ textAlign: 'center' }}>
                                     <div style={{ fontWeight: 'bold' }}>{ent.name}</div>
-                                    <div style={{ fontSize: 10, color: '#666' }}>{ent.types.join(' | ')}</div>
+                                    <div style={{ fontSize: 10, color: token.colorTextSecondary }}>{ent.types.join(' | ')}</div>
                                     {[ent.province, ent.city].some(Boolean) && (
                                         <div style={{ fontSize: 10, marginTop: 4 }}>
                                             <EnvironmentOutlined /> {[ent.province, ent.city].filter(Boolean).join(' ')}

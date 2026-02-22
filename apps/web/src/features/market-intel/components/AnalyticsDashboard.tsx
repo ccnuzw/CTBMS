@@ -1,5 +1,5 @@
 import React from 'react';
-import { Card, Row, Col, Typography, Empty, Flex } from 'antd';
+import { Card, Row, Col, Typography, Empty, Flex, theme } from 'antd';
 import {
     LineChart,
     Line,
@@ -35,6 +35,7 @@ export const AnalyticsDashboard: React.FC<AnalyticsDashboardProps> = ({
     stats,
     loading,
 }) => {
+    const { token } = theme.useToken();
     const { data: trendData, isLoading: loadingTrend } = useTrendAnalysis(filterQuery);
 
     const formattedTrendData = React.useMemo(() => {
@@ -73,7 +74,7 @@ export const AnalyticsDashboard: React.FC<AnalyticsDashboardProps> = ({
                                         type="monotone"
                                         dataKey="volume"
                                         name="事件量"
-                                        stroke="#1890ff"
+                                        stroke={token.colorPrimary}
                                         strokeWidth={2}
                                         dot={false}
                                     />
@@ -82,7 +83,7 @@ export const AnalyticsDashboard: React.FC<AnalyticsDashboardProps> = ({
                                         type="monotone"
                                         dataKey="sentimentScore"
                                         name="情绪指数"
-                                        stroke="#52c41a"
+                                        stroke={token.colorSuccess}
                                         strokeWidth={2}
                                         dot={false}
                                     />
@@ -108,9 +109,9 @@ export const AnalyticsDashboard: React.FC<AnalyticsDashboardProps> = ({
                                     <XAxis type="number" hide />
                                     <YAxis type="category" dataKey="region" width={80} />
                                     <Tooltip />
-                                    <Bar dataKey="count" name="事件数" fill="#faad14" radius={[0, 4, 4, 0]} barSize={40}>
+                                    <Bar dataKey="count" name="事件数" fill={token.colorWarning} radius={[0, 4, 4, 0]} barSize={40}>
                                         {(stats?.regionStats || []).slice(0, 10).map((entry, index) => (
-                                            <Cell key={`cell-${index}`} fill={['#ffc53d', '#faad14', '#d48806'][index % 3]} />
+                                            <Cell key={`cell-${index}`} fill={[token.colorWarningActive, token.colorWarning, token.colorWarningHover][index % 3] as string} />
                                         ))}
                                     </Bar>
                                 </BarChart>
@@ -131,7 +132,7 @@ export const AnalyticsDashboard: React.FC<AnalyticsDashboardProps> = ({
                                     <XAxis dataKey="commodity" />
                                     <YAxis />
                                     <Tooltip />
-                                    <Bar dataKey="count" name="事件数" fill="#13c2c2" radius={[4, 4, 0, 0]} />
+                                    <Bar dataKey="count" name="事件数" fill={token.cyan} radius={[4, 4, 0, 0]} />
                                 </BarChart>
                             </ResponsiveContainer>
                         </ChartContainer>

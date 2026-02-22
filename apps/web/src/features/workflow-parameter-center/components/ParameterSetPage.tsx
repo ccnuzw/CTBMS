@@ -28,6 +28,7 @@ import {
   InputNumber,
   Switch,
   Divider,
+  theme,
 } from 'antd';
 import {
   CheckCircleOutlined,
@@ -174,6 +175,7 @@ const slugifyParamCode = (name?: string): string => {
 };
 
 export const ParameterSetPage: React.FC = () => {
+  const { token } = theme.useToken();
   const { message } = App.useApp();
   const [setForm] = Form.useForm<CreateParameterSetDto>();
   const [itemForm] = Form.useForm<CreateParameterItemDto>();
@@ -533,8 +535,8 @@ export const ParameterSetPage: React.FC = () => {
         title: '当前值',
         dataIndex: 'currentValue',
         width: 150,
-        render: (value: unknown, record) => (
-          <span style={{ color: record.isOverridden ? '#fa8c16' : undefined, fontWeight: record.isOverridden ? 600 : undefined }}>
+        render: (value: unknown, record: any) => (
+          <span style={{ color: record.isOverridden ? token.colorWarning : undefined, fontWeight: record.isOverridden ? 600 : undefined }}>
             {formatValue(value)}
           </span>
         ),
@@ -777,7 +779,7 @@ export const ParameterSetPage: React.FC = () => {
             columns={setColumns}
             onRow={(record) =>
               record.id === highlightedSetId
-                ? { style: { backgroundColor: '#fffbe6' } }
+                ? { style: { backgroundColor: token.colorWarningBg || '#fffbe6' } }
                 : {}
             }
             scroll={{ x: 1400 }}
@@ -903,7 +905,7 @@ export const ParameterSetPage: React.FC = () => {
                   <Statistic
                     title="继承模板"
                     value={overrideSummary.inherited}
-                    valueStyle={{ color: '#52c41a' }}
+                    valueStyle={{ color: token.colorSuccess }}
                     prefix={<CheckCircleOutlined />}
                   />
                 </Card>
@@ -913,7 +915,7 @@ export const ParameterSetPage: React.FC = () => {
                   <Statistic
                     title="已覆盖"
                     value={overrideSummary.overridden}
-                    valueStyle={{ color: '#fa8c16' }}
+                    valueStyle={{ color: token.colorWarning }}
                     prefix={<WarningOutlined />}
                   />
                 </Card>
@@ -925,7 +927,7 @@ export const ParameterSetPage: React.FC = () => {
                       title="覆盖率"
                       value={overrideSummary.overrideRate}
                       suffix="%"
-                      valueStyle={{ color: overrideSummary.overrideRate > 50 ? '#fa8c16' : '#52c41a' }}
+                      valueStyle={{ color: overrideSummary.overrideRate > 50 ? token.colorWarning : token.colorSuccess }}
                     />
                   </Tooltip>
                 </Card>

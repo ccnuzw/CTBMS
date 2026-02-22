@@ -45,13 +45,15 @@ import {
 
 const { Title, Text } = Typography;
 
+const globalToken = theme.getDesignToken();
+
 // 采集点类型图标映射
 const POINT_TYPE_ICONS: Record<string, React.ReactNode> = {
-    PORT: <AimOutlined style={{ color: '#1890ff' }} />,
-    ENTERPRISE: <BankOutlined style={{ color: '#52c41a' }} />,
-    MARKET: <ShopOutlined style={{ color: '#faad14' }} />,
-    REGION: <GlobalOutlined style={{ color: '#722ed1' }} />,
-    STATION: <EnvironmentOutlined style={{ color: '#13c2c2' }} />,
+    PORT: <AimOutlined style={{ color: globalToken.blue }} />,
+    ENTERPRISE: <BankOutlined style={{ color: globalToken.colorSuccess }} />,
+    MARKET: <ShopOutlined style={{ color: globalToken.colorWarning }} />,
+    REGION: <GlobalOutlined style={{ color: (globalToken as any).purple || globalToken.colorPrimary }} />,
+    STATION: <EnvironmentOutlined style={{ color: globalToken.cyan }} />,
 };
 
 const POINT_TYPE_LABELS_FALLBACK: Record<string, string> = {

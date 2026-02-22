@@ -25,13 +25,15 @@ interface AdvancedPointSelectorProps {
     currentPointTypeFilter: string[];
 }
 
+const globalToken = theme.getDesignToken();
+
 // 采集点类型图标映射
 const POINT_TYPE_ICONS: Record<string, React.ReactNode> = {
-    PORT: <AimOutlined style={{ color: '#1890ff' }} />,
-    ENTERPRISE: <BankOutlined style={{ color: '#52c41a' }} />,
-    MARKET: <ShopOutlined style={{ color: '#faad14' }} />,
-    REGION: <GlobalOutlined style={{ color: '#722ed1' }} />,
-    STATION: <EnvironmentOutlined style={{ color: '#13c2c2' }} />,
+    PORT: <AimOutlined style={{ color: globalToken.blue }} />,
+    ENTERPRISE: <BankOutlined style={{ color: globalToken.colorSuccess }} />,
+    MARKET: <ShopOutlined style={{ color: globalToken.colorWarning }} />,
+    REGION: <GlobalOutlined style={{ color: (globalToken as any).purple || globalToken.colorPrimary }} />,
+    STATION: <EnvironmentOutlined style={{ color: globalToken.cyan }} />,
 };
 
 const POINT_TYPE_LABELS_FALLBACK: Record<string, string> = {
@@ -414,67 +416,67 @@ export const AdvancedPointSelector: React.FC<AdvancedPointSelectorProps> = ({
 
                 {/* 双栏布局 */}
                 <Flex style={{ height: 420 }}>
-                {/* 左侧：待选列表 */}
-                <div style={{ flex: 1, borderRight: `1px solid ${token.colorBorderSecondary}`, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
-                    <div style={{ padding: '8px 12px', borderBottom: `1px solid ${token.colorBorderSecondary}` }}>
-                        <Input
-                            prefix={<SearchOutlined />}
-                            placeholder="搜索采集点名称/编码..."
-                            value={searchKeyword}
-                            onChange={(e) => setSearchKeyword(e.target.value)}
-                            size="small"
-                            allowClear
-                            {...autoFocusFieldProps}
-                        />
+                    {/* 左侧：待选列表 */}
+                    <div style={{ flex: 1, borderRight: `1px solid ${token.colorBorderSecondary}`, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+                        <div style={{ padding: '8px 12px', borderBottom: `1px solid ${token.colorBorderSecondary}` }}>
+                            <Input
+                                prefix={<SearchOutlined />}
+                                placeholder="搜索采集点名称/编码..."
+                                value={searchKeyword}
+                                onChange={(e) => setSearchKeyword(e.target.value)}
+                                size="small"
+                                allowClear
+                                {...autoFocusFieldProps}
+                            />
+                        </div>
+                        <div style={{ flex: 1, overflow: 'auto', padding: '8px 12px' }}>
+                            {renderAvailableList()}
+                        </div>
+                        <Flex justify="space-between" align="center" style={{ padding: 8, borderTop: `1px solid ${token.colorBorderSecondary}` }}>
+                            <Tag>{availableCount} 项待选</Tag>
+                            <Pagination
+                                size="small"
+                                simple
+                                current={allPointsData?.page || page}
+                                pageSize={allPointsData?.pageSize || POINT_PAGE_SIZE}
+                                total={allPointsData?.total || 0}
+                                showSizeChanger={false}
+                                onChange={(nextPage) => setPage(nextPage)}
+                            />
+                        </Flex>
                     </div>
-                    <div style={{ flex: 1, overflow: 'auto', padding: '8px 12px' }}>
-                        {renderAvailableList()}
-                    </div>
-                    <Flex justify="space-between" align="center" style={{ padding: 8, borderTop: `1px solid ${token.colorBorderSecondary}` }}>
-                        <Tag>{availableCount} 项待选</Tag>
-                        <Pagination
-                            size="small"
-                            simple
-                            current={allPointsData?.page || page}
-                            pageSize={allPointsData?.pageSize || POINT_PAGE_SIZE}
-                            total={allPointsData?.total || 0}
-                            showSizeChanger={false}
-                            onChange={(nextPage) => setPage(nextPage)}
-                        />
-                    </Flex>
-                </div>
 
-                {/* 右侧：已选列表 */}
-                <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
-                    <Flex justify="space-between" align="center" style={{ padding: '8px 12px', borderBottom: `1px solid ${token.colorBorderSecondary}` }}>
-                        <span style={{ fontSize: 12, fontWeight: 500 }}>已选采集点</span>
-                        {targetKeys.length > 0 && (
-                            <Button type="link" size="small" danger onClick={handleClearAll} style={{ padding: 0, fontSize: 11 }}>
-                                清空全部
-                            </Button>
-                        )}
-                    </Flex>
-                    <div style={{ flex: 1, overflow: 'auto', padding: '8px 12px' }}>
-                        {renderSelectedList()}
+                    {/* 右侧：已选列表 */}
+                    <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+                        <Flex justify="space-between" align="center" style={{ padding: '8px 12px', borderBottom: `1px solid ${token.colorBorderSecondary}` }}>
+                            <span style={{ fontSize: 12, fontWeight: 500 }}>已选采集点</span>
+                            {targetKeys.length > 0 && (
+                                <Button type="link" size="small" danger onClick={handleClearAll} style={{ padding: 0, fontSize: 11 }}>
+                                    清空全部
+                                </Button>
+                            )}
+                        </Flex>
+                        <div style={{ flex: 1, overflow: 'auto', padding: '8px 12px' }}>
+                            {renderSelectedList()}
+                        </div>
+                        <Flex justify="center" style={{ padding: 8, borderTop: `1px solid ${token.colorBorderSecondary}` }}>
+                            <Space size={8}>
+                                {Object.entries(selectedStats).map(([type, count]) => (
+                                    <Tag key={type} icon={POINT_TYPE_ICONS[type]} style={{ fontSize: 11 }}>
+                                        {count}
+                                    </Tag>
+                                ))}
+                                {targetKeys.length === 0 && <Tag>未选择</Tag>}
+                            </Space>
+                        </Flex>
                     </div>
-                    <Flex justify="center" style={{ padding: 8, borderTop: `1px solid ${token.colorBorderSecondary}` }}>
-                        <Space size={8}>
-                            {Object.entries(selectedStats).map(([type, count]) => (
-                                <Tag key={type} icon={POINT_TYPE_ICONS[type]} style={{ fontSize: 11 }}>
-                                    {count}
-                                </Tag>
-                            ))}
-                            {targetKeys.length === 0 && <Tag>未选择</Tag>}
-                        </Space>
-                    </Flex>
-                </div>
-            </Flex>
+                </Flex>
 
-            {/* 底部提示 */}
-            <Flex justify="space-between" align="center" style={{ padding: '8px 16px', borderTop: `1px solid ${token.colorBorderSecondary}`, color: token.colorTextSecondary, fontSize: 12 }}>
-                <span>提示: 点击左侧条目添加，点击右侧标签的 × 移除</span>
-                <span>共选中 <strong style={{ color: token.colorPrimary }}>{targetKeys.length}</strong> 个采集点</span>
-            </Flex>
+                {/* 底部提示 */}
+                <Flex justify="space-between" align="center" style={{ padding: '8px 16px', borderTop: `1px solid ${token.colorBorderSecondary}`, color: token.colorTextSecondary, fontSize: 12 }}>
+                    <span>提示: 点击左侧条目添加，点击右侧标签的 × 移除</span>
+                    <span>共选中 <strong style={{ color: token.colorPrimary }}>{targetKeys.length}</strong> 个采集点</span>
+                </Flex>
             </div>
         </Modal>
     );

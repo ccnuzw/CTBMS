@@ -54,10 +54,7 @@ interface DebateReplayViewerProps {
 
 // ── Helpers ──
 
-const PARTICIPANT_LINE_COLORS = [
-  '#1890ff', '#52c41a', '#fa541c', '#722ed1', '#13c2c2',
-  '#eb2f96', '#faad14', '#2f54eb', '#a0d911', '#f5222d',
-];
+// PARTICIPANT_LINE_COLORS is generated dynamically inside the component using tokens
 
 const SPEED_OPTIONS = [
   { label: '0.5x', value: 6000 },
@@ -91,9 +88,9 @@ const formatConfidence = (v: number | null | undefined): string => {
   return `${(v * 100).toFixed(1)}%`;
 };
 
-const confidenceChangeColor = (delta: number | null | undefined): string => {
+const confidenceChangeColor = (delta: number | null | undefined, token: any): string => {
   if (delta === null || delta === undefined || delta === 0) return '';
-  return delta > 0 ? '#52c41a' : '#ff4d4f';
+  return delta > 0 ? token.colorSuccess : token.colorError;
 };
 
 // ── Component ──
@@ -103,6 +100,11 @@ export const DebateReplayViewer: React.FC<DebateReplayViewerProps> = ({
   isLoading = false,
 }) => {
   const { token } = theme.useToken();
+
+  const PARTICIPANT_LINE_COLORS = useMemo(() => [
+    token.blue, token.green, token.volcano, token.purple, token.cyan,
+    token.magenta, token.gold, token.geekblue, token.lime, token.red,
+  ], [token]);
 
   const [currentRound, setCurrentRound] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -341,7 +343,7 @@ export const DebateReplayViewer: React.FC<DebateReplayViewerProps> = ({
                       title="置信度变化"
                       value={formatConfidence(currentRoundData.roundSummary.confidenceDelta)}
                       valueStyle={{
-                        color: confidenceChangeColor(currentRoundData.roundSummary.confidenceDelta),
+                        color: confidenceChangeColor(currentRoundData.roundSummary.confidenceDelta, token),
                       }}
                     />
                   )}
@@ -442,7 +444,7 @@ export const DebateReplayViewer: React.FC<DebateReplayViewerProps> = ({
                           <Text
                             style={{
                               fontSize: 11,
-                              color: confidenceChangeColor(delta),
+                              color: confidenceChangeColor(delta, token),
                               width: 48,
                               textAlign: 'right',
                             }}
@@ -474,7 +476,7 @@ export const DebateReplayViewer: React.FC<DebateReplayViewerProps> = ({
                       style={{
                         marginBottom: 8,
                         borderLeft: `3px solid ${entry.isJudgement
-                          ? (token as any).colorPurple || '#722ed1'
+                          ? (token as any).purple || token.colorPrimary
                           : token.colorPrimary
                           }`,
                       }}
@@ -482,7 +484,7 @@ export const DebateReplayViewer: React.FC<DebateReplayViewerProps> = ({
                       <Flex justify="space-between" align="center" style={{ marginBottom: 8 }}>
                         <Space>
                           {entry.isJudgement ? (
-                            <TrophyOutlined style={{ color: '#722ed1' }} />
+                            <TrophyOutlined style={{ color: (token as any).purple || token.colorPrimary }} />
                           ) : (
                             <UserOutlined />
                           )}
@@ -509,6 +511,7 @@ export const DebateReplayViewer: React.FC<DebateReplayViewerProps> = ({
                                       marginLeft: 4,
                                       color: confidenceChangeColor(
                                         entry.confidence - entry.previousConfidence,
+                                        token
                                       ),
                                     }}
                                   >
@@ -552,8 +555,8 @@ export const DebateReplayViewer: React.FC<DebateReplayViewerProps> = ({
                           size="small"
                           style={{
                             marginTop: 8,
-                            background: '#f9f0ff',
-                            borderColor: '#d3adf7',
+                            background: token.colorBgLayout,
+                            borderColor: token.colorBorder,
                           }}
                         >
                           <Descriptions column={1} size="small">
@@ -588,11 +591,11 @@ export const DebateReplayViewer: React.FC<DebateReplayViewerProps> = ({
               <Card title="质询配对" size="small" style={{ marginTop: 16 }}>
                 <Space direction="vertical" style={{ width: '100%' }} size={12}>
                   {challengePairs.map((pair, idx) => (
-                    <Card key={idx} size="small" style={{ background: '#fafafa' }}>
+                    <Card key={idx} size="small" style={{ background: token.colorBgLayout }}>
                       <Flex gap={12} align="stretch">
                         <Card
                           size="small"
-                          style={{ flex: 1, borderColor: '#ff7a45' }}
+                          style={{ flex: 1, borderColor: (token as any).volcano || token.colorWarning }}
                           title={
                             <Space size={4}>
                               <UserOutlined />
@@ -620,7 +623,7 @@ export const DebateReplayViewer: React.FC<DebateReplayViewerProps> = ({
 
                         <Card
                           size="small"
-                          style={{ flex: 1, borderColor: '#36cfc9' }}
+                          style={{ flex: 1, borderColor: (token as any).cyan || token.colorInfo }}
                           title={
                             <Space size={4}>
                               <UserOutlined />

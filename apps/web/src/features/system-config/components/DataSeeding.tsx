@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Card, Button, Typography, Space, Alert, Popconfirm, message } from 'antd';
+import { Card, Button, Typography, Space, Alert, Popconfirm, message, theme } from 'antd';
 import { PlayCircleOutlined, LoadingOutlined, CheckCircleOutlined, ConsoleSqlOutlined } from '@ant-design/icons';
 
 const { Title, Text } = Typography;
@@ -10,6 +10,7 @@ export const DataSeeding: React.FC = () => {
     const [status, setStatus] = useState<'idle' | 'running' | 'completed' | 'error'>('idle');
     const bottomRef = useRef<HTMLDivElement>(null);
     const eventSourceRef = useRef<EventSource | null>(null);
+    const { token } = theme.useToken();
 
     useEffect(() => {
         // Auto-scroll to bottom
@@ -147,20 +148,20 @@ export const DataSeeding: React.FC = () => {
                 {/* Terminal View */}
                 <div style={{
                     backgroundColor: '#1e1e1e',
-                    color: '#00ff00',
+                    color: token.colorSuccess,
                     fontFamily: "'Fira Code', 'Courier New', monospace",
                     fontSize: '13px',
                     padding: '16px',
                     borderRadius: '8px',
                     height: '500px',
                     overflowY: 'auto',
-                    border: '1px solid #333',
+                    border: `1px solid ${token.colorBorder}`,
                     lineHeight: '1.5'
                 }}>
-                    {logs.length === 0 && <div style={{ color: '#666' }}>等待操作... 点击"开始初始化"执行种子数据脚本</div>}
+                    {logs.length === 0 && <div style={{ color: token.colorTextSecondary }}>等待操作... 点击"开始初始化"执行种子数据脚本</div>}
                     {logs.map((log, index) => (
                         <div key={index} style={{
-                            color: log.type === 'stderr' ? '#ff4d4f' : '#52c41a',
+                            color: log.type === 'stderr' ? token.colorError : token.colorSuccess,
                             whiteSpace: 'pre-wrap',
                             wordBreak: 'break-all'
                         }}>

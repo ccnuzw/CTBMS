@@ -1,4 +1,8 @@
 import { IntelCategory, IntelSourceType, type AIAnalysisResult } from '@packages/types';
+import { theme } from 'antd';
+
+const { getDesignToken } = theme;
+const globalToken = getDesignToken();
 
 // =============================================
 // 采集规范配置
@@ -370,14 +374,14 @@ export const MOCK_CARDS: InfoCard[] = [
 
 // K线图颜色配置
 export const LINE_COLORS = [
-  '#2563eb', // Blue
-  '#dc2626', // Red
-  '#16a34a', // Green
-  '#d97706', // Amber
-  '#9333ea', // Purple
-  '#0891b2', // Cyan
-  '#be123c', // Rose
-  '#4d7c0f', // Lime
+  globalToken.blue,
+  globalToken.colorError,
+  globalToken.colorSuccess,
+  globalToken.colorWarning,
+  (globalToken as any).purple || globalToken.colorPrimary,
+  globalToken.cyan,
+  (globalToken as any).magenta || globalToken.colorErrorActive,
+  (globalToken as any).lime || globalToken.colorSuccessActive,
 ];
 
 // =============================================

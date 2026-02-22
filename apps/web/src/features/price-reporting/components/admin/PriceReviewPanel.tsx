@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Card, Table, Button, Space, Tag, App, Row, Col, Statistic } from 'antd';
+import { Card, Table, Button, Space, Tag, App, Row, Col, Statistic, theme } from 'antd';
 import { CheckOutlined, CloseOutlined } from '@ant-design/icons';
 import {
   usePendingReviews,
@@ -18,6 +18,7 @@ const STATUS_MAP: Record<string, { text: string; color: string }> = {
 };
 
 export const PriceReviewPanel: React.FC = () => {
+  const { token } = theme.useToken();
   const { message, modal } = App.useApp();
   const [query, setQuery] = useState({ page: 1, pageSize: 20 });
 
@@ -175,12 +176,12 @@ export const PriceReviewPanel: React.FC = () => {
       <Row gutter={16} style={{ marginBottom: 24 }}>
         <Col xs={12} sm={6}>
           <Card size="small">
-            <Statistic title="待审核" value={stats?.pendingReview || 0} valueStyle={{ color: '#faad14' }} />
+            <Statistic title="待审核" value={stats?.pendingReview || 0} valueStyle={{ color: token.colorWarning }} />
           </Card>
         </Col>
         <Col xs={12} sm={6}>
           <Card size="small">
-            <Statistic title="今日完成" value={stats?.todayCompleted || 0} valueStyle={{ color: '#52c41a' }} />
+            <Statistic title="今日完成" value={stats?.todayCompleted || 0} valueStyle={{ color: token.colorSuccess }} />
           </Card>
         </Col>
         <Col xs={12} sm={6}>
@@ -190,7 +191,7 @@ export const PriceReviewPanel: React.FC = () => {
         </Col>
         <Col xs={12} sm={6}>
           <Card size="small">
-            <Statistic title="已拒绝" value={stats?.rejectedCount || 0} valueStyle={{ color: '#ff4d4f' }} />
+            <Statistic title="已拒绝" value={stats?.rejectedCount || 0} valueStyle={{ color: token.colorError }} />
           </Card>
         </Col>
       </Row>

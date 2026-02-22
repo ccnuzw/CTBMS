@@ -83,7 +83,7 @@ export const PriceAlertCard: React.FC<PriceAlertCardProps> = ({
     const stats = getPriceStats(pricePoints);
 
     // 根据涨跌情况确定边框颜色
-    const borderColor = stats.isMainlyUp ? '#f5222d' : stats.downCount > 0 ? '#52c41a' : token.colorPrimary;
+    const borderColor = stats.isMainlyUp ? token.colorError : stats.downCount > 0 ? token.colorSuccess : token.colorPrimary;
 
     return (
         <Card
@@ -123,25 +123,25 @@ export const PriceAlertCard: React.FC<PriceAlertCardProps> = ({
                         <Divider type="vertical" style={{ height: 40 }} />
                         <div style={{ textAlign: 'center' }}>
                             <Text type="secondary" style={{ fontSize: 11, display: 'block' }}>
-                                <RiseOutlined style={{ color: '#f5222d' }} /> 上涨
+                                <RiseOutlined style={{ color: token.colorError }} /> 上涨
                             </Text>
-                            <Text strong style={{ fontSize: 18, color: '#f5222d' }}>{stats.upCount}</Text>
+                            <Text strong style={{ fontSize: 18, color: token.colorError }}>{stats.upCount}</Text>
                         </div>
                         <div style={{ textAlign: 'center' }}>
                             <Text type="secondary" style={{ fontSize: 11, display: 'block' }}>
-                                <FallOutlined style={{ color: '#52c41a' }} /> 下跌
+                                <FallOutlined style={{ color: token.colorSuccess }} /> 下跌
                             </Text>
-                            <Text strong style={{ fontSize: 18, color: '#52c41a' }}>{stats.downCount}</Text>
+                            <Text strong style={{ fontSize: 18, color: token.colorSuccess }}>{stats.downCount}</Text>
                         </div>
                     </Space>
                     <div style={{ textAlign: 'right' }}>
                         {stats.maxUp > 0 && (
-                            <Text style={{ fontSize: 12, color: '#f5222d', display: 'block' }}>
+                            <Text style={{ fontSize: 12, color: token.colorError, display: 'block' }}>
                                 最大涨幅 +{stats.maxUp}
                             </Text>
                         )}
                         {stats.maxDown < 0 && (
-                            <Text style={{ fontSize: 12, color: '#52c41a', display: 'block' }}>
+                            <Text style={{ fontSize: 12, color: token.colorSuccess, display: 'block' }}>
                                 最大跌幅 {stats.maxDown}
                             </Text>
                         )}
@@ -187,15 +187,15 @@ export const PriceAlertCard: React.FC<PriceAlertCardProps> = ({
                             style={{
                                 padding: '6px 10px',
                                 background: pp.change && pp.change > 0
-                                    ? 'rgba(245, 34, 45, 0.1)'
+                                    ? token.colorErrorBg
                                     : pp.change && pp.change < 0
-                                        ? 'rgba(82, 196, 66, 0.1)'
+                                        ? token.colorSuccessBg
                                         : token.colorFillQuaternary,
                                 borderRadius: token.borderRadius,
                                 border: `1px solid ${pp.change && pp.change > 0
-                                    ? 'rgba(245, 34, 45, 0.3)'
+                                    ? token.colorErrorBorder
                                     : pp.change && pp.change < 0
-                                        ? 'rgba(82, 196, 66, 0.3)'
+                                        ? token.colorSuccessBorder
                                         : token.colorBorder}`,
                             }}
                         >
@@ -207,7 +207,7 @@ export const PriceAlertCard: React.FC<PriceAlertCardProps> = ({
                                     <Text
                                         style={{
                                             fontSize: 12,
-                                            color: pp.change > 0 ? '#f5222d' : '#52c41a',
+                                            color: pp.change > 0 ? token.colorError : token.colorSuccess,
                                             fontWeight: 500,
                                         }}
                                     >

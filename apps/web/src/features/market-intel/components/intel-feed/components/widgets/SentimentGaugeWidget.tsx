@@ -46,20 +46,20 @@ export const SentimentGaugeWidget: React.FC = () => {
 
         return {
             distribution: [
-                { name: '看涨/积极', value: positive, color: '#f5222d' }, // Red for bullish in China? Actually standard is Red=Rise, Green=Fall in China.
+                { name: '看涨/积极', value: positive, color: token.colorError }, // Red for bullish in China? Actually standard is Red=Rise, Green=Fall in China.
                 // Let's stick to Semantic Colors: Positive=Red (Bullish), Negative=Green (Bearish/Fall) in Chinese context
                 // But typically Sentiment Positive = Good, Negative = Bad. 
                 // In commodity market: Price Up (Positive for seller) = Red. Price Down (Negative for seller) = Green.
                 // Let's use Red for Positive/Bullish, Green for Negative/Bearish, Grey for Neutral.
-                { name: '看跌/消极', value: negative, color: '#52c41a' },
-                { name: '平稳/中性', value: neutral, color: '#faad14' },
+                { name: '看跌/消极', value: negative, color: token.colorSuccess },
+                { name: '平稳/中性', value: neutral, color: token.colorWarning },
             ],
             score: Math.round(score),
             label: score > 20 ? '偏强' : score < -20 ? '偏弱' : '震荡'
         };
-    }, [feedData]);
+    }, [feedData, token]);
 
-    const COLORS = ['#f5222d', '#52c41a', '#faad14'];
+    const COLORS = [token.colorError, token.colorSuccess, token.colorWarning];
 
     const renderNeedle = (value: number) => {
         // Value -100 to 100.
@@ -128,7 +128,7 @@ export const SentimentGaugeWidget: React.FC = () => {
                         {renderNeedle(sentimentStats.score)}
                         <div style={{ marginTop: -20, textAlign: 'center', zIndex: 11 }}>
                             <Text type="secondary" style={{ fontSize: 12 }}>情绪指数</Text>
-                            <div style={{ fontSize: 28, fontWeight: 'bold', color: sentimentStats.score > 0 ? '#f5222d' : sentimentStats.score < 0 ? '#52c41a' : '#faad14' }}>
+                            <div style={{ fontSize: 28, fontWeight: 'bold', color: sentimentStats.score > 0 ? token.colorError : sentimentStats.score < 0 ? token.colorSuccess : token.colorWarning }}>
                                 {sentimentStats.score > 0 ? '+' : ''}{sentimentStats.score}
                             </div>
                             <Tag color={sentimentStats.score > 20 ? 'red' : sentimentStats.score < -20 ? 'green' : 'orange'}>
@@ -146,7 +146,7 @@ export const SentimentGaugeWidget: React.FC = () => {
                                         <div style={{ width: 8, height: 8, borderRadius: '50%', background: item.color }} />
                                         <Text style={{ fontSize: 12 }}>{item.name}</Text>
                                     </Flex>
-                                    <Text strong style={{ paddingLeft: 16 }}>{item.value} <span style={{ fontSize: 10, color: '#999' }}>条</span></Text>
+                                    <Text strong style={{ paddingLeft: 16 }}>{item.value} <span style={{ fontSize: 10, color: token.colorTextSecondary }}>条</span></Text>
                                 </div>
                             ))}
                         </Flex>

@@ -134,7 +134,7 @@ export const UnifiedAnalytics: React.FC = () => {
                     title="总下载量"
                     value={reportStats?.totalDownloads || 0}
                     icon={<DownloadOutlined />}
-                    color="#722ed1"
+                    color={(token as any).purple || token.colorPrimary}
                     suffix="次"
                 />
             </Col>
@@ -150,7 +150,7 @@ export const UnifiedAnalytics: React.FC = () => {
                         title="文档总数"
                         value={docStats?.total || 0}
                         icon={<FileTextOutlined />}
-                        color="#1890ff"
+                        color={token.colorPrimary}
                     />
                 </Col>
                 <Col xs={24} sm={12} lg={6}>
@@ -158,7 +158,7 @@ export const UnifiedAnalytics: React.FC = () => {
                         title="本月新增"
                         value={docStats?.monthlyNew || 0}
                         icon={<RiseOutlined />}
-                        color="#52c41a"
+                        color={token.colorSuccess}
                         trend={12.5}
                     />
                 </Col>
@@ -167,7 +167,7 @@ export const UnifiedAnalytics: React.FC = () => {
                         title="来源渠道"
                         value={docStats?.bySource?.length || 0}
                         icon={<PieChartOutlined />}
-                        color="#faad14"
+                        color={token.colorWarning}
                         suffix="个"
                     />
                 </Col>
@@ -176,7 +176,7 @@ export const UnifiedAnalytics: React.FC = () => {
                         title="热门标签"
                         value={docStats?.topTags?.length || 0}
                         icon={<TagsOutlined />}
-                        color="#eb2f96"
+                        color={(token as any).magenta || token.colorError}
                         suffix="个"
                     />
                 </Col>
@@ -299,7 +299,7 @@ export const UnifiedAnalytics: React.FC = () => {
                             title={
                                 <Space>
                                     <span style={{
-                                        backgroundColor: '#faad1415',
+                                        backgroundColor: `${token.colorWarning}15`,
                                         padding: 8,
                                         borderRadius: '50%',
                                         display: 'inline-flex',
@@ -307,7 +307,7 @@ export const UnifiedAnalytics: React.FC = () => {
                                         justifyContent: 'center',
                                         marginRight: 4
                                     }}>
-                                        <FileSearchOutlined style={{ color: '#faad14' }} />
+                                        <FileSearchOutlined style={{ color: token.colorWarning }} />
                                     </span>
                                     <span>待审核</span>
                                 </Space>

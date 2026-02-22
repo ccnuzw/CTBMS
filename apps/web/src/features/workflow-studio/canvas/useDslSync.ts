@@ -7,7 +7,7 @@ import {
     addEdge,
     type Connection,
 } from '@xyflow/react';
-import { message } from 'antd';
+import { message, theme } from 'antd';
 import {
     normalizeWorkflowNodeType,
     type WorkflowDsl,
@@ -318,17 +318,19 @@ function flowToDsl(nodes: Node[], edges: Edge[], originalDsl: WorkflowDsl): Work
     };
 }
 
+const globalToken = theme.getDesignToken();
+
 function getEdgeStyle(edgeType: string): React.CSSProperties {
     switch (edgeType) {
         case 'data-edge':
-            return { stroke: '#1677FF', strokeWidth: 2 };
+            return { stroke: globalToken.blue, strokeWidth: 2 };
         case 'control-edge':
-            return { stroke: '#8C8C8C', strokeWidth: 2, strokeDasharray: '5,5' };
+            return { stroke: globalToken.colorTextTertiary, strokeWidth: 2, strokeDasharray: '5,5' };
         case 'condition-edge':
-            return { stroke: '#FA8C16', strokeWidth: 2 };
+            return { stroke: globalToken.colorWarning, strokeWidth: 2 };
         case 'error-edge':
-            return { stroke: '#F5222D', strokeWidth: 2, strokeDasharray: '3,3' };
+            return { stroke: globalToken.colorError, strokeWidth: 2, strokeDasharray: '3,3' };
         default:
-            return { stroke: '#1677FF', strokeWidth: 2 };
+            return { stroke: globalToken.blue, strokeWidth: 2 };
     }
 }

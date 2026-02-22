@@ -97,7 +97,7 @@ export const ComprehensiveDashboard: React.FC = () => {
         yField: 'value',
         point: { size: 5, shape: 'diamond' },
         height: 220,
-        color: '#1677ff',
+        color: token.colorPrimary,
         yAxis: { max: 100, min: 0 },
     };
 

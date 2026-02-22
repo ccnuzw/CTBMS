@@ -30,16 +30,19 @@ import type { PriceReviewScope, PriceSourceScope, PriceSubType } from '@packages
 
 const { Text } = Typography;
 
+const { getDesignToken } = theme;
+const globalToken = getDesignToken();
+
 // 图表颜色
 const LINE_COLORS = [
-  '#1890ff',
-  '#52c41a',
-  '#faad14',
-  '#722ed1',
-  '#13c2c2',
-  '#eb2f96',
-  '#fa541c',
-  '#2f54eb',
+  globalToken.blue,
+  globalToken.green,
+  globalToken.gold,
+  (globalToken as any).purple || globalToken.colorPrimary,
+  globalToken.cyan,
+  globalToken.magenta,
+  (globalToken as any).volcano || globalToken.colorWarning,
+  globalToken.geekblue,
 ];
 
 type ViewMode = 'line' | 'area' | 'comparison';
@@ -498,7 +501,7 @@ export const TrendChart: React.FC<TrendChartProps> = ({
                         dot={{
                           r: highlightName === item.point.name ? 4 : 3,
                           strokeWidth: 2,
-                          fill: '#fff',
+                          fill: token.colorBgContainer,
                         }}
                         activeDot={{ r: highlightName === item.point.name ? 7 : 6 }}
                         connectNulls

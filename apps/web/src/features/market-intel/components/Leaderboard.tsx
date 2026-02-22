@@ -37,9 +37,9 @@ export const Leaderboard: React.FC = () => {
 
     // 颜色定义
     const RANK_COLORS = {
-        1: { main: '#FFD700', shadow: '#E6C200', bg: 'linear-gradient(180deg, rgba(255, 215, 0, 0.2) 0%, rgba(255, 215, 0, 0) 100%)' },
-        2: { main: '#C0C0C0', shadow: '#A9A9A9', bg: 'linear-gradient(180deg, rgba(192, 192, 192, 0.2) 0%, rgba(192, 192, 192, 0) 100%)' },
-        3: { main: '#CD7F32', shadow: '#A0522D', bg: 'linear-gradient(180deg, rgba(205, 127, 50, 0.2) 0%, rgba(205, 127, 50, 0) 100%)' },
+        1: { main: token.colorWarning, shadow: token.colorWarningTextHover, bg: `linear-gradient(180deg, ${token.colorWarning}33 0%, ${token.colorWarning}00 100%)` },
+        2: { main: token.colorTextSecondary, shadow: token.colorTextTertiary, bg: `linear-gradient(180deg, ${token.colorTextSecondary}33 0%, ${token.colorTextSecondary}00 100%)` },
+        3: { main: (token as any).volcano || token.colorError, shadow: (token as any).volcanoActive || token.colorErrorActive, bg: `linear-gradient(180deg, ${(token as any).volcano || token.colorError}33 0%, ${(token as any).volcano || token.colorError}00 100%)` },
     };
 
     const columns: ColumnsType<LeaderboardEntry> = [
@@ -164,7 +164,7 @@ export const Leaderboard: React.FC = () => {
                         left: '50%',
                         transform: 'translateX(-50%)',
                         background: `linear-gradient(90deg, ${config.main}, ${config.shadow})`,
-                        color: '#FFF',
+                        color: token.colorTextLightSolid || token.colorBgContainer,
                         borderRadius: '16px',
                         padding: '2px 12px',
                         fontSize: 12,
@@ -221,7 +221,7 @@ export const Leaderboard: React.FC = () => {
                         justifyContent: 'center',
                         boxShadow: `0 4px 12px ${token.colorPrimary}40`
                     }}>
-                        <TrophyOutlined style={{ fontSize: 20, color: '#fff' }} />
+                        <TrophyOutlined style={{ fontSize: 20, color: token.colorTextLightSolid || token.colorBgContainer }} />
                     </div>
                     <div>
                         <Title level={4} style={{ margin: 0 }}>绩效英雄榜</Title>

@@ -85,6 +85,8 @@ const stripHtml = (html: string) => {
 const highlightKeywords = (text: string, keywords: string): React.ReactNode => {
   if (!text || !keywords?.trim()) return text;
 
+  const globalToken = theme.getDesignToken();
+
   // 将关键词拆分并创建正则表达式
   const keywordList = keywords.trim().split(/\s+/).filter(Boolean);
   if (keywordList.length === 0) return text;
@@ -101,7 +103,7 @@ const highlightKeywords = (text: string, keywords: string): React.ReactNode => {
       <mark
         key={i}
         style={{
-          backgroundColor: '#fff1b8',
+          backgroundColor: globalToken.colorWarningBg,
           padding: '0 2px',
           borderRadius: 2,
         }}
@@ -754,110 +756,110 @@ ${topDocs}
                     // 已收藏的搜索快捷方式
                     ...(savedSearches.length > 0 && !query
                       ? [
-                          {
+                        {
+                          label: (
+                            <Text type="secondary" style={{ fontSize: 12 }}>
+                              <StarFilled style={{ marginRight: 4, color: token.colorWarning }} />
+                              收藏的搜索
+                            </Text>
+                          ),
+                          options: savedSearches.map((search) => ({
+                            value: search.keyword,
                             label: (
-                              <Text type="secondary" style={{ fontSize: 12 }}>
-                                <StarFilled style={{ marginRight: 4, color: token.colorWarning }} />
-                                收藏的搜索
-                              </Text>
-                            ),
-                            options: savedSearches.map((search) => ({
-                              value: search.keyword,
-                              label: (
-                                <Flex align="center" justify="space-between">
-                                  <Flex align="center" gap={8}>
-                                    <StarFilled
-                                      style={{ color: token.colorWarning, fontSize: 12 }}
-                                    />
-                                    <span>{search.keyword}</span>
-                                    <Tag style={{ fontSize: 10 }}>{search.dateRange}</Tag>
-                                  </Flex>
-                                  <Button
-                                    type="text"
-                                    size="small"
-                                    icon={<DeleteOutlined />}
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      deleteSavedSearch(search.id);
-                                    }}
-                                    style={{ color: token.colorTextTertiary }}
+                              <Flex align="center" justify="space-between">
+                                <Flex align="center" gap={8}>
+                                  <StarFilled
+                                    style={{ color: token.colorWarning, fontSize: 12 }}
                                   />
+                                  <span>{search.keyword}</span>
+                                  <Tag style={{ fontSize: 10 }}>{search.dateRange}</Tag>
                                 </Flex>
-                              ),
-                            })),
-                          },
-                        ]
+                                <Button
+                                  type="text"
+                                  size="small"
+                                  icon={<DeleteOutlined />}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    deleteSavedSearch(search.id);
+                                  }}
+                                  style={{ color: token.colorTextTertiary }}
+                                />
+                              </Flex>
+                            ),
+                          })),
+                        },
+                      ]
                       : []),
                     // 搜索历史选项组
                     ...(searchHistory.length > 0 && !query
                       ? [
-                          {
+                        {
+                          label: (
+                            <Flex align="center" justify="space-between">
+                              <Text type="secondary" style={{ fontSize: 12 }}>
+                                <HistoryOutlined style={{ marginRight: 4 }} />
+                                搜索历史
+                              </Text>
+                              <Button
+                                type="text"
+                                size="small"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setSearchHistory([]);
+                                  localStorage.removeItem(SEARCH_HISTORY_KEY);
+                                }}
+                                style={{ fontSize: 11, color: token.colorTextTertiary }}
+                              >
+                                清空
+                              </Button>
+                            </Flex>
+                          ),
+                          options: searchHistory.map((term) => ({
+                            value: term,
                             label: (
-                              <Flex align="center" justify="space-between">
-                                <Text type="secondary" style={{ fontSize: 12 }}>
-                                  <HistoryOutlined style={{ marginRight: 4 }} />
-                                  搜索历史
-                                </Text>
-                                <Button
-                                  type="text"
-                                  size="small"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    setSearchHistory([]);
-                                    localStorage.removeItem(SEARCH_HISTORY_KEY);
-                                  }}
-                                  style={{ fontSize: 11, color: token.colorTextTertiary }}
-                                >
-                                  清空
-                                </Button>
+                              <Flex align="center" gap={8}>
+                                <HistoryOutlined style={{ color: token.colorTextTertiary }} />
+                                <span>{term}</span>
                               </Flex>
                             ),
-                            options: searchHistory.map((term) => ({
-                              value: term,
-                              label: (
-                                <Flex align="center" gap={8}>
-                                  <HistoryOutlined style={{ color: token.colorTextTertiary }} />
-                                  <span>{term}</span>
-                                </Flex>
-                              ),
-                            })),
-                          },
-                        ]
+                          })),
+                        },
+                      ]
                       : []),
                     // 搜索建议选项组
                     ...(suggestions.length > 0 && query
                       ? [
-                          {
+                        {
+                          label: (
+                            <Text type="secondary" style={{ fontSize: 12 }}>
+                              <BulbOutlined style={{ marginRight: 4 }} />
+                              搜索建议
+                            </Text>
+                          ),
+                          options: suggestions.map((s) => ({
+                            value: s.text,
                             label: (
-                              <Text type="secondary" style={{ fontSize: 12 }}>
-                                <BulbOutlined style={{ marginRight: 4 }} />
-                                搜索建议
-                              </Text>
+                              <Flex align="center" gap={8}>
+                                {s.type === 'collection_point' && (
+                                  <TagOutlined style={{ color: token.colorPrimary }} />
+                                )}
+                                {s.type === 'commodity' && (
+                                  <LineChartOutlined style={{ color: token.colorSuccess }} />
+                                )}
+                                {s.type === 'tag' && (
+                                  <BulbOutlined style={{ color: token.colorWarning }} />
+                                )}
+                                <span>{s.text}</span>
+                                {s.count && (
+                                  <Text type="secondary" style={{ fontSize: 11 }}>
+                                    ({s.count})
+                                  </Text>
+                                )}
+                              </Flex>
                             ),
-                            options: suggestions.map((s) => ({
-                              value: s.text,
-                              label: (
-                                <Flex align="center" gap={8}>
-                                  {s.type === 'collection_point' && (
-                                    <TagOutlined style={{ color: token.colorPrimary }} />
-                                  )}
-                                  {s.type === 'commodity' && (
-                                    <LineChartOutlined style={{ color: token.colorSuccess }} />
-                                  )}
-                                  {s.type === 'tag' && (
-                                    <BulbOutlined style={{ color: token.colorWarning }} />
-                                  )}
-                                  <span>{s.text}</span>
-                                  {s.count && (
-                                    <Text type="secondary" style={{ fontSize: 11 }}>
-                                      ({s.count})
-                                    </Text>
-                                  )}
-                                </Flex>
-                              ),
-                            })),
-                          },
-                        ]
+                          })),
+                        },
+                      ]
                       : []),
                   ]}
                 >
@@ -1306,7 +1308,7 @@ ${topDocs}
                                   <CartesianGrid
                                     strokeDasharray="3 3"
                                     vertical={false}
-                                    stroke="#f0f0f0"
+                                    stroke={token.colorBorderSecondary}
                                   />
                                   <XAxis
                                     dataKey="date"
@@ -1331,7 +1333,7 @@ ${topDocs}
                                               token.colorSuccess,
                                               token.colorWarning,
                                               token.colorError,
-                                              '#722ed1',
+                                              (token as any).purple || token.colorPrimary,
                                             ][idx % 5]
                                           }
                                           strokeWidth={2}
@@ -1495,7 +1497,7 @@ ${topDocs}
                     <Card
                       title={
                         <Flex align="center" gap={8}>
-                          <AlertOutlined style={{ color: '#722ed1' }} />
+                          <AlertOutlined style={{ color: (token as any).purple || token.colorPrimary }} />
                           <Text strong>市场情报 (Intel)</Text>
                           <Tag color="purple">{intels.length}</Tag>
                         </Flex>
@@ -1536,7 +1538,7 @@ ${topDocs}
                                   height: 10,
                                   borderRadius: '50%',
                                   background: token.colorBgContainer,
-                                  border: `2px solid ${c.aiAnalysis?.sentiment === 'positive' ? token.colorSuccess : c.aiAnalysis?.sentiment === 'negative' ? token.colorError : '#722ed1'}`,
+                                  border: `2px solid ${c.aiAnalysis?.sentiment === 'positive' ? token.colorSuccess : c.aiAnalysis?.sentiment === 'negative' ? token.colorError : ((token as any).purple || token.colorPrimary)}`,
                                 }}
                               />
                               <Card

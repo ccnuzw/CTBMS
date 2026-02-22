@@ -349,8 +349,6 @@ export const ResearchReportCreatePage = () => {
     const bodyContent = form.getFieldValue('content') || values.content;
     const summaryContent = form.getFieldValue('summary') || values.summary;
 
-    console.log('[handleFinish] content length:', bodyContent?.length, 'summary length:', summaryContent?.length);
-
     if (!bodyContent) {
       message.error(isPeriodicReport ? '请填写报告内容' : '研报正文不能为空');
       return;

@@ -99,7 +99,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ filterState }) => 
     }
 
     // Colors for charts
-    const COLORS = ['#1890ff', '#52c41a', '#faad14', '#f5222d', '#722ed1', '#13c2c2'];
+    const COLORS = [token.blue, token.green, token.gold, token.red, (token as any).purple || token.colorPrimary, token.cyan];
 
     return (
         <div style={{ padding: 16 }}>
@@ -136,8 +136,8 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ filterState }) => 
                         <Statistic
                             title="高价值"
                             value={stats.overview.highValue || '-'}
-                            prefix={<FireOutlined style={{ color: '#faad14' }} />}
-                            valueStyle={{ color: '#faad14' }}
+                            prefix={<FireOutlined style={{ color: token.colorWarning }} />}
+                            valueStyle={{ color: token.colorWarning }}
                         />
                     </Card>
                 </Col>
@@ -146,8 +146,8 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ filterState }) => 
                         <Statistic
                             title="待处理"
                             value={stats.overview.pending || '-'}
-                            prefix={<ClockCircleOutlined style={{ color: '#fa8c16' }} />}
-                            valueStyle={{ color: '#fa8c16' }}
+                            prefix={<ClockCircleOutlined style={{ color: (token as any).orange || token.colorWarningActive }} />}
+                            valueStyle={{ color: (token as any).orange || token.colorWarningActive }}
                         />
                     </Card>
                 </Col>
@@ -156,8 +156,8 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ filterState }) => 
                         <Statistic
                             title="已确认"
                             value={stats.overview.confirmed || '-'}
-                            prefix={<CheckCircleOutlined style={{ color: '#52c41a' }} />}
-                            valueStyle={{ color: '#52c41a' }}
+                            prefix={<CheckCircleOutlined style={{ color: token.colorSuccess }} />}
+                            valueStyle={{ color: token.colorSuccess }}
                         />
                     </Card>
                 </Col>
@@ -167,8 +167,8 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ filterState }) => 
                             title="平均质量分"
                             value={stats.overview.avgQuality}
                             suffix="/100"
-                            prefix={<TrophyOutlined style={{ color: '#722ed1' }} />}
-                            valueStyle={{ color: '#722ed1' }}
+                            prefix={<TrophyOutlined style={{ color: (token as any).purple || token.colorPrimary }} />}
+                            valueStyle={{ color: (token as any).purple || token.colorPrimary }}
                         />
                     </Card>
                 </Col>
@@ -203,9 +203,9 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ filterState }) => 
                                     <YAxis />
                                     <Tooltip labelFormatter={(val) => dayjs(val).format('YYYY-MM-DD')} />
                                     <Legend />
-                                    <Area type="monotone" dataKey="daily" name="日报/信号" stackId="1" stroke="#1890ff" fill="#1890ff" fillOpacity={0.6} />
-                                    <Area type="monotone" dataKey="research" name="研报/洞察" stackId="1" stroke="#52c41a" fill="#52c41a" fillOpacity={0.6} />
-                                    <Area type="monotone" dataKey="policy" name="政策/其他" stackId="1" stroke="#722ed1" fill="#722ed1" fillOpacity={0.6} />
+                                    <Area type="monotone" dataKey="daily" name="日报/信号" stackId="1" stroke={token.blue} fill={token.blue} fillOpacity={0.6} />
+                                    <Area type="monotone" dataKey="research" name="研报/洞察" stackId="1" stroke={token.green} fill={token.green} fillOpacity={0.6} />
+                                    <Area type="monotone" dataKey="policy" name="政策/其他" stackId="1" stroke={(token as any).purple || token.colorPrimary} fill={(token as any).purple || token.colorPrimary} fillOpacity={0.6} />
                                 </AreaChart>
                             </ResponsiveContainer>
                         </ChartContainer>

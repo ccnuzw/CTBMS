@@ -1,5 +1,5 @@
 import { PageContainer, ProTable, ActionType, ProColumns, ModalForm, ProFormText, ProFormSelect, ProFormDigit, ProFormSwitch, ProFormDependency, ProFormTextArea, ProFormInstance } from '@ant-design/pro-components';
-import { Card, App, Alert, Space, Button, Modal, Tag, Typography, Tooltip, Badge, Divider, Checkbox, Table } from 'antd';
+import { Card, App, Alert, Space, Button, Modal, Tag, Typography, Tooltip, Badge, Divider, Checkbox, Table, theme } from 'antd';
 import {
     useAIConfigs,
     useUpdateAIConfig,
@@ -16,6 +16,7 @@ import { useModalAutoFocus } from '@/hooks/useModalAutoFocus';
 const { Text } = Typography;
 
 export const AIModelConfigPage = () => {
+    const { token } = theme.useToken();
     const { message, modal } = App.useApp();
     const actionRef = useRef<ActionType>();
     const { data: configs, isLoading } = useAIConfigs(true);
@@ -400,10 +401,10 @@ export const AIModelConfigPage = () => {
                             )}
                             {result.response && (
                                 <div style={{
-                                    background: '#f5f5f5',
+                                    background: token.colorFillAlter,
                                     padding: '8px 12px',
                                     borderRadius: 6,
-                                    border: '1px solid #d9d9d9',
+                                    border: `1px solid ${token.colorBorder}`,
                                     fontSize: 12,
                                     fontFamily: 'monospace',
                                     maxHeight: 150,
@@ -440,12 +441,12 @@ export const AIModelConfigPage = () => {
                             )}
                             {result.error && (
                                 <div style={{
-                                    background: '#fff1f0',
-                                    border: '1px solid #ffa39e',
+                                    background: token.colorErrorBg,
+                                    border: `1px solid ${token.colorErrorBorder}`,
                                     padding: 8,
                                     borderRadius: 4,
                                     marginTop: 8,
-                                    color: '#cf1322',
+                                    color: token.colorError,
                                     fontSize: 12
                                 }}>
                                     {result.error}
@@ -538,10 +539,10 @@ export const AIModelConfigPage = () => {
                                 <p style={{ margin: 0 }}><strong>模型:</strong> {result.modelId}</p>
                             </div>
                             <div style={{
-                                background: '#f5f5f5',
+                                background: token.colorFillAlter,
                                 padding: '8px 12px',
                                 borderRadius: 6,
-                                border: '1px solid #d9d9d9',
+                                border: `1px solid ${token.colorBorder}`,
                                 fontSize: 12,
                                 fontFamily: 'monospace',
                                 maxHeight: 150,
@@ -562,12 +563,12 @@ export const AIModelConfigPage = () => {
                             <p style={{ fontWeight: 500 }}>{result.message}</p>
                             {result.error && (
                                 <div style={{
-                                    background: '#fff1f0',
-                                    border: '1px solid #ffa39e',
+                                    background: token.colorErrorBg,
+                                    border: `1px solid ${token.colorErrorBorder}`,
                                     padding: 8,
                                     borderRadius: 4,
                                     marginTop: 8,
-                                    color: '#cf1322',
+                                    color: token.colorError,
                                     fontSize: 12
                                 }}>
                                     {result.error}
@@ -630,7 +631,7 @@ export const AIModelConfigPage = () => {
             search: false,
             width: 120,
             render: (_, record) => (
-                <Space direction="vertical" size={0} style={{ fontSize: 12, color: '#666' }}>
+                <Space direction="vertical" size={0} style={{ fontSize: 12, color: token.colorTextSecondary }}>
                     <span>Temp: {record.temperature}</span>
                     <span>Tokens: {record.maxTokens}</span>
                 </Space>
@@ -673,7 +674,7 @@ export const AIModelConfigPage = () => {
                 record.configKey !== 'DEFAULT' && (
                     <a
                         key="delete"
-                        style={{ color: '#ff4d4f' }}
+                        style={{ color: token.colorError }}
                         onClick={(event) => {
                             event.preventDefault();
                             blurActiveElement();
@@ -965,7 +966,7 @@ export const AIModelConfigPage = () => {
                                     gap: 8,
                                 }}
                             />
-                            <div style={{ marginTop: 8, color: '#666', fontSize: 12 }}>
+                            <div style={{ marginTop: 8, color: token.colorTextSecondary, fontSize: 12 }}>
                                 已选择 {selectedFetchedModels.length} / {fetchedModels.length}
                             </div>
                         </Card>
@@ -1159,7 +1160,7 @@ export const AIModelConfigPage = () => {
                         ]}
                     />
                     {batchTestRunning && (
-                        <div style={{ marginTop: 8, color: '#666', fontSize: 12 }}>
+                        <div style={{ marginTop: 8, color: token.colorTextSecondary, fontSize: 12 }}>
                             正在测试，请稍候...
                         </div>
                     )}

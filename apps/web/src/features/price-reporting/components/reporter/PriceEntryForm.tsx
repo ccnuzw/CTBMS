@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Card, Form, InputNumber, Input, Select, Button, Space, Row, Col, Divider, Typography, Spin, Alert, App } from 'antd';
+import { Card, Form, InputNumber, Input, Select, Button, Space, Row, Col, Divider, Typography, Spin, Alert, App, theme } from 'antd';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { ArrowLeftOutlined, CopyOutlined, SendOutlined, WarningOutlined, EditOutlined, DeleteOutlined } from '@ant-design/icons';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
@@ -46,6 +46,7 @@ export const PriceEntryForm: React.FC = () => {
   const navigate = useNavigate();
   const [form] = Form.useForm();
   const { message, modal } = App.useApp();
+  const { token } = theme.useToken();
   const { currentUser } = useVirtualUser();
 
   const queryClient = useQueryClient();
@@ -350,7 +351,7 @@ export const PriceEntryForm: React.FC = () => {
         content: (
           <div>
             <p>您还有以下分配的品种尚未填报：</p>
-            <p style={{ color: '#ff4d4f', fontWeight: 'bold' }}>{missingCommodities.join('、')}</p>
+            <p style={{ color: token.colorError, fontWeight: 'bold' }}>{missingCommodities.join('、')}</p>
             <p>提交后任务将标记为完成。如需稍后继续，请点击“取消”并保存草稿。</p>
           </div>
         ),
@@ -595,16 +596,16 @@ export const PriceEntryForm: React.FC = () => {
                       display: 'flex',
                       justifyContent: 'space-between',
                       alignItems: 'center',
-                      backgroundColor: currentTask?.status === 'RETURNED' ? '#f6ffed' : 'transparent',
+                      backgroundColor: currentTask?.status === 'RETURNED' ? token.colorSuccessBg : 'transparent',
                       borderRadius: 4,
                       marginBottom: index < priceDataList.length - 1 ? 4 : 0,
-                      border: taskId ? '1px solid #b7eb8f' : 'none',
+                      border: taskId ? `1px solid ${token.colorSuccessBorder}` : 'none',
                     }}
                   >
                     <Space>
                       <Text strong>{commodityLabels[item.commodity] || item.commodity}</Text>
                       <Text type="secondary">{priceSubTypeLabels[item.subType] || item.subType}</Text>
-                      <Text style={{ color: '#1890ff', fontWeight: 'bold' }}>
+                      <Text style={{ color: token.colorPrimary, fontWeight: 'bold' }}>
                         {Number(item.price).toLocaleString()} 元/吨
                       </Text>
                       {item.moisture && <Text type="secondary">水分 {item.moisture}%</Text>}
@@ -675,7 +676,7 @@ export const PriceEntryForm: React.FC = () => {
                                         content: (
                                           <div>
                                             <p>检测到重复数据：</p>
-                                            <p style={{ fontWeight: 'bold', color: '#ff4d4f' }}>
+                                            <p style={{ fontWeight: 'bold', color: token.colorError }}>
                                               {commodityLabels[commodity] || commodity} 在 {date} 已有 {priceSubTypeLabels[priceType] || priceType} 数据
                                             </p>
                                             <p>请选择以下操作：</p>
@@ -747,12 +748,12 @@ export const PriceEntryForm: React.FC = () => {
                       contentStyle={{ fontSize: 12 }}
                       formatter={(value: any) => [`${value} 元/吨`, '价格']}
                     />
-                    <Area type="monotone" dataKey="price" stroke="#1890ff" fill="#e6f7ff" />
+                    <Area type="monotone" dataKey="price" stroke={token.colorPrimary} fill={token.colorPrimaryBg} />
                   </AreaChart>
                 </ResponsiveContainer>
                 <div style={{ textAlign: 'center', marginTop: 8 }}>
                   <Text type="secondary" style={{ fontSize: 12 }}>
-                    最近报价: <span style={{ color: '#1890ff', fontWeight: 'bold' }}>{Number(priceHistory[0].price).toLocaleString()}</span> 元/吨
+                    最近报价: <span style={{ color: token.colorPrimary, fontWeight: 'bold' }}>{Number(priceHistory[0].price).toLocaleString()}</span> 元/吨
                   </Text>
                 </div>
               </div>

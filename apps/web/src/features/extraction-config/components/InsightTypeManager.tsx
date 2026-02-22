@@ -36,11 +36,13 @@ import { useModalAutoFocus } from '../../../hooks/useModalAutoFocus';
 
 const { Text } = Typography;
 
+const globalToken = theme.getDesignToken();
+
 const CATEGORY_OPTIONS = [
-    { label: '预判', value: 'Forecast', color: '#1890ff' },
-    { label: '分析', value: 'Analysis', color: '#52c41a' },
-    { label: '数据', value: 'Data', color: '#13c2c2' },
-    { label: '逻辑', value: 'Logic', color: '#eb2f96' },
+    { label: '预判', value: 'Forecast', color: globalToken.blue },
+    { label: '分析', value: 'Analysis', color: globalToken.colorSuccess },
+    { label: '数据', value: 'Data', color: globalToken.cyan },
+    { label: '逻辑', value: 'Logic', color: (globalToken as any).magenta || globalToken.colorError },
 ];
 
 export const InsightTypeManager: React.FC = () => {

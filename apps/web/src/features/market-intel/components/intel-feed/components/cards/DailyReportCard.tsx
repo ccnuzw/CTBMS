@@ -48,11 +48,14 @@ const FALLBACK_SENTIMENT_LABELS: Record<string, string> = {
     mixed: '分歧',
 };
 
+const { getDesignToken } = theme;
+const globalToken = getDesignToken();
+
 const FALLBACK_SENTIMENT_COLORS: Record<string, string> = {
-    bullish: '#f5222d',
-    bearish: '#52c41a',
-    neutral: '#1890ff',
-    mixed: '#faad14',
+    bullish: globalToken.colorError,
+    bearish: globalToken.colorSuccess,
+    neutral: globalToken.blue,
+    mixed: globalToken.colorWarning,
 };
 
 const FALLBACK_RISK_LABELS: Record<string, string> = { low: '低', medium: '中', high: '高' };
@@ -89,7 +92,7 @@ export const DailyReportCard: React.FC<DailyReportCardProps> = ({
         return items.reduce<{ labels: Record<string, string>; colors: Record<string, string> }>(
             (acc, item) => {
                 acc.labels[item.code] = item.label;
-                const color = (item.meta as { color?: string } | null)?.color || FALLBACK_SENTIMENT_COLORS[item.code] || '#1890ff';
+                const color = (item.meta as { color?: string } | null)?.color || FALLBACK_SENTIMENT_COLORS[item.code] || globalToken.blue;
                 acc.colors[item.code] = color;
                 return acc;
             },
@@ -116,7 +119,7 @@ export const DailyReportCard: React.FC<DailyReportCardProps> = ({
         );
     }, [dictionaries]);
 
-    const sentimentColor = sentimentMeta.colors[intel.marketSentiment?.overall || ''] || '#1890ff';
+    const sentimentColor = sentimentMeta.colors[intel.marketSentiment?.overall || ''] || globalToken.blue;
     const sentimentLabel = sentimentMeta.labels[intel.marketSentiment?.overall || ''] || intel.marketSentiment?.overall || '未知';
     const sourceInfo = sourceTypeMeta[intel.sourceType] || { label: '未知', color: 'default' };
 
@@ -155,7 +158,7 @@ export const DailyReportCard: React.FC<DailyReportCardProps> = ({
                     <Text type="secondary" style={{ fontSize: 12 }}>上报人:</Text>
                     <Flex align="center" gap={4}>
                         {/* Simple avatar placeholder if no image */}
-                        <div style={{ width: 16, height: 16, borderRadius: '50%', background: token.colorPrimary, color: '#fff', fontSize: 10, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                        <div style={{ width: 16, height: 16, borderRadius: '50%', background: token.colorPrimary, color: token.colorTextLightSolid, fontSize: 10, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                             {intel.author.name[0]}
                         </div>
                         <Text style={{ fontSize: 12 }}>{intel.author.name}</Text>
@@ -206,7 +209,7 @@ export const DailyReportCard: React.FC<DailyReportCardProps> = ({
             {intel.events && intel.events.length > 0 && (
                 <div style={{ marginBottom: 12 }}>
                     <Flex align="center" gap={6} style={{ marginBottom: 6 }}>
-                        <ThunderboltOutlined style={{ color: '#faad14' }} />
+                        <ThunderboltOutlined style={{ color: token.colorWarning }} />
                         <Text type="secondary" style={{ fontSize: 12 }}>事件摘要</Text>
                     </Flex>
                     <Space wrap>
@@ -223,7 +226,7 @@ export const DailyReportCard: React.FC<DailyReportCardProps> = ({
             {intel.insights && intel.insights.length > 0 && (
                 <div style={{ marginBottom: 12, padding: 10, background: token.colorFillQuaternary, borderRadius: token.borderRadius }}>
                     <Flex align="center" gap={6} style={{ marginBottom: 6 }}>
-                        <BulbOutlined style={{ color: '#722ed1' }} />
+                        <BulbOutlined style={{ color: (token as any).purple || token.colorPrimary }} />
                         <Text type="secondary" style={{ fontSize: 12 }}>AI洞察</Text>
                     </Flex>
                     {intel.insights.map((insight: any, idx: number) => (
