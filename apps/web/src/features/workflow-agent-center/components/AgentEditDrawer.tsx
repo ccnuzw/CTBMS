@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import {
     App,
     Button,
+    Collapse,
     Drawer,
     Form,
     Input,
@@ -12,14 +13,14 @@ import {
     Tabs,
     Typography,
     Tooltip,
+    theme,
 } from 'antd';
 import { PlusOutlined } from '@ant-design/icons';
 import { AgentProfileDto, AgentRoleType } from '@packages/types';
-import { useUpdateAgentProfile, useAgentPromptTemplates } from '../api';
+import { useUpdateAgentProfile, useAgentPromptTemplates, useAgentSkills } from '../api';
 import { useAIConfigs } from '../../system-config/api';
 import {
     getAgentRoleLabel,
-    getMemoryPolicyLabel,
     OUTPUT_SCHEMA_OPTIONS,
 } from '../constants';
 import { RetryPolicyForm } from './RetryPolicyForm';
@@ -38,6 +39,13 @@ interface AgentEditDrawerProps {
     onSuccess?: () => void;
 }
 
+/** 记忆策略友好文案 */
+const MEMORY_POLICY_FRIENDLY: { value: string; label: string; description: string }[] = [
+    { value: 'none', label: '无记忆', description: '每次独立对话，不保留任何上下文' },
+    { value: 'short-term', label: '短期记忆', description: '当轮对话内保持上下文连贯' },
+    { value: 'windowed', label: '窗口记忆', description: '保留最近 N 轮对话历史' },
+];
+
 export const AgentEditDrawer: React.FC<AgentEditDrawerProps> = ({
     open,
     onClose,
@@ -45,6 +53,7 @@ export const AgentEditDrawer: React.FC<AgentEditDrawerProps> = ({
     onSuccess,
 }) => {
     const { message } = App.useApp();
+    const { token } = theme.useToken();
     const [form] = Form.useForm();
     const [promptCreateVisible, setPromptCreateVisible] = useState(false);
     const updateMutation = useUpdateAgentProfile();
@@ -56,6 +65,8 @@ export const AgentEditDrawer: React.FC<AgentEditDrawerProps> = ({
         isActive: true,
         includePublic: true,
     });
+
+    const { data: skillsData } = useAgentSkills({ pageSize: 100 });
 
     const promptOptions = useMemo(() => {
         return (promptTemplates?.data || []).map((t) => ({
@@ -71,9 +82,9 @@ export const AgentEditDrawer: React.FC<AgentEditDrawerProps> = ({
         })) || [];
     }, [aiConfigs]);
 
-    const memoryOptions = useMemo(() => ['none', 'short-term', 'windowed'].map((item) => ({
-        label: getMemoryPolicyLabel(item),
-        value: item,
+    const memoryOptions = useMemo(() => MEMORY_POLICY_FRIENDLY.map((item) => ({
+        label: `${item.label} — ${item.description}`,
+        value: item.value,
     })), []);
 
     useEffect(() => {
@@ -91,6 +102,7 @@ export const AgentEditDrawer: React.FC<AgentEditDrawerProps> = ({
 
                 outputSchemaCode: agent.outputSchemaCode,
                 outputSchemaString: agent.outputSchema ? JSON.stringify(agent.outputSchema, null, 2) : undefined,
+                skillCodes: agent.skillCodes || [],
                 toolPolicy: agent.toolPolicy || {},
                 guardrails: agent.guardrails || {},
 
@@ -118,6 +130,7 @@ export const AgentEditDrawer: React.FC<AgentEditDrawerProps> = ({
                 memoryPolicy: values.memoryPolicy,
 
                 outputSchemaCode: values.outputSchemaCode,
+                skillCodes: values.skillCodes || [],
                 toolPolicy: values.toolPolicy,
                 guardrails: values.guardrails,
 
@@ -155,64 +168,81 @@ export const AgentEditDrawer: React.FC<AgentEditDrawerProps> = ({
     const items = [
         {
             key: 'basic',
-            label: '基本信息',
+            label: '基础配置',
             children: (
-                <Space direction="vertical" style={{ width: '100%' }}>
-                    <Form.Item label="编码 (Code)">
-                        <Input value={agent?.agentCode} disabled />
-                    </Form.Item>
-                    <Form.Item label="角色 (Role)">
-                        <Input value={getAgentRoleLabel(agent?.roleType)} disabled />
-                    </Form.Item>
-                    <Form.Item name="agentName" label="名称" rules={[{ required: true, message: '请输入名称' }]}>
-                        <Input placeholder="请输入智能体名称" />
-                    </Form.Item>
-                    <Form.Item name="objective" label="目标 (Objective)">
-                        <TextArea rows={4} placeholder="描述该智能体的主要目标和职责" />
-                    </Form.Item>
-                    <Form.Item name="isActive" label="状态" valuePropName="checked">
-                        <Switch checkedChildren="启用" unCheckedChildren="停用" />
-                    </Form.Item>
-                </Space>
-            ),
-        },
-        {
-            key: 'model',
-            label: '模型与智能',
-            children: (
-                <Space direction="vertical" style={{ width: '100%' }}>
-                    <Form.Item name="modelConfigKey" label="AI 模型配置" rules={[{ required: true }]}>
-                        <Select options={modelConfigOptions} showSearch />
-                    </Form.Item>
-                    <Form.Item label="提示词模板" required>
-                        <Space style={{ display: 'flex' }} align="start">
-                            <Form.Item
-                                name="agentPromptCode"
-                                rules={[{ required: true, message: '请选择提示词模板' }]}
-                                noStyle
-                            >
-                                <Select
-                                    showSearch
-                                    placeholder="选择提示词模板"
-                                    options={promptOptions}
-                                    filterOption={(input, option) =>
-                                        (option?.label ?? '').toLowerCase().includes(input.toLowerCase()) ||
-                                        (option?.value ?? '').toLowerCase().includes(input.toLowerCase())
-                                    }
-                                    style={{ width: 440 }}
-                                />
-                            </Form.Item>
-                            <Tooltip title="新建提示词模板">
-                                <Button
-                                    icon={<PlusOutlined />}
-                                    onClick={() => setPromptCreateVisible(true)}
-                                />
-                            </Tooltip>
-                        </Space>
-                    </Form.Item>
-                    <Form.Item name="memoryPolicy" label="记忆策略" rules={[{ required: true }]}>
-                        <Select options={memoryOptions} />
-                    </Form.Item>
+                <Space direction="vertical" style={{ width: '100%' }} size={16}>
+                    {/* ─── 身份信息 ─── */}
+                    <div
+                        style={{
+                            backgroundColor: token.colorFillAlter,
+                            padding: '16px 16px 0 16px',
+                            borderRadius: 8,
+                        }}
+                    >
+                        <Typography.Text strong style={{ display: 'block', marginBottom: 12 }}>
+                            🏷️ 身份信息
+                        </Typography.Text>
+                        <Form.Item label="编码 (Code)">
+                            <Input value={agent?.agentCode} disabled />
+                        </Form.Item>
+                        <Form.Item label="角色 (Role)">
+                            <Input value={getAgentRoleLabel(agent?.roleType)} disabled />
+                        </Form.Item>
+                        <Form.Item name="agentName" label="名称" rules={[{ required: true, message: '请输入名称' }]}>
+                            <Input placeholder="请输入智能体名称" />
+                        </Form.Item>
+                        <Form.Item name="objective" label="目标 (Objective)">
+                            <TextArea rows={3} placeholder="描述该智能体的主要目标和职责" />
+                        </Form.Item>
+                        <Form.Item name="isActive" label="状态" valuePropName="checked">
+                            <Switch checkedChildren="启用" unCheckedChildren="停用" />
+                        </Form.Item>
+                    </div>
+
+                    {/* ─── AI 模型与提示词 ─── */}
+                    <div
+                        style={{
+                            backgroundColor: token.colorFillAlter,
+                            padding: '16px 16px 0 16px',
+                            borderRadius: 8,
+                        }}
+                    >
+                        <Typography.Text strong style={{ display: 'block', marginBottom: 12 }}>
+                            🧠 AI 模型与提示词
+                        </Typography.Text>
+                        <Form.Item name="modelConfigKey" label="AI 模型配置" rules={[{ required: true }]}>
+                            <Select options={modelConfigOptions} showSearch />
+                        </Form.Item>
+                        <Form.Item label="提示词模板" required>
+                            <Space style={{ display: 'flex' }} align="start">
+                                <Form.Item
+                                    name="agentPromptCode"
+                                    rules={[{ required: true, message: '请选择提示词模板' }]}
+                                    noStyle
+                                >
+                                    <Select
+                                        showSearch
+                                        placeholder="选择提示词模板"
+                                        options={promptOptions}
+                                        filterOption={(input, option) =>
+                                            (option?.label ?? '').toLowerCase().includes(input.toLowerCase()) ||
+                                            (option?.value ?? '').toLowerCase().includes(input.toLowerCase())
+                                        }
+                                        style={{ width: 440 }}
+                                    />
+                                </Form.Item>
+                                <Tooltip title="新建提示词模板">
+                                    <Button
+                                        icon={<PlusOutlined />}
+                                        onClick={() => setPromptCreateVisible(true)}
+                                    />
+                                </Tooltip>
+                            </Space>
+                        </Form.Item>
+                        <Form.Item name="memoryPolicy" label="记忆策略" rules={[{ required: true }]}>
+                            <Select options={memoryOptions} />
+                        </Form.Item>
+                    </div>
                 </Space>
             ),
         },
@@ -220,7 +250,8 @@ export const AgentEditDrawer: React.FC<AgentEditDrawerProps> = ({
             key: 'capabilities',
             label: '能力与规范',
             children: (
-                <Space direction="vertical" style={{ width: '100%' }}>
+                <Space direction="vertical" style={{ width: '100%' }} size={16}>
+                    {/* ─── 输出与技能 ─── */}
                     <Form.Item name="outputSchemaCode" label="输出结构模板 (Schema)" rules={[{ required: true }]}>
                         <Select options={OUTPUT_SCHEMA_OPTIONS} placeholder="选择或自定义输出结构" />
                     </Form.Item>
@@ -236,32 +267,41 @@ export const AgentEditDrawer: React.FC<AgentEditDrawerProps> = ({
                             ) : null
                         }
                     </Form.Item>
+                    <Form.Item name="skillCodes" label="绑定技能">
+                        <Select
+                            mode="multiple"
+                            placeholder="选择绑定的辅助技能"
+                            options={skillsData?.data?.map((s: any) => ({ label: s.name, value: s.skillCode })) || []}
+                            allowClear
+                        />
+                    </Form.Item>
                     <Form.Item name="toolPolicy" label="工具策略">
                         <VisualToolPolicyBuilder />
                     </Form.Item>
                     <Form.Item name="guardrails" label="防护规则">
                         <VisualGuardrailsBuilder />
                     </Form.Item>
-                </Space>
-            ),
-        },
-        {
-            key: 'runtime',
-            label: '运行策略',
-            children: (
-                <Space direction="vertical" style={{ width: '100%' }}>
-                    <Form.Item name="timeoutMs" label="超时控制 (ms)" rules={[{ required: true }]}>
-                        <InputNumber min={1000} max={300000} style={{ width: '100%' }} />
-                    </Form.Item>
-                    <RetryPolicyForm name="retryPolicy" />
-                    <Form.Item name="templateSource" label="模板来源" rules={[{ required: true }]}>
-                        <Select
-                            options={[
-                                { label: '私有 (Private)', value: 'PRIVATE' },
-                                { label: '公共 (Public)', value: 'PUBLIC' },
-                            ]}
-                        />
-                    </Form.Item>
+
+                    {/* ─── 运行策略 (折叠) ─── */}
+                    <Collapse
+                        ghost
+                        style={{ backgroundColor: token.colorFillQuaternary, borderRadius: 8 }}
+                    >
+                        <Collapse.Panel key="runtime" header="⚙️ 运行策略 (按需展开)">
+                            <Form.Item name="timeoutMs" label="超时控制 (ms)" rules={[{ required: true }]}>
+                                <InputNumber min={1000} max={300000} style={{ width: '100%' }} />
+                            </Form.Item>
+                            <RetryPolicyForm name="retryPolicy" />
+                            <Form.Item name="templateSource" label="模板来源" rules={[{ required: true }]}>
+                                <Select
+                                    options={[
+                                        { label: '私有 (仅当前租户可见)', value: 'PRIVATE' },
+                                        { label: '公共 (共享到模板市场)', value: 'PUBLIC' },
+                                    ]}
+                                />
+                            </Form.Item>
+                        </Collapse.Panel>
+                    </Collapse>
                 </Space>
             ),
         },

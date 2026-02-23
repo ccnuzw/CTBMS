@@ -1,13 +1,14 @@
 import React, { useMemo } from 'react';
 import type { ColumnsType } from 'antd/es/table';
 import dayjs, { Dayjs } from 'dayjs';
-import { Button, Card, Input, Select, Space, Switch, Table, Tag, Typography, Popconfirm, Drawer, Alert } from 'antd';
+import { Button, Card, Input, Select, Space, Switch, Table, Tag, Typography, Drawer, Alert } from 'antd';
 import { WorkflowDefinitionDto, WorkflowDefinitionStatus, WorkflowMode, WorkflowUsageMethod, WorkflowVersionDto, WorkflowPublishAuditDto } from '@packages/types';
 
 import { useWorkflowDefinitionViewModel } from './workflow-definition/useWorkflowDefinitionViewModel';
 import { WorkflowDefinitionCreateDrawer } from './workflow-definition/WorkflowDefinitionCreateDrawer';
 import { WorkflowDefinitionVersionDrawer } from './workflow-definition/WorkflowDefinitionVersionDrawer';
 import { WorkflowDefinitionPublishWizardModal } from './workflow-definition/WorkflowDefinitionPublishWizardModal';
+import { WorkflowQuickRunnerModal } from './workflow-definition/WorkflowQuickRunnerModal';
 import {
   modeOptions,
   usageMethodOptions,
@@ -108,9 +109,7 @@ export const WorkflowDefinitionPage: React.FC = () => {
               <Button type="link" onClick={() => { state.setStudioVersion(record); state.setStudioVisible(true); }}>编辑画布</Button>
               <Button type="link" disabled={(queries.versions?.length ?? 0) < 2} onClick={() => state.setDiffVisible(true)}>对比版本</Button>
               <Button type="link" disabled={!canOpenPublishWizard || queries.dependencyCatalogLoading} loading={isPublishing} onClick={() => actions.handleOpenPublishWizard(record)}>发布</Button>
-              <Popconfirm title="确认要运行这个版本吗？" onConfirm={() => actions.handleTriggerExecution(record)} disabled={!canRun}>
-                <Button type="link" disabled={!canRun} loading={isRunning}>运行</Button>
-              </Popconfirm>
+              <Button type="link" disabled={!canRun} onClick={() => actions.handleOpenQuickRunner(record)}>运行</Button>
             </Space>
           );
         }
@@ -279,6 +278,15 @@ export const WorkflowDefinitionPage: React.FC = () => {
           <Alert type="info" showIcon message="至少需要两个版本才能进行差异对比" />
         )}
       </Drawer>
+
+      <WorkflowQuickRunnerModal
+        open={state.quickRunnerVisible}
+        definition={state.selectedDefinition}
+        version={state.quickRunnerVersion}
+        loading={mutations.triggerExecutionMutation.isPending && state.runningVersionId === state.quickRunnerVersion?.id}
+        onClose={() => { state.setQuickRunnerVisible(false); state.setQuickRunnerVersion(null); }}
+        onRun={actions.handleSubmitQuickRunner}
+      />
     </Card>
   );
 };

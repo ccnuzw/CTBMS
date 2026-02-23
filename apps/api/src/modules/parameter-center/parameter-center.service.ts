@@ -180,6 +180,9 @@ export class ParameterCenterService {
         defaultValue: this.toNullableJsonValue(dto.defaultValue),
         minValue: this.toNullableJsonValue(dto.minValue),
         maxValue: this.toNullableJsonValue(dto.maxValue),
+        uiComponent: dto.uiComponent ?? null,
+        uiProps: this.toNullableJsonValue(dto.uiProps),
+        optionsSourceId: dto.optionsSourceId ?? null,
         scopeLevel: dto.scopeLevel,
         scopeValue: dto.scopeValue ?? null,
         inheritedFrom: dto.inheritedFrom ?? null,
@@ -275,6 +278,8 @@ export class ParameterCenterService {
       paramName: dto.paramName,
       paramType: dto.paramType,
       unit: dto.unit,
+      uiComponent: dto.uiComponent,
+      optionsSourceId: dto.optionsSourceId,
       scopeLevel: dto.scopeLevel,
       scopeValue: dto.scopeValue,
       inheritedFrom: dto.inheritedFrom,
@@ -300,6 +305,9 @@ export class ParameterCenterService {
     }
     if (Object.prototype.hasOwnProperty.call(dto, 'maxValue')) {
       data.maxValue = this.toNullableJsonValue(dto.maxValue);
+    }
+    if (Object.prototype.hasOwnProperty.call(dto, 'uiProps')) {
+      data.uiProps = this.toNullableJsonValue(dto.uiProps);
     }
 
     const updated = await this.prisma.parameterItem.update({

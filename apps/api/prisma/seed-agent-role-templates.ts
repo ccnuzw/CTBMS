@@ -223,6 +223,7 @@ async function seedAgentRoleTemplates() {
         timeoutMs: 30000,
         templateSource: 'PUBLIC',
         isActive: true,
+        version: 2,
       },
       create: {
         agentCode: item.agentCode,
@@ -247,6 +248,7 @@ async function seedAgentRoleTemplates() {
         },
         templateSource: 'PUBLIC',
         isActive: true,
+        version: 2,
       },
     });
   }

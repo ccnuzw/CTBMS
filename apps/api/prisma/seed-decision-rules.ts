@@ -34,88 +34,54 @@ async function seedDecisionRules() {
     },
   });
 
-  const rules = [
-    {
-      ruleCode: 'parsed_thesis_exists',
-      name: '结构化结论存在',
-      fieldPath: 'parsed.thesis',
-      operator: 'EXISTS',
-      expectedValue: true,
-      weight: 4,
-      priority: 120,
+  const conditionAST = {
+    root: {
+      logic: 'AND',
+      children: [
+        {
+          id: 'parsed_thesis_exists',
+          fieldPath: 'parsed.thesis',
+          operator: 'EXISTS',
+          expectedValue: true,
+        },
+        {
+          id: 'parsed_confidence_floor',
+          fieldPath: 'parsed.confidence',
+          operator: 'GTE',
+          expectedValue: 0.55,
+        },
+        {
+          id: 'parsed_risk_level_not_extreme',
+          fieldPath: 'parsed.riskLevel',
+          operator: 'NOT_IN',
+          expectedValue: ['EXTREME'],
+        },
+        {
+          id: 'parsed_evidence_exists',
+          fieldPath: 'parsed.evidence',
+          operator: 'EXISTS',
+          expectedValue: true,
+        },
+      ],
     },
-    {
-      ruleCode: 'parsed_confidence_floor',
-      name: '结构化置信度阈值',
-      fieldPath: 'parsed.confidence',
-      operator: 'GTE',
-      expectedValue: 0.55,
-      weight: 5,
-      priority: 110,
-    },
-    {
-      ruleCode: 'parsed_risk_level_not_extreme',
-      name: '结构化风险等级不得为极高',
-      fieldPath: 'parsed.riskLevel',
-      operator: 'NOT_IN',
-      expectedValue: ['EXTREME'],
-      weight: 6,
-      priority: 100,
-    },
-    {
-      ruleCode: 'parsed_evidence_exists',
-      name: '结构化证据列表存在',
-      fieldPath: 'parsed.evidence',
-      operator: 'EXISTS',
-      expectedValue: true,
-      weight: 3,
-      priority: 90,
-    },
-  ] as const;
+  };
 
-  const activeRuleCodes = rules.map((rule) => rule.ruleCode);
+  await prisma.decisionRulePack.update({
+    where: { id: pack.id },
+    data: {
+      conditionAST,
+    },
+  });
+
+  // Since we migrated to AST, we will deactivate old flat rules.
   await prisma.decisionRule.updateMany({
     where: {
       rulePackId: pack.id,
-      ruleCode: {
-        notIn: activeRuleCodes,
-      },
     },
     data: {
       isActive: false,
     },
   });
-
-  for (const rule of rules) {
-    await prisma.decisionRule.upsert({
-      where: {
-        rulePackId_ruleCode: {
-          rulePackId: pack.id,
-          ruleCode: rule.ruleCode,
-        },
-      },
-      update: {
-        name: rule.name,
-        fieldPath: rule.fieldPath,
-        operator: rule.operator,
-        expectedValue: rule.expectedValue,
-        weight: rule.weight,
-        priority: rule.priority,
-        isActive: true,
-      },
-      create: {
-        rulePackId: pack.id,
-        ruleCode: rule.ruleCode,
-        name: rule.name,
-        fieldPath: rule.fieldPath,
-        operator: rule.operator,
-        expectedValue: rule.expectedValue,
-        weight: rule.weight,
-        priority: rule.priority,
-        isActive: true,
-      },
-    });
-  }
 
   console.log(`✅ 决策规则包已更新: ${RULE_PACK_CODE}`);
 }

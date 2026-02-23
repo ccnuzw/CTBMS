@@ -3,6 +3,7 @@ import {
   CreateWorkflowDefinitionDto,
   CreateWorkflowVersionDto,
   PublishWorkflowVersionDto,
+  PreflightWorkflowDslDto,
   ValidateWorkflowDslDto,
   ValidateWorkflowNodePreviewDto,
   WorkflowDefinitionDto,
@@ -13,6 +14,7 @@ import {
   WorkflowDefinitionQueryDto,
   WorkflowExecutionDetailDto,
   WorkflowValidationResult,
+  WorkflowDslPreflightResultDto,
   WorkflowVersionDto,
 } from '@packages/types';
 import { apiClient } from '../../../api/client';
@@ -24,6 +26,24 @@ export const useWorkflowDefinitions = (query?: Partial<WorkflowDefinitionQueryDt
     queryKey: ['workflow-definitions', query],
     queryFn: async () => {
       const res = await apiClient.get<WorkflowDefinitionPageDto>(API_BASE, {
+        params: query,
+      });
+      return res.data;
+    },
+  });
+};
+
+export const usePublishedWorkflows = (query?: {
+  page?: number;
+  pageSize?: number;
+  categoryId?: string;
+  keyword?: string;
+  orderBy?: 'stars' | 'createdAt';
+}) => {
+  return useQuery<any>({
+    queryKey: ['workflow-definitions-published', query],
+    queryFn: async () => {
+      const res = await apiClient.get<any>(`${API_BASE}/public/published`, {
         params: query,
       });
       return res.data;
@@ -149,6 +169,18 @@ export const useValidateWorkflowDsl = () => {
   });
 };
 
+export const usePreflightWorkflowDsl = () => {
+  return useMutation({
+    mutationFn: async (payload: PreflightWorkflowDslDto) => {
+      const res = await apiClient.post<WorkflowDslPreflightResultDto>(
+        `${API_BASE}/preflight-dsl`,
+        payload,
+      );
+      return res.data;
+    },
+  });
+};
+
 export const usePreviewWorkflowNode = () => {
   return useMutation({
     mutationFn: async (payload: ValidateWorkflowNodePreviewDto) => {
@@ -164,7 +196,11 @@ export const usePreviewWorkflowNode = () => {
 export const useTriggerWorkflowExecution = () => {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async (payload: { workflowDefinitionId: string; workflowVersionId?: string }) => {
+    mutationFn: async (payload: {
+      workflowDefinitionId: string;
+      workflowVersionId?: string;
+      paramSnapshot?: Record<string, unknown>;
+    }) => {
       const res = await apiClient.post<WorkflowExecutionDetailDto>(
         '/workflow-executions/trigger',
         payload,
@@ -173,6 +209,24 @@ export const useTriggerWorkflowExecution = () => {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['workflow-executions'] });
+    },
+  });
+};
+
+export const useSmartParseParams = () => {
+  return useMutation({
+    mutationFn: async (payload: {
+      workflowDefinitionId: string;
+      userInput: string;
+      paramSchema?: Record<string, unknown>;
+    }) => {
+      const { workflowDefinitionId, ...body } = payload;
+      const res = await apiClient.post<{
+        params: Record<string, unknown>;
+        confidence: string;
+        reasoning: string;
+      }>(`${API_BASE}/${workflowDefinitionId}/smart-parse-params`, body);
+      return res.data;
     },
   });
 };

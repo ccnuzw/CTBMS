@@ -20,13 +20,23 @@ import {
   CreateDecisionRuleRequest,
   PublishDecisionRulePackRequest,
   UpdateDecisionRuleRequest,
+  SmartParseRuleASTRequest,
 } from './dto';
 
 type AuthRequest = ExpressRequest & { user?: { id?: string } };
 
 @Controller('decision-rule-packs')
 export class DecisionRuleController {
-  constructor(private readonly decisionRuleService: DecisionRuleService) {}
+  constructor(private readonly decisionRuleService: DecisionRuleService) { }
+
+  @Post('smart-parse-ast')
+  smartParseAst(@Body() dto: SmartParseRuleASTRequest, @Request() req: AuthRequest) {
+    const userId = req.user?.id;
+    if (!userId) {
+      throw new UnauthorizedException('User not authenticated');
+    }
+    return this.decisionRuleService.smartParseAst(dto);
+  }
 
   @Post()
   createPack(@Body() dto: CreateDecisionRulePackRequest, @Request() req: AuthRequest) {

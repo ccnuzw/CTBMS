@@ -17,6 +17,36 @@ export const DecisionRuleOperatorEnum = z.enum([
   'BETWEEN',
 ]);
 
+// --- [AST Modification] ---
+export const DecisionRuleLogicEnum = z.enum(['AND', 'OR']);
+
+// A single leaf node representing one concrete condition
+export const DecisionRuleConditionLeafSchema = z.object({
+  id: z.string().uuid().optional(), // For React keys or DB tracing
+  fieldPath: z.string().min(1, 'fieldPath is required'),
+  operator: DecisionRuleOperatorEnum,
+  expectedValue: z.unknown().nullable().optional(),
+});
+
+// A logical group node that can contain sub-nodes or leaves (Recursive)
+export type DecisionRuleConditionNode = {
+  logic: z.infer<typeof DecisionRuleLogicEnum>;
+  children: Array<DecisionRuleConditionNode | z.infer<typeof DecisionRuleConditionLeafSchema>>;
+};
+
+export const DecisionRuleConditionNodeSchema: z.ZodType<DecisionRuleConditionNode> = z.lazy(() =>
+  z.object({
+    logic: DecisionRuleLogicEnum,
+    children: z.array(z.union([DecisionRuleConditionNodeSchema, DecisionRuleConditionLeafSchema])),
+  })
+);
+
+// The top-level AST structure
+export const DecisionRuleConditionASTSchema = z.object({
+  root: DecisionRuleConditionNodeSchema.nullable().optional(),
+});
+// --------------------------
+
 export const DecisionRulePackOwnerTypeEnum = z.enum(['SYSTEM', 'ADMIN', 'USER']);
 export const DecisionRuleLayerEnum = z.enum([
   'DEFAULT',
@@ -62,7 +92,8 @@ export const DecisionRulePackSchema = z.object({
 });
 
 export const DecisionRulePackDetailSchema = DecisionRulePackSchema.extend({
-  rules: z.array(DecisionRuleSchema),
+  rules: z.array(DecisionRuleSchema), // Legacy flat mapping (kept for backwards compatibility if needed during migration)
+  conditionAST: DecisionRuleConditionASTSchema.optional(), // New AST tree representation
 });
 
 export const CreateDecisionRuleSchema = z.object({
@@ -96,7 +127,8 @@ export const CreateDecisionRulePackSchema = z.object({
   ownerType: DecisionRulePackOwnerTypeEnum.optional(),
   templateSource: WorkflowTemplateSourceEnum.default('PRIVATE'),
   priority: z.coerce.number().int().min(0).max(1000).default(0),
-  rules: z.array(CreateDecisionRuleSchema).max(200).optional(),
+  rules: z.array(CreateDecisionRuleSchema).max(200).optional(),           // Legacy
+  conditionAST: DecisionRuleConditionASTSchema.nullable().optional(),     // New feature
 });
 
 export const UpdateDecisionRulePackSchema = z.object({
@@ -107,6 +139,7 @@ export const UpdateDecisionRulePackSchema = z.object({
   ownerType: DecisionRulePackOwnerTypeEnum.optional(),
   isActive: z.boolean().optional(),
   priority: z.coerce.number().int().min(0).max(1000).optional(),
+  conditionAST: DecisionRuleConditionASTSchema.nullable().optional(),
 });
 
 export const DecisionRulePackQuerySchema = z.object({
@@ -120,6 +153,10 @@ export const DecisionRulePackQuerySchema = z.object({
 
 export const PublishDecisionRulePackSchema = z.object({
   comment: z.string().max(500).optional(),
+});
+
+export const SmartParseRuleASTSchema = z.object({
+  naturalLanguage: z.string().min(1).max(2000),
 });
 
 export const DecisionRulePackPageSchema = z.object({
@@ -143,3 +180,10 @@ export type CreateDecisionRulePackDto = z.infer<typeof CreateDecisionRulePackSch
 export type UpdateDecisionRulePackDto = z.infer<typeof UpdateDecisionRulePackSchema>;
 export type DecisionRulePackQueryDto = z.infer<typeof DecisionRulePackQuerySchema>;
 export type PublishDecisionRulePackDto = z.infer<typeof PublishDecisionRulePackSchema>;
+export type SmartParseRuleASTDto = z.infer<typeof SmartParseRuleASTSchema>;
+
+// --- [AST Types] ---
+export type DecisionRuleLogic = z.infer<typeof DecisionRuleLogicEnum>;
+export type DecisionRuleConditionLeafDto = z.infer<typeof DecisionRuleConditionLeafSchema>;
+export type DecisionRuleConditionNodeDto = DecisionRuleConditionNode;
+export type DecisionRuleConditionASTDto = z.infer<typeof DecisionRuleConditionASTSchema>;

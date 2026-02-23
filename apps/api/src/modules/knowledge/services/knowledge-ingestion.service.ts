@@ -49,11 +49,7 @@ export class KnowledgeIngestionService {
     provider: string;
     modelName: string;
   }> {
-    const configs = await this.configService.getAllAIModelConfigs();
-    // Prefer active config, prioritize specific provider if needed
-    const activeConfig =
-      configs.find((c) => c.isActive && c.configKey !== 'DEFAULT') ||
-      (await this.configService.getDefaultAIConfig());
+    const activeConfig = await this.configService.getDefaultAIConfig();
 
     if (!activeConfig) {
       // Fallback to Env if no config in DB

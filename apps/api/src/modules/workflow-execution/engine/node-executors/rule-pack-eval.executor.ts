@@ -118,28 +118,56 @@ export class RulePackEvalNodeExecutor implements WorkflowNodeExecutor {
             throw new Error(`规则包不存在或无权限访问: ${missingCodes.join(', ')}`);
         }
 
-        const flattenedRules = packs.flatMap((pack) =>
-            pack.rules.map((rule) => ({
-                packCode: pack.rulePackCode,
-                ruleLayer: pack.ruleLayer,
-                rule,
-            })),
-        );
-        if (flattenedRules.length === 0) {
-            throw new Error('规则包未配置可用规则');
+        const allHits: RuleHitRecord[] = [];
+        let anyPackPassed = false;
+        let finalHitScore = 0;
+
+        for (const pack of packs) {
+            // New AST based evaluation
+            const conditionAST = pack.conditionAST as Record<string, unknown> | null;
+            if (conditionAST && conditionAST.root) {
+                const astResult = this.evaluateASTNode(
+                    context.input,
+                    conditionAST.root as Record<string, unknown>,
+                    pack.rulePackCode,
+                    pack.ruleLayer
+                );
+
+                allHits.push(...astResult.hits);
+                if (astResult.passed) {
+                    anyPackPassed = true;
+                    finalHitScore = Math.max(finalHitScore, 100); // AST resolution is boolean, so pass implies 100%
+                }
+            } else {
+                // Legacy Flat Rules evaluation
+                if (pack.rules && pack.rules.length > 0) {
+                    const legacyHits = pack.rules.map((rule) => {
+                        const base = this.evaluateRule(context.input, rule);
+                        return {
+                            ...base,
+                            source: 'DECISION_RULE_PACK' as RuleSource,
+                            sourcePackCode: pack.rulePackCode,
+                            sourceLayer: pack.ruleLayer,
+                        };
+                    });
+
+                    allHits.push(...legacyHits);
+
+                    const totalWeight = legacyHits.reduce((acc, hit) => acc + hit.weight, 0);
+                    const matchedWeight = legacyHits.filter((hit) => hit.matched).reduce((acc, hit) => acc + hit.weight, 0);
+                    const packScore = totalWeight > 0 ? (matchedWeight / totalWeight) * 100 : 0;
+
+                    if (packScore >= minHitScore) {
+                        anyPackPassed = true;
+                    }
+                    finalHitScore = Math.max(finalHitScore, packScore);
+                }
+            }
         }
 
-        const ruleHits: RuleHitRecord[] = flattenedRules.map((item) => {
-            const base = this.evaluateRule(context.input, item.rule);
-            return {
-                ...base,
-                source: 'DECISION_RULE_PACK',
-                sourcePackCode: item.packCode,
-                sourceLayer: item.ruleLayer,
-            };
-        });
-
-        const summary = this.buildSummary(ruleHits, minHitScore, context.input);
+        if (allHits.length === 0) {
+            throw new Error('规则包未配置可用AST规则或平面规则');
+        }
 
         return {
             status: 'SUCCESS',
@@ -155,10 +183,79 @@ export class RulePackEvalNodeExecutor implements WorkflowNodeExecutor {
                     ruleLayer: pack.ruleLayer,
                     applicableScopes: pack.applicableScopes,
                 })),
-                ...summary,
+                hitScore: this.toClampedScore(finalHitScore, 0),
+                minHitScore,
+                passed: anyPackPassed,
+                matchedRuleCount: allHits.filter((hit) => hit.matched).length,
+                totalRuleCount: allHits.length,
+                ruleHits: allHits,
                 evaluatedAt: new Date().toISOString(),
             },
         };
+    }
+
+    private evaluateASTNode(
+        input: Record<string, unknown>,
+        node: Record<string, unknown>,
+        packCode: string,
+        ruleLayer: string
+    ): { passed: boolean; hits: RuleHitRecord[] } {
+        if (!node) {
+            return { passed: true, hits: [] };
+        }
+
+        // It is a Logic Group Node
+        if (typeof node.logic === 'string' && Array.isArray(node.children)) {
+            const isAnd = node.logic.toUpperCase() === 'AND';
+            let groupPassed = isAnd ? true : false;
+            const collectedHits: RuleHitRecord[] = [];
+
+            if (node.children.length === 0) {
+                return { passed: true, hits: [] };
+            }
+
+            for (const child of node.children) {
+                const childResult = this.evaluateASTNode(input, child, packCode, ruleLayer);
+                collectedHits.push(...childResult.hits);
+
+                if (isAnd) {
+                    groupPassed = groupPassed && childResult.passed;
+                } else {
+                    groupPassed = groupPassed || childResult.passed;
+                }
+            }
+
+            return { passed: groupPassed, hits: collectedHits };
+        }
+
+        // It is a Leaf Node (Condition)
+        const fieldPath = this.readString(node.fieldPath);
+        const operator = this.readString(node.operator);
+
+        if (!fieldPath || !operator) {
+            // Invalid leaf, ignore safely
+            return { passed: true, hits: [] };
+        }
+
+        const expectedValue = (node.expectedValue !== undefined ? node.expectedValue : null) as Prisma.JsonValue | null;
+        const actualValue = this.readValueByPath(input, fieldPath);
+        const matched = this.matchRule(actualValue, operator, expectedValue);
+
+        const hit: RuleHitRecord = {
+            ruleCode: this.readString(node.id) ?? 'AST_LEAF',
+            ruleName: `Ast Rule on ${fieldPath}`,
+            fieldPath,
+            operator,
+            expectedValue,
+            actualValue: actualValue ?? null,
+            matched,
+            weight: 1, // AST leaves don't strictly use weight in the same way, but keeping interface
+            source: 'DECISION_RULE_PACK',
+            sourcePackCode: packCode,
+            sourceLayer: ruleLayer,
+        };
+
+        return { passed: matched, hits: [hit] };
     }
 
     private async executeMarketAlertRule(

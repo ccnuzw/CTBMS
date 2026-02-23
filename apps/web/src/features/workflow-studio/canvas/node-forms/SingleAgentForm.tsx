@@ -1,11 +1,10 @@
 import React, { useMemo } from 'react';
 import {
   Alert,
+  AutoComplete,
   Card,
-  Collapse,
   Descriptions,
   Form,
-  Input,
   Select,
   Slider,
   Space,
@@ -13,12 +12,8 @@ import {
   Typography,
   theme,
 } from 'antd';
-import { InfoCircleOutlined, SettingOutlined } from '@ant-design/icons';
+import { InfoCircleOutlined } from '@ant-design/icons';
 import { useAgentProfiles } from '../../../workflow-agent-center/api';
-import { StructuredPromptBuilder } from '../../../workflow-agent-center/components/StructuredPromptBuilder';
-import { OutputSchemaBuilder } from '../../../workflow-agent-center/components/OutputSchemaBuilder';
-import { VisualGuardrailsBuilder } from '../../../workflow-agent-center/components/VisualGuardrailsBuilder';
-import { VisualToolPolicyBuilder } from '../../../workflow-agent-center/components/VisualToolPolicyBuilder';
 
 const { Text } = Typography;
 
@@ -26,26 +21,6 @@ interface SingleAgentFormProps {
   config: Record<string, unknown>;
   onChange: (key: string, value: unknown) => void;
 }
-
-const stringifySchema = (value: unknown): string => {
-  if (!value) return '';
-  if (typeof value === 'string') return value;
-  try {
-    return JSON.stringify(value, null, 2);
-  } catch {
-    return '';
-  }
-};
-
-const parseSchemaValue = (value: string): unknown => {
-  const raw = value.trim();
-  if (!raw) return undefined;
-  try {
-    return JSON.parse(raw);
-  } catch {
-    return value;
-  }
-};
 
 export const SingleAgentForm: React.FC<SingleAgentFormProps> = ({ config, onChange }) => {
   const { token } = theme.useToken();
@@ -67,21 +42,15 @@ export const SingleAgentForm: React.FC<SingleAgentFormProps> = ({ config, onChan
     );
   }, [selectedAgentCode, agentProfilePage?.data]);
 
-  // 是否有任何高级覆盖项被填写
-  const hasOverrides = useMemo(() => {
-    const hasPrompt = Boolean(config.systemPrompt || config.systemPromptOverride);
-    const hasSchema = Boolean(config.outputSchema);
-    const hasGuardrails = Boolean(
-      config.guardrails && Object.keys(config.guardrails as Record<string, unknown>).length > 0,
-    );
-    const hasToolPolicy = Boolean(
-      config.toolPolicy && Object.keys(config.toolPolicy as Record<string, unknown>).length > 0,
-    );
-    return hasPrompt || hasSchema || hasGuardrails || hasToolPolicy;
-  }, [config.systemPrompt, config.systemPromptOverride, config.outputSchema, config.guardrails, config.toolPolicy]);
-
   return (
     <Form layout="vertical" size="small">
+      <Alert
+        type="info"
+        showIcon
+        style={{ marginBottom: 12 }}
+        message="已启用简化配置模式"
+        description="默认继承智能体中心配置，仅保留最常用的执行参数。"
+      />
       {/* ── 第一步：选择智能体（必填）── */}
       <Form.Item label="选择智能体" required>
         <Select
@@ -131,7 +100,7 @@ export const SingleAgentForm: React.FC<SingleAgentFormProps> = ({ config, onChan
           </Descriptions>
           <Text type="secondary" style={{ fontSize: 11 }}>
             <InfoCircleOutlined style={{ marginRight: 4 }} />
-            以上为该智能体的默认配置，如需修改请展开下方"高级覆盖"
+            以上为该智能体的默认配置，节点将自动继承。
           </Text>
         </Card>
       )}
@@ -166,107 +135,25 @@ export const SingleAgentForm: React.FC<SingleAgentFormProps> = ({ config, onChan
       </Form.Item>
 
       {/* ── 模型覆盖（可选）── */}
-      <Form.Item label="模型覆盖（可选）" extra="不填则使用智能体默认模型">
-        <Input
+      <Form.Item label="模型覆盖（可选）" extra="可手填，或选择常用模型作为私有覆盖">
+        <AutoComplete
           value={(config.modelOverride as string) ?? (config.model as string)}
-          onChange={(event) => {
-            onChange('modelOverride', event.target.value);
-            onChange('model', event.target.value);
+          onChange={(value) => {
+            onChange('modelOverride', value);
+            onChange('model', value);
           }}
-          placeholder="例如：openai/gpt-4.1"
+          options={[
+            { value: 'openai/gpt-4o' },
+            { value: 'openai/gpt-4o-mini' },
+            { value: 'anthropic/claude-3-5-sonnet-latest' },
+            { value: 'google/gemini-1.5-pro-latest' },
+            { value: 'google/gemini-1.5-flash-latest' },
+            { value: 'deepseek/deepseek-chat' },
+            { value: 'deepseek/deepseek-reasoner' },
+          ]}
+          placeholder="例如：openai/gpt-4o"
         />
       </Form.Item>
-
-      {/* ── 高级覆盖（默认折叠）── */}
-      <Collapse
-        size="small"
-        defaultActiveKey={hasOverrides ? ['advanced'] : []}
-        items={[
-          {
-            key: 'advanced',
-            label: (
-              <Space size={8}>
-                <SettingOutlined />
-                <span>高级覆盖</span>
-                {hasOverrides && (
-                  <Text type="warning" style={{ fontSize: 11 }}>
-                    已自定义
-                  </Text>
-                )}
-              </Space>
-            ),
-            children: (
-              <Space direction="vertical" size={16} style={{ width: '100%' }}>
-                <Alert
-                  type="info"
-                  showIcon
-                  message="以下配置项不填写则自动继承智能体的默认设置"
-                  style={{ marginBottom: 0 }}
-                />
-
-                <Collapse
-                  size="small"
-                  items={[
-                    {
-                      key: 'prompt',
-                      label: '提示词覆盖',
-                      children: (
-                        <StructuredPromptBuilder
-                          value={(config.systemPrompt as string) ?? ''}
-                          onChange={(value) => {
-                            onChange('systemPrompt', value);
-                            onChange('systemPromptOverride', value);
-                          }}
-                        />
-                      ),
-                    },
-                    {
-                      key: 'schema',
-                      label: '输出结构覆盖',
-                      children: (
-                        <OutputSchemaBuilder
-                          value={stringifySchema(config.outputSchema)}
-                          onChange={(value) => {
-                            onChange('outputSchema', parseSchemaValue(value));
-                            if (value.trim()) {
-                              onChange('outputSchemaCode', 'CUSTOM');
-                            }
-                          }}
-                        />
-                      ),
-                    },
-                    {
-                      key: 'guardrails',
-                      label: '安全防护覆盖',
-                      children: (
-                        <VisualGuardrailsBuilder
-                          value={(config.guardrails as Record<string, unknown>) ?? {}}
-                          onChange={(value) => onChange('guardrails', value)}
-                        />
-                      ),
-                    },
-                    {
-                      key: 'tools',
-                      label: '工具策略覆盖',
-                      children: (
-                        <VisualToolPolicyBuilder
-                          value={
-                            (config.toolPolicy as {
-                              allowedTools?: string[];
-                              blockedTools?: string[];
-                            }) ?? {}
-                          }
-                          onChange={(value) => onChange('toolPolicy', value)}
-                        />
-                      ),
-                    },
-                  ]}
-                />
-              </Space>
-            ),
-          },
-        ]}
-      />
     </Form>
   );
 };

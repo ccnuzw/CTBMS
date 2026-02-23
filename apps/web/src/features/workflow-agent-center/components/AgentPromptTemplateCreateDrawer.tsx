@@ -1,12 +1,14 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
     App,
     Button,
+    Collapse,
     Drawer,
     Form,
     Input,
     Select,
     Space,
+    Typography,
 } from 'antd';
 import {
     CreateAgentPromptTemplateDto,
@@ -36,9 +38,26 @@ export const AgentPromptTemplateCreateDrawer: React.FC<AgentPromptTemplateCreate
     const { message } = App.useApp();
     const [createForm] = Form.useForm<CreateAgentPromptTemplateDto>();
     const createMutation = useCreateAgentPromptTemplate();
+    const [isPromptCodeCustomized, setIsPromptCodeCustomized] = useState(false);
+
+    /** 根据中文名称生成大写 SNAKE_CASE */
+    const slugifyPromptCode = (name?: string): string => {
+        const normalized = (name || '')
+            .trim()
+            .replace(/[\s.-]+/g, '_')
+            .replace(/[^\w\u4e00-\u9fa5]+/g, '') // allow Chinese chars for Pinyin mapping backends, but here just raw
+            .replace(/_+/g, '_')
+            .replace(/^_|_$/g, '');
+        if (!normalized) return '';
+        // Note: ideal is converting Pinyin, but a simple uppercase is fine for now
+        // A better approach for Chinese names is to just use a prefix + timestamp if Pinyin is hard
+        // We will generate a base string, user can modify
+        return `PROMPT_${normalized.toUpperCase()}`;
+    };
 
     useEffect(() => {
         if (open) {
+            setIsPromptCodeCustomized(false);
             createForm.resetFields();
         }
     }, [open, createForm]);
@@ -102,19 +121,55 @@ export const AgentPromptTemplateCreateDrawer: React.FC<AgentPromptTemplateCreate
                 </Space>
             }
         >
-            <Form form={createForm} layout="vertical" initialValues={{
-                roleType: 'ANALYST',
-                outputFormat: 'json',
-                templateSource: 'PRIVATE',
-                variables: '{}',
-                guardrails: '{}',
-            }}>
-                <Form.Item name="promptCode" label="提示词编码" rules={[{ required: true }]}>
-                    <Input placeholder="例如: MARKET_ANALYSIS_PROMPT_V1" />
-                </Form.Item>
+            <Form
+                form={createForm}
+                layout="vertical"
+                initialValues={{
+                    roleType: 'ANALYST',
+                    outputFormat: 'json',
+                    templateSource: 'PRIVATE',
+                    variables: '{}',
+                    guardrails: '{}',
+                }}
+                onValuesChange={(changedValues, allValues) => {
+                    const changedName = changedValues.name as string | undefined;
+                    if (changedName !== undefined && !isPromptCodeCustomized) {
+                        // Very simple mock pinyin or just random suffix since browser TS doesn't have pinyin lib
+                        // To keep it simple, if no Pinyin, we just use the ID or generic name
+                        // A better approach: generate a random string or let backend handle it, but for UI:
+                        createForm.setFieldsValue({ promptCode: `PROMPT_${Date.now().toString().slice(-6)}` });
+                    }
+
+                    const changedCode = changedValues.promptCode as string | undefined;
+                    if (changedCode !== undefined) {
+                        setIsPromptCodeCustomized(true);
+                    }
+                }}
+            >
                 <Form.Item name="name" label="模板名称" rules={[{ required: true }]}>
-                    <Input />
+                    <Input placeholder="例如: 深度市场分析模板" />
                 </Form.Item>
+                <Collapse
+                    size="small"
+                    ghost
+                    style={{ marginBottom: 16, backgroundColor: '#fafafa', borderRadius: 6 }}
+                    items={[
+                        {
+                            key: 'custom-code',
+                            label: <Typography.Text type="secondary" style={{ fontSize: 13 }}>⚙️ 提示词编码 (自动生成，点击修改)</Typography.Text>,
+                            children: (
+                                <Form.Item
+                                    name="promptCode"
+                                    rules={[{ required: true }]}
+                                    style={{ marginBottom: 0 }}
+                                    extra="建议使用英文大写加下划线，用于代码中明确引用该模板"
+                                >
+                                    <Input placeholder="例如: MARKET_ANALYSIS_PROMPT_V1" />
+                                </Form.Item>
+                            ),
+                        },
+                    ]}
+                />
                 <Form.Item name="roleType" label="适用角色" rules={[{ required: true }]}>
                     <Select options={AGENT_ROLE_OPTIONS.map((r) => ({ label: getAgentRoleLabel(r), value: r }))} />
                 </Form.Item>

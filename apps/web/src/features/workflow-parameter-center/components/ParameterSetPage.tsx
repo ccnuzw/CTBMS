@@ -27,6 +27,7 @@ import {
   InputNumber,
   Switch,
   Divider,
+  Collapse,
   theme,
 } from 'antd';
 import {
@@ -35,6 +36,8 @@ import {
   HistoryOutlined,
   RollbackOutlined,
   WarningOutlined,
+  PlusOutlined,
+  MinusCircleOutlined,
 } from '@ant-design/icons';
 import type {
   CreateParameterItemDto,
@@ -109,7 +112,13 @@ export const ParameterSetPage: React.FC = () => {
         width: 260,
         render: (_, record) => (
           <Space size={4}>
-            <Button type="link" onClick={() => { vm.setters.setSelectedSetId(record.id); vm.setters.setDetailTab('items'); }}>
+            <Button
+              type="link"
+              onClick={() => {
+                vm.setters.setSelectedSetId(record.id);
+                vm.setters.setDetailTab('items');
+              }}
+            >
               查看详情
             </Button>
             <Popconfirm
@@ -120,7 +129,10 @@ export const ParameterSetPage: React.FC = () => {
               <Button
                 type="link"
                 disabled={!record.isActive || isPublished(record.version)}
-                loading={vm.mutations.publishSetMutation.isPending && vm.state.publishingSetId === record.id}
+                loading={
+                  vm.mutations.publishSetMutation.isPending &&
+                  vm.state.publishingSetId === record.id
+                }
               >
                 {isPublished(record.version) ? '已发布' : '发布'}
               </Button>
@@ -140,7 +152,13 @@ export const ParameterSetPage: React.FC = () => {
         ),
       },
     ],
-    [vm.actions, vm.mutations.deleteSetMutation, vm.mutations.publishSetMutation.isPending, vm.setters, vm.state.publishingSetId],
+    [
+      vm.actions,
+      vm.mutations.deleteSetMutation,
+      vm.mutations.publishSetMutation.isPending,
+      vm.setters,
+      vm.state.publishingSetId,
+    ],
   );
 
   const itemColumns = useMemo<ColumnsType<ParameterItemDto>>(
@@ -197,7 +215,10 @@ export const ParameterSetPage: React.FC = () => {
         width: 180,
         render: (_, record) => {
           const hasDefault = record.defaultValue !== null && record.defaultValue !== undefined;
-          const isOverridden = hasDefault && record.value !== null && record.value !== undefined &&
+          const isOverridden =
+            hasDefault &&
+            record.value !== null &&
+            record.value !== undefined &&
             JSON.stringify(record.value) !== JSON.stringify(record.defaultValue);
           return (
             <Space size={4}>
@@ -228,7 +249,9 @@ export const ParameterSetPage: React.FC = () => {
         title: '作用域',
         dataIndex: 'scopeLevel',
         width: 130,
-        render: (value: string) => <Tag color={scopeColorMap[value] || 'default'}>{getScopeLabel(value)}</Tag>,
+        render: (value: string) => (
+          <Tag color={scopeColorMap[value] || 'default'}>{getScopeLabel(value)}</Tag>
+        ),
       },
       {
         title: '模板默认值',
@@ -241,7 +264,12 @@ export const ParameterSetPage: React.FC = () => {
         dataIndex: 'currentValue',
         width: 150,
         render: (value: unknown, record: Record<string, unknown>) => (
-          <span style={{ color: record.isOverridden ? token.colorWarning : undefined, fontWeight: record.isOverridden ? 600 : undefined }}>
+          <span
+            style={{
+              color: record.isOverridden ? token.colorWarning : undefined,
+              fontWeight: record.isOverridden ? 600 : undefined,
+            }}
+          >
             {formatValue(value)}
           </span>
         ),
@@ -270,9 +298,7 @@ export const ParameterSetPage: React.FC = () => {
         title: '操作',
         dataIndex: 'operation',
         width: 130,
-        render: (value: string) => (
-          <Tag color={operationColorMap[value] || 'default'}>{value}</Tag>
-        ),
+        render: (value: string) => <Tag color={operationColorMap[value] || 'default'}>{value}</Tag>,
       },
       { title: '字段', dataIndex: 'fieldPath', width: 120, render: (v?: string) => v || '-' },
       {
@@ -287,7 +313,12 @@ export const ParameterSetPage: React.FC = () => {
         width: 150,
         render: (value: unknown) => formatValue(value),
       },
-      { title: '变更原因', dataIndex: 'changeReason', ellipsis: true, render: (v?: string) => v || '-' },
+      {
+        title: '变更原因',
+        dataIndex: 'changeReason',
+        ellipsis: true,
+        render: (v?: string) => v || '-',
+      },
       { title: '操作人', dataIndex: 'changedByUserId', width: 120 },
       {
         title: '时间',
@@ -327,7 +358,10 @@ export const ParameterSetPage: React.FC = () => {
               onChange={(event) => {
                 const nextValue = event.target.value;
                 vm.setters.setKeywordInput(nextValue);
-                if (!nextValue.trim()) { vm.setters.setKeyword(undefined); vm.setters.setPage(1); }
+                if (!nextValue.trim()) {
+                  vm.setters.setKeyword(undefined);
+                  vm.setters.setPage(1);
+                }
               }}
               onSearch={(value) => {
                 const normalized = value?.trim() || '';
@@ -346,11 +380,12 @@ export const ParameterSetPage: React.FC = () => {
                 { label: getActiveStatusLabel(false), value: false },
               ]}
               value={vm.state.isActiveFilter}
-              onChange={(value) => { vm.setters.setIsActiveFilter(value); vm.setters.setPage(1); }}
+              onChange={(value) => {
+                vm.setters.setIsActiveFilter(value);
+                vm.setters.setPage(1);
+              }}
             />
-            <Button onClick={() => vm.setters.setCompareVisible(true)}>
-              版本对比
-            </Button>
+            <Button onClick={() => vm.setters.setCompareVisible(true)}>版本对比</Button>
             <Button type="primary" onClick={() => vm.setters.setCreateVisible(true)}>
               新建参数包
             </Button>
@@ -374,7 +409,10 @@ export const ParameterSetPage: React.FC = () => {
               pageSize: vm.data.data?.pageSize ?? vm.state.pageSize,
               total: vm.data.data?.total ?? 0,
               showSizeChanger: true,
-              onChange: (nextPage, nextPageSize) => { vm.setters.setPage(nextPage); vm.setters.setPageSize(nextPageSize); },
+              onChange: (nextPage, nextPageSize) => {
+                vm.setters.setPage(nextPage);
+                vm.setters.setPageSize(nextPageSize);
+              },
             }}
           />
         </div>
@@ -416,12 +454,17 @@ export const ParameterSetPage: React.FC = () => {
         title="参数包详情"
         width="85%"
         open={Boolean(vm.state.selectedSetId)}
-        onClose={() => { vm.setters.setSelectedSetId(null); vm.setters.setSelectedItemIds([]); }}
+        onClose={() => {
+          vm.setters.setSelectedSetId(null);
+          vm.setters.setSelectedItemIds([]);
+        }}
       >
         <Space direction="vertical" style={{ width: '100%' }} size={16}>
           <Space style={{ justifyContent: 'space-between', width: '100%' }}>
             <Space>
-              <Typography.Title level={4} style={{ margin: 0 }}>{vm.data.setDetail?.name || '-'}</Typography.Title>
+              <Typography.Title level={4} style={{ margin: 0 }}>
+                {vm.data.setDetail?.name || '-'}
+              </Typography.Title>
               <Tag color={vm.data.setDetail?.isActive ? 'green' : 'red'}>
                 {getActiveStatusLabel(vm.data.setDetail?.isActive)}
               </Tag>
@@ -431,7 +474,9 @@ export const ParameterSetPage: React.FC = () => {
               <Tag>版本 {vm.data.setDetail?.version ?? '-'}</Tag>
               {vm.data.setDetail?.templateSource === 'PUBLIC' && (
                 <Tooltip title="继承自公共模板">
-                  <Tag color="blue" icon={<CheckCircleOutlined />}>公共模板</Tag>
+                  <Tag color="blue" icon={<CheckCircleOutlined />}>
+                    公共模板
+                  </Tag>
                 </Tooltip>
               )}
             </Space>
@@ -472,7 +517,10 @@ export const ParameterSetPage: React.FC = () => {
               onConfirm={vm.actions.handleScopeBatchReset}
               disabled={!vm.state.scopeResetLevel}
             >
-              <Button disabled={!vm.state.scopeResetLevel} loading={vm.mutations.batchResetMutation.isPending}>
+              <Button
+                disabled={!vm.state.scopeResetLevel}
+                loading={vm.mutations.batchResetMutation.isPending}
+              >
                 按作用域批量重置
               </Button>
             </Popconfirm>
@@ -513,7 +561,12 @@ export const ParameterSetPage: React.FC = () => {
                       title="覆盖率"
                       value={vm.computed.overrideSummary.overrideRate}
                       suffix="%"
-                      valueStyle={{ color: vm.computed.overrideSummary.overrideRate > 50 ? token.colorWarning : token.colorSuccess }}
+                      valueStyle={{
+                        color:
+                          vm.computed.overrideSummary.overrideRate > 50
+                            ? token.colorWarning
+                            : token.colorSuccess,
+                      }}
                     />
                   </Tooltip>
                 </Card>
@@ -601,7 +654,12 @@ export const ParameterSetPage: React.FC = () => {
                         columns={[
                           { title: '流程编码', dataIndex: 'workflowCode', width: 180 },
                           { title: '流程名称', dataIndex: 'workflowName', width: 220 },
-                          { title: '版本', dataIndex: 'versionCode', width: 120, render: (v) => <Tag>{v}</Tag> },
+                          {
+                            title: '版本',
+                            dataIndex: 'versionCode',
+                            width: 120,
+                            render: (v) => <Tag>{v}</Tag>,
+                          },
                         ]}
                       />
                     </Card>
@@ -615,7 +673,12 @@ export const ParameterSetPage: React.FC = () => {
                         columns={[
                           { title: 'Agent 编码', dataIndex: 'agentCode', width: 200 },
                           { title: '名称', dataIndex: 'agentName', width: 180 },
-                          { title: '角色', dataIndex: 'roleType', width: 160, render: (v) => <Tag>{v}</Tag> },
+                          {
+                            title: '角色',
+                            dataIndex: 'roleType',
+                            width: 160,
+                            render: (v) => <Tag>{v}</Tag>,
+                          },
                         ]}
                       />
                     </Card>
@@ -664,30 +727,37 @@ export const ParameterSetPage: React.FC = () => {
                         <Timeline
                           items={(vm.data.changeLogs?.data ?? []).map((log) => ({
                             key: log.id,
-                            color: operationColorMap[log.operation] === 'green'
-                              ? 'green'
-                              : operationColorMap[log.operation] === 'red'
-                                ? 'red'
-                                : operationColorMap[log.operation] === 'purple'
-                                  ? 'purple' as unknown as undefined
-                                  : 'blue',
-                            dot: log.operation === 'PUBLISH'
-                              ? <CheckCircleOutlined />
-                              : log.operation === 'DELETE'
-                                ? <WarningOutlined />
-                                : log.operation === 'RESET_TO_DEFAULT' || log.operation === 'BATCH_RESET'
-                                  ? <RollbackOutlined />
-                                  : <EditOutlined />,
+                            color:
+                              operationColorMap[log.operation] === 'green'
+                                ? 'green'
+                                : operationColorMap[log.operation] === 'red'
+                                  ? 'red'
+                                  : operationColorMap[log.operation] === 'purple'
+                                    ? ('purple' as unknown as undefined)
+                                    : 'blue',
+                            dot:
+                              log.operation === 'PUBLISH' ? (
+                                <CheckCircleOutlined />
+                              ) : log.operation === 'DELETE' ? (
+                                <WarningOutlined />
+                              ) : log.operation === 'RESET_TO_DEFAULT' ||
+                                log.operation === 'BATCH_RESET' ? (
+                                <RollbackOutlined />
+                              ) : (
+                                <EditOutlined />
+                              ),
                             children: (
                               <Card size="small" style={{ marginBottom: 4 }}>
-                                <Flex justify="space-between" align="center" style={{ marginBottom: 4 }}>
+                                <Flex
+                                  justify="space-between"
+                                  align="center"
+                                  style={{ marginBottom: 4 }}
+                                >
                                   <Space size={4}>
                                     <Tag color={operationColorMap[log.operation] || 'default'}>
                                       {log.operation}
                                     </Tag>
-                                    {log.fieldPath && (
-                                      <Tag>{log.fieldPath}</Tag>
-                                    )}
+                                    {log.fieldPath && <Tag>{log.fieldPath}</Tag>}
                                   </Space>
                                   <Typography.Text type="secondary" style={{ fontSize: 12 }}>
                                     {log.createdAt
@@ -695,12 +765,16 @@ export const ParameterSetPage: React.FC = () => {
                                       : '-'}
                                   </Typography.Text>
                                 </Flex>
-                                {(log.oldValue !== null && log.oldValue !== undefined) && (
+                                {log.oldValue !== null && log.oldValue !== undefined && (
                                   <Flex gap={8} style={{ fontSize: 12 }}>
                                     <Typography.Text type="secondary">旧值:</Typography.Text>
-                                    <Typography.Text delete>{formatValue(log.oldValue)}</Typography.Text>
+                                    <Typography.Text delete>
+                                      {formatValue(log.oldValue)}
+                                    </Typography.Text>
                                     <Typography.Text type="secondary">→</Typography.Text>
-                                    <Typography.Text strong>{formatValue(log.newValue)}</Typography.Text>
+                                    <Typography.Text strong>
+                                      {formatValue(log.newValue)}
+                                    </Typography.Text>
                                   </Flex>
                                 )}
                                 {log.changeReason && (
@@ -709,7 +783,10 @@ export const ParameterSetPage: React.FC = () => {
                                   </Typography.Text>
                                 )}
                                 {log.changedByUserId && (
-                                  <Typography.Text type="secondary" style={{ fontSize: 11, display: 'block' }}>
+                                  <Typography.Text
+                                    type="secondary"
+                                    style={{ fontSize: 11, display: 'block' }}
+                                  >
                                     操作人: {log.changedByUserId}
                                   </Typography.Text>
                                 )}
@@ -726,11 +803,15 @@ export const ParameterSetPage: React.FC = () => {
                             上一页
                           </Button>
                           <Typography.Text type="secondary" style={{ lineHeight: '32px' }}>
-                            {vm.data.changeLogs?.page ?? vm.state.logPage} / {Math.ceil((vm.data.changeLogs?.total ?? 0) / 20) || 1}
+                            {vm.data.changeLogs?.page ?? vm.state.logPage} /{' '}
+                            {Math.ceil((vm.data.changeLogs?.total ?? 0) / 20) || 1}
                           </Typography.Text>
                           <Button
                             type="link"
-                            disabled={(vm.data.changeLogs?.page ?? vm.state.logPage) >= Math.ceil((vm.data.changeLogs?.total ?? 0) / 20)}
+                            disabled={
+                              (vm.data.changeLogs?.page ?? vm.state.logPage) >=
+                              Math.ceil((vm.data.changeLogs?.total ?? 0) / 20)
+                            }
                             onClick={() => vm.setters.setLogPage((prev) => prev + 1)}
                           >
                             下一页
@@ -771,93 +852,215 @@ export const ParameterSetPage: React.FC = () => {
         confirmLoading={vm.mutations.updateItemMutation.isPending}
         width={720}
       >
-        <Form layout="vertical" form={vm.state.editItemForm}>
+        <Form layout="vertical" form={vm.state.editItemForm as any}>
           <Typography.Title level={5}>基本信息</Typography.Title>
           <Row gutter={16}>
             <Col span={12}>
-              <Form.Item name="paramName" label="参数名称" rules={[{ required: true }]}>
-                <Input />
+              <Form.Item name="paramName" label="参数名称 (中文)" rules={[{ required: true }]}>
+                <Input placeholder="例: 最大重试次数" />
               </Form.Item>
             </Col>
             <Col span={12}>
-              <Form.Item name="paramType" label="参数类型" rules={[{ required: true }]}>
+              <Form.Item name="paramType" label="数据类型" rules={[{ required: true }]}>
                 <Select options={paramTypeOptions.map((item) => ({ label: item, value: item }))} />
               </Form.Item>
             </Col>
-            <Col span={12}>
-              <Form.Item name="unit" label="单位">
-                <Input allowClear />
-              </Form.Item>
-            </Col>
-            <Col span={12}>
-              <Form.Item name="source" label="来源">
-                <Input allowClear placeholder="例如: 业务规则V1, 外部API" />
-              </Form.Item>
-            </Col>
           </Row>
 
-          <Divider style={{ margin: '16px 0' }} />
-          <Typography.Title level={5}>作用域</Typography.Title>
-          <Row gutter={16}>
-            <Col span={12}>
-              <Form.Item name="scopeLevel" label="作用域层级" rules={[{ required: true }]}>
-                <Select options={scopeOptions.map((item) => ({ label: getScopeLabel(item), value: item }))} />
-              </Form.Item>
-            </Col>
-            <Col span={12}>
-              <Form.Item name="scopeValue" label="作用域值">
-                <Input placeholder="例如: USER_XYZ, REGION_CN" />
-              </Form.Item>
-            </Col>
-          </Row>
-
-          <Divider style={{ margin: '16px 0' }} />
-          <Typography.Title level={5}>数值设定</Typography.Title>
           <Form.Item noStyle shouldUpdate={(prev, curr) => prev.paramType !== curr.paramType}>
             {({ getFieldValue }) => {
               const type = getFieldValue('paramType');
               return (
-                <Row gutter={16}>
-                  <Col span={24}>
-                    <Form.Item name="value" label="当前值" valuePropName={type === 'boolean' ? 'checked' : 'value'}>
-                      {renderDynamicInput(type, '覆盖后的实际生效值')}
-                    </Form.Item>
-                  </Col>
-                  <Col span={24}>
-                    <Form.Item name="defaultValue" label="默认值" valuePropName={type === 'boolean' ? 'checked' : 'value'}>
-                      {renderDynamicInput(type, '若未被覆盖，将继承此默认值')}
-                    </Form.Item>
-                  </Col>
-                </Row>
+                <>
+                  <Row gutter={16}>
+                    <Col span={12}>
+                      <Form.Item
+                        name="defaultValue"
+                        label="模板默认值"
+                        valuePropName={type === 'boolean' ? 'checked' : 'value'}
+                      >
+                        {renderDynamicInput(type, '若未被覆盖，将继承此默认值')}
+                      </Form.Item>
+                    </Col>
+                    <Col span={12}>
+                      <Form.Item
+                        name="value"
+                        label="当前实际生效值"
+                        valuePropName={type === 'boolean' ? 'checked' : 'value'}
+                      >
+                        {renderDynamicInput(type, '覆盖后的当前实际生效值')}
+                      </Form.Item>
+                    </Col>
+                  </Row>
+                  {type === 'number' && (
+                    <Row
+                      gutter={16}
+                      style={{
+                        backgroundColor: token.colorFillAlter,
+                        padding: '12px 12px 0 12px',
+                        borderRadius: 6,
+                        marginBottom: 16,
+                      }}
+                    >
+                      <Col span={8}>
+                        <Form.Item name="numberMin" label="最小值限制">
+                          <InputNumber style={{ width: '100%' }} />
+                        </Form.Item>
+                      </Col>
+                      <Col span={8}>
+                        <Form.Item name="numberMax" label="最大值限制">
+                          <InputNumber style={{ width: '100%' }} />
+                        </Form.Item>
+                      </Col>
+                      <Col span={8}>
+                        <Form.Item name="numberStep" label="递增步长">
+                          <InputNumber style={{ width: '100%' }} />
+                        </Form.Item>
+                      </Col>
+                    </Row>
+                  )}
+                  {type === 'enum' && (
+                    <div
+                      style={{
+                        backgroundColor: token.colorFillAlter,
+                        padding: '12px 12px 0 12px',
+                        borderRadius: 6,
+                        marginBottom: 16,
+                      }}
+                    >
+                      <Typography.Text strong style={{ display: 'block', marginBottom: 8 }}>
+                        选项配置管理
+                      </Typography.Text>
+                      <Form.List name="selectOptions">
+                        {(fields, { add, remove }) => (
+                          <>
+                            {fields.map(({ key, name, ...restField }) => (
+                              <Space
+                                key={key}
+                                style={{ display: 'flex', marginBottom: 8 }}
+                                align="baseline"
+                              >
+                                <Form.Item
+                                  {...restField}
+                                  name={[name, 'label']}
+                                  rules={[{ required: true, message: '必填' }]}
+                                  style={{ marginBottom: 0 }}
+                                >
+                                  <Input placeholder="下拉可见展示名" />
+                                </Form.Item>
+                                <Form.Item
+                                  {...restField}
+                                  name={[name, 'value']}
+                                  rules={[{ required: true, message: '必填' }]}
+                                  style={{ marginBottom: 0 }}
+                                >
+                                  <Input placeholder="后端实际取值" />
+                                </Form.Item>
+                                <MinusCircleOutlined
+                                  onClick={() => remove(name)}
+                                  style={{ color: token.colorError }}
+                                />
+                              </Space>
+                            ))}
+                            <Form.Item>
+                              <Button
+                                type="dashed"
+                                onClick={() => add()}
+                                block
+                                icon={<PlusOutlined />}
+                              >
+                                新增选项项目
+                              </Button>
+                            </Form.Item>
+                          </>
+                        )}
+                      </Form.List>
+                    </div>
+                  )}
+                </>
               );
             }}
           </Form.Item>
 
-          <Divider style={{ margin: '16px 0' }} />
-          <Typography.Title level={5}>约束条件</Typography.Title>
-          <Row gutter={16}>
-            <Col span={12}>
-              <Form.Item name="minValueText" label="最小值 (JSON/Text)">
-                <Input placeholder="例如: 0, 1.5" />
-              </Form.Item>
-            </Col>
-            <Col span={12}>
-              <Form.Item name="maxValueText" label="最大值 (JSON/Text)">
-                <Input placeholder="例如: 100, 99.9" />
-              </Form.Item>
-            </Col>
-          </Row>
+          <Collapse
+            ghost
+            style={{ backgroundColor: token.colorFillQuaternary, borderRadius: 8, marginTop: 16 }}
+          >
+            <Collapse.Panel key="advanced" header="⚙️ 高级配置 (按需展开)">
+              <Typography.Text type="secondary" style={{ display: 'block', marginBottom: 16 }}>
+                专业开发选项 / 数据源配置
+              </Typography.Text>
+              <Row gutter={16}>
+                <Col span={12}>
+                  <Form.Item name="scopeLevel" label="作用域层级" rules={[{ required: true }]}>
+                    <Select
+                      options={scopeOptions.map((item) => ({
+                        label: getScopeLabel(item),
+                        value: item,
+                      }))}
+                    />
+                  </Form.Item>
+                </Col>
+                <Col span={12}>
+                  <Form.Item name="scopeValue" label="限定作用域值">
+                    <Input placeholder="填入 ID 覆盖范围, 留空则全覆盖" />
+                  </Form.Item>
+                </Col>
+                <Col span={12}>
+                  <Form.Item name="unit" label="数值单位">
+                    <Input allowClear />
+                  </Form.Item>
+                </Col>
+                <Col span={12}>
+                  <Form.Item name="source" label="参数定义来源">
+                    <Input allowClear placeholder="例如: 业务规则V1, 外部API" />
+                  </Form.Item>
+                </Col>
+              </Row>
+              <Divider style={{ margin: '8px 0' }} />
+              <Row gutter={16}>
+                <Col span={8}>
+                  <Form.Item name="uiComponent" label="UI 控件覆盖渲染">
+                    <Select
+                      allowClear
+                      options={[
+                        { label: '默认输入 (Input)', value: 'input' },
+                        { label: '数字输入框 (NumberInput)', value: 'number-input' },
+                        { label: '短滑块 (Slider)', value: 'slider' },
+                        { label: '单选下拉 (Select)', value: 'select' },
+                        { label: '外部字典下拉 (DictSelect)', value: 'dict-select' },
+                      ]}
+                      placeholder="默认自动推断"
+                    />
+                  </Form.Item>
+                </Col>
+                <Col span={8}>
+                  <Form.Item name="optionsSourceId" label="外部选项数据源">
+                    <Input allowClear placeholder="如 SYSTEM_REGION" />
+                  </Form.Item>
+                </Col>
+                <Col span={8}>
+                  <Form.Item name="uiPropsText" label="特殊透传配置 (JSON)">
+                    <Input.TextArea
+                      rows={1}
+                      allowClear
+                      placeholder='如: {"placeholder":"填入年龄"}'
+                    />
+                  </Form.Item>
+                </Col>
+              </Row>
+            </Collapse.Panel>
+          </Collapse>
 
           <Divider style={{ margin: '16px 0' }} />
-          <Typography.Title level={5}>变更审计</Typography.Title>
           <Row gutter={16}>
             <Col span={16}>
-              <Form.Item name="changeReason" label="变更原因">
-                <Input.TextArea rows={1} placeholder="请简述本次修改的原因" />
+              <Form.Item name="changeReason" label="提交变更原因">
+                <Input.TextArea rows={1} placeholder="为了日后追溯，请简述本次修改的原因" />
               </Form.Item>
             </Col>
             <Col span={8}>
-              <Form.Item name="isActive" label="启用状态">
+              <Form.Item name="isActive" label="记录状态启用">
                 <Select
                   options={[
                     { label: getActiveStatusLabel(true), value: true },
@@ -871,7 +1074,39 @@ export const ParameterSetPage: React.FC = () => {
       </Modal>
 
       <Modal
-        title="新建参数项"
+        title={
+          <Flex align="center" gap="middle">
+            <span>新建参数项</span>
+            <Space size="small">
+              <Button
+                size="small"
+                type="primary"
+                ghost
+                onClick={() => {
+                  vm.state.itemForm.setFieldsValue({
+                    paramType: 'number',
+                    defaultValue: 0,
+                    numberMin: 0,
+                    numberMax: 100,
+                    numberStep: 1,
+                  });
+                }}
+              >
+                数值阈值参数
+              </Button>
+              <Button
+                size="small"
+                type="primary"
+                ghost
+                onClick={() => {
+                  vm.state.itemForm.setFieldsValue({ paramType: 'boolean', defaultValue: false });
+                }}
+              >
+                状态开关
+              </Button>
+            </Space>
+          </Flex>
+        }
         open={vm.state.itemVisible}
         onCancel={() => {
           vm.setters.setItemVisible(false);
@@ -879,11 +1114,12 @@ export const ParameterSetPage: React.FC = () => {
         }}
         onOk={vm.actions.handleCreateItem}
         confirmLoading={vm.mutations.createItemMutation.isPending}
+        width={720}
       >
         <Form<CreateParameterItemDto>
           layout="vertical"
-          form={vm.state.itemForm}
-          initialValues={{ scopeLevel: 'GLOBAL', paramType: 'number' }}
+          form={vm.state.itemForm as any}
+          initialValues={{ scopeLevel: 'GLOBAL', paramType: 'string' }}
           onValuesChange={(changedValues, allValues) => {
             const changedName = changedValues.paramName as string | undefined;
             if (changedName !== undefined && !vm.state.isParamCodeCustomized) {
@@ -897,63 +1133,227 @@ export const ParameterSetPage: React.FC = () => {
               if (!normalized) {
                 vm.setters.setIsParamCodeCustomized(false);
               } else {
-                vm.setters.setIsParamCodeCustomized(Boolean(generatedCode && normalized !== generatedCode));
+                vm.setters.setIsParamCodeCustomized(
+                  Boolean(generatedCode && normalized !== generatedCode),
+                );
               }
             }
           }}
         >
-          <Form.Item name="paramCode" label="参数编码" rules={[{ required: true }]}>
-            <Input
-              addonAfter={(
-                <Button
-                  type="link"
-                  size="small"
-                  onClick={() => {
-                    const generatedCode = slugifyParamCode(vm.state.itemForm.getFieldValue('paramName'));
-                    vm.state.itemForm.setFieldsValue({ paramCode: generatedCode || undefined });
-                    vm.setters.setIsParamCodeCustomized(false);
+          <Row gutter={16}>
+            <Col span={12}>
+              <Form.Item name="paramName" label="参数名称 (中文)" rules={[{ required: true }]}>
+                <Input placeholder="例: 最大重试次数" />
+              </Form.Item>
+              <Form.Item
+                name="paramCode"
+                label={
+                  <span
+                    style={{ color: token.colorTextSecondary, fontSize: 12, fontWeight: 'normal' }}
+                  >
+                    唯一编码 (将根据名称自动静默生成)
+                  </span>
+                }
+                rules={[{ required: true }]}
+                style={{ marginTop: -16, marginBottom: 16 }}
+              >
+                <Input
+                  bordered={false}
+                  style={{
+                    color: token.colorTextDisabled,
+                    padding: 0,
+                    fontSize: 12,
+                    transform: 'translateY(-10px)',
                   }}
-                >
-                  自动生成
-                </Button>
-              )}
-            />
-          </Form.Item>
-          <Form.Item name="paramName" label="参数名称" rules={[{ required: true }]}>
-            <Input />
-          </Form.Item>
-          <Form.Item name="paramType" label="参数类型" rules={[{ required: true }]}>
-            <Select options={paramTypeOptions.map((item) => ({ label: item, value: item }))} />
-          </Form.Item>
-          <Form.Item name="scopeLevel" label="作用域" rules={[{ required: true }]}>
-            <Select options={scopeOptions.map((item) => ({ label: getScopeLabel(item), value: item }))} />
-          </Form.Item>
-          <Form.Item name="scopeValue" label="作用域值">
-            <Input />
-          </Form.Item>
+                />
+              </Form.Item>
+            </Col>
+            <Col span={12}>
+              <Form.Item name="paramType" label="数据类型" rules={[{ required: true }]}>
+                <Select options={paramTypeOptions.map((item) => ({ label: item, value: item }))} />
+              </Form.Item>
+            </Col>
+          </Row>
+
           <Form.Item noStyle shouldUpdate={(prev, curr) => prev.paramType !== curr.paramType}>
             {({ getFieldValue }) => {
               const type = getFieldValue('paramType');
               return (
                 <>
-                  <Form.Item
-                    name="defaultValue"
-                    label={type === 'json' || type === 'expression' ? '默认值(JSON或文本)' : '默认值'}
-                    valuePropName={type === 'boolean' ? 'checked' : 'value'}
-                  >
-                    {renderDynamicInput(type, '设置模板默认值')}
-                  </Form.Item>
-                  <Form.Item
-                    name="value"
-                    label={type === 'json' || type === 'expression' ? '值(JSON或文本)' : '值'}
-                    valuePropName={type === 'boolean' ? 'checked' : 'value'}
-                  >
-                    {renderDynamicInput(type, '设置当前值')}
-                  </Form.Item>
+                  <Row gutter={16}>
+                    <Col span={12}>
+                      <Form.Item
+                        name="defaultValue"
+                        label={
+                          type === 'json' || type === 'expression'
+                            ? '模板默认值 (JSON/Text)'
+                            : '模板默认值'
+                        }
+                        valuePropName={type === 'boolean' ? 'checked' : 'value'}
+                      >
+                        {renderDynamicInput(type, '设置此参数项的出厂默认值')}
+                      </Form.Item>
+                    </Col>
+                    <Col span={12}>
+                      <Form.Item
+                        name="value"
+                        label={
+                          type === 'json' || type === 'expression'
+                            ? '实生效值 (JSON/Text)'
+                            : '当前实生效值'
+                        }
+                        valuePropName={type === 'boolean' ? 'checked' : 'value'}
+                      >
+                        {renderDynamicInput(type, '若有值则覆盖默认值')}
+                      </Form.Item>
+                    </Col>
+                  </Row>
+
+                  {type === 'number' && (
+                    <Row
+                      gutter={16}
+                      style={{
+                        backgroundColor: token.colorFillAlter,
+                        padding: '12px 12px 0 12px',
+                        borderRadius: 6,
+                        marginBottom: 16,
+                      }}
+                    >
+                      <Col span={8}>
+                        <Form.Item name="numberMin" label="最小值限制">
+                          <InputNumber style={{ width: '100%' }} />
+                        </Form.Item>
+                      </Col>
+                      <Col span={8}>
+                        <Form.Item name="numberMax" label="最大值限制">
+                          <InputNumber style={{ width: '100%' }} />
+                        </Form.Item>
+                      </Col>
+                      <Col span={8}>
+                        <Form.Item name="numberStep" label="递增步长">
+                          <InputNumber style={{ width: '100%' }} />
+                        </Form.Item>
+                      </Col>
+                    </Row>
+                  )}
+                  {type === 'enum' && (
+                    <div
+                      style={{
+                        backgroundColor: token.colorFillAlter,
+                        padding: '12px 12px 0 12px',
+                        borderRadius: 6,
+                        marginBottom: 16,
+                      }}
+                    >
+                      <Typography.Text strong style={{ display: 'block', marginBottom: 8 }}>
+                        选项配置管理
+                      </Typography.Text>
+                      <Form.List name="selectOptions">
+                        {(fields, { add, remove }) => (
+                          <>
+                            {fields.map(({ key, name, ...restField }) => (
+                              <Space
+                                key={key}
+                                style={{ display: 'flex', marginBottom: 8 }}
+                                align="baseline"
+                              >
+                                <Form.Item
+                                  {...restField}
+                                  name={[name, 'label']}
+                                  rules={[{ required: true, message: '必填' }]}
+                                  style={{ marginBottom: 0 }}
+                                >
+                                  <Input placeholder="可见选项 (如: 男)" />
+                                </Form.Item>
+                                <Form.Item
+                                  {...restField}
+                                  name={[name, 'value']}
+                                  rules={[{ required: true, message: '必填' }]}
+                                  style={{ marginBottom: 0 }}
+                                >
+                                  <Input placeholder="后端实际值 (如: M)" />
+                                </Form.Item>
+                                <MinusCircleOutlined
+                                  onClick={() => remove(name)}
+                                  style={{ color: token.colorError }}
+                                />
+                              </Space>
+                            ))}
+                            <Form.Item>
+                              <Button
+                                type="dashed"
+                                onClick={() => add()}
+                                block
+                                icon={<PlusOutlined />}
+                              >
+                                新增选项项目
+                              </Button>
+                            </Form.Item>
+                          </>
+                        )}
+                      </Form.List>
+                    </div>
+                  )}
                 </>
               );
             }}
           </Form.Item>
+
+          <Collapse
+            ghost
+            style={{ backgroundColor: token.colorFillQuaternary, borderRadius: 8, marginTop: 16 }}
+          >
+            <Collapse.Panel key="advanced" header="⚙️ 高级配置 (按需展开)">
+              <Row gutter={16}>
+                <Col span={12}>
+                  <Form.Item name="scopeLevel" label="作用域层级" rules={[{ required: true }]}>
+                    <Select
+                      options={scopeOptions.map((item) => ({
+                        label: getScopeLabel(item),
+                        value: item,
+                      }))}
+                    />
+                  </Form.Item>
+                </Col>
+                <Col span={12}>
+                  <Form.Item name="scopeValue" label="限定作用域值">
+                    <Input placeholder="填入 ID 覆盖范围, 留空则全覆盖" />
+                  </Form.Item>
+                </Col>
+              </Row>
+              <Divider style={{ margin: '8px 0' }} />
+              <Typography.Text type="secondary" style={{ display: 'block', marginBottom: 16 }}>
+                专业开发选项 / 数据源配置
+              </Typography.Text>
+              <Row gutter={16}>
+                <Col span={8}>
+                  <Form.Item name="uiComponent" label="UI 控件覆盖渲染">
+                    <Select
+                      allowClear
+                      options={[
+                        { label: '默认输入 (Input)', value: 'input' },
+                        { label: '数字输入框 (NumberInput)', value: 'number-input' },
+                        { label: '单选下拉 (Select)', value: 'select' },
+                        { label: '外部字典下拉 (DictSelect)', value: 'dict-select' },
+                        { label: '日期选择器 (DatePicker)', value: 'date-picker' },
+                      ]}
+                      placeholder="默认由参数类型自动推断"
+                    />
+                  </Form.Item>
+                </Col>
+                <Col span={8}>
+                  <Form.Item name="optionsSourceId" label="外部字典数据源">
+                    <Input allowClear placeholder="如 SYSTEM_REGION" />
+                  </Form.Item>
+                </Col>
+                <Col span={8}>
+                  <Form.Item name="uiPropsText" label="特殊透传配置 (JSON)">
+                    <Input.TextArea rows={1} allowClear placeholder='{"placeholder":"填入年龄"}' />
+                  </Form.Item>
+                </Col>
+              </Row>
+            </Collapse.Panel>
+          </Collapse>
         </Form>
       </Modal>
     </Card>

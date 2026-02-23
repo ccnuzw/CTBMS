@@ -88,7 +88,7 @@ export interface WorkflowCanvasProps {
     viewLevel?: WorkflowStudioViewLevel;
     onViewLevelChange?: (level: WorkflowStudioViewLevel) => void;
     viewMode?: 'edit' | 'replay';
-     
+
     executionData?: any;
 }
 
@@ -189,6 +189,11 @@ export function useWorkflowCanvasViewModel(props: WorkflowCanvasProps) {
         window.localStorage.setItem(WORKFLOW_STUDIO_VIEW_LEVEL_STORAGE_KEY, currentViewLevel);
     }, [currentViewLevel]);
 
+    const onValidateRef = useRef(onValidate);
+    useEffect(() => {
+        onValidateRef.current = onValidate;
+    }, [onValidate]);
+
     const {
         nodes,
         edges,
@@ -227,7 +232,7 @@ export function useWorkflowCanvasViewModel(props: WorkflowCanvasProps) {
         }
         const statusMap = new Map<string, string>();
         const history = executionData.history || [];
-         
+
         history.forEach((step: any) => {
             if (step.nodeId) {
                 statusMap.set(step.nodeId, step.status);
@@ -237,7 +242,7 @@ export function useWorkflowCanvasViewModel(props: WorkflowCanvasProps) {
     }, [viewMode, executionData]);
 
     const getEdgeStyle = useCallback(
-         
+
         (edge: any) => {
             if (viewMode !== 'replay') return {};
             const sourceStatus = executionStatusMap.get(edge.source);
@@ -327,8 +332,8 @@ export function useWorkflowCanvasViewModel(props: WorkflowCanvasProps) {
 
     const runValidation = useCallback(
         async (dsl: WorkflowDsl): Promise<ValidationError[]> => {
-            if (onValidate) {
-                const remoteResult = await onValidate(dsl, 'SAVE');
+            if (onValidateRef.current) {
+                const remoteResult = await onValidateRef.current(dsl, 'SAVE');
                 if (remoteResult) {
                     return remoteResult.issues
                         .filter((issue) => issue.severity === 'ERROR')
@@ -344,7 +349,7 @@ export function useWorkflowCanvasViewModel(props: WorkflowCanvasProps) {
             const fallback = validateGraph(nodes, edges, workflowMode);
             return fallback.errors;
         },
-        [onValidate, nodes, edges, workflowMode],
+        [nodes, edges, workflowMode],
     );
 
     const autoFixableIssueCodes = useMemo(

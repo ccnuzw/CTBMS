@@ -37,6 +37,7 @@ export class AgentProfileService {
         agentPromptCode: dto.agentPromptCode,
         memoryPolicy: dto.memoryPolicy,
         toolPolicy: this.toNullableJsonValue(dto.toolPolicy),
+        skillCodes: this.toNullableJsonValue(dto.skillCodes), // [NEW] Added for skill decoupling
         guardrails: this.toNullableJsonValue(dto.guardrails),
         outputSchemaCode: dto.outputSchemaCode,
         timeoutMs: dto.timeoutMs,
@@ -110,6 +111,9 @@ export class AgentProfileService {
     if (Object.prototype.hasOwnProperty.call(dto, 'toolPolicy')) {
       data.toolPolicy = this.toNullableJsonValue(dto.toolPolicy);
     }
+    if (Object.prototype.hasOwnProperty.call(dto, 'skillCodes')) {
+      data.skillCodes = this.toNullableJsonValue(dto.skillCodes); // [NEW] Added for skill decoupling
+    }
     if (Object.prototype.hasOwnProperty.call(dto, 'guardrails')) {
       data.guardrails = this.toNullableJsonValue(dto.guardrails);
     }
@@ -182,6 +186,7 @@ export class AgentProfileService {
         agentPromptCode: String(data.agentPromptCode ?? current.agentPromptCode),
         memoryPolicy: String(data.memoryPolicy ?? current.memoryPolicy),
         toolPolicy: this.toNullableJsonValue(data.toolPolicy),
+        skillCodes: this.toNullableJsonValue(data.skillCodes), // [NEW] Added for skill decoupling
         guardrails: this.toNullableJsonValue(data.guardrails),
         outputSchemaCode,
         timeoutMs: Number(data.timeoutMs ?? current.timeoutMs),

@@ -41,6 +41,7 @@ import {
   useDeleteAgentProfile,
   usePublishAgentProfile,
   useUpdateAgentProfile,
+  useAgentSkills,
 } from '../api';
 import { useAIConfigs } from '../../system-config/api';
 import {
@@ -168,6 +169,8 @@ export const AgentProfilePage: React.FC = () => {
     page,
     pageSize,
   });
+
+  const { data: skillsData } = useAgentSkills({ pageSize: 100 });
 
   const normalizedKeyword = keyword?.trim().toLowerCase() || '';
   const highlightedAgentId = useMemo(() => {
@@ -343,7 +346,8 @@ export const AgentProfilePage: React.FC = () => {
         outputSchemaCode: values.outputSchemaCode,
         timeoutMs: values.timeoutMs,
         templateSource: values.templateSource,
-        toolPolicy: values.toolPolicy,
+        toolPolicy: values.toolPolicy, // [DEPRECATED] To be replaced
+        skillCodes: values.skillCodes || [], // [NEW] Added for Sprint 3
         guardrails: values.guardrails,
         retryPolicy: values.retryPolicy,
         outputSchema: values.outputSchemaCode === 'CUSTOM' && (values as any).outputSchemaString
@@ -533,6 +537,7 @@ export const AgentProfilePage: React.FC = () => {
               timeoutMs: 30000,
               templateSource: 'PRIVATE',
               toolPolicy: {},
+              skillCodes: [],
               guardrails: { requireEvidence: true, noHallucination: true },
               retryPolicy: { retryCount: 1, retryBackoffMs: 2000 },
             }}
@@ -658,6 +663,14 @@ export const AgentProfilePage: React.FC = () => {
                       </Form.Item>
                       <Form.Item name="timeoutMs" label="超时控制 (ms)" rules={[{ required: true }]}>
                         <InputNumber min={1000} max={120000} style={{ width: '100%' }} />
+                      </Form.Item>
+                      <Form.Item name="skillCodes" label="绑定技能">
+                        <Select
+                          mode="multiple"
+                          placeholder="选择绑定的辅助技能"
+                          options={skillsData?.data?.map((s: any) => ({ label: s.name, value: s.skillCode })) || []}
+                          allowClear
+                        />
                       </Form.Item>
                       <Form.Item name="toolPolicy" label="工具策略">
                         <VisualToolPolicyBuilder />

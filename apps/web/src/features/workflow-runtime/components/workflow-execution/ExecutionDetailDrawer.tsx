@@ -1,6 +1,8 @@
 import React, { useMemo } from 'react';
 import { Drawer, Tabs, Space, Alert, Descriptions, Tag, Tooltip, Card, Table, Input, Select, Checkbox, Collapse, Typography, Empty } from 'antd';
 import dayjs from 'dayjs';
+import { AgentCallTracePanel } from '../AgentCallTracePanel';
+import { ExecutionOutputView } from '../ExecutionOutputView';
 
 const { Paragraph } = Typography;
 
@@ -54,7 +56,7 @@ export const ExecutionDetailDrawer: React.FC<ExecutionDetailDrawerProps> = ({ vi
 
     const debateRoundCollapseItems = useMemo(
         () =>
-             
+
             debateRounds.map((round: any) => ({
                 key: String(round.roundNumber),
                 label: `第 ${round.roundNumber} 轮 · 参与者 ${round.roundSummary.participantCount} · 裁决 ${round.roundSummary.hasJudgement ? '是' : '否'
@@ -85,6 +87,17 @@ export const ExecutionDetailDrawer: React.FC<ExecutionDetailDrawerProps> = ({ vi
             <Tabs
                 defaultActiveKey="overview"
                 items={[
+                    {
+                        key: 'result',
+                        label: '运行结果',
+                        children: (
+                            <ExecutionOutputView
+                                nodeExecutions={executionDetail?.nodeExecutions ?? []}
+                                executionStatus={executionDetail?.status}
+                                errorMessage={executionDetail?.errorMessage}
+                            />
+                        ),
+                    },
                     {
                         key: 'overview',
                         label: '概览',
@@ -246,6 +259,17 @@ export const ExecutionDetailDrawer: React.FC<ExecutionDetailDrawerProps> = ({ vi
                                 columns={nodeColumns}
                                 dataSource={executionDetail?.nodeExecutions || []}
                                 pagination={false}
+                                expandable={{
+                                    rowExpandable: (record) => record.nodeType === 'agent-call',
+                                    expandedRowRender: (record) => (
+                                        <AgentCallTracePanel
+                                            outputSnapshot={record.outputSnapshot}
+                                            inputSnapshot={record.inputSnapshot}
+                                            status={record.status}
+                                            durationMs={record.durationMs}
+                                        />
+                                    ),
+                                }}
                             />
                         ),
                     },
@@ -316,7 +340,7 @@ export const ExecutionDetailDrawer: React.FC<ExecutionDetailDrawerProps> = ({ vi
 
                                 <Collapse
                                     items={debateRoundCollapseItems}
-                                     
+
                                     defaultActiveKey={debateRoundCollapseItems.slice(0, 1).map((item: any) => item.key)}
                                 />
 

@@ -442,6 +442,7 @@ export const WorkflowValidationIssueCodeEnum = z.enum([
 ]);
 
 export const WorkflowValidationStageEnum = z.enum(['SAVE', 'PUBLISH']);
+export const WorkflowDslAutoFixLevelEnum = z.enum(['SAFE', 'AGGRESSIVE']);
 
 export const WorkflowValidationIssueSchema = z.object({
   code: WorkflowValidationIssueCodeEnum,
@@ -459,6 +460,36 @@ export const WorkflowValidationResultSchema = z.object({
 export const ValidateWorkflowDslSchema = z.object({
   dslSnapshot: WorkflowDslSchema,
   stage: WorkflowValidationStageEnum.default('SAVE'),
+});
+
+export const WorkflowDslAutoFixItemSchema = z.object({
+  code: z.string(),
+  message: z.string(),
+  nodeId: z.string().optional(),
+  fieldPath: z.string().optional(),
+  before: z.unknown().optional(),
+  after: z.unknown().optional(),
+});
+
+export const PreflightWorkflowDslSchema = z.object({
+  dslSnapshot: WorkflowDslSchema,
+  stage: WorkflowValidationStageEnum.default('SAVE'),
+  autoFixLevel: WorkflowDslAutoFixLevelEnum.default('SAFE'),
+  enabledAutoFixCodes: z.array(z.string()).optional(),
+});
+
+export const WorkflowDslPreflightResultSchema = z.object({
+  normalizedDsl: WorkflowDslSchema,
+  validation: WorkflowValidationResultSchema,
+  autoFixLevel: WorkflowDslAutoFixLevelEnum,
+  autoFixes: z.array(WorkflowDslAutoFixItemSchema),
+  summary: z.object({
+    nodeCount: z.number().int(),
+    edgeCount: z.number().int(),
+    agentBindingCount: z.number().int(),
+    paramSetBindingCount: z.number().int(),
+    dataConnectorBindingCount: z.number().int(),
+  }),
 });
 
 export const WorkflowNodePreviewFieldStatusEnum = z.enum([
@@ -592,7 +623,11 @@ export type WorkflowPublishAuditQueryDto = z.infer<typeof WorkflowPublishAuditQu
 export type WorkflowValidationIssue = z.infer<typeof WorkflowValidationIssueSchema>;
 export type WorkflowValidationResult = z.infer<typeof WorkflowValidationResultSchema>;
 export type ValidateWorkflowDslDto = z.infer<typeof ValidateWorkflowDslSchema>;
+export type WorkflowDslAutoFixItemDto = z.infer<typeof WorkflowDslAutoFixItemSchema>;
+export type PreflightWorkflowDslDto = z.infer<typeof PreflightWorkflowDslSchema>;
+export type WorkflowDslPreflightResultDto = z.infer<typeof WorkflowDslPreflightResultSchema>;
 export type WorkflowValidationStage = z.infer<typeof WorkflowValidationStageEnum>;
+export type WorkflowDslAutoFixLevel = z.infer<typeof WorkflowDslAutoFixLevelEnum>;
 export type WorkflowNodePreviewFieldStatus = z.infer<typeof WorkflowNodePreviewFieldStatusEnum>;
 export type WorkflowNodePreviewInputField = z.infer<typeof WorkflowNodePreviewInputFieldSchema>;
 export type ValidateWorkflowNodePreviewDto = z.infer<typeof ValidateWorkflowNodePreviewSchema>;

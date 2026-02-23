@@ -1,5 +1,5 @@
 import React from 'react';
-import { App, Button, Card, Empty, Input, Select, Space, Tag, Typography, Popover } from 'antd';
+import { App, Button, Card, Empty, Input, InputNumber, Select, Space, Switch, Tag, Typography, Popover } from 'antd';
 import { LinkOutlined, ThunderboltOutlined, SettingOutlined } from '@ant-design/icons';
 import { useReactFlow } from '@xyflow/react';
 import { ExpressionEditor } from '../ExpressionEditor';
@@ -7,6 +7,22 @@ import { VariableSelector } from '../VariableSelector';
 import { getNodeTypeConfig } from '../nodeTypeRegistry';
 
 const { Text } = Typography;
+
+const TYPE_LABEL_MAP: Record<string, string> = {
+  string: '文本',
+  number: '数字',
+  integer: '整数',
+  boolean: '布尔 (是/否)',
+  object: '对象 / JSON',
+  json: '对象 / JSON',
+  array: '数组 / 列表',
+  list: '数组 / 列表',
+  any: '任意类型',
+};
+
+const getFriendlyTypeLabel = (schemaType: string): string => {
+  return TYPE_LABEL_MAP[schemaType?.toLowerCase()] || schemaType;
+};
 
 interface InputFieldSchema {
   name: string;
@@ -222,7 +238,9 @@ export const InputMappingMatrix: React.FC<InputMappingMatrixProps> = ({
               <Space style={{ width: '100%', justifyContent: 'space-between' }}>
                 <Space size={6}>
                   <Text strong>{field.name}</Text>
-                  <Tag style={{ marginInlineEnd: 0 }}>{field.type}</Tag>
+                  <Tag style={{ marginInlineEnd: 0 }} color="blue">
+                    {getFriendlyTypeLabel(field.type)}
+                  </Tag>
                   {field.required ? <Tag color="error">必填</Tag> : <Tag>选填</Tag>}
                 </Space>
                 <Space size={4}>
@@ -307,13 +325,39 @@ export const InputMappingMatrix: React.FC<InputMappingMatrixProps> = ({
               ) : null}
 
               {sourceMode === 'constant' ? (
-                <Input
-                  value={stringifyValue(defaultValues[field.name])}
-                  onChange={(event) =>
-                    onDefaultValueChange(field.name, parseLooseValue(event.target.value))
-                  }
-                  placeholder="输入固定值（支持文本、数字等）"
-                />
+                field.type.toLowerCase() === 'boolean' ? (
+                  <Switch
+                    checked={Boolean(defaultValues[field.name])}
+                    onChange={(checked) => onDefaultValueChange(field.name, checked)}
+                    checkedChildren="是 (true)"
+                    unCheckedChildren="否 (false)"
+                  />
+                ) : field.type.toLowerCase() === 'number' || field.type.toLowerCase() === 'integer' ? (
+                  <InputNumber
+                    value={defaultValues[field.name] as number}
+                    onChange={(val) => onDefaultValueChange(field.name, val)}
+                    placeholder="输入数字"
+                    style={{ width: '100%' }}
+                  />
+                ) : field.type.toLowerCase() === 'object' || field.type.toLowerCase() === 'json' || field.type.toLowerCase() === 'array' || field.type.toLowerCase() === 'list' ? (
+                  <Input.TextArea
+                    value={stringifyValue(defaultValues[field.name])}
+                    onChange={(event) =>
+                      onDefaultValueChange(field.name, parseLooseValue(event.target.value))
+                    }
+                    placeholder={`输入结构化数据，例如 ${field.type.toLowerCase() === 'array' || field.type.toLowerCase() === 'list' ? '["a", "b"]' : '{"key": "value"}'}`}
+                    autoSize={{ minRows: 2, maxRows: 6 }}
+                    style={{ fontFamily: 'monospace' }}
+                  />
+                ) : (
+                  <Input
+                    value={stringifyValue(defaultValues[field.name])}
+                    onChange={(event) =>
+                      onDefaultValueChange(field.name, event.target.value)
+                    }
+                    placeholder={`输入固定值`}
+                  />
+                )
               ) : null}
 
               {sourceMode === 'expression' ? (

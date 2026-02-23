@@ -1,144 +1,58 @@
 import React, { useState } from 'react';
-import {
-  App,
-  Button,
-  Card,
-  Col,
-  Descriptions,
-  Drawer,
-  Flex,
-  Input,
-  Modal,
-  Popconfirm,
-  Row,
-  Select,
-  Space,
-  Statistic,
-  Table,
-  Tabs,
-  Tag,
-  Typography,
-  theme,
-} from 'antd';
+import { App, Button, Card, Col, Flex, Input, Row, Space, Typography, theme, Tag, Spin } from 'antd';
 import {
   AppstoreOutlined,
-  CopyOutlined,
-  DeleteOutlined,
-  EyeOutlined,
-  PlusOutlined,
-  SendOutlined,
+  PlayCircleOutlined,
   StarOutlined,
-  StopOutlined,
-  UserOutlined,
-  SafetyCertificateOutlined,
+  RocketOutlined,
 } from '@ant-design/icons';
-import type { ColumnsType } from 'antd/es/table';
 import { useSearchParams } from 'react-router-dom';
-import type { TemplateCatalogDto } from '@packages/types';
 import {
-  useTemplateCatalog,
-  useMyTemplates,
-  useTemplateDetail,
-  useCreateTemplate,
-  usePublishTemplate,
-  useArchiveTemplate,
-  useDeleteTemplate,
-  useCopyTemplate,
-} from '../api/templates';
+  usePublishedWorkflows,
+  useWorkflowDefinitionDetail,
+  useTriggerWorkflowExecution
+} from '../../workflow-studio/api/workflow-definitions';
+import { WorkflowQuickRunnerModal } from '../../workflow-studio/components/workflow-definition/WorkflowQuickRunnerModal';
 
 const { Title, Text, Paragraph } = Typography;
-
-const categoryConfig: Record<string, { color: string; label: string }> = {
-  TRADING: { color: 'blue', label: '交易' },
-  RISK_MANAGEMENT: { color: 'red', label: '风险管理' },
-  ANALYSIS: { color: 'purple', label: '分析' },
-  MONITORING: { color: 'orange', label: '监控' },
-  REPORTING: { color: 'green', label: '报告' },
-  CUSTOM: { color: 'default', label: '自定义' },
-};
-
-const statusConfig: Record<string, { color: string; label: string }> = {
-  DRAFT: { color: 'default', label: '草稿' },
-  PUBLISHED: { color: 'success', label: '已发布' },
-  ARCHIVED: { color: 'warning', label: '已归档' },
-};
 
 export const TemplateMarketPage: React.FC = () => {
   const { token } = theme.useToken();
   const { message } = App.useApp();
   const [searchParams, setSearchParams] = useSearchParams();
 
-  const activeTab = searchParams.get('tab') ?? 'market';
   const page = Number(searchParams.get('page') ?? '1');
-  const pageSize = Number(searchParams.get('pageSize') ?? '20');
-  const categoryFilter = searchParams.get('category') ?? undefined;
+  const pageSize = 20;
   const keyword = searchParams.get('keyword') ?? undefined;
 
-  const [selectedTemplateId, setSelectedTemplateId] = useState<string | undefined>();
-  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
-  const [copyModal, setCopyModal] = useState<{ open: boolean; templateId: string; newName: string }>({
-    open: false, templateId: '', newName: '',
+  const [selectedWorkflowId, setSelectedWorkflowId] = useState<string | null>(null);
+
+  const { data: pageData, isLoading } = usePublishedWorkflows({
+    page,
+    pageSize,
+    keyword,
+    orderBy: 'stars',
   });
 
-  const [createForm, setCreateForm] = useState({
-    templateCode: '',
-    name: '',
-    description: '',
-    category: 'CUSTOM' as string,
-    sourceWorkflowDefinitionId: '',
-    sourceVersionId: '',
-  });
+  const { data: definitionDetail, isLoading: isDetailLoading } = useWorkflowDefinitionDetail(selectedWorkflowId ?? undefined);
 
-  const marketQuery = { category: categoryFilter, keyword, page, pageSize };
-  const { data: marketData, isLoading: isMarketLoading } = useTemplateCatalog(
-    activeTab === 'market' ? marketQuery : undefined,
-  );
-  const { data: myData, isLoading: isMyLoading } = useMyTemplates(
-    activeTab === 'mine' ? marketQuery : undefined,
-  );
-  const { data: templateDetail } = useTemplateDetail(selectedTemplateId);
+  // Derive the active version to run
+  const activeVersion = (definitionDetail as any)?.versions?.find((v: any) => v.versionCode === definitionDetail?.latestVersionCode) || (definitionDetail as any)?.versions?.[0];
 
-  const createMutation = useCreateTemplate();
-  const publishMutation = usePublishTemplate();
-  const archiveMutation = useArchiveTemplate();
-  const deleteMutation = useDeleteTemplate();
-  const copyMutation = useCopyTemplate();
+  const triggerMutation = useTriggerWorkflowExecution();
 
-  const currentData = activeTab === 'market' ? marketData : myData;
-  const isLoading = activeTab === 'market' ? isMarketLoading : isMyLoading;
-
-  const handleCreate = async () => {
-    if (!createForm.templateCode || !createForm.name || !createForm.sourceWorkflowDefinitionId) {
-      message.warning('请填写必要字段');
-      return;
-    }
+  const handleRun = async (paramSnapshot: Record<string, unknown>) => {
+    if (!definitionDetail?.id) return;
     try {
-      await createMutation.mutateAsync({
-        templateCode: createForm.templateCode,
-        name: createForm.name,
-        description: createForm.description || undefined,
-        category: createForm.category as 'TRADING' | 'RISK_MANAGEMENT' | 'ANALYSIS' | 'MONITORING' | 'REPORTING' | 'CUSTOM',
-        sourceWorkflowDefinitionId: createForm.sourceWorkflowDefinitionId,
-        sourceVersionId: createForm.sourceVersionId,
+      await triggerMutation.mutateAsync({
+        workflowDefinitionId: definitionDetail.id,
+        workflowVersionId: activeVersion?.id,
+        paramSnapshot,
       });
-      message.success('模板已创建');
-      setIsCreateModalOpen(false);
-      setCreateForm({ templateCode: '', name: '', description: '', category: 'CUSTOM', sourceWorkflowDefinitionId: '', sourceVersionId: '' });
-    } catch {
-      message.error('创建失败');
-    }
-  };
-
-  const handleCopy = async () => {
-    try {
-      await copyMutation.mutateAsync({
-        templateId: copyModal.templateId,
-        newName: copyModal.newName || undefined,
-      });
-      message.success('模板已复制到工作流空间');
-      setCopyModal({ open: false, templateId: '', newName: '' });
-    } catch {
-      message.error('复制失败');
+      message.success('已启动工作流执行');
+      setSelectedWorkflowId(null);
+    } catch (e) {
+      // Error handled by standard interceptors
     }
   };
 
@@ -150,322 +64,105 @@ export const TemplateMarketPage: React.FC = () => {
     setSearchParams(next);
   };
 
-  const columns: ColumnsType<TemplateCatalogDto> = [
-    {
-      title: '模板',
-      width: 240,
-      render: (_, record) => (
-        <Space direction="vertical" size={0}>
-          <Space size={4}>
-            <Text strong>{record.name}</Text>
-            {record.isOfficial && (
-              <Tag color="gold" icon={<SafetyCertificateOutlined />} style={{ fontSize: 10 }}>
-                官方
-              </Tag>
-            )}
-          </Space>
-          <Text type="secondary" style={{ fontSize: 11 }}>{record.templateCode}</Text>
-        </Space>
-      ),
-    },
-    {
-      title: '分类',
-      dataIndex: 'category',
-      width: 100,
-      render: (cat: string) => {
-        const cfg = categoryConfig[cat] ?? { color: 'default', label: cat };
-        return <Tag color={cfg.color}>{cfg.label}</Tag>;
-      },
-    },
-    {
-      title: '状态',
-      dataIndex: 'status',
-      width: 80,
-      render: (status: string) => {
-        const cfg = statusConfig[status] ?? { color: 'default', label: status };
-        return <Tag color={cfg.color}>{cfg.label}</Tag>;
-      },
-    },
-    {
-      title: '节点/连线',
-      width: 100,
-      render: (_, record) => (
-        <Text style={{ fontSize: 12 }}>{record.nodeCount} / {record.edgeCount}</Text>
-      ),
-    },
-    {
-      title: '使用次数',
-      dataIndex: 'usageCount',
-      width: 90,
-      render: (v: number) => <Tag icon={<CopyOutlined />}>{v}</Tag>,
-    },
-    {
-      title: '作者',
-      dataIndex: 'authorName',
-      width: 100,
-      render: (name: string | null) => (
-        <Space size={4}>
-          <UserOutlined style={{ fontSize: 11 }} />
-          <Text style={{ fontSize: 12 }}>{name ?? '-'}</Text>
-        </Space>
-      ),
-    },
-    {
-      title: '操作',
-      width: 200,
-      render: (_, record) => (
-        <Space size={4} wrap>
-          <Button
-            type="link"
-            size="small"
-            icon={<EyeOutlined />}
-            onClick={() => setSelectedTemplateId(record.id)}
-          >
-            查看
-          </Button>
-          {record.status === 'PUBLISHED' && (
-            <Button
-              type="link"
-              size="small"
-              icon={<CopyOutlined />}
-              onClick={() => setCopyModal({ open: true, templateId: record.id, newName: `${record.name} (副本)` })}
-            >
-              复制
-            </Button>
-          )}
-          {activeTab === 'mine' && (
-            <>
-              {record.status === 'DRAFT' && (
-                <Button
-                  type="link"
-                  size="small"
-                  icon={<SendOutlined />}
-                  onClick={async () => {
-                    try { await publishMutation.mutateAsync(record.id); message.success('已发布'); } catch { message.error('发布失败'); }
-                  }}
-                >
-                  发布
-                </Button>
-              )}
-              {record.status === 'PUBLISHED' && (
-                <Button
-                  type="link"
-                  size="small"
-                  icon={<StopOutlined />}
-                  onClick={async () => {
-                    try { await archiveMutation.mutateAsync(record.id); message.success('已归档'); } catch { message.error('归档失败'); }
-                  }}
-                >
-                  归档
-                </Button>
-              )}
-              <Popconfirm title="确认删除?" onConfirm={async () => {
-                try { await deleteMutation.mutateAsync(record.id); message.success('已删除'); } catch { message.error('删除失败'); }
-              }}>
-                <Button type="link" size="small" danger icon={<DeleteOutlined />} />
-              </Popconfirm>
-            </>
-          )}
-        </Space>
-      ),
-    },
-  ];
-
   return (
-    <Space direction="vertical" style={{ width: '100%' }} size={16}>
-      <Card>
-        <Flex justify="space-between" align="center" wrap="wrap" gap={12}>
-          <Space>
-            <AppstoreOutlined style={{ fontSize: 20, color: token.colorPrimary }} />
-            <Title level={4} style={{ margin: 0 }}>模板市场</Title>
+    <Space direction="vertical" style={{ width: '100%' }} size={24}>
+      {/* 顶部 Banner 区 */}
+      <Card bodyStyle={{ padding: '32px 24px', background: `linear-gradient(135deg, ${token.colorBgContainer}, ${token.colorPrimaryBg})` }} bordered={false}>
+        <Flex justify="space-between" align="center" wrap="wrap" gap={16}>
+          <Space direction="vertical" size={0}>
+            <Title level={3} style={{ margin: 0 }}>
+              <AppstoreOutlined style={{ marginRight: 8, color: token.colorPrimary }} />
+              工作流应用商店
+            </Title>
+            <Text type="secondary" style={{ fontSize: 16 }}>探索并在您的业务中零门槛应用先进的 AI 智能体工作流</Text>
           </Space>
-          <Space wrap>
-            <Input.Search
-              allowClear
-              placeholder="搜索模板"
-              style={{ width: 200 }}
-              defaultValue={keyword}
-              onSearch={(v) => updateParams({ keyword: v || undefined, page: '1' })}
-            />
-            <Select
-              allowClear
-              style={{ width: 120 }}
-              placeholder="分类"
-              value={categoryFilter}
-              onChange={(v) => updateParams({ category: v, page: '1' })}
-              options={Object.entries(categoryConfig).map(([value, cfg]) => ({ label: cfg.label, value }))}
-            />
-            <Button type="primary" icon={<PlusOutlined />} onClick={() => setIsCreateModalOpen(true)}>
-              发布模板
-            </Button>
-          </Space>
+          <Input.Search
+            allowClear
+            size="large"
+            placeholder="搜索应用与模板..."
+            style={{ width: 300, boxShadow: token.boxShadowSecondary }}
+            defaultValue={keyword}
+            onSearch={(v) => updateParams({ keyword: v || undefined, page: '1' })}
+          />
         </Flex>
       </Card>
 
-      <Card>
-        <Tabs
-          activeKey={activeTab}
-          onChange={(key) => updateParams({ tab: key, page: '1' })}
-          items={[
-            { key: 'market', label: '公开模板' },
-            { key: 'mine', label: '我的模板' },
-          ]}
-        />
-        <Table<TemplateCatalogDto>
-          rowKey="id"
-          loading={isLoading}
-          dataSource={currentData?.data ?? []}
-          columns={columns}
-          size="middle"
-          scroll={{ x: 1000 }}
-          pagination={{
-            current: page,
-            pageSize,
-            total: currentData?.total ?? 0,
-            showSizeChanger: true,
-            showTotal: (total) => `共 ${total} 条`,
-            onChange: (p, ps) => updateParams({ page: String(p), pageSize: String(ps) }),
-          }}
-        />
-      </Card>
-
-      {/* ── Create Modal ── */}
-      <Modal
-        title="发布模板"
-        open={isCreateModalOpen}
-        onCancel={() => setIsCreateModalOpen(false)}
-        onOk={handleCreate}
-        confirmLoading={createMutation.isPending}
-        width={520}
-      >
-        <Space direction="vertical" style={{ width: '100%' }} size={12}>
-          <Row gutter={12}>
-            <Col span={12}>
-              <Text strong>模板编号 *</Text>
-              <Input value={createForm.templateCode} onChange={(e) => setCreateForm((p) => ({ ...p, templateCode: e.target.value }))} style={{ marginTop: 4 }} />
-            </Col>
-            <Col span={12}>
-              <Text strong>模板名称 *</Text>
-              <Input value={createForm.name} onChange={(e) => setCreateForm((p) => ({ ...p, name: e.target.value }))} style={{ marginTop: 4 }} />
-            </Col>
-          </Row>
-          <div>
-            <Text strong>分类</Text>
-            <Select
-              style={{ width: '100%', marginTop: 4 }}
-              value={createForm.category}
-              onChange={(v) => setCreateForm((p) => ({ ...p, category: v }))}
-              options={Object.entries(categoryConfig).map(([value, cfg]) => ({ label: cfg.label, value }))}
-            />
-          </div>
-          <div>
-            <Text strong>源工作流定义 ID *</Text>
-            <Input value={createForm.sourceWorkflowDefinitionId} onChange={(e) => setCreateForm((p) => ({ ...p, sourceWorkflowDefinitionId: e.target.value }))} style={{ marginTop: 4 }} />
-          </div>
-          <div>
-            <Text strong>源版本 ID *</Text>
-            <Input value={createForm.sourceVersionId} onChange={(e) => setCreateForm((p) => ({ ...p, sourceVersionId: e.target.value }))} style={{ marginTop: 4 }} />
-          </div>
-          <div>
-            <Text strong>描述</Text>
-            <Input.TextArea rows={3} value={createForm.description} onChange={(e) => setCreateForm((p) => ({ ...p, description: e.target.value }))} style={{ marginTop: 4 }} />
-          </div>
-        </Space>
-      </Modal>
-
-      {/* ── Copy Modal ── */}
-      <Modal
-        title="复制模板到工作流空间"
-        open={copyModal.open}
-        onCancel={() => setCopyModal((p) => ({ ...p, open: false }))}
-        onOk={handleCopy}
-        confirmLoading={copyMutation.isPending}
-      >
-        <div>
-          <Text strong>新工作流名称</Text>
-          <Input
-            value={copyModal.newName}
-            onChange={(e) => setCopyModal((p) => ({ ...p, newName: e.target.value }))}
-            style={{ marginTop: 4 }}
-          />
-        </div>
-      </Modal>
-
-      {/* ── Detail Drawer ── */}
-      <Drawer
-        title="模板详情"
-        open={Boolean(selectedTemplateId)}
-        onClose={() => setSelectedTemplateId(undefined)}
-        width={720}
-      >
-        {templateDetail && (
-          <Space direction="vertical" style={{ width: '100%' }} size={16}>
-            <Descriptions column={2} bordered size="small">
-              <Descriptions.Item label="模板编号">{templateDetail.templateCode}</Descriptions.Item>
-              <Descriptions.Item label="名称">{templateDetail.name}</Descriptions.Item>
-              <Descriptions.Item label="分类">
-                <Tag color={categoryConfig[templateDetail.category]?.color ?? 'default'}>
-                  {categoryConfig[templateDetail.category]?.label ?? templateDetail.category}
-                </Tag>
-              </Descriptions.Item>
-              <Descriptions.Item label="状态">
-                <Tag color={statusConfig[templateDetail.status]?.color ?? 'default'}>
-                  {statusConfig[templateDetail.status]?.label ?? templateDetail.status}
-                </Tag>
-              </Descriptions.Item>
-              <Descriptions.Item label="节点数">{templateDetail.nodeCount}</Descriptions.Item>
-              <Descriptions.Item label="连线数">{templateDetail.edgeCount}</Descriptions.Item>
-              <Descriptions.Item label="使用次数">{templateDetail.usageCount}</Descriptions.Item>
-              <Descriptions.Item label="作者">{templateDetail.authorName ?? '-'}</Descriptions.Item>
-              {templateDetail.isOfficial && (
-                <Descriptions.Item label="官方" span={2}>
-                  <Tag color="gold" icon={<SafetyCertificateOutlined />}>官方认证</Tag>
-                </Descriptions.Item>
-              )}
-              {templateDetail.description && (
-                <Descriptions.Item label="描述" span={2}>
-                  <Paragraph style={{ margin: 0, fontSize: 12 }} ellipsis={{ rows: 4, expandable: true }}>
-                    {templateDetail.description}
-                  </Paragraph>
-                </Descriptions.Item>
-              )}
-              {templateDetail.tags && (templateDetail.tags as string[]).length > 0 && (
-                <Descriptions.Item label="标签" span={2}>
-                  <Space size={4} wrap>
-                    {(templateDetail.tags as string[]).map((tag) => (
-                      <Tag key={tag}>{tag}</Tag>
-                    ))}
-                  </Space>
-                </Descriptions.Item>
-              )}
-            </Descriptions>
-
-            <Card title="DSL 快照预览" size="small">
-              <pre style={{ fontSize: 11, maxHeight: 400, overflow: 'auto', whiteSpace: 'pre-wrap', margin: 0 }}>
-                {JSON.stringify(templateDetail.dslSnapshot, null, 2)}
-              </pre>
-            </Card>
-
-            {templateDetail.status === 'PUBLISHED' && (
-              <Button
-                type="primary"
-                icon={<CopyOutlined />}
-                block
-                onClick={() => {
-                  setSelectedTemplateId(undefined);
-                  setCopyModal({
-                    open: true,
-                    templateId: templateDetail.id,
-                    newName: `${templateDetail.name} (副本)`,
-                  });
-                }}
+      {/* 瀑布流展示区 */}
+      <Spin spinning={isLoading}>
+        <Row gutter={[16, 24]}>
+          {(pageData?.data || []).map((workflow: any) => (
+            <Col xs={24} sm={12} md={8} lg={6} xl={6} key={workflow.id}>
+              <Card
+                hoverable
+                style={{ height: '100%', display: 'flex', flexDirection: 'column' }}
+                bodyStyle={{ flex: 1, display: 'flex', flexDirection: 'column' }}
+                cover={
+                  <div style={{ height: 140, background: token.colorFillAlter, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    {workflow.coverImage ? (
+                      <img src={workflow.coverImage} alt="cover" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                    ) : (
+                      <RocketOutlined style={{ fontSize: 48, color: token.colorTextQuaternary }} />
+                    )}
+                  </div>
+                }
+                actions={[
+                  <Button
+                    type="primary"
+                    icon={<PlayCircleOutlined />}
+                    onClick={() => setSelectedWorkflowId(workflow.id)}
+                    style={{ width: '80%' }}
+                  >
+                    立即运行
+                  </Button>
+                ]}
               >
-                复制到我的工作流空间
-              </Button>
-            )}
-          </Space>
+                <div style={{ flex: 1 }}>
+                  <Flex justify="space-between" align="flex-start" style={{ marginBottom: 8 }}>
+                    <Title level={5} style={{ margin: 0 }} ellipsis={{ rows: 2, tooltip: workflow.name }}>
+                      {workflow.name}
+                    </Title>
+                  </Flex>
+                  {workflow.categoryId && (
+                    <Tag color="geekblue" style={{ marginBottom: 12 }}>
+                      {workflow.categoryId}
+                    </Tag>
+                  )}
+                  <Paragraph type="secondary" style={{ fontSize: 13, minHeight: 40 }} ellipsis={{ rows: 2 }}>
+                    {workflow.description || '暂无详细描述'}
+                  </Paragraph>
+                </div>
+                <div style={{ marginTop: 12, borderTop: `1px solid ${token.colorBorderSecondary}`, paddingTop: 12 }}>
+                  <Flex justify="space-between" align="center">
+                    <Text type="secondary" style={{ fontSize: 12 }}>
+                      {workflow.ownerUser?.name || '系统预设'}
+                    </Text>
+                    <Space size={4}>
+                      <StarOutlined style={{ color: token.colorWarning }} />
+                      <Text strong>{workflow.stars}</Text>
+                    </Space>
+                  </Flex>
+                </div>
+              </Card>
+            </Col>
+          ))}
+        </Row>
+
+        {pageData?.data?.length === 0 && (
+          <Flex justify="center" align="center" style={{ minHeight: 200 }}>
+            <Text type="secondary">没有找到匹配的已发布工作流应用</Text>
+          </Flex>
         )}
-      </Drawer>
+      </Spin>
+
+      {/* 一键运行弹窗 */}
+      <WorkflowQuickRunnerModal
+        open={Boolean(selectedWorkflowId)}
+        definition={definitionDetail!}
+        version={activeVersion}
+        loading={isDetailLoading || triggerMutation.isPending}
+        onClose={() => setSelectedWorkflowId(null)}
+        onRun={handleRun}
+      />
     </Space>
   );
 };

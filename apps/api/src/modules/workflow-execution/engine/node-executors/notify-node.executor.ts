@@ -9,7 +9,7 @@ import {
 @Injectable()
 export class NotifyNodeExecutor implements WorkflowNodeExecutor {
     readonly name = 'NotifyNodeExecutor';
-    private readonly notifyNodeTypes = new Set(['notify', 'report-generate', 'dashboard-publish']);
+    private readonly notifyNodeTypes = new Set(['notify', 'dashboard-publish']);
 
     supports(node: WorkflowNode): boolean {
         return this.notifyNodeTypes.has(node.type);

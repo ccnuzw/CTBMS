@@ -253,6 +253,9 @@ importers:
       axios:
         specifier: ^1.13.2
         version: 1.13.2
+      cronstrue:
+        specifier: ^3.12.0
+        version: 3.12.0
       dagre:
         specifier: ^0.8.5
         version: 0.8.5
@@ -316,6 +319,9 @@ importers:
       tiptap-markdown:
         specifier: ^0.9.0
         version: 0.9.0(@tiptap/core@3.15.3(@tiptap/pm@3.15.3))
+      uuid:
+        specifier: ^13.0.0
+        version: 13.0.0
       xlsx:
         specifier: ^0.18.5
         version: 0.18.5
@@ -341,6 +347,9 @@ importers:
       '@types/screenfull':
         specifier: ^4.1.0
         version: 4.1.0
+      '@types/uuid':
+        specifier: ^11.0.0
+        version: 11.0.0
       '@vitejs/plugin-react':
         specifier: ^5.1.2
         version: 5.1.2(vite@7.3.1(@types/node@20.19.28)(terser@5.44.1))
@@ -2480,6 +2489,10 @@ packages:
   cron@4.3.5:
     resolution: {integrity: sha512-hKPP7fq1+OfyCqoePkKfVq7tNAdFwiQORr4lZUHwrf0tebC65fYEeWgOrXOL6prn1/fegGOdTfrM6e34PJfksg==}
     engines: {node: '>=18.x'}
+
+  cronstrue@3.12.0:
+    resolution: {integrity: sha512-k9oiM4G7U1GEEktOGfZabldP0gtFWTsaRVqq9X06ifytr73mpSYYdt+zGZBeS5lRCsqMfq0y7oSHycWGIJSo6g==}
+    hasBin: true
 
   cross-spawn@7.0.6:
     resolution: {integrity: sha512-uV2QOWP2nWzsy2aMp8aRibhi9dlzF5Hgh5SHaB9OiTGEyDTiJJyx0uy51QXdyWbtAHNua4XJzUKca3OzKUd3vA==}
@@ -8021,6 +8034,8 @@ snapshots:
     dependencies:
       '@types/luxon': 3.7.1
       luxon: 3.7.2
+
+  cronstrue@3.12.0: {}
 
   cross-spawn@7.0.6:
     dependencies:

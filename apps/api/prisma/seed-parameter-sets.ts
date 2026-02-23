@@ -508,6 +508,33 @@ const PARAMETER_SETS: SeedParameterSet[] = [
       },
     ],
   },
+  {
+    setCode: 'DEBATE_SCENARIO_SET',
+    name: '辩论制高点参数集',
+    description: '提供多角色辩论论题与设定，面向辩论节点与裁判节点。',
+    items: [
+      {
+        paramCode: 'debateTopic',
+        paramName: '辩论主题',
+        paramType: 'string',
+        value: '近期纯碱现货上涨是否具有持续性？',
+        defaultValue: '请分析当前市场的核心矛盾。',
+        scopeLevel: 'GLOBAL',
+        source: 'SYSTEM_SEED',
+        changeReason: '用于测试前端快速触发组件',
+      },
+      {
+        paramCode: 'debateRounds',
+        paramName: '最大反驳轮次',
+        paramType: 'number',
+        value: 3,
+        defaultValue: 2,
+        minValue: 1,
+        maxValue: 10,
+        scopeLevel: 'GLOBAL',
+      },
+    ],
+  },
 ];
 
 async function seedParameterSets() {

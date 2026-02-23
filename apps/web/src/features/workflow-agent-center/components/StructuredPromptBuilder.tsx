@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { Input, Card, Space, Typography, Switch, Button, Tooltip, theme } from 'antd';
-import { QuestionCircleOutlined, BuildOutlined, EditOutlined } from '@ant-design/icons';
+import { Input, Card, Space, Typography, Switch, Button, Tooltip, theme, Tag, Dropdown } from 'antd';
+import { QuestionCircleOutlined, BuildOutlined, EditOutlined, ThunderboltOutlined } from '@ant-design/icons';
 
 const { Text } = Typography;
 const { TextArea } = Input;
@@ -16,6 +16,27 @@ const SECTION_HEADERS = {
     constraints: '# 约束条件',
     examples: '# 示例',
 };
+
+const QUICK_TEMPLATES = [
+    {
+        label: '数据分析师',
+        role: '你是一个资深的数据分析师，精通宏观经济和商品市场逻辑。',
+        task: '你的任务是分析提供的市场数据和新闻，提取关键指标，并给出趋势判断。',
+        constraints: '1. 始终保持客观中立\n2. 结论必须有数据支撑\n3. 仅输出最终的分析结构，禁止输出思考过程',
+    },
+    {
+        label: '风控审查员',
+        role: '你是一个严格合规的风险控制专家，负责审查所有即将发出的交易指令。',
+        task: '核对各项操作是否违规，包括但不限于资金限额、价格偏移报警、黑名单等。',
+        constraints: '1. 任何命中高危名单的操作直接拒绝\n2. 输出判断必须明确 YES 或 NO',
+    },
+    {
+        label: '会议总结助手',
+        role: '你是一个专业的会议记录秘书。',
+        task: '阅读提供的会议转录文本，提取：会议结论、待办事项(To-Do)、遗留问题。',
+        constraints: '1. 总结要精炼，不超过300字\n2. 使用 Markdown 无序列表输出',
+    },
+];
 
 export const StructuredPromptBuilder: React.FC<StructuredPromptBuilderProps> = ({ value = '', onChange }) => {
     const [isStructured, setIsStructured] = useState(false);
@@ -86,62 +107,87 @@ export const StructuredPromptBuilder: React.FC<StructuredPromptBuilderProps> = (
                 </Space>
             }
             extra={
-                <Switch
-                    checkedChildren="结构化"
-                    unCheckedChildren="纯文本"
-                    checked={isStructured}
-                    onChange={(checked) => {
-                        setIsStructured(checked);
-                        if (checked && value && !value.includes(SECTION_HEADERS.role)) {
-                            // Try to put everything in Task if switching from raw to structured
-                            updateSection('task', value);
-                        }
-                    }}
-                />
+                <Space>
+                    {isStructured && (
+                        <Dropdown
+                            menu={{
+                                items: QUICK_TEMPLATES.map((tpl, i) => ({
+                                    key: String(i),
+                                    label: tpl.label,
+                                    onClick: () => {
+                                        const newSections = {
+                                            ...sections,
+                                            role: tpl.role,
+                                            task: tpl.task,
+                                            constraints: tpl.constraints,
+                                        };
+                                        setSections(newSections);
+                                        composeAndEmit(newSections);
+                                    }
+                                })),
+                            }}
+                        >
+                            <Button size="small" type="dashed" icon={<ThunderboltOutlined />}>快捷模板</Button>
+                        </Dropdown>
+                    )}
+                    <Switch
+                        checkedChildren="结构化"
+                        unCheckedChildren="纯文本"
+                        checked={isStructured}
+                        onChange={(checked) => {
+                            setIsStructured(checked);
+                            if (checked && value && !value.includes(SECTION_HEADERS.role)) {
+                                updateSection('task', value);
+                            }
+                        }}
+                    />
+                </Space>
             }
             style={{ marginBottom: 16 }}
             bodyStyle={{ padding: isStructured ? 16 : 0 }}
         >
             {isStructured ? (
-                <Space direction="vertical" style={{ width: '100%' }} size={12}>
+                <Space direction="vertical" style={{ width: '100%' }} size={16}>
                     <div>
-                        <Text type="secondary" style={{ fontSize: 12 }}>🧙‍♂️ 角色设定 (Role)</Text>
+                        <Space style={{ marginBottom: 4 }}>
+                            <Text type="secondary" style={{ fontSize: 12 }}>🧙‍♂️ 角色设定 (Role)</Text>
+                            <Tag bordered={false} style={{ fontSize: 10, cursor: 'pointer' }} onClick={() => updateSection('role', sections.role + '你是一个资深的金融分析专家。')}>+ 分析专家</Tag>
+                        </Space>
                         <TextArea
                             placeholder="你是一个经验丰富的金融分析师，擅长宏观经济分析..."
                             autoSize={{ minRows: 2, maxRows: 6 }}
                             value={sections.role}
                             onChange={(e) => updateSection('role', e.target.value)}
-                            style={{ marginTop: 4 }}
                         />
                     </div>
                     <div>
-                        <Text type="secondary" style={{ fontSize: 12 }}>🎯 核心任务 (Task)</Text>
+                        <Text type="secondary" style={{ fontSize: 12, display: 'block', marginBottom: 4 }}>🎯 核心任务 (Task)</Text>
                         <TextArea
                             placeholder="你需要阅读提供的新闻材料，提炼出关键的市场影响因子..."
                             autoSize={{ minRows: 3, maxRows: 8 }}
                             value={sections.task}
                             onChange={(e) => updateSection('task', e.target.value)}
-                            style={{ marginTop: 4 }}
                         />
                     </div>
                     <div>
-                        <Text type="secondary" style={{ fontSize: 12 }}>🚫 约束条件 (Constraints)</Text>
+                        <Space style={{ marginBottom: 4 }}>
+                            <Text type="secondary" style={{ fontSize: 12 }}>🚫 约束条件 (Constraints)</Text>
+                            <Tag bordered={false} style={{ fontSize: 10, cursor: 'pointer' }} onClick={() => updateSection('constraints', sections.constraints + (sections.constraints ? '\n' : '') + '1. 严格使用 JSON 格式输出，不要包含 markdown 标记。')}>+ 严格 JSON</Tag>
+                        </Space>
                         <TextArea
                             placeholder="不要输出任何解释性文字，仅输出 JSON..."
                             autoSize={{ minRows: 2, maxRows: 6 }}
                             value={sections.constraints}
                             onChange={(e) => updateSection('constraints', e.target.value)}
-                            style={{ marginTop: 4 }}
                         />
                     </div>
                     <div>
-                        <Text type="secondary" style={{ fontSize: 12 }}>🌰 示例 (Few-Shot Examples)</Text>
+                        <Text type="secondary" style={{ fontSize: 12, display: 'block', marginBottom: 4 }}>🌰 示例 (Few-Shot Examples)</Text>
                         <TextArea
                             placeholder="用户输入: ... 助手输出: ..."
                             autoSize={{ minRows: 2, maxRows: 6 }}
                             value={sections.examples}
                             onChange={(e) => updateSection('examples', e.target.value)}
-                            style={{ marginTop: 4 }}
                         />
                     </div>
                 </Space>

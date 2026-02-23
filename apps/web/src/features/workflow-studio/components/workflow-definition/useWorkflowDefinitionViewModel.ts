@@ -13,6 +13,7 @@ import {
 import { getErrorMessage } from '../../../../api/client';
 import {
     useCreateWorkflowVersion,
+    usePreflightWorkflowDsl,
     usePublishWorkflowVersion,
     useTriggerWorkflowExecution,
     useValidateWorkflowDsl,
@@ -70,6 +71,8 @@ export const useWorkflowDefinitionViewModel = () => {
     const [publishWizardDryRunLoading, setPublishWizardDryRunLoading] = useState(false);
     const [publishWizardDryRunPreview, setPublishWizardDryRunPreview] =
         useState<PublishDryRunPreview | null>(null);
+    const [quickRunnerVisible, setQuickRunnerVisible] = useState(false);
+    const [quickRunnerVersion, setQuickRunnerVersion] = useState<WorkflowVersionDto | null>(null);
 
     const definitionQuery = useMemo(
         () => ({
@@ -107,23 +110,24 @@ export const useWorkflowDefinitionViewModel = () => {
     const publishMutation = usePublishWorkflowVersion();
     const triggerExecutionMutation = useTriggerWorkflowExecution();
     const validateDslMutation = useValidateWorkflowDsl();
+    const preflightDslMutation = usePreflightWorkflowDsl();
     const { data: strictModeSetting, isLoading: strictModeLoading } = useWorkflowAgentStrictMode();
     const updateStrictModeMutation = useUpdateWorkflowAgentStrictMode();
 
-     
+
     const rulePackOptions = useMemo(() => (rulePackCatalog?.data || []).filter((pack: any) => pack.isActive).map((pack: any) => ({ label: `${pack.name} (${pack.rulePackCode})`, value: pack.rulePackCode })), [rulePackCatalog?.data]);
-     
+
     const agentBindingOptions = useMemo(() => (agentProfileCatalog?.data || []).filter((item: any) => item.isActive).map((item: any) => ({ label: `${item.agentName} (${item.agentCode})`, value: item.agentCode })), [agentProfileCatalog?.data]);
-     
+
     const parameterBindingOptions = useMemo(() => (parameterSetCatalog?.data || []).filter((item: any) => item.isActive).map((item: any) => ({ label: `${item.name} (${item.setCode})`, value: item.setCode })), [parameterSetCatalog?.data]);
-     
+
     const dataConnectorBindingOptions = useMemo(() => (dataConnectorCatalog?.data || []).filter((item: any) => item.isActive).map((item: any) => ({ label: `${item.connectorName} (${item.connectorCode})`, value: item.connectorCode })), [dataConnectorCatalog?.data]);
 
-     
+
     const rulePackCodeMap = useMemo(() => new Map((rulePackCatalog?.data || []).map((item: any) => [item.rulePackCode, item])), [rulePackCatalog?.data]);
-     
+
     const parameterSetCodeMap = useMemo(() => new Map((parameterSetCatalog?.data || []).map((item: any) => [item.setCode, item])), [parameterSetCatalog?.data]);
-     
+
     const agentProfileCodeMap = useMemo(() => new Map((agentProfileCatalog?.data || []).map((item: any) => [item.agentCode, item])), [agentProfileCatalog?.data]);
 
     const dependencyCatalogLoading = isRulePackLoading || isParameterSetLoading || isAgentProfileLoading;
@@ -149,6 +153,8 @@ export const useWorkflowDefinitionViewModel = () => {
         setPublishWizardDependencyRefreshing(false);
         setPublishWizardDryRunLoading(false);
         setPublishWizardDryRunPreview(null);
+        setQuickRunnerVisible(false);
+        setQuickRunnerVersion(null);
     }, [selectedDefinition?.id]);
 
     const runPublishValidationCheck = async (version: WorkflowVersionDto): Promise<WorkflowValidationResult | null> => {
@@ -210,11 +216,11 @@ export const useWorkflowDefinitionViewModel = () => {
             const nextDependencyResult = checkPublishDependenciesByLookups(
                 publishWizardVersion.dslSnapshot,
                 {
-                     
+
                     rulePacks: new Map((rulePackResult.data?.data || []).map((item: any) => [item.rulePackCode, item])) as Map<string, DependencyLookupItem>,
-                     
+
                     parameterSets: new Map((parameterSetResult.data?.data || []).map((item: any) => [item.setCode, item])) as Map<string, DependencyLookupItem>,
-                     
+
                     agentProfiles: new Map((agentProfileResult.data?.data || []).map((item: any) => [item.agentCode, item])) as Map<string, DependencyLookupItem>,
                 },
             );
@@ -329,20 +335,40 @@ export const useWorkflowDefinitionViewModel = () => {
     };
 
     const handleSaveStudioDsl = async (dsl: WorkflowDsl) => {
-        if (!selectedDefinition?.id || !studioVersion) return;
+        if (!selectedDefinition?.id || !studioVersion) {
+            throw new Error('当前未选择可编辑版本');
+        }
         try {
+            const mergedDsl = { ...studioVersion.dslSnapshot, ...dsl };
+            const preflightResult = await preflightDslMutation.mutateAsync({
+                dslSnapshot: mergedDsl,
+                stage: 'SAVE',
+                autoFixLevel: 'SAFE',
+            });
+            if (preflightResult.autoFixes.length > 0) {
+                message.info(`系统已自动修复 ${preflightResult.autoFixes.length} 项配置`);
+            }
+            if (!preflightResult.validation.valid) {
+                message.warning(`保存前校验未通过，仍有 ${preflightResult.validation.issues.length} 项问题`);
+                throw new Error('保存前校验未通过');
+            }
             await createVersionMutation.mutateAsync({
                 workflowDefinitionId: selectedDefinition.id,
                 payload: {
-                    dslSnapshot: { ...studioVersion.dslSnapshot, ...dsl },
+                    dslSnapshot: preflightResult.normalizedDsl,
                     changelog: `Studio 编辑保存（基于 ${studioVersion.versionCode}）`,
                 },
             });
-            message.success('Studio 保存成功，已生成新的草稿版本');
+            if (preflightResult.autoFixes.length > 0) {
+                message.success(`Studio 保存成功，已智能补全 ${preflightResult.autoFixes.length} 项并生成新草稿版本`);
+            } else {
+                message.success('Studio 保存成功，已生成新的草稿版本');
+            }
             setStudioVisible(false);
             setStudioVersion(null);
         } catch (error) {
             message.error(getErrorMessage(error));
+            throw error;
         }
     };
 
@@ -384,13 +410,49 @@ export const useWorkflowDefinitionViewModel = () => {
         }
     }
 
-    const handleStudioRun = async (dsl: WorkflowDsl) => {
+    const handleOpenQuickRunner = (version: WorkflowVersionDto) => {
+        setQuickRunnerVersion(version);
+        setQuickRunnerVisible(true);
+    };
+
+    const handleSubmitQuickRunner = async (paramSnapshot: Record<string, unknown>) => {
+        if (!selectedDefinition?.id || !quickRunnerVersion) return;
+        try {
+            setRunningVersionId(quickRunnerVersion.id);
+            const execution = await triggerExecutionMutation.mutateAsync({
+                workflowDefinitionId: selectedDefinition.id,
+                workflowVersionId: quickRunnerVersion.id,
+                paramSnapshot, // 透传在前端填写的动态运行参数
+            });
+            message.success(`已发起带参运行，实例 ID: ${execution.id}`);
+            setQuickRunnerVisible(false);
+        } catch (error) {
+            message.error(getErrorMessage(error));
+        } finally {
+            setRunningVersionId(null);
+        }
+    };
+
+    const handleStudioRun = useCallback(async (dsl: WorkflowDsl) => {
         if (!selectedDefinition?.id || !studioVersion) return undefined;
         try {
+            const mergedDsl = { ...studioVersion.dslSnapshot, ...dsl };
+            const preflightResult = await preflightDslMutation.mutateAsync({
+                dslSnapshot: mergedDsl,
+                stage: 'SAVE',
+                autoFixLevel: 'SAFE',
+            });
+            if (preflightResult.autoFixes.length > 0) {
+                message.info(`系统已自动修复 ${preflightResult.autoFixes.length} 项配置`);
+            }
+            if (!preflightResult.validation.valid) {
+                message.warning(`运行前校验未通过，仍有 ${preflightResult.validation.issues.length} 项问题`);
+                return undefined;
+            }
             const newVersion = await createVersionMutation.mutateAsync({
                 workflowDefinitionId: selectedDefinition.id,
                 payload: {
-                    dslSnapshot: { ...studioVersion.dslSnapshot, ...dsl },
+                    dslSnapshot: preflightResult.normalizedDsl,
                     changelog: `Studio 调试运行快照（基于 ${studioVersion.versionCode}）`,
                 },
             });
@@ -405,11 +467,16 @@ export const useWorkflowDefinitionViewModel = () => {
             message.error(getErrorMessage(error));
             return undefined;
         }
-    };
+    }, [selectedDefinition?.id, studioVersion, createVersionMutation, preflightDslMutation, triggerExecutionMutation, message]);
 
-    const handleStudioValidate = async (dsl: WorkflowDsl) => {
-        return validateDslMutation.mutateAsync({ dslSnapshot: dsl, stage: 'SAVE' });
-    };
+    const handleStudioValidate = useCallback(async (dsl: WorkflowDsl) => {
+        const preflightResult = await preflightDslMutation.mutateAsync({
+            dslSnapshot: dsl,
+            stage: 'SAVE',
+            autoFixLevel: 'SAFE',
+        });
+        return preflightResult.validation;
+    }, [preflightDslMutation]);
 
     const handleStrictModeChange = async (checked: boolean) => {
         try {
@@ -457,6 +524,8 @@ export const useWorkflowDefinitionViewModel = () => {
             publishWizardDryRunPreview, setPublishWizardDryRunPreview,
             publishingVersionId, setPublishingVersionId,
             runningVersionId, setRunningVersionId,
+            quickRunnerVisible, setQuickRunnerVisible,
+            quickRunnerVersion, setQuickRunnerVersion,
         },
         queries: {
             definitionPage, isDefinitionLoading,
@@ -482,6 +551,8 @@ export const useWorkflowDefinitionViewModel = () => {
             handleSaveStudioDsl,
             handleValidateLatestForPublish,
             handleTriggerExecution,
+            handleOpenQuickRunner,
+            handleSubmitQuickRunner,
             handleStudioRun,
             handleStudioValidate,
             handleStrictModeChange,
@@ -489,7 +560,12 @@ export const useWorkflowDefinitionViewModel = () => {
             runPublishValidationCheck,
         },
         mutations: {
-            publishMutation, triggerExecutionMutation, createVersionMutation, validateDslMutation, updateStrictModeMutation
+            publishMutation,
+            triggerExecutionMutation,
+            createVersionMutation,
+            validateDslMutation,
+            preflightDslMutation,
+            updateStrictModeMutation,
         }
     };
 };

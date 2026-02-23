@@ -1,12 +1,13 @@
 import React from 'react';
 import {
   Alert,
+  Collapse,
   Empty,
   Form,
   Input,
   InputNumber,
-  Segmented,
   Select,
+  Segmented,
   Space,
   Switch,
   Tabs,
@@ -22,7 +23,6 @@ import { ExpressionEditor } from './ExpressionEditor';
 import { NODE_FORM_REGISTRY } from './node-forms/formRegistry';
 import { InputMappingMatrix } from './property-panel/InputMappingMatrix';
 import { NodeDryRunPreview } from './property-panel/NodeDryRunPreview';
-import { ParameterOverrideBuilder } from './property-panel/ParameterOverrideBuilder';
 import { RuntimePresetCard as RuntimePresetCardComponent } from './property-panel/RuntimePresetCard';
 
 const { Text } = Typography;
@@ -82,8 +82,6 @@ export const PropertyPanel: React.FC<PropertyPanelProps> = ({
   selectedEdge,
   onUpdateNode,
   onUpdateEdge,
-
-  paramSetBindings = [],
   currentDsl,
   onFocusNode,
   onClose,
@@ -92,10 +90,28 @@ export const PropertyPanel: React.FC<PropertyPanelProps> = ({
 
   const [viewMode, setViewMode] = React.useState<'ui' | 'json'>('ui');
   const [activeTab, setActiveTab] = React.useState('overview');
+  const [runCollapseKey, setRunCollapseKey] = React.useState<string[]>([]);
 
   React.useEffect(() => {
     setActiveTab('overview');
   }, [selectedNode?.id, selectedEdge?.id]);
+
+  React.useEffect(() => {
+    if (selectedNode) {
+      const nodeData = (selectedNode.data as Record<string, unknown> | undefined) ?? EMPTY_RECORD;
+      const runtimePolicy = (nodeData.runtimePolicy as Record<string, unknown>) ?? EMPTY_RECORD;
+      const t = (runtimePolicy.timeoutMs as number) ?? 30000;
+      const r = (runtimePolicy.retryCount as number) ?? 1;
+      const b = (runtimePolicy.retryBackoffMs as number) ?? 2000;
+      const o = (runtimePolicy.onError as string) ?? 'FAIL_FAST';
+      const isCustom = !(
+        (t === 15000 && r === 0 && b === 0 && o === 'FAIL_FAST') ||
+        (t === 30000 && r === 1 && b === 2000 && o === 'CONTINUE') ||
+        (t === 60000 && r === 3 && b === 3000 && o === 'ROUTE_TO_ERROR')
+      );
+      setRunCollapseKey(isCustom ? ['advanced'] : []);
+    }
+  }, [selectedNode]);
 
 
   if (selectedEdge && onUpdateEdge) {
@@ -123,10 +139,6 @@ export const PropertyPanel: React.FC<PropertyPanelProps> = ({
   const isEnabled = (nodeData.enabled as boolean) ?? true;
   const nodeTags = (nodeData.tags as string[]) || [];
 
-
-  const paramOverrideMode =
-    (config.paramOverrideMode as 'INHERIT' | 'PRIVATE_OVERRIDE') ?? 'INHERIT';
-  const paramOverrides = (config.paramOverrides as Record<string, unknown>) ?? EMPTY_RECORD;
 
   const currentTimeoutMs = (runtimePolicy.timeoutMs as number) ?? 30000;
   const currentRetryCount = (runtimePolicy.retryCount as number) ?? 1;
@@ -216,10 +228,6 @@ export const PropertyPanel: React.FC<PropertyPanelProps> = ({
       }
     });
 
-    if (paramOverrideMode === 'PRIVATE_OVERRIDE' && Object.keys(paramOverrides).length === 0) {
-      issues.push({ type: 'warning', message: '当前启用了“私有覆盖”，但尚未配置任何覆盖项。' });
-    }
-
     if (currentTimeoutMs > 90000) {
       issues.push({ type: 'warning', message: '超时时间较高，可能导致实例长时间占用资源。' });
     }
@@ -241,86 +249,36 @@ export const PropertyPanel: React.FC<PropertyPanelProps> = ({
     isEnabled,
     nodeName,
     nodeTypeConfig?.inputsSchema,
-    paramOverrideMode,
-    paramOverrides,
   ]);
 
   const capabilityContent = (
     <Space direction="vertical" size={12} style={{ width: '100%' }}>
-      {(
-        <Space style={{ width: '100%', justifyContent: 'space-between' }}>
-          <Text type="secondary" style={{ fontSize: 12 }}>
-            支持可视化表单和源码配置
-          </Text>
-          <Segmented
-            size="small"
-            options={[
-              { label: '表单', value: 'ui' },
-              { label: '源码', value: 'json' },
-            ]}
-            value={viewMode}
-            onChange={(value) => setViewMode(value as 'ui' | 'json')}
-          />
-        </Space>
-      )}
+      <Text type="secondary" style={{ fontSize: 12 }}>
+        简化模式下仅保留可视化表单配置。
+      </Text>
 
-      {viewMode === 'json' ? (
-        <Input.TextArea
-          value={JSON.stringify(config, null, 2)}
-          onChange={(event) => {
-            try {
-              const nextConfig = JSON.parse(event.target.value);
-              onUpdateNode?.(selectedNode.id, { config: nextConfig });
-            } catch {
-              // typing in progress
-            }
-          }}
-          autoSize={{ minRows: 10, maxRows: 30 }}
-          style={{ fontFamily: 'monospace', fontSize: 12 }}
-        />
+      {NODE_FORM_REGISTRY[nodeType] ? (
+        React.createElement(NODE_FORM_REGISTRY[nodeType], {
+          config,
+          onChange: handleConfigChange,
+          currentNodeId: selectedNode.id,
+        })
       ) : (
-        <>
-          {NODE_FORM_REGISTRY[nodeType] ? (
-            React.createElement(NODE_FORM_REGISTRY[nodeType], {
-              config,
-              onChange: handleConfigChange,
-              currentNodeId: selectedNode.id,
-            })
-          ) : (
-            <Form layout="vertical" size="small">
-              {Object.entries(config)
-                .filter(([key]) => !key.startsWith('_'))
-                .map(([key, value]) => (
-                  <Form.Item key={key} label={key} style={{ marginBottom: 12 }}>
-                    {renderConfigField(
-                      key,
-                      value,
-                      (nextValue) => handleConfigChange(key, nextValue),
-                      selectedNode.id,
-                    )}
-                  </Form.Item>
-                ))}
-            </Form>
-          )}
-        </>
+        <Form layout="vertical" size="small">
+          {Object.entries(config)
+            .filter(([key]) => !key.startsWith('_'))
+            .map(([key, value]) => (
+              <Form.Item key={key} label={key} style={{ marginBottom: 12 }}>
+                {renderConfigField(
+                  key,
+                  value,
+                  (nextValue) => handleConfigChange(key, nextValue),
+                  selectedNode.id,
+                )}
+              </Form.Item>
+            ))}
+        </Form>
       )}
-
-      <ParameterOverrideBuilder
-        paramOverrideMode={paramOverrideMode}
-        paramOverrides={paramOverrides}
-        defaultParameterSetCodes={paramSetBindings}
-        onModeChange={(mode) => {
-          if (mode === 'INHERIT') {
-            // 必须一次性更新两个字段，避免分两次调用导致 stale closure 覆盖
-            onUpdateNode?.(selectedNode.id, {
-              config: { ...config, paramOverrideMode: mode, paramOverrides: {} },
-            });
-          } else {
-            handleConfigChange('paramOverrideMode', mode);
-          }
-        }}
-        onOverridesChange={(overrides) => handleConfigChange('paramOverrides', overrides)}
-      />
     </Space>
   );
 
@@ -336,7 +294,11 @@ export const PropertyPanel: React.FC<PropertyPanelProps> = ({
           currentTimeout={currentTimeoutMs}
           currentRetry={currentRetryCount}
           onChange={(value) => {
-            if (value === 'CUSTOM') return;
+            if (value === 'CUSTOM') {
+              setRunCollapseKey(['advanced']);
+              return;
+            }
+            setRunCollapseKey([]);
             const preset = applyRuntimePreset(value as 'FAST' | 'BALANCED' | 'ROBUST');
             handleRuntimePolicyChange('timeoutMs', preset.timeoutMs);
             handleRuntimePolicyChange('retryCount', preset.retryCount);
@@ -354,87 +316,101 @@ export const PropertyPanel: React.FC<PropertyPanelProps> = ({
         description={`超时 ${currentTimeoutMs / 1000} 秒，重试 ${currentRetryCount} 次，间隔 ${currentRetryBackoffMs / 1000} 秒，失败时“${currentOnError === 'FAIL_FAST' ? '立即停止' : currentOnError === 'CONTINUE' ? '继续执行' : '走异常路径'}”`}
       />
 
-      <Form.Item label="超时时间（秒）" style={{ marginBottom: 12 }}>
-        <InputNumber
-          value={currentTimeoutMs}
-          min={1000}
-          max={120000}
-          step={5000}
-          style={{ width: '100%' }}
-          onChange={(value) => handleRuntimePolicyChange('timeoutMs', value)}
-        />
-      </Form.Item>
+      <Collapse
+        size="small"
+        bordered={false}
+        ghost
+        activeKey={runCollapseKey}
+        onChange={(keys) => setRunCollapseKey(keys as string[])}
+        items={[
+          {
+            key: 'advanced',
+            label: '高级运行策略',
+            children: (
+              <>
+                <Form.Item label="超时时间（秒）" style={{ marginBottom: 12 }}>
+                  <InputNumber
+                    value={currentTimeoutMs}
+                    min={1000}
+                    max={120000}
+                    step={5000}
+                    style={{ width: '100%' }}
+                    onChange={(value) => handleRuntimePolicyChange('timeoutMs', value)}
+                  />
+                </Form.Item>
 
-      <Form.Item label="重试次数" style={{ marginBottom: 12 }}>
-        <InputNumber
-          value={currentRetryCount}
-          min={0}
-          max={5}
-          style={{ width: '100%' }}
-          onChange={(value) => handleRuntimePolicyChange('retryCount', value)}
-        />
-      </Form.Item>
+                <Form.Item label="重试次数" style={{ marginBottom: 12 }}>
+                  <InputNumber
+                    value={currentRetryCount}
+                    min={0}
+                    max={5}
+                    style={{ width: '100%' }}
+                    onChange={(value) => handleRuntimePolicyChange('retryCount', value)}
+                  />
+                </Form.Item>
 
-      <Form.Item label="重试间隔 (ms)" style={{ marginBottom: 12 }}>
-        <InputNumber
-          value={currentRetryBackoffMs}
-          min={0}
-          max={60000}
-          step={1000}
-          style={{ width: '100%' }}
-          onChange={(value) => handleRuntimePolicyChange('retryBackoffMs', value)}
-        />
-      </Form.Item>
+                <Form.Item label="重试间隔 (ms)" style={{ marginBottom: 12 }}>
+                  <InputNumber
+                    value={currentRetryBackoffMs}
+                    min={0}
+                    max={60000}
+                    step={1000}
+                    style={{ width: '100%' }}
+                    onChange={(value) => handleRuntimePolicyChange('retryBackoffMs', value)}
+                  />
+                </Form.Item>
 
+                <Form.Item label="失败处理" style={{ marginBottom: 12 }}>
+                  <Select
+                    value={currentOnError}
+                    onChange={(value) => handleRuntimePolicyChange('onError', value)}
+                    options={[
+                      { label: '立即停止', value: 'FAIL_FAST' },
+                      { label: '继续执行', value: 'CONTINUE' },
+                      { label: '走异常路径', value: 'ROUTE_TO_ERROR' },
+                    ]}
+                  />
+                </Form.Item>
 
-      <Form.Item label="失败处理" style={{ marginBottom: 12 }}>
-        <Select
-          value={currentOnError}
-          onChange={(value) => handleRuntimePolicyChange('onError', value)}
-          options={[
-            { label: '立即停止', value: 'FAIL_FAST' },
-            { label: '继续执行', value: 'CONTINUE' },
-            { label: '走异常路径', value: 'ROUTE_TO_ERROR' },
-          ]}
-        />
-      </Form.Item>
+                <Form.Item label="缓存策略" style={{ marginBottom: 12 }}>
+                  <Select
+                    value={currentCachePolicy}
+                    onChange={(value) => handleRuntimePolicyChange('cachePolicy', value)}
+                    options={[
+                      { label: '不缓存', value: 'NONE' },
+                      { label: '本地缓存', value: 'LOCAL' },
+                      { label: '共享缓存', value: 'SHARED' },
+                    ]}
+                  />
+                </Form.Item>
 
-      <Form.Item label="缓存策略" style={{ marginBottom: 12 }}>
-        <Select
-          value={currentCachePolicy}
-          onChange={(value) => handleRuntimePolicyChange('cachePolicy', value)}
-          options={[
-            { label: '不缓存', value: 'NONE' },
-            { label: '本地缓存', value: 'LOCAL' },
-            { label: '共享缓存', value: 'SHARED' },
-          ]}
-        />
-      </Form.Item>
+                {currentCachePolicy === 'LOCAL' || currentCachePolicy === 'SHARED' ? (
+                  <Form.Item label="缓存时长 (秒)" style={{ marginBottom: 12 }}>
+                    <InputNumber
+                      value={(runtimePolicy.cacheTtlSec as number) ?? 300}
+                      min={1}
+                      style={{ width: '100%' }}
+                      onChange={(value) => handleRuntimePolicyChange('cacheTtlSec', value)}
+                    />
+                  </Form.Item>
+                ) : null}
 
-      {
-        currentCachePolicy === 'LOCAL' || currentCachePolicy === 'SHARED' ? (
-          <Form.Item label="缓存时长 (秒)" style={{ marginBottom: 12 }}>
-            <InputNumber
-              value={(runtimePolicy.cacheTtlSec as number) ?? 300}
-              min={1}
-              style={{ width: '100%' }}
-              onChange={(value) => handleRuntimePolicyChange('cacheTtlSec', value)}
-            />
-          </Form.Item>
-        ) : null
-      }
-
-      <Form.Item label="审计级别" style={{ marginBottom: 12 }}>
-        <Select
-          value={currentAuditLevel}
-          onChange={(value) => handleRuntimePolicyChange('auditLevel', value)}
-          options={[
-            { label: '无', value: 'NONE' },
-            { label: '基础', value: 'BASIC' },
-            { label: '完整', value: 'FULL' },
-          ]}
-        />
-      </Form.Item>
+                <Form.Item label="审计级别" style={{ marginBottom: 12 }}>
+                  <Select
+                    value={currentAuditLevel}
+                    onChange={(value) => handleRuntimePolicyChange('auditLevel', value)}
+                    options={[
+                      { label: '无', value: 'NONE' },
+                      { label: '基础', value: 'BASIC' },
+                      { label: '完整', value: 'FULL' },
+                    ]}
+                  />
+                </Form.Item>
+              </>
+            ),
+          },
+        ]}
+      />
     </Form>
   );
 
@@ -560,8 +536,6 @@ export const PropertyPanel: React.FC<PropertyPanelProps> = ({
               description={[
                 `输入映射: ${Object.keys(inputBindings).filter((key) => (inputBindings[key] ?? '').trim().length > 0).length} 项`,
                 `默认值: ${Object.keys(defaultValues).length} 项`,
-                `参数模式: ${paramOverrideMode === 'INHERIT' ? '继承' : '私有覆盖'}`,
-                `覆盖项: ${Object.keys(paramOverrides).length} 个`,
               ].join(' | ')}
             />
 

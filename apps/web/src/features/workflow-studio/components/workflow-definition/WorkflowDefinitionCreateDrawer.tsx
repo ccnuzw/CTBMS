@@ -1,8 +1,8 @@
 import React, { useEffect, useState } from 'react';
-import { Button, Drawer, Form, Input, InputNumber, Select, Space, Collapse, App } from 'antd';
+import { Button, Drawer, Form, Input, Select, Space, App } from 'antd';
 import { CreateWorkflowDefinitionFormValues } from './types';
 import { slugifyWorkflowId, buildInitialDslSnapshot } from './utils';
-import { starterTemplateOptions, modeOptions, usageMethodOptions, runtimeOnErrorOptions } from './constants';
+import { starterTemplateOptions } from './constants';
 import { useCreateWorkflowDefinition } from '../../api';
 
 const { TextArea } = Input;
@@ -24,18 +24,24 @@ export const WorkflowDefinitionCreateDrawer: React.FC<WorkflowDefinitionCreateDr
     open,
     onClose,
     rulePackOptions,
-    agentBindingOptions,
-    parameterBindingOptions,
-    dataConnectorBindingOptions,
     isRulePackLoading,
-    isAgentProfileLoading,
-    isParameterSetLoading,
-    isDataConnectorLoading,
 }) => {
     const { message } = App.useApp();
     const [form] = Form.useForm<CreateWorkflowDefinitionFormValues>();
     const [isWorkflowIdCustomized, setIsWorkflowIdCustomized] = useState(false);
     const createMutation = useCreateWorkflowDefinition();
+
+    const resolveStarterTemplateProfile = (
+        starterTemplate?: CreateWorkflowDefinitionFormValues['starterTemplate'],
+    ): { mode: CreateWorkflowDefinitionFormValues['mode']; usageMethod: CreateWorkflowDefinitionFormValues['usageMethod'] } => {
+        if (starterTemplate === 'DEBATE_ANALYSIS') {
+            return { mode: 'DEBATE', usageMethod: 'COPILOT' };
+        }
+        if (starterTemplate === 'RISK_REVIEW') {
+            return { mode: 'DAG', usageMethod: 'HEADLESS' };
+        }
+        return { mode: 'LINEAR', usageMethod: 'COPILOT' };
+    };
 
     useEffect(() => {
         if (!open) {
@@ -49,35 +55,30 @@ export const WorkflowDefinitionCreateDrawer: React.FC<WorkflowDefinitionCreateDr
             const values = await form.validateFields();
             const {
                 starterTemplate,
-                defaultTimeoutMs,
-                defaultRetryCount,
-                defaultRetryBackoffMs,
-                defaultOnError,
                 defaultRulePackCode,
-                defaultAgentBindings,
-                defaultParamSetBindings,
-                defaultDataConnectorBindings,
                 ...definitionPayload
             } = values;
+            const templateProfile = resolveStarterTemplateProfile(starterTemplate);
 
             const runtimePolicy = {
-                timeoutMs: defaultTimeoutMs ?? 30000,
-                retryCount: defaultRetryCount ?? 1,
-                retryBackoffMs: defaultRetryBackoffMs ?? 2000,
-                onError: defaultOnError ?? 'FAIL_FAST',
+                timeoutMs: 30000,
+                retryCount: 1,
+                retryBackoffMs: 2000,
+                onError: 'FAIL_FAST' as const,
             };
 
             await createMutation.mutateAsync({
                 ...definitionPayload,
+                mode: templateProfile.mode,
+                usageMethod: templateProfile.usageMethod,
                 templateSource: 'PRIVATE',
                 dslSnapshot: buildInitialDslSnapshot(
                     {
                         ...values,
+                        mode: templateProfile.mode,
+                        usageMethod: templateProfile.usageMethod,
                         starterTemplate,
                         defaultRulePackCode,
-                        defaultAgentBindings,
-                        defaultParamSetBindings,
-                        defaultDataConnectorBindings,
                     },
                     runtimePolicy,
                 ),
@@ -113,12 +114,6 @@ export const WorkflowDefinitionCreateDrawer: React.FC<WorkflowDefinitionCreateDr
                 layout="vertical"
                 initialValues={{
                     starterTemplate: 'QUICK_DECISION',
-                    mode: 'LINEAR',
-                    usageMethod: 'COPILOT',
-                    defaultTimeoutMs: 30000,
-                    defaultRetryCount: 1,
-                    defaultRetryBackoffMs: 2000,
-                    defaultOnError: 'FAIL_FAST',
                 }}
                 onValuesChange={(changedValues, allValues) => {
                     const changedName = changedValues.name as string | undefined;
@@ -138,15 +133,6 @@ export const WorkflowDefinitionCreateDrawer: React.FC<WorkflowDefinitionCreateDr
                         }
                     }
 
-                    const changedStarterTemplate =
-                        changedValues.starterTemplate as CreateWorkflowDefinitionFormValues['starterTemplate'] | undefined;
-                    if (changedStarterTemplate === 'DEBATE_ANALYSIS') {
-                        form.setFieldsValue({ mode: 'DEBATE', usageMethod: 'COPILOT' });
-                    } else if (changedStarterTemplate === 'RISK_REVIEW') {
-                        form.setFieldsValue({ mode: 'DAG', usageMethod: 'HEADLESS' });
-                    } else if (changedStarterTemplate === 'QUICK_DECISION') {
-                        form.setFieldsValue({ mode: 'LINEAR', usageMethod: 'COPILOT' });
-                    }
                 }}
             >
                 <Form.Item
@@ -195,12 +181,6 @@ export const WorkflowDefinitionCreateDrawer: React.FC<WorkflowDefinitionCreateDr
                         }
                     />
                 </Form.Item>
-                <Form.Item label="编排模式" name="mode" rules={[{ required: true }]}>
-                    <Select options={modeOptions} />
-                </Form.Item>
-                <Form.Item label="使用方式" name="usageMethod" rules={[{ required: true }]}>
-                    <Select options={usageMethodOptions} />
-                </Form.Item>
                 <Form.Item
                     label="默认规则包（可选）"
                     name="defaultRulePackCode"
@@ -215,83 +195,9 @@ export const WorkflowDefinitionCreateDrawer: React.FC<WorkflowDefinitionCreateDr
                         placeholder="请选择规则包编码"
                     />
                 </Form.Item>
-                <Form.Item
-                    label="默认智能体绑定（可选）"
-                    name="defaultAgentBindings"
-                    extra="可多选，系统将自动写入流程绑定。"
-                >
-                    <Select
-                        mode="multiple"
-                        allowClear
-                        showSearch
-                        loading={isAgentProfileLoading}
-                        options={agentBindingOptions}
-                        optionFilterProp="label"
-                        placeholder="选择智能体（可多选）"
-                    />
+                <Form.Item label="描述" name="description">
+                    <TextArea rows={4} placeholder="流程说明（可选）" />
                 </Form.Item>
-                <Form.Item
-                    label="默认参数包绑定（可选）"
-                    name="defaultParamSetBindings"
-                    extra="可多选，系统将自动写入参数包绑定。"
-                >
-                    <Select
-                        mode="multiple"
-                        allowClear
-                        showSearch
-                        loading={isParameterSetLoading}
-                        options={parameterBindingOptions}
-                        optionFilterProp="label"
-                        placeholder="选择参数包（可多选）"
-                    />
-                </Form.Item>
-                <Form.Item
-                    label="默认连接器绑定（可选）"
-                    name="defaultDataConnectorBindings"
-                    extra="可多选，便于后续节点直接引用连接器。"
-                >
-                    <Select
-                        mode="multiple"
-                        allowClear
-                        showSearch
-                        loading={isDataConnectorLoading}
-                        options={dataConnectorBindingOptions}
-                        optionFilterProp="label"
-                        placeholder="选择数据连接器（可多选）"
-                    />
-                </Form.Item>
-                <Collapse
-                    size="small"
-                    items={[
-                        {
-                            key: 'advanced-runtime',
-                            label: '高级设置（运行策略与说明）',
-                            children: (
-                                <Space direction="vertical" style={{ width: '100%' }} size={0}>
-                                    <Form.Item label="默认超时(ms)" name="defaultTimeoutMs" rules={[{ required: true }]}>
-                                        <InputNumber style={{ width: '100%' }} min={1000} max={120000} step={1000} />
-                                    </Form.Item>
-                                    <Form.Item label="默认重试次数" name="defaultRetryCount" rules={[{ required: true }]}>
-                                        <InputNumber style={{ width: '100%' }} min={0} max={5} step={1} />
-                                    </Form.Item>
-                                    <Form.Item
-                                        label="默认重试间隔(ms)"
-                                        name="defaultRetryBackoffMs"
-                                        rules={[{ required: true }]}
-                                    >
-                                        <InputNumber style={{ width: '100%' }} min={0} max={60000} step={500} />
-                                    </Form.Item>
-                                    <Form.Item label="默认异常策略" name="defaultOnError" rules={[{ required: true }]}>
-                                        <Select options={runtimeOnErrorOptions} />
-                                    </Form.Item>
-                                    <Form.Item label="描述" name="description">
-                                        <TextArea rows={4} placeholder="流程说明（可选）" />
-                                    </Form.Item>
-                                </Space>
-                            ),
-                        },
-                    ]}
-                />
             </Form>
         </Drawer>
     );

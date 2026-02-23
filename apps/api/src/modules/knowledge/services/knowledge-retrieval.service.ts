@@ -36,7 +36,7 @@ export class KnowledgeRetrievalService {
     private configService: ConfigService,
     private queryExpansionService: KnowledgeQueryExpansionService,
     private aiProviderFactory: AIProviderFactory,
-  ) {}
+  ) { }
 
   private resolveApiKey(config?: AIModelConfig | null): string {
     if (config?.apiKey) return config.apiKey;
@@ -45,10 +45,7 @@ export class KnowledgeRetrievalService {
   }
 
   private async getEmbeddings(): Promise<OpenAIEmbeddings | GoogleGenerativeAIEmbeddings> {
-    const configs = await this.configService.getAllAIModelConfigs();
-    const activeConfig =
-      configs.find((c) => c.isActive && c.configKey !== 'DEFAULT') ||
-      (await this.configService.getDefaultAIConfig());
+    const activeConfig = await this.configService.getDefaultAIConfig();
 
     if (!activeConfig) {
       // Fallback to Env if no config in DB

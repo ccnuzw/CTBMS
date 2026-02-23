@@ -30,6 +30,7 @@ import {
 } from '@packages/types';
 import { useSearchParams } from 'react-router-dom';
 import { getErrorMessage } from '../../../api/client';
+import { RuleTreeEditor } from './RuleTreeEditor';
 import {
     useCreateDecisionRule,
     useCreateDecisionRulePack,
@@ -202,6 +203,7 @@ export const DecisionRulePackPage: React.FC = () => {
             description: selectedPack.description || undefined,
             priority: selectedPack.priority,
             isActive: selectedPack.isActive,
+            conditionAST: selectedPack.conditionAST as any,
         });
     }, [selectedPack, updatePackForm]);
 
@@ -724,16 +726,13 @@ export const DecisionRulePackPage: React.FC = () => {
                 }}
                 extra={
                     <Space>
-                        <Button onClick={handleOpenCreateRule} disabled={!selectedPackId}>
-                            新增规则
-                        </Button>
                         <Button
                             type="primary"
                             loading={updatePackMutation.isPending}
                             onClick={handleUpdatePack}
                             disabled={!selectedPack}
                         >
-                            保存规则包
+                            保存规则包配置
                         </Button>
                     </Space>
                 }
@@ -773,16 +772,14 @@ export const DecisionRulePackPage: React.FC = () => {
                         <Form.Item label="描述" name="description">
                             <TextArea rows={2} />
                         </Form.Item>
-                    </Form>
 
-                    <Table
-                        rowKey="id"
-                        loading={isPackDetailLoading}
-                        columns={ruleColumns}
-                        dataSource={selectedPack?.rules || []}
-                        pagination={false}
-                        scroll={{ x: 1200 }}
-                    />
+                        <div style={{ marginTop: 24, padding: 16, backgroundColor: token.colorFillQuaternary, borderRadius: token.borderRadiusLG }}>
+                            <Title level={5} style={{ marginTop: 0 }}>高级树状推理编排 (Condition AST)</Title>
+                            <Form.Item name="conditionAST" noStyle>
+                                <RuleTreeEditor />
+                            </Form.Item>
+                        </div>
+                    </Form>
                 </Space>
             </Drawer>
 

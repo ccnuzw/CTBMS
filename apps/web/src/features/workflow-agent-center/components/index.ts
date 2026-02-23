@@ -6,3 +6,5 @@ export * from './GuardrailsEditor';
 export * from './RetryPolicyForm';
 export * from './GuardrailsForm';
 export * from './ToolPolicyForm';
+export * from './SkillDashboardPage';
+export * from './RagSkillParamForm';

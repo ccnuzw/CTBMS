@@ -1,12 +1,12 @@
 import { OpenAI } from 'openai';
 import { Logger } from '@nestjs/common';
-import { IAIProvider, AIRequestOptions } from './base.provider';
+import { IAIProvider, AIRequestOptions, AIMessage, AIChatResponse } from './base.provider';
 
 export class OpenAIProvider implements IAIProvider {
   private readonly logger = new Logger(OpenAIProvider.name);
 
   private buildHeaders(options: AIRequestOptions): Record<string, string> | undefined {
-    const authType = options.authType === 'custom' ? 'bearer' : (options.authType || 'bearer');
+    const authType = options.authType === 'custom' ? 'bearer' : options.authType || 'bearer';
     return this.buildHeadersForAuthMode(options, authType);
   }
 
@@ -31,14 +31,19 @@ export class OpenAIProvider implements IAIProvider {
     return Object.keys(headers).length ? headers : undefined;
   }
 
-  private resolveAuthModes(options: AIRequestOptions): Array<'bearer' | 'x-api-key' | 'api-key' | 'none'> {
+  private resolveAuthModes(
+    options: AIRequestOptions,
+  ): Array<'bearer' | 'x-api-key' | 'api-key' | 'none'> {
     if (options.authType === 'bearer') return ['bearer'];
     if (options.authType === 'api-key') return ['api-key'];
     if (options.authType === 'none') return ['none'];
     return ['bearer', 'x-api-key', 'api-key'];
   }
 
-  private async fetchModelsDirect(apiUrl: string | undefined, options: AIRequestOptions): Promise<string[]> {
+  private async fetchModelsDirect(
+    apiUrl: string | undefined,
+    options: AIRequestOptions,
+  ): Promise<string[]> {
     const baseUrl = (apiUrl || 'https://api.openai.com/v1').replace(/\/+$/, '');
     const response = await fetch(`${baseUrl}/models`, {
       headers: this.buildHeaders(options),
@@ -47,7 +52,7 @@ export class OpenAIProvider implements IAIProvider {
       const errorText = await response.text();
       throw new Error(`${response.status} ${errorText}`);
     }
-    const data = await response.json() as { data?: Array<{ id?: string }> };
+    const data = (await response.json()) as { data?: Array<{ id?: string }> };
     return (data.data || []).map((model) => model.id || '').filter(Boolean);
   }
 
@@ -78,7 +83,7 @@ export class OpenAIProvider implements IAIProvider {
       throw new Error(`${response.status} ${errorText}`);
     }
 
-    const data = await response.json() as { choices?: Array<{ message?: { content?: string } }> };
+    const data = (await response.json()) as { choices?: Array<{ message?: { content?: string } }> };
     return data.choices?.[0]?.message?.content || '';
   }
 
@@ -109,7 +114,7 @@ export class OpenAIProvider implements IAIProvider {
       throw new Error(`${response.status} ${errorText}`);
     }
 
-    const data = await response.json() as { choices?: Array<{ text?: string }> };
+    const data = (await response.json()) as { choices?: Array<{ text?: string }> };
     return data.choices?.[0]?.text || '';
   }
 
@@ -131,7 +136,12 @@ export class OpenAIProvider implements IAIProvider {
 
     for (const authMode of authModes) {
       try {
-        const content = await this.callChatCompletionFetch(primaryBase, options, messages, authMode);
+        const content = await this.callChatCompletionFetch(
+          primaryBase,
+          options,
+          messages,
+          authMode,
+        );
         return { content, authMode, pathUsed: '/chat/completions' };
       } catch (error) {
         const msg = error instanceof Error ? error.message : String(error);
@@ -147,7 +157,8 @@ export class OpenAIProvider implements IAIProvider {
             const content = await this.callCompletionFetch(primaryBase, options, prompt, authMode);
             return { content, authMode, pathUsed: '/completions' };
           } catch (fallbackError) {
-            const fallbackMsg = fallbackError instanceof Error ? fallbackError.message : String(fallbackError);
+            const fallbackMsg =
+              fallbackError instanceof Error ? fallbackError.message : String(fallbackError);
             const fallbackStatus = parseStatus(fallbackMsg);
             if ((fallbackStatus === 401 || fallbackStatus === 403) && authModes.length > 1) {
               continue;
@@ -176,14 +187,14 @@ export class OpenAIProvider implements IAIProvider {
         role: 'user',
         content: options.images?.length
           ? [
-            { type: 'text', text: userPrompt },
-            ...options.images.map((img) => ({
-              type: 'image_url' as const,
-              image_url: {
-                url: `data:${img.mimeType};base64,${img.base64}`,
-              },
-            })),
-          ]
+              { type: 'text', text: userPrompt },
+              ...options.images.map((img) => ({
+                type: 'image_url' as const,
+                image_url: {
+                  url: `data:${img.mimeType};base64,${img.base64}`,
+                },
+              })),
+            ]
           : userPrompt,
       },
     ];
@@ -201,9 +212,93 @@ export class OpenAIProvider implements IAIProvider {
     } catch (error) {
       this.logger.error('OpenAI API call failed', error);
       if (options.allowCompatPathFallback) {
-        const fallback = await this.callWithCompatFallback(options.apiUrl || 'https://api.openai.com/v1', options, messages, `${systemPrompt}\n\n${userPrompt}`);
+        const fallback = await this.callWithCompatFallback(
+          options.apiUrl || 'https://api.openai.com/v1',
+          options,
+          messages,
+          `${systemPrompt}\n\n${userPrompt}`,
+        );
         return fallback.content;
       }
+      throw error;
+    }
+  }
+
+  async generateChat(messages: AIMessage[], options: AIRequestOptions): Promise<AIChatResponse> {
+    const client = this.createClient(options);
+
+    const openAiMessages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = messages.map(
+      (msg) => {
+        if (msg.role === 'tool') {
+          return {
+            role: 'tool',
+            content: msg.content || '',
+            tool_call_id: msg.tool_call_id || '',
+          } as OpenAI.Chat.Completions.ChatCompletionToolMessageParam;
+        } else if (msg.role === 'assistant') {
+          return {
+            role: 'assistant',
+            content: msg.content,
+            tool_calls: msg.tool_calls as
+              | OpenAI.Chat.Completions.ChatCompletionMessageToolCall[]
+              | undefined,
+          } as OpenAI.Chat.Completions.ChatCompletionAssistantMessageParam;
+        } else if (msg.role === 'system') {
+          return {
+            role: 'system',
+            content: msg.content || '',
+          } as OpenAI.Chat.Completions.ChatCompletionSystemMessageParam;
+        } else {
+          return {
+            role: 'user',
+            content: msg.content || '',
+            name: msg.name,
+          } as OpenAI.Chat.Completions.ChatCompletionUserMessageParam;
+        }
+      },
+    );
+
+    const requestPayload: OpenAI.Chat.Completions.ChatCompletionCreateParamsNonStreaming = {
+      model: options.modelName,
+      messages: openAiMessages,
+      temperature: options.temperature ?? 0.3,
+      max_tokens: options.maxTokens ?? 8192,
+      top_p: options.topP,
+      tools: options.tools as OpenAI.Chat.Completions.ChatCompletionTool[] | undefined,
+    };
+
+    try {
+      const response = await client.chat.completions.create(requestPayload);
+
+      const responseMessage = response.choices[0]?.message;
+      const toolCalls = responseMessage?.tool_calls?.flatMap((toolCall, index) => {
+        if (toolCall.type !== 'function') {
+          return [];
+        }
+        return [
+          {
+            id: toolCall.id || `call_${index}`,
+            type: 'function' as const,
+            function: {
+              name: toolCall.function.name,
+              arguments: toolCall.function.arguments,
+            },
+          },
+        ];
+      });
+      return {
+        content: responseMessage?.content || null,
+        tool_calls: toolCalls?.length ? toolCalls : undefined,
+        usage: response.usage
+          ? {
+              prompt_tokens: response.usage.prompt_tokens,
+              completion_tokens: response.usage.completion_tokens,
+              total_tokens: response.usage.total_tokens,
+            }
+          : undefined,
+      };
+    } catch (error) {
+      this.logger.error('OpenAI generateChat failed', error);
       throw error;
     }
   }
@@ -250,7 +345,8 @@ export class OpenAIProvider implements IAIProvider {
             pathUsed: response.pathUsed,
           };
         } catch (fallbackError) {
-          const fallbackMsg = fallbackError instanceof Error ? fallbackError.message : String(fallbackError);
+          const fallbackMsg =
+            fallbackError instanceof Error ? fallbackError.message : String(fallbackError);
           return {
             success: false,
             message: `OpenAI 连接失败: ${msg}`,
@@ -273,13 +369,17 @@ export class OpenAIProvider implements IAIProvider {
       const models = await this.fetchModels(options.apiUrl, options);
       return { models, activeUrl: options.apiUrl };
     } catch (error) {
-      this.logger.warn(`Failed to fetch models from default URL: ${error instanceof Error ? error.message : String(error)}`);
+      this.logger.warn(
+        `Failed to fetch models from default URL: ${error instanceof Error ? error.message : String(error)}`,
+      );
 
       try {
         const models = await this.fetchModelsDirect(options.apiUrl, options);
         return { models, activeUrl: options.apiUrl };
       } catch (directError) {
-        this.logger.warn(`Direct fetch fallback failed: ${directError instanceof Error ? directError.message : String(directError)}`);
+        this.logger.warn(
+          `Direct fetch fallback failed: ${directError instanceof Error ? directError.message : String(directError)}`,
+        );
       }
 
       // Probing logic
@@ -299,7 +399,9 @@ export class OpenAIProvider implements IAIProvider {
                 return { models, activeUrl: url };
               }
             } catch (directError) {
-              this.logger.warn(`Direct fetch failed for ${url}: ${directError instanceof Error ? directError.message : String(directError)}`);
+              this.logger.warn(
+                `Direct fetch failed for ${url}: ${directError instanceof Error ? directError.message : String(directError)}`,
+              );
             }
             continue;
           }
@@ -335,7 +437,10 @@ export class OpenAIProvider implements IAIProvider {
     return Array.from(urls);
   }
 
-  private async fetchModels(apiUrl: string | undefined, options: AIRequestOptions): Promise<string[]> {
+  private async fetchModels(
+    apiUrl: string | undefined,
+    options: AIRequestOptions,
+  ): Promise<string[]> {
     const client = new OpenAI({
       apiKey: options.apiKey,
       baseURL: apiUrl || 'https://api.openai.com/v1',
@@ -346,9 +451,7 @@ export class OpenAIProvider implements IAIProvider {
     });
 
     const response = await client.models.list();
-    return response.data
-      .map((model) => model.id)
-      .sort();
+    return response.data.map((model) => model.id).sort();
   }
 
   private createClient(options: AIRequestOptions): OpenAI {

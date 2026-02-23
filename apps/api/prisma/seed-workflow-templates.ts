@@ -330,7 +330,7 @@ const WORKFLOW_TEMPLATES: SeedWorkflow[] = [
       ownerUserId: DEFAULT_ADMIN_USER_ID,
       templateSource: 'PUBLIC',
       runPolicy: COMMON_RUN_POLICY,
-      paramSetBindings: ['BASELINE_SET', 'TRADER_EXPERIENCE_SET'],
+      paramSetBindings: ['BASELINE_SET', 'TRADER_EXPERIENCE_SET', 'DEBATE_SCENARIO_SET'],
       agentBindings: [
         'MARKET_ANALYST_AGENT_V1',
         'FUTURES_EXPERT_AGENT_V1',

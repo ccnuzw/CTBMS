@@ -3,6 +3,7 @@ import { WorkflowNode } from '@packages/types';
 import { WorkflowNodeExecutor } from './node-executor.interface';
 import { ManualTriggerNodeExecutor } from './node-executors/manual-trigger.executor';
 import { NotifyNodeExecutor } from './node-executors/notify-node.executor';
+import { ReportGenerateNodeExecutor } from './node-executors/report-generate-node.executor';
 import { PassthroughNodeExecutor } from './node-executors/passthrough-node.executor';
 import { RulePackEvalNodeExecutor } from './node-executors/rule-pack-eval.executor';
 import { RiskGateNodeExecutor } from './node-executors/risk-gate.executor';
@@ -30,6 +31,7 @@ export class NodeExecutorRegistry {
         private readonly rulePackEvalNodeExecutor: RulePackEvalNodeExecutor,
         private readonly riskGateNodeExecutor: RiskGateNodeExecutor,
         private readonly notifyNodeExecutor: NotifyNodeExecutor,
+        private readonly reportGenerateNodeExecutor: ReportGenerateNodeExecutor,
         private readonly passthroughNodeExecutor: PassthroughNodeExecutor,
         private readonly agentCallNodeExecutor: AgentCallNodeExecutor,
         private readonly dataFetchNodeExecutor: DataFetchNodeExecutor,
@@ -56,6 +58,7 @@ export class NodeExecutorRegistry {
             this.rulePackEvalNodeExecutor,
             this.riskGateNodeExecutor,
             this.notifyNodeExecutor,
+            this.reportGenerateNodeExecutor,
             this.agentCallNodeExecutor,
             this.dataFetchNodeExecutor,
             this.futuresDataFetchNodeExecutor,
