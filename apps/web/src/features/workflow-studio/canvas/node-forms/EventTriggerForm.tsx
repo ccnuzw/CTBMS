@@ -31,13 +31,15 @@ export const EventTriggerForm: React.FC<FormProps> = ({ config, onChange }) => {
                 />
             </Form.Item>
 
-            <Form.Item label="条件白名单 (可选)" help="仅当事件承载的数据符合下方条件时触发工作流">
+            <Form.Item label="条件过滤表达式 (可选)" help="使用条件表达式进行精确拦截，仅当数据匹配且非空/非假时触发">
                 <Input.TextArea
                     value={config.filter as string}
                     onChange={(e) => onChange('filter', e.target.value)}
                     rows={3}
-                    style={{ fontFamily: 'monospace' }}
-                    placeholder="输入匹配条件表达式，例如: data.price > 1000"
+                    style={{ fontFamily: 'monospace', fontSize: 13 }}
+                    placeholder={`支持标准表达式引擎语法，示例：
+payload.price > 1000
+payload.region == 'CN' && payload.urgency == 'HIGH'`}
                 />
             </Form.Item>
         </Form>

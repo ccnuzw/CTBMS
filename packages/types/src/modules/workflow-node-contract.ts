@@ -61,15 +61,18 @@ const WORKFLOW_NODE_CONTRACT_MAP: Record<WorkflowCanonicalNodeType, WorkflowNode
     configSchema: withParamOverride({
       eventType: z.string().optional(),
       topic: z.string().optional(),
+      filter: z.string().optional(),
     }),
   },
   'api-trigger': {
     nodeType: 'api-trigger',
     inputsSchema: [],
     outputsSchema: [{ name: 'payload', type: 'object' }],
-    defaultConfig: { rateLimitQpm: 60 },
+    defaultConfig: { rateLimitQpm: 60, authType: 'NONE' },
     configSchema: withParamOverride({
       rateLimitQpm: z.number().int().positive().optional(),
+      authType: z.enum(['NONE', 'API_KEY', 'BEARER_TOKEN']).optional(),
+      authConfig: z.record(z.unknown()).optional(),
     }),
   },
   'data-fetch': {

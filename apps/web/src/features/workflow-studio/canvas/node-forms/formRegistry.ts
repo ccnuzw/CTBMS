@@ -18,8 +18,10 @@ import { ApprovalForm } from './ApprovalForm'; // New
 import { NotifyForm } from './NotifyForm'; // New
 import { FormulaCalcForm } from './FormulaCalcForm'; // New
 import { FeatureCalcForm } from './FeatureCalcForm'; // New
+import { QuantileCalcForm } from './QuantileCalcForm'; // New
 import { ContextBuilderForm } from './ContextBuilderForm'; // New
 import { JudgeAgentForm } from './JudgeAgentForm'; // New
+import { AlertCheckForm } from './AlertCheckForm'; // New
 
 interface FormProps {
     config: Record<string, unknown>;
@@ -52,6 +54,8 @@ export const NODE_FORM_REGISTRY: Record<string, React.FC<FormProps>> = {
     'notify': NotifyForm,
     'formula-calc': FormulaCalcForm,
     'feature-calc': FeatureCalcForm,
+    'quantile-calc': QuantileCalcForm,
+    'alert-check': AlertCheckForm,
     'context-builder': ContextBuilderForm,
     'judge-agent': JudgeAgentForm,
 };

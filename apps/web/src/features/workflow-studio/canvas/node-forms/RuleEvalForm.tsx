@@ -1,34 +1,21 @@
 import React, { useState, useEffect } from 'react';
-import { Form, Input, Select, Radio, Space, Button, Typography, Row, Col, Divider, Tooltip } from 'antd';
-import { SwapOutlined, CodeOutlined, FormOutlined, InfoCircleOutlined } from '@ant-design/icons';
+import { Form, Input, Select, Radio, Space, Button, Typography, Divider, Tooltip, Alert } from 'antd';
+import { SwapOutlined, CodeOutlined, FormOutlined } from '@ant-design/icons';
 import { VariableSelector } from '../VariableSelector';
-import { ExpressionEditor } from '../ExpressionEditor'; // Assuming reusing this for code mode
-// import { useReactFlow } from '@xyflow/react'; // If needed for context
 
 const { Text } = Typography;
 
 interface RuleEvalFormProps {
     config: Record<string, unknown>;
     onChange: (key: string, value: unknown) => void;
-    currentNodeId?: string; // Might need to pass this down from PropertyPanel
+    currentNodeId?: string;
 }
 
 export const RuleEvalForm: React.FC<RuleEvalFormProps> = ({ config, onChange, currentNodeId }) => {
-    // Current node ID is improvingly passed or we might need to get it from context if not available.
-    // Ideally PropertyPanel passes it. But PropertyPanel uses createElement.
-    // Let's assume PropertyPanel passes it?
-    // Checking PropertyPanel: "React.createElement(NODE_FORM_REGISTRY[nodeType], { config, onChange })"
-    // It does NOT pass currentNodeId. I need to fix PropertyPanel to pass it or use a hook.
-    // VariableSelector uses useReactFlow().currentNodeId? No, it takes props.
-    // I need to update PropertyPanel to pass currentNodeId to the form.
-
-    // For now, I'll rely on a prop that I WILL add to PropertyPanel.
-
     const [mode, setMode] = useState<'visual' | 'code'>('visual');
     const [valueType, setValueType] = useState<'static' | 'variable'>('static');
 
     useEffect(() => {
-        // Detect value type
         const val = config.value as string;
         if (typeof val === 'string' && val.startsWith('{{') && val.endsWith('}}')) {
             setValueType('variable');
@@ -38,38 +25,43 @@ export const RuleEvalForm: React.FC<RuleEvalFormProps> = ({ config, onChange, cu
     }, [config.value]);
 
     const operatorOptions = [
-        { label: 'Equals (==)', value: 'EQ' },
-        { label: 'Not Equals (!=)', value: 'NEQ' },
-        { label: 'Greater Than (>)', value: 'GT' },
-        { label: 'Greater or Equal (>=)', value: 'GTE' },
-        { label: 'Less Than (<)', value: 'LT' },
-        { label: 'Less or Equal (<=)', value: 'LTE' },
-        { label: 'Contains', value: 'CONTAINS' },
-        { label: 'Matches Regex', value: 'MATCHES' },
-        { label: 'Is Null', value: 'IS_NULL' },
-        { label: 'Is Not Null', value: 'NOT_NULL' },
+        { label: '等于 (==)', value: 'EQ' },
+        { label: '不等于 (!=)', value: 'NEQ' },
+        { label: '大于 (>)', value: 'GT' },
+        { label: '大于或等于 (>=)', value: 'GTE' },
+        { label: '小于 (<)', value: 'LT' },
+        { label: '小于或等于 (<=)', value: 'LTE' },
+        { label: '包含 (Contains)', value: 'CONTAINS' },
+        { label: '正则匹配 (Matches)', value: 'MATCHES' },
+        { label: '为空 (Is Null)', value: 'IS_NULL' },
+        { label: '不为空 (Not Null)', value: 'NOT_NULL' },
     ];
 
     return (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <Text strong>Rule Configuration</Text>
+                <Text strong>规则评估配置</Text>
                 <Radio.Group
                     value={mode}
                     onChange={(e) => setMode(e.target.value)}
                     size="small"
                     optionType="button"
                 >
-                    <Radio.Button value="visual"><FormOutlined /> Visual</Radio.Button>
-                    <Radio.Button value="code"><CodeOutlined /> Code</Radio.Button>
+                    <Radio.Button value="visual"><FormOutlined /> 可视化配置</Radio.Button>
+                    <Radio.Button value="code"><CodeOutlined /> 极客模式</Radio.Button>
                 </Radio.Group>
             </div>
 
             {mode === 'visual' ? (
                 <Form layout="vertical" size="small">
-                    <Form.Item label="Comparison Field (Left)" required tooltip="The variable to check">
-                        {/* We need currentNodeId for VariableSelector */}
-                        {/* I will add a placeholder if missing */}
+                    <Alert
+                        message="如何配置判断逻辑？"
+                        description="您需要在左侧提取数据字段（如某节点的 price），在右侧设置期望值（静态数字或引用另一节点变量），中间选择对比算子（大于、等于）。"
+                        type="info"
+                        showIcon
+                        style={{ marginBottom: 16 }}
+                    />
+                    <Form.Item label="比较字段 (左侧目标)" required tooltip="从上游节点的数据对象中提取想要判断的字段">
                         <VariableSelector
                             value={config.fieldPath as string}
                             onChange={(val) => onChange('fieldPath', val)}
@@ -77,7 +69,7 @@ export const RuleEvalForm: React.FC<RuleEvalFormProps> = ({ config, onChange, cu
                         />
                     </Form.Item>
 
-                    <Form.Item label="Operator" required>
+                    <Form.Item label="操作符 (计算关系)" required>
                         <Select
                             value={config.operator as string || 'EQ'}
                             onChange={(val) => onChange('operator', val)}
@@ -88,23 +80,23 @@ export const RuleEvalForm: React.FC<RuleEvalFormProps> = ({ config, onChange, cu
                     {!['IS_NULL', 'NOT_NULL'].includes(config.operator as string) && (
                         <Form.Item
                             label={
-                                <Space>
-                                    <span>Comparison Value (Right)</span>
-                                    <Tooltip title="Switch between static value and variable">
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
+                                    <span>对比值 (右侧参考)</span>
+                                    <Tooltip title={valueType === 'static' ? '点击切换为引用上游节点变量' : '点击切换为手填固定值'}>
                                         <Button
                                             size="small"
-                                            type="text"
+                                            type="link"
                                             icon={<SwapOutlined />}
                                             onClick={() => {
                                                 const next = valueType === 'static' ? 'variable' : 'static';
                                                 setValueType(next);
-                                                onChange('value', ''); // Clear value on switch
+                                                onChange('value', '');
                                             }}
                                         >
-                                            {valueType === 'static' ? 'Use Variable' : 'Use Static'}
+                                            {valueType === 'static' ? '切换为 [变量]' : '切换为 [静态]'}
                                         </Button>
                                     </Tooltip>
-                                </Space>
+                                </div>
                             }
                             required
                         >
@@ -118,7 +110,7 @@ export const RuleEvalForm: React.FC<RuleEvalFormProps> = ({ config, onChange, cu
                                 <Input
                                     value={config.value as string}
                                     onChange={(e) => onChange('value', e.target.value)}
-                                    placeholder="Enter static value"
+                                    placeholder="输入静态的比对值（如：100，或一段文本）"
                                 />
                             )}
                         </Form.Item>
@@ -126,37 +118,44 @@ export const RuleEvalForm: React.FC<RuleEvalFormProps> = ({ config, onChange, cu
 
                     <Divider style={{ margin: '12px 0' }} />
 
-                    <Form.Item label="Description" style={{ marginBottom: 0 }}>
+                    <Form.Item label="规则描述 (选填)" style={{ marginBottom: 0 }}>
                         <Input.TextArea
                             value={config.ruleName as string}
                             onChange={(e) => onChange('ruleName', e.target.value)}
-                            placeholder="Human readable description for this rule"
+                            placeholder="给这套规则起个容易理解的名字，如：价格是否超出警戒线"
                             rows={2}
                         />
                     </Form.Item>
                 </Form>
             ) : (
                 <Form layout="vertical" size="small">
-                    <Form.Item label="Rule Code" tooltip="Advanced: Use a pre-defined rule code">
+                    <Alert
+                        message="极客代码模式"
+                        description="在此模式下，您可以直接填入服务端预设的高级过滤代码与底层参数，建议仅技术人员使用。"
+                        type="warning"
+                        showIcon
+                        style={{ marginBottom: 16 }}
+                    />
+                    <Form.Item label="系统级判定码" tooltip="输入服务端硬编码的判定标识 (如 RULES_001)">
                         <Input
                             value={config.ruleCode as string}
                             onChange={(e) => onChange('ruleCode', e.target.value)}
-                            placeholder="e.g. RULE_001"
+                            placeholder="示例：LIMIT_CHK_01"
                         />
                     </Form.Item>
-                    <Form.Item label="Field Path">
+                    <Form.Item label="底层 Field Path">
                         <Input
                             value={config.fieldPath as string}
                             onChange={(e) => onChange('fieldPath', e.target.value)}
                         />
                     </Form.Item>
-                    <Form.Item label="Operator">
+                    <Form.Item label="底层 Operator">
                         <Input
                             value={config.operator as string}
                             onChange={(e) => onChange('operator', e.target.value)}
                         />
                     </Form.Item>
-                    <Form.Item label="Value">
+                    <Form.Item label="底层 Value">
                         <Input
                             value={config.value as string}
                             onChange={(e) => onChange('value', e.target.value)}
