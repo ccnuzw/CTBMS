@@ -250,8 +250,16 @@ export class DataFetchNodeExecutor implements WorkflowNodeExecutor {
         if (filters) {
             for (const [field, value] of Object.entries(filters)) {
                 if (value !== undefined && value !== null) {
-                    whereConditions.push(`"${field}" = $${params.length + 1}`);
-                    params.push(value);
+                    if (Array.isArray(value)) {
+                        if (value.length > 0) {
+                            const placeholders = value.map((_, i) => `$${params.length + i + 1}`).join(', ');
+                            whereConditions.push(`"${field}" IN (${placeholders})`);
+                            params.push(...value);
+                        }
+                    } else {
+                        whereConditions.push(`"${field}" = $${params.length + 1}`);
+                        params.push(value);
+                    }
                 }
             }
         }
