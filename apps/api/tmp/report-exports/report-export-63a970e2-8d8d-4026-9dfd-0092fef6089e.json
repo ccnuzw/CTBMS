@@ -1,0 +1,67 @@
+{
+  "title": "Agent Conversation Delivery agent_conversation_delivery_1771958563536 辩论报告",
+  "generatedAt": "2026-02-24T18:42:43.985Z",
+  "workflowExecutionId": "fab27ee9-4a32-48ad-9863-1e24ac34f0d8",
+  "workflowName": "Agent Conversation Delivery agent_conversation_delivery_1771958563536",
+  "versionCode": "1.0.0",
+  "conclusion": null,
+  "evidenceItems": [
+    {
+      "source": "n_risk_gate",
+      "category": "RULE_HIT",
+      "content": "风险等级=EXTREME, 降级动作=HOLD, 总分=N/A",
+      "weight": null
+    },
+    {
+      "source": "n_model_evidence",
+      "category": "AGENT_OPINION",
+      "content": "无输出",
+      "weight": null
+    }
+  ],
+  "debateRounds": [],
+  "riskItems": [
+    {
+      "riskType": "OVERALL",
+      "level": "EXTREME",
+      "description": "综合风险评估",
+      "mitigationAction": null
+    }
+  ],
+  "paramSnapshot": {
+    "params": {},
+    "region": "东北",
+    "timeRange": "LAST_7_DAYS",
+    "outputFormat": [
+      "MARKDOWN",
+      "JSON"
+    ],
+    "resolvedParams": {},
+    "_workflowBindings": {
+      "resolvedBindings": {
+        "agents": [],
+        "rulePacks": [],
+        "parameterSets": [],
+        "dataConnectors": []
+      },
+      "workflowBindings": {
+        "agentBindings": [],
+        "paramSetBindings": [],
+        "rulePackBindings": [],
+        "dataConnectorBindings": []
+      },
+      "resolvedParameters": {},
+      "unresolvedBindings": {
+        "agents": [],
+        "rulePacks": [],
+        "parameterSets": [],
+        "dataConnectors": []
+      },
+      "userConfigBindings": [],
+      "parameterResolutionContext": {
+        "region": "东北",
+        "sessionOverrides": {}
+      }
+    }
+  }
+}

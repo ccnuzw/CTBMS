@@ -61,6 +61,7 @@ import { FuturesSimPage } from '../features/futures-sim';
 import { UserConfigBindingPage } from '../features/user-config-binding';
 import { ReplayEvaluationPage } from '../features/replay-evaluation';
 import { WorkflowAdvancedHubPage } from '../features/workflow-advanced/components/WorkflowAdvancedHubPage';
+import { AgentCopilotPage } from '../features/agent-copilot';
 
 // Backward-compatible redirect: /workstation/report/:type -> unified editor
 const WorkstationReportRedirect = () => {
@@ -183,6 +184,10 @@ export const router = createBrowserRouter([
       {
         path: 'workflow/workbench',
         element: <AgentWorkbenchPage />,
+      },
+      {
+        path: 'workflow/copilot',
+        element: <AgentCopilotPage />,
       },
       {
         path: 'workflow/templates',

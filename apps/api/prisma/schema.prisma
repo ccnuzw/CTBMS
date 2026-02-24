@@ -2061,6 +2061,28 @@ enum WorkflowBackfillStatus {
   FAILED
 }
 
+enum ConversationState {
+  INTENT_CAPTURE
+  SLOT_FILLING
+  PLAN_PREVIEW
+  USER_CONFIRM
+  EXECUTING
+  RESULT_DELIVERY
+  DONE
+  FAILED
+}
+
+enum ConversationRole {
+  USER
+  ASSISTANT
+  SYSTEM
+}
+
+enum ConversationPlanType {
+  RUN_PLAN
+  DEBATE_PLAN
+}
+
 model WorkflowDefinition {
   id                String                   @id @default(uuid())
   workflowId        String                   @unique
@@ -2743,6 +2765,107 @@ model ExportTask {
   @@index([workflowExecutionId, createdAt])
   @@index([status])
   @@index([createdByUserId, createdAt])
+}
+
+// ─────────────── ConversationSession (对话会话) ───────────────
+
+model ConversationSession {
+  id                 String               @id @default(uuid())
+  title              String?
+  ownerUserId        String
+  state              ConversationState    @default(INTENT_CAPTURE)
+  currentIntent      String?
+  currentSlots       Json?
+  latestPlanType     ConversationPlanType?
+  latestPlanSnapshot Json?
+  latestExecutionId  String?
+  traceId            String?
+  startedAt          DateTime             @default(now())
+  endedAt            DateTime?
+  createdAt          DateTime             @default(now())
+  updatedAt          DateTime             @updatedAt
+
+  turns ConversationTurn[]
+  plans ConversationPlan[]
+  subscriptions ConversationSubscription[]
+
+  @@index([ownerUserId, createdAt])
+  @@index([state, updatedAt])
+}
+
+model ConversationTurn {
+  id                String           @id @default(uuid())
+  sessionId         String
+  role              ConversationRole
+  content           String           @db.Text
+  structuredPayload Json?
+  tokenUsage        Int?
+  latencyMs         Int?
+  createdAt         DateTime         @default(now())
+
+  session ConversationSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@index([sessionId, createdAt])
+}
+
+model ConversationPlan {
+  id                  String               @id @default(uuid())
+  sessionId           String
+  version             Int
+  planType            ConversationPlanType
+  planSnapshot        Json
+  validatorResult     Json?
+  isConfirmed         Boolean              @default(false)
+  confirmedAt         DateTime?
+  confirmedByUserId   String?
+  workflowExecutionId String?
+  createdAt           DateTime             @default(now())
+
+  session ConversationSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@unique([sessionId, version])
+  @@index([sessionId, createdAt])
+}
+
+model ConversationSubscription {
+  id             String   @id @default(uuid())
+  sessionId      String
+  ownerUserId    String
+  name           String
+  planSnapshot   Json
+  cronExpr       String
+  timezone       String   @default("Asia/Shanghai")
+  status         String   @default("ACTIVE") // ACTIVE | PAUSED | FAILED | ARCHIVED
+  deliveryConfig Json?
+  quietHours     Json?
+  nextRunAt      DateTime?
+  lastRunAt      DateTime?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  session ConversationSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  runs    ConversationSubscriptionRun[]
+
+  @@index([ownerUserId, createdAt])
+  @@index([status, nextRunAt])
+  @@index([sessionId, createdAt])
+}
+
+model ConversationSubscriptionRun {
+  id                  String   @id @default(uuid())
+  subscriptionId      String
+  workflowExecutionId String?
+  exportTaskId        String?
+  status              String   @default("QUEUED") // QUEUED | RUNNING | SUCCESS | FAILED
+  triggerMode         String   @default("MANUAL") // MANUAL | SCHEDULED | RERUN
+  errorMessage        String?  @db.Text
+  startedAt           DateTime @default(now())
+  endedAt             DateTime?
+
+  subscription ConversationSubscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+
+  @@index([subscriptionId, startedAt])
+  @@index([status, startedAt])
 }
 
 // ─────────────── WorkflowExperimentRun (实验运行明细) ───────────────

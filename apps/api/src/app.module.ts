@@ -46,6 +46,7 @@ import { ConnectorModule } from './modules/connector/connector.module';
 import { AgentPersonaModule } from './modules/agent-persona/agent-persona.module';
 import { WizardModule } from './modules/wizard/wizard.module';
 import { AgentSkillModule } from './modules/agent-skill';
+import { AgentConversationModule } from './modules/agent-conversation';
 
 @Module({
   imports: [
@@ -93,6 +94,7 @@ import { AgentSkillModule } from './modules/agent-skill';
     AgentPersonaModule,
     WizardModule,
     AgentSkillModule,
+    AgentConversationModule,
   ],
   controllers: [AppController],
   providers: [],

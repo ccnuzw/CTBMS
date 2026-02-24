@@ -51,3 +51,19 @@ export const getErrorMessage = (error: unknown): string => {
     }
     return '请求失败';
 };
+
+export const getErrorCode = (error: unknown): string | null => {
+    if (axios.isAxiosError(error)) {
+        const axiosError = error as AxiosError<{ code?: string }>;
+        const code = axiosError.response?.data?.code;
+        return typeof code === 'string' ? code : null;
+    }
+    return null;
+};
+
+export const getApiError = (error: unknown): { code: string | null; message: string } => {
+    return {
+        code: getErrorCode(error),
+        message: getErrorMessage(error),
+    };
+};

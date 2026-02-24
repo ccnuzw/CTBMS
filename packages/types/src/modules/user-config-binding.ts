@@ -6,6 +6,7 @@ export const UserConfigBindingTypeEnum = z.enum([
   'AGENT_PROFILE',
   'TEMPLATE_CATALOG',
   'WORKFLOW_DEFINITION',
+  'AGENT_COPILOT_PROMPTS',
 ]);
 
 export const UserConfigBindingSchema = z.object({

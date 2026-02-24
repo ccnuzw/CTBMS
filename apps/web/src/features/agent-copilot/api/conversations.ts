@@ -1,0 +1,411 @@
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { apiClient } from '../../../api/client';
+import type {
+  CreateUserConfigBindingDto,
+  UpdateUserConfigBindingDto,
+  UserConfigBindingDto,
+  UserConfigBindingPageDto,
+} from '@packages/types';
+
+export type ConversationState =
+  | 'INTENT_CAPTURE'
+  | 'SLOT_FILLING'
+  | 'PLAN_PREVIEW'
+  | 'USER_CONFIRM'
+  | 'EXECUTING'
+  | 'RESULT_DELIVERY'
+  | 'DONE'
+  | 'FAILED';
+
+export interface ConversationSession {
+  id: string;
+  title?: string | null;
+  state: ConversationState;
+  currentIntent?: string | null;
+  latestExecutionId?: string | null;
+  updatedAt: string;
+}
+
+export interface ConversationTurn {
+  id: string;
+  role: 'USER' | 'ASSISTANT' | 'SYSTEM';
+  content: string;
+  structuredPayload?: Record<string, unknown>;
+  createdAt: string;
+}
+
+export interface ConversationPlan {
+  id: string;
+  version: number;
+  planType: 'RUN_PLAN' | 'DEBATE_PLAN';
+  planSnapshot: Record<string, unknown>;
+  isConfirmed: boolean;
+  createdAt: string;
+}
+
+export interface ConversationDetail extends ConversationSession {
+  turns: ConversationTurn[];
+  plans: ConversationPlan[];
+}
+
+export interface ConversationPage {
+  data: ConversationSession[];
+  total: number;
+  page: number;
+  pageSize: number;
+  totalPages: number;
+}
+
+export interface TurnResponse {
+  assistantMessage: string;
+  state: ConversationState;
+  intent: string;
+  missingSlots: string[];
+  proposedPlan?: Record<string, unknown> | null;
+  confirmRequired: boolean;
+}
+
+export interface ConfirmResponse {
+  accepted: boolean;
+  executionId: string;
+  status: 'EXECUTING';
+  traceId: string;
+}
+
+export interface ResultResponse {
+  status: 'EXECUTING' | 'DONE' | 'FAILED' | ConversationState;
+  result: {
+    facts: Array<{ text: string; citations: Array<Record<string, unknown>> }>;
+    analysis: string;
+    actions: Record<string, unknown>;
+    confidence: number;
+    dataTimestamp: string;
+  } | null;
+  artifacts: Array<{
+    type: string;
+    exportTaskId: string;
+    status: string;
+    downloadUrl: string | null;
+  }>;
+  executionId?: string;
+  error?: string | null;
+}
+
+export interface ExportResponse {
+  exportTaskId: string;
+  status: string;
+  workflowExecutionId: string;
+  downloadUrl?: string | null;
+}
+
+export interface DeliverEmailResponse {
+  deliveryTaskId: string;
+  status: 'QUEUED' | 'SENT' | 'FAILED';
+  errorMessage?: string | null;
+}
+
+export interface SubscriptionItem {
+  id: string;
+  name: string;
+  status: 'ACTIVE' | 'PAUSED' | 'FAILED' | 'ARCHIVED';
+  cronExpr: string;
+  timezone: string;
+  nextRunAt?: string | null;
+  lastRunAt?: string | null;
+  runs?: Array<{
+    id: string;
+    status: string;
+    triggerMode: string;
+    startedAt: string;
+    endedAt?: string | null;
+    errorMessage?: string | null;
+    workflowExecutionId?: string | null;
+  }>;
+}
+
+const COPILOT_PROMPT_BINDING_TYPE = 'AGENT_COPILOT_PROMPTS';
+
+export type CopilotPromptScope = 'PERSONAL' | 'TEAM';
+
+const scopeToTargetId = (scope: CopilotPromptScope) =>
+  scope === 'TEAM' ? 'team-default' : 'personal-default';
+
+const scopeToTargetCode = (scope: CopilotPromptScope) =>
+  scope === 'TEAM' ? 'agent-copilot-quick-prompts-team' : 'agent-copilot-quick-prompts-personal';
+
+export const useConversationSessions = (params?: {
+  state?: ConversationState;
+  keyword?: string;
+  page?: number;
+  pageSize?: number;
+}) =>
+  useQuery<ConversationPage>({
+    queryKey: ['agent-copilot', 'sessions', params],
+    queryFn: async () => {
+      const res = await apiClient.get<ConversationPage>('/agent-conversations/sessions', { params });
+      return res.data;
+    },
+  });
+
+export const useConversationDetail = (sessionId?: string) =>
+  useQuery<ConversationDetail>({
+    queryKey: ['agent-copilot', 'session', sessionId],
+    queryFn: async () => {
+      const res = await apiClient.get<ConversationDetail>(`/agent-conversations/sessions/${sessionId}`);
+      return res.data;
+    },
+    enabled: Boolean(sessionId),
+  });
+
+export const useConversationResult = (sessionId?: string) =>
+  useQuery<ResultResponse>({
+    queryKey: ['agent-copilot', 'result', sessionId],
+    queryFn: async () => {
+      const res = await apiClient.get<ResultResponse>(`/agent-conversations/sessions/${sessionId}/result`);
+      return res.data;
+    },
+    enabled: Boolean(sessionId),
+    refetchInterval: (query) => {
+      const status = (query as { state?: { data?: ResultResponse } })?.state?.data?.status;
+      return status === 'EXECUTING' ? 3000 : false;
+    },
+  });
+
+export const useCreateConversationSession = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (payload: { title?: string }) => {
+      const res = await apiClient.post<ConversationSession>('/agent-conversations/sessions', payload);
+      return res.data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['agent-copilot', 'sessions'] });
+    },
+  });
+};
+
+export const useSendConversationTurn = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (payload: {
+      sessionId: string;
+      message: string;
+      contextPatch?: Record<string, unknown>;
+    }) => {
+      const { sessionId, ...body } = payload;
+      const res = await apiClient.post<TurnResponse>(
+        `/agent-conversations/sessions/${sessionId}/turns`,
+        body,
+      );
+      return { sessionId, data: res.data };
+    },
+    onSuccess: ({ sessionId }) => {
+      queryClient.invalidateQueries({ queryKey: ['agent-copilot', 'session', sessionId] });
+      queryClient.invalidateQueries({ queryKey: ['agent-copilot', 'sessions'] });
+    },
+  });
+};
+
+export const useConfirmConversationPlan = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (payload: {
+      sessionId: string;
+      planId: string;
+      planVersion: number;
+      confirmedPlan?: Record<string, unknown>;
+    }) => {
+      const { sessionId, ...body } = payload;
+      const res = await apiClient.post<ConfirmResponse>(
+        `/agent-conversations/sessions/${sessionId}/plan/confirm`,
+        body,
+      );
+      return { sessionId, data: res.data };
+    },
+    onSuccess: ({ sessionId }) => {
+      queryClient.invalidateQueries({ queryKey: ['agent-copilot', 'session', sessionId] });
+      queryClient.invalidateQueries({ queryKey: ['agent-copilot', 'result', sessionId] });
+      queryClient.invalidateQueries({ queryKey: ['agent-copilot', 'sessions'] });
+    },
+  });
+};
+
+export const useExportConversationResult = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (payload: {
+      sessionId: string;
+      workflowExecutionId?: string;
+      format: 'PDF' | 'WORD' | 'JSON';
+      sections?: Array<'CONCLUSION' | 'EVIDENCE' | 'DEBATE_PROCESS' | 'RISK_ASSESSMENT'>;
+      title?: string;
+      includeRawData?: boolean;
+    }) => {
+      const { sessionId, ...body } = payload;
+      const res = await apiClient.post<ExportResponse>(
+        `/agent-conversations/sessions/${sessionId}/export`,
+        body,
+      );
+      return { sessionId, data: res.data };
+    },
+    onSuccess: ({ sessionId }) => {
+      queryClient.invalidateQueries({ queryKey: ['agent-copilot', 'result', sessionId] });
+      queryClient.invalidateQueries({ queryKey: ['agent-copilot', 'session', sessionId] });
+    },
+  });
+};
+
+export const useDeliverConversationEmail = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (payload: {
+      sessionId: string;
+      exportTaskId: string;
+      to: string[];
+      subject: string;
+      content: string;
+    }) => {
+      const { sessionId, ...body } = payload;
+      const res = await apiClient.post<DeliverEmailResponse>(
+        `/agent-conversations/sessions/${sessionId}/deliver/email`,
+        body,
+      );
+      return { sessionId, data: res.data };
+    },
+    onSuccess: ({ sessionId }) => {
+      queryClient.invalidateQueries({ queryKey: ['agent-copilot', 'session', sessionId] });
+    },
+  });
+};
+
+export const useCopilotPromptTemplates = (scope: CopilotPromptScope) =>
+  useQuery<UserConfigBindingDto | null>({
+    queryKey: ['agent-copilot', 'prompt-templates', scope],
+    queryFn: async () => {
+      const res = await apiClient.get<UserConfigBindingPageDto>('/user-config-bindings', {
+        params: {
+          bindingType: COPILOT_PROMPT_BINDING_TYPE,
+          page: 1,
+          pageSize: 100,
+        },
+      });
+      const targetId = scopeToTargetId(scope);
+      return res.data.data.find((item) => item.targetId === targetId) ?? null;
+    },
+  });
+
+export const useUpsertCopilotPromptTemplates = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (payload: {
+      scope: CopilotPromptScope;
+      bindingId?: string;
+      templates: Array<Record<string, unknown>>;
+    }) => {
+      if (payload.bindingId) {
+        const dto: UpdateUserConfigBindingDto = {
+          metadata: { templates: payload.templates },
+        };
+        const res = await apiClient.put<UserConfigBindingDto>(
+          `/user-config-bindings/${payload.bindingId}`,
+          dto,
+        );
+        return res.data;
+      }
+
+      const dto: CreateUserConfigBindingDto = {
+        bindingType: COPILOT_PROMPT_BINDING_TYPE,
+        targetId: scopeToTargetId(payload.scope),
+        targetCode: scopeToTargetCode(payload.scope),
+        metadata: { templates: payload.templates },
+        isActive: true,
+        priority: 100,
+      };
+      const res = await apiClient.post<UserConfigBindingDto>('/user-config-bindings', dto);
+      return res.data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['agent-copilot', 'prompt-templates'] });
+    },
+  });
+};
+
+export const useConversationSubscriptions = (sessionId?: string) =>
+  useQuery<SubscriptionItem[]>({
+    queryKey: ['agent-copilot', 'subscriptions', sessionId],
+    queryFn: async () => {
+      const res = await apiClient.get<SubscriptionItem[]>(
+        `/agent-conversations/sessions/${sessionId}/subscriptions`,
+      );
+      return res.data;
+    },
+    enabled: Boolean(sessionId),
+  });
+
+export const useCreateConversationSubscription = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (payload: {
+      sessionId: string;
+      name: string;
+      cronExpr: string;
+      timezone?: string;
+      planVersion?: number;
+    }) => {
+      const { sessionId, ...body } = payload;
+      const res = await apiClient.post<SubscriptionItem>(
+        `/agent-conversations/sessions/${sessionId}/subscriptions`,
+        body,
+      );
+      return { sessionId, data: res.data };
+    },
+    onSuccess: ({ sessionId }) => {
+      queryClient.invalidateQueries({ queryKey: ['agent-copilot', 'subscriptions', sessionId] });
+      queryClient.invalidateQueries({ queryKey: ['agent-copilot', 'session', sessionId] });
+    },
+  });
+};
+
+export const useUpdateConversationSubscription = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (payload: {
+      sessionId: string;
+      subscriptionId: string;
+      status?: 'ACTIVE' | 'PAUSED' | 'FAILED' | 'ARCHIVED';
+      cronExpr?: string;
+      timezone?: string;
+      name?: string;
+    }) => {
+      const { sessionId, subscriptionId, ...body } = payload;
+      const res = await apiClient.patch<SubscriptionItem>(
+        `/agent-conversations/sessions/${sessionId}/subscriptions/${subscriptionId}`,
+        body,
+      );
+      return { sessionId, data: res.data };
+    },
+    onSuccess: ({ sessionId }) => {
+      queryClient.invalidateQueries({ queryKey: ['agent-copilot', 'subscriptions', sessionId] });
+    },
+  });
+};
+
+export const useRunConversationSubscription = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (payload: { sessionId: string; subscriptionId: string }) => {
+      const res = await apiClient.post<{
+        runId: string;
+        status: string;
+        workflowExecutionId?: string;
+      }>(
+        `/agent-conversations/sessions/${payload.sessionId}/subscriptions/${payload.subscriptionId}/run`,
+      );
+      return { sessionId: payload.sessionId, data: res.data };
+    },
+    onSuccess: ({ sessionId }) => {
+      queryClient.invalidateQueries({ queryKey: ['agent-copilot', 'subscriptions', sessionId] });
+      queryClient.invalidateQueries({ queryKey: ['agent-copilot', 'session', sessionId] });
+    },
+  });
+};

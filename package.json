@@ -64,6 +64,7 @@
     "workflow:quality:report:validate:self-check": "node scripts/workflow-quality-gate-report-validate-self-check.mjs",
     "workflow:quality:validation:guidance:self-check": "node scripts/workflow-quality-gate-validation-guidance-self-check.mjs",
     "workflow:quality:report:summary": "node scripts/workflow-quality-gate-report-summary.mjs",
+    "agent:pre-release": "pnpm --filter @packages/types build && pnpm --filter api exec prisma db push && pnpm workflow:type-check:split && pnpm --filter api run test:e2e:agent-suite",
     "format": "prettier --write \"**/*.{ts,tsx,md}\""
   },
   "devDependencies": {

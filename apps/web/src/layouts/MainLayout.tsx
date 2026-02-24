@@ -37,6 +37,7 @@ import {
   ExperimentOutlined,
   RocketOutlined,
   AlertOutlined,
+  MessageOutlined,
 } from '@ant-design/icons';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { ThemeSwitcher } from '../components/ThemeSwitcher';
@@ -78,6 +79,11 @@ export const MainLayout: React.FC = () => {
             key: '/workflow/workbench',
             icon: <AppstoreOutlined />,
             label: '应用中心',
+          },
+          {
+            key: '/workflow/copilot',
+            icon: <MessageOutlined />,
+            label: '对话助手',
           },
           {
             key: '/workflow/definitions',
