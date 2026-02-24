@@ -32,7 +32,7 @@ export const AIConfigSchema = z.object({
   topK: z.number().int().positive().optional(),
   isActive: z.boolean().default(true),
   isDefault: z.boolean().default(false),
-  timeoutMs: z.number().int().positive().default(30000),
+  timeoutSeconds: z.number().int().positive().default(30),
   maxRetries: z.number().int().min(0).default(3),
   availableModels: z.array(z.string()).default([]),
 });

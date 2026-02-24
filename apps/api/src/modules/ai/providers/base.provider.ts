@@ -13,7 +13,7 @@ export interface AIRequestOptions {
   temperature?: number;
   maxTokens?: number;
   topP?: number;
-  timeoutMs?: number;
+  timeoutSeconds?: number;
   maxRetries?: number;
   images?: {
     base64: string;

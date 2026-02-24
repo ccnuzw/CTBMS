@@ -80,9 +80,9 @@ export const WorkflowEdgeTypeEnum = z.enum([
 export const WorkflowNodeOnErrorPolicyEnum = z.enum(['FAIL_FAST', 'CONTINUE', 'ROUTE_TO_ERROR']);
 
 export const WorkflowNodeRuntimePolicySchema = z.object({
-  timeoutMs: z.coerce.number().int().min(1000).max(120000).default(30000),
+  timeoutSeconds: z.coerce.number().int().min(1).max(120).default(30),
   retryCount: z.coerce.number().int().min(0).max(5).default(1),
-  retryBackoffMs: z.coerce.number().int().min(0).max(60000).default(2000),
+  retryIntervalSeconds: z.coerce.number().int().min(0).max(60).default(2),
   onError: WorkflowNodeOnErrorPolicyEnum.default('FAIL_FAST'),
 });
 

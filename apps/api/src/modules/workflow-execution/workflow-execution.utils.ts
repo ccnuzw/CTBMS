@@ -282,13 +282,13 @@ export function toInteger(value: unknown, fallback: number, min: number, max: nu
 
 export async function executeWithTimeout<T>(
   task: () => Promise<T>,
-  timeoutMs: number,
+  timeoutSeconds: number,
   timeoutMessage: string,
 ): Promise<T> {
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => {
       reject(new WorkflowTimeoutError(timeoutMessage));
-    }, timeoutMs);
+    }, timeoutSeconds);
 
     task()
       .then((result) => {

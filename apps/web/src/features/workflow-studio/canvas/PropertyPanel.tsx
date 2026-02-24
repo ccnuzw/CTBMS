@@ -47,14 +47,14 @@ const EMPTY_STRING_RECORD: Record<string, string> = {};
 
 const applyRuntimePreset = (
   preset: 'FAST' | 'BALANCED' | 'ROBUST',
-): { timeoutMs: number; retryCount: number; retryBackoffMs: number; onError: string } => {
+): { timeoutSeconds: number; retryCount: number; retryIntervalSeconds: number; onError: string } => {
   if (preset === 'FAST') {
-    return { timeoutMs: 15000, retryCount: 0, retryBackoffMs: 0, onError: 'FAIL_FAST' };
+    return { timeoutSeconds: 15, retryCount: 0, retryIntervalSeconds: 0, onError: 'FAIL_FAST' };
   }
   if (preset === 'ROBUST') {
-    return { timeoutMs: 60000, retryCount: 3, retryBackoffMs: 3000, onError: 'ROUTE_TO_ERROR' };
+    return { timeoutSeconds: 60, retryCount: 3, retryIntervalSeconds: 3, onError: 'ROUTE_TO_ERROR' };
   }
-  return { timeoutMs: 30000, retryCount: 1, retryBackoffMs: 2000, onError: 'CONTINUE' };
+  return { timeoutSeconds: 30, retryCount: 1, retryIntervalSeconds: 2, onError: 'CONTINUE' };
 };
 
 const formatIssueMessage = (value: unknown): string => {
@@ -100,14 +100,14 @@ export const PropertyPanel: React.FC<PropertyPanelProps> = ({
     if (selectedNode) {
       const nodeData = (selectedNode.data as Record<string, unknown> | undefined) ?? EMPTY_RECORD;
       const runtimePolicy = (nodeData.runtimePolicy as Record<string, unknown>) ?? EMPTY_RECORD;
-      const t = (runtimePolicy.timeoutMs as number) ?? 30000;
+      const t = (runtimePolicy.timeoutSeconds as number) ?? 30;
       const r = (runtimePolicy.retryCount as number) ?? 1;
-      const b = (runtimePolicy.retryBackoffMs as number) ?? 2000;
+      const b = (runtimePolicy.retryIntervalSeconds as number) ?? 2;
       const o = (runtimePolicy.onError as string) ?? 'FAIL_FAST';
       const isCustom = !(
-        (t === 15000 && r === 0 && b === 0 && o === 'FAIL_FAST') ||
-        (t === 30000 && r === 1 && b === 2000 && o === 'CONTINUE') ||
-        (t === 60000 && r === 3 && b === 3000 && o === 'ROUTE_TO_ERROR')
+        (t === 15 && r === 0 && b === 0 && o === 'FAIL_FAST') ||
+        (t === 30 && r === 1 && b === 2 && o === 'CONTINUE') ||
+        (t === 60 && r === 3 && b === 3 && o === 'ROUTE_TO_ERROR')
       );
       setRunCollapseKey(isCustom ? ['advanced'] : []);
     }
@@ -140,27 +140,27 @@ export const PropertyPanel: React.FC<PropertyPanelProps> = ({
   const nodeTags = (nodeData.tags as string[]) || [];
 
 
-  const currentTimeoutMs = (runtimePolicy.timeoutMs as number) ?? 30000;
+  const currentTimeoutSeconds = (runtimePolicy.timeoutSeconds as number) ?? 30;
   const currentRetryCount = (runtimePolicy.retryCount as number) ?? 1;
-  const currentRetryBackoffMs = (runtimePolicy.retryBackoffMs as number) ?? 2000;
+  const currentRetryIntervalSeconds = (runtimePolicy.retryIntervalSeconds as number) ?? 2;
   const currentOnError = (runtimePolicy.onError as string) ?? 'FAIL_FAST';
   const currentCachePolicy = (runtimePolicy.cachePolicy as string) ?? 'NONE';
   const currentAuditLevel = (runtimePolicy.auditLevel as string) ?? 'BASIC';
 
   const currentRuntimePreset =
-    currentTimeoutMs === 15000 &&
+    currentTimeoutSeconds === 15 &&
       currentRetryCount === 0 &&
-      currentRetryBackoffMs === 0 &&
+      currentRetryIntervalSeconds === 0 &&
       currentOnError === 'FAIL_FAST'
       ? 'FAST'
-      : currentTimeoutMs === 30000 &&
+      : currentTimeoutSeconds === 30 &&
         currentRetryCount === 1 &&
-        currentRetryBackoffMs === 2000 &&
+        currentRetryIntervalSeconds === 2 &&
         currentOnError === 'CONTINUE'
         ? 'BALANCED'
-        : currentTimeoutMs === 60000 &&
+        : currentTimeoutSeconds === 60 &&
           currentRetryCount === 3 &&
-          currentRetryBackoffMs === 3000 &&
+          currentRetryIntervalSeconds === 3 &&
           currentOnError === 'ROUTE_TO_ERROR'
           ? 'ROBUST'
           : 'CUSTOM';
@@ -228,7 +228,7 @@ export const PropertyPanel: React.FC<PropertyPanelProps> = ({
       }
     });
 
-    if (currentTimeoutMs > 90000) {
+    if (currentTimeoutSeconds > 90) {
       issues.push({ type: 'warning', message: '超时时间较高，可能导致实例长时间占用资源。' });
     }
 
@@ -243,7 +243,7 @@ export const PropertyPanel: React.FC<PropertyPanelProps> = ({
     return issues;
   }, [
     currentRetryCount,
-    currentTimeoutMs,
+    currentTimeoutSeconds,
     defaultValues,
     inputBindings,
     isEnabled,
@@ -291,7 +291,7 @@ export const PropertyPanel: React.FC<PropertyPanelProps> = ({
       >
         <RuntimePresetCardComponent
           value={currentRuntimePreset}
-          currentTimeout={currentTimeoutMs}
+          currentTimeout={currentTimeoutSeconds}
           currentRetry={currentRetryCount}
           onChange={(value) => {
             if (value === 'CUSTOM') {
@@ -300,9 +300,9 @@ export const PropertyPanel: React.FC<PropertyPanelProps> = ({
             }
             setRunCollapseKey([]);
             const preset = applyRuntimePreset(value as 'FAST' | 'BALANCED' | 'ROBUST');
-            handleRuntimePolicyChange('timeoutMs', preset.timeoutMs);
+            handleRuntimePolicyChange('timeoutSeconds', preset.timeoutSeconds);
             handleRuntimePolicyChange('retryCount', preset.retryCount);
-            handleRuntimePolicyChange('retryBackoffMs', preset.retryBackoffMs);
+            handleRuntimePolicyChange('retryIntervalSeconds', preset.retryIntervalSeconds);
             handleRuntimePolicyChange('onError', preset.onError);
           }}
         />
@@ -313,7 +313,7 @@ export const PropertyPanel: React.FC<PropertyPanelProps> = ({
         type="info"
         style={{ marginBottom: 12 }}
         message="当前策略摘要"
-        description={`超时 ${currentTimeoutMs / 1000} 秒，重试 ${currentRetryCount} 次，间隔 ${currentRetryBackoffMs / 1000} 秒，失败时“${currentOnError === 'FAIL_FAST' ? '立即停止' : currentOnError === 'CONTINUE' ? '继续执行' : '走异常路径'}”`}
+        description={`超时 ${currentTimeoutSeconds} 秒，重试 ${currentRetryCount} 次，间隔 ${currentRetryIntervalSeconds} 秒，失败时“${currentOnError === 'FAIL_FAST' ? '立即停止' : currentOnError === 'CONTINUE' ? '继续执行' : '走异常路径'}”`}
       />
 
       <Collapse
@@ -330,12 +330,12 @@ export const PropertyPanel: React.FC<PropertyPanelProps> = ({
               <>
                 <Form.Item label="超时时间（秒）" style={{ marginBottom: 12 }}>
                   <InputNumber
-                    value={currentTimeoutMs}
-                    min={1000}
-                    max={120000}
-                    step={5000}
+                    value={currentTimeoutSeconds}
+                    min={1}
+                    max={120}
+                    step={5}
                     style={{ width: '100%' }}
-                    onChange={(value) => handleRuntimePolicyChange('timeoutMs', value)}
+                    onChange={(value) => handleRuntimePolicyChange('timeoutSeconds', value)}
                   />
                 </Form.Item>
 
@@ -349,14 +349,14 @@ export const PropertyPanel: React.FC<PropertyPanelProps> = ({
                   />
                 </Form.Item>
 
-                <Form.Item label="重试间隔 (ms)" style={{ marginBottom: 12 }}>
+                <Form.Item label="重试间隔 (秒)" style={{ marginBottom: 12 }}>
                   <InputNumber
-                    value={currentRetryBackoffMs}
+                    value={currentRetryIntervalSeconds}
                     min={0}
-                    max={60000}
-                    step={1000}
+                    max={60}
+                    step={1}
                     style={{ width: '100%' }}
-                    onChange={(value) => handleRuntimePolicyChange('retryBackoffMs', value)}
+                    onChange={(value) => handleRuntimePolicyChange('retryIntervalSeconds', value)}
                   />
                 </Form.Item>
 

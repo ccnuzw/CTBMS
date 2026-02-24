@@ -294,7 +294,7 @@ export const useTestAIModel = () => {
             modelFetchMode?: 'official' | 'manual' | 'custom';
             allowUrlProbe?: boolean;
             allowCompatPathFallback?: boolean;
-            timeoutMs?: number;
+            timeoutSeconds?: number;
             maxRetries?: number;
             temperature?: number;
             maxTokens?: number;

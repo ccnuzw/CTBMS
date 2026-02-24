@@ -10,7 +10,7 @@ const AI_MODEL_CONFIGS: Array<{
   temperature: number;
   maxTokens: number;
   maxRetries: number;
-  timeoutMs: number;
+  timeoutSeconds: number;
   isDefault: boolean;
 }> = [
   {
@@ -21,7 +21,7 @@ const AI_MODEL_CONFIGS: Array<{
     temperature: 0.3,
     maxTokens: 8192,
     maxRetries: 2,
-    timeoutMs: 30000,
+    timeoutSeconds: 30,
     isDefault: true,
   },
   {
@@ -32,7 +32,7 @@ const AI_MODEL_CONFIGS: Array<{
     temperature: 0.2,
     maxTokens: 4096,
     maxRetries: 1,
-    timeoutMs: 20000,
+    timeoutSeconds: 20,
     isDefault: false,
   },
   {
@@ -43,7 +43,7 @@ const AI_MODEL_CONFIGS: Array<{
     temperature: 0.2,
     maxTokens: 12000,
     maxRetries: 2,
-    timeoutMs: 45000,
+    timeoutSeconds: 45,
     isDefault: false,
   },
 ];
@@ -72,7 +72,7 @@ async function seedAiModelConfigs() {
         temperature: config.temperature,
         maxTokens: config.maxTokens,
         maxRetries: config.maxRetries,
-        timeoutMs: config.timeoutMs,
+        timeoutSeconds: config.timeoutSeconds,
         isActive: true,
         isDefault: config.isDefault,
       },
@@ -84,7 +84,7 @@ async function seedAiModelConfigs() {
         temperature: config.temperature,
         maxTokens: config.maxTokens,
         maxRetries: config.maxRetries,
-        timeoutMs: config.timeoutMs,
+        timeoutSeconds: config.timeoutSeconds,
         isActive: true,
         isDefault: config.isDefault,
       },

@@ -344,7 +344,7 @@ export const AgentProfilePage: React.FC = () => {
         agentPromptCode: values.agentPromptCode,
         memoryPolicy: values.memoryPolicy,
         outputSchemaCode: values.outputSchemaCode,
-        timeoutMs: values.timeoutMs,
+        timeoutSeconds: values.timeoutSeconds,
         templateSource: values.templateSource,
         toolPolicy: values.toolPolicy, // [DEPRECATED] To be replaced
         skillCodes: values.skillCodes || [], // [NEW] Added for Sprint 3
@@ -534,12 +534,12 @@ export const AgentProfilePage: React.FC = () => {
               roleType: 'ANALYST',
               outputSchemaCode: defaultOutputSchemaByRole('ANALYST'),
               memoryPolicy: 'none',
-              timeoutMs: 30000,
+              timeoutSeconds: 30,
               templateSource: 'PRIVATE',
               toolPolicy: {},
               skillCodes: [],
               guardrails: { requireEvidence: true, noHallucination: true },
-              retryPolicy: { retryCount: 1, retryBackoffMs: 2000 },
+              retryPolicy: { retryCount: 1, retryIntervalSeconds: 2 },
             }}
             onValuesChange={(changedValues, allValues) => {
               const changedName = changedValues.agentName as string | undefined;
@@ -661,7 +661,7 @@ export const AgentProfilePage: React.FC = () => {
                       <Form.Item name="memoryPolicy" label="记忆策略" rules={[{ required: true }]}>
                         <Select options={memoryOptions.map((item) => ({ label: getMemoryPolicyLabel(item), value: item }))} />
                       </Form.Item>
-                      <Form.Item name="timeoutMs" label="超时控制 (ms)" rules={[{ required: true }]}>
+                      <Form.Item name="timeoutSeconds" label="超时控制 (秒)" rules={[{ required: true }]}>
                         <InputNumber min={1000} max={120000} style={{ width: '100%' }} />
                       </Form.Item>
                       <Form.Item name="skillCodes" label="绑定技能">
@@ -748,7 +748,7 @@ export const AgentProfilePage: React.FC = () => {
               label: '记忆策略',
               children: getMemoryPolicyLabel(selectedAgent?.memoryPolicy),
             },
-            { key: 'timeout', label: '超时(ms)', children: selectedAgent?.timeoutMs ?? '-' },
+            { key: 'timeout', label: '超时(秒)', children: selectedAgent?.timeoutSeconds ?? '-' },
             { key: 'version', label: '版本', children: selectedAgent?.version ?? '-' },
             {
               key: 'source',

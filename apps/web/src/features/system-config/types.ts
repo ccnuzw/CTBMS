@@ -34,7 +34,7 @@ export interface AIModelConfig extends BaseEntity {
     temperature: number;
     maxTokens: number;
     maxRetries: number;
-    timeoutMs: number;
+    timeoutSeconds: number;
     isActive: boolean;
     isDefault: boolean;
     availableModels: string[];

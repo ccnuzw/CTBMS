@@ -16,9 +16,9 @@ type SeedWorkflow = {
 
 const COMMON_RUN_POLICY = {
   nodeDefaults: {
-    timeoutMs: 25000,
+    timeoutSeconds: 25,
     retryCount: 0,
-    retryBackoffMs: 1000,
+    retryIntervalSeconds: 1,
     onError: 'CONTINUE',
   },
 };
@@ -381,7 +381,7 @@ const WORKFLOW_TEMPLATES: SeedWorkflow[] = [
             maxRounds: 1,
             judgePolicy: 'WEIGHTED',
             consensusThreshold: 0.7,
-            timeoutMs: 90000,
+            timeoutSeconds: 90,
             participants: [
               {
                 agentCode: 'MARKET_ANALYST_AGENT_V1',
@@ -1082,7 +1082,7 @@ const WORKFLOW_TEMPLATES: SeedWorkflow[] = [
             maxRounds: 1,
             judgePolicy: 'WEIGHTED',
             consensusThreshold: 0.68,
-            timeoutMs: 90000,
+            timeoutSeconds: 90,
             participants: [
               {
                 agentCode: 'MARKET_ANALYST_AGENT_V1',

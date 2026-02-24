@@ -149,7 +149,7 @@ export class AIModelService {
         modelFetchMode: aiConfig?.modelFetchMode as AIRequestOptions['modelFetchMode'],
         allowUrlProbe: aiConfig?.allowUrlProbe ?? undefined,
         allowCompatPathFallback: aiConfig?.allowCompatPathFallback ?? undefined,
-        timeoutMs: aiConfig?.timeoutMs ?? undefined,
+        timeoutSeconds: aiConfig?.timeoutSeconds ?? undefined,
         maxRetries: aiConfig?.maxRetries ?? undefined,
       };
 
@@ -197,7 +197,7 @@ export class AIModelService {
     modelFetchMode?: AIRequestOptions['modelFetchMode'];
     allowUrlProbe?: boolean;
     allowCompatPathFallback?: boolean;
-    timeoutMs?: number;
+    timeoutSeconds?: number;
     maxRetries?: number;
     temperature?: number;
     maxTokens?: number;
@@ -237,7 +237,7 @@ export class AIModelService {
         modelFetchMode: payload.modelFetchMode,
         allowUrlProbe: payload.allowUrlProbe,
         allowCompatPathFallback: payload.allowCompatPathFallback,
-        timeoutMs: payload.timeoutMs,
+        timeoutSeconds: payload.timeoutSeconds,
         maxRetries: payload.maxRetries,
         temperature: payload.temperature,
         maxTokens: payload.maxTokens,
@@ -358,7 +358,7 @@ export class AIModelService {
           modelFetchMode: resolvedConfig?.modelFetchMode as AIRequestOptions['modelFetchMode'],
           allowUrlProbe: resolvedConfig?.allowUrlProbe ?? undefined,
           allowCompatPathFallback: resolvedConfig?.allowCompatPathFallback ?? undefined,
-          timeoutMs: resolvedConfig?.timeoutMs ?? undefined,
+          timeoutSeconds: resolvedConfig?.timeoutSeconds ?? undefined,
           maxRetries: resolvedConfig?.maxRetries ?? undefined,
         };
 
@@ -388,7 +388,7 @@ export class AIModelService {
                   topK: resolvedConfig.topK ?? undefined,
                   isActive: resolvedConfig.isActive,
                   isDefault: resolvedConfig.isDefault,
-                  timeoutMs: resolvedConfig.timeoutMs,
+                  timeoutSeconds: resolvedConfig.timeoutSeconds,
                   maxRetries: resolvedConfig.maxRetries,
                   availableModels: result.models,
                 })

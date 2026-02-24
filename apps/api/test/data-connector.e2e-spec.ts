@@ -63,7 +63,7 @@ async function main() {
           'Content-Type': 'application/json',
           'x-virtual-user-id': 'admin-user',
         },
-        body: JSON.stringify({ timeoutMs: 500 }),
+        body: JSON.stringify({ timeoutSeconds: 1 }),
       },
     );
     assert.equal(dbHealth.status, 201);
@@ -94,7 +94,7 @@ async function main() {
           'Content-Type': 'application/json',
           'x-virtual-user-id': 'admin-user',
         },
-        body: JSON.stringify({ timeoutMs: 500 }),
+        body: JSON.stringify({ timeoutSeconds: 1 }),
       },
     );
     assert.equal(apiHealth.status, 201);

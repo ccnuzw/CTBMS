@@ -155,7 +155,7 @@ export class DataConnectorService {
     }
 
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), dto.timeoutMs);
+    const timeout = setTimeout(() => controller.abort(), dto.timeoutSeconds);
     try {
       const response = await fetch(healthUrl, {
         method: 'GET',

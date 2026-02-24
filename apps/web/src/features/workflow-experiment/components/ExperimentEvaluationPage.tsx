@@ -238,7 +238,7 @@ export const ExperimentEvaluationPage: React.FC = () => {
         value ? <Tag color="success">SUCCESS</Tag> : <Tag color="error">FAIL</Tag>,
     },
     {
-      title: '耗时(ms)',
+      title: '耗时(秒)',
       dataIndex: 'durationMs',
       width: 110,
     },
@@ -350,8 +350,8 @@ export const ExperimentEvaluationPage: React.FC = () => {
                   value={(metrics.variantB.successRate * 100).toFixed(2)}
                   suffix="%"
                 />
-                <Statistic title="A 平均耗时(ms)" value={metrics.variantA.avgDurationMs} />
-                <Statistic title="B 平均耗时(ms)" value={metrics.variantB.avgDurationMs} />
+                <Statistic title="A 平均耗时(秒)" value={metrics.variantA.avgDurationMs} />
+                <Statistic title="B 平均耗时(秒)" value={metrics.variantB.avgDurationMs} />
               </Space>
             </Card>
           )}

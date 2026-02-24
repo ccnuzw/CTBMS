@@ -58,8 +58,8 @@ async function main() {
         toolPolicy: { tools: ['market-data-fetch'] },
         guardrails: { requireEvidence: true },
         outputSchemaCode: 'AGENT_OUTPUT_V1',
-        timeoutMs: 30000,
-        retryPolicy: { retryCount: 1, retryBackoffMs: 1000 },
+        timeoutSeconds: 30,
+        retryPolicy: { retryCount: 1, retryIntervalSeconds: 1 },
         templateSource: 'PRIVATE',
       }),
     });

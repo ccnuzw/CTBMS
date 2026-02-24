@@ -234,7 +234,7 @@ export const DataConnectorPageSchema = z.object({
 });
 
 export const DataConnectorHealthCheckSchema = z.object({
-  timeoutMs: z.coerce.number().int().min(100).max(10000).default(3000),
+  timeoutSeconds: z.coerce.number().int().min(1).max(10).default(3),
 });
 
 export const DataConnectorHealthCheckResultSchema = z.object({

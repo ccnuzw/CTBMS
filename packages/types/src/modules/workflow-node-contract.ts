@@ -399,17 +399,22 @@ const WORKFLOW_NODE_CONTRACT_MAP: Record<WorkflowCanonicalNodeType, WorkflowNode
     nodeType: 'report-generate',
     inputsSchema: [{ name: 'input', type: 'object' }],
     outputsSchema: [{ name: 'report', type: 'object' }],
-    defaultConfig: { format: 'PDF' },
+    defaultConfig: { format: 'PDF', titleTemplate: '', templateId: '' },
     configSchema: withParamOverride({
       format: z.string().optional(),
+      titleTemplate: z.string().optional(),
+      templateId: z.string().optional(),
     }),
   },
   'dashboard-publish': {
     nodeType: 'dashboard-publish',
     inputsSchema: [{ name: 'input', type: 'object' }],
     outputsSchema: [{ name: 'published', type: 'boolean' }],
-    defaultConfig: {},
-    configSchema: withParamOverride({}),
+    defaultConfig: { dashboardId: '', datasetName: '' },
+    configSchema: withParamOverride({
+      dashboardId: z.string().optional(),
+      datasetName: z.string().optional(),
+    }),
   },
   group: {
     nodeType: 'group',

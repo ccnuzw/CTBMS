@@ -7,9 +7,9 @@ export interface AutoFixIssue {
 const AUTO_FIXABLE_CODES = new Set(['WF003', 'WF004', 'WF005', 'WF101', 'WF102', 'WF104', 'WF106']);
 
 const DEFAULT_RUNTIME_POLICY = {
-    timeoutMs: 30000,
+    timeoutSeconds: 30,
     retryCount: 1,
-    retryBackoffMs: 2000,
+    retryIntervalSeconds: 2,
     onError: 'FAIL_FAST' as const,
 };
 

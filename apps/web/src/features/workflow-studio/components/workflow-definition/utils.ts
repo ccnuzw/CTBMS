@@ -51,9 +51,9 @@ export const getWorkflowPublishOperationLabel = (operation?: string | null): str
 export const buildInitialDslSnapshot = (
     values: CreateWorkflowDefinitionFormValues,
     runtimePolicy: {
-        timeoutMs: number;
+        timeoutSeconds: number;
         retryCount: number;
-        retryBackoffMs: number;
+        retryIntervalSeconds: number;
         onError: WorkflowNodeOnErrorPolicy;
     },
 ): WorkflowDsl => {

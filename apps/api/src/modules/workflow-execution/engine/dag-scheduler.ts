@@ -39,9 +39,9 @@ export interface DagNodeCallbacks {
     }) => Promise<{ id: string }>;
     /** 解析运行时策略 */
     resolveRuntimePolicy: (node: WorkflowNode, runPolicy?: WorkflowRunPolicy) => {
-        timeoutMs: number;
+        timeoutSeconds: number;
         retryCount: number;
-        retryBackoffMs: number;
+        retryIntervalSeconds: number;
         onError: string;
     };
     /** 带超时执行 */
@@ -444,7 +444,7 @@ export class DagScheduler {
                 nodeId: node.id,
                 nodeType: node.type,
                 retryCount: runtimePolicy.retryCount,
-                timeoutMs: runtimePolicy.timeoutMs,
+                timeoutMs: runtimePolicy.timeoutSeconds * 1000,
             },
         });
 
@@ -476,8 +476,8 @@ export class DagScheduler {
                             paramSnapshot: nodeParamSnapshot,
                         });
                     },
-                    runtimePolicy.timeoutMs,
-                    `[DAG] 节点 ${node.name} 执行超时（${runtimePolicy.timeoutMs}ms）`,
+                    runtimePolicy.timeoutSeconds * 1000,
+                    `[DAG] 节点 ${node.name} 执行超时（${runtimePolicy.timeoutSeconds}s）`,
                 );
 
                 status = (result.status as 'SUCCESS' | 'FAILED') ?? 'SUCCESS';
@@ -527,11 +527,11 @@ export class DagScheduler {
                             nodeId: node.id,
                             nodeType: node.type,
                             attempt: attempts,
-                            retryBackoffMs: runtimePolicy.retryBackoffMs,
+                            retryBackoffMs: runtimePolicy.retryIntervalSeconds * 1000,
                             errorMessage,
                         },
                     });
-                    await callbacks.sleep(runtimePolicy.retryBackoffMs);
+                    await callbacks.sleep(runtimePolicy.retryIntervalSeconds * 1000);
                     continue;
                 }
             }

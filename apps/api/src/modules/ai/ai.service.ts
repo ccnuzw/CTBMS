@@ -240,7 +240,7 @@ export class AIService implements OnModuleInit {
             temperature: aiConfig?.temperature ?? 0.3,
             maxTokens: aiConfig?.maxTokens ?? 8192,
             topP: aiConfig?.topP ?? undefined,
-            timeoutMs: aiConfig?.timeoutMs ?? undefined,
+            timeoutSeconds: aiConfig?.timeoutSeconds ?? undefined,
             maxRetries: aiConfig?.maxRetries ?? undefined,
             images: base64Image && mimeType ? [{ base64: base64Image, mimeType }] : undefined
         };
@@ -304,7 +304,7 @@ export class AIService implements OnModuleInit {
                 pathOverrides: this.aiModelService.resolveRecord(aiConfig?.pathOverrides),
                 modelFetchMode: aiConfig?.modelFetchMode as AIRequestOptions['modelFetchMode'],
                 allowUrlProbe: aiConfig?.allowUrlProbe ?? undefined,
-                timeoutMs: aiConfig?.timeoutMs ?? undefined,
+                timeoutSeconds: aiConfig?.timeoutSeconds ?? undefined,
                 maxRetries: aiConfig?.maxRetries ?? undefined,
             };
 
@@ -579,7 +579,7 @@ export class AIService implements OnModuleInit {
                 pathOverrides: this.aiModelService.resolveRecord(aiConfig?.pathOverrides),
                 modelFetchMode: aiConfig?.modelFetchMode as AIRequestOptions['modelFetchMode'],
                 allowUrlProbe: aiConfig?.allowUrlProbe ?? undefined,
-                timeoutMs: aiConfig?.timeoutMs ?? undefined,
+                timeoutSeconds: aiConfig?.timeoutSeconds ?? undefined,
                 maxRetries: aiConfig?.maxRetries ?? undefined,
                 temperature: aiConfig?.temperature ?? 0.7, // Chat usually needs higher temp
                 maxTokens: aiConfig?.maxTokens ?? 2048,

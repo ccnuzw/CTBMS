@@ -444,7 +444,7 @@ export class OpenAIProvider implements IAIProvider {
     const client = new OpenAI({
       apiKey: options.apiKey,
       baseURL: apiUrl || 'https://api.openai.com/v1',
-      timeout: options.timeoutMs ? Math.min(options.timeoutMs, 10000) : 10000, // shorter timeout for probing
+      timeout: options.timeoutSeconds ? Math.min(options.timeoutSeconds, 10000) : 10000, // shorter timeout for probing
       maxRetries: 0, // No internal retries, we handle it
       dangerouslyAllowBrowser: true,
       defaultHeaders: this.buildHeaders(options),
@@ -458,7 +458,7 @@ export class OpenAIProvider implements IAIProvider {
     return new OpenAI({
       apiKey: options.apiKey,
       baseURL: options.apiUrl || 'https://api.openai.com/v1',
-      timeout: options.timeoutMs || 30000,
+      timeout: options.timeoutSeconds || 30000,
       maxRetries: options.maxRetries ?? 3,
       defaultHeaders: this.buildHeaders(options),
     });

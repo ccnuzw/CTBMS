@@ -259,14 +259,14 @@ export class WorkflowExecutionDagService {
         const workflowNodeDefaults = runPolicy?.nodeDefaults ?? {};
         const nodeRuntimePolicy = node.runtimePolicy ?? {};
 
-        const timeoutMsSource =
-            nodeRuntimePolicy.timeoutMs ?? config.timeoutMs ?? workflowNodeDefaults.timeoutMs;
+        const timeoutSecondsSource =
+            nodeRuntimePolicy.timeoutSeconds ?? config.timeoutSeconds ?? workflowNodeDefaults.timeoutSeconds;
         const retryCountSource =
             nodeRuntimePolicy.retryCount ?? config.retryCount ?? workflowNodeDefaults.retryCount;
-        const retryBackoffMsSource =
-            nodeRuntimePolicy.retryBackoffMs ??
-            config.retryBackoffMs ??
-            workflowNodeDefaults.retryBackoffMs;
+        const retryIntervalSecondsSource =
+            nodeRuntimePolicy.retryIntervalSeconds ??
+            config.retryIntervalSeconds ??
+            workflowNodeDefaults.retryIntervalSeconds;
         const onErrorSource =
             nodeRuntimePolicy.onError ?? config.onError ?? workflowNodeDefaults.onError;
 
@@ -277,9 +277,9 @@ export class WorkflowExecutionDagService {
             : onErrorResolved;
 
         return {
-            timeoutMs: ExecutionUtils.toInteger(timeoutMsSource, defaults.timeoutMs, 1_000, 120_000),
+            timeoutSeconds: ExecutionUtils.toInteger(timeoutSecondsSource, defaults.timeoutSeconds, 1, 120),
             retryCount: ExecutionUtils.toInteger(retryCountSource, defaults.retryCount, 0, 5),
-            retryBackoffMs: ExecutionUtils.toInteger(retryBackoffMsSource, defaults.retryBackoffMs, 0, 60_000),
+            retryIntervalSeconds: ExecutionUtils.toInteger(retryIntervalSecondsSource, defaults.retryIntervalSeconds, 0, 60),
             onError,
         };
     }

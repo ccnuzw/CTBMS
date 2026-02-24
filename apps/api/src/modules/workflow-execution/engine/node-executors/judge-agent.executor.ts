@@ -119,7 +119,7 @@ export class JudgeAgentNodeExecutor implements WorkflowNodeExecutor {
                 pathOverrides: this.toRecord(modelConfig.pathOverrides),
                 temperature: 0.3,
                 maxTokens: 3000,
-                timeoutMs: (profile as Record<string, unknown> | null)?.timeoutMs as number ?? 30000,
+                timeoutSeconds: (profile as Record<string, unknown> | null)?.timeoutSeconds as number ?? 30000,
                 maxRetries: modelConfig.maxRetries,
             };
 

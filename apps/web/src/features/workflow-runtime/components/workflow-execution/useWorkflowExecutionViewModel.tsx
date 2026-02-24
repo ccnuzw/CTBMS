@@ -443,7 +443,7 @@ export const useWorkflowExecutionViewModel = () => {
         { title: '节点 ID', dataIndex: 'nodeId', width: 180 },
         { title: '节点类型', dataIndex: 'nodeType', width: 180, render: (value: string) => getNodeTypeLabel(value) },
         { title: '状态', dataIndex: 'status', width: 120, render: (value: string) => <Tag color={nodeStatusColorMap[value] ?? 'default'} > {getNodeStatusLabel(value)} </Tag> },
-        { title: '耗时(ms)', dataIndex: 'durationMs', width: 120, render: (value?: number | null) => value ?? '-' },
+        { title: '耗时(秒)', dataIndex: 'durationMs', width: 120, render: (value?: number | null) => value ?? '-' },
         { title: '尝试次数', key: 'attempts', width: 100, render: (_, record) => getNodeAttempts(record) ?? '-' },
         { title: '路径标记', key: 'routeHint', width: 160, render: (_, record) => { const hint = getNodeRouteHint(record); return hint ? <Tag color={hint.color}> {hint.label} </Tag> : '-'; } },
         { title: '错误信息', dataIndex: 'errorMessage', render: (value?: string | null) => value || '-' },

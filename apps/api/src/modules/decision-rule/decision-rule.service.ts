@@ -422,7 +422,7 @@ export class DecisionRuleService {
         pathOverrides: this.aiModelService.resolveRecord(aiConfig?.pathOverrides),
         modelFetchMode: aiConfig?.modelFetchMode as AIRequestOptions['modelFetchMode'],
         allowUrlProbe: aiConfig?.allowUrlProbe ?? undefined,
-        timeoutMs: aiConfig?.timeoutMs ?? undefined,
+        timeoutSeconds: aiConfig?.timeoutSeconds ?? undefined,
         maxRetries: aiConfig?.maxRetries ?? undefined,
         temperature: 0.1, // requires high precision
       };

@@ -36,7 +36,7 @@ export class WorkflowExecutionRunnerService {
     private readonly workflowExperimentService: WorkflowExperimentService,
     @Inject(forwardRef(() => WorkflowExecutionService))
     private readonly executionService: WorkflowExecutionService,
-  ) {}
+  ) { }
 
   public async executeLinearWorkflow(params: {
     executionId: string;
@@ -224,7 +224,7 @@ export class WorkflowExecutionRunnerService {
             nodeId: node.id,
             nodeType: node.type,
             retryCount: runtimePolicy.retryCount,
-            timeoutMs: runtimePolicy.timeoutMs,
+            timeoutMs: runtimePolicy.timeoutSeconds * 1000,
           },
         });
 
@@ -254,8 +254,8 @@ export class WorkflowExecutionRunnerService {
                   paramSnapshot: nodeParamSnapshot,
                 });
               },
-              runtimePolicy.timeoutMs,
-              `节点 ${node.name} 执行超时（${runtimePolicy.timeoutMs}ms）`,
+              runtimePolicy.timeoutSeconds * 1000,
+              `节点 ${node.name} 执行超时（${runtimePolicy.timeoutSeconds}s）`,
             );
 
             status = result.status ?? 'SUCCESS';
@@ -308,11 +308,11 @@ export class WorkflowExecutionRunnerService {
                   nodeType: node.type,
                   attempt: attempts,
                   retryCount: runtimePolicy.retryCount,
-                  retryBackoffMs: runtimePolicy.retryBackoffMs,
+                  retryBackoffMs: runtimePolicy.retryIntervalSeconds * 1000,
                   errorMessage,
                 },
               });
-              await ExecutionUtils.sleep(runtimePolicy.retryBackoffMs);
+              await ExecutionUtils.sleep(runtimePolicy.retryIntervalSeconds * 1000);
               continue;
             }
           }

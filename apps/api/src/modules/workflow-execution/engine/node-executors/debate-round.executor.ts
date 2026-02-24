@@ -312,7 +312,7 @@ export class DebateRoundNodeExecutor implements WorkflowNodeExecutor {
                 pathOverrides: this.toRecord(modelConfig.pathOverrides),
                 temperature: 0.7,
                 maxTokens: 2000,
-                timeoutMs: typeof profile.timeoutMs === 'number' ? (profile.timeoutMs as number) : undefined,
+                timeoutSeconds: typeof profile.timeoutSeconds === 'number' ? (profile.timeoutSeconds as number) : undefined,
                 maxRetries: typeof modelConfig.maxRetries === 'number' ? modelConfig.maxRetries as number : undefined,
             };
 

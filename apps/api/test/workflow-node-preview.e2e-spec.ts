@@ -70,9 +70,9 @@ const buildPreviewDsl = (): WorkflowDsl => ({
   edges: [{ id: 'e1', from: 'n_source', to: 'n_target', edgeType: 'data-edge' }],
   runPolicy: {
     nodeDefaults: {
-      timeoutMs: 30000,
+      timeoutSeconds: 30,
       retryCount: 1,
-      retryBackoffMs: 2000,
+      retryIntervalSeconds: 2,
       onError: 'FAIL_FAST',
     },
   },

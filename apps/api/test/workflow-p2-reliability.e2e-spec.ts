@@ -77,9 +77,9 @@ const createDslSnapshot = (params: {
                 delayMs: params.passthroughDelayMs ?? 0,
             },
             runtimePolicy: {
-                timeoutMs: params.passthroughTimeoutMs ?? 30_000,
+                timeoutSeconds: params.passthroughTimeoutMs ?? 30_000,
                 retryCount: params.passthroughRetryCount ?? 0,
-                retryBackoffMs: 0,
+                retryIntervalSeconds: 0,
                 onError: 'FAIL_FAST',
             },
         },
@@ -141,9 +141,9 @@ const createDslSnapshot = (params: {
     ],
     runPolicy: {
         nodeDefaults: {
-            timeoutMs: 30000,
+            timeoutSeconds: 30,
             retryCount: 1,
-            retryBackoffMs: 2000,
+            retryIntervalSeconds: 2,
             onError: 'FAIL_FAST',
         },
     },

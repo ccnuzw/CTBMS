@@ -106,8 +106,8 @@ export const AgentEditDrawer: React.FC<AgentEditDrawerProps> = ({
                 toolPolicy: agent.toolPolicy || {},
                 guardrails: agent.guardrails || {},
 
-                timeoutMs: agent.timeoutMs,
-                retryPolicy: agent.retryPolicy || { retryCount: 1, retryBackoffMs: 2000 },
+                timeoutSeconds: agent.timeoutSeconds,
+                retryPolicy: agent.retryPolicy || { retryCount: 1, retryIntervalSeconds: 2 },
                 templateSource: agent.templateSource || 'PRIVATE',
             });
         } else {
@@ -134,7 +134,7 @@ export const AgentEditDrawer: React.FC<AgentEditDrawerProps> = ({
                 toolPolicy: values.toolPolicy,
                 guardrails: values.guardrails,
 
-                timeoutMs: values.timeoutMs,
+                timeoutSeconds: values.timeoutSeconds,
                 retryPolicy: values.retryPolicy,
                 templateSource: values.templateSource,
             };
@@ -288,7 +288,7 @@ export const AgentEditDrawer: React.FC<AgentEditDrawerProps> = ({
                         style={{ backgroundColor: token.colorFillQuaternary, borderRadius: 8 }}
                     >
                         <Collapse.Panel key="runtime" header="⚙️ 运行策略 (按需展开)">
-                            <Form.Item name="timeoutMs" label="超时控制 (ms)" rules={[{ required: true }]}>
+                            <Form.Item name="timeoutSeconds" label="超时控制 (秒)" rules={[{ required: true }]}>
                                 <InputNumber min={1000} max={300000} style={{ width: '100%' }} />
                             </Form.Item>
                             <RetryPolicyForm name="retryPolicy" />

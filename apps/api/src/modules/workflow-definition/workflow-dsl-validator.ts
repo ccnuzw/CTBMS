@@ -321,11 +321,11 @@ export class WorkflowDslValidator {
       const missingFields: string[] = [];
 
       if (
-        nodeRuntimePolicy.timeoutMs === undefined &&
-        nodeConfig.timeoutMs === undefined &&
-        nodeDefaults.timeoutMs === undefined
+        nodeRuntimePolicy.timeoutSeconds === undefined &&
+        nodeConfig.timeoutSeconds === undefined &&
+        nodeDefaults.timeoutSeconds === undefined
       ) {
-        missingFields.push('timeoutMs');
+        missingFields.push('timeoutSeconds');
       }
       if (
         nodeRuntimePolicy.retryCount === undefined &&
@@ -335,11 +335,11 @@ export class WorkflowDslValidator {
         missingFields.push('retryCount');
       }
       if (
-        nodeRuntimePolicy.retryBackoffMs === undefined &&
-        nodeConfig.retryBackoffMs === undefined &&
-        nodeDefaults.retryBackoffMs === undefined
+        nodeRuntimePolicy.retryIntervalSeconds === undefined &&
+        nodeConfig.retryIntervalSeconds === undefined &&
+        nodeDefaults.retryIntervalSeconds === undefined
       ) {
-        missingFields.push('retryBackoffMs');
+        missingFields.push('retryIntervalSeconds');
       }
       if (
         nodeRuntimePolicy.onError === undefined &&

@@ -81,9 +81,9 @@ const buildDslSnapshot = (
   ],
   runPolicy: {
     nodeDefaults: {
-      timeoutMs: 30000,
+      timeoutSeconds: 30,
       retryCount: 1,
-      retryBackoffMs: 2000,
+      retryIntervalSeconds: 2,
       onError: 'FAIL_FAST',
     },
   },
@@ -142,9 +142,9 @@ const buildOnDemandDslSnapshot = (
   ],
   runPolicy: {
     nodeDefaults: {
-      timeoutMs: 30000,
+      timeoutSeconds: 30,
       retryCount: 1,
-      retryBackoffMs: 2000,
+      retryIntervalSeconds: 2,
       onError: 'FAIL_FAST',
     },
   },

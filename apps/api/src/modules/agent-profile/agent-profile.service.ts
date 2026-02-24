@@ -40,7 +40,7 @@ export class AgentProfileService {
         skillCodes: this.toNullableJsonValue(dto.skillCodes), // [NEW] Added for skill decoupling
         guardrails: this.toNullableJsonValue(dto.guardrails),
         outputSchemaCode: dto.outputSchemaCode,
-        timeoutMs: dto.timeoutMs,
+        timeoutSeconds: dto.timeoutSeconds,
         retryPolicy: this.toNullableJsonValue(dto.retryPolicy),
         ownerUserId,
         templateSource: dto.templateSource,
@@ -103,7 +103,7 @@ export class AgentProfileService {
       agentPromptCode: dto.agentPromptCode,
       memoryPolicy: dto.memoryPolicy,
       outputSchemaCode: dto.outputSchemaCode,
-      timeoutMs: dto.timeoutMs,
+      timeoutSeconds: dto.timeoutSeconds,
       isActive: dto.isActive,
       outputSchema: dto.outputSchema ? this.toNullableJsonValue(dto.outputSchema) : undefined,
     };
@@ -189,7 +189,7 @@ export class AgentProfileService {
         skillCodes: this.toNullableJsonValue(data.skillCodes), // [NEW] Added for skill decoupling
         guardrails: this.toNullableJsonValue(data.guardrails),
         outputSchemaCode,
-        timeoutMs: Number(data.timeoutMs ?? current.timeoutMs),
+        timeoutSeconds: Number(data.timeoutSeconds ?? current.timeoutSeconds),
         retryPolicy: this.toNullableJsonValue(data.retryPolicy),
         isActive: Boolean(data.isActive ?? current.isActive),
         version: { increment: 1 },

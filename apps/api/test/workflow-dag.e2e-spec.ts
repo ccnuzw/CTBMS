@@ -85,9 +85,9 @@ const buildDagDslSnapshot = (
   ],
   runPolicy: {
     nodeDefaults: {
-      timeoutMs: 30000,
+      timeoutSeconds: 30,
       retryCount: 1,
-      retryBackoffMs: 200,
+      retryIntervalSeconds: 1,
       onError: 'FAIL_FAST',
     },
   },

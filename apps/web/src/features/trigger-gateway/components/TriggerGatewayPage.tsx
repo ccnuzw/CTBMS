@@ -386,7 +386,7 @@ export const TriggerGatewayPage: React.FC = () => {
         render: (value: string) => <Tag color={logStatusColorMap[value] || 'default'}>{value}</Tag>,
       },
       {
-        title: '耗时(ms)',
+        title: '耗时(秒)',
         dataIndex: 'durationMs',
         width: 100,
         render: (value?: number) => (value !== null && value !== undefined ? value : '-'),
@@ -554,7 +554,7 @@ export const TriggerGatewayPage: React.FC = () => {
       <Descriptions.Item label="事件来源">{String(config.eventSource ?? '-')}</Descriptions.Item>
       <Descriptions.Item label="事件类型">{String(config.eventType ?? '-')}</Descriptions.Item>
       <Descriptions.Item label="匹配模式">{String(config.matchMode ?? '-')}</Descriptions.Item>
-      <Descriptions.Item label="防抖(ms)">{String(config.debounceMs ?? 0)}</Descriptions.Item>
+      <Descriptions.Item label="防抖(秒)">{String(config.debounceMs ?? 0)}</Descriptions.Item>
       {Array.isArray(config.filterRules) && config.filterRules.length > 0 && (
         <Descriptions.Item label="过滤规则" span={2}>
           <pre style={{ fontSize: 12, margin: 0, whiteSpace: 'pre-wrap' }}>

@@ -24,7 +24,7 @@ type AvailableSkill = {
  * Agent 节点执行器
  *
  * 执行流程:
- * 1. 从 AgentProfile 获取配置（modelConfigKey, guardrails, timeoutMs）
+ * 1. 从 AgentProfile 获取配置（modelConfigKey, guardrails, timeoutSeconds）
  * 2. 从 AgentPromptTemplate 获取提示词模板
  * 3. 构建上下文（paramSnapshot + 上游节点输出 → 变量替换）
  * 4. 调用 AI 模块（复用 AIProviderFactory）
@@ -163,7 +163,7 @@ export class AgentCallNodeExecutor implements WorkflowNodeExecutor {
       temperature: modelConfig.temperature,
       maxTokens: modelConfig.maxTokens,
       topP: modelConfig.topP ?? undefined,
-      timeoutMs: profile.timeoutMs,
+      timeoutSeconds: profile.timeoutSeconds,
       maxRetries: modelConfig.maxRetries,
       tools,
     };
@@ -325,7 +325,7 @@ export class AgentCallNodeExecutor implements WorkflowNodeExecutor {
     retryCount: number,
     retryPolicy: Record<string, unknown> | null,
   ): Promise<{ success: boolean; response?: string }> {
-    const backoffMs = (retryPolicy?.retryBackoffMs as number) ?? 2000;
+    const backoffMs = (retryPolicy?.retryIntervalSeconds as number) ?? 2000;
     const provider = this.aiProviderFactory.getProvider(providerType);
 
     for (let attempt = 1; attempt <= retryCount; attempt++) {

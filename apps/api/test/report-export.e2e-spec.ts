@@ -86,9 +86,9 @@ const buildDsl = (workflowId: string, workflowName: string, rulePackCode: string
   ],
   runPolicy: {
     nodeDefaults: {
-      timeoutMs: 30000,
+      timeoutSeconds: 30,
       retryCount: 0,
-      retryBackoffMs: 0,
+      retryIntervalSeconds: 0,
       onError: 'FAIL_FAST',
     },
   },

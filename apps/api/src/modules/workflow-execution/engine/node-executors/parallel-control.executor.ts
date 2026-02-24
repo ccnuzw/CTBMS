@@ -15,7 +15,7 @@ import type { WorkflowNode } from '@packages/types';
  *   config.joinPolicy: 'ALL_REQUIRED' | 'QUORUM' | 'FIRST_SUCCESS' | 'WEIGHTED_MERGE'
  *   config.quorumBranches: number (仅 QUORUM 模式)
  *   config.weights: Record<string, number> (仅 WEIGHTED_MERGE 模式)
- *   config.timeoutMs: number (等待上游超时, 可选)
+ *   config.timeoutSeconds: number (等待上游超时, 可选)
  */
 @Injectable()
 export class ParallelControlNodeExecutor implements WorkflowNodeExecutor {

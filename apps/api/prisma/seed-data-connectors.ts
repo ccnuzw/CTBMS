@@ -87,12 +87,12 @@ const CONNECTORS: SeedConnector[] = [
       maxMinutes: 60,
     },
     rateLimitConfig: {
-      timeoutMs: 15000,
+      timeoutSeconds: 15,
       qpm: 60,
     },
     healthCheckConfig: {
       strategy: 'http_get',
-      timeoutMs: 3000,
+      timeoutSeconds: 3,
     },
     fallbackConnectorCode: 'MARKET_INTEL_INTERNAL_DB',
   },

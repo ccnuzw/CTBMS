@@ -37,7 +37,7 @@ export const AgentProfileSchema = z.object({
   guardrails: z.record(z.unknown()),
   outputSchemaCode: z.string(),
   outputSchema: z.record(z.unknown()).nullable().optional(),
-  timeoutMs: z.number().int(),
+  timeoutSeconds: z.number().int(),
   retryPolicy: z.record(z.unknown()),
   isActive: z.boolean(),
   version: z.number().int(),
@@ -60,8 +60,8 @@ export const CreateAgentProfileSchema = z.object({
   guardrails: z.record(z.unknown()).default({}),
   outputSchemaCode: z.string().min(1).max(120),
   outputSchema: z.record(z.unknown()).optional(),
-  timeoutMs: z.coerce.number().int().min(1000).max(120000).default(30000),
-  retryPolicy: z.record(z.unknown()).default({ retryCount: 1, retryBackoffMs: 2000 }),
+  timeoutSeconds: z.coerce.number().int().min(1).max(120).default(30),
+  retryPolicy: z.record(z.unknown()).default({ retryCount: 1, retryIntervalSeconds: 2 }),
   templateSource: WorkflowTemplateSourceEnum.default('PRIVATE'),
 });
 
@@ -77,7 +77,7 @@ export const UpdateAgentProfileSchema = z.object({
   guardrails: z.record(z.unknown()).optional(),
   outputSchemaCode: z.string().min(1).max(120).optional(),
   outputSchema: z.record(z.unknown()).optional(),
-  timeoutMs: z.coerce.number().int().min(1000).max(120000).optional(),
+  timeoutSeconds: z.coerce.number().int().min(1).max(120).optional(),
   retryPolicy: z.record(z.unknown()).optional(),
   isActive: z.boolean().optional(),
 });

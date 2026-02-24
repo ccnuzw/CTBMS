@@ -19,7 +19,7 @@ export interface NodeExecutionSnapshot {
     startedAt: string;
     /** 执行完成时间 */
     completedAt: string;
-    /** 执行时长 (ms) */
+    /** 执行时长 (秒) */
     durationMs: number;
     /** 重试次数 */
     attempts: number;

@@ -284,7 +284,7 @@ const EndpointConfigFields: React.FC<{ type: DataConnectorType }> = ({ type }) =
               </Form.Item>
             </Col>
             <Col span={8}>
-              <Form.Item name={['endpointConfig', 'timeout']} label="超时 (ms)">
+              <Form.Item name={['endpointConfig', 'timeout']} label="超时 (秒)">
                 <InputNumber style={{ width: '100%' }} placeholder="30000" min={0} />
               </Form.Item>
             </Col>
@@ -583,7 +583,7 @@ export const DataConnectorPage: React.FC = () => {
                 try {
                   const res = await healthMutation.mutateAsync({
                     id: record.id,
-                    payload: { timeoutMs: 1500 },
+                    payload: { timeoutSeconds: 1 },
                   });
                   if (res.healthy) {
                     message.success(`健康检查通过，耗时 ${res.latencyMs}ms`);

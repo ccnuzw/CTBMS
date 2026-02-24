@@ -638,9 +638,9 @@ export class WorkflowDefinitionService {
           ],
           runPolicy: {
             nodeDefaults: {
-              timeoutMs: 30000,
+              timeoutSeconds: 30,
               retryCount: 1,
-              retryBackoffMs: 2000,
+              retryIntervalSeconds: 2,
               onError: 'FAIL_FAST',
             },
           },
@@ -671,14 +671,13 @@ export class WorkflowDefinitionService {
         ? previousOnError
         : 'FAIL_FAST';
     const completedNodeDefaults = {
-      timeoutMs:
-        typeof previousNodeDefaults.timeoutMs === 'number' ? previousNodeDefaults.timeoutMs : 30000,
+      timeoutSeconds:
+        typeof previousNodeDefaults.timeoutSeconds === 'number' ? previousNodeDefaults.timeoutSeconds: 30,
       retryCount:
         typeof previousNodeDefaults.retryCount === 'number' ? previousNodeDefaults.retryCount : 1,
-      retryBackoffMs:
-        typeof previousNodeDefaults.retryBackoffMs === 'number'
-          ? previousNodeDefaults.retryBackoffMs
-          : 2000,
+      retryIntervalSeconds:
+        typeof previousNodeDefaults.retryIntervalSeconds === 'number'
+          ? previousNodeDefaults.retryIntervalSeconds: 2,
       onError: completedOnError,
     };
     const rawOnError: 'FAIL_FAST' | 'CONTINUE' | 'ROUTE_TO_ERROR' | undefined =
@@ -688,18 +687,18 @@ export class WorkflowDefinitionService {
         ? previousOnError
         : undefined;
     const rawNodeDefaults: {
-      timeoutMs?: number;
+      timeoutSeconds?: number;
       retryCount?: number;
-      retryBackoffMs?: number;
+      retryIntervalSeconds?: number;
       onError?: 'FAIL_FAST' | 'CONTINUE' | 'ROUTE_TO_ERROR';
     } = {
-      timeoutMs:
-        typeof previousNodeDefaults.timeoutMs === 'number' ? previousNodeDefaults.timeoutMs : undefined,
+      timeoutSeconds:
+        typeof previousNodeDefaults.timeoutSeconds === 'number' ? previousNodeDefaults.timeoutSeconds : undefined,
       retryCount:
         typeof previousNodeDefaults.retryCount === 'number' ? previousNodeDefaults.retryCount : undefined,
-      retryBackoffMs:
-        typeof previousNodeDefaults.retryBackoffMs === 'number'
-          ? previousNodeDefaults.retryBackoffMs
+      retryIntervalSeconds:
+        typeof previousNodeDefaults.retryIntervalSeconds === 'number'
+          ? previousNodeDefaults.retryIntervalSeconds
           : undefined,
       onError: rawOnError,
     };

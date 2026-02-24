@@ -22,6 +22,8 @@ import { QuantileCalcForm } from './QuantileCalcForm'; // New
 import { ContextBuilderForm } from './ContextBuilderForm'; // New
 import { JudgeAgentForm } from './JudgeAgentForm'; // New
 import { AlertCheckForm } from './AlertCheckForm'; // New
+import { ReportGenerateForm } from './ReportGenerateForm';
+import { DashboardPublishForm } from './DashboardPublishForm';
 
 interface FormProps {
     config: Record<string, unknown>;
@@ -58,4 +60,6 @@ export const NODE_FORM_REGISTRY: Record<string, React.FC<FormProps>> = {
     'alert-check': AlertCheckForm,
     'context-builder': ContextBuilderForm,
     'judge-agent': JudgeAgentForm,
+    'report-generate': ReportGenerateForm,
+    'dashboard-publish': DashboardPublishForm,
 };

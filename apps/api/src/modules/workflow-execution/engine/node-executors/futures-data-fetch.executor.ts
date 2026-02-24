@@ -122,10 +122,10 @@ export class FuturesDataFetchNodeExecutor implements WorkflowNodeExecutor {
 
             const headers = (endpointConfig?.headers as Record<string, string>) ?? {};
             const rateLimitConfig = (connector as Record<string, unknown>).rateLimitConfig as Record<string, unknown> | null;
-            const timeoutMs = (rateLimitConfig?.timeoutMs as number) ?? 30000;
+            const timeoutSeconds = (rateLimitConfig?.timeoutSeconds as number) ?? 30000;
 
             const controller = new AbortController();
-            const timeout = setTimeout(() => controller.abort(), timeoutMs);
+            const timeout = setTimeout(() => controller.abort(), timeoutSeconds);
 
             try {
                 const response = await fetch(url.toString(), {

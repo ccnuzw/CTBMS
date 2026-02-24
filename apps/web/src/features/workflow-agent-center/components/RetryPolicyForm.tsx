@@ -22,7 +22,7 @@ export const RetryPolicyForm: React.FC<RetryPolicyFormProps> = ({ name }) => {
                     <InputNumber min={0} max={10} />
                 </Form.Item>
                 <Form.Item
-                    name={[...(Array.isArray(name) ? name : [name]), 'retryBackoffMs']}
+                    name={[...(Array.isArray(name) ? name : [name]), 'retryIntervalSeconds']}
                     label="重试间隔（毫秒）"
                     tooltip="每次重试之间的等待时间"
                     initialValue={2000}

@@ -185,7 +185,7 @@ export const AIModelConfigPage = () => {
             temperature: 0.3,
             maxTokens: 8192,
             maxRetries: 3,
-            timeoutMs: 30000,
+            timeoutSeconds: 30,
             availableModels: []
         });
         openEditModal();
@@ -368,7 +368,7 @@ export const AIModelConfigPage = () => {
                 modelFetchMode: values.modelFetchMode,
                 allowUrlProbe: values.allowUrlProbe,
                 allowCompatPathFallback: values.allowCompatPathFallback,
-                timeoutMs: values.timeoutMs,
+                timeoutSeconds: values.timeoutSeconds,
                 maxRetries: values.maxRetries,
                 temperature: values.temperature,
                 maxTokens: values.maxTokens,
@@ -484,7 +484,7 @@ export const AIModelConfigPage = () => {
             modelFetchMode: values.modelFetchMode,
             allowUrlProbe: values.allowUrlProbe,
             allowCompatPathFallback: values.allowCompatPathFallback,
-            timeoutMs: values.timeoutMs,
+            timeoutSeconds: values.timeoutSeconds,
             maxRetries: values.maxRetries,
             temperature: values.temperature,
             maxTokens: values.maxTokens,
@@ -1097,8 +1097,8 @@ export const AIModelConfigPage = () => {
                             width="xs"
                         />
                         <ProFormDigit
-                            name="timeoutMs"
-                            label="超时时间 (ms)"
+                            name="timeoutSeconds"
+                            label="超时时间 (秒)"
                             min={1000}
                             width="sm"
                         />

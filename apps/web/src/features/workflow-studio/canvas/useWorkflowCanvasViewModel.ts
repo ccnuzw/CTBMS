@@ -36,15 +36,15 @@ export type RuntimePreset = 'FAST' | 'BALANCED' | 'ROBUST';
 export const runtimePresetPolicyMap: Record<
     RuntimePreset,
     {
-        timeoutMs: number;
+        timeoutSeconds: number;
         retryCount: number;
-        retryBackoffMs: number;
+        retryIntervalSeconds: number;
         onError: 'FAIL_FAST' | 'CONTINUE' | 'ROUTE_TO_ERROR';
     }
 > = {
-    FAST: { timeoutMs: 15000, retryCount: 0, retryBackoffMs: 0, onError: 'FAIL_FAST' },
-    BALANCED: { timeoutMs: 30000, retryCount: 1, retryBackoffMs: 2000, onError: 'CONTINUE' },
-    ROBUST: { timeoutMs: 60000, retryCount: 3, retryBackoffMs: 3000, onError: 'ROUTE_TO_ERROR' },
+    FAST: { timeoutSeconds: 15, retryCount: 0, retryIntervalSeconds: 0, onError: 'FAIL_FAST' },
+    BALANCED: { timeoutSeconds: 30, retryCount: 1, retryIntervalSeconds: 2, onError: 'CONTINUE' },
+    ROBUST: { timeoutSeconds: 60, retryCount: 3, retryIntervalSeconds: 3, onError: 'ROUTE_TO_ERROR' },
 };
 
 export const AUTO_FIX_STEP_SEQUENCE: Array<{ title: string; codes: string[] }> = [
@@ -670,9 +670,9 @@ export function useWorkflowCanvasViewModel(props: WorkflowCanvasProps) {
                             ...node.data,
                             runtimePolicy: {
                                 ...currentRuntimePolicy,
-                                timeoutMs: policy.timeoutMs,
+                                timeoutSeconds: policy.timeoutSeconds,
                                 retryCount: policy.retryCount,
-                                retryBackoffMs: policy.retryBackoffMs,
+                                retryIntervalSeconds: policy.retryIntervalSeconds,
                                 onError: policy.onError,
                             },
                         },

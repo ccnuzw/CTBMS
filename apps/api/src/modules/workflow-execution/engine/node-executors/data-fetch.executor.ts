@@ -160,7 +160,7 @@ export class DataFetchNodeExecutor implements WorkflowNodeExecutor {
 
         // 应用限流配置
         const rateLimitConfig = connector.rateLimitConfig as Record<string, unknown> | null;
-        const timeoutMs = (rateLimitConfig?.timeoutMs as number) ?? 30000;
+        const timeoutSeconds = (rateLimitConfig?.timeoutSeconds as number) ?? 30000;
 
         const fullUrl = new URL(url);
         for (const [key, value] of Object.entries(queryParams)) {
@@ -168,7 +168,7 @@ export class DataFetchNodeExecutor implements WorkflowNodeExecutor {
         }
 
         const controller = new AbortController();
-        const timeout = setTimeout(() => controller.abort(), timeoutMs);
+        const timeout = setTimeout(() => controller.abort(), timeoutSeconds);
 
         try {
             const response = await fetch(fullUrl.toString(), {

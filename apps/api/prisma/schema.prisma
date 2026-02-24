@@ -793,35 +793,35 @@ model ResearchReport {
 // =============================================
 
 enum NodeType {
-  COMMODITY    // 品种
-  REGION       // 地域
+  COMMODITY // 品种
+  REGION // 地域
   ORGANIZATION // 机构
-  EVENT        // 事件
-  FACTOR       // 影响因素 (e.g., "天气", "政策")
-  CONCEPT      // 概念 (e.g., "去库存", "通胀")
+  EVENT // 事件
+  FACTOR // 影响因素 (e.g., "天气", "政策")
+  CONCEPT // 概念 (e.g., "去库存", "通胀")
 }
 
 enum RelationType {
-  AFFECTS       // 影响 (供需 -> 价格)
-  CAUSES        // 导致 (暴雨 -> 减产)
-  LOCATED_IN    // 位于
-  BELONGS_TO    // 属于
-  HAS_RISK      // 存在风险
-  MENTIONS      // 提及
+  AFFECTS // 影响 (供需 -> 价格)
+  CAUSES // 导致 (暴雨 -> 减产)
+  LOCATED_IN // 位于
+  BELONGS_TO // 属于
+  HAS_RISK // 存在风险
+  MENTIONS // 提及
 }
 
 // 知识节点 (实体)
 model KnowledgeNode {
-  id        String   @id @default(uuid())
-  name      String   // 实体名称
-  type      NodeType // 实体类型
-  
+  id   String   @id @default(uuid())
+  name String // 实体名称
+  type NodeType // 实体类型
+
   // 索引与去重
-  code      String?  @unique // 标准化编码 (可选)
-  
+  code String? @unique // 标准化编码 (可选)
+
   description String? // 描述
-  meta        Json?   // 元数据
-  
+  meta        Json? // 元数据
+
   edgesFrom KnowledgeEdge[] @relation("SourceNode")
   edgesTo   KnowledgeEdge[] @relation("TargetNode")
 
@@ -834,20 +834,20 @@ model KnowledgeNode {
 
 // 知识边 (关系)
 model KnowledgeEdge {
-  id        String   @id @default(uuid())
-  
-  sourceId  String
-  source    KnowledgeNode @relation("SourceNode", fields: [sourceId], references: [id], onDelete: Cascade)
-  
-  targetId  String
-  target    KnowledgeNode @relation("TargetNode", fields: [targetId], references: [id], onDelete: Cascade)
-  
-  type      RelationType // 关系类型
-  weight    Float    @default(1.0) // 权重/置信度
-  
+  id String @id @default(uuid())
+
+  sourceId String
+  source   KnowledgeNode @relation("SourceNode", fields: [sourceId], references: [id], onDelete: Cascade)
+
+  targetId String
+  target   KnowledgeNode @relation("TargetNode", fields: [targetId], references: [id], onDelete: Cascade)
+
+  type   RelationType // 关系类型
+  weight Float        @default(1.0) // 权重/置信度
+
   // 来源溯源
   sourceIntelId String? // 该关系提取自哪篇情报
-  
+
   createdAt DateTime @default(now())
 
   @@index([sourceId])
@@ -890,8 +890,8 @@ model KnowledgeItem {
   viewCount     Int @default(0)
   downloadCount Int @default(0)
 
-  createdAt        DateTime        @default(now())
-  updatedAt        DateTime        @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   analysis      KnowledgeAnalysis?
   attachments   KnowledgeAttachment[]
@@ -1151,13 +1151,13 @@ model PriceData {
   qualityTag PriceQualityTag @default(RAW) // 数据质量标签
 
   // ===== 关联 =====
-  intelId  String?
-  intel    MarketIntel? @relation(fields: [intelId], references: [id])
+  intelId String?
+  intel   MarketIntel? @relation(fields: [intelId], references: [id])
 
   // ===== 知识库关联（日报提取数据） =====
   knowledgeId String?
   knowledge   KnowledgeItem? @relation(fields: [knowledgeId], references: [id])
-  authorId String
+  authorId    String
 
   // ===== [NEW] 填报来源追踪 =====
   inputMethod PriceInputMethod @default(AI_EXTRACTED) // 录入方式
@@ -1922,10 +1922,10 @@ model AIModelConfig {
   id        String @id @default(uuid())
   configKey String @unique // 配置键 (e.g. "DEFAULT", "GEMINI_PRO")
 
-  provider  String // "google", "openai"
-  modelName String // "gemini-1.5-pro"
+  provider       String // "google", "openai"
+  modelName      String // "gemini-1.5-pro"
   embeddingModel String? // [NEW] Embedding model name (e.g. "text-embedding-004")
-  apiUrl    String? // [NEW] Custom API Endpoint
+  apiUrl         String? // [NEW] Custom API Endpoint
 
   apiKeyEnvVar String? // 环境变量名 (推荐)
   apiKey       String? // 直接存储 (仅供测试或私有部署，需加密)
@@ -1943,8 +1943,8 @@ model AIModelConfig {
   topP        Float?
   topK        Int?
 
-  maxRetries Int @default(3)
-  timeoutMs  Int @default(30000)
+  maxRetries     Int @default(3)
+  timeoutSeconds Int @default(30)
 
   isActive  Boolean @default(true)
   isDefault Boolean @default(false)
@@ -2081,10 +2081,10 @@ model WorkflowDefinition {
   updatedAt DateTime @updatedAt
 
   // [NEW] Sprint 5: Workflow Hub (Template Market) Fields
-  isPublished      Boolean @default(false)
-  categoryId       String? // 所属业务域分类
-  coverImage       String? // 模板封面图URL
-  stars            Int     @default(0) // 收藏/点赞数 (热度)
+  isPublished Boolean @default(false)
+  categoryId  String? // 所属业务域分类
+  coverImage  String? // 模板封面图URL
+  stars       Int     @default(0) // 收藏/点赞数 (热度)
 
   @@index([ownerUserId, status])
   @@index([mode, usageMethod])
@@ -2261,7 +2261,7 @@ model DecisionRulePack {
   publishedByUserId  String?
   publishedAt        DateTime?
   lastPublishComment String?
-  conditionAST       Json?   // [NEW] The structured AST representation of the rule logic
+  conditionAST       Json? // [NEW] The structured AST representation of the rule logic
 
   rules DecisionRule[]
 
@@ -2337,12 +2337,12 @@ model AgentProfile {
   modelConfigKey   String
   agentPromptCode  String
   memoryPolicy     String  @default("none")
-  toolPolicy       Json?   // [DEPRECATED] To be replaced by skillCodes
-  skillCodes       Json?   // [NEW] Array of AgentSkill.skillCode strings to bind tools statically
+  toolPolicy       Json? // [DEPRECATED] To be replaced by skillCodes
+  skillCodes       Json? // [NEW] Array of AgentSkill.skillCode strings to bind tools statically
   guardrails       Json?
   outputSchemaCode String
   outputSchema     Json? // [NEW] Custom Output Schema Definition
-  timeoutMs        Int     @default(30000)
+  timeoutSeconds   Int     @default(30)
   retryPolicy      Json?
   isActive         Boolean @default(true)
   version          Int     @default(1)
@@ -2365,12 +2365,12 @@ model AgentProfile {
 model AgentSkill {
   id String @id @default(uuid())
 
-  skillCode      String  @unique // e.g. "math_calculator", "market_price_query"
-  name           String
-  description    String  @db.Text
-  parameters     Json    // JSON Schema for tool input arguments
-  handlerCode    String  // Backend method identifier or local endpoint to execute the tool
-  
+  skillCode   String @unique // e.g. "math_calculator", "market_price_query"
+  name        String
+  description String @db.Text
+  parameters  Json // JSON Schema for tool input arguments
+  handlerCode String // Backend method identifier or local endpoint to execute the tool
+
   ownerUserId    String?
   templateSource WorkflowTemplateSource @default(PRIVATE)
   isActive       Boolean                @default(true)
