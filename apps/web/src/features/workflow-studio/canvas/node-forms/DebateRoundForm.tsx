@@ -105,7 +105,7 @@ export const DebateRoundForm: React.FC<DebateRoundFormProps> = ({ config, onChan
 
   return (
     <Form layout="vertical" size="small">
-      <Form.Item label="最大轮次">
+      <Form.Item label="最大辩论轮次" help="建议设置 3 轮，轮数越多讨论越充分，但消耗 Token 越多且耗时更久。">
         <InputNumber
           min={1}
           max={10}
@@ -115,30 +115,30 @@ export const DebateRoundForm: React.FC<DebateRoundFormProps> = ({ config, onChan
         />
       </Form.Item>
 
-      <Form.Item label="裁判策略">
+      <Form.Item label="裁判研判策略" required help="决定最终如何合并各位虚拟辩手的意见">
         <Select
           value={(config.judgePolicy as string) ?? 'WEIGHTED'}
           onChange={(value) => onChange('judgePolicy', value)}
           options={[
-            { label: '加权投票', value: 'WEIGHTED' },
-            { label: '一票否决', value: 'VETO' },
-            { label: '多数决', value: 'MAJORITY' },
+            { label: '⚖️ 加权投票 (根据下方每个辩手的权重统计得分)', value: 'WEIGHTED' },
+            { label: '🛡️ 一票否决 (只要有一名辩手反对，即可推翻共识)', value: 'VETO' },
+            { label: '🙋 多数决 (少数服从多数，忽略权重)', value: 'MAJORITY' },
           ]}
         />
       </Form.Item>
 
       <Card
         size="small"
-        title="参与者配置"
+        title="辩论席位配置"
         extra={
           <Button type="dashed" size="small" icon={<PlusOutlined />} onClick={addParticipant}>
-            添加参与者
+            添加辩手
           </Button>
         }
       >
         <Space direction="vertical" size={10} style={{ width: '100%' }}>
           <Text type="secondary" style={{ fontSize: 12 }}>
-            通过可视化方式配置每个辩手的身份、立场与权重。
+            通过此面板，为每位虚拟辩手分配特有的出场身份、思考立场与发言权重。
           </Text>
 
           {participants.length === 0 ? <Text type="secondary">暂无参与者，请先添加。</Text> : null}

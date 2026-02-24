@@ -106,7 +106,7 @@ export const SingleAgentForm: React.FC<SingleAgentFormProps> = ({ config, onChan
       )}
 
       {/* ── 节点独有配置：创意度 + 推理开关 ── */}
-      <Form.Item label="创意度" extra="数值越高回答越发散，越低越严谨">
+      <Form.Item label="创意度 (Temperature)" extra="数值越高，AI 回答越发散越具创造力；越低则越严谨、越稳定">
         <Slider
           min={0}
           max={1}
@@ -129,13 +129,13 @@ export const SingleAgentForm: React.FC<SingleAgentFormProps> = ({ config, onChan
             unCheckedChildren="仅结论"
           />
           <Text type="secondary" style={{ fontSize: 12 }}>
-            是否在输出中包含推理分析过程
+            是否在最终结果中一并保留大模型的思考分析过程
           </Text>
         </Space>
       </Form.Item>
 
       {/* ── 模型覆盖（可选）── */}
-      <Form.Item label="模型覆盖（可选）" extra="可手填，或选择常用模型作为私有覆盖">
+      <Form.Item label="强行指定运行模型 (可选)" extra="留空则使用智能体本身的默认模型。在这里选择则无视本身设置强行替换成新模型。">
         <AutoComplete
           value={(config.modelOverride as string) ?? (config.model as string)}
           onChange={(value) => {

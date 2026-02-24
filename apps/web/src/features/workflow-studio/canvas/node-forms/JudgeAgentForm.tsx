@@ -63,15 +63,15 @@ export const JudgeAgentForm: React.FC<FormProps> = ({ config, onChange }) => {
         />
       </Form.Item>
 
-      <Form.Item label="裁决策略">
+      <Form.Item label="裁决策略" help="决定当出现分歧时该听谁的">
         <Select
           value={(config.judgePolicy as string) ?? 'WEIGHTED'}
           onChange={(value) => onChange('judgePolicy', value)}
           options={[
-            { label: '加权评分', value: 'WEIGHTED' },
-            { label: '全票通过', value: 'UNANIMOUS' },
-            { label: '多数票', value: 'MAJORITY' },
-            { label: '一票否决', value: 'VETO' },
+            { label: '⚖️ 加权评分', value: 'WEIGHTED' },
+            { label: '🤝 全票通过', value: 'UNANIMOUS' },
+            { label: '🙋 多数票', value: 'MAJORITY' },
+            { label: '🛡️ 一票否决', value: 'VETO' },
           ]}
         />
       </Form.Item>
@@ -82,7 +82,7 @@ export const JudgeAgentForm: React.FC<FormProps> = ({ config, onChange }) => {
         items={[
           {
             key: 'rubric',
-            label: '评分标准与裁决指令',
+            label: '🌟 核心：评分标准与裁决指令',
             children: (
               <StructuredPromptBuilder
                 value={(config.rubric as string) ?? ''}
@@ -90,41 +90,45 @@ export const JudgeAgentForm: React.FC<FormProps> = ({ config, onChange }) => {
               />
             ),
           },
+        ]}
+        style={{ marginBottom: 16 }}
+      />
+
+      <Collapse
+        size="small"
+        items={[
           {
-            key: 'schema',
-            label: '输出结构',
+            key: 'advanced',
+            label: '🛠 高级专家选项 (输出结构、护栏与插件)',
             children: (
-              <OutputSchemaBuilder
-                value={stringifySchema(config.outputSchema)}
-                onChange={(value) => {
-                  onChange('outputSchema', parseSchemaValue(value));
-                  if (value.trim()) {
-                    onChange('outputSchemaCode', 'CUSTOM');
-                  }
-                }}
-              />
-            ),
-          },
-          {
-            key: 'guardrails',
-            label: '安全防护',
-            children: (
-              <VisualGuardrailsBuilder
-                value={(config.guardrails as Record<string, unknown>) ?? {}}
-                onChange={(value) => onChange('guardrails', value)}
-              />
-            ),
-          },
-          {
-            key: 'tools',
-            label: '工具策略',
-            children: (
-              <VisualToolPolicyBuilder
-                value={
-                  (config.toolPolicy as { allowedTools?: string[]; blockedTools?: string[] }) ?? {}
-                }
-                onChange={(value) => onChange('toolPolicy', value)}
-              />
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                <div>
+                  <div style={{ marginBottom: 8, fontWeight: 'bold', fontSize: 13 }}>输出结构定义</div>
+                  <OutputSchemaBuilder
+                    value={stringifySchema(config.outputSchema)}
+                    onChange={(value) => {
+                      onChange('outputSchema', parseSchemaValue(value));
+                      if (value.trim()) {
+                        onChange('outputSchemaCode', 'CUSTOM');
+                      }
+                    }}
+                  />
+                </div>
+                <div>
+                  <div style={{ marginBottom: 8, fontWeight: 'bold', fontSize: 13 }}>安全防护 (Guardrails)</div>
+                  <VisualGuardrailsBuilder
+                    value={(config.guardrails as Record<string, unknown>) ?? {}}
+                    onChange={(value) => onChange('guardrails', value)}
+                  />
+                </div>
+                <div>
+                  <div style={{ marginBottom: 8, fontWeight: 'bold', fontSize: 13 }}>工具调用策略</div>
+                  <VisualToolPolicyBuilder
+                    value={(config.toolPolicy as { allowedTools?: string[]; blockedTools?: string[] }) ?? {}}
+                    onChange={(value) => onChange('toolPolicy', value)}
+                  />
+                </div>
+              </div>
             ),
           },
         ]}
