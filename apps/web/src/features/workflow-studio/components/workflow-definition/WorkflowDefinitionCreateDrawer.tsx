@@ -85,7 +85,7 @@ export const WorkflowDefinitionCreateDrawer: React.FC<WorkflowDefinitionCreateDr
             });
             message.success('流程创建成功');
             onClose();
-         
+
         } catch (error: any) {
             if (error?.message?.includes('out of date')) {
                 return;
@@ -182,9 +182,9 @@ export const WorkflowDefinitionCreateDrawer: React.FC<WorkflowDefinitionCreateDr
                     />
                 </Form.Item>
                 <Form.Item
-                    label="默认规则包（可选）"
+                    label="默认搭载规则包（可选）"
                     name="defaultRulePackCode"
-                    extra="选择后将生成 trigger -> rule-pack-eval -> risk-gate -> notify；未选择时为 trigger -> risk-gate -> notify。"
+                    extra="选择后将自动生成：数据触发 -> 规则判定 -> 风险闸门 -> 消息通知 的完整标准流程；未选择时自动跳过规则判定环节。"
                 >
                     <Select
                         allowClear

@@ -129,7 +129,7 @@ export const CanvasToolbar: React.FC<CanvasToolbarProps> = ({
         <Tooltip title="缩小">
           <Button type="text" size="small" icon={<ZoomOutOutlined />} onClick={() => zoomOut()} />
         </Tooltip>
-        <Tooltip title="适应画布">
+        <Tooltip title="适应全景视图">
           <Button
             type="text"
             size="small"
@@ -142,7 +142,7 @@ export const CanvasToolbar: React.FC<CanvasToolbarProps> = ({
 
         <Space size={8} align="center">
           <Text type="secondary" style={{ fontSize: 12 }}>
-            模式:
+            编排模式:
           </Text>
           <Select
             value={workflowMode}
@@ -217,7 +217,7 @@ export const CanvasToolbar: React.FC<CanvasToolbarProps> = ({
           </>
         )}
         <Divider type="vertical" />
-        <Tooltip title="撤销">
+        <Tooltip title={canUndo ? "撤销上一步" : "没有可撤销的操作"}>
           <Button
             type="text"
             size="small"
@@ -226,7 +226,7 @@ export const CanvasToolbar: React.FC<CanvasToolbarProps> = ({
             disabled={!canUndo}
           />
         </Tooltip>
-        <Tooltip title="重做">
+        <Tooltip title={canRedo ? "重新应用撤销" : "没有可重做的操作"}>
           <Button
             type="text"
             size="small"
