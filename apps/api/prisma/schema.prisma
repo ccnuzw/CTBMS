@@ -2083,6 +2083,13 @@ enum ConversationPlanType {
   DEBATE_PLAN
 }
 
+enum BacktestStatus {
+  QUEUED
+  RUNNING
+  COMPLETED
+  FAILED
+}
+
 model WorkflowDefinition {
   id                String                   @id @default(uuid())
   workflowId        String                   @unique
@@ -2788,6 +2795,8 @@ model ConversationSession {
   turns ConversationTurn[]
   plans ConversationPlan[]
   subscriptions ConversationSubscription[]
+  backtests     ConversationBacktestJob[]
+  conflicts     ConversationConflictRecord[]
 
   @@index([ownerUserId, createdAt])
   @@index([state, updatedAt])
@@ -2866,6 +2875,45 @@ model ConversationSubscriptionRun {
 
   @@index([subscriptionId, startedAt])
   @@index([status, startedAt])
+}
+
+model ConversationBacktestJob {
+  id                  String         @id @default(uuid())
+  sessionId           String
+  workflowExecutionId String
+  status              BacktestStatus @default(QUEUED)
+  inputConfig         Json
+  resultSummary       Json?
+  metrics             Json?
+  errorMessage        String?        @db.Text
+  createdAt           DateTime       @default(now())
+  startedAt           DateTime?
+  completedAt         DateTime?
+
+  session ConversationSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@index([sessionId, createdAt])
+  @@index([status, createdAt])
+}
+
+model ConversationConflictRecord {
+  id                  String   @id @default(uuid())
+  sessionId           String
+  workflowExecutionId String?
+  topic               String
+  consistencyScore    Float?
+  sourceA             String
+  sourceB             String
+  valueA              Json?
+  valueB              Json?
+  resolution          String?
+  resolutionReason    String?
+  createdAt           DateTime @default(now())
+
+  session ConversationSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@index([sessionId, createdAt])
+  @@index([topic, createdAt])
 }
 
 // ─────────────── WorkflowExperimentRun (实验运行明细) ───────────────

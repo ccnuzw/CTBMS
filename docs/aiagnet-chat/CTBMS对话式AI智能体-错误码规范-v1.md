@@ -36,6 +36,17 @@
 - `CONV_EXPORT_TASK_NOT_FOUND`：导出任务不存在或无权限访问（400）
 - `CONV_EXPORT_TASK_NOT_READY`：导出任务尚未完成，不可投递邮件（400）
 
+### 3.4 订阅
+
+- `CONV_SUB_PLAN_NOT_FOUND`：未找到可订阅计划（400）
+- `CONV_SUB_NOT_FOUND`：订阅不存在或无权限访问（404）
+
+### 3.5 回测
+
+- `CONV_BACKTEST_EXECUTION_NOT_FOUND`：未找到可回测执行实例（400）
+- `CONV_BACKTEST_NOT_FOUND`：回测任务不存在或无权限访问（404）
+- `CONV_BACKTEST_RUN_FAILED`：回测执行失败（400）
+
 ## 4. 前端映射策略
 
 - 优先使用 `code` 映射中文提示，确保稳定。
@@ -45,6 +56,4 @@
 ## 5. 迭代建议
 
 - 下一阶段补充：
-  - 订阅模块错误码（`CONV_SUB_*`）
-  - 回测模块错误码（`CONV_BACKTEST_*`）
   - 冲突消解错误码（`CONV_CONFLICT_*`）

@@ -32,14 +32,21 @@ import { getApiError } from '../../../api/client';
 import {
   CopilotPromptScope,
   useConfirmConversationPlan,
+  useConversationBacktest,
+  useConversationConflicts,
+  useConversationSubscriptions,
   useConversationDetail,
   useConversationResult,
   useConversationSessions,
   useCopilotPromptTemplates,
+  useCreateConversationSubscription,
   useCreateConversationSession,
+  useCreateConversationBacktest,
   useDeliverConversationEmail,
   useExportConversationResult,
+  useRunConversationSubscription,
   useSendConversationTurn,
+  useUpdateConversationSubscription,
   useUpsertCopilotPromptTemplates,
 } from '../api/conversations';
 
@@ -96,6 +103,11 @@ const copilotErrorMessageByCode: Record<string, string> = {
   CONV_EXPORT_EXECUTION_NOT_FOUND: '没有可导出的执行结果，请先运行任务。',
   CONV_EXPORT_TASK_NOT_FOUND: '导出任务不存在或无权限访问。',
   CONV_EXPORT_TASK_NOT_READY: '导出任务尚未完成，请稍后再发送邮箱。',
+  CONV_SUB_PLAN_NOT_FOUND: '未找到可订阅计划，请先确认并执行计划。',
+  CONV_SUB_NOT_FOUND: '订阅不存在或无权限访问。',
+  CONV_BACKTEST_EXECUTION_NOT_FOUND: '未找到可回测的执行实例，请先完成一次执行。',
+  CONV_BACKTEST_NOT_FOUND: '回测任务不存在或无权限访问。',
+  CONV_BACKTEST_RUN_FAILED: '回测执行失败，请稍后重试。',
 };
 
 export const AgentCopilotPage: React.FC = () => {
@@ -110,6 +122,8 @@ export const AgentCopilotPage: React.FC = () => {
   const [templateMode, setTemplateMode] = useState<'FORM' | 'JSON'>('FORM');
   const [templateDraft, setTemplateDraft] = useState<QuickPromptTemplate[]>(defaultQuickPrompts);
   const [quickPrompts, setQuickPrompts] = useState<QuickPromptTemplate[]>(defaultQuickPrompts);
+  const [subscriptionName, setSubscriptionName] = useState('每周玉米复盘订阅');
+  const [subscriptionCronExpr, setSubscriptionCronExpr] = useState('0 0 8 * * 1');
   const timelineRef = useRef<HTMLDivElement | null>(null);
   const templateFileInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -122,6 +136,11 @@ export const AgentCopilotPage: React.FC = () => {
   const confirmPlanMutation = useConfirmConversationPlan();
   const exportMutation = useExportConversationResult();
   const deliverMutation = useDeliverConversationEmail();
+  const subscriptionsQuery = useConversationSubscriptions(activeSessionId);
+  const createSubscriptionMutation = useCreateConversationSubscription();
+  const updateSubscriptionMutation = useUpdateConversationSubscription();
+  const runSubscriptionMutation = useRunConversationSubscription();
+  const createBacktestMutation = useCreateConversationBacktest();
   const personalPromptTemplateQuery = useCopilotPromptTemplates('PERSONAL');
   const teamPromptTemplateQuery = useCopilotPromptTemplates('TEAM');
   const upsertPromptTemplatesMutation = useUpsertCopilotPromptTemplates();
@@ -142,6 +161,16 @@ export const AgentCopilotPage: React.FC = () => {
   };
   const missingSlots = latestAssistantPayload.missingSlots ?? [];
   const proposedPlanFromTurn = latestAssistantPayload.proposedPlan ?? null;
+  const latestBacktestJobId = useMemo(() => {
+    return [...(detailQuery.data?.turns ?? [])]
+      .reverse()
+      .map((turn) => turn.structuredPayload as Record<string, unknown> | undefined)
+      .find((payload) => payload && typeof payload.backtestJobId === 'string')?.backtestJobId as
+      | string
+      | undefined;
+  }, [detailQuery.data?.turns]);
+  const backtestQuery = useConversationBacktest(activeSessionId, latestBacktestJobId);
+  const conflictsQuery = useConversationConflicts(activeSessionId);
 
   const deliveryLogs = useMemo(() => {
     return (detailQuery.data?.turns ?? [])
@@ -167,6 +196,90 @@ export const AgentCopilotPage: React.FC = () => {
     const apiError = getApiError(error);
     const codeMsg = apiError.code ? copilotErrorMessageByCode[apiError.code] : null;
     message.error(codeMsg || apiError.message || fallback);
+  };
+
+  const handleCreateSubscription = async () => {
+    if (!activeSessionId) {
+      message.warning('请先选择会话');
+      return;
+    }
+    if (!latestPlan) {
+      message.warning('请先生成并确认计划');
+      return;
+    }
+    try {
+      await createSubscriptionMutation.mutateAsync({
+        sessionId: activeSessionId,
+        name: subscriptionName,
+        cronExpr: subscriptionCronExpr,
+        planVersion: latestPlan.version,
+      });
+      message.success('订阅创建成功');
+    } catch (error) {
+      showCopilotError(error, '订阅创建失败');
+    }
+  };
+
+  const handleToggleSubscription = async (
+    subscriptionId: string,
+    status: 'ACTIVE' | 'PAUSED' | 'FAILED' | 'ARCHIVED',
+  ) => {
+    if (!activeSessionId) {
+      return;
+    }
+    const nextStatus = status === 'ACTIVE' ? 'PAUSED' : 'ACTIVE';
+    try {
+      await updateSubscriptionMutation.mutateAsync({
+        sessionId: activeSessionId,
+        subscriptionId,
+        status: nextStatus,
+      });
+      message.success(nextStatus === 'ACTIVE' ? '已恢复订阅' : '已暂停订阅');
+    } catch (error) {
+      showCopilotError(error, '订阅更新失败');
+    }
+  };
+
+  const handleRunSubscriptionNow = async (subscriptionId: string) => {
+    if (!activeSessionId) {
+      return;
+    }
+    try {
+      await runSubscriptionMutation.mutateAsync({
+        sessionId: activeSessionId,
+        subscriptionId,
+      });
+      message.success('已触发补跑');
+    } catch (error) {
+      showCopilotError(error, '补跑失败');
+    }
+  };
+
+  const handleCreateBacktest = async () => {
+    if (!activeSessionId) {
+      message.warning('请先选择会话');
+      return;
+    }
+    const executionId = resultQuery.data?.executionId;
+    if (!executionId) {
+      message.warning('暂无可回测执行结果，请先确认并执行计划');
+      return;
+    }
+    try {
+      const created = await createBacktestMutation.mutateAsync({
+        sessionId: activeSessionId,
+        executionId,
+        strategySource: 'LATEST_ACTIONS',
+        lookbackDays: 180,
+        feeModel: {
+          spotFeeBps: 8,
+          futuresFeeBps: 3,
+        },
+      });
+      message.success(`回测任务已创建：${created.data.backtestJobId}`);
+    } catch (error) {
+      showCopilotError(error, '回测创建失败');
+    }
   };
 
   const handleCreateSession = async () => {
@@ -774,6 +887,75 @@ export const AgentCopilotPage: React.FC = () => {
                   </div>
                 </div>
 
+                <Divider style={{ margin: '8px 0' }} />
+                <Text strong>订阅任务</Text>
+                <Space direction="vertical" style={{ width: '100%' }} size={8}>
+                  <Input
+                    value={subscriptionName}
+                    onChange={(e) => setSubscriptionName(e.target.value)}
+                    placeholder="订阅名称"
+                  />
+                  <Input
+                    value={subscriptionCronExpr}
+                    onChange={(e) => setSubscriptionCronExpr(e.target.value)}
+                    placeholder="cron 表达式，例如 0 0 8 * * 1"
+                  />
+                  <Button
+                    onClick={handleCreateSubscription}
+                    loading={createSubscriptionMutation.isPending}
+                    disabled={!latestPlan}
+                    block
+                  >
+                    创建订阅
+                  </Button>
+
+                  <List
+                    size="small"
+                    dataSource={subscriptionsQuery.data ?? []}
+                    locale={{ emptyText: '暂无订阅' }}
+                    renderItem={(item) => (
+                      <List.Item
+                        actions={[
+                          <Button
+                            key="toggle"
+                            size="small"
+                            loading={updateSubscriptionMutation.isPending}
+                            onClick={() =>
+                              void handleToggleSubscription(
+                                item.id,
+                                item.status as 'ACTIVE' | 'PAUSED' | 'FAILED' | 'ARCHIVED',
+                              )
+                            }
+                          >
+                            {item.status === 'ACTIVE' ? '暂停' : '恢复'}
+                          </Button>,
+                          <Button
+                            key="rerun"
+                            size="small"
+                            loading={runSubscriptionMutation.isPending}
+                            onClick={() => void handleRunSubscriptionNow(item.id)}
+                          >
+                            补跑
+                          </Button>,
+                        ]}
+                      >
+                        <Space direction="vertical" size={2} style={{ width: '100%' }}>
+                          <Space>
+                            <Text strong>{item.name}</Text>
+                            <Tag color={item.status === 'ACTIVE' ? 'success' : 'default'}>{item.status}</Tag>
+                          </Space>
+                          <Text type="secondary" style={{ fontSize: 12 }}>
+                            cron: {item.cronExpr}
+                          </Text>
+                          <Text type="secondary" style={{ fontSize: 12 }}>
+                            下次执行: {item.nextRunAt ? new Date(item.nextRunAt).toLocaleString('zh-CN') : '-'}
+                          </Text>
+                        </Space>
+                      </List.Item>
+                    )}
+                  />
+                </Space>
+
                 <Button
                   type="primary"
                   icon={<PlayCircleOutlined />}
@@ -821,6 +1003,14 @@ export const AgentCopilotPage: React.FC = () => {
 
                     <Divider style={{ margin: '8px 0' }} />
                     <Space wrap>
+                      <Button
+                        icon={<PlayCircleOutlined />}
+                        loading={createBacktestMutation.isPending}
+                        onClick={handleCreateBacktest}
+                        disabled={!resultQuery.data?.executionId}
+                      >
+                        发起回测
+                      </Button>
                       <Button
                         icon={<DownloadOutlined />}
                         loading={exportMutation.isPending}
@@ -909,6 +1099,65 @@ export const AgentCopilotPage: React.FC = () => {
                             </List.Item>
                           )}
                         />
+                      </>
+                    ) : null}
+
+                    {backtestQuery.data ? (
+                      <>
+                        <Divider style={{ margin: '8px 0' }} />
+                        <Text strong>回测结果</Text>
+                        <Alert
+                          type={
+                            backtestQuery.data.status === 'FAILED'
+                              ? 'error'
+                              : backtestQuery.data.status === 'COMPLETED'
+                                ? 'success'
+                                : 'info'
+                          }
+                          message={`状态：${backtestQuery.data.status}`}
+                          description={
+                            backtestQuery.data.status === 'COMPLETED'
+                              ? `收益 ${backtestQuery.data.summary?.returnPct ?? '-'}%，最大回撤 ${backtestQuery.data.summary?.maxDrawdownPct ?? '-'}%，胜率 ${backtestQuery.data.summary?.winRatePct ?? '-'}%，评分 ${backtestQuery.data.summary?.score ?? '-'}。`
+                              : backtestQuery.data.errorMessage || '回测处理中'
+                          }
+                          showIcon
+                        />
+                      </>
+                    ) : null}
+
+                    {conflictsQuery.data ? (
+                      <>
+                        <Divider style={{ margin: '8px 0' }} />
+                        <Text strong>冲突消解</Text>
+                        <Alert
+                          type={conflictsQuery.data.conflicts.length > 0 ? 'warning' : 'success'}
+                          showIcon
+                          message={`一致性分：${Math.round(conflictsQuery.data.consistencyScore * 100)}%`}
+                          description={
+                            conflictsQuery.data.conflicts.length > 0
+                              ? `检测到 ${conflictsQuery.data.conflicts.length} 条冲突，请关注来源差异。`
+                              : '未检测到显著冲突'
+                          }
+                        />
+                        {conflictsQuery.data.conflicts.length > 0 ? (
+                          <List
+                            size="small"
+                            dataSource={conflictsQuery.data.conflicts}
+                            renderItem={(item) => (
+                              <List.Item>
+                                <Space direction="vertical" size={2} style={{ width: '100%' }}>
+                                  <Text strong>{item.topic}</Text>
+                                  <Text type="secondary" style={{ fontSize: 12 }}>
+                                    来源: {item.sources.join(' vs ')}
+                                  </Text>
+                                  <Text type="secondary" style={{ fontSize: 12 }}>
+                                    消解: {item.resolution || '-'} / {item.reason || '-'}
+                                  </Text>
+                                </Space>
+                              </List.Item>
+                            )}
+                          />
+                        ) : null}
                       </>
                     ) : null}
                   </Space>

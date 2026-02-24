@@ -123,6 +123,40 @@ export interface SubscriptionItem {
   }>;
 }
 
+export interface BacktestJobSummary {
+  backtestJobId: string;
+  status: 'QUEUED' | 'RUNNING' | 'COMPLETED' | 'FAILED';
+}
+
+export interface BacktestJobDetail {
+  backtestJobId: string;
+  status: 'QUEUED' | 'RUNNING' | 'COMPLETED' | 'FAILED';
+  summary?: {
+    returnPct?: number;
+    maxDrawdownPct?: number;
+    winRatePct?: number;
+    score?: number;
+  };
+  assumptions?: Record<string, unknown>;
+  metrics?: Record<string, unknown>;
+  errorMessage?: string | null;
+  completedAt?: string | null;
+}
+
+export interface ConversationConflictItem {
+  conflictId: string;
+  topic: string;
+  sources: string[];
+  resolution?: string | null;
+  reason?: string | null;
+  consistencyScore?: number;
+}
+
+export interface ConversationConflictsResponse {
+  consistencyScore: number;
+  conflicts: ConversationConflictItem[];
+}
+
 const COPILOT_PROMPT_BINDING_TYPE = 'AGENT_COPILOT_PROMPTS';
 
 export type CopilotPromptScope = 'PERSONAL' | 'TEAM';
@@ -409,3 +443,58 @@ export const useRunConversationSubscription = () => {
     },
   });
 };
+
+export const useCreateConversationBacktest = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (payload: {
+      sessionId: string;
+      executionId?: string;
+      strategySource?: 'LATEST_ACTIONS' | 'PLAN_SNAPSHOT';
+      lookbackDays?: number;
+      feeModel: {
+        spotFeeBps: number;
+        futuresFeeBps: number;
+      };
+    }) => {
+      const { sessionId, ...body } = payload;
+      const res = await apiClient.post<BacktestJobSummary>(
+        `/agent-conversations/sessions/${sessionId}/backtests`,
+        body,
+      );
+      return { sessionId, data: res.data };
+    },
+    onSuccess: ({ sessionId, data }) => {
+      queryClient.invalidateQueries({ queryKey: ['agent-copilot', 'session', sessionId] });
+      queryClient.invalidateQueries({ queryKey: ['agent-copilot', 'backtest', sessionId, data.backtestJobId] });
+    },
+  });
+};
+
+export const useConversationBacktest = (sessionId?: string, backtestJobId?: string) =>
+  useQuery<BacktestJobDetail>({
+    queryKey: ['agent-copilot', 'backtest', sessionId, backtestJobId],
+    queryFn: async () => {
+      const res = await apiClient.get<BacktestJobDetail>(
+        `/agent-conversations/sessions/${sessionId}/backtests/${backtestJobId}`,
+      );
+      return res.data;
+    },
+    enabled: Boolean(sessionId && backtestJobId),
+    refetchInterval: (query) => {
+      const status = (query as { state?: { data?: BacktestJobDetail } })?.state?.data?.status;
+      return status === 'RUNNING' || status === 'QUEUED' ? 2000 : false;
+    },
+  });
+
+export const useConversationConflicts = (sessionId?: string) =>
+  useQuery<ConversationConflictsResponse>({
+    queryKey: ['agent-copilot', 'conflicts', sessionId],
+    queryFn: async () => {
+      const res = await apiClient.get<ConversationConflictsResponse>(
+        `/agent-conversations/sessions/${sessionId}/conflicts`,
+      );
+      return res.data;
+    },
+    enabled: Boolean(sessionId),
+  });

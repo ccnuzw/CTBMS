@@ -15,6 +15,7 @@ import { AgentConversationService } from './agent-conversation.service';
 import {
   ConfirmConversationPlanRequest,
   ConversationSessionQueryRequest,
+  CreateConversationBacktestRequest,
   CreateConversationSubscriptionRequest,
   CreateConversationSessionRequest,
   CreateConversationTurnRequest,
@@ -196,6 +197,50 @@ export class AgentConversationController {
       throw new NotFoundException({
         code: 'CONV_SUB_NOT_FOUND',
         message: '订阅不存在或无权限访问',
+      });
+    }
+    return result;
+  }
+
+  @Post(':sessionId/backtests')
+  async createBacktest(
+    @Request() req: AuthRequest,
+    @Param('sessionId') sessionId: string,
+    @Body() dto: CreateConversationBacktestRequest,
+  ) {
+    const result = await this.service.createBacktest(this.getUserId(req), sessionId, dto);
+    if (!result) {
+      throw new NotFoundException({
+        code: 'CONV_SESSION_NOT_FOUND',
+        message: '会话不存在或无权限访问',
+      });
+    }
+    return result;
+  }
+
+  @Get(':sessionId/backtests/:backtestJobId')
+  async getBacktest(
+    @Request() req: AuthRequest,
+    @Param('sessionId') sessionId: string,
+    @Param('backtestJobId') backtestJobId: string,
+  ) {
+    const result = await this.service.getBacktest(this.getUserId(req), sessionId, backtestJobId);
+    if (!result) {
+      throw new NotFoundException({
+        code: 'CONV_BACKTEST_NOT_FOUND',
+        message: '回测任务不存在或无权限访问',
+      });
+    }
+    return result;
+  }
+
+  @Get(':sessionId/conflicts')
+  async getConflicts(@Request() req: AuthRequest, @Param('sessionId') sessionId: string) {
+    const result = await this.service.getConflicts(this.getUserId(req), sessionId);
+    if (!result) {
+      throw new NotFoundException({
+        code: 'CONV_SESSION_NOT_FOUND',
+        message: '会话不存在或无权限访问',
       });
     }
     return result;

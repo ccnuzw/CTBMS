@@ -1,5 +1,6 @@
 import { createZodDto } from 'nestjs-zod';
 import {
+  CreateConversationBacktestSchema,
   CreateConversationSubscriptionSchema,
   ConfirmConversationPlanSchema,
   CreateConversationSessionSchema,
@@ -16,6 +17,7 @@ export class ExportConversationResultRequest extends createZodDto(ExportConversa
 export class CreateConversationSubscriptionRequest extends createZodDto(
   CreateConversationSubscriptionSchema,
 ) {}
+export class CreateConversationBacktestRequest extends createZodDto(CreateConversationBacktestSchema) {}
 export class UpdateConversationSubscriptionRequest extends createZodDto(
   UpdateConversationSubscriptionSchema,
 ) {}
