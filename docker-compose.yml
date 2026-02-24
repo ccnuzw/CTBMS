@@ -1,24 +1,38 @@
-version: '3.8'
 services:
   postgres:
     build:
       context: .
       dockerfile: Dockerfile.pgvector
+    image: ctbms/postgres-pgvector:15-debian
     container_name: ctbms_postgres
+    restart: unless-stopped
     ports:
-      - "5433:5432"
+      - '5433:5432'
     environment:
-      POSTGRES_USER: ctbms
-      POSTGRES_PASSWORD: ctbms_password
-      POSTGRES_DB: ctbms_dev
+      POSTGRES_USER: ${POSTGRES_USER:-ctbms}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-ctbms_password}
+      POSTGRES_DB: ${POSTGRES_DB:-ctbms_dev}
     volumes:
       - postgres_data:/var/lib/postgresql/data
-    restart: always
+    shm_size: 256mb
+    stop_grace_period: 30s
+    networks:
+      - ctbms_network
     healthcheck:
-      test: [ "CMD-SHELL", "pg_isready -U ctbms -d ctbms_dev" ]
+      test: ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER:-ctbms} -d ${POSTGRES_DB:-ctbms_dev}']
       interval: 5s
       timeout: 3s
       retries: 10
+      start_period: 10s
+    logging:
+      driver: json-file
+      options:
+        max-size: '10m'
+        max-file: '3'
 
 volumes:
   postgres_data:
+
+networks:
+  ctbms_network:
+    driver: bridge

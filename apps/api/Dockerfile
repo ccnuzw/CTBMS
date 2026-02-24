@@ -1,17 +1,24 @@
-FROM node:20-alpine AS base
+FROM node:20-slim AS base
+# Ensure openssl is installed for Prisma
+# In Debian slim, we use apt-get instead of apk, and ca-certificates are usually needed for https
+RUN apt-get update && apt-get install -y openssl ca-certificates && rm -rf /var/lib/apt/lists/*
 
-# Install pnpm and turbo
+FROM node:20 AS build-base
+# Install pnpm and turbo. 
+# node:20 (full variant) already contains build-essential (make, g++ etc) and python3
 RUN npm install -g pnpm turbo
-RUN apk add --no-cache libc6-compat openssl python3 make g++
+ENV PNPM_HOME="/pnpm" \
+    PATH="$PNPM_HOME:$PATH"
+RUN pnpm config set store-dir /pnpm/store
 
-FROM base AS builder
+FROM build-base AS builder
 WORKDIR /app
 COPY . .
 # Prune the workspace for the api app
 RUN turbo prune --scope=api --docker
 
 # Installer stage
-FROM base AS installer
+FROM build-base AS installer
 WORKDIR /app
 
 # Copy lockfile and package.json's of isolated subworkspace
@@ -19,8 +26,8 @@ COPY --from=builder /app/out/json/ .
 COPY --from=builder /app/out/pnpm-lock.yaml ./pnpm-lock.yaml
 COPY --from=builder /app/out/pnpm-workspace.yaml ./pnpm-workspace.yaml
 
-# Install dependencies
-RUN pnpm install --frozen-lockfile
+# Install dependencies using pnpm cache mount
+RUN --mount=type=cache,id=pnpm,target=/pnpm/store pnpm install --frozen-lockfile
 
 # Copy source code of isolated subworkspace
 COPY --from=builder /app/out/full/ .
@@ -36,12 +43,13 @@ RUN pnpm turbo run build --filter=api...
 # Compile seed scripts for production initialization
 RUN cd apps/api && npx tsc prisma/*.ts --outDir dist/prisma --esModuleInterop --skipLibCheck --resolveJsonModule --module commonjs --target es2017
 
+# Production Runner Stage
 FROM base AS runner
 WORKDIR /app
 
 # Don't run production as root
-RUN addgroup --system --gid 1001 nodejs
-RUN adduser --system --uid 1001 nestjs
+RUN addgroup --system --gid 1001 nodejs && \
+    adduser --system --uid 1001 nestjs
 
 # Create uploads directory and set permissions (must be done as root)
 RUN mkdir -p /app/uploads && chown nestjs:nodejs /app/uploads
@@ -61,8 +69,6 @@ COPY --from=installer /app/apps/api/prisma ./apps/api/prisma
 
 # Copy seed.sql for production initialization (tsc doesn't copy .sql files)
 COPY --from=installer /app/apps/api/prisma/seed.sql ./apps/api/dist/prisma/seed.sql
-
-
 
 EXPOSE 3000
 

@@ -4,5 +4,6 @@ export * from './workflow-definition-query.dto';
 export * from './create-workflow-version.dto';
 export * from './publish-workflow-version.dto';
 export * from './validate-workflow-dsl.dto';
+export * from './preflight-workflow-dsl.dto';
 export * from './validate-workflow-node-preview.dto';
 export * from './workflow-publish-audit-query.dto';

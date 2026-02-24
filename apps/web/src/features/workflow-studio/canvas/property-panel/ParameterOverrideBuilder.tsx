@@ -249,61 +249,61 @@ export const ParameterOverrideBuilder: React.FC<ParameterOverrideBuilderProps> =
   return (
     <Space direction="vertical" size={12} style={{ width: '100%' }}>
       <Card size="small">
-        <Space direction="vertical" size={10} style={{ width: '100%' }}>
-          <Text type="secondary" style={{ fontSize: 12 }}>
-            参数覆盖用于对当前节点应用临时参数差异，默认继承流程参数包。
-          </Text>
-
-          <Segmented
-            block
-            value={paramOverrideMode}
-            options={[
-              { label: '继承流程参数', value: 'INHERIT' },
-              { label: '节点私有覆盖', value: 'PRIVATE_OVERRIDE' },
-            ]}
-            onChange={(value) => {
-              const mode = value as 'INHERIT' | 'PRIVATE_OVERRIDE';
-              onModeChange(mode);
-              if (mode === 'INHERIT') {
-                onOverridesChange({});
-                setEntries([]);
-              }
-            }}
-          />
+        <Space direction="vertical" style={{ width: '100%' }}>
+          <Space style={{ width: '100%', justifyContent: 'space-between' }}>
+            <Text strong>独立定制节点参数</Text>
+            <Switch
+              size="small"
+              checked={paramOverrideMode === 'PRIVATE_OVERRIDE'}
+              onChange={(checked) => {
+                const mode = checked ? 'PRIVATE_OVERRIDE' : 'INHERIT';
+                onModeChange(mode);
+                if (mode === 'INHERIT') {
+                  setEntries([]);
+                }
+              }}
+            />
+          </Space>
+          {paramOverrideMode === 'PRIVATE_OVERRIDE' ? (
+            <Text type="secondary" style={{ fontSize: 12 }}>
+              已开启参数定制。节点将优先使用本文定制的参数，其余按全局参数包继承。
+            </Text>
+          ) : (
+            <Text type="secondary" style={{ fontSize: 12 }}>
+              当前节点直接继承流程全局参数包。
+            </Text>
+          )}
         </Space>
       </Card>
 
       {paramOverrideMode === 'PRIVATE_OVERRIDE' ? (
         <Card
           size="small"
-          title="覆盖项"
-          extra={
-            <Button size="small" type="dashed" icon={<PlusOutlined />} onClick={addEntry}>
-              新增覆盖项
-            </Button>
-          }
-        >
-          <Space direction="vertical" size={10} style={{ width: '100%' }}>
-            <Space style={{ width: '100%', justifyContent: 'space-between' }}>
-              <Text type="secondary" style={{ fontSize: 12 }}>
-                先选择参数包，再挑选参数项进行覆盖。
-              </Text>
+          title={
+            <Space>
+              <Text style={{ fontSize: 14 }}>设置定制项</Text>
               <Select
-                showSearch
-                placeholder="选择参数包"
-                style={{ width: 260 }}
+                size="small"
+                bordered={false}
+                placeholder="参数包"
+                style={{ width: 140 }}
                 value={selectedSetCode}
                 loading={isLoadingParameterSets}
                 options={parameterSetOptions.map((item) => ({
                   label: item.label,
                   value: item.value,
                 }))}
-                onChange={(value) => {
-                  setSelectedSetCode(value);
-                  message.info('已切换参数包，覆盖项列表会按当前参数包过滤');
-                }}
+                onChange={(value) => setSelectedSetCode(value)}
               />
             </Space>
+          }
+          extra={
+            <Button size="small" type="dashed" icon={<PlusOutlined />} onClick={addEntry}>
+              新增
+            </Button>
+          }
+        >
+          <Space direction="vertical" size={10} style={{ width: '100%' }}>
 
             {!selectedSet ? (
               <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无可用参数包" />

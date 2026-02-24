@@ -216,51 +216,32 @@ async function seedLayeredDecisionRules() {
       },
     });
 
-    const ruleCodes = pack.rules.map((rule) => rule.ruleCode);
+    const conditionAST = {
+      root: {
+        logic: 'AND',
+        children: pack.rules.map((rule) => ({
+          id: rule.ruleCode,
+          fieldPath: rule.fieldPath,
+          operator: rule.operator,
+          expectedValue: rule.expectedValue,
+        })),
+      },
+    };
+
+    await prisma.decisionRulePack.update({
+      where: { id: savedPack.id },
+      data: { conditionAST },
+    });
+
+    // Inactivate legacy flat rules
     await prisma.decisionRule.updateMany({
       where: {
         rulePackId: savedPack.id,
-        ruleCode: {
-          notIn: ruleCodes,
-        },
       },
       data: {
         isActive: false,
       },
     });
-
-    for (const rule of pack.rules) {
-      await prisma.decisionRule.upsert({
-        where: {
-          rulePackId_ruleCode: {
-            rulePackId: savedPack.id,
-            ruleCode: rule.ruleCode,
-          },
-        },
-        update: {
-          name: rule.name,
-          description: rule.description,
-          fieldPath: rule.fieldPath,
-          operator: rule.operator,
-          expectedValue: rule.expectedValue,
-          weight: rule.weight,
-          priority: rule.priority,
-          isActive: true,
-        },
-        create: {
-          rulePackId: savedPack.id,
-          ruleCode: rule.ruleCode,
-          name: rule.name,
-          description: rule.description,
-          fieldPath: rule.fieldPath,
-          operator: rule.operator,
-          expectedValue: rule.expectedValue,
-          weight: rule.weight,
-          priority: rule.priority,
-          isActive: true,
-        },
-      });
-    }
   }
 
   console.log(`✅ 分层决策规则包播种完成，共 ${RULE_PACKS.length} 个规则包`);

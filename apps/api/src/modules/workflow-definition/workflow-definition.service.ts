@@ -8,24 +8,20 @@ import {
   normalizeWorkflowNodeType,
   PublishWorkflowVersionDto,
   UpdateWorkflowDefinitionDto,
-  ValidateWorkflowNodePreviewDto,
+  WorkflowDslAutoFixItemDto,
   WorkflowDefinitionQueryDto,
+  WorkflowEdge,
   WorkflowPublishAuditQueryDto,
   WorkflowDsl,
   WorkflowDslSchema,
-  WorkflowValidationIssue,
-  WorkflowNodePreviewField,
-  WorkflowNodePreviewInputField,
-  WorkflowNodePreviewResult,
   WorkflowValidationStage,
-  WorkflowValidationResult,
 } from '@packages/types';
 import { PrismaService } from '../../prisma';
 import { WorkflowDslValidator } from './workflow-dsl-validator';
-import {
-  VariableResolutionContext,
-  VariableResolver,
-} from '../workflow-execution/engine/variable-resolver';
+import { WorkflowDefinitionValidatorService } from './workflow-definition-validator.service';
+import { VariableResolver } from '../workflow-execution/engine/variable-resolver';
+
+type WorkflowPreflightAutoFixLevel = 'SAFE' | 'AGGRESSIVE';
 
 @Injectable()
 export class WorkflowDefinitionService {
@@ -33,6 +29,7 @@ export class WorkflowDefinitionService {
     private readonly prisma: PrismaService,
     private readonly dslValidator: WorkflowDslValidator,
     private readonly variableResolver: VariableResolver,
+    private readonly validatorService: WorkflowDefinitionValidatorService,
   ) {}
 
   async create(ownerUserId: string, dto: CreateWorkflowDefinitionDto) {
@@ -53,12 +50,12 @@ export class WorkflowDefinitionService {
       ownerUserId,
       dto.templateSource,
     );
-    this.ensureDslValid(normalizedDsl);
-    this.ensureRiskGateBindingsValid(normalizedDsl);
-    await this.ensureRulePackBindingsValid(ownerUserId, normalizedDsl);
-    await this.ensureAgentBindingsValid(ownerUserId, normalizedDsl);
-    await this.ensureParameterSetBindingsValid(ownerUserId, normalizedDsl);
-    await this.ensureDataConnectorBindingsValid(normalizedDsl);
+    this.validatorService.ensureDslValid(normalizedDsl);
+    this.validatorService.ensureRiskGateBindingsValid(normalizedDsl);
+    await this.validatorService.ensureRulePackBindingsValid(ownerUserId, normalizedDsl);
+    await this.validatorService.ensureAgentBindingsValid(ownerUserId, normalizedDsl);
+    await this.validatorService.ensureParameterSetBindingsValid(ownerUserId, normalizedDsl);
+    await this.validatorService.ensureDataConnectorBindingsValid(normalizedDsl);
 
     const created = await this.prisma.$transaction(async (tx) => {
       const definition = await tx.workflowDefinition.create({
@@ -108,6 +105,70 @@ export class WorkflowDefinitionService {
             orderBy: { createdAt: 'desc' },
             take: 1,
           },
+        },
+      }),
+      this.prisma.workflowDefinition.count({ where }),
+    ]);
+
+    return {
+      data,
+      total,
+      page,
+      pageSize,
+      totalPages: Math.ceil(total / pageSize),
+    };
+  }
+
+  async getPublishedWorkflows(query: {
+    page?: number;
+    pageSize?: number;
+    categoryId?: string;
+    keyword?: string;
+    orderBy?: 'stars' | 'createdAt';
+  }) {
+    const page = query.page ?? 1;
+    const pageSize = query.pageSize ?? 20;
+
+    const where: Prisma.WorkflowDefinitionWhereInput = {
+      isPublished: true,
+      isActive: true, // Only show active flows in market
+    };
+
+    if (query.categoryId) {
+      where.categoryId = query.categoryId;
+    }
+
+    if (query.keyword) {
+      where.OR = [
+        { name: { contains: query.keyword, mode: 'insensitive' } },
+        { description: { contains: query.keyword, mode: 'insensitive' } },
+      ];
+    }
+
+    const orderByList: unknown =
+      query.orderBy === 'createdAt'
+        ? { createdAt: 'desc' }
+        : [{ stars: 'desc' }, { createdAt: 'desc' }]; // Default to 'stars'
+
+    const [data, total] = await Promise.all([
+      this.prisma.workflowDefinition.findMany({
+        where,
+        orderBy: orderByList as
+          | Prisma.WorkflowDefinitionOrderByWithRelationInput
+          | Prisma.WorkflowDefinitionOrderByWithRelationInput[],
+        skip: (page - 1) * pageSize,
+        take: pageSize,
+        select: {
+          id: true,
+          workflowId: true,
+          name: true,
+          description: true,
+          categoryId: true,
+          coverImage: true,
+          stars: true,
+          createdAt: true,
+          updatedAt: true,
+          ownerUserId: true,
         },
       }),
       this.prisma.workflowDefinition.count({ where }),
@@ -192,12 +253,15 @@ export class WorkflowDefinitionService {
       definition.ownerUserId,
       definition.templateSource,
     );
-    this.ensureDslValid(normalizedDsl);
-    this.ensureRiskGateBindingsValid(normalizedDsl);
-    await this.ensureRulePackBindingsValid(definition.ownerUserId, normalizedDsl);
-    await this.ensureAgentBindingsValid(definition.ownerUserId, normalizedDsl);
-    await this.ensureParameterSetBindingsValid(definition.ownerUserId, normalizedDsl);
-    await this.ensureDataConnectorBindingsValid(normalizedDsl);
+    this.validatorService.ensureDslValid(normalizedDsl);
+    this.validatorService.ensureRiskGateBindingsValid(normalizedDsl);
+    await this.validatorService.ensureRulePackBindingsValid(definition.ownerUserId, normalizedDsl);
+    await this.validatorService.ensureAgentBindingsValid(definition.ownerUserId, normalizedDsl);
+    await this.validatorService.ensureParameterSetBindingsValid(
+      definition.ownerUserId,
+      normalizedDsl,
+    );
+    await this.validatorService.ensureDataConnectorBindingsValid(normalizedDsl);
 
     const nextVersionCode = this.nextVersionCode(definition.latestVersionCode);
     const createdVersion = await this.prisma.$transaction(async (tx) => {
@@ -257,8 +321,8 @@ export class WorkflowDefinitionService {
         issues: publishValidation.issues,
       });
     }
-    this.ensureRiskGateBindingsValid(parsedDsl.data);
-    const governanceIssues = await this.validateGovernanceForPublish(
+    this.validatorService.ensureRiskGateBindingsValid(parsedDsl.data);
+    const governanceIssues = await this.validatorService.validateGovernanceForPublish(
       ownerUserId,
       parsedDsl.data,
       definition.id,
@@ -269,7 +333,7 @@ export class WorkflowDefinitionService {
         issues: governanceIssues,
       });
     }
-    await this.ensureDataConnectorBindingsValid(parsedDsl.data);
+    await this.validatorService.ensureDataConnectorBindingsValid(parsedDsl.data);
 
     return this.prisma.$transaction(async (tx) => {
       const archivedPublishedVersions = await tx.workflowVersion.findMany({
@@ -382,52 +446,31 @@ export class WorkflowDefinitionService {
     };
   }
 
-  validateDsl(
+  preflightDsl(
     dslSnapshot: WorkflowDsl,
     stage: WorkflowValidationStage = 'SAVE',
-  ): WorkflowValidationResult {
-    return this.dslValidator.validate(canonicalizeWorkflowDsl(dslSnapshot), stage);
-  }
-
-  previewNodeBindings(dto: ValidateWorkflowNodePreviewDto): WorkflowNodePreviewResult {
-    const normalizedDsl = canonicalizeWorkflowDsl(dto.dslSnapshot);
-    const validation = this.dslValidator.validate(normalizedDsl, dto.stage ?? 'SAVE');
-    const node = normalizedDsl.nodes.find((item) => item.id === dto.nodeId);
-    if (!node) {
-      throw new BadRequestException(`节点不存在: ${dto.nodeId}`);
-    }
-
-    const nodeIssues = validation.issues.filter((issue) => issue.nodeId === dto.nodeId);
-    const contract = getWorkflowNodeContract(normalizeWorkflowNodeType(node.type));
-    const fallbackInputs = (contract?.inputsSchema ?? []).map((field) => ({
-      name: field.name,
-      type: field.type,
-      required: field.required,
-    }));
-    const inputsSchema = dto.inputsSchema.length > 0 ? dto.inputsSchema : fallbackInputs;
-
-    const inputBindings =
-      Object.keys(dto.inputBindings).length > 0
-        ? dto.inputBindings
-        : this.readStringMap(node.inputBindings);
-    const defaultValues = dto.defaultValues ?? {};
-    const nullPolicies = dto.nullPolicies ?? {};
-    const sampleInput = dto.sampleInput ?? {};
-
-    const { rows, resolvedPayload } = this.buildNodePreviewRows(
-      inputsSchema,
-      inputBindings,
-      defaultValues,
-      nullPolicies,
-      sampleInput,
+    autoFixLevel: WorkflowPreflightAutoFixLevel = 'SAFE',
+    enabledAutoFixCodes?: string[],
+  ) {
+    const { dsl, autoFixes } = this.applySmartDefaultsToDsl(
+      dslSnapshot,
+      autoFixLevel,
+      enabledAutoFixCodes,
     );
+    const validation = this.dslValidator.validate(dsl, stage);
 
     return {
-      nodeId: dto.nodeId,
+      normalizedDsl: dsl,
       validation,
-      nodeIssues,
-      rows,
-      resolvedPayload,
+      autoFixLevel,
+      autoFixes,
+      summary: {
+        nodeCount: dsl.nodes.length,
+        edgeCount: dsl.edges.length,
+        agentBindingCount: (dsl.agentBindings ?? []).length,
+        paramSetBindingCount: (dsl.paramSetBindings ?? []).length,
+        dataConnectorBindingCount: (dsl.dataConnectorBindings ?? []).length,
+      },
     };
   }
 
@@ -525,1078 +568,6 @@ export class WorkflowDefinitionService {
     return definition;
   }
 
-  private ensureDslValid(dslSnapshot: WorkflowDsl): void {
-    const validation = this.dslValidator.validate(dslSnapshot, 'SAVE');
-    if (!validation.valid) {
-      throw new BadRequestException({
-        message: 'DSL 校验失败',
-        issues: validation.issues,
-      });
-    }
-  }
-
-  private ensureRiskGateBindingsValid(dslSnapshot: WorkflowDsl): void {
-    const invalidNodeIds = dslSnapshot.nodes
-      .filter((node) => node.type === 'risk-gate')
-      .filter((node) => {
-        const config = node.config as Record<string, unknown>;
-        return typeof config.riskProfileCode !== 'string' || !config.riskProfileCode.trim();
-      })
-      .map((node) => node.id);
-
-    if (invalidNodeIds.length > 0) {
-      throw new BadRequestException(
-        `risk-gate 节点缺少 riskProfileCode 配置: ${invalidNodeIds.join(', ')}`,
-      );
-    }
-  }
-
-  private async ensureRulePackBindingsValid(
-    ownerUserId: string,
-    dslSnapshot: WorkflowDsl,
-  ): Promise<void> {
-    const rulePackCodes = this.extractRulePackCodesFromDsl(dslSnapshot);
-    if (rulePackCodes.length === 0) {
-      return;
-    }
-
-    const packs = await this.prisma.decisionRulePack.findMany({
-      where: {
-        rulePackCode: { in: rulePackCodes },
-        isActive: true,
-        OR: [{ ownerUserId }, { templateSource: 'PUBLIC' }],
-      },
-      select: { rulePackCode: true },
-    });
-    const existingCodes = new Set(packs.map((pack) => pack.rulePackCode));
-    const missingCodes = rulePackCodes.filter((code) => !existingCodes.has(code));
-
-    if (missingCodes.length > 0) {
-      throw new BadRequestException(`规则包不存在、已停用或无权限访问: ${missingCodes.join(', ')}`);
-    }
-  }
-
-  private async ensureAgentBindingsValid(
-    ownerUserId: string,
-    dslSnapshot: WorkflowDsl,
-  ): Promise<void> {
-    const dedupedCodes = new Set(this.readBindingCodes(dslSnapshot.agentBindings));
-    const agentNodeTypes = new Set(['single-agent', 'agent-call', 'agent-group', 'judge-agent']);
-    for (const node of dslSnapshot.nodes) {
-      if (!agentNodeTypes.has(node.type)) {
-        continue;
-      }
-      const config = this.asRecord(node.config);
-      const agentProfileCode = config?.agentProfileCode;
-      if (typeof agentProfileCode !== 'string') {
-        continue;
-      }
-      const normalized = agentProfileCode.trim();
-      if (normalized) {
-        dedupedCodes.add(normalized);
-      }
-    }
-    const agentCodes = [...dedupedCodes];
-    if (agentCodes.length === 0) {
-      return;
-    }
-
-    const agents = await this.prisma.agentProfile.findMany({
-      where: {
-        agentCode: { in: agentCodes },
-        isActive: true,
-        OR: [{ ownerUserId }, { templateSource: 'PUBLIC' }],
-      },
-      select: { agentCode: true },
-    });
-
-    const existingCodes = new Set(agents.map((item) => item.agentCode));
-    const missingCodes = agentCodes.filter((code) => !existingCodes.has(code));
-    if (missingCodes.length > 0) {
-      throw new BadRequestException(
-        `Agent 绑定不存在、已停用或无权限访问: ${missingCodes.join(', ')}`,
-      );
-    }
-  }
-
-  private async ensureParameterSetBindingsValid(
-    ownerUserId: string,
-    dslSnapshot: WorkflowDsl,
-  ): Promise<void> {
-    const setCodes = this.readBindingCodes(dslSnapshot.paramSetBindings);
-    if (setCodes.length === 0) {
-      return;
-    }
-
-    const sets = await this.prisma.parameterSet.findMany({
-      where: {
-        setCode: { in: setCodes },
-        isActive: true,
-        OR: [{ ownerUserId }, { templateSource: 'PUBLIC' }],
-      },
-      select: { setCode: true },
-    });
-
-    const existingCodes = new Set(sets.map((item) => item.setCode));
-    const missingCodes = setCodes.filter((code) => !existingCodes.has(code));
-    if (missingCodes.length > 0) {
-      throw new BadRequestException(
-        `参数包绑定不存在、已停用或无权限访问: ${missingCodes.join(', ')}`,
-      );
-    }
-  }
-
-  private async ensureDataConnectorBindingsValid(dslSnapshot: WorkflowDsl): Promise<void> {
-    const connectorCodes = this.readBindingCodes(dslSnapshot.dataConnectorBindings);
-    if (connectorCodes.length === 0) {
-      return;
-    }
-
-    const connectors = await this.prisma.dataConnector.findMany({
-      where: {
-        connectorCode: { in: connectorCodes },
-        isActive: true,
-      },
-      select: { connectorCode: true },
-    });
-
-    const existingCodes = new Set(connectors.map((item) => item.connectorCode));
-    const missingCodes = connectorCodes.filter((code) => !existingCodes.has(code));
-    if (missingCodes.length > 0) {
-      throw new BadRequestException(`数据连接器绑定不存在或已停用: ${missingCodes.join(', ')}`);
-    }
-  }
-
-  private async validateGovernanceForPublish(
-    ownerUserId: string,
-    dslSnapshot: WorkflowDsl,
-    currentWorkflowDefinitionId: string,
-  ): Promise<WorkflowValidationIssue[]> {
-    const issues: WorkflowValidationIssue[] = [];
-
-    const dslOwnerUserId =
-      typeof dslSnapshot.ownerUserId === 'string' ? dslSnapshot.ownerUserId.trim() : '';
-    if (!dslOwnerUserId) {
-      issues.push({
-        code: 'WF304',
-        severity: 'ERROR',
-        message: '发布前 DSL 必须声明 ownerUserId',
-      });
-    } else if (dslOwnerUserId !== ownerUserId) {
-      issues.push({
-        code: 'WF304',
-        severity: 'ERROR',
-        message: 'DSL ownerUserId 与发布操作者不一致，隔离校验未通过',
-      });
-    }
-
-    const rulePackCodes = this.extractRulePackCodesFromDsl(dslSnapshot);
-    if (rulePackCodes.length > 0) {
-      const packs = await this.prisma.decisionRulePack.findMany({
-        where: {
-          rulePackCode: { in: rulePackCodes },
-          isActive: true,
-          OR: [{ ownerUserId }, { templateSource: 'PUBLIC' }],
-        },
-        select: { rulePackCode: true, version: true },
-      });
-      const existingCodes = new Set(packs.map((item) => item.rulePackCode));
-      const missingCodes = rulePackCodes.filter((code) => !existingCodes.has(code));
-      if (missingCodes.length > 0) {
-        issues.push({
-          code: 'WF301',
-          severity: 'ERROR',
-          message: `RulePack 未发布/不可用/无权限访问: ${missingCodes.join(', ')}`,
-        });
-      }
-      const invalidVersionCodes = packs
-        .filter((item) => !Number.isInteger(item.version) || item.version < 2)
-        .map((item) => item.rulePackCode);
-      if (invalidVersionCodes.length > 0) {
-        issues.push({
-          code: 'WF301',
-          severity: 'ERROR',
-          message: `RulePack 尚未发布（需要 version>=2）: ${invalidVersionCodes.join(', ')}`,
-        });
-      }
-    }
-
-    const setCodes = this.readBindingCodes(dslSnapshot.paramSetBindings);
-    if (setCodes.length > 0) {
-      const sets = await this.prisma.parameterSet.findMany({
-        where: {
-          setCode: { in: setCodes },
-          isActive: true,
-          OR: [{ ownerUserId }, { templateSource: 'PUBLIC' }],
-        },
-        select: { setCode: true, version: true },
-      });
-      const existingCodes = new Set(sets.map((item) => item.setCode));
-      const missingCodes = setCodes.filter((code) => !existingCodes.has(code));
-      if (missingCodes.length > 0) {
-        issues.push({
-          code: 'WF302',
-          severity: 'ERROR',
-          message: `ParameterSet 不存在/不可用/无权限访问: ${missingCodes.join(', ')}`,
-        });
-      }
-      const invalidVersionCodes = sets
-        .filter((item) => !Number.isInteger(item.version) || item.version < 2)
-        .map((item) => item.setCode);
-      if (invalidVersionCodes.length > 0) {
-        issues.push({
-          code: 'WF302',
-          severity: 'ERROR',
-          message: `ParameterSet 尚未发布（需要 version>=2）: ${invalidVersionCodes.join(', ')}`,
-        });
-      }
-    }
-
-    const paramRefs = this.extractParameterRefsFromDsl(dslSnapshot);
-    if (paramRefs.size > 0) {
-      if (setCodes.length === 0) {
-        issues.push({
-          code: 'WF203',
-          severity: 'ERROR',
-          message: `流程引用了参数表达式 (${[...paramRefs].join(', ')})，但未声明 paramSetBindings`,
-        });
-      } else {
-        const refList = [...paramRefs];
-        const parameterItems = await this.prisma.parameterItem.findMany({
-          where: {
-            paramCode: { in: refList },
-            isActive: true,
-            parameterSet: {
-              setCode: { in: setCodes },
-              isActive: true,
-              OR: [{ ownerUserId }, { templateSource: 'PUBLIC' }],
-            },
-          },
-          select: { paramCode: true },
-        });
-        const resolvedCodes = new Set(parameterItems.map((item) => item.paramCode));
-        const unresolvedCodes = refList.filter((code) => !resolvedCodes.has(code));
-        if (unresolvedCodes.length > 0) {
-          issues.push({
-            code: 'WF203',
-            severity: 'ERROR',
-            message: `参数表达式无法在绑定 ParameterSet 中解析: ${unresolvedCodes.join(', ')}`,
-          });
-        }
-      }
-    }
-
-    const agentCodes = this.extractAgentCodesFromDsl(dslSnapshot);
-    if (agentCodes.length > 0) {
-      const profiles = await this.prisma.agentProfile.findMany({
-        where: {
-          agentCode: { in: agentCodes },
-          isActive: true,
-          OR: [{ ownerUserId }, { templateSource: 'PUBLIC' }],
-        },
-        select: { agentCode: true, version: true },
-      });
-      const existingCodes = new Set(profiles.map((item) => item.agentCode));
-      const missingCodes = agentCodes.filter((code) => !existingCodes.has(code));
-      if (missingCodes.length > 0) {
-        issues.push({
-          code: 'WF303',
-          severity: 'ERROR',
-          message: `AgentProfile 不存在/不可用/无权限访问: ${missingCodes.join(', ')}`,
-        });
-      }
-      const invalidVersionCodes = profiles
-        .filter((item) => !Number.isInteger(item.version) || item.version < 2)
-        .map((item) => item.agentCode);
-      if (invalidVersionCodes.length > 0) {
-        issues.push({
-          code: 'WF303',
-          severity: 'ERROR',
-          message: `AgentProfile 尚未发布（需要 version>=2）: ${invalidVersionCodes.join(', ')}`,
-        });
-      }
-    }
-
-    const subflowIssues = await this.validateSubflowReferencesForPublish(
-      ownerUserId,
-      dslSnapshot,
-      currentWorkflowDefinitionId,
-    );
-    issues.push(...subflowIssues);
-
-    return issues;
-  }
-
-  private async validateSubflowReferencesForPublish(
-    ownerUserId: string,
-    dslSnapshot: WorkflowDsl,
-    currentWorkflowDefinitionId: string,
-  ): Promise<WorkflowValidationIssue[]> {
-    const issues: WorkflowValidationIssue[] = [];
-    const subflowNodes = dslSnapshot.nodes.filter((node) => node.type === 'subflow-call');
-    if (subflowNodes.length === 0) {
-      return issues;
-    }
-
-    for (const node of subflowNodes) {
-      const config = this.asRecord(node.config);
-      const workflowDefinitionId =
-        typeof config?.workflowDefinitionId === 'string' ? config.workflowDefinitionId.trim() : '';
-      const workflowVersionId =
-        typeof config?.workflowVersionId === 'string' ? config.workflowVersionId.trim() : '';
-
-      if (!workflowDefinitionId) {
-        issues.push({
-          code: 'WF107',
-          severity: 'ERROR',
-          message: `subflow-call 节点 ${node.name} 缺少 workflowDefinitionId`,
-          nodeId: node.id,
-        });
-        continue;
-      }
-      if (workflowDefinitionId === currentWorkflowDefinitionId) {
-        issues.push({
-          code: 'WF107',
-          severity: 'ERROR',
-          message: `subflow-call 节点 ${node.name} 不允许引用当前流程自身`,
-          nodeId: node.id,
-        });
-        continue;
-      }
-
-      const definition = await this.prisma.workflowDefinition.findFirst({
-        where: {
-          id: workflowDefinitionId,
-          OR: [{ ownerUserId }, { templateSource: 'PUBLIC' }],
-        },
-        select: { id: true },
-      });
-      if (!definition) {
-        issues.push({
-          code: 'WF107',
-          severity: 'ERROR',
-          message: `subflow-call 节点 ${node.name} 引用的流程不存在或无权限访问`,
-          nodeId: node.id,
-        });
-        continue;
-      }
-
-      if (workflowVersionId) {
-        const version = await this.prisma.workflowVersion.findFirst({
-          where: {
-            id: workflowVersionId,
-            workflowDefinitionId: definition.id,
-            status: 'PUBLISHED',
-          },
-          select: { id: true },
-        });
-        if (!version) {
-          issues.push({
-            code: 'WF107',
-            severity: 'ERROR',
-            message: `subflow-call 节点 ${node.name} 指定的版本不存在或未发布`,
-            nodeId: node.id,
-          });
-        }
-        continue;
-      }
-
-      const published = await this.prisma.workflowVersion.findFirst({
-        where: {
-          workflowDefinitionId: definition.id,
-          status: 'PUBLISHED',
-        },
-        select: { id: true },
-      });
-      if (!published) {
-        issues.push({
-          code: 'WF107',
-          severity: 'ERROR',
-          message: `subflow-call 节点 ${node.name} 引用流程缺少已发布版本`,
-          nodeId: node.id,
-        });
-      }
-    }
-
-    return issues;
-  }
-
-  private extractRulePackCodesFromDsl(dslSnapshot: WorkflowDsl): string[] {
-    const ruleNodeTypes = new Set(['rule-pack-eval', 'rule-eval', 'alert-check']);
-    const deduped = new Set<string>();
-    for (const node of dslSnapshot.nodes) {
-      if (!ruleNodeTypes.has(node.type)) {
-        continue;
-      }
-      const config = this.asRecord(node.config);
-      if (!this.shouldUseDecisionRulePack(node.type, config)) {
-        continue;
-      }
-      const codes = this.readRulePackCodes(config);
-      if (codes.length === 0) {
-        throw new BadRequestException(`规则节点 ${node.name} 缺少 rulePackCode 配置`);
-      }
-      for (const code of codes) {
-        if (code) {
-          deduped.add(code);
-        }
-      }
-    }
-    return [...deduped];
-  }
-
-  private shouldUseDecisionRulePack(
-    nodeType: string,
-    config: Record<string, unknown> | null,
-  ): boolean {
-    if (nodeType === 'rule-pack-eval') {
-      return true;
-    }
-    const source = this.resolveRuleSource(nodeType, config);
-    return source === 'DECISION_RULE_PACK';
-  }
-
-  private resolveRuleSource(nodeType: string, config: Record<string, unknown> | null): string {
-    const raw = config?.ruleSource;
-    if (typeof raw === 'string' && raw.trim()) {
-      return raw.trim().toUpperCase();
-    }
-    if (nodeType === 'alert-check') {
-      const hasAlertRefs = Boolean(
-        (typeof config?.alertRuleId === 'string' && config.alertRuleId.trim()) ||
-        (typeof config?.alertType === 'string' && config.alertType.trim()),
-      );
-      return hasAlertRefs ? 'MARKET_ALERT_RULE' : 'INLINE';
-    }
-    if (nodeType === 'rule-eval') {
-      return 'INLINE';
-    }
-    return 'DECISION_RULE_PACK';
-  }
-
-  private readRulePackCodes(config: Record<string, unknown> | null): string[] {
-    if (!config) {
-      return [];
-    }
-    const direct = typeof config.rulePackCode === 'string' ? config.rulePackCode.trim() : '';
-    const list = Array.isArray(config.rulePackCodes)
-      ? config.rulePackCodes
-          .filter((value): value is string => typeof value === 'string')
-          .map((value) => value.trim())
-          .filter(Boolean)
-      : [];
-    return [...new Set([direct, ...list].filter(Boolean))];
-  }
-
-  private extractAgentCodesFromDsl(dslSnapshot: WorkflowDsl): string[] {
-    const deduped = new Set(this.readBindingCodes(dslSnapshot.agentBindings));
-    const agentNodeTypes = new Set(['single-agent', 'agent-call', 'agent-group', 'judge-agent']);
-    for (const node of dslSnapshot.nodes) {
-      if (!agentNodeTypes.has(node.type)) {
-        continue;
-      }
-      const config = this.asRecord(node.config);
-      const agentProfileCode = config?.agentProfileCode;
-      if (typeof agentProfileCode !== 'string') {
-        continue;
-      }
-      const normalized = agentProfileCode.trim();
-      if (normalized) {
-        deduped.add(normalized);
-      }
-    }
-    return [...deduped];
-  }
-
-  private extractParameterRefsFromDsl(dslSnapshot: WorkflowDsl): Set<string> {
-    const refs = new Set<string>();
-    for (const node of dslSnapshot.nodes) {
-      this.collectStringLeaves(node.config).forEach((value) => {
-        for (const ref of this.extractExpressionRefs(value)) {
-          if (ref.scope !== 'params') {
-            continue;
-          }
-          const code = ref.path.split('.')[0]?.trim();
-          if (code) {
-            refs.add(code);
-          }
-        }
-      });
-      this.collectStringLeaves(node.inputBindings).forEach((value) => {
-        for (const ref of this.extractExpressionRefs(value)) {
-          if (ref.scope !== 'params') {
-            continue;
-          }
-          const code = ref.path.split('.')[0]?.trim();
-          if (code) {
-            refs.add(code);
-          }
-        }
-      });
-    }
-    for (const edge of dslSnapshot.edges) {
-      this.collectStringLeaves(edge.condition).forEach((value) => {
-        for (const ref of this.extractExpressionRefs(value)) {
-          if (ref.scope !== 'params') {
-            continue;
-          }
-          const code = ref.path.split('.')[0]?.trim();
-          if (code) {
-            refs.add(code);
-          }
-        }
-      });
-    }
-    return refs;
-  }
-
-  private collectStringLeaves(value: unknown): string[] {
-    if (typeof value === 'string') {
-      return [value];
-    }
-    if (!value || typeof value !== 'object') {
-      return [];
-    }
-    if (Array.isArray(value)) {
-      return value.flatMap((item) => this.collectStringLeaves(item));
-    }
-    return Object.values(value).flatMap((item) => this.collectStringLeaves(item));
-  }
-
-  private extractExpressionRefs(value: string): Array<{ scope: string; path: string }> {
-    const refs: Array<{ scope: string; path: string }> = [];
-    const expressionPattern = /\{\{\s*([^}]+?)\s*\}\}/g;
-    let match = expressionPattern.exec(value);
-    while (match) {
-      const rawExpr = match[1];
-      const withNoDefault = rawExpr.split('|')[0]?.trim() ?? '';
-      const dotIndex = withNoDefault.indexOf('.');
-      if (dotIndex > 0 && dotIndex < withNoDefault.length - 1) {
-        const scope = withNoDefault.slice(0, dotIndex).trim();
-        const path = withNoDefault.slice(dotIndex + 1).trim();
-        if (scope && path) {
-          refs.push({ scope, path });
-        }
-      }
-      match = expressionPattern.exec(value);
-    }
-    return refs;
-  }
-
-  private buildNodePreviewRows(
-    inputsSchema: WorkflowNodePreviewInputField[],
-    inputBindings: Record<string, string>,
-    defaultValues: Record<string, unknown>,
-    nullPolicies: Record<string, string>,
-    sampleInput: Record<string, unknown>,
-  ): { rows: WorkflowNodePreviewField[]; resolvedPayload: Record<string, unknown> } {
-    const rows: WorkflowNodePreviewField[] = [];
-    const resolvedPayload: Record<string, unknown> = {};
-    const resolverContext = this.buildPreviewResolverContext(sampleInput);
-
-    const fields =
-      inputsSchema.length > 0
-        ? inputsSchema
-        : [...new Set([...Object.keys(inputBindings), ...Object.keys(defaultValues)])].map(
-            (name) => ({
-              name,
-              type: 'any',
-              required: false,
-            }),
-          );
-
-    for (const field of fields) {
-      const binding = inputBindings[field.name];
-      const defaultValue = defaultValues[field.name];
-      const nullPolicy = nullPolicies[field.name] ?? 'FAIL';
-
-      if (!binding || !binding.trim()) {
-        if (defaultValue !== undefined && defaultValue !== '') {
-          rows.push(
-            this.withPreviewTypeCheck({
-              field: field.name,
-              expectedType: field.type,
-              status: 'default',
-              source: 'defaultValues',
-              value: defaultValue,
-            }),
-          );
-          resolvedPayload[field.name] = defaultValue;
-          continue;
-        }
-
-        if (field.required) {
-          rows.push({
-            field: field.name,
-            expectedType: field.type,
-            status: 'missing',
-            source: '-',
-            note: '必填字段未配置映射且无默认值',
-          });
-          continue;
-        }
-
-        rows.push({
-          field: field.name,
-          expectedType: field.type,
-          status: 'empty',
-          source: '-',
-        });
-        continue;
-      }
-
-      const parsedBinding = this.parseSimpleBindingExpression(binding);
-      if (!parsedBinding) {
-        const expressionEval = this.resolveAdvancedBindingExpression(binding, resolverContext);
-        if (expressionEval.status === 'resolved') {
-          rows.push(
-            this.withPreviewTypeCheck({
-              field: field.name,
-              expectedType: field.type,
-              status: 'resolved',
-              source: 'expression',
-              value: expressionEval.value,
-              note: expressionEval.note,
-            }),
-          );
-          resolvedPayload[field.name] = expressionEval.value;
-          continue;
-        }
-
-        if (expressionEval.status === 'unsupported') {
-          rows.push({
-            field: field.name,
-            expectedType: field.type,
-            status: 'expression',
-            source: 'expression',
-            value: binding,
-            note: expressionEval.note,
-          });
-          resolvedPayload[field.name] = binding;
-          continue;
-        }
-
-        if (nullPolicy === 'USE_DEFAULT') {
-          rows.push(
-            this.withPreviewTypeCheck({
-              field: field.name,
-              expectedType: field.type,
-              status: 'default',
-              source: 'nullPolicy.USE_DEFAULT',
-              value: defaultValue,
-              note:
-                defaultValue === undefined
-                  ? `${expressionEval.note}；默认值为空，建议补齐`
-                  : expressionEval.note,
-            }),
-          );
-          if (defaultValue !== undefined) {
-            resolvedPayload[field.name] = defaultValue;
-          }
-          continue;
-        }
-
-        if (nullPolicy === 'SKIP') {
-          rows.push({
-            field: field.name,
-            expectedType: field.type,
-            status: 'skipped',
-            source: 'nullPolicy.SKIP',
-            note: expressionEval.note,
-          });
-          continue;
-        }
-
-        rows.push({
-          field: field.name,
-          expectedType: field.type,
-          status: 'missing',
-          source: 'expression',
-          note: expressionEval.note,
-        });
-        continue;
-      }
-
-      const sourceScope = this.resolveSourceScope(sampleInput, parsedBinding.scope);
-      const resolvedValue = this.resolveDeepPath(sourceScope, parsedBinding.path.join('.'));
-      const sourcePath = `${parsedBinding.scope}.${parsedBinding.path.join('.')}`;
-
-      if (resolvedValue !== undefined) {
-        rows.push(
-          this.withPreviewTypeCheck({
-            field: field.name,
-            expectedType: field.type,
-            status: 'resolved',
-            source: sourcePath,
-            value: resolvedValue,
-          }),
-        );
-        resolvedPayload[field.name] = resolvedValue;
-        continue;
-      }
-
-      if (nullPolicy === 'USE_DEFAULT') {
-        rows.push(
-          this.withPreviewTypeCheck({
-            field: field.name,
-            expectedType: field.type,
-            status: 'default',
-            source: 'nullPolicy.USE_DEFAULT',
-            value: defaultValue,
-            note: defaultValue === undefined ? '默认值为空，建议补齐' : undefined,
-          }),
-        );
-        if (defaultValue !== undefined) {
-          resolvedPayload[field.name] = defaultValue;
-        }
-        continue;
-      }
-
-      if (nullPolicy === 'SKIP') {
-        rows.push({
-          field: field.name,
-          expectedType: field.type,
-          status: 'skipped',
-          source: 'nullPolicy.SKIP',
-        });
-        continue;
-      }
-
-      rows.push({
-        field: field.name,
-        expectedType: field.type,
-        status: 'missing',
-        source: sourcePath,
-        note: '未在样例输入中解析到该字段',
-      });
-    }
-
-    return { rows, resolvedPayload };
-  }
-
-  private buildPreviewResolverContext(
-    sampleInput: Record<string, unknown>,
-  ): VariableResolutionContext {
-    const outputsByNode = new Map<string, Record<string, unknown>>();
-
-    const upstream = this.asRecord(sampleInput.upstream);
-    if (upstream) {
-      for (const [nodeId, output] of Object.entries(upstream)) {
-        const record = this.asRecord(output);
-        if (!record) {
-          continue;
-        }
-        outputsByNode.set(nodeId, record);
-      }
-    }
-
-    for (const [scope, output] of Object.entries(sampleInput)) {
-      if (scope === 'upstream' || scope === 'params' || scope === 'meta') {
-        continue;
-      }
-      const record = this.asRecord(output);
-      if (!record) {
-        continue;
-      }
-      outputsByNode.set(scope, record);
-    }
-
-    const paramSnapshot = this.asRecord(sampleInput.params) ?? {};
-    const meta = this.asRecord(sampleInput.meta);
-
-    return {
-      currentNodeId: 'preview-node',
-      outputsByNode,
-      paramSnapshot,
-      meta: {
-        executionId:
-          typeof meta?.executionId === 'string' && meta.executionId.trim()
-            ? meta.executionId
-            : 'preview-execution',
-        triggerUserId:
-          typeof meta?.triggerUserId === 'string' && meta.triggerUserId.trim()
-            ? meta.triggerUserId
-            : 'preview-user',
-        timestamp:
-          typeof meta?.timestamp === 'string' && meta.timestamp.trim()
-            ? meta.timestamp
-            : new Date().toISOString(),
-      },
-    };
-  }
-
-  private resolveAdvancedBindingExpression(
-    binding: string,
-    context: VariableResolutionContext,
-  ):
-    | { status: 'resolved'; value: unknown; note: string }
-    | { status: 'unresolved'; note: string }
-    | { status: 'unsupported'; note: string } {
-    const trimmed = binding.trim();
-    const hasTemplateToken = trimmed.includes('{{') && trimmed.includes('}}');
-    if (!hasTemplateToken) {
-      return {
-        status: 'unsupported',
-        note: '当前仅支持 {{scope.path}} / {{scope.path | default: value}} 模板表达式预览',
-      };
-    }
-
-    const templateTokens = trimmed.match(/\{\{\s*[^}]+?\s*\}\}/g) ?? [];
-    const isSingleTemplate = templateTokens.length === 1 && templateTokens[0] === trimmed;
-    if (isSingleTemplate) {
-      const result = this.variableResolver.resolveMapping({ __preview__: trimmed }, context);
-      const unresolvedCount = result.unresolvedVars.length;
-      if (
-        unresolvedCount > 0 ||
-        !Object.prototype.hasOwnProperty.call(result.resolved, '__preview__')
-      ) {
-        return {
-          status: 'unresolved',
-          note: `表达式变量无法解析: ${this.describeUnresolvedExpressions(result.unresolvedVars, trimmed)}`,
-        };
-      }
-      return {
-        status: 'resolved',
-        value: result.resolved.__preview__,
-        note: '已按表达式规则完成求值',
-      };
-    }
-
-    const templateResult = this.variableResolver.resolveTemplate(trimmed, context);
-    const unresolvedMatches = templateResult.text.match(/\{\{\s*[^}]+?\s*\}\}/g) ?? [];
-    if (unresolvedMatches.length > 0) {
-      return {
-        status: 'unresolved',
-        note: `模板变量无法解析: ${this.describeUnresolvedExpressions(unresolvedMatches, trimmed)}`,
-      };
-    }
-
-    return {
-      status: 'resolved',
-      value: this.tryEvaluateNumericExpression(templateResult.text),
-      note: '已按模板表达式完成求值',
-    };
-  }
-
-  private describeUnresolvedExpressions(candidates: string[], fallback: string): string {
-    const deduped = [...new Set(candidates.map((item) => item.trim()).filter(Boolean))];
-    if (deduped.length === 0) {
-      return fallback;
-    }
-    if (deduped.length <= 3) {
-      return deduped.join(', ');
-    }
-    return `${deduped.slice(0, 3).join(', ')} 等 ${deduped.length} 项`;
-  }
-
-  private tryEvaluateNumericExpression(templateText: string): unknown {
-    const raw = templateText.trim();
-    if (!raw) {
-      return templateText;
-    }
-
-    const numericExpressionPattern = /^[0-9+\-*/%().\s]+$/;
-    if (!numericExpressionPattern.test(raw)) {
-      return templateText;
-    }
-
-    try {
-      const result = Function(`"use strict"; return (${raw});`)();
-      if (typeof result === 'number' && Number.isFinite(result)) {
-        return result;
-      }
-      return templateText;
-    } catch {
-      return templateText;
-    }
-  }
-
-  private withPreviewTypeCheck(row: WorkflowNodePreviewField): WorkflowNodePreviewField {
-    if (row.value === undefined) {
-      return row;
-    }
-
-    const actualType = this.inferPreviewValueType(row.value);
-    const typeCompatible = this.isPreviewTypeCompatible(row.expectedType, actualType);
-    if (typeCompatible) {
-      return {
-        ...row,
-        actualType,
-        typeCompatible: true,
-      };
-    }
-
-    const mismatchNote = `类型不兼容：期望 ${this.normalizePreviewType(row.expectedType)}，实际 ${actualType}`;
-    return {
-      ...row,
-      actualType,
-      typeCompatible: false,
-      note: row.note ? `${row.note}；${mismatchNote}` : mismatchNote,
-    };
-  }
-
-  private inferPreviewValueType(value: unknown): string {
-    if (value === null) {
-      return 'null';
-    }
-    if (Array.isArray(value)) {
-      return 'array';
-    }
-    const rawType = typeof value;
-    if (rawType === 'string' || rawType === 'number' || rawType === 'boolean') {
-      return rawType;
-    }
-    if (rawType === 'object') {
-      return 'object';
-    }
-    return 'unknown';
-  }
-
-  private normalizePreviewType(rawType: string): string {
-    const normalized = rawType.trim().toLowerCase();
-    if (!normalized) {
-      return 'unknown';
-    }
-    if (normalized === 'int' || normalized === 'integer' || normalized === 'float') {
-      return 'number';
-    }
-    if (normalized === 'double') {
-      return 'number';
-    }
-    if (normalized === 'json' || normalized === 'map') {
-      return 'object';
-    }
-    if (normalized === 'list' || normalized === 'tuple') {
-      return 'array';
-    }
-    if (normalized === 'bool') {
-      return 'boolean';
-    }
-    if (normalized === 'str') {
-      return 'string';
-    }
-    if (
-      normalized === 'string' ||
-      normalized === 'number' ||
-      normalized === 'boolean' ||
-      normalized === 'object' ||
-      normalized === 'array' ||
-      normalized === 'null' ||
-      normalized === 'unknown' ||
-      normalized === 'any'
-    ) {
-      return normalized;
-    }
-    return 'unknown';
-  }
-
-  private isPreviewTypeCompatible(expectedType: string, actualType: string): boolean {
-    const normalizedExpected = this.normalizePreviewType(expectedType);
-    const normalizedActual = this.normalizePreviewType(actualType);
-    if (normalizedExpected === 'any' || normalizedActual === 'any') {
-      return true;
-    }
-    if (normalizedExpected === 'unknown' || normalizedActual === 'unknown') {
-      return true;
-    }
-    return normalizedExpected === normalizedActual;
-  }
-
-  private parseSimpleBindingExpression(binding: string): { scope: string; path: string[] } | null {
-    const match = binding.trim().match(/^\{\{\s*([^{}]+?)\s*\}\}$/);
-    if (!match) {
-      return null;
-    }
-    const expression = match[1].trim();
-    if (!expression || expression.includes(' ') || expression.includes('|')) {
-      return null;
-    }
-    const parts = expression.split('.');
-    if (parts.length < 2) {
-      return null;
-    }
-    const [scope, ...path] = parts;
-    if (!scope || path.length === 0) {
-      return null;
-    }
-    return { scope, path };
-  }
-
-  private resolveSourceScope(sampleInput: Record<string, unknown>, scope: string): unknown {
-    const directScope = sampleInput[scope];
-    if (directScope !== undefined) {
-      return directScope;
-    }
-    const upstream = this.asRecord(sampleInput.upstream);
-    if (!upstream) {
-      return undefined;
-    }
-    return upstream[scope];
-  }
-
-  private readStringMap(value: unknown): Record<string, string> {
-    const record = this.asRecord(value);
-    if (!record) {
-      return {};
-    }
-    const result: Record<string, string> = {};
-    for (const [key, item] of Object.entries(record)) {
-      if (typeof item !== 'string') {
-        continue;
-      }
-      result[key] = item;
-    }
-    return result;
-  }
-
-  private resolveDeepPath(source: unknown, path: string): unknown {
-    if (!source || typeof source !== 'object') {
-      return undefined;
-    }
-
-    let current: unknown = source;
-    for (const segment of path.split('.')) {
-      if (!current || typeof current !== 'object') {
-        return undefined;
-      }
-      if (Array.isArray(current)) {
-        const index = Number(segment);
-        if (!Number.isInteger(index)) {
-          return undefined;
-        }
-        current = current[index];
-        continue;
-      }
-      current = (current as Record<string, unknown>)[segment];
-    }
-    return current;
-  }
-
-  private asRecord(value: unknown): Record<string, unknown> | null {
-    if (!value || typeof value !== 'object' || Array.isArray(value)) {
-      return null;
-    }
-    return value as Record<string, unknown>;
-  }
-
-  private readBindingCodes(value: unknown): string[] {
-    if (!Array.isArray(value)) {
-      return [];
-    }
-    const set = new Set<string>();
-    for (const item of value) {
-      if (typeof item !== 'string') {
-        continue;
-      }
-      const normalized = item.trim();
-      if (!normalized) {
-        continue;
-      }
-      set.add(normalized);
-    }
-    return [...set];
-  }
-
   private normalizeDslForDefinition(
     sourceDsl: WorkflowDsl | undefined,
     workflowId: string,
@@ -1606,76 +577,638 @@ export class WorkflowDefinitionService {
     ownerUserId: string,
     templateSource: 'PUBLIC' | 'PRIVATE' | 'COPIED',
   ): WorkflowDsl {
-    if (!sourceDsl) {
-      return canonicalizeWorkflowDsl({
-        workflowId,
-        name,
-        mode,
-        usageMethod,
-        version: '1.0.0',
-        status: 'DRAFT',
-        ownerUserId,
-        templateSource,
-        nodes: [
-          {
-            id: 'n_trigger',
-            type: 'manual-trigger',
-            name: '手工触发',
-            enabled: true,
-            config: {},
-          },
-          {
-            id: 'n_risk_gate',
-            type: 'risk-gate',
-            name: '风险闸门',
-            enabled: true,
-            config: {
-              riskProfileCode: 'CORN_RISK_BASE',
-              degradeAction: 'HOLD',
+    const baseDsl = sourceDsl
+      ? {
+          ...sourceDsl,
+          workflowId,
+          name,
+          mode: sourceDsl.mode,
+          usageMethod: sourceDsl.usageMethod ?? usageMethod,
+          ownerUserId,
+          templateSource,
+        }
+      : {
+          workflowId,
+          name,
+          mode,
+          usageMethod,
+          version: '1.0.0',
+          status: 'DRAFT',
+          ownerUserId,
+          templateSource,
+          nodes: [
+            {
+              id: 'n_trigger',
+              type: 'manual-trigger',
+              name: '手工触发',
+              enabled: true,
+              config: {},
+            },
+            {
+              id: 'n_risk_gate',
+              type: 'risk-gate',
+              name: '风险闸门',
+              enabled: true,
+              config: {
+                riskProfileCode: 'CORN_RISK_BASE',
+                degradeAction: 'HOLD',
+              },
+            },
+            {
+              id: 'n_notify',
+              type: 'notify',
+              name: '结果输出',
+              enabled: true,
+              config: { channels: ['DASHBOARD'] },
+            },
+          ],
+          edges: [
+            {
+              id: 'e_trigger_risk_gate',
+              from: 'n_trigger',
+              to: 'n_risk_gate',
+              edgeType: 'control-edge',
+            },
+            {
+              id: 'e_risk_gate_notify',
+              from: 'n_risk_gate',
+              to: 'n_notify',
+              edgeType: 'control-edge',
+            },
+          ],
+          runPolicy: {
+            nodeDefaults: {
+              timeoutMs: 30000,
+              retryCount: 1,
+              retryBackoffMs: 2000,
+              onError: 'FAIL_FAST',
             },
           },
-          {
-            id: 'n_notify',
-            type: 'notify',
-            name: '结果输出',
-            enabled: true,
-            config: { channels: ['DASHBOARD'] },
-          },
-        ],
-        edges: [
-          {
-            id: 'e_trigger_risk_gate',
-            from: 'n_trigger',
-            to: 'n_risk_gate',
-            edgeType: 'control-edge',
-          },
-          {
-            id: 'e_risk_gate_notify',
-            from: 'n_risk_gate',
-            to: 'n_notify',
-            edgeType: 'control-edge',
-          },
-        ],
-        runPolicy: {
-          nodeDefaults: {
-            timeoutMs: 30000,
-            retryCount: 1,
-            retryBackoffMs: 2000,
-            onError: 'FAIL_FAST',
-          },
-        },
+        };
+
+    const { dsl } = this.applySmartDefaultsToDsl(baseDsl as WorkflowDsl, 'AGGRESSIVE');
+    return dsl;
+  }
+
+  private applySmartDefaultsToDsl(
+    sourceDsl: WorkflowDsl,
+    autoFixLevel: WorkflowPreflightAutoFixLevel = 'SAFE',
+    enabledAutoFixCodes?: string[],
+  ): {
+    dsl: WorkflowDsl;
+    autoFixes: WorkflowDslAutoFixItemDto[];
+  } {
+    const autoFixes: WorkflowDslAutoFixItemDto[] = [];
+    const enabledAutoFixCodeSet = this.toEnabledAutoFixCodeSet(enabledAutoFixCodes);
+    const canApplyAutoFix = (code: string) => this.isAutoFixEnabled(code, enabledAutoFixCodeSet);
+    const normalizedDsl = canonicalizeWorkflowDsl(sourceDsl);
+    const previousNodeDefaults = this.readRecord(normalizedDsl.runPolicy?.nodeDefaults);
+    const previousOnError = previousNodeDefaults.onError;
+    const completedOnError: 'FAIL_FAST' | 'CONTINUE' | 'ROUTE_TO_ERROR' =
+      previousOnError === 'CONTINUE' ||
+      previousOnError === 'ROUTE_TO_ERROR' ||
+      previousOnError === 'FAIL_FAST'
+        ? previousOnError
+        : 'FAIL_FAST';
+    const completedNodeDefaults = {
+      timeoutMs:
+        typeof previousNodeDefaults.timeoutMs === 'number' ? previousNodeDefaults.timeoutMs : 30000,
+      retryCount:
+        typeof previousNodeDefaults.retryCount === 'number' ? previousNodeDefaults.retryCount : 1,
+      retryBackoffMs:
+        typeof previousNodeDefaults.retryBackoffMs === 'number'
+          ? previousNodeDefaults.retryBackoffMs
+          : 2000,
+      onError: completedOnError,
+    };
+    const rawOnError: 'FAIL_FAST' | 'CONTINUE' | 'ROUTE_TO_ERROR' | undefined =
+      previousOnError === 'CONTINUE' ||
+      previousOnError === 'ROUTE_TO_ERROR' ||
+      previousOnError === 'FAIL_FAST'
+        ? previousOnError
+        : undefined;
+    const rawNodeDefaults: {
+      timeoutMs?: number;
+      retryCount?: number;
+      retryBackoffMs?: number;
+      onError?: 'FAIL_FAST' | 'CONTINUE' | 'ROUTE_TO_ERROR';
+    } = {
+      timeoutMs:
+        typeof previousNodeDefaults.timeoutMs === 'number' ? previousNodeDefaults.timeoutMs : undefined,
+      retryCount:
+        typeof previousNodeDefaults.retryCount === 'number' ? previousNodeDefaults.retryCount : undefined,
+      retryBackoffMs:
+        typeof previousNodeDefaults.retryBackoffMs === 'number'
+          ? previousNodeDefaults.retryBackoffMs
+          : undefined,
+      onError: rawOnError,
+    };
+    const shouldAutoFixNodeDefaults =
+      JSON.stringify(previousNodeDefaults) !== JSON.stringify(completedNodeDefaults);
+    const nodeDefaults =
+      shouldAutoFixNodeDefaults && !canApplyAutoFix('AUTO_RUN_POLICY_DEFAULTS')
+        ? rawNodeDefaults
+        : completedNodeDefaults;
+
+    if (shouldAutoFixNodeDefaults && canApplyAutoFix('AUTO_RUN_POLICY_DEFAULTS')) {
+      autoFixes.push({
+        code: 'AUTO_RUN_POLICY_DEFAULTS',
+        message: '自动补全全局节点运行策略默认值',
+        fieldPath: 'runPolicy.nodeDefaults',
+        before: previousNodeDefaults,
+        after: completedNodeDefaults,
       });
     }
 
-    return canonicalizeWorkflowDsl({
-      ...sourceDsl,
-      workflowId,
-      name,
-      mode: sourceDsl.mode,
-      usageMethod: sourceDsl.usageMethod ?? usageMethod,
-      ownerUserId,
-      templateSource,
+    const agentBindingSet = new Set(this.readStringArray(normalizedDsl.agentBindings));
+    const paramSetBindingSet = new Set(this.readStringArray(normalizedDsl.paramSetBindings));
+    const connectorBindingSet = new Set(this.readStringArray(normalizedDsl.dataConnectorBindings));
+    const previousAgentBindings = [...agentBindingSet];
+    const previousParamSetBindings = [...paramSetBindingSet];
+    const previousConnectorBindings = [...connectorBindingSet];
+    let nodes = normalizedDsl.nodes.map((node) => {
+      const nodeType = normalizeWorkflowNodeType(node.type);
+      const contract = getWorkflowNodeContract(nodeType);
+      const previousConfig = this.readRecord(node.config);
+      const config: Record<string, unknown> = contract
+        ? { ...contract.defaultConfig, ...previousConfig }
+        : { ...previousConfig };
+      let nodeChanged = false;
+
+      if (JSON.stringify(previousConfig) !== JSON.stringify(config)) {
+        nodeChanged = true;
+      }
+
+      if (nodeType === 'risk-gate') {
+        const profileCode =
+          typeof config.riskProfileCode === 'string' ? config.riskProfileCode.trim() : '';
+        if (!profileCode && canApplyAutoFix('AUTO_RISK_PROFILE')) {
+          config.riskProfileCode = 'CORN_RISK_BASE';
+          nodeChanged = true;
+          autoFixes.push({
+            code: 'AUTO_RISK_PROFILE',
+            message: '风险闸门缺少 riskProfileCode，已自动补全为 CORN_RISK_BASE',
+            nodeId: node.id,
+            fieldPath: `nodes.${node.id}.config.riskProfileCode`,
+            before: previousConfig.riskProfileCode,
+            after: 'CORN_RISK_BASE',
+          });
+        }
+
+        const degradeAction =
+          typeof config.degradeAction === 'string' ? config.degradeAction.trim() : '';
+        if (!degradeAction && canApplyAutoFix('AUTO_RISK_PROFILE')) {
+          config.degradeAction = 'HOLD';
+          nodeChanged = true;
+        }
+      }
+
+      if (nodeType === 'notify') {
+        const channels = Array.isArray(config.channels)
+          ? config.channels.filter(
+              (item): item is string => typeof item === 'string' && item.trim().length > 0,
+            )
+          : [];
+        if (channels.length === 0) {
+          const singleChannel = typeof config.channel === 'string' ? config.channel.trim() : '';
+          config.channels = singleChannel ? [singleChannel] : ['DASHBOARD'];
+          nodeChanged = true;
+        } else if (JSON.stringify(channels) !== JSON.stringify(config.channels)) {
+          config.channels = channels;
+          nodeChanged = true;
+        }
+      }
+
+      if (nodeType === 'rule-pack-eval') {
+        const rulePackCode =
+          typeof config.rulePackCode === 'string' ? config.rulePackCode.trim() : '';
+        if (!rulePackCode && canApplyAutoFix('AUTO_RULE_PACK_CODE')) {
+          const rulePackCodes = this.readStringArray(config.rulePackCodes);
+          if (rulePackCodes.length > 0) {
+            config.rulePackCode = rulePackCodes[0];
+            nodeChanged = true;
+            autoFixes.push({
+              code: 'AUTO_RULE_PACK_CODE',
+              message: '规则节点缺少 rulePackCode，已根据 rulePackCodes 自动补全',
+              nodeId: node.id,
+              fieldPath: `nodes.${node.id}.config.rulePackCode`,
+              before: previousConfig.rulePackCode,
+              after: rulePackCodes[0],
+            });
+          }
+        }
+      }
+
+      const agentProfileCode =
+        typeof config.agentProfileCode === 'string' ? config.agentProfileCode.trim() : '';
+      const agentCode = typeof config.agentCode === 'string' ? config.agentCode.trim() : '';
+      if (agentProfileCode) {
+        agentBindingSet.add(agentProfileCode);
+      }
+      if (agentCode) {
+        agentBindingSet.add(agentCode);
+      }
+      this.readStringArray(config.agentProfileCodes).forEach((code) => agentBindingSet.add(code));
+      this.readStringArray(config.agentCodes).forEach((code) => agentBindingSet.add(code));
+
+      const paramSetCode =
+        typeof config.paramSetCode === 'string' ? config.paramSetCode.trim() : '';
+      const parameterSetCode =
+        typeof config.parameterSetCode === 'string' ? config.parameterSetCode.trim() : '';
+      const setCode = typeof config.setCode === 'string' ? config.setCode.trim() : '';
+      if (paramSetCode) {
+        paramSetBindingSet.add(paramSetCode);
+      }
+      if (parameterSetCode) {
+        paramSetBindingSet.add(parameterSetCode);
+      }
+      if (setCode) {
+        paramSetBindingSet.add(setCode);
+      }
+      this.readStringArray(config.paramSetCodes).forEach((code) => paramSetBindingSet.add(code));
+      this.readStringArray(config.parameterSetCodes).forEach((code) => paramSetBindingSet.add(code));
+      this.readStringArray(config.setCodes).forEach((code) => paramSetBindingSet.add(code));
+
+      const dataSourceCode =
+        typeof config.dataSourceCode === 'string' ? config.dataSourceCode.trim() : '';
+      const connectorCode =
+        typeof config.connectorCode === 'string' ? config.connectorCode.trim() : '';
+      if (dataSourceCode) {
+        connectorBindingSet.add(dataSourceCode);
+      }
+      if (connectorCode) {
+        connectorBindingSet.add(connectorCode);
+      }
+      this.readStringArray(config.dataSourceCodes).forEach((code) => connectorBindingSet.add(code));
+      this.readStringArray(config.connectorCodes).forEach((code) => connectorBindingSet.add(code));
+
+      if (!nodeChanged && nodeType === node.type) {
+        return node;
+      }
+
+      return {
+        ...node,
+        type: nodeType,
+        config,
+      };
     });
+
+    const edges = normalizedDsl.edges.map((edge) => ({ ...edge }));
+    if (autoFixLevel === 'AGGRESSIVE') {
+      const usedNodeIds = new Set(nodes.map((node) => node.id));
+      const usedEdgeIds = new Set(edges.map((edge) => edge.id));
+      const triggerNodeTypes = new Set(['manual-trigger', 'cron-trigger', 'event-trigger', 'api-trigger']);
+      const outputNodeTypes = new Set(['notify', 'report-generate', 'dashboard-publish']);
+      const buildId = (prefix: string, idSet: Set<string>) => {
+        let index = 1;
+        let nextId = `${prefix}_${index}`;
+        while (idSet.has(nextId)) {
+          index += 1;
+          nextId = `${prefix}_${index}`;
+        }
+        idSet.add(nextId);
+        return nextId;
+      };
+      const addEdgeIfMissing = (
+        from: string | undefined,
+        to: string | undefined,
+        edgeType: WorkflowEdge['edgeType'],
+        code?: string,
+        message?: string,
+      ) => {
+        if (!from || !to || from === to) {
+          return;
+        }
+        if (code && !canApplyAutoFix(code)) {
+          return;
+        }
+        const exists = edges.some((edge) => edge.from === from && edge.to === to);
+        if (exists) {
+          return;
+        }
+        edges.push({
+          id: buildId('e_auto', usedEdgeIds),
+          from,
+          to,
+          edgeType,
+        });
+        if (code && message) {
+          autoFixes.push({
+            code,
+            message,
+          });
+        }
+      };
+
+      let triggerNode = nodes.find((node) => triggerNodeTypes.has(node.type));
+      if (!triggerNode && canApplyAutoFix('AUTO_TRIGGER_NODE')) {
+        triggerNode = {
+          id: buildId('n_trigger', usedNodeIds),
+          type: 'manual-trigger',
+          name: '手工触发',
+          enabled: true,
+          config: {},
+        };
+        nodes = [...nodes, triggerNode];
+        autoFixes.push({
+          code: 'AUTO_TRIGGER_NODE',
+          message: '流程缺少触发节点，已自动补全 manual-trigger',
+          nodeId: triggerNode.id,
+          fieldPath: `nodes.${triggerNode.id}`,
+        });
+      }
+
+      let riskGateNode = nodes.find((node) => node.type === 'risk-gate');
+      if (!riskGateNode && canApplyAutoFix('AUTO_RISK_GATE_NODE')) {
+        riskGateNode = {
+          id: buildId('n_risk_gate', usedNodeIds),
+          type: 'risk-gate',
+          name: '风险闸门',
+          enabled: true,
+          config: {
+            riskProfileCode: 'CORN_RISK_BASE',
+            degradeAction: 'HOLD',
+          },
+        };
+        nodes = [...nodes, riskGateNode];
+        autoFixes.push({
+          code: 'AUTO_RISK_GATE_NODE',
+          message: '流程缺少 risk-gate 节点，已自动补全',
+          nodeId: riskGateNode.id,
+          fieldPath: `nodes.${riskGateNode.id}`,
+        });
+        addEdgeIfMissing(
+          triggerNode?.id,
+          riskGateNode.id,
+          'control-edge',
+          'AUTO_TRIGGER_TO_RISK',
+          '已自动补全触发节点到风险闸门的连线',
+        );
+      }
+
+      let outputNode = nodes.find((node) => outputNodeTypes.has(node.type));
+      if (!outputNode && canApplyAutoFix('AUTO_OUTPUT_NODE')) {
+        outputNode = {
+          id: buildId('n_notify', usedNodeIds),
+          type: 'notify',
+          name: '结果输出',
+          enabled: true,
+          config: { channels: ['DASHBOARD'] },
+        };
+        nodes = [...nodes, outputNode];
+        autoFixes.push({
+          code: 'AUTO_OUTPUT_NODE',
+          message: '流程缺少输出节点，已自动补全 notify',
+          nodeId: outputNode.id,
+          fieldPath: `nodes.${outputNode.id}`,
+        });
+        addEdgeIfMissing(
+          riskGateNode?.id ?? triggerNode?.id,
+          outputNode.id,
+          'control-edge',
+          'AUTO_TO_OUTPUT_EDGE',
+          '已自动补全主链路到输出节点的连线',
+        );
+      }
+
+      if (normalizedDsl.mode === 'DEBATE') {
+        let contextNode = nodes.find((node) => node.type === 'context-builder');
+        let debateNode = nodes.find((node) => node.type === 'debate-round');
+        let judgeNode = nodes.find((node) => node.type === 'judge-agent');
+
+        if (!contextNode && canApplyAutoFix('AUTO_DEBATE_CONTEXT_NODE')) {
+          contextNode = {
+            id: buildId('n_context_builder', usedNodeIds),
+            type: 'context-builder',
+            name: '上下文构建',
+            enabled: true,
+            config: {},
+          };
+          nodes = [...nodes, contextNode];
+          autoFixes.push({
+            code: 'AUTO_DEBATE_CONTEXT_NODE',
+            message: 'DEBATE 模式缺少 context-builder，已自动补全',
+            nodeId: contextNode.id,
+            fieldPath: `nodes.${contextNode.id}`,
+          });
+        }
+        if (!debateNode && canApplyAutoFix('AUTO_DEBATE_ROUND_NODE')) {
+          debateNode = {
+            id: buildId('n_debate_round', usedNodeIds),
+            type: 'debate-round',
+            name: '辩论回合',
+            enabled: true,
+            config: {
+              maxRounds: 3,
+              judgePolicy: 'WEIGHTED',
+            },
+          };
+          nodes = [...nodes, debateNode];
+          autoFixes.push({
+            code: 'AUTO_DEBATE_ROUND_NODE',
+            message: 'DEBATE 模式缺少 debate-round，已自动补全',
+            nodeId: debateNode.id,
+            fieldPath: `nodes.${debateNode.id}`,
+          });
+        }
+        if (!judgeNode && canApplyAutoFix('AUTO_DEBATE_JUDGE_NODE')) {
+          judgeNode = {
+            id: buildId('n_judge_agent', usedNodeIds),
+            type: 'judge-agent',
+            name: '裁判节点',
+            enabled: true,
+            config: {},
+          };
+          nodes = [...nodes, judgeNode];
+          autoFixes.push({
+            code: 'AUTO_DEBATE_JUDGE_NODE',
+            message: 'DEBATE 模式缺少 judge-agent，已自动补全',
+            nodeId: judgeNode.id,
+            fieldPath: `nodes.${judgeNode.id}`,
+          });
+        }
+
+        addEdgeIfMissing(
+          triggerNode?.id,
+          contextNode?.id,
+          'control-edge',
+          'AUTO_DEBATE_CHAIN_EDGES',
+          'DEBATE 模式主链路连线已自动补全',
+        );
+        addEdgeIfMissing(
+          contextNode?.id,
+          debateNode?.id,
+          'data-edge',
+          'AUTO_DEBATE_CHAIN_EDGES',
+          'DEBATE 模式主链路连线已自动补全',
+        );
+        addEdgeIfMissing(
+          debateNode?.id,
+          judgeNode?.id,
+          'data-edge',
+          'AUTO_DEBATE_CHAIN_EDGES',
+          'DEBATE 模式主链路连线已自动补全',
+        );
+      }
+
+      if (normalizedDsl.mode === 'DAG') {
+        let joinNode = nodes.find((node) => node.type === 'join');
+        if (!joinNode && canApplyAutoFix('AUTO_DAG_JOIN_NODE')) {
+          joinNode = {
+            id: buildId('n_join', usedNodeIds),
+            type: 'join',
+            name: '自动汇聚',
+            enabled: true,
+            config: { joinPolicy: 'ALL_REQUIRED' },
+          };
+          nodes = [...nodes, joinNode];
+          autoFixes.push({
+            code: 'AUTO_DAG_JOIN_NODE',
+            message: 'DAG 模式缺少 join 节点，已自动补全',
+            nodeId: joinNode.id,
+            fieldPath: `nodes.${joinNode.id}`,
+          });
+        }
+        if (joinNode) {
+          const upstreamNode =
+            nodes.find((node) => triggerNodeTypes.has(node.type) && node.id !== joinNode.id) ||
+            nodes.find(
+              (node) =>
+                !outputNodeTypes.has(node.type) &&
+                node.type !== 'join' &&
+                node.type !== 'group' &&
+                node.id !== joinNode.id,
+            );
+          const downstreamNode =
+            nodes.find((node) => node.type === 'risk-gate' && node.id !== joinNode.id) ||
+            nodes.find((node) => outputNodeTypes.has(node.type) && node.id !== joinNode.id);
+
+          addEdgeIfMissing(
+            upstreamNode?.id,
+            joinNode.id,
+            'data-edge',
+            'AUTO_DAG_JOIN_EDGES',
+            'DAG 模式 join 连线已自动补全',
+          );
+          addEdgeIfMissing(
+            joinNode.id,
+            downstreamNode?.id,
+            'control-edge',
+            'AUTO_DAG_JOIN_EDGES',
+            'DAG 模式 join 连线已自动补全',
+          );
+        }
+      }
+    }
+
+    const inferredAgentBindings = [...agentBindingSet];
+    const inferredParamSetBindings = [...paramSetBindingSet];
+    const inferredConnectorBindings = [...connectorBindingSet];
+    const shouldFixAgentBindings =
+      JSON.stringify(previousAgentBindings) !== JSON.stringify(inferredAgentBindings);
+    const shouldFixParamSetBindings =
+      JSON.stringify(previousParamSetBindings) !== JSON.stringify(inferredParamSetBindings);
+    const shouldFixConnectorBindings =
+      JSON.stringify(previousConnectorBindings) !== JSON.stringify(inferredConnectorBindings);
+    const nextAgentBindings =
+      shouldFixAgentBindings && !canApplyAutoFix('AUTO_AGENT_BINDINGS')
+        ? previousAgentBindings
+        : inferredAgentBindings;
+    const nextParamSetBindings =
+      shouldFixParamSetBindings && !canApplyAutoFix('AUTO_PARAM_SET_BINDINGS')
+        ? previousParamSetBindings
+        : inferredParamSetBindings;
+    const nextConnectorBindings =
+      shouldFixConnectorBindings && !canApplyAutoFix('AUTO_CONNECTOR_BINDINGS')
+        ? previousConnectorBindings
+        : inferredConnectorBindings;
+    if (shouldFixAgentBindings && canApplyAutoFix('AUTO_AGENT_BINDINGS')) {
+      autoFixes.push({
+        code: 'AUTO_AGENT_BINDINGS',
+        message: '已根据节点配置自动补全 agentBindings',
+        fieldPath: 'agentBindings',
+        before: previousAgentBindings,
+        after: inferredAgentBindings,
+      });
+    }
+    if (shouldFixParamSetBindings && canApplyAutoFix('AUTO_PARAM_SET_BINDINGS')) {
+      autoFixes.push({
+        code: 'AUTO_PARAM_SET_BINDINGS',
+        message: '已根据节点配置自动补全 paramSetBindings',
+        fieldPath: 'paramSetBindings',
+        before: previousParamSetBindings,
+        after: inferredParamSetBindings,
+      });
+    }
+    if (shouldFixConnectorBindings && canApplyAutoFix('AUTO_CONNECTOR_BINDINGS')) {
+      autoFixes.push({
+        code: 'AUTO_CONNECTOR_BINDINGS',
+        message: '已根据节点配置自动补全 dataConnectorBindings',
+        fieldPath: 'dataConnectorBindings',
+        before: previousConnectorBindings,
+        after: inferredConnectorBindings,
+      });
+    }
+
+    return {
+      dsl: {
+        ...normalizedDsl,
+        nodes,
+        edges,
+        runPolicy: {
+          ...(normalizedDsl.runPolicy ?? {}),
+          nodeDefaults,
+        },
+        agentBindings: nextAgentBindings.length > 0 ? nextAgentBindings : undefined,
+        paramSetBindings: nextParamSetBindings.length > 0 ? nextParamSetBindings : undefined,
+        dataConnectorBindings: nextConnectorBindings.length > 0 ? nextConnectorBindings : undefined,
+      },
+      autoFixes,
+    };
+  }
+
+  private readRecord(value: unknown): Record<string, unknown> {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+      return {};
+    }
+    return value as Record<string, unknown>;
+  }
+
+  private readStringArray(value: unknown): string[] {
+    if (!Array.isArray(value)) {
+      return [];
+    }
+    const deduped = new Set<string>();
+    for (const item of value) {
+      if (typeof item !== 'string') {
+        continue;
+      }
+      const normalized = item.trim();
+      if (!normalized) {
+        continue;
+      }
+      deduped.add(normalized);
+    }
+    return [...deduped];
+  }
+
+  private toEnabledAutoFixCodeSet(enabledAutoFixCodes?: string[]): Set<string> | null {
+    if (!enabledAutoFixCodes || enabledAutoFixCodes.length === 0) {
+      return null;
+    }
+    return new Set(
+      enabledAutoFixCodes
+        .filter((code): code is string => typeof code === 'string')
+        .map((code) => code.trim())
+        .filter(Boolean),
+    );
+  }
+
+  private isAutoFixEnabled(code: string, enabledAutoFixCodeSet: Set<string> | null): boolean {
+    if (!enabledAutoFixCodeSet) {
+      return true;
+    }
+    return enabledAutoFixCodeSet.has(code);
   }
 
   private nextVersionCode(latestVersionCode: string | null | undefined): string {

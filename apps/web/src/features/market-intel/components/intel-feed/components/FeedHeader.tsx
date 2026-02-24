@@ -251,7 +251,7 @@ export const FeedHeader: React.FC<FeedHeaderProps> = ({
             <Modal
                 title={
                     <Flex align="center" gap={8}>
-                        <RobotOutlined style={{ color: '#1890ff' }} />
+                        <RobotOutlined style={{ color: token.colorPrimary }} />
                         <span>市场动态智能简报</span>
                     </Flex>
                 }

@@ -1,6 +1,11 @@
 import { GoogleGenerativeAI, Part } from '@google/generative-ai';
 import { Logger } from '@nestjs/common';
-import { IAIProvider, AIRequestOptions } from './base.provider';
+import { IAIProvider, AIRequestOptions, AIMessage, AIChatResponse } from './base.provider';
+
+type GeminiFunctionCall = {
+  name: string;
+  args?: object;
+};
 
 export class GoogleProvider implements IAIProvider {
   private readonly logger = new Logger(GoogleProvider.name);
@@ -11,7 +16,7 @@ export class GoogleProvider implements IAIProvider {
 
   private buildHeaders(options: AIRequestOptions): Record<string, string> | undefined {
     // 'custom' is not a valid auth mode for standard headers logic, so we fallback to 'api-key' or ignore it
-    const authType = options.authType === 'custom' ? 'api-key' : (options.authType || 'api-key');
+    const authType = options.authType === 'custom' ? 'api-key' : options.authType || 'api-key';
     return this.buildHeadersForAuthMode(options, authType);
   }
 
@@ -40,7 +45,9 @@ export class GoogleProvider implements IAIProvider {
     return Object.keys(headers).length ? headers : undefined;
   }
 
-  private resolveAuthModes(options: AIRequestOptions): Array<'x-goog-api-key' | 'bearer' | 'x-api-key' | 'query' | 'api-key' | 'none'> {
+  private resolveAuthModes(
+    options: AIRequestOptions,
+  ): Array<'x-goog-api-key' | 'bearer' | 'x-api-key' | 'query' | 'api-key' | 'none'> {
     if (options.authType === 'bearer') return ['bearer'];
     if (options.authType === 'api-key') return ['query', 'x-goog-api-key'];
     if (options.authType === 'none') return ['none'];
@@ -48,7 +55,9 @@ export class GoogleProvider implements IAIProvider {
   }
 
   private buildBaseUrl(options: AIRequestOptions): string {
-    return options.apiUrl ? options.apiUrl.replace(/\/+$/, '') : 'https://generativelanguage.googleapis.com/v1beta';
+    return options.apiUrl
+      ? options.apiUrl.replace(/\/+$/, '')
+      : 'https://generativelanguage.googleapis.com/v1beta';
   }
 
   private resolveModelListPaths(baseUrl: string, options: AIRequestOptions): string[] {
@@ -62,7 +71,11 @@ export class GoogleProvider implements IAIProvider {
     return ['/v1beta/models', '/models'];
   }
 
-  private buildUrl(path: string, options: AIRequestOptions, authMode?: 'x-goog-api-key' | 'bearer' | 'x-api-key' | 'api-key' | 'none' | 'query'): string {
+  private buildUrl(
+    path: string,
+    options: AIRequestOptions,
+    authMode?: 'x-goog-api-key' | 'bearer' | 'x-api-key' | 'api-key' | 'none' | 'query',
+  ): string {
     if (path.startsWith('http://') || path.startsWith('https://')) {
       const url = new URL(path);
       if (options.queryParams) {
@@ -109,7 +122,13 @@ export class GoogleProvider implements IAIProvider {
   }
 
   private shouldUseRest(options: AIRequestOptions): boolean {
-    return Boolean(options.apiUrl || options.headers || options.queryParams || options.pathOverrides || options.authType === 'custom');
+    return Boolean(
+      options.apiUrl ||
+      options.headers ||
+      options.queryParams ||
+      options.pathOverrides ||
+      options.authType === 'custom',
+    );
   }
 
   private async generateByRest(
@@ -131,10 +150,10 @@ export class GoogleProvider implements IAIProvider {
     const generationConfig = options.apiUrl
       ? undefined
       : {
-        maxOutputTokens: options.maxTokens ?? 8192,
-        temperature: options.temperature ?? 0.3,
-        topP: options.topP,
-      };
+          maxOutputTokens: options.maxTokens ?? 8192,
+          temperature: options.temperature ?? 0.3,
+          topP: options.topP,
+        };
 
     const body = {
       contents: [
@@ -180,11 +199,15 @@ export class GoogleProvider implements IAIProvider {
           throw lastError;
         }
 
-        const data = await response.json() as {
+        const data = (await response.json()) as {
           candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
         };
 
-        const text = data.candidates?.[0]?.content?.parts?.map((p) => p.text).filter(Boolean).join('') || '';
+        const text =
+          data.candidates?.[0]?.content?.parts
+            ?.map((p) => p.text)
+            .filter(Boolean)
+            .join('') || '';
         return { content: text, authMode, pathUsed: path };
       }
     }
@@ -221,9 +244,7 @@ export class GoogleProvider implements IAIProvider {
       requestOptions,
     );
 
-    const parts: Part[] = [
-      { text: `${systemPrompt}\n\n${userPrompt}` } as Part,
-    ];
+    const parts: Part[] = [{ text: `${systemPrompt}\n\n${userPrompt}` } as Part];
 
     if (options.images?.length) {
       for (const img of options.images) {
@@ -242,6 +263,137 @@ export class GoogleProvider implements IAIProvider {
       return response.text();
     } catch (error) {
       this.logger.error('Google Gemini API call failed', error);
+      throw error;
+    }
+  }
+
+  async generateChat(messages: AIMessage[], options: AIRequestOptions): Promise<AIChatResponse> {
+    const genAI = new GoogleGenerativeAI(options.apiKey);
+    const requestOptions = this.buildRequestOptions(options);
+
+    const geminiTools = options.tools
+      ? [
+          {
+            functionDeclarations: options.tools.map((t) => ({
+              name: t.function.name,
+              description: t.function.description || '',
+              parameters: t.function.parameters as Record<string, unknown> | undefined,
+            })),
+          },
+        ]
+      : undefined;
+
+    const contents: Array<Record<string, unknown>> = [];
+    let systemInstruction = '';
+
+    messages.forEach((msg) => {
+      if (msg.role === 'system') {
+        systemInstruction += msg.content + '\n';
+      } else if (msg.role === 'tool') {
+        contents.push({
+          role: 'function',
+          parts: [
+            {
+              functionResponse: {
+                name: msg.name || msg.tool_call_id || 'unknown',
+                response: { result: msg.content },
+              },
+            },
+          ],
+        });
+      } else if (msg.role === 'assistant') {
+        const parts: Array<Record<string, unknown>> = [];
+        if (msg.content) parts.push({ text: msg.content });
+        if (msg.tool_calls) {
+          msg.tool_calls.forEach((tc) => {
+            parts.push({
+              functionCall: {
+                name: tc.function.name,
+                args: tc.function.arguments ? JSON.parse(tc.function.arguments) : {},
+              },
+            });
+          });
+        }
+        contents.push({ role: 'model', parts });
+      } else {
+        contents.push({ role: 'user', parts: [{ text: msg.content || '' }] });
+      }
+    });
+
+    const modelParams: Record<string, unknown> = {
+      model: options.modelName,
+      generationConfig: {
+        maxOutputTokens: options.maxTokens ?? 8192,
+        temperature: options.temperature ?? 0.3,
+        topP: options.topP,
+      },
+      tools: geminiTools,
+    };
+    if (systemInstruction) {
+      modelParams.systemInstruction = {
+        role: 'system',
+        parts: [{ text: systemInstruction.trim() }],
+      };
+    }
+
+    const model = genAI.getGenerativeModel(
+      modelParams as unknown as Parameters<GoogleGenerativeAI['getGenerativeModel']>[0],
+      requestOptions,
+    );
+
+    try {
+      const result = await model.generateContent({ contents } as unknown as Parameters<
+        typeof model.generateContent
+      >[0]);
+      const response = await result.response;
+
+      let functionCalls: GeminiFunctionCall[] | undefined;
+      let text = '';
+      try {
+        text = response.text();
+      } catch {
+        text = '';
+      }
+
+      if (response.functionCalls && typeof response.functionCalls === 'function') {
+        const sdkCalls = response.functionCalls() || [];
+        const mappedCalls: GeminiFunctionCall[] = [];
+        for (const call of sdkCalls) {
+          if (call?.name) {
+            mappedCalls.push({ name: call.name, args: call.args });
+          }
+        }
+        functionCalls = mappedCalls;
+      } else {
+        // Fallback for some SDK version shapes
+        const callParts = response.candidates?.[0]?.content?.parts?.filter((p) => p.functionCall);
+        if (callParts?.length) {
+          const mappedCalls: GeminiFunctionCall[] = [];
+          for (const part of callParts) {
+            const call = part.functionCall;
+            if (call?.name) {
+              mappedCalls.push({ name: call.name, args: call.args });
+            }
+          }
+          functionCalls = mappedCalls;
+        }
+      }
+
+      const tool_calls = functionCalls?.map((fc, index) => ({
+        id: `call_${index}`,
+        type: 'function' as const,
+        function: {
+          name: fc.name,
+          arguments: JSON.stringify(fc.args ?? {}),
+        },
+      }));
+
+      return {
+        content: text || null,
+        tool_calls: tool_calls?.length ? tool_calls : undefined,
+      };
+    } catch (error) {
+      this.logger.error('Google Gemini generateChat failed', error);
       throw error;
     }
   }
@@ -270,10 +422,7 @@ export class GoogleProvider implements IAIProvider {
       const genAI = new GoogleGenerativeAI(options.apiKey);
       const requestOptions = this.buildRequestOptions(options);
 
-      const model = genAI.getGenerativeModel(
-        { model: options.modelName },
-        requestOptions,
-      );
+      const model = genAI.getGenerativeModel({ model: options.modelName }, requestOptions);
 
       const result = await model.generateContent('Hello');
       const response = await result.response;
@@ -304,7 +453,11 @@ export class GoogleProvider implements IAIProvider {
       return { models: [], activeUrl: _options.apiUrl };
     }
 
-    if (_options.modelFetchMode === 'official' || _options.modelFetchMode === 'custom' || !_options.modelFetchMode) {
+    if (
+      _options.modelFetchMode === 'official' ||
+      _options.modelFetchMode === 'custom' ||
+      !_options.modelFetchMode
+    ) {
       const baseUrl = this.buildBaseUrl(_options);
       const paths = this.resolveModelListPaths(baseUrl, _options);
       const authModes = this.resolveAuthModes(_options);
@@ -323,7 +476,7 @@ export class GoogleProvider implements IAIProvider {
               throw new Error(`Gemini model list failed: ${response.status} ${errorText}`);
             }
 
-            const data = await response.json() as { models?: Array<{ name?: string }> };
+            const data = (await response.json()) as { models?: Array<{ name?: string }> };
             const models = (data.models || [])
               .map((model) => model.name || '')
               .filter(Boolean)
@@ -334,7 +487,9 @@ export class GoogleProvider implements IAIProvider {
               return { models, activeUrl: _options.apiUrl };
             }
           } catch (error) {
-            this.logger.warn(`Failed to fetch Gemini models via REST: ${error instanceof Error ? error.message : String(error)}`);
+            this.logger.warn(
+              `Failed to fetch Gemini models via REST: ${error instanceof Error ? error.message : String(error)}`,
+            );
           }
         }
       }

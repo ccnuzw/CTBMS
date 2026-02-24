@@ -1,5 +1,5 @@
 import React from 'react';
-import { Card, Transfer, Typography, Tooltip, Space, Tag } from 'antd';
+import { Card, Transfer, Typography, Tooltip, Space, Tag , theme } from 'antd';
 import { QuestionCircleOutlined, ToolOutlined } from '@ant-design/icons';
 import { AVAILABLE_TOOLS } from '../constants';
 
@@ -11,6 +11,7 @@ interface VisualToolPolicyBuilderProps {
 }
 
 export const VisualToolPolicyBuilder: React.FC<VisualToolPolicyBuilderProps> = ({ value, onChange }) => {
+  const { token } = theme.useToken();
     const allowedKeys = value?.allowedTools || [];
     const blockedKeys = value?.blockedTools || [];
 
@@ -37,7 +38,7 @@ export const VisualToolPolicyBuilder: React.FC<VisualToolPolicyBuilderProps> = (
                     <ToolOutlined />
                     <span>工具策略配置</span>
                     <Tooltip title="配置智能体允许和禁止使用的工具">
-                        <QuestionCircleOutlined style={{ color: '#999' }} />
+                        <QuestionCircleOutlined style={{ color: token.colorTextSecondary }} />
                     </Tooltip>
                 </Space>
             }

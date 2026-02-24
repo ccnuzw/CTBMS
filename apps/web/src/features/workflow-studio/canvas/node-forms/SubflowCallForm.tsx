@@ -118,18 +118,18 @@ export const SubflowCallForm: React.FC<SubflowCallFormProps> = ({ config, onChan
 
             {showManualFields ? (
                 <>
-                    <Form.Item label="子流程定义 ID (手动)">
+                    <Form.Item label="子流程节点别名 (手动)">
                         <Input
                             value={workflowDefinitionId}
                             onChange={(event) => onChange('workflowDefinitionId', event.target.value)}
-                            placeholder="workflowDefinitionId"
+                            placeholder="输入目标流程标识符"
                         />
                     </Form.Item>
-                    <Form.Item label="子流程版本 ID (手动)">
+                    <Form.Item label="指定版本标识 (手动，留空默认正式版)">
                         <Input
                             value={workflowVersionId}
                             onChange={(event) => onChange('workflowVersionId', event.target.value)}
-                            placeholder="workflowVersionId"
+                            placeholder="可选：输入特定版本号"
                         />
                     </Form.Item>
                 </>

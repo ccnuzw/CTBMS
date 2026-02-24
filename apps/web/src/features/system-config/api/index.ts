@@ -192,7 +192,7 @@ export const useAIConfig = (key: string = 'DEFAULT') => {
 export const useUpdateAIConfig = () => {
     const queryClient = useQueryClient();
     return useMutation({
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- mutation payload
+         
         mutationFn: async (data: any) => {
             const res = await fetch(`${API_BASE}/ai-models`, {
                 method: 'POST',

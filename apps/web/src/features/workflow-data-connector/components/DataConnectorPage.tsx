@@ -5,17 +5,24 @@ import {
   App,
   Button,
   Card,
+  Collapse,
+  Col,
   Drawer,
   Descriptions,
+  Divider,
+  Flex,
   Form,
   Input,
+  InputNumber,
   Modal,
   Popconfirm,
+  Row,
   Select,
   Space,
   Table,
   Tag,
   Typography,
+  theme,
 } from 'antd';
 import {
   CreateDataConnectorDto,
@@ -70,6 +77,11 @@ const connectorCategoryLabelMap: Record<string, string> = {
   REPORTING: '报表',
 };
 
+const categoryOptions = Object.entries(connectorCategoryLabelMap).map(([value, label]) => ({
+  label: `${label} (${value})`,
+  value,
+}));
+
 const getConnectorTypeLabel = (value?: DataConnectorType | null): string => {
   if (!value) return '-';
   return connectorTypeLabelMap[value] ?? value;
@@ -94,11 +106,367 @@ const parsePositiveInt = (value: string | null, fallback: number): number => {
   return Math.floor(parsed);
 };
 
+/**
+ * 将名称自动转换为 SNAKE_CASE 编码
+ * "内部价格数据" → "nei_bu_jia_ge_shu_ju" (简化拼音/直译)
+ * 如果名称全是英文，则直接 UPPER_SNAKE_CASE
+ */
+const slugifyConnectorCode = (name?: string): string => {
+  if (!name?.trim()) return '';
+  const trimmed = name.trim();
+  // If all ASCII - just snake_case it
+  if (/^[\x20-\x7e]+$/.test(trimmed)) {
+    return trimmed
+      .toUpperCase()
+      .replace(/[^A-Z0-9]+/g, '_')
+      .replace(/^_|_$/g, '');
+  }
+  // For Chinese/mixed, produce a simplified slug
+  return trimmed
+    .replace(/[\s-]+/g, '_')
+    .replace(/[^\w\u4e00-\u9fa5]+/g, '')
+    .toUpperCase();
+};
+
+/**
+ * 根据连接器类型，将结构化表单字段组装为 endpointConfig JSON
+ */
+const assembleEndpointConfig = (
+  type: DataConnectorType,
+  formValues: Record<string, unknown>,
+): Record<string, unknown> | undefined => {
+  const ep = (formValues.endpointConfig ?? {}) as Record<string, unknown>;
+  const clean = (obj: Record<string, unknown>) => {
+    const result: Record<string, unknown> = {};
+    for (const [key, val] of Object.entries(obj)) {
+      if (val !== undefined && val !== null && val !== '') {
+        result[key] = val;
+      }
+    }
+    return Object.keys(result).length > 0 ? result : undefined;
+  };
+
+  switch (type) {
+    case 'INTERNAL_DB':
+      return clean({
+        host: ep.host,
+        port: ep.port,
+        database: ep.database,
+        schema: ep.schema,
+        username: ep.username,
+        password: ep.password,
+        ssl: ep.ssl,
+      });
+    case 'REST_API':
+      return clean({
+        baseUrl: ep.baseUrl,
+        authType: ep.authType,
+        headerKey: ep.headerKey,
+        headerValue: ep.headerValue,
+        timeout: ep.timeout,
+      });
+    case 'EXCHANGE_API':
+      return clean({
+        baseUrl: ep.baseUrl,
+        apiKey: ep.apiKey,
+        secretKey: ep.secretKey,
+      });
+    case 'GRAPHQL':
+      return clean({
+        endpoint: ep.endpoint,
+        wsEndpoint: ep.wsEndpoint,
+        authHeader: ep.authHeader,
+      });
+    case 'FILE_IMPORT':
+      return clean({
+        filePath: ep.filePath,
+        format: ep.format,
+        delimiter: ep.delimiter,
+        encoding: ep.encoding,
+      });
+    case 'WEBHOOK':
+      return clean({
+        callbackUrl: ep.callbackUrl,
+        secretToken: ep.secretToken,
+        retryCount: ep.retryCount,
+        contentType: ep.contentType,
+      });
+    default:
+      return ep && Object.keys(ep).length > 0 ? ep : undefined;
+  }
+};
+
+/**
+ * 将 endpointConfig JSON 反解为嵌套表单字段
+ */
+const decomposeEndpointConfig = (config?: Record<string, unknown> | null) => {
+  if (!config) return {};
+  return { endpointConfig: config };
+};
+
+/**
+ * 根据连接器类型渲染结构化的端点配置表单字段
+ */
+const EndpointConfigFields: React.FC<{ type: DataConnectorType }> = ({ type }) => {
+  const { token } = theme.useToken();
+
+  const wrapperStyle: React.CSSProperties = {
+    backgroundColor: token.colorFillAlter,
+    padding: '16px 16px 0 16px',
+    borderRadius: 8,
+    marginBottom: 16,
+  };
+
+  switch (type) {
+    case 'INTERNAL_DB':
+      return (
+        <div style={wrapperStyle}>
+          <Typography.Text strong style={{ display: 'block', marginBottom: 12 }}>
+            🗄️ 数据库连接信息
+          </Typography.Text>
+          <Row gutter={16}>
+            <Col span={12}>
+              <Form.Item name={['endpointConfig', 'host']} label="主机地址">
+                <Input placeholder="如: localhost 或 192.168.1.100" />
+              </Form.Item>
+            </Col>
+            <Col span={6}>
+              <Form.Item name={['endpointConfig', 'port']} label="端口">
+                <InputNumber style={{ width: '100%' }} placeholder="5432" />
+              </Form.Item>
+            </Col>
+            <Col span={6}>
+              <Form.Item name={['endpointConfig', 'ssl']} label="SSL">
+                <Select
+                  allowClear
+                  options={[
+                    { label: '启用', value: true },
+                    { label: '禁用', value: false },
+                  ]}
+                  placeholder="默认禁用"
+                />
+              </Form.Item>
+            </Col>
+            <Col span={12}>
+              <Form.Item name={['endpointConfig', 'database']} label="数据库名">
+                <Input placeholder="如: ctbms_production" />
+              </Form.Item>
+            </Col>
+            <Col span={12}>
+              <Form.Item name={['endpointConfig', 'schema']} label="Schema">
+                <Input placeholder="如: public" />
+              </Form.Item>
+            </Col>
+            <Col span={12}>
+              <Form.Item name={['endpointConfig', 'username']} label="用户名">
+                <Input placeholder="数据库登录用户" />
+              </Form.Item>
+            </Col>
+            <Col span={12}>
+              <Form.Item name={['endpointConfig', 'password']} label="密码">
+                <Input.Password placeholder="数据库密码" />
+              </Form.Item>
+            </Col>
+          </Row>
+        </div>
+      );
+
+    case 'REST_API':
+      return (
+        <div style={wrapperStyle}>
+          <Typography.Text strong style={{ display: 'block', marginBottom: 12 }}>
+            🌐 REST API 接入信息
+          </Typography.Text>
+          <Row gutter={16}>
+            <Col span={16}>
+              <Form.Item name={['endpointConfig', 'baseUrl']} label="Base URL">
+                <Input placeholder="https://api.example.com/v1" />
+              </Form.Item>
+            </Col>
+            <Col span={8}>
+              <Form.Item name={['endpointConfig', 'timeout']} label="超时 (ms)">
+                <InputNumber style={{ width: '100%' }} placeholder="30000" min={0} />
+              </Form.Item>
+            </Col>
+            <Col span={8}>
+              <Form.Item name={['endpointConfig', 'authType']} label="认证方式">
+                <Select
+                  allowClear
+                  options={[
+                    { label: '无认证', value: 'NONE' },
+                    { label: 'Bearer Token', value: 'BEARER' },
+                    { label: 'API Key (Header)', value: 'API_KEY' },
+                    { label: 'Basic Auth', value: 'BASIC' },
+                  ]}
+                  placeholder="选择认证方式"
+                />
+              </Form.Item>
+            </Col>
+            <Col span={8}>
+              <Form.Item name={['endpointConfig', 'headerKey']} label="认证 Header 名">
+                <Input placeholder="如: Authorization" />
+              </Form.Item>
+            </Col>
+            <Col span={8}>
+              <Form.Item name={['endpointConfig', 'headerValue']} label="认证值 / Token">
+                <Input.Password placeholder="Bearer xxx 或 API Key" />
+              </Form.Item>
+            </Col>
+          </Row>
+        </div>
+      );
+
+    case 'EXCHANGE_API':
+      return (
+        <div style={wrapperStyle}>
+          <Typography.Text strong style={{ display: 'block', marginBottom: 12 }}>
+            📈 交易所 API 凭证
+          </Typography.Text>
+          <Row gutter={16}>
+            <Col span={24}>
+              <Form.Item name={['endpointConfig', 'baseUrl']} label="API Base URL">
+                <Input placeholder="https://api.exchange.com" />
+              </Form.Item>
+            </Col>
+            <Col span={12}>
+              <Form.Item name={['endpointConfig', 'apiKey']} label="API Key">
+                <Input.Password placeholder="Access Key" />
+              </Form.Item>
+            </Col>
+            <Col span={12}>
+              <Form.Item name={['endpointConfig', 'secretKey']} label="Secret Key">
+                <Input.Password placeholder="Secret Key" />
+              </Form.Item>
+            </Col>
+          </Row>
+        </div>
+      );
+
+    case 'GRAPHQL':
+      return (
+        <div style={wrapperStyle}>
+          <Typography.Text strong style={{ display: 'block', marginBottom: 12 }}>
+            🔗 GraphQL 接入信息
+          </Typography.Text>
+          <Row gutter={16}>
+            <Col span={12}>
+              <Form.Item name={['endpointConfig', 'endpoint']} label="GraphQL Endpoint">
+                <Input placeholder="https://api.example.com/graphql" />
+              </Form.Item>
+            </Col>
+            <Col span={12}>
+              <Form.Item name={['endpointConfig', 'wsEndpoint']} label="WebSocket Endpoint">
+                <Input placeholder="wss://api.example.com/graphql (可选)" />
+              </Form.Item>
+            </Col>
+            <Col span={24}>
+              <Form.Item name={['endpointConfig', 'authHeader']} label="认证 Header (完整值)">
+                <Input.Password placeholder="如: Bearer eyJhbGciOi..." />
+              </Form.Item>
+            </Col>
+          </Row>
+        </div>
+      );
+
+    case 'FILE_IMPORT':
+      return (
+        <div style={wrapperStyle}>
+          <Typography.Text strong style={{ display: 'block', marginBottom: 12 }}>
+            📁 文件导入配置
+          </Typography.Text>
+          <Row gutter={16}>
+            <Col span={16}>
+              <Form.Item name={['endpointConfig', 'filePath']} label="文件路径 / URL">
+                <Input placeholder="/data/imports/prices.csv 或 https://..." />
+              </Form.Item>
+            </Col>
+            <Col span={8}>
+              <Form.Item name={['endpointConfig', 'format']} label="文件格式">
+                <Select
+                  options={[
+                    { label: 'CSV', value: 'CSV' },
+                    { label: 'JSON', value: 'JSON' },
+                    { label: 'XLSX (Excel)', value: 'XLSX' },
+                    { label: 'Parquet', value: 'PARQUET' },
+                  ]}
+                  placeholder="选择格式"
+                />
+              </Form.Item>
+            </Col>
+            <Col span={8}>
+              <Form.Item name={['endpointConfig', 'delimiter']} label="分隔符 (CSV)">
+                <Input placeholder="默认: ," />
+              </Form.Item>
+            </Col>
+            <Col span={8}>
+              <Form.Item name={['endpointConfig', 'encoding']} label="编码">
+                <Select
+                  allowClear
+                  options={[
+                    { label: 'UTF-8', value: 'UTF-8' },
+                    { label: 'GBK', value: 'GBK' },
+                    { label: 'GB2312', value: 'GB2312' },
+                    { label: 'ISO-8859-1', value: 'ISO-8859-1' },
+                  ]}
+                  placeholder="默认 UTF-8"
+                />
+              </Form.Item>
+            </Col>
+          </Row>
+        </div>
+      );
+
+    case 'WEBHOOK':
+      return (
+        <div style={wrapperStyle}>
+          <Typography.Text strong style={{ display: 'block', marginBottom: 12 }}>
+            🔔 Webhook 回调配置
+          </Typography.Text>
+          <Row gutter={16}>
+            <Col span={16}>
+              <Form.Item name={['endpointConfig', 'callbackUrl']} label="回调 URL">
+                <Input placeholder="https://your-server.com/webhook/receiver" />
+              </Form.Item>
+            </Col>
+            <Col span={8}>
+              <Form.Item name={['endpointConfig', 'retryCount']} label="重试次数">
+                <InputNumber style={{ width: '100%' }} min={0} max={10} placeholder="3" />
+              </Form.Item>
+            </Col>
+            <Col span={12}>
+              <Form.Item name={['endpointConfig', 'secretToken']} label="签名密钥 (Secret)">
+                <Input.Password placeholder="用于校验 Webhook 签名" />
+              </Form.Item>
+            </Col>
+            <Col span={12}>
+              <Form.Item name={['endpointConfig', 'contentType']} label="Content-Type">
+                <Select
+                  allowClear
+                  options={[
+                    { label: 'application/json', value: 'application/json' },
+                    { label: 'application/x-www-form-urlencoded', value: 'application/x-www-form-urlencoded' },
+                  ]}
+                  placeholder="默认 JSON"
+                />
+              </Form.Item>
+            </Col>
+          </Row>
+        </div>
+      );
+
+    default:
+      return null;
+  }
+};
+
 export const DataConnectorPage: React.FC = () => {
   const { message } = App.useApp();
+  const { token } = theme.useToken();
   const [form] = Form.useForm<CreateDataConnectorDto>();
   const [editForm] = Form.useForm<{
     connectorName: string;
+    connectorType?: DataConnectorType;
+    endpointConfig?: Record<string, unknown>;
     endpointConfigText?: string;
     isActive?: boolean;
   }>();
@@ -118,6 +486,7 @@ export const DataConnectorPage: React.FC = () => {
   const [pageSize, setPageSize] = useState(parsePositiveInt(searchParams.get('pageSize'), 20));
   const [selectedConnector, setSelectedConnector] = useState<DataConnectorDto | null>(null);
   const [editVisible, setEditVisible] = useState(false);
+  const [isCodeCustomized, setIsCodeCustomized] = useState(false);
 
   const { data, isLoading } = useDataConnectors({
     keyword,
@@ -131,17 +500,21 @@ export const DataConnectorPage: React.FC = () => {
   const updateMutation = useUpdateDataConnector();
 
   React.useEffect(() => {
-    const next = new URLSearchParams();
+    const next = new URLSearchParams(searchParams);
     if (keyword) {
       next.set('keyword', keyword);
+    } else {
+      next.delete('keyword');
     }
     if (isActiveFilter !== undefined) {
       next.set('isActive', String(isActiveFilter));
+    } else {
+      next.delete('isActive');
     }
     next.set('page', String(page));
     next.set('pageSize', String(pageSize));
     setSearchParams(next, { replace: true });
-  }, [isActiveFilter, keyword, page, pageSize, setSearchParams]);
+  }, [isActiveFilter, keyword, page, pageSize, searchParams, setSearchParams]);
 
   const columns = useMemo<ColumnsType<DataConnectorDto>>(
     () => [
@@ -190,11 +563,15 @@ export const DataConnectorPage: React.FC = () => {
                 setSelectedConnector(record);
                 editForm.setFieldsValue({
                   connectorName: record.connectorName,
+                  connectorType: record.connectorType,
+                  ...decomposeEndpointConfig(
+                    record.endpointConfig as Record<string, unknown> | null,
+                  ),
                   endpointConfigText: record.endpointConfig
                     ? JSON.stringify(record.endpointConfig, null, 2)
                     : '{}',
                   isActive: record.isActive,
-                });
+                } as Parameters<typeof editForm.setFieldsValue>[0]);
                 setEditVisible(true);
               }}
             >
@@ -239,27 +616,17 @@ export const DataConnectorPage: React.FC = () => {
         ),
       },
     ],
-    [deleteMutation, healthMutation, message],
+    [deleteMutation, editForm, healthMutation, message],
   );
 
   const handleCreate = async () => {
     try {
       const values = await form.validateFields();
-      let endpointConfig: Record<string, unknown> | undefined;
-
-      if (values.endpointConfig) {
-        if (typeof values.endpointConfig === 'string') {
-          try {
-            endpointConfig = JSON.parse(values.endpointConfig);
-          } catch {
-            message.error('Endpoint配置必须是合法 JSON');
-            return;
-          }
-        } else {
-          // It's already an object (from EXCHANGE_API fields)
-          endpointConfig = values.endpointConfig as Record<string, unknown>;
-        }
-      }
+      const connectorType = values.connectorType;
+      const endpointConfig = assembleEndpointConfig(
+        connectorType,
+        values as unknown as Record<string, unknown>,
+      );
 
       const payload: CreateDataConnectorDto = {
         ...values,
@@ -269,6 +636,7 @@ export const DataConnectorPage: React.FC = () => {
       message.success('连接器创建成功');
       setVisible(false);
       form.resetFields();
+      setIsCodeCustomized(false);
     } catch (error) {
       message.error(getErrorMessage(error) || '连接器创建失败');
     }
@@ -280,15 +648,11 @@ export const DataConnectorPage: React.FC = () => {
     }
     try {
       const values = await editForm.validateFields();
-      let endpointConfig: Record<string, unknown> | undefined;
-      if (values.endpointConfigText?.trim()) {
-        try {
-          endpointConfig = JSON.parse(values.endpointConfigText) as Record<string, unknown>;
-        } catch {
-          message.error('Endpoint配置必须是合法 JSON');
-          return;
-        }
-      }
+      const connectorType = values.connectorType || selectedConnector.connectorType;
+      const endpointConfig = assembleEndpointConfig(
+        connectorType,
+        values as unknown as Record<string, unknown>,
+      );
 
       await updateMutation.mutateAsync({
         id: selectedConnector.id,
@@ -361,10 +725,59 @@ export const DataConnectorPage: React.FC = () => {
         />
       </Space>
 
+      {/* ========== 新建连接器 ========== */}
       <Modal
-        title="新建连接器"
+        title={
+          <Flex align="center" gap="middle">
+            <span>新建数据连接器</span>
+            <Space size="small">
+              <Button
+                size="small"
+                type="primary"
+                ghost
+                onClick={() => {
+                  form.setFieldsValue({
+                    connectorType: 'REST_API',
+                    ownerType: 'SYSTEM',
+                  });
+                }}
+              >
+                REST 接口
+              </Button>
+              <Button
+                size="small"
+                type="primary"
+                ghost
+                onClick={() => {
+                  form.setFieldsValue({
+                    connectorType: 'INTERNAL_DB',
+                    ownerType: 'SYSTEM',
+                  });
+                }}
+              >
+                数据库
+              </Button>
+              <Button
+                size="small"
+                type="primary"
+                ghost
+                onClick={() => {
+                  form.setFieldsValue({
+                    connectorType: 'WEBHOOK',
+                    ownerType: 'SYSTEM',
+                  });
+                }}
+              >
+                Webhook
+              </Button>
+            </Space>
+          </Flex>
+        }
         open={visible}
-        onCancel={() => setVisible(false)}
+        onCancel={() => {
+          setVisible(false);
+          setIsCodeCustomized(false);
+        }}
         onOk={handleCreate}
         confirmLoading={createMutation.isPending}
         width={760}
@@ -373,63 +786,106 @@ export const DataConnectorPage: React.FC = () => {
           layout="vertical"
           form={form}
           initialValues={{
-            connectorType: 'INTERNAL_DB',
+            connectorType: 'REST_API',
             ownerType: 'SYSTEM',
           }}
-        >
-          <Form.Item name="connectorCode" label="编码" rules={[{ required: true }]}>
-            <Input placeholder="如 INTERNAL_PRICE_DATA" />
-          </Form.Item>
-          <Form.Item name="connectorName" label="名称" rules={[{ required: true }]}>
-            <Input />
-          </Form.Item>
-          <Form.Item name="connectorType" label="类型" rules={[{ required: true }]}>
-            <Select options={typeOptions.map((item) => ({ label: getConnectorTypeLabel(item), value: item }))} />
-          </Form.Item>
-          <Form.Item name="category" label="分类" rules={[{ required: true }]}>
-            <Input placeholder="如 MARKET_INTEL（市场情报）" />
-          </Form.Item>
-          <Form.Item name="ownerType" label="所有者类型" rules={[{ required: true }]}>
-            <Select options={ownerTypeOptions.map((item) => ({ label: item, value: item }))} />
-          </Form.Item>
-          <Form.Item name="fallbackConnectorCode" label="Fallback连接器编码">
-            <Input />
-          </Form.Item>
-          <Form.Item
-            noStyle
-            shouldUpdate={(prev, curr) => prev.connectorType !== curr.connectorType}
-          >
-            {({ getFieldValue }) => {
-              const type = getFieldValue('connectorType');
-              if (type === 'EXCHANGE_API') {
-                return (
-                  <>
-                    <Form.Item name={['endpointConfig', 'baseUrl']} label="API Base URL">
-                      <Input placeholder="https://api.exchange.com" />
-                    </Form.Item>
-                    <Form.Item name={['endpointConfig', 'apiKey']} label="API Key">
-                      <Input.Password placeholder="Access Key" />
-                    </Form.Item>
-                    <Form.Item name={['endpointConfig', 'secretKey']} label="Secret Key">
-                      <Input.Password placeholder="Secret Key" />
-                    </Form.Item>
-                  </>
-                );
+          onValuesChange={(changed) => {
+            const changedName = changed.connectorName as string | undefined;
+            if (changedName !== undefined && !isCodeCustomized) {
+              const generatedCode = slugifyConnectorCode(changedName);
+              form.setFieldsValue({ connectorCode: generatedCode || undefined });
+            }
+            const changedCode = changed.connectorCode as string | undefined;
+            if (changedCode !== undefined) {
+              const generatedCode = slugifyConnectorCode(form.getFieldValue('connectorName'));
+              const normalized = changedCode.trim();
+              if (!normalized) {
+                setIsCodeCustomized(false);
+              } else {
+                setIsCodeCustomized(Boolean(generatedCode && normalized !== generatedCode));
               }
-              return (
-                <Form.Item name="endpointConfig" label="Endpoint配置(JSON)">
-                  <Input.TextArea
-                    rows={3}
-                    placeholder={'例如 {"url":"https://example.com/health"}'}
-                  />
-                </Form.Item>
-              );
+            }
+          }}
+        >
+          <Row gutter={16}>
+            <Col span={12}>
+              <Form.Item name="connectorName" label="连接器名称 (中文)" rules={[{ required: true }]}>
+                <Input placeholder="如：内部价格数据库" />
+              </Form.Item>
+              <Form.Item
+                name="connectorCode"
+                label={
+                  <span style={{ color: token.colorTextSecondary, fontSize: 12, fontWeight: 'normal' }}>
+                    唯一编码 (根据名称自动生成)
+                  </span>
+                }
+                rules={[{ required: true }]}
+                style={{ marginTop: -16, marginBottom: 16 }}
+              >
+                <Input
+                  bordered={false}
+                  style={{
+                    color: token.colorTextDisabled,
+                    padding: 0,
+                    fontSize: 12,
+                    transform: 'translateY(-10px)',
+                  }}
+                />
+              </Form.Item>
+            </Col>
+            <Col span={12}>
+              <Form.Item name="connectorType" label="接入类型" rules={[{ required: true }]}>
+                <Select
+                  options={typeOptions.map((item) => ({
+                    label: getConnectorTypeLabel(item),
+                    value: item,
+                  }))}
+                />
+              </Form.Item>
+            </Col>
+          </Row>
+
+          <Row gutter={16}>
+            <Col span={12}>
+              <Form.Item name="category" label="业务分类" rules={[{ required: true }]}>
+                <Select
+                  showSearch
+                  options={categoryOptions}
+                  placeholder="选择业务分类"
+                  filterOption={(input, option) =>
+                    (option?.label ?? '').toLowerCase().includes(input.toLowerCase())
+                  }
+                />
+              </Form.Item>
+            </Col>
+            <Col span={12}>
+              <Form.Item name="ownerType" label="所有者" rules={[{ required: true }]}>
+                <Select options={ownerTypeOptions.map((item) => ({ label: item, value: item }))} />
+              </Form.Item>
+            </Col>
+          </Row>
+
+          <Form.Item noStyle shouldUpdate={(prev, curr) => prev.connectorType !== curr.connectorType}>
+            {({ getFieldValue }) => {
+              const type = getFieldValue('connectorType') as DataConnectorType;
+              return <EndpointConfigFields type={type} />;
             }}
           </Form.Item>
 
+          <Collapse
+            ghost
+            style={{ backgroundColor: token.colorFillQuaternary, borderRadius: 8 }}
+          >
+            <Collapse.Panel key="advanced" header="⚙️ 高级配置 (按需展开)">
+              <Form.Item name="fallbackConnectorCode" label="Fallback 连接器编码">
+                <Input placeholder="当主连接器不可用时自动切换" />
+              </Form.Item>
+            </Collapse.Panel>
+          </Collapse>
         </Form>
       </Modal>
 
+      {/* ========== 编辑连接器 ========== */}
       <Modal
         title={`编辑连接器 - ${selectedConnector?.connectorCode || ''}`}
         open={editVisible}
@@ -450,12 +906,35 @@ export const DataConnectorPage: React.FC = () => {
               ]}
             />
           </Form.Item>
-          <Form.Item name="endpointConfigText" label="Endpoint配置(JSON)">
-            <Input.TextArea rows={4} />
+
+          <Form.Item
+            noStyle
+            shouldUpdate={(prev, curr) => prev.connectorType !== curr.connectorType}
+          >
+            {({ getFieldValue }) => {
+              const type = (getFieldValue('connectorType') ||
+                selectedConnector?.connectorType) as DataConnectorType;
+              if (type) {
+                return <EndpointConfigFields type={type} />;
+              }
+              return null;
+            }}
           </Form.Item>
+
+          <Collapse
+            ghost
+            style={{ backgroundColor: token.colorFillQuaternary, borderRadius: 8 }}
+          >
+            <Collapse.Panel key="raw" header="📝 原始 JSON 编辑 (高级)">
+              <Form.Item name="endpointConfigText" label="Endpoint配置(JSON)">
+                <Input.TextArea rows={4} />
+              </Form.Item>
+            </Collapse.Panel>
+          </Collapse>
         </Form>
       </Modal>
 
+      {/* ========== 详情抽屉 ========== */}
       <Drawer
         title="连接器详情"
         width={820}

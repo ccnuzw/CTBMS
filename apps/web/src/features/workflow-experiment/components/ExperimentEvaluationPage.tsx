@@ -13,6 +13,7 @@ import {
   Table,
   Tag,
   Typography,
+  theme,
 } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import { useSearchParams } from 'react-router-dom';
@@ -38,10 +39,6 @@ const statusConfig: Record<string, { color: string; label: string }> = {
   ABORTED: { color: 'error', label: '已中止' },
 };
 
-const variantColors = {
-  A: '#1677ff',
-  B: '#52c41a',
-};
 
 const prepareChartData = (runs: ExperimentRunDto[]) => {
   const sorted = [...runs].sort(
@@ -57,6 +54,11 @@ const prepareChartData = (runs: ExperimentRunDto[]) => {
 
 export const ExperimentEvaluationPage: React.FC = () => {
   const { message } = App.useApp();
+  const { token } = theme.useToken();
+  const variantColors = {
+    A: token.colorPrimary,
+    B: token.colorSuccess,
+  };
   const [searchParams, setSearchParams] = useSearchParams();
   const [selectedExperimentId, setSelectedExperimentId] = useState<string | undefined>();
 

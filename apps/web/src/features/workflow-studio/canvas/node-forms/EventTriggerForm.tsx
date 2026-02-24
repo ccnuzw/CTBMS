@@ -9,34 +9,35 @@ interface FormProps {
 export const EventTriggerForm: React.FC<FormProps> = ({ config, onChange }) => {
     return (
         <Form layout="vertical" size="small">
-            <Form.Item label="事件类型 (Event Type)" required>
+            <Form.Item label="监听事件类型" required>
                 <Select
                     value={config.eventType as string}
                     onChange={(v) => onChange('eventType', v)}
                     options={[
-                        { label: '市场异动 (Market Anomaly)', value: 'MARKET_ANOMALY' },
-                        { label: '新闻舆情 (News Alert)', value: 'NEWS_ALERT' },
-                        { label: '系统通知 (System Notification)', value: 'SYSTEM_NOTIFICATION' },
-                        { label: '订单状态 (Order Status)', value: 'ORDER_STATUS' },
+                        { label: '外部市场异动', value: 'MARKET_ANOMALY' },
+                        { label: '外部新闻舆情', value: 'NEWS_ALERT' },
+                        { label: '内部系统通知', value: 'SYSTEM_NOTIFICATION' },
+                        { label: '内部订单状态变更', value: 'ORDER_STATUS' },
                     ]}
-                    placeholder="选择事件类型"
+                    placeholder="选择触发该工作流的事件类型"
                 />
             </Form.Item>
 
-            <Form.Item label="订阅主题 (Topic)">
+            <Form.Item label="精准过滤主题 (可选)" help="例如仅监听市场异动大类下的玉米分类">
                 <Input
                     value={config.topic as string}
                     onChange={(e) => onChange('topic', e.target.value)}
-                    placeholder="例如: market.us.corn"
+                    placeholder="例如: market.agri.corn"
                 />
             </Form.Item>
 
-            <Form.Item label="过滤条件 (Filter Expression)">
+            <Form.Item label="条件白名单 (可选)" help="仅当事件承载的数据符合下方条件时触发工作流">
                 <Input.TextArea
                     value={config.filter as string}
                     onChange={(e) => onChange('filter', e.target.value)}
-                    rows={2}
-                    placeholder="JSONPath 或简易表达式"
+                    rows={3}
+                    style={{ fontFamily: 'monospace' }}
+                    placeholder="输入匹配条件表达式，例如: data.price > 1000"
                 />
             </Form.Item>
         </Form>

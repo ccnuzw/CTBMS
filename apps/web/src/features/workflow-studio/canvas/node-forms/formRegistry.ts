@@ -4,6 +4,8 @@ import { ManualTriggerForm } from './ManualTriggerForm';
 import { ApiTriggerForm } from './ApiTriggerForm';
 import { EventTriggerForm } from './EventTriggerForm'; // New
 import { MarketDataFetchForm } from './MarketDataFetchForm';
+import { KnowledgeFetchForm } from './KnowledgeFetchForm';
+import { ReportFetchForm } from './ReportFetchForm';
 import { RulePackEvalForm } from './RulePackEvalForm';
 import { RuleEvalForm } from './RuleEvalForm'; // New
 import { SingleAgentForm } from './SingleAgentForm';
@@ -32,6 +34,8 @@ export const NODE_FORM_REGISTRY: Record<string, React.FC<FormProps>> = {
     'event-trigger': EventTriggerForm, // New
     'data-fetch': MarketDataFetchForm,
     'market-data-fetch': MarketDataFetchForm,
+    'knowledge-fetch': KnowledgeFetchForm,
+    'report-fetch': ReportFetchForm,
     'rule-pack-eval': RulePackEvalForm,
     'rule-eval': RuleEvalForm,
     'agent-call': SingleAgentForm,

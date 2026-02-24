@@ -24,19 +24,19 @@ export const ContextBuilderForm: React.FC<FormProps> = ({ config, onChange }) =>
                 />
             </Form.Item>
 
-            <Form.Item label="输出格式">
+            <Form.Item label="最终打包格式">
                 <Select
                     value={config.format as string ?? 'MARKDOWN'}
                     onChange={(v) => onChange('format', v)}
                     options={[
-                        { label: 'Markdown 文本', value: 'MARKDOWN' },
-                        { label: 'JSON 对象', value: 'JSON' },
-                        { label: '纯文本', value: 'TEXT' },
+                        { label: 'Markdown 纯文本', value: 'MARKDOWN' },
+                        { label: '结构化 JSON', value: 'JSON' },
+                        { label: '系统原始文本', value: 'TEXT' },
                     ]}
                 />
             </Form.Item>
 
-            <Form.Item label="最大 Token 数">
+            <Form.Item label="单次最大打包容量 (Tokens)" help="防止总文案过长超出大模型上下文上限">
                 <InputNumber
                     value={config.maxTokens as number ?? 2000}
                     onChange={(v) => onChange('maxTokens', v)}

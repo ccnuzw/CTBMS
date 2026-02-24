@@ -245,7 +245,7 @@ export const useDeleteTask = () => {
 export const useSubmitTask = () => {
     const queryClient = useQueryClient();
     return useMutation({
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- mutation payload
+         
         mutationFn: async ({ id, operatorId, data }: { id: string; operatorId: string; data?: any }) => {
             const { data: res } = await apiClient.post<IntelTaskResponse>(`${BASE_URL}/${id}/submit`, { operatorId, data });
             return res;

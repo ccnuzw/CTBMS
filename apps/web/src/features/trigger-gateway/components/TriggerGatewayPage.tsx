@@ -17,7 +17,9 @@ import {
   Tabs,
   Tag,
   Typography,
+  theme,
 } from 'antd';
+import cronstrue from 'cronstrue/i18n';
 import type { TriggerConfigDto, CreateTriggerConfigDto } from '@packages/types';
 import { useSearchParams } from 'react-router-dom';
 import { getErrorMessage } from '../../../api/client';
@@ -58,6 +60,38 @@ const logStatusColorMap: Record<string, string> = {
   TIMEOUT: 'volcano',
 };
 
+/**
+ * 将 Cron 表达式翻译为中文人话
+ */
+const describeCron = (expression?: string): string | null => {
+  if (!expression?.trim()) return null;
+  try {
+    return cronstrue.toString(expression.trim(), { locale: 'zh_CN' });
+  } catch {
+    return null;
+  }
+};
+
+/** 常用 Cron 快捷预设 */
+const CRON_PRESETS = [
+  { label: '每小时', value: '0 0 * * * ?' },
+  { label: '每天 8:00', value: '0 0 8 * * ?' },
+  { label: '8:00 和 20:00', value: '0 0 8,20 * * ?' },
+  { label: '工作日 9:00', value: '0 0 9 ? * MON-FRI' },
+  { label: '每周一', value: '0 0 0 ? * MON' },
+  { label: '每月1号', value: '0 0 0 1 * ?' },
+  { label: '每5分钟', value: '0 */5 * * * ?' },
+];
+
+const TRIGGER_QUERY_KEY = {
+  tab: 'triggerTab',
+  keyword: 'triggerKeyword',
+  triggerType: 'triggerTypeFilter',
+  status: 'triggerStatusFilter',
+  page: 'triggerPage',
+  pageSize: 'triggerPageSize',
+} as const;
+
 const parsePositiveInt = (value: string | null, fallback: number): number => {
   if (!value) return fallback;
   const parsed = Number(value);
@@ -67,38 +101,65 @@ const parsePositiveInt = (value: string | null, fallback: number): number => {
 
 export const TriggerGatewayPage: React.FC = () => {
   const { message } = App.useApp();
+  const { token } = theme.useToken();
   const [form] = Form.useForm<CreateTriggerConfigDto>();
   const [searchParams, setSearchParams] = useSearchParams();
-  const [activeTab, setActiveTab] = useState<string>(searchParams.get('tab') || 'configs');
-  const [keywordInput, setKeywordInput] = useState(searchParams.get('keyword')?.trim() || '');
+  const [activeTab, setActiveTab] = useState<string>(() => {
+    const currentTab = searchParams.get(TRIGGER_QUERY_KEY.tab);
+    if (currentTab === 'configs' || currentTab === 'logs') {
+      return currentTab;
+    }
+    const legacyTab = searchParams.get('tab');
+    if (legacyTab === 'configs' || legacyTab === 'logs') {
+      return legacyTab;
+    }
+    return 'configs';
+  });
+  const [keywordInput, setKeywordInput] = useState(
+    searchParams.get(TRIGGER_QUERY_KEY.keyword)?.trim() || '',
+  );
   const [keyword, setKeyword] = useState<string | undefined>(
-    searchParams.get('keyword')?.trim() || undefined,
+    searchParams.get(TRIGGER_QUERY_KEY.keyword)?.trim() || undefined,
   );
   const [typeFilter, setTypeFilter] = useState<string | undefined>(
-    searchParams.get('triggerType') || undefined,
+    searchParams.get(TRIGGER_QUERY_KEY.triggerType) || undefined,
   );
   const [statusFilter, setStatusFilter] = useState<string | undefined>(
-    searchParams.get('status') || undefined,
+    searchParams.get(TRIGGER_QUERY_KEY.status) || undefined,
   );
   const [createVisible, setCreateVisible] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [page, setPage] = useState(parsePositiveInt(searchParams.get('page'), 1));
-  const [pageSize, setPageSize] = useState(parsePositiveInt(searchParams.get('pageSize'), 20));
+  const [page, setPage] = useState(parsePositiveInt(searchParams.get(TRIGGER_QUERY_KEY.page), 1));
+  const [pageSize, setPageSize] = useState(
+    parsePositiveInt(searchParams.get(TRIGGER_QUERY_KEY.pageSize), 20),
+  );
   const [logPage, setLogPage] = useState(1);
   const [logPageSize, setLogPageSize] = useState(50);
 
   const selectedTriggerType = Form.useWatch('triggerType', form);
 
   React.useEffect(() => {
-    const next = new URLSearchParams();
-    next.set('tab', activeTab);
-    if (keyword) next.set('keyword', keyword);
-    if (typeFilter) next.set('triggerType', typeFilter);
-    if (statusFilter) next.set('status', statusFilter);
-    next.set('page', String(page));
-    next.set('pageSize', String(pageSize));
+    const next = new URLSearchParams(searchParams);
+    next.set(TRIGGER_QUERY_KEY.tab, activeTab);
+    if (keyword) {
+      next.set(TRIGGER_QUERY_KEY.keyword, keyword);
+    } else {
+      next.delete(TRIGGER_QUERY_KEY.keyword);
+    }
+    if (typeFilter) {
+      next.set(TRIGGER_QUERY_KEY.triggerType, typeFilter);
+    } else {
+      next.delete(TRIGGER_QUERY_KEY.triggerType);
+    }
+    if (statusFilter) {
+      next.set(TRIGGER_QUERY_KEY.status, statusFilter);
+    } else {
+      next.delete(TRIGGER_QUERY_KEY.status);
+    }
+    next.set(TRIGGER_QUERY_KEY.page, String(page));
+    next.set(TRIGGER_QUERY_KEY.pageSize, String(pageSize));
     setSearchParams(next, { replace: true });
-  }, [activeTab, keyword, typeFilter, statusFilter, page, pageSize, setSearchParams]);
+  }, [activeTab, keyword, typeFilter, statusFilter, page, pageSize, searchParams, setSearchParams]);
 
   const { data, isLoading } = useTriggerConfigs({
     keyword,
@@ -189,7 +250,7 @@ export const TriggerGatewayPage: React.FC = () => {
           <Typography.Paragraph copyable={{ text: curlCommand }}>
             <pre
               style={{
-                background: '#f5f5f5',
+                background: token.colorBgLayout,
                 padding: 12,
                 borderRadius: 4,
                 overflowX: 'auto',
@@ -219,9 +280,7 @@ export const TriggerGatewayPage: React.FC = () => {
         title: '状态',
         dataIndex: 'status',
         width: 100,
-        render: (value: string) => (
-          <Tag color={statusColorMap[value] || 'default'}>{value}</Tag>
-        ),
+        render: (value: string) => <Tag color={statusColorMap[value] || 'default'}>{value}</Tag>,
       },
       {
         title: '最后触发',
@@ -324,9 +383,7 @@ export const TriggerGatewayPage: React.FC = () => {
         title: '状态',
         dataIndex: 'status',
         width: 100,
-        render: (value: string) => (
-          <Tag color={logStatusColorMap[value] || 'default'}>{value}</Tag>
-        ),
+        render: (value: string) => <Tag color={logStatusColorMap[value] || 'default'}>{value}</Tag>,
       },
       {
         title: '耗时(ms)',
@@ -446,29 +503,44 @@ export const TriggerGatewayPage: React.FC = () => {
     />
   );
 
-  const renderCronConfigDetail = (config: Record<string, unknown>) => (
-    <Descriptions column={2} bordered size="small">
-      <Descriptions.Item label="Cron 表达式">{String(config.cronExpression ?? '-')}</Descriptions.Item>
-      <Descriptions.Item label="时区">{String(config.timezone ?? '-')}</Descriptions.Item>
-      <Descriptions.Item label="最大并发">{String(config.maxConcurrent ?? '-')}</Descriptions.Item>
-      <Descriptions.Item label="补偿遗漏">{config.catchUpMissed ? '是' : '否'}</Descriptions.Item>
-      {Boolean(config.startDate) && (
-        <Descriptions.Item label="开始时间">
-          {dayjs(String(config.startDate)).format('YYYY-MM-DD HH:mm:ss')}
+  const renderCronConfigDetail = (config: Record<string, unknown>) => {
+    const cronExpr = String(config.cronExpression ?? '');
+    const description = describeCron(cronExpr);
+    return (
+      <Descriptions column={2} bordered size="small">
+        <Descriptions.Item label="Cron 表达式">
+          <Space direction="vertical" size={2}>
+            <Typography.Text code>{cronExpr || '-'}</Typography.Text>
+            {description && (
+              <Typography.Text type="success" style={{ fontSize: 12 }}>
+                📅 {description}
+              </Typography.Text>
+            )}
+          </Space>
         </Descriptions.Item>
-      )}
-      {Boolean(config.endDate) && (
-        <Descriptions.Item label="结束时间">
-          {dayjs(String(config.endDate)).format('YYYY-MM-DD HH:mm:ss')}
-        </Descriptions.Item>
-      )}
-    </Descriptions>
-  );
+        <Descriptions.Item label="时区">{String(config.timezone ?? '-')}</Descriptions.Item>
+        <Descriptions.Item label="最大并发">{String(config.maxConcurrent ?? '-')}</Descriptions.Item>
+        <Descriptions.Item label="补偿遗漏">{config.catchUpMissed ? '是' : '否'}</Descriptions.Item>
+        {Boolean(config.startDate) && (
+          <Descriptions.Item label="开始时间">
+            {dayjs(String(config.startDate)).format('YYYY-MM-DD HH:mm:ss')}
+          </Descriptions.Item>
+        )}
+        {Boolean(config.endDate) && (
+          <Descriptions.Item label="结束时间">
+            {dayjs(String(config.endDate)).format('YYYY-MM-DD HH:mm:ss')}
+          </Descriptions.Item>
+        )}
+      </Descriptions>
+    );
+  };
 
   const renderApiConfigDetail = (config: Record<string, unknown>) => (
     <Descriptions column={2} bordered size="small">
       <Descriptions.Item label="认证方式">{String(config.authMethod ?? '-')}</Descriptions.Item>
-      <Descriptions.Item label="速率限制">{String(config.rateLimitPerMinute ?? '-')}/分钟</Descriptions.Item>
+      <Descriptions.Item label="速率限制">
+        {String(config.rateLimitPerMinute ?? '-')}/分钟
+      </Descriptions.Item>
       {Boolean(config.allowedIps) && (
         <Descriptions.Item label="IP 白名单" span={2}>
           {Array.isArray(config.allowedIps) ? config.allowedIps.join(', ') : '-'}
@@ -529,7 +601,11 @@ export const TriggerGatewayPage: React.FC = () => {
           form={form}
           initialValues={{ triggerType: 'SCHEDULE' }}
         >
-          <Form.Item name="workflowDefinitionId" label="关联流程定义 ID" rules={[{ required: true }]}>
+          <Form.Item
+            name="workflowDefinitionId"
+            label="关联流程定义 ID"
+            rules={[{ required: true }]}
+          >
             <Input placeholder="输入 WorkflowDefinition UUID" />
           </Form.Item>
           <Form.Item name="name" label="触发器名称" rules={[{ required: true }]}>
@@ -539,13 +615,35 @@ export const TriggerGatewayPage: React.FC = () => {
             <Input.TextArea rows={2} />
           </Form.Item>
           <Form.Item name="triggerType" label="触发类型" rules={[{ required: true }]}>
-            <Select
-              options={triggerTypeOptions.map((item) => ({ label: item, value: item }))}
-            />
+            <Select options={triggerTypeOptions.map((item) => ({ label: item, value: item }))} />
           </Form.Item>
 
           {selectedTriggerType === 'SCHEDULE' && (
             <>
+              <div style={{ marginBottom: 8 }}>
+                <Typography.Text type="secondary" style={{ fontSize: 12, marginRight: 8 }}>
+                  常用频率：
+                </Typography.Text>
+                <Space size={4} wrap>
+                  {CRON_PRESETS.map((preset) => (
+                    <Tag
+                      key={preset.label}
+                      color="blue"
+                      style={{ cursor: 'pointer' }}
+                      onClick={() => {
+                        form.setFieldsValue({
+                          cronConfig: {
+                            ...form.getFieldValue('cronConfig'),
+                            cronExpression: preset.value,
+                          },
+                        });
+                      }}
+                    >
+                      {preset.label}
+                    </Tag>
+                  ))}
+                </Space>
+              </div>
               <Form.Item
                 name={['cronConfig', 'cronExpression']}
                 label="Cron 表达式"
@@ -553,7 +651,35 @@ export const TriggerGatewayPage: React.FC = () => {
               >
                 <Input placeholder="如: 0 0 8 * * ? (每天8点)" />
               </Form.Item>
-              <Form.Item name={['cronConfig', 'timezone']} label="时区" initialValue="Asia/Shanghai">
+              <Form.Item noStyle shouldUpdate>
+                {({ getFieldValue }) => {
+                  const cronExpr = getFieldValue(['cronConfig', 'cronExpression']);
+                  const description = describeCron(cronExpr);
+                  if (!cronExpr?.trim()) return null;
+                  return (
+                    <div style={{
+                      marginTop: -16,
+                      marginBottom: 16,
+                      paddingLeft: 2,
+                    }}>
+                      {description ? (
+                        <Typography.Text type="success" style={{ fontSize: 13 }}>
+                          📅 {description}
+                        </Typography.Text>
+                      ) : (
+                        <Typography.Text type="danger" style={{ fontSize: 13 }}>
+                          ⚠️ Cron 表达式格式错误
+                        </Typography.Text>
+                      )}
+                    </div>
+                  );
+                }}
+              </Form.Item>
+              <Form.Item
+                name={['cronConfig', 'timezone']}
+                label="时区"
+                initialValue="Asia/Shanghai"
+              >
                 <Input />
               </Form.Item>
             </>
@@ -626,18 +752,14 @@ export const TriggerGatewayPage: React.FC = () => {
               <Descriptions.Item label="状态">
                 <Tag color={statusColorMap[detail.status] || 'default'}>{detail.status}</Tag>
               </Descriptions.Item>
-              <Descriptions.Item label="Cron 状态">
-                {detail.cronState || '-'}
-              </Descriptions.Item>
+              <Descriptions.Item label="Cron 状态">{detail.cronState || '-'}</Descriptions.Item>
               <Descriptions.Item label="最后触发">
                 {detail.lastTriggeredAt
                   ? dayjs(detail.lastTriggeredAt).format('YYYY-MM-DD HH:mm:ss')
                   : '-'}
               </Descriptions.Item>
               <Descriptions.Item label="下次触发">
-                {detail.nextFireAt
-                  ? dayjs(detail.nextFireAt).format('YYYY-MM-DD HH:mm:ss')
-                  : '-'}
+                {detail.nextFireAt ? dayjs(detail.nextFireAt).format('YYYY-MM-DD HH:mm:ss') : '-'}
               </Descriptions.Item>
               <Descriptions.Item label="说明" span={2}>
                 {detail.description || '-'}

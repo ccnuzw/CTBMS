@@ -18,14 +18,14 @@ export interface DocItem {
     sourceType: IntelSourceType | string;
     rawContent: string;
     summary: string | null;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- AI analysis JSON structure
+     
     aiAnalysis: any;
     effectiveTime: string;
     author: { id: string; name: string } | null;
     attachments?: { id: string; fileName: string; fileUrl: string; mimeType: string }[];
     // 扩展字段：区分文档和研报
     itemType?: 'document' | 'report';
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- AI analysis JSON structure
+     
     reportData?: any; // 研报原始数据
 }
 
@@ -128,7 +128,7 @@ export const DocumentCardView: React.FC<DocumentCardViewProps> = ({
                                     type="text"
                                     size="small"
                                     icon={isFavorite(doc.id) ?
-                                        <StarFilled style={{ color: '#faad14' }} /> :
+                                        <StarFilled style={{ color: token.colorWarning }} /> :
                                         <StarOutlined style={{ color: token.colorTextSecondary }} />
                                     }
                                     onClick={(e) => {

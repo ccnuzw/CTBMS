@@ -46,20 +46,21 @@ import {
 import { WorkflowDefinitionPage } from '../features/workflow-studio';
 import { WorkflowExecutionPage } from '../features/workflow-runtime';
 import { DecisionRulePackPage } from '../features/workflow-rule-center';
-import { AgentProfilePage, AgentPromptTemplatePage } from '../features/workflow-agent-center';
+import { AgentProfilePage, AgentPromptTemplatePage, SkillDashboardPage } from '../features/workflow-agent-center';
 import { AgentWizardPage } from '../features/agent-wizard';
 import { ParameterSetPage } from '../features/workflow-parameter-center';
 import { DataConnectorPage } from '../features/workflow-data-connector';
 import { TriggerGatewayPage } from '../features/trigger-gateway';
-import { DecisionRecordPage } from '../features/decision-record';
 import { ReportExportPage } from '../features/report-export';
-import { ExperimentEvaluationPage } from '../features/workflow-experiment';
 import { ExecutionAnalyticsDashboard } from '../features/execution-analytics';
+import { DecisionReportHubPage } from '../features/decision-record/components/DecisionReportHubPage';
+import { ExperimentAnalyticsHubPage } from '../features/workflow-experiment/components/ExperimentAnalyticsHubPage';
 import { AgentWorkbenchPage } from '../features/agent-workbench';
 import { TemplateMarketPage } from '../features/template-market';
 import { FuturesSimPage } from '../features/futures-sim';
 import { UserConfigBindingPage } from '../features/user-config-binding';
 import { ReplayEvaluationPage } from '../features/replay-evaluation';
+import { WorkflowAdvancedHubPage } from '../features/workflow-advanced/components/WorkflowAdvancedHubPage';
 
 // Backward-compatible redirect: /workstation/report/:type -> unified editor
 const WorkstationReportRedirect = () => {
@@ -142,6 +143,10 @@ export const router = createBrowserRouter([
         path: 'workflow/agents/wizard',
         element: <AgentWizardPage />,
       },
+      {
+        path: 'workflow/skills',
+        element: <SkillDashboardPage />,
+      },
 
       {
         path: 'workflow/prompts',
@@ -161,7 +166,7 @@ export const router = createBrowserRouter([
       },
       {
         path: 'workflow/decisions',
-        element: <DecisionRecordPage />,
+        element: <Navigate to="/workflow/executions" replace />,
       },
       {
         path: 'workflow/exports',
@@ -169,7 +174,7 @@ export const router = createBrowserRouter([
       },
       {
         path: 'workflow/experiments',
-        element: <ExperimentEvaluationPage />,
+        element: <Navigate to="/workflow/advanced?tab=analytics" replace />,
       },
       {
         path: 'workflow/analytics',
@@ -194,6 +199,10 @@ export const router = createBrowserRouter([
       {
         path: 'workflow/replay',
         element: <ReplayEvaluationPage />,
+      },
+      {
+        path: 'workflow/advanced',
+        element: <WorkflowAdvancedHubPage />,
       },
       {
         path: 'system',

@@ -76,17 +76,17 @@ export const StatsBar: React.FC<StatsBarProps> = ({ items }) => {
                 {/* 右侧: 关键指标 */}
                 <Flex align="center" gap={24}>
                     <Flex align="center" gap={6}>
-                        <RiseOutlined style={{ color: '#faad14' }} />
+                        <RiseOutlined style={{ color: token.colorWarning }} />
                         <span>高价值 <strong>{stats.highValue}</strong></span>
                     </Flex>
 
                     <Flex align="center" gap={6}>
-                        <ClockCircleOutlined style={{ color: '#fa8c16' }} />
+                        <ClockCircleOutlined style={{ color: token.colorWarning }} />
                         <span>待处理 <strong>{stats.pending}</strong></span>
                     </Flex>
 
                     <Flex align="center" gap={6}>
-                        <CheckCircleOutlined style={{ color: '#52c41a' }} />
+                        <CheckCircleOutlined style={{ color: token.colorSuccess }} />
                         <span>已确认 <strong>{stats.confirmed}</strong></span>
                     </Flex>
                 </Flex>

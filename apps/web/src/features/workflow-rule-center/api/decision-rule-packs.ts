@@ -8,6 +8,7 @@ import {
     PublishDecisionRulePackDto,
     UpdateDecisionRuleDto,
     UpdateDecisionRulePackDto,
+    SmartParseRuleASTDto,
 } from '@packages/types';
 import { apiClient } from '../../../api/client';
 
@@ -167,6 +168,18 @@ export const useDeleteDecisionRule = () => {
         },
         onSuccess: (_, variables) => {
             queryClient.invalidateQueries({ queryKey: ['decision-rule-pack', variables.packId] });
+        },
+    });
+};
+
+export const useSmartParseAst = () => {
+    return useMutation({
+        mutationFn: async (payload: SmartParseRuleASTDto) => {
+            const res = await apiClient.post<any>(
+                `${API_BASE}/smart-parse-ast`,
+                payload,
+            );
+            return res.data;
         },
     });
 };

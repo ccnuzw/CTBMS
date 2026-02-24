@@ -1,5 +1,5 @@
 import React from 'react';
-import { Button, Table, Tag, Popconfirm, App } from 'antd';
+import { Button, Table, Tag, Popconfirm, App , theme } from 'antd';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import dayjs from 'dayjs';
 import { apiClient, getErrorMessage } from '../../../api/client';
@@ -14,6 +14,7 @@ export const AgentPromptTemplateHistory: React.FC<AgentPromptTemplateHistoryProp
     onRollbackSuccess,
 }) => {
     const { message } = App.useApp();
+    const { token } = theme.useToken();
 
     const { data: history, isLoading, refetch } = useQuery({
         queryKey: ['agent-prompt-template-history', templateId],
@@ -59,7 +60,7 @@ export const AgentPromptTemplateHistory: React.FC<AgentPromptTemplateHistoryProp
         {
             title: '操作',
             key: 'action',
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+             
             render: (_: any, record: any) => (
                 <Popconfirm
                     title={`确定回滚到版本 v${record.version}?`}
@@ -86,7 +87,7 @@ export const AgentPromptTemplateHistory: React.FC<AgentPromptTemplateHistoryProp
             size="small"
             expandable={{
                 expandedRowRender: (record) => (
-                    <div style={{ padding: 16, background: '#f5f5f5', borderRadius: 4 }}>
+                    <div style={{ padding: 16, background: token.colorBgLayout, borderRadius: 4 }}>
                         <p><strong>系统提示词：</strong></p>
                         <div style={{ whiteSpace: 'pre-wrap', maxHeight: 200, overflowY: 'auto' }}>
                             {record.data.systemPrompt}

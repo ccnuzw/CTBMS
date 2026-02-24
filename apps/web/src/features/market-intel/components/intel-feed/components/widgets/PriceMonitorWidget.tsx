@@ -64,9 +64,9 @@ export const PriceMonitorWidget: React.FC<PriceMonitorWidgetProps> = ({
         const change = current - prev;
         const pct = (change / prev) * 100;
 
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- untyped API response iteration
+         
         const min = Math.min(...data.map((d: any) => d.price));
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- untyped API response iteration
+         
         const max = Math.max(...data.map((d: any) => d.price));
 
         return { current, change, pct, min, max };
@@ -123,7 +123,7 @@ export const PriceMonitorWidget: React.FC<PriceMonitorWidgetProps> = ({
                         </div>
                         <div>
                             <Text type="secondary" style={{ fontSize: 12 }}>日涨跌</Text>
-                            <div style={{ color: stats.change >= 0 ? '#f5222d' : '#52c41a', fontSize: 16, display: 'flex', alignItems: 'center' }}>
+                            <div style={{ color: stats.change >= 0 ? token.colorError : token.colorSuccess, fontSize: 16, display: 'flex', alignItems: 'center' }}>
                                 {stats.change >= 0 ? <RiseOutlined /> : <FallOutlined />}
                                 <span style={{ marginLeft: 4 }}>{Math.abs(stats.change).toFixed(0)} ({Math.abs(stats.pct).toFixed(2)}%)</span>
                             </div>
@@ -167,7 +167,7 @@ export const PriceMonitorWidget: React.FC<PriceMonitorWidgetProps> = ({
                             />
                             <Tooltip
                                 labelFormatter={val => dayjs(val).format('YYYY-MM-DD')}
-                                // eslint-disable-next-line @typescript-eslint/no-explicit-any -- AntD onChange callback
+                                 
                                 formatter={(val: any) => [`${val} 元/吨`, '价格']}
                             />
                             <Area

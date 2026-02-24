@@ -41,9 +41,9 @@ export const starterTemplateOptions: {
     ];
 
 export const runtimeOnErrorOptions: { label: string; value: WorkflowNodeOnErrorPolicy }[] = [
-    { label: '失败即中断 (FAIL_FAST)', value: 'FAIL_FAST' },
-    { label: '失败后继续 (CONTINUE)', value: 'CONTINUE' },
-    { label: '失败路由错误分支 (ROUTE_TO_ERROR)', value: 'ROUTE_TO_ERROR' },
+    { label: '失败即中止流程', value: 'FAIL_FAST' },
+    { label: '失败后忽略并继续', value: 'CONTINUE' },
+    { label: '失败后路由至异常分支', value: 'ROUTE_TO_ERROR' },
 ];
 
 export const definitionStatusColorMap: Record<string, string> = {

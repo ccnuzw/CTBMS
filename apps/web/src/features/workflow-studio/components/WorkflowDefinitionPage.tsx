@@ -1,13 +1,14 @@
 import React, { useMemo } from 'react';
 import type { ColumnsType } from 'antd/es/table';
 import dayjs, { Dayjs } from 'dayjs';
-import { Button, Card, Input, Select, Space, Switch, Table, Tag, Typography, Popconfirm, Drawer, Alert } from 'antd';
+import { Button, Card, Input, Select, Space, Switch, Table, Tag, Typography, Drawer, Alert } from 'antd';
 import { WorkflowDefinitionDto, WorkflowDefinitionStatus, WorkflowMode, WorkflowUsageMethod, WorkflowVersionDto, WorkflowPublishAuditDto } from '@packages/types';
 
 import { useWorkflowDefinitionViewModel } from './workflow-definition/useWorkflowDefinitionViewModel';
 import { WorkflowDefinitionCreateDrawer } from './workflow-definition/WorkflowDefinitionCreateDrawer';
 import { WorkflowDefinitionVersionDrawer } from './workflow-definition/WorkflowDefinitionVersionDrawer';
 import { WorkflowDefinitionPublishWizardModal } from './workflow-definition/WorkflowDefinitionPublishWizardModal';
+import { WorkflowQuickRunnerModal } from './workflow-definition/WorkflowQuickRunnerModal';
 import {
   modeOptions,
   usageMethodOptions,
@@ -34,8 +35,8 @@ export const WorkflowDefinitionPage: React.FC = () => {
 
   const definitionColumns = useMemo<ColumnsType<WorkflowDefinitionDto>>(
     () => [
-      { title: '流程名称', dataIndex: 'name', width: 240 },
-      { title: '流程编码', dataIndex: 'workflowId', width: 220 },
+      { title: '工作流名称', dataIndex: 'name', width: 240 },
+      { title: '编号', dataIndex: 'workflowId', width: 220 },
       {
         title: '模式', dataIndex: 'mode', width: 120,
         render: (value: WorkflowMode) => <Tag color="blue">{workflowModeLabelMap[value] || value}</Tag>
@@ -105,12 +106,10 @@ export const WorkflowDefinitionPage: React.FC = () => {
           const canRun = record.status === 'PUBLISHED' && Boolean(state.selectedDefinition?.id);
           return (
             <Space size={4}>
-              <Button type="link" onClick={() => { state.setStudioVersion(record); state.setStudioVisible(true); }}>画布编辑</Button>
-              <Button type="link" disabled={(queries.versions?.length ?? 0) < 2} onClick={() => state.setDiffVisible(true)}>版本对比</Button>
-              <Button type="link" disabled={!canOpenPublishWizard || queries.dependencyCatalogLoading} loading={isPublishing} onClick={() => actions.handleOpenPublishWizard(record)}>发布版本</Button>
-              <Popconfirm title="确认触发运行该版本？" onConfirm={() => actions.handleTriggerExecution(record)} disabled={!canRun}>
-                <Button type="link" disabled={!canRun} loading={isRunning}>触发运行</Button>
-              </Popconfirm>
+              <Button type="link" onClick={() => { state.setStudioVersion(record); state.setStudioVisible(true); }}>编辑画布</Button>
+              <Button type="link" disabled={(queries.versions?.length ?? 0) < 2} onClick={() => state.setDiffVisible(true)}>对比版本</Button>
+              <Button type="link" disabled={!canOpenPublishWizard || queries.dependencyCatalogLoading} loading={isPublishing} onClick={() => actions.handleOpenPublishWizard(record)}>发布</Button>
+              <Button type="link" disabled={!canRun} onClick={() => actions.handleOpenQuickRunner(record)}>运行</Button>
             </Space>
           );
         }
@@ -119,11 +118,11 @@ export const WorkflowDefinitionPage: React.FC = () => {
     [queries, actions, mutations, state]
   );
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- API response typing deferred
+
   const versionCodeMap = useMemo(() => new Map((queries.versions || []).map((item: any) => [item.id, item.versionCode])), [queries.versions]);
 
   const auditVersionOptions = useMemo(
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- API response typing deferred
+
     () => (queries.versions || []).map((item: any) => ({ label: item.versionCode, value: item.id })),
     [queries.versions]
   );
@@ -140,7 +139,7 @@ export const WorkflowDefinitionPage: React.FC = () => {
     [versionCodeMap]
   );
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- API response typing deferred
+
   const latestDraftVersion = useMemo(() => (queries.versions || []).find((item: any) => item.status === 'DRAFT'), [queries.versions]);
   const latestDraftDependencyResult = latestDraftVersion && !queries.dependencyCatalogLoading ? actions.checkPublishDependencies(latestDraftVersion.dslSnapshot) : null;
   const latestDraftUnpublishedCount = latestDraftDependencyResult ? countDependencyIssues(latestDraftDependencyResult.unpublished) : 0;
@@ -161,21 +160,21 @@ export const WorkflowDefinitionPage: React.FC = () => {
       <Space direction="vertical" style={{ width: '100%' }} size={16}>
         <Space style={{ width: '100%', justifyContent: 'space-between' }}>
           <div>
-            <Title level={4} style={{ marginBottom: 0 }}>工作流定义管理</Title>
-            <Text type="secondary">第一阶段能力：流程定义、版本快照、版本发布。</Text>
+            <Title level={4} style={{ marginBottom: 0 }}>工作流编排</Title>
+            <Text type="secondary">创建和管理工作流，编辑画布、版本管理与发布。</Text>
           </div>
           <Space wrap size={12}>
             <Space size={6}>
-              <Text type="secondary">Agent 严格模式</Text>
+              <Text type="secondary">智能体严格模式</Text>
               <Switch checked={queries.strictModeSetting?.enabled ?? false} loading={queries.strictModeLoading || mutations.updateStrictModeMutation.isPending} checkedChildren="严格" unCheckedChildren="宽松" onChange={actions.handleStrictModeChange} />
               <Tag color="blue">{strictModeSourceLabel}</Tag>
             </Space>
-            <Button type="primary" onClick={() => state.setCreateVisible(true)}>新建流程</Button>
+            <Button type="primary" onClick={() => state.setCreateVisible(true)}>新建工作流</Button>
           </Space>
         </Space>
 
         <Space wrap>
-          <Input.Search allowClear style={{ width: 280 }} placeholder="关键词（流程名称/编码）" value={state.keywordInput} onChange={(e) => { const val = e.target.value; state.setKeywordInput(val); if (!val.trim()) { state.setKeyword(undefined); state.setDefinitionPageNumber(1); } }} onSearch={(val) => { const norm = val.trim(); state.setKeyword(norm ? norm : undefined); state.setDefinitionPageNumber(1); }} />
+          <Input.Search allowClear style={{ width: 280 }} placeholder="搜索工作流名称或编号" value={state.keywordInput} onChange={(e) => { const val = e.target.value; state.setKeywordInput(val); if (!val.trim()) { state.setKeyword(undefined); state.setDefinitionPageNumber(1); } }} onSearch={(val) => { const norm = val.trim(); state.setKeyword(norm ? norm : undefined); state.setDefinitionPageNumber(1); }} />
           <Select allowClear style={{ width: 180 }} placeholder="按模式筛选" options={modeOptions} value={state.selectedMode} onChange={(val) => { state.setSelectedMode(val); state.setDefinitionPageNumber(1); }} />
           <Select allowClear style={{ width: 200 }} placeholder="按使用方式筛选" options={usageMethodOptions} value={state.selectedUsageMethod} onChange={(val) => { state.setSelectedUsageMethod(val); state.setDefinitionPageNumber(1); }} />
           <Select allowClear style={{ width: 180 }} placeholder="按状态筛选" options={definitionStatusOptions} value={state.selectedStatus} onChange={(val) => { state.setSelectedStatus(val); state.setDefinitionPageNumber(1); }} />
@@ -264,7 +263,7 @@ export const WorkflowDefinitionPage: React.FC = () => {
         onGoToStudio={actions.handleOpenStudioForPublishWizardVersion}
       />
 
-      <Drawer title={`Workflow Studio - ${state.studioVersion?.versionCode || ''}`} open={state.studioVisible} width="100%" destroyOnClose onClose={() => { state.setStudioVisible(false); state.setStudioVersion(null); }}>
+      <Drawer title={`工作流编辑器 - ${state.studioVersion?.versionCode || ''}`} open={state.studioVisible} width="100%" destroyOnClose onClose={() => { state.setStudioVisible(false); state.setStudioVersion(null); }}>
         {state.studioVersion && (
           <div style={{ height: '78vh' }}>
             <WorkflowCanvas initialDsl={state.studioVersion.dslSnapshot} onSave={actions.handleSaveStudioDsl} onRun={actions.handleStudioRun} onValidate={actions.handleStudioValidate} currentVersionId={state.studioVersion.id} currentDefinitionId={state.selectedDefinition?.id} />
@@ -279,6 +278,15 @@ export const WorkflowDefinitionPage: React.FC = () => {
           <Alert type="info" showIcon message="至少需要两个版本才能进行差异对比" />
         )}
       </Drawer>
+
+      <WorkflowQuickRunnerModal
+        open={state.quickRunnerVisible}
+        definition={state.selectedDefinition}
+        version={state.quickRunnerVersion}
+        loading={mutations.triggerExecutionMutation.isPending && state.runningVersionId === state.quickRunnerVersion?.id}
+        onClose={() => { state.setQuickRunnerVisible(false); state.setQuickRunnerVersion(null); }}
+        onRun={actions.handleSubmitQuickRunner}
+      />
     </Card>
   );
 };

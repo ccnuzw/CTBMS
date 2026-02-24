@@ -7,12 +7,33 @@ import { Prisma } from '@prisma/client';
 
 @Injectable()
 export class KnowledgeSyncService {
-    private readonly logger = new Logger(KnowledgeSyncService.name);
-    constructor(
-        private prisma: PrismaService,
-        private ragPipelineService: RagPipelineService
-    ) {}
-    async syncFromMarketIntel(intelId: string, options?: { skipRecursiveReportSync?: boolean }) {
+  private readonly logger = new Logger(KnowledgeSyncService.name);
+
+  private buildRagMetadata(item: {
+    publishAt?: Date | null;
+    type?: string;
+    sourceType?: string | null;
+    authorId?: string;
+    periodType?: string;
+    periodKey?: string | null;
+  }): Record<string, unknown> {
+    return {
+      publishDate: item.publishAt?.toISOString(),
+      contentType: item.type,
+      type: item.type,
+      knowledgeType: item.type,
+      sourceType: item.sourceType || 'UNKNOWN',
+      authorId: item.authorId,
+      periodType: item.periodType,
+      periodKey: item.periodKey,
+    };
+  }
+
+  constructor(
+    private prisma: PrismaService,
+    private ragPipelineService: RagPipelineService,
+  ) {}
+  async syncFromMarketIntel(intelId: string, options?: { skipRecursiveReportSync?: boolean }) {
     const intel = await this.prisma.marketIntel.findUnique({
       where: { id: intelId },
       include: {
@@ -39,56 +60,56 @@ export class KnowledgeSyncService {
 
     const item = existing
       ? await this.prisma.knowledgeItem.update({
-        where: { id: existing.id },
-        data: {
-          type,
-          title:
-            intel.researchReport?.title ||
-            intel.summary?.slice(0, 80) ||
-            intel.rawContent.slice(0, 80) ||
-            '未命名内容',
-          contentPlain: intel.rawContent || '',
-          contentRich: intel.summary || intel.rawContent,
-          sourceType: intel.sourceType,
-          publishAt: intel.effectiveTime,
-          effectiveAt: intel.effectiveTime,
-          periodType: KnowledgeUtils.mapLegacyContentTypeToPeriodType(intel.contentType),
-          periodKey: KnowledgeUtils.toPeriodKey(
-            intel.effectiveTime,
-            KnowledgeUtils.mapLegacyContentTypeToPeriodType(intel.contentType),
-          ),
-          location: intel.location,
-          region: intel.region || [],
-          status: 'PUBLISHED',
-          authorId: intel.authorId,
-        },
-      })
+          where: { id: existing.id },
+          data: {
+            type,
+            title:
+              intel.researchReport?.title ||
+              intel.summary?.slice(0, 80) ||
+              intel.rawContent.slice(0, 80) ||
+              '未命名内容',
+            contentPlain: intel.rawContent || '',
+            contentRich: intel.summary || intel.rawContent,
+            sourceType: intel.sourceType,
+            publishAt: intel.effectiveTime,
+            effectiveAt: intel.effectiveTime,
+            periodType: KnowledgeUtils.mapLegacyContentTypeToPeriodType(intel.contentType),
+            periodKey: KnowledgeUtils.toPeriodKey(
+              intel.effectiveTime,
+              KnowledgeUtils.mapLegacyContentTypeToPeriodType(intel.contentType),
+            ),
+            location: intel.location,
+            region: intel.region || [],
+            status: 'PUBLISHED',
+            authorId: intel.authorId,
+          },
+        })
       : await this.prisma.knowledgeItem.create({
-        data: {
-          type,
-          title:
-            intel.researchReport?.title ||
-            intel.summary?.slice(0, 80) ||
-            intel.rawContent.slice(0, 80) ||
-            '未命名内容',
-          contentPlain: intel.rawContent || '',
-          contentRich: intel.summary || intel.rawContent,
-          sourceType: intel.sourceType,
-          publishAt: intel.effectiveTime,
-          effectiveAt: intel.effectiveTime,
-          periodType: KnowledgeUtils.mapLegacyContentTypeToPeriodType(intel.contentType),
-          periodKey: KnowledgeUtils.toPeriodKey(
-            intel.effectiveTime,
-            KnowledgeUtils.mapLegacyContentTypeToPeriodType(intel.contentType),
-          ),
-          location: intel.location,
-          region: intel.region || [],
-          status: 'PUBLISHED',
-          authorId: intel.authorId,
-          originLegacyType: 'MARKET_INTEL',
-          originLegacyId: intel.id,
-        },
-      });
+          data: {
+            type,
+            title:
+              intel.researchReport?.title ||
+              intel.summary?.slice(0, 80) ||
+              intel.rawContent.slice(0, 80) ||
+              '未命名内容',
+            contentPlain: intel.rawContent || '',
+            contentRich: intel.summary || intel.rawContent,
+            sourceType: intel.sourceType,
+            publishAt: intel.effectiveTime,
+            effectiveAt: intel.effectiveTime,
+            periodType: KnowledgeUtils.mapLegacyContentTypeToPeriodType(intel.contentType),
+            periodKey: KnowledgeUtils.toPeriodKey(
+              intel.effectiveTime,
+              KnowledgeUtils.mapLegacyContentTypeToPeriodType(intel.contentType),
+            ),
+            location: intel.location,
+            region: intel.region || [],
+            status: 'PUBLISHED',
+            authorId: intel.authorId,
+            originLegacyType: 'MARKET_INTEL',
+            originLegacyId: intel.id,
+          },
+        });
 
     const aiAnalysis = (intel.aiAnalysis ?? {}) as {
       summary?: string;
@@ -160,7 +181,16 @@ export class KnowledgeSyncService {
     // Trigger Vectorization (RAG Ingest)
     const content = item.contentPlain || item.contentRich || '';
     if (content) {
-      await this.ragPipelineService.ingest(item.id, content);
+      const ingestResult = await this.ragPipelineService.ingest(
+        item.id,
+        content,
+        this.buildRagMetadata(item),
+      );
+      if (ingestResult.errorCode) {
+        this.logger.warn(
+          `[syncFromMarketIntel] RAG ingest issue for ${item.id}: ${ingestResult.errorCode} (${ingestResult.errorMessage || 'no details'})`,
+        );
+      }
     }
 
     if (intel.researchReport?.id && !options?.skipRecursiveReportSync) {
@@ -170,7 +200,7 @@ export class KnowledgeSyncService {
     return item.id;
   }
 
-    async syncFromResearchReport(reportId: string) {
+  async syncFromResearchReport(reportId: string) {
     const report = await this.prisma.researchReport.findUnique({
       where: { id: reportId },
       include: {
@@ -182,7 +212,9 @@ export class KnowledgeSyncService {
       throw new NotFoundException(`ResearchReport ${reportId} 不存在`);
     }
 
-    const knowledgeId = await this.syncFromMarketIntel(report.intelId, { skipRecursiveReportSync: true });
+    const knowledgeId = await this.syncFromMarketIntel(report.intelId, {
+      skipRecursiveReportSync: true,
+    });
 
     await this.prisma.knowledgeItem.update({
       where: { id: knowledgeId },
@@ -229,7 +261,7 @@ export class KnowledgeSyncService {
     return knowledgeId;
   }
 
-    async backfillFromLegacy(limit = 500): Promise<BackfillResult> {
+  async backfillFromLegacy(limit = 500): Promise<BackfillResult> {
     const failures: BackfillResult['failures'] = [];
     let intelProcessed = 0;
     let reportProcessed = 0;
@@ -275,7 +307,7 @@ export class KnowledgeSyncService {
     return { intelProcessed, reportProcessed, failures };
   }
 
-    async checkLegacyConsistency(sampleSize = 50) {
+  async checkLegacyConsistency(sampleSize = 50) {
     const [legacyIntelCount, legacyReportCount, knowledgeCount] = await Promise.all([
       this.prisma.marketIntel.count(),
       this.prisma.researchReport.count(),
@@ -331,7 +363,7 @@ export class KnowledgeSyncService {
     };
   }
 
-    async resolveLegacy(source: 'intel' | 'report', id: string) {
+  async resolveLegacy(source: 'intel' | 'report', id: string) {
     if (source === 'intel') {
       const item = await this.prisma.knowledgeItem.findFirst({
         where: {
@@ -368,5 +400,4 @@ export class KnowledgeSyncService {
 
     return item;
   }
-
 }

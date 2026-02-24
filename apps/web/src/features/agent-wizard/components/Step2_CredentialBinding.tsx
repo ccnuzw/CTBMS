@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Card, Button, Input, List, Typography, Space, Tag, message } from 'antd';
+import { Card, Button, Input, List, Typography, Space, Tag, message, theme } from 'antd';
 import { ApiOutlined, CheckCircleFilled, KeyOutlined, LockOutlined } from '@ant-design/icons';
 import axios from 'axios';
 
@@ -29,6 +29,7 @@ interface Step2Props {
 
 export const Step2_CredentialBinding = ({ onSubmit, onBack, currentKeys, selectedPersona }: Step2Props) => {
     const [keys, setKeys] = useState<Record<string, string>>(currentKeys || {});
+    const { token } = theme.useToken();
 
     // Fetch all connectors
     const { data: connectors, isLoading } = useQuery(['connectors'], async () => {
@@ -76,14 +77,14 @@ export const Step2_CredentialBinding = ({ onSubmit, onBack, currentKeys, selecte
                                     <Space size="large">
                                         <div style={{
                                             width: 48, height: 48, borderRadius: 8,
-                                            background: '#f0f5ff', color: '#1890ff',
+                                            background: token.colorPrimaryBg, color: token.colorPrimary,
                                             display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 24
                                         }}>
                                             <ApiOutlined />
                                         </div>
                                         <div>
                                             <Text strong style={{ fontSize: 16 }}>{item.meta.name}</Text>
-                                            <div style={{ color: '#888' }}>{item.meta.description}</div>
+                                            <div style={{ color: token.colorTextTertiary }}>{item.meta.description}</div>
                                             {needsAuth && <Tag icon={<LockOutlined />} color="warning" style={{ marginTop: 8 }}>Requires API Key</Tag>}
                                             {!needsAuth && <Tag color="success" style={{ marginTop: 8 }}>Public Access</Tag>}
                                         </div>
@@ -98,7 +99,7 @@ export const Step2_CredentialBinding = ({ onSubmit, onBack, currentKeys, selecte
                                             style={{ width: 300 }}
                                         />
                                     ) : (
-                                        <Button type="text" icon={<CheckCircleFilled style={{ color: '#52c41a' }} />}>Auto-Connected</Button>
+                                        <Button type="text" icon={<CheckCircleFilled style={{ color: token.colorSuccess }} />}>Auto-Connected</Button>
                                     )}
                                 </div>
                             </Card>

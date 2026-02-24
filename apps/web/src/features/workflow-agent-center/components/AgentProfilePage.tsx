@@ -23,6 +23,7 @@ import {
   Steps,
   Row,
   Col,
+  theme,
 } from 'antd';
 import { PlusOutlined } from '@ant-design/icons';
 import {
@@ -40,6 +41,7 @@ import {
   useDeleteAgentProfile,
   usePublishAgentProfile,
   useUpdateAgentProfile,
+  useAgentSkills,
 } from '../api';
 import { useAIConfigs } from '../../system-config/api';
 import {
@@ -108,6 +110,7 @@ type CreateAgentProfileFormValues = Omit<
 
 export const AgentProfilePage: React.FC = () => {
   const { message } = App.useApp();
+  const { token } = theme.useToken();
   const [form] = Form.useForm<CreateAgentProfileFormValues>();
 
   const [searchParams, setSearchParams] = useSearchParams();
@@ -167,6 +170,8 @@ export const AgentProfilePage: React.FC = () => {
     pageSize,
   });
 
+  const { data: skillsData } = useAgentSkills({ pageSize: 100 });
+
   const normalizedKeyword = keyword?.trim().toLowerCase() || '';
   const highlightedAgentId = useMemo(() => {
     if (!normalizedKeyword) {
@@ -198,17 +203,21 @@ export const AgentProfilePage: React.FC = () => {
 
 
   React.useEffect(() => {
-    const next = new URLSearchParams();
+    const next = new URLSearchParams(searchParams);
     if (keyword) {
       next.set('keyword', keyword);
+    } else {
+      next.delete('keyword');
     }
     if (isActiveFilter !== undefined) {
       next.set('isActive', String(isActiveFilter));
+    } else {
+      next.delete('isActive');
     }
     next.set('page', String(page));
     next.set('pageSize', String(pageSize));
     setSearchParams(next, { replace: true });
-  }, [isActiveFilter, keyword, page, pageSize, setSearchParams]);
+  }, [isActiveFilter, keyword, page, pageSize, searchParams, setSearchParams]);
 
   React.useEffect(() => {
     if (!highlightedAgentId || !agentTableContainerRef.current) {
@@ -337,7 +346,8 @@ export const AgentProfilePage: React.FC = () => {
         outputSchemaCode: values.outputSchemaCode,
         timeoutMs: values.timeoutMs,
         templateSource: values.templateSource,
-        toolPolicy: values.toolPolicy,
+        toolPolicy: values.toolPolicy, // [DEPRECATED] To be replaced
+        skillCodes: values.skillCodes || [], // [NEW] Added for Sprint 3
         guardrails: values.guardrails,
         retryPolicy: values.retryPolicy,
         outputSchema: values.outputSchemaCode === 'CUSTOM' && (values as any).outputSchemaString
@@ -424,7 +434,7 @@ export const AgentProfilePage: React.FC = () => {
               record.id === highlightedAgentId
                 ? {
                   style: {
-                    backgroundColor: '#fffbe6',
+                    backgroundColor: token.colorWarningBg,
                   },
                 }
                 : {}
@@ -527,6 +537,7 @@ export const AgentProfilePage: React.FC = () => {
               timeoutMs: 30000,
               templateSource: 'PRIVATE',
               toolPolicy: {},
+              skillCodes: [],
               guardrails: { requireEvidence: true, noHallucination: true },
               retryPolicy: { retryCount: 1, retryBackoffMs: 2000 },
             }}
@@ -652,6 +663,14 @@ export const AgentProfilePage: React.FC = () => {
                       </Form.Item>
                       <Form.Item name="timeoutMs" label="超时控制 (ms)" rules={[{ required: true }]}>
                         <InputNumber min={1000} max={120000} style={{ width: '100%' }} />
+                      </Form.Item>
+                      <Form.Item name="skillCodes" label="绑定技能">
+                        <Select
+                          mode="multiple"
+                          placeholder="选择绑定的辅助技能"
+                          options={skillsData?.data?.map((s: any) => ({ label: s.name, value: s.skillCode })) || []}
+                          allowClear
+                        />
                       </Form.Item>
                       <Form.Item name="toolPolicy" label="工具策略">
                         <VisualToolPolicyBuilder />

@@ -112,7 +112,7 @@ export const PriceReviewPanel: React.FC = () => {
     {
       title: '操作',
       key: 'action',
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- AntD table column render callback
+       
       render: (_: any, record: Record<string, any>) => (
         <Space>
           <Button

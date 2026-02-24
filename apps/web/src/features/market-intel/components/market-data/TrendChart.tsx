@@ -460,7 +460,7 @@ export const TrendChart: React.FC<TrendChartProps> = ({
                     boxShadow: '0 4px 12px rgba(0,0,0,0.1)',
                     background: token.colorBgElevated,
                   }}
-                  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- dynamic form/parameter value
+                   
                   formatter={(value: any) => `${Number(value).toLocaleString()} 元/吨`}
                 />
                 <Legend content={renderLegend} wrapperStyle={{ paddingTop: 10 }} />

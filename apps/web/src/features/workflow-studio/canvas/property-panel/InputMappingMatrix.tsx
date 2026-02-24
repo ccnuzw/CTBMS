@@ -1,12 +1,28 @@
 import React from 'react';
-import { App, Button, Card, Empty, Input, Radio, Select, Space, Tag, Typography } from 'antd';
-import { LinkOutlined, ThunderboltOutlined } from '@ant-design/icons';
+import { App, Button, Card, Empty, Input, InputNumber, Select, Space, Switch, Tag, Typography, Popover } from 'antd';
+import { LinkOutlined, ThunderboltOutlined, SettingOutlined } from '@ant-design/icons';
 import { useReactFlow } from '@xyflow/react';
 import { ExpressionEditor } from '../ExpressionEditor';
 import { VariableSelector } from '../VariableSelector';
 import { getNodeTypeConfig } from '../nodeTypeRegistry';
 
 const { Text } = Typography;
+
+const TYPE_LABEL_MAP: Record<string, string> = {
+  string: '文本',
+  number: '数字',
+  integer: '整数',
+  boolean: '布尔 (是/否)',
+  object: '对象 / JSON',
+  json: '对象 / JSON',
+  array: '数组 / 列表',
+  list: '数组 / 列表',
+  any: '任意类型',
+};
+
+const getFriendlyTypeLabel = (schemaType: string): string => {
+  return TYPE_LABEL_MAP[schemaType?.toLowerCase()] || schemaType;
+};
 
 interface InputFieldSchema {
   name: string;
@@ -179,26 +195,26 @@ export const InputMappingMatrix: React.FC<InputMappingMatrixProps> = ({
     });
 
     if (mappedCount === 0) {
-      message.info('未找到可自动映射的同名字段');
+      message.info('未找到可自动匹配的同名数据');
       return;
     }
 
     onInputBindingsChange(nextBindings);
-    message.success(`已自动映射 ${mappedCount} 个字段`);
+    message.success(`已自动匹配 ${mappedCount} 个输入项`);
   };
 
   if (!inputsSchema.length) {
-    return <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="当前节点无需配置输入映射" />;
+    return <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="当前步骤无需设置数据输入" />;
   }
 
   return (
     <Space direction="vertical" size={12} style={{ width: '100%' }}>
       <Space style={{ width: '100%', justifyContent: 'space-between' }}>
         <Text type="secondary" style={{ fontSize: 12 }}>
-          按字段配置来源，可选上游字段、常量值或高级表达式。
+          设置每个输入项的数据来源：可以引用前面步骤的结果，也可以手动填写固定值。
         </Text>
         <Button size="small" icon={<ThunderboltOutlined />} onClick={handleAutoMap}>
-          自动映射同名字段
+          智能匹配
         </Button>
       </Space>
 
@@ -208,9 +224,9 @@ export const InputMappingMatrix: React.FC<InputMappingMatrixProps> = ({
         const parsedBinding = parseVariableBinding(currentBinding);
         const matchedUpstreamField = parsedBinding
           ? upstreamFieldCatalog.find(
-              (item) =>
-                item.nodeId === parsedBinding.nodeId && item.fieldName === parsedBinding.fieldName,
-            )
+            (item) =>
+              item.nodeId === parsedBinding.nodeId && item.fieldName === parsedBinding.fieldName,
+          )
           : undefined;
         const isTypeCompatible = matchedUpstreamField
           ? areFieldTypesCompatible(field.type, matchedUpstreamField.fieldType)
@@ -222,58 +238,69 @@ export const InputMappingMatrix: React.FC<InputMappingMatrixProps> = ({
               <Space style={{ width: '100%', justifyContent: 'space-between' }}>
                 <Space size={6}>
                   <Text strong>{field.name}</Text>
-                  <Tag style={{ marginInlineEnd: 0 }}>{field.type}</Tag>
+                  <Tag style={{ marginInlineEnd: 0 }} color="blue">
+                    {getFriendlyTypeLabel(field.type)}
+                  </Tag>
                   {field.required ? <Tag color="error">必填</Tag> : <Tag>选填</Tag>}
                 </Space>
-                <Select
-                  size="small"
-                  style={{ width: 120 }}
-                  value={nullPolicies[field.name] ?? 'FAIL'}
-                  onChange={(value) => onNullPolicyChange(field.name, value)}
-                  options={[
-                    { label: '空值报错', value: 'FAIL' },
-                    { label: '使用默认', value: 'USE_DEFAULT' },
-                    { label: '直接跳过', value: 'SKIP' },
-                  ]}
-                />
-              </Space>
+                <Space size={4}>
+                  <Select
+                    size="small"
+                    value={sourceMode}
+                    options={[
+                      { label: '引用前序', value: 'upstream' },
+                      { label: '固定值', value: 'constant' },
+                      { label: '公式', value: 'expression' },
+                    ]}
+                    style={{ width: 100 }}
+                    bordered={false}
+                    onChange={(nextMode: SourceMode) => {
+                      if (nextMode === 'constant') {
+                        onInputBindingChange(field.name, '');
+                        return;
+                      }
+                      if (nextMode === 'expression') {
+                        if (!currentBinding) {
+                          onInputBindingChange(field.name, '{{}}');
+                        }
+                        return;
+                      }
 
-              <Radio.Group
-                size="small"
-                value={sourceMode}
-                optionType="button"
-                buttonStyle="solid"
-                options={[
-                  { label: '上游字段', value: 'upstream' },
-                  { label: '常量', value: 'constant' },
-                  { label: '表达式', value: 'expression' },
-                ]}
-                onChange={(event) => {
-                  const nextMode = event.target.value as SourceMode;
-                  if (nextMode === 'constant') {
-                    onInputBindingChange(field.name, '');
-                    return;
-                  }
-                  if (nextMode === 'expression') {
-                    if (!currentBinding) {
-                      onInputBindingChange(field.name, '{{}}');
+                      const fallback = upstreamFieldCatalog.find(
+                        (item) => item.fieldName === field.name,
+                      );
+                      if (fallback) {
+                        onInputBindingChange(
+                          field.name,
+                          `{{${fallback.nodeId}.${fallback.fieldName}}}`,
+                        );
+                        return;
+                      }
+                      onInputBindingChange(field.name, '');
+                    }}
+                  />
+                  <Popover
+                    title="空值处理"
+                    trigger="click"
+                    placement="bottomRight"
+                    content={
+                      <Select
+                        size="small"
+                        style={{ width: 140 }}
+                        value={nullPolicies[field.name] ?? 'FAIL'}
+                        onChange={(value) => onNullPolicyChange(field.name, value)}
+                        options={[
+                          { label: '报错 (FAIL)', value: 'FAIL' },
+                          { label: '用默认值 (DEFAULT)', value: 'USE_DEFAULT' },
+                          { label: '跳过此项 (SKIP)', value: 'SKIP' },
+                        ]}
+                      />
                     }
-                    return;
-                  }
-
-                  const fallback = upstreamFieldCatalog.find(
-                    (item) => item.fieldName === field.name,
-                  );
-                  if (fallback) {
-                    onInputBindingChange(
-                      field.name,
-                      `{{${fallback.nodeId}.${fallback.fieldName}}}`,
-                    );
-                    return;
-                  }
-                  onInputBindingChange(field.name, '');
-                }}
-              />
+                  >
+                    <Button type="text" size="small" icon={<SettingOutlined />} />
+                  </Popover>
+                </Space>
+              </Space>
 
               {sourceMode === 'upstream' ? (
                 <Space direction="vertical" size={6} style={{ width: '100%' }}>
@@ -289,8 +316,8 @@ export const InputMappingMatrix: React.FC<InputMappingMatrixProps> = ({
                       </Tag>
                       <Tag color={isTypeCompatible ? 'success' : 'warning'}>
                         {isTypeCompatible
-                          ? `类型匹配 (${matchedUpstreamField.fieldType})`
-                          : `类型可能不匹配 (${matchedUpstreamField.fieldType} -> ${field.type})`}
+                          ? `类型匹配`
+                          : `类型可能不兼容`}
                       </Tag>
                     </Space>
                   ) : null}
@@ -298,13 +325,39 @@ export const InputMappingMatrix: React.FC<InputMappingMatrixProps> = ({
               ) : null}
 
               {sourceMode === 'constant' ? (
-                <Input
-                  value={stringifyValue(defaultValues[field.name])}
-                  onChange={(event) =>
-                    onDefaultValueChange(field.name, parseLooseValue(event.target.value))
-                  }
-                  placeholder="输入常量值，支持数字/布尔/文本/JSON"
-                />
+                field.type.toLowerCase() === 'boolean' ? (
+                  <Switch
+                    checked={Boolean(defaultValues[field.name])}
+                    onChange={(checked) => onDefaultValueChange(field.name, checked)}
+                    checkedChildren="是 (true)"
+                    unCheckedChildren="否 (false)"
+                  />
+                ) : field.type.toLowerCase() === 'number' || field.type.toLowerCase() === 'integer' ? (
+                  <InputNumber
+                    value={defaultValues[field.name] as number}
+                    onChange={(val) => onDefaultValueChange(field.name, val)}
+                    placeholder="输入数字"
+                    style={{ width: '100%' }}
+                  />
+                ) : field.type.toLowerCase() === 'object' || field.type.toLowerCase() === 'json' || field.type.toLowerCase() === 'array' || field.type.toLowerCase() === 'list' ? (
+                  <Input.TextArea
+                    value={stringifyValue(defaultValues[field.name])}
+                    onChange={(event) =>
+                      onDefaultValueChange(field.name, parseLooseValue(event.target.value))
+                    }
+                    placeholder={`输入结构化数据，例如 ${field.type.toLowerCase() === 'array' || field.type.toLowerCase() === 'list' ? '["a", "b"]' : '{"key": "value"}'}`}
+                    autoSize={{ minRows: 2, maxRows: 6 }}
+                    style={{ fontFamily: 'monospace' }}
+                  />
+                ) : (
+                  <Input
+                    value={stringifyValue(defaultValues[field.name])}
+                    onChange={(event) =>
+                      onDefaultValueChange(field.name, event.target.value)
+                    }
+                    placeholder={`输入固定值`}
+                  />
+                )
               ) : null}
 
               {sourceMode === 'expression' ? (
@@ -312,7 +365,7 @@ export const InputMappingMatrix: React.FC<InputMappingMatrixProps> = ({
                   currentNodeId={currentNodeId}
                   value={currentBinding}
                   onChange={(value) => onInputBindingChange(field.name, value)}
-                  placeholder={`为 ${field.name} 编写表达式`}
+                  placeholder={`为 ${field.name} 编写高级公式`}
                 />
               ) : null}
             </Space>

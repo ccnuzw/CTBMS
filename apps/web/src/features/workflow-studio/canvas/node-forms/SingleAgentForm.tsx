@@ -1,10 +1,19 @@
-import React from 'react';
-import { Collapse, Form, Input, Select, Slider, Space, Switch, Typography } from 'antd';
+import React, { useMemo } from 'react';
+import {
+  Alert,
+  AutoComplete,
+  Card,
+  Descriptions,
+  Form,
+  Select,
+  Slider,
+  Space,
+  Switch,
+  Typography,
+  theme,
+} from 'antd';
+import { InfoCircleOutlined } from '@ant-design/icons';
 import { useAgentProfiles } from '../../../workflow-agent-center/api';
-import { StructuredPromptBuilder } from '../../../workflow-agent-center/components/StructuredPromptBuilder';
-import { OutputSchemaBuilder } from '../../../workflow-agent-center/components/OutputSchemaBuilder';
-import { VisualGuardrailsBuilder } from '../../../workflow-agent-center/components/VisualGuardrailsBuilder';
-import { VisualToolPolicyBuilder } from '../../../workflow-agent-center/components/VisualToolPolicyBuilder';
 
 const { Text } = Typography;
 
@@ -13,27 +22,9 @@ interface SingleAgentFormProps {
   onChange: (key: string, value: unknown) => void;
 }
 
-const stringifySchema = (value: unknown): string => {
-  if (!value) return '';
-  if (typeof value === 'string') return value;
-  try {
-    return JSON.stringify(value, null, 2);
-  } catch {
-    return '';
-  }
-};
-
-const parseSchemaValue = (value: string): unknown => {
-  const raw = value.trim();
-  if (!raw) return undefined;
-  try {
-    return JSON.parse(raw);
-  } catch {
-    return value;
-  }
-};
-
 export const SingleAgentForm: React.FC<SingleAgentFormProps> = ({ config, onChange }) => {
+  const { token } = theme.useToken();
+
   const { data: agentProfilePage, isLoading } = useAgentProfiles({
     includePublic: true,
     isActive: true,
@@ -43,9 +34,25 @@ export const SingleAgentForm: React.FC<SingleAgentFormProps> = ({ config, onChan
 
   const selectedAgentCode = (config.agentProfileCode as string) || (config.agentCode as string);
 
+  // 查找已选择的智能体的完整配置信息
+  const selectedAgentProfile = useMemo(() => {
+    if (!selectedAgentCode || !agentProfilePage?.data) return null;
+    return agentProfilePage.data.find(
+      (item) => item.agentCode === selectedAgentCode && item.isActive,
+    );
+  }, [selectedAgentCode, agentProfilePage?.data]);
+
   return (
     <Form layout="vertical" size="small">
-      <Form.Item label="智能体" required>
+      <Alert
+        type="info"
+        showIcon
+        style={{ marginBottom: 12 }}
+        message="已启用简化配置模式"
+        description="默认继承智能体中心配置，仅保留最常用的执行参数。"
+      />
+      {/* ── 第一步：选择智能体（必填）── */}
+      <Form.Item label="选择智能体" required>
         <Select
           value={selectedAgentCode}
           onChange={(value) => {
@@ -61,22 +68,45 @@ export const SingleAgentForm: React.FC<SingleAgentFormProps> = ({ config, onChan
               label: `${item.agentName} (${item.agentCode})`,
               value: item.agentCode,
             }))}
-          placeholder="选择智能体配置"
+          placeholder="请选择要使用的智能体"
         />
       </Form.Item>
 
-      <Form.Item label="模型覆盖（可选）" extra="不填则使用智能体默认模型">
-        <Input
-          value={(config.modelOverride as string) ?? (config.model as string)}
-          onChange={(event) => {
-            onChange('modelOverride', event.target.value);
-            onChange('model', event.target.value);
+      {/* ── 继承预览：展示选中智能体的默认配置 ── */}
+      {selectedAgentProfile && (
+        <Card
+          size="small"
+          style={{
+            marginBottom: 16,
+            background: token.colorFillQuaternary,
+            border: `1px solid ${token.colorBorderSecondary}`,
           }}
-          placeholder="例如：openai/gpt-4.1"
-        />
-      </Form.Item>
+        >
+          <Descriptions
+            size="small"
+            column={1}
+            labelStyle={{ fontSize: 12, color: token.colorTextSecondary, width: 80 }}
+            contentStyle={{ fontSize: 12 }}
+          >
+            <Descriptions.Item label="模型">
+              {selectedAgentProfile.modelConfigKey || '默认模型'}
+            </Descriptions.Item>
+            <Descriptions.Item label="提示词">
+              {selectedAgentProfile.agentPromptCode || '未设置'}
+            </Descriptions.Item>
+            <Descriptions.Item label="输出结构">
+              {selectedAgentProfile.outputSchemaCode || '默认'}
+            </Descriptions.Item>
+          </Descriptions>
+          <Text type="secondary" style={{ fontSize: 11 }}>
+            <InfoCircleOutlined style={{ marginRight: 4 }} />
+            以上为该智能体的默认配置，节点将自动继承。
+          </Text>
+        </Card>
+      )}
 
-      <Form.Item label="创意度 (Creativity)" extra="数值越高回答越发散，越低越严谨">
+      {/* ── 节点独有配置：创意度 + 推理开关 ── */}
+      <Form.Item label="创意度" extra="数值越高回答越发散，越低越严谨">
         <Slider
           min={0}
           max={1}
@@ -90,76 +120,40 @@ export const SingleAgentForm: React.FC<SingleAgentFormProps> = ({ config, onChan
         />
       </Form.Item>
 
-      <Form.Item label="输出要求" style={{ marginBottom: 8 }}>
+      <Form.Item label="输出要求" style={{ marginBottom: 16 }}>
         <Space size={8}>
           <Switch
             checked={Boolean(config.returnReasoning ?? true)}
             onChange={(checked) => onChange('returnReasoning', checked)}
-            checkedChildren="推理过程"
+            checkedChildren="含推理"
             unCheckedChildren="仅结论"
           />
           <Text type="secondary" style={{ fontSize: 12 }}>
-            控制输出中是否保留推理说明字段。
+            是否在输出中包含推理分析过程
           </Text>
         </Space>
       </Form.Item>
 
-      <Collapse
-        size="small"
-        defaultActiveKey={['prompt', 'schema']}
-        items={[
-          {
-            key: 'prompt',
-            label: '提示词配置',
-            children: (
-              <StructuredPromptBuilder
-                value={(config.systemPrompt as string) ?? ''}
-                onChange={(value) => {
-                  onChange('systemPrompt', value);
-                  onChange('systemPromptOverride', value);
-                }}
-              />
-            ),
-          },
-          {
-            key: 'schema',
-            label: '输出结构',
-            children: (
-              <OutputSchemaBuilder
-                value={stringifySchema(config.outputSchema)}
-                onChange={(value) => {
-                  onChange('outputSchema', parseSchemaValue(value));
-                  if (value.trim()) {
-                    onChange('outputSchemaCode', 'CUSTOM');
-                  }
-                }}
-              />
-            ),
-          },
-          {
-            key: 'guardrails',
-            label: '安全防护',
-            children: (
-              <VisualGuardrailsBuilder
-                value={(config.guardrails as Record<string, unknown>) ?? {}}
-                onChange={(value) => onChange('guardrails', value)}
-              />
-            ),
-          },
-          {
-            key: 'tools',
-            label: '工具策略',
-            children: (
-              <VisualToolPolicyBuilder
-                value={
-                  (config.toolPolicy as { allowedTools?: string[]; blockedTools?: string[] }) ?? {}
-                }
-                onChange={(value) => onChange('toolPolicy', value)}
-              />
-            ),
-          },
-        ]}
-      />
+      {/* ── 模型覆盖（可选）── */}
+      <Form.Item label="模型覆盖（可选）" extra="可手填，或选择常用模型作为私有覆盖">
+        <AutoComplete
+          value={(config.modelOverride as string) ?? (config.model as string)}
+          onChange={(value) => {
+            onChange('modelOverride', value);
+            onChange('model', value);
+          }}
+          options={[
+            { value: 'openai/gpt-4o' },
+            { value: 'openai/gpt-4o-mini' },
+            { value: 'anthropic/claude-3-5-sonnet-latest' },
+            { value: 'google/gemini-1.5-pro-latest' },
+            { value: 'google/gemini-1.5-flash-latest' },
+            { value: 'deepseek/deepseek-chat' },
+            { value: 'deepseek/deepseek-reasoner' },
+          ]}
+          placeholder="例如：openai/gpt-4o"
+        />
+      </Form.Item>
     </Form>
   );
 };

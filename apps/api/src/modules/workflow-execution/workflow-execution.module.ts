@@ -1,12 +1,16 @@
 import { Module } from '@nestjs/common';
 import { WorkflowExecutionController } from './workflow-execution.controller';
 import { WorkflowExecutionService } from './workflow-execution.service';
+import { WorkflowExecutionRunnerService } from './workflow-execution-runner.service';
 import { ExecutionLogService } from './execution-log.service';
 import { WorkflowExecutionQueryService } from './workflow-execution-query.service';
 import { WorkflowExecutionReplayService } from './workflow-execution-replay.service';
+import { WorkflowExecutionContextService } from './workflow-execution-context.service';
+import { WorkflowExecutionDagService } from './workflow-execution-dag.service';
 import { NodeExecutorRegistry } from './engine/node-executor.registry';
 import { ManualTriggerNodeExecutor } from './engine/node-executors/manual-trigger.executor';
 import { NotifyNodeExecutor } from './engine/node-executors/notify-node.executor';
+import { ReportGenerateNodeExecutor } from './engine/node-executors/report-generate-node.executor';
 import { PassthroughNodeExecutor } from './engine/node-executors/passthrough-node.executor';
 import { RulePackEvalNodeExecutor } from './engine/node-executors/rule-pack-eval.executor';
 import { RiskGateNodeExecutor } from './engine/node-executors/risk-gate.executor';
@@ -33,52 +37,59 @@ import { WorkflowExperimentModule } from '../workflow-experiment/workflow-experi
 import { AIProviderFactory } from '../ai/providers/provider.factory';
 import { AgentProfileModule } from '../agent-profile';
 import { DecisionRecordModule } from '../decision-record/decision-record.module';
-
+import { KnowledgeModule } from '../knowledge/knowledge.module';
 
 @Module({
-    imports: [DebateTraceModule, WorkflowExperimentModule, AgentProfileModule, DecisionRecordModule],
+  imports: [DebateTraceModule, WorkflowExperimentModule, AgentProfileModule, DecisionRecordModule, KnowledgeModule],
 
-    controllers: [WorkflowExecutionController],
-    providers: [
-        WorkflowExecutionService,
-        ExecutionLogService,
-        WorkflowExecutionQueryService,
-        WorkflowExecutionReplayService,
-        NodeExecutorRegistry,
-        ManualTriggerNodeExecutor,
-        RulePackEvalNodeExecutor,
-        RiskGateNodeExecutor,
-        NotifyNodeExecutor,
-        PassthroughNodeExecutor,
-        AgentCallNodeExecutor,
-        DataFetchNodeExecutor,
-        FuturesDataFetchNodeExecutor,
-        ComputeNodeExecutor,
-        DebateRoundNodeExecutor,
-        ApiTriggerNodeExecutor,
-        ConditionBranchNodeExecutor,
-        ParallelControlNodeExecutor,
-        DecisionMergeNodeExecutor,
-        CronTriggerNodeExecutor,
-        EventTriggerNodeExecutor,
-        ContextBuilderNodeExecutor,
-        JudgeAgentNodeExecutor,
-        ApprovalNodeExecutor,
-        VariableResolver,
-        EvidenceCollector,
-        ReplayAssembler,
-        DagScheduler,
-        AIProviderFactory,
-    ],
-    exports: [
-        WorkflowExecutionService,
-        ExecutionLogService,
-        WorkflowExecutionQueryService,
-        WorkflowExecutionReplayService,
-        VariableResolver,
-        EvidenceCollector,
-        ReplayAssembler,
-        DagScheduler
-    ],
+  controllers: [WorkflowExecutionController],
+  providers: [
+    WorkflowExecutionService,
+    ExecutionLogService,
+    WorkflowExecutionQueryService,
+    WorkflowExecutionReplayService,
+    WorkflowExecutionContextService,
+    WorkflowExecutionDagService,
+    NodeExecutorRegistry,
+    ManualTriggerNodeExecutor,
+    RulePackEvalNodeExecutor,
+    RiskGateNodeExecutor,
+    NotifyNodeExecutor,
+    ReportGenerateNodeExecutor,
+    PassthroughNodeExecutor,
+    AgentCallNodeExecutor,
+    DataFetchNodeExecutor,
+    FuturesDataFetchNodeExecutor,
+    ComputeNodeExecutor,
+    DebateRoundNodeExecutor,
+    ApiTriggerNodeExecutor,
+    ConditionBranchNodeExecutor,
+    ParallelControlNodeExecutor,
+    DecisionMergeNodeExecutor,
+    CronTriggerNodeExecutor,
+    EventTriggerNodeExecutor,
+    ContextBuilderNodeExecutor,
+    JudgeAgentNodeExecutor,
+    ApprovalNodeExecutor,
+    VariableResolver,
+    EvidenceCollector,
+    ReplayAssembler,
+    DagScheduler,
+    AIProviderFactory,
+    WorkflowExecutionRunnerService,
+  ],
+  exports: [
+    WorkflowExecutionService,
+    ExecutionLogService,
+    WorkflowExecutionQueryService,
+    WorkflowExecutionReplayService,
+    WorkflowExecutionContextService,
+    WorkflowExecutionDagService,
+    VariableResolver,
+    EvidenceCollector,
+    ReplayAssembler,
+    DagScheduler,
+    WorkflowExecutionRunnerService,
+  ],
 })
 export class WorkflowExecutionModule { }

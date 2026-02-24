@@ -1,14 +1,15 @@
 import { Body, Controller, Get, Post, Query } from '@nestjs/common';
 import { AIService } from './ai.service';
+import { AIModelService } from './ai-model.service';
 import { AIProvider } from '@packages/types';
 
 @Controller('ai')
 export class AIController {
-    constructor(private readonly aiService: AIService) { }
+    constructor(private readonly aiModelService: AIModelService, private readonly aiService: AIService) { }
 
     @Get('test-connection')
     async testConnection(@Query('configKey') configKey?: string) {
-        return this.aiService.testConnection(configKey);
+        return this.aiModelService.testConnection(configKey);
     }
 
     @Get('models')
@@ -21,7 +22,7 @@ export class AIController {
         if (!provider && !configKey) {
             throw new Error('Provider parameter is required');
         }
-        return this.aiService.getAvailableModels(provider, apiKey, apiUrl, configKey);
+        return this.aiModelService.getAvailableModels(provider, apiKey, apiUrl, configKey);
     }
 
     @Post('test-model')
@@ -43,6 +44,6 @@ export class AIController {
         maxTokens?: number;
         topP?: number;
     }) {
-        return this.aiService.testModelDirect(payload);
+        return this.aiModelService.testModelDirect(payload);
     }
 }

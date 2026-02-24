@@ -3,6 +3,7 @@ import React from 'react';
 import { useQuery } from '@tanstack/react-query';
 import axios from 'axios';
 import { useMachine } from '@xstate/react';
+import { theme } from 'antd';
 import { wizardMachine } from './wizard.machine';
 import { Step3_Knowledge } from './components/Step3_Knowledge';
 import { Step4_Playground } from './components/Step4_Playground';
@@ -10,6 +11,7 @@ import { Step1_PersonaSelection } from './components/Step1_PersonaSelection';
 import { Step2_CredentialBinding } from './components/Step2_CredentialBinding';
 
 export const WizardLayout = () => {
+    const { token } = theme.useToken();
     const [state, send] = useMachine(wizardMachine);
     const stateSnapshot = state as any;
     const { data: personas } = useQuery(['agent-personas'], async () => {
@@ -19,7 +21,7 @@ export const WizardLayout = () => {
 
     return (
         <div style={{ maxWidth: 800, margin: '40px auto', border: '1px solid #ddd', borderRadius: 8, overflow: 'hidden' }}>
-            <div style={{ background: '#f5f5f5', padding: '10px 20px', borderBottom: '1px solid #ddd' }}>
+            <div style={{ background: token.colorBgLayout, padding: '10px 20px', borderBottom: '1px solid #ddd' }}>
                 <strong>Wizard State:</strong> {JSON.stringify(state.value)}
             </div>
 

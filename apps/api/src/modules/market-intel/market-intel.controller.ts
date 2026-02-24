@@ -17,11 +17,13 @@ import {
 import { Response } from 'express';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { IntelCrudService } from './intel-crud.service';
+import { IntelEventInsightService } from './intel-event-insight.service';
 import { IntelAnalysisService } from './intel-analysis.service';
 import { IntelSearchService } from './intel-search.service';
 import { IntelScoringService } from './intel-scoring.service';
 import { PriceDataService } from './price-data.service';
-import { PriceAggregationService } from './price-aggregation.service';
+import { PriceAnalyticsService } from './price-analytics.service';
+import { PriceTimeseriesService } from './price-timeseries.service';
 import { PriceAlertService } from './price-alert.service';
 
 import {
@@ -49,17 +51,19 @@ export class MarketIntelController {
   private readonly logger = new Logger(MarketIntelController.name);
   constructor(
     private readonly intelCrudService: IntelCrudService,
+    private readonly intelEventInsightService: IntelEventInsightService,
     private readonly intelAnalysisService: IntelAnalysisService,
     private readonly intelSearchService: IntelSearchService,
     private readonly intelScoringService: IntelScoringService,
     private readonly priceDataService: PriceDataService,
-    private readonly priceAggregationService: PriceAggregationService,
+    private readonly priceAnalyticsService: PriceAnalyticsService,
+    private readonly priceTimeseriesService: PriceTimeseriesService,
     private readonly priceAlertService: PriceAlertService,
     private readonly intelAttachmentService: IntelAttachmentService,
     private readonly documentParserService: DocumentParserService,
     private readonly pdfToMarkdownService: PdfToMarkdownService,
     private readonly knowledgeExtractionService: KnowledgeExtractionService,
-  ) { }
+  ) {}
 
   // =============================================
   // 静态路由 (必须在动态路由 :id 之前)
@@ -274,7 +278,7 @@ export class MarketIntelController {
 
   @Get('price-data/continuity-health')
   async getPriceContinuityHealth(@Query() query: PriceDataQuery & { days?: string }) {
-    return this.priceAggregationService.getContinuityHealth(query);
+    return this.priceAnalyticsService.getContinuityHealth(query);
   }
 
   @Get('alerts/rules')
@@ -378,12 +382,12 @@ export class MarketIntelController {
     @Query('location') location: string,
     @Query('days') days = '30',
   ) {
-    return this.priceAggregationService.getTrend(commodity, location, parseInt(days, 10));
+    return this.priceTimeseriesService.getTrend(commodity, location, parseInt(days, 10));
   }
 
   @Get('price-data/heatmap')
   async getPriceHeatmap(@Query('commodity') commodity: string, @Query('date') date?: string) {
-    return this.priceAggregationService.getHeatmap(commodity, date ? new Date(date) : undefined);
+    return this.priceTimeseriesService.getHeatmap(commodity, date ? new Date(date) : undefined);
   }
 
   /**
@@ -400,7 +404,7 @@ export class MarketIntelController {
     @Query('reviewScope') reviewScope?: string,
     @Query('sourceScope') sourceScope?: string,
   ) {
-    return this.priceAggregationService.getByCollectionPoint(
+    return this.priceTimeseriesService.getByCollectionPoint(
       collectionPointId,
       commodity,
       parseInt(days, 10),
@@ -427,7 +431,7 @@ export class MarketIntelController {
     @Query('sourceScope') sourceScope?: string,
     @Query('includeData') includeData?: string,
   ) {
-    return this.priceAggregationService.getByRegion(
+    return this.priceTimeseriesService.getByRegion(
       regionCode,
       commodity,
       parseInt(days, 10),
@@ -455,7 +459,7 @@ export class MarketIntelController {
     @Query('sourceScope') sourceScope?: string,
   ) {
     const collectionPointIds = ids.split(',').filter((id) => id.trim());
-    return this.priceAggregationService.getMultiPointTrend(
+    return this.priceTimeseriesService.getMultiPointTrend(
       collectionPointIds,
       commodity,
       parseInt(days, 10),
@@ -486,7 +490,7 @@ export class MarketIntelController {
     @Query('regionWindow') regionWindow?: string,
   ) {
     const collectionPointIds = (ids || '').split(',').filter((id) => id.trim());
-    return this.priceAggregationService.getCompareAnalytics({
+    return this.priceAnalyticsService.getCompareAnalytics({
       collectionPointIds,
       commodity,
       days: parseInt(days, 10),
@@ -506,7 +510,7 @@ export class MarketIntelController {
 
   @Get('filter-options')
   async getFilterOptions() {
-    return this.intelCrudService.getFilterOptions();
+    return this.intelEventInsightService.getFilterOptions();
   }
 
   @Get('dashboard/stats')
@@ -539,7 +543,7 @@ export class MarketIntelController {
 
   @Post('dashboard/briefing')
   async generateSmartBriefing(
-    @Body() body: { startDate?: string; endDate?: string;[key: string]: unknown },
+    @Body() body: { startDate?: string; endDate?: string; [key: string]: unknown },
   ) {
     return this.intelAnalysisService.generateSmartBriefing({
       ...body,
@@ -577,7 +581,7 @@ export class MarketIntelController {
     @Query('page') page = '1',
     @Query('pageSize') pageSize = '20',
   ) {
-    return this.intelCrudService.findEvents({
+    return this.intelEventInsightService.findEvents({
       eventTypeId,
       collectionPointId,
       commodity,
@@ -598,7 +602,7 @@ export class MarketIntelController {
     @Query('commodities') commodities?: string,
     @Query('regions') regions?: string,
   ) {
-    return this.intelCrudService.getEventStats({
+    return this.intelEventInsightService.getEventStats({
       startDate: startDate ? new Date(startDate) : undefined,
       endDate: endDate ? new Date(endDate) : undefined,
       commodities: commodities ? commodities.split(',') : undefined,
@@ -608,7 +612,7 @@ export class MarketIntelController {
 
   @Get('events/:id')
   async findEventById(@Param('id') id: string) {
-    return this.intelCrudService.findEventById(id);
+    return this.intelEventInsightService.findEventById(id);
   }
 
   // --- C类增强：市场洞察 ---
@@ -625,7 +629,7 @@ export class MarketIntelController {
     @Query('page') page = '1',
     @Query('pageSize') pageSize = '20',
   ) {
-    return this.intelCrudService.findInsights({
+    return this.intelEventInsightService.findInsights({
       insightTypeId,
       direction,
       timeframe,
@@ -640,12 +644,12 @@ export class MarketIntelController {
 
   @Get('insights/stats')
   async getInsightStats() {
-    return this.intelCrudService.getInsightStats();
+    return this.intelEventInsightService.getInsightStats();
   }
 
   @Get('insights/:id')
   async findInsightById(@Param('id') id: string) {
-    return this.intelCrudService.findInsightById(id);
+    return this.intelEventInsightService.findInsightById(id);
   }
 
   // --- 文档升级为研报 (Promote to Report) ---
@@ -744,7 +748,13 @@ export class MarketIntelController {
   )
   async uploadDocument(
     @UploadedFile() file: Express.Multer.File,
-    @Body() body: { sourceType?: string; contentType?: string; location?: string; skipKnowledgeSync?: string | boolean },
+    @Body()
+    body: {
+      sourceType?: string;
+      contentType?: string;
+      location?: string;
+      skipKnowledgeSync?: string | boolean;
+    },
   ) {
     if (!file) {
       throw new BadRequestException('No file uploaded');

@@ -1,5 +1,5 @@
 import React from 'react';
-import { Card, Space, Typography, Tag, Radio, Tooltip } from 'antd';
+import { Card, Space, Typography, Tag, Radio, Tooltip, theme } from 'antd';
 import { RocketOutlined, SafetyCertificateOutlined, SafetyOutlined, SettingOutlined } from '@ant-design/icons';
 
 const { Text, Title } = Typography;
@@ -46,6 +46,7 @@ export const RuntimePresetCard: React.FC<RuntimePresetCardProps> = ({
     currentTimeout,
     currentRetry,
 }) => {
+    const { token } = theme.useToken();
     return (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 8 }}>
             {Object.entries(PRESETS).map(([key, config]) => {
@@ -56,15 +57,15 @@ export const RuntimePresetCard: React.FC<RuntimePresetCardProps> = ({
                         onClick={() => onChange(key as RuntimePresetType)}
                         style={{
                             cursor: 'pointer',
-                            border: `1px solid ${isSelected ? config.color : '#f0f0f0'}`,
+                            border: `1px solid ${isSelected ? config.color : token.colorBorderSecondary}`,
                             borderRadius: 8,
                             padding: 12,
-                            background: isSelected ? `${config.color}08` : '#fff',
+                            background: isSelected ? `${config.color}08` : token.colorBgContainer,
                             transition: 'all 0.2s',
                         }}
                     >
                         <Space align="start">
-                            <div style={{ color: isSelected ? config.color : '#8c8c8c', fontSize: 16 }}>
+                            <div style={{ color: isSelected ? config.color : token.colorTextTertiary, fontSize: 16 }}>
                                 {config.icon}
                             </div>
                             <div style={{ display: 'flex', flexDirection: 'column' }}>

@@ -80,7 +80,7 @@ export const CollectionPointManager: React.FC = () => {
         try {
             await deleteMutation.mutateAsync(id);
             message.success('删除成功');
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- error object from catch
+         
         } catch (error: any) {
             message.error(error.message || '删除失败');
         }

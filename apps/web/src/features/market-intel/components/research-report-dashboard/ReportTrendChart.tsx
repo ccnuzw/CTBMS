@@ -30,7 +30,7 @@ export const ReportTrendChart: React.FC<ReportTrendChartProps> = ({ data, loadin
             shape: 'disc',
             style: {
                 fill: 'white',
-                stroke: '#5B8FF9',
+                stroke: '#5B8FF9' /* chart-series-color */,
                 lineWidth: 2,
             },
         },
@@ -41,7 +41,7 @@ export const ReportTrendChart: React.FC<ReportTrendChartProps> = ({ data, loadin
             active: {
                 style: {
                     shadowBlur: 4,
-                    stroke: '#000',
+                    stroke: '#000' /* chart-axis-color */,
                     fill: 'red',
                 },
             },

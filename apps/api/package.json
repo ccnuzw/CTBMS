@@ -61,7 +61,7 @@
     "@langchain/textsplitters": "^1.0.1",
     "@nestjs/common": "^10.0.0",
     "@nestjs/core": "^10.0.0",
-    "@nestjs/platform-express": "^10.0.0",
+    "@nestjs/platform-express": "^10.4.22",
     "@nestjs/schedule": "^6.1.0",
     "@nestjs/swagger": "^7.3.0",
     "@packages/types": "workspace:*",

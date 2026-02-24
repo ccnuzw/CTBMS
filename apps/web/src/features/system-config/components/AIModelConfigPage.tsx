@@ -119,7 +119,7 @@ export const AIModelConfigPage = () => {
         return JSON.stringify(value, null, 2);
     };
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- dynamic form/parameter value
+     
     const parseJsonField = (value: any, label: string) => {
         if (value === undefined || value === null || value === '') return undefined;
         if (typeof value === 'object') return value as Record<string, string>;
@@ -231,7 +231,7 @@ export const AIModelConfigPage = () => {
         try {
             // Include id if editing
             const { __template, showAdvanced, ...restValues } = values;
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+             
             const payload: Record<string, any> = {
                 ...restValues,
                 headers: parseJsonField(values.headers, 'Headers'),
@@ -311,7 +311,7 @@ export const AIModelConfigPage = () => {
                 message.info(`已使用 ${result.provider} 模式获取模型列表`);
             }
             message.success(`成功获取 ${models.length} 个模型，请从列表选择添加`);
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- error object from catch
+         
         } catch (error: any) {
             message.error(`获取失败: ${error.message}`);
         } finally {

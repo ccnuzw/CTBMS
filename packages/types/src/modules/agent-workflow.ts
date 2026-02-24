@@ -32,7 +32,8 @@ export const AgentProfileSchema = z.object({
   modelConfigKey: z.string(),
   agentPromptCode: z.string(),
   memoryPolicy: AgentMemoryPolicyEnum,
-  toolPolicy: z.record(z.unknown()),
+  toolPolicy: z.record(z.unknown()).optional(), // [DEPRECATED]
+  skillCodes: z.array(z.string()).optional(),    // [NEW]
   guardrails: z.record(z.unknown()),
   outputSchemaCode: z.string(),
   outputSchema: z.record(z.unknown()).nullable().optional(),
@@ -54,7 +55,8 @@ export const CreateAgentProfileSchema = z.object({
   modelConfigKey: z.string().min(1).max(120),
   agentPromptCode: z.string().min(1).max(120),
   memoryPolicy: AgentMemoryPolicyEnum.default('none'),
-  toolPolicy: z.record(z.unknown()).default({}),
+  toolPolicy: z.record(z.unknown()).optional(), // [DEPRECATED]
+  skillCodes: z.array(z.string()).default([]),  // [NEW]
   guardrails: z.record(z.unknown()).default({}),
   outputSchemaCode: z.string().min(1).max(120),
   outputSchema: z.record(z.unknown()).optional(),
@@ -70,7 +72,8 @@ export const UpdateAgentProfileSchema = z.object({
   modelConfigKey: z.string().min(1).max(120).optional(),
   agentPromptCode: z.string().min(1).max(120).optional(),
   memoryPolicy: AgentMemoryPolicyEnum.optional(),
-  toolPolicy: z.record(z.unknown()).optional(),
+  toolPolicy: z.record(z.unknown()).optional(), // [DEPRECATED]
+  skillCodes: z.array(z.string()).optional(),    // [NEW]
   guardrails: z.record(z.unknown()).optional(),
   outputSchemaCode: z.string().min(1).max(120).optional(),
   outputSchema: z.record(z.unknown()).optional(),
@@ -98,6 +101,58 @@ export const AgentProfilePageSchema = z.object({
 
 export const PublishAgentProfileSchema = z.object({
   comment: z.string().max(500).optional(),
+});
+
+// ─── AgentSkill ────────────────────────────────────────────────────
+
+export const AgentSkillSchema = z.object({
+  id: z.string().uuid(),
+  skillCode: z.string(),
+  name: z.string(),
+  description: z.string(),
+  parameters: z.record(z.unknown()), // JSON Schema
+  handlerCode: z.string(),
+
+  ownerUserId: z.string().nullable().optional(),
+  templateSource: WorkflowTemplateSourceEnum,
+  isActive: z.boolean(),
+  version: z.number().int(),
+
+  createdAt: z.date().optional(),
+  updatedAt: z.date().optional(),
+});
+
+export const CreateAgentSkillSchema = z.object({
+  skillCode: z.string().regex(/^[A-Z0-9_]{3,120}$/i),
+  name: z.string().min(1).max(120),
+  description: z.string().min(1).max(2000),
+  parameters: z.record(z.unknown()).default({ type: "object", properties: {} }),
+  handlerCode: z.string().min(1).max(120),
+  templateSource: WorkflowTemplateSourceEnum.default('PRIVATE'),
+});
+
+export const UpdateAgentSkillSchema = z.object({
+  name: z.string().min(1).max(120).optional(),
+  description: z.string().min(1).max(2000).optional(),
+  parameters: z.record(z.unknown()).optional(),
+  handlerCode: z.string().min(1).max(120).optional(),
+  isActive: z.boolean().optional(),
+});
+
+export const AgentSkillQuerySchema = z.object({
+  keyword: z.string().max(120).optional(),
+  includePublic: z.coerce.boolean().default(true),
+  isActive: z.coerce.boolean().optional(),
+  page: z.coerce.number().int().min(1).default(1),
+  pageSize: z.coerce.number().int().min(1).max(1000).default(20),
+});
+
+export const AgentSkillPageSchema = z.object({
+  data: z.array(AgentSkillSchema),
+  total: z.number().int(),
+  page: z.number().int(),
+  pageSize: z.number().int(),
+  totalPages: z.number().int(),
 });
 
 // ─── AgentPromptTemplate ────────────────────────────────────────────
@@ -180,6 +235,12 @@ export type UpdateAgentProfileDto = z.infer<typeof UpdateAgentProfileSchema>;
 export type AgentProfileQueryDto = z.infer<typeof AgentProfileQuerySchema>;
 export type AgentProfilePageDto = z.infer<typeof AgentProfilePageSchema>;
 export type PublishAgentProfileDto = z.infer<typeof PublishAgentProfileSchema>;
+
+export type AgentSkillDto = z.infer<typeof AgentSkillSchema>;
+export type CreateAgentSkillDto = z.infer<typeof CreateAgentSkillSchema>;
+export type UpdateAgentSkillDto = z.infer<typeof UpdateAgentSkillSchema>;
+export type AgentSkillQueryDto = z.infer<typeof AgentSkillQuerySchema>;
+export type AgentSkillPageDto = z.infer<typeof AgentSkillPageSchema>;
 
 export type AgentPromptOutputFormat = z.infer<typeof AgentPromptOutputFormatEnum>;
 export type AgentPromptTemplateDto = z.infer<typeof AgentPromptTemplateSchema>;

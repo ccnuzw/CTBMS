@@ -592,14 +592,14 @@ export const OperationalWorkbench: React.FC = () => {
                                 style={{ background: token.colorWarningBg, borderColor: token.colorWarningBorder }}
                             >
                                 <Flex justify="space-between" style={{ marginBottom: 4 }}>
-                                    <Text strong style={{ color: '#d97706', fontSize: 12 }}>
+                                    <Text strong style={{ color: token.colorWarning, fontSize: 12 }}>
                                         北港价格倒挂
                                     </Text>
                                     <Text type="secondary" style={{ fontSize: 10 }}>
                                         1小时前
                                     </Text>
                                 </Flex>
-                                <Text style={{ fontSize: 11, color: '#d97706' }}>
+                                <Text style={{ fontSize: 11, color: token.colorWarning }}>
                                     集港成本已高于平舱价20元/吨。
                                 </Text>
                             </Card>

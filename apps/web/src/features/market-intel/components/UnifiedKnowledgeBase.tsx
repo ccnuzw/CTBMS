@@ -449,7 +449,7 @@ export const UnifiedKnowledgeBase: React.FC = () => {
                                     { value: 'all', label: `全部 (${docCount + reportCount})` },
                                     { value: 'documents', icon: <FileTextOutlined />, label: `文档 (${docCount})` },
                                     { value: 'reports', icon: <FileSearchOutlined />, label: `研报 (${reportCount})` },
-                                    { value: 'favorites', icon: <StarFilled style={{ color: '#faad14' }} />, label: `收藏 (${favoriteCount})` },
+                                    { value: 'favorites', icon: <StarFilled style={{ color: token.colorWarning }} />, label: `收藏 (${favoriteCount})` },
                                 ]}
                             />
                             <Input

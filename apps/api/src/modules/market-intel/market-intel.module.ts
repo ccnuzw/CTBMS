@@ -1,11 +1,13 @@
 import { Module } from '@nestjs/common';
 import { MarketIntelController } from './market-intel.controller';
 import { IntelCrudService } from './intel-crud.service';
+import { IntelEventInsightService } from './intel-event-insight.service';
 import { IntelAnalysisService } from './intel-analysis.service';
 import { IntelSearchService } from './intel-search.service';
 import { IntelScoringService } from './intel-scoring.service';
 import { PriceDataService } from './price-data.service';
-import { PriceAggregationService } from './price-aggregation.service';
+import { PriceAnalyticsService } from './price-analytics.service';
+import { PriceTimeseriesService } from './price-timeseries.service';
 import { PriceAlertService } from './price-alert.service';
 
 import { IntelAttachmentService } from './intel-attachment.service';
@@ -24,7 +26,8 @@ import { KnowledgeModule } from '../knowledge/knowledge.module';
     IntelSearchService,
     IntelScoringService,
     PriceDataService,
-    PriceAggregationService,
+    PriceAnalyticsService,
+    PriceTimeseriesService,
     PriceAlertService,
 
     IntelAttachmentService,
@@ -32,6 +35,7 @@ import { KnowledgeModule } from '../knowledge/knowledge.module';
     DocumentParserService,
     PdfToMarkdownService,
     PdfToMarkdownService,
+      IntelEventInsightService,
   ],
   exports: [
     IntelCrudService,
@@ -39,7 +43,8 @@ import { KnowledgeModule } from '../knowledge/knowledge.module';
     IntelSearchService,
     IntelScoringService,
     PriceDataService,
-    PriceAggregationService,
+    PriceAnalyticsService,
+    PriceTimeseriesService,
     PriceAlertService,
 
     IntelAttachmentService,
@@ -47,6 +52,7 @@ import { KnowledgeModule } from '../knowledge/knowledge.module';
     DocumentParserService,
     PdfToMarkdownService,
     PdfToMarkdownService,
+      IntelEventInsightService,
   ],
 })
 export class MarketIntelModule { }

@@ -135,7 +135,7 @@ export const IntelInsightPanel: React.FC<IntelInsightPanelProps> = ({
                 <Card
                     title={
                         <Space>
-                            <BulbOutlined style={{ color: '#faad14' }} />
+                            <BulbOutlined style={{ color: token.colorWarning }} />
                             <span>情报透视</span>
                         </Space>
                     }

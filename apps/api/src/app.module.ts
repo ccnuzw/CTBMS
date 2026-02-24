@@ -45,6 +45,7 @@ import { UserConfigBindingModule } from './modules/user-config-binding';
 import { ConnectorModule } from './modules/connector/connector.module';
 import { AgentPersonaModule } from './modules/agent-persona/agent-persona.module';
 import { WizardModule } from './modules/wizard/wizard.module';
+import { AgentSkillModule } from './modules/agent-skill';
 
 @Module({
   imports: [
@@ -91,6 +92,7 @@ import { WizardModule } from './modules/wizard/wizard.module';
     ConnectorModule,
     AgentPersonaModule,
     WizardModule,
+    AgentSkillModule,
   ],
   controllers: [AppController],
   providers: [],

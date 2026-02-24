@@ -13,7 +13,7 @@ export const ThemeSwitcher: React.FC = () => {
                 components: {
                     Segmented: {
                         itemSelectedBg: token.colorPrimary,
-                        // itemSelectedColor: '#fff',
+                        // itemSelectedColor: token.colorBgContainer,
                         // trackBg: token.colorFillTertiary,
                     }
                 }

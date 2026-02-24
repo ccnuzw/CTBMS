@@ -9,7 +9,7 @@ interface ApiTriggerFormProps {
 export const ApiTriggerForm: React.FC<ApiTriggerFormProps> = ({ config, onChange }) => {
     return (
         <Form layout="vertical" size="small">
-            <Form.Item label="限流 (QPM)">
+            <Form.Item label="请求频率限制 (次/分钟)" help="保护当前工作流免受外部流量重击">
                 <InputNumber
                     min={1}
                     max={1000}

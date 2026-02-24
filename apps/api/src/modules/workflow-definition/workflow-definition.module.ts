@@ -1,12 +1,24 @@
 import { Module } from '@nestjs/common';
 import { WorkflowDefinitionController } from './workflow-definition.controller';
 import { WorkflowDefinitionService } from './workflow-definition.service';
+import { WorkflowDefinitionValidatorService } from './workflow-definition-validator.service';
+import { WorkflowNodePreviewService } from './workflow-node-preview.service';
 import { WorkflowDslValidator } from './workflow-dsl-validator';
 import { VariableResolver } from '../workflow-execution/engine/variable-resolver';
 
 @Module({
   controllers: [WorkflowDefinitionController],
-  providers: [WorkflowDefinitionService, WorkflowDslValidator, VariableResolver],
-  exports: [WorkflowDefinitionService],
+  providers: [
+    WorkflowDefinitionService,
+    WorkflowDefinitionValidatorService,
+    WorkflowDslValidator,
+    VariableResolver,
+    WorkflowNodePreviewService,
+  ],
+  exports: [
+    WorkflowDefinitionService,
+    WorkflowDefinitionValidatorService,
+    WorkflowNodePreviewService,
+  ],
 })
-export class WorkflowDefinitionModule {}
+export class WorkflowDefinitionModule { }

@@ -19,9 +19,7 @@ export class KnowledgeQueryExpansionService {
     }
 
     private async getLLM(): Promise<ChatOpenAI | ChatGoogleGenerativeAI> {
-        const configs = await this.configService.getAllAIModelConfigs();
-        const activeConfig = configs.find(c => c.isActive && c.configKey !== 'DEFAULT')
-            || await this.configService.getDefaultAIConfig();
+        const activeConfig = await this.configService.getDefaultAIConfig();
 
         if (!activeConfig) {
             // Fallback

@@ -39,7 +39,7 @@ export const AIStatsWidget: React.FC = () => {
                         title="平均耗时"
                         value={aiStats.processingSpeed}
                         suffix="s/条"
-                        prefix={<ThunderboltOutlined style={{ color: '#faad14' }} />}
+                        prefix={<ThunderboltOutlined style={{ color: token.colorWarning }} />}
                         valueStyle={{ fontSize: 20 }}
                     />
                 </Col>

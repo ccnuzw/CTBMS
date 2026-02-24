@@ -57,7 +57,7 @@ export const BatchPriceEntryTable: React.FC = () => {
         if (assignedPoints && assignedPoints.length > 0) {
             const rows: BatchEntryRow[] = [];
 
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any -- untyped API response iteration
+             
             assignedPoints.forEach((allocation: any) => {
                 // Skip if already reported today (Granular check from backend)
                 if (allocation.todayReported) return;

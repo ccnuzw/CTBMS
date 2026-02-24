@@ -1,11 +1,73 @@
 import React from 'react';
-import { Alert, Button, Card, Divider, Modal, Space, Steps, Typography, Tag } from 'antd';
+import { Alert, Button, Card, Divider, Modal, Space, Steps, Typography, Tag, Tooltip } from 'antd';
 import dayjs from 'dayjs';
 import { WorkflowVersionDto } from '@packages/types';
 import { WorkflowDependencyCheckResult, WorkflowDependencyGroup, PublishDryRunPreview } from './types';
 import { countDependencyIssues, hasDependencyIssues } from './utils';
 
 const { Text } = Typography;
+
+/**
+ * 校验问题错误码 → 中文类别标签
+ */
+const ISSUE_CODE_LABEL_MAP: Record<string, string> = {
+    // 基础结构
+    WF001: '流程结构',
+    WF002: '节点配置',
+    WF003: '连线配置',
+    WF004: '节点引用',
+    WF005: '循环检测',
+    // 语义校验
+    WF101: '触发节点',
+    WF102: '终止节点',
+    WF103: '分支结构',
+    WF104: '节点连接',
+    WF105: '参数绑定',
+    WF106: '表达式',
+    WF107: '节点配置',
+    // 依赖校验
+    WF201: '规则包引用',
+    WF202: '智能体引用',
+    WF203: '参数集引用',
+    WF204: '连接器引用',
+    WF205: '提示词引用',
+    // 发布校验
+    WF301: '版本状态',
+    WF302: '发布权限',
+    WF303: '运行策略',
+    WF304: '发布条件',
+};
+
+/**
+ * 根据错误码前缀判断严重级别
+ * WF0xx / WF1xx = ERROR (结构/语义) 
+ * WF2xx = WARNING (依赖)
+ * WF3xx = ERROR (发布条件)
+ * 其余 = INFO
+ */
+const getIssueSeverity = (code: string): 'error' | 'warning' | 'info' => {
+    if (!code) return 'info';
+    const num = parseInt(code.replace('WF', ''), 10);
+    if (Number.isNaN(num)) return 'info';
+    if (num < 100) return 'error';    // 基础结构
+    if (num < 200) return 'error';    // 语义
+    if (num < 300) return 'warning';  // 依赖
+    return 'error';                   // 发布条件
+};
+
+const SEVERITY_LABEL: Record<string, string> = {
+    error: '🔴 阻塞',
+    warning: '🟡 警告',
+    info: '🔵 提示',
+};
+
+const SEVERITY_TAG_COLOR: Record<string, string> = {
+    error: 'error',
+    warning: 'warning',
+    info: 'processing',
+};
+
+const getIssueLabel = (code: string): string => ISSUE_CODE_LABEL_MAP[code] || code;
 
 export interface WorkflowDefinitionPublishWizardModalProps {
     publishWizardVersion: WorkflowVersionDto | null;
@@ -14,7 +76,7 @@ export interface WorkflowDefinitionPublishWizardModalProps {
     publishWizardUnpublishedCount: number;
     publishWizardUnavailableCount: number;
     publishWizardValidationLoading: boolean;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- validation result structure
+
     publishWizardValidationResult: any;
     publishWizardHasValidationBlock: boolean;
     publishWizardCurrentStep: number;
@@ -187,28 +249,61 @@ export const WorkflowDefinitionPublishWizardModal: React.FC<WorkflowDefinitionPu
                         size="small"
                         title="步骤 2：发布校验"
                         extra={
-                            <Button size="small" loading={publishWizardValidationLoading} onClick={onRevalidate}>
-                                重新校验
-                            </Button>
+                            <Space>
+                                {!publishWizardValidationResult?.valid && (
+                                    <Button size="small" type="link" onClick={onGoToStudio}>
+                                        去画布修复
+                                    </Button>
+                                )}
+                                <Button size="small" loading={publishWizardValidationLoading} onClick={onRevalidate}>
+                                    重新校验
+                                </Button>
+                            </Space>
                         }
                     >
                         {publishWizardValidationLoading ? (
                             <Text type="secondary">正在校验流程结构和发布规则，请稍候...</Text>
                         ) : publishWizardValidationResult ? (
-                            <Space direction="vertical" size={8}>
+                            <Space direction="vertical" size={8} style={{ width: '100%' }}>
                                 <Alert
                                     showIcon
                                     type={publishWizardValidationResult.valid ? 'success' : 'warning'}
                                     message={publishWizardValidationResult.valid ? '发布校验通过' : `发布校验未通过（${publishWizardValidationResult.issues.length} 项）`}
                                 />
                                 {!publishWizardValidationResult.valid && (
-                                    <Space direction="vertical" size={4}>
-                                        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- untyped API response iteration
-                                        {publishWizardValidationResult.issues.slice(0, 8).map((issue: any) => (
-                                            <Text key={`${issue.code}-${issue.message}`} type="secondary">
-                                                {issue.code}: {issue.message}
+                                    <Space direction="vertical" size={6} style={{ width: '100%' }}>
+                                        {publishWizardValidationResult.issues.slice(0, 10).map((issue: any, idx: number) => {
+                                            const severity = getIssueSeverity(issue.code);
+                                            return (
+                                                <Tooltip
+                                                    key={`${issue.code}-${idx}`}
+                                                    title={`建议：请检查流程画布中相关${getIssueLabel(issue.code)}配置`}
+                                                >
+                                                    <Space size={8} align="start" style={{ width: '100%' }}>
+                                                        <Tag color={SEVERITY_TAG_COLOR[severity]} style={{ minWidth: 60, textAlign: 'center' }}>
+                                                            {SEVERITY_LABEL[severity]}
+                                                        </Tag>
+                                                        <Tag color="default" style={{ fontFamily: 'monospace', fontSize: 11 }}>
+                                                            {issue.code}
+                                                        </Tag>
+                                                        <Text
+                                                            type={severity === 'error' ? 'danger' : 'secondary'}
+                                                            style={{ flex: 1 }}
+                                                        >
+                                                            <Text strong style={{ marginRight: 4, color: 'inherit' }}>
+                                                                [{getIssueLabel(issue.code)}]
+                                                            </Text>
+                                                            {issue.message}
+                                                        </Text>
+                                                    </Space>
+                                                </Tooltip>
+                                            );
+                                        })}
+                                        {publishWizardValidationResult.issues.length > 10 && (
+                                            <Text type="secondary" style={{ paddingLeft: 4 }}>
+                                                ...还有 {publishWizardValidationResult.issues.length - 10} 项问题未展示
                                             </Text>
-                                        ))}
+                                        )}
                                     </Space>
                                 )}
                             </Space>

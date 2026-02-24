@@ -2,6 +2,7 @@ import { Injectable , Logger } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma';
 import { AIService } from '../ai/ai.service';
+import { AIModelService } from '../ai/ai-model.service';
 import { IntelCategory } from '@prisma/client';
 import { ContentType as TypesContentType } from '@packages/types';
 import {
@@ -55,6 +56,7 @@ export class IntelAnalysisService {
     constructor(
         private prisma: PrismaService,
         private aiService: AIService,
+        private readonly aiModelService: AIModelService,
     ) { }
 
     async analyze(
@@ -76,7 +78,7 @@ export class IntelAnalysisService {
     }
 
     async testAI() {
-        return this.aiService.testConnection();
+        return this.aiModelService.testConnection();
     }
 
     async getTrendAnalysis(query: {

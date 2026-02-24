@@ -1,4 +1,4 @@
-import { Button, App, Popconfirm, Tag, Space, Modal, Typography, Divider, Descriptions, Switch } from 'antd';
+import { Button, App, Popconfirm, Tag, Space, Modal, Typography, Divider, Descriptions, Switch , theme } from 'antd';
 import { useMemo, useState, useRef } from 'react';
 import { ActionType, ProColumns, ProTable, ModalForm, ProFormText, ProFormSelect, ProFormDigit, ProFormSwitch, ProFormDependency } from '@ant-design/pro-components';
 import { useMappingRules, useCreateMappingRule, useUpdateMappingRule, useDeleteMappingRule, useDictionaryDomains } from '../api';
@@ -61,6 +61,7 @@ const TARGET_OPTIONS_FALLBACK: Record<string, Record<string, string>> = {
 
 export const LogicRulesPage = () => {
     const { message } = App.useApp();
+    const { token } = theme.useToken();
     const actionRef = useRef<ActionType>();
     const { data: rules, isLoading, refetch } = useMappingRules();
     const { data: dictionaryDomains } = useDictionaryDomains(false);
@@ -214,7 +215,7 @@ export const LogicRulesPage = () => {
                 return (
                     <Space>
                         <Tag color="blue">{record.targetValue}</Tag>
-                        {friendly && <span style={{ color: '#666', fontSize: 13 }}>{friendly}</span>}
+                        {friendly && <span style={{ color: token.colorTextSecondary, fontSize: 13 }}>{friendly}</span>}
                     </Space>
                 );
             },
@@ -268,7 +269,7 @@ export const LogicRulesPage = () => {
     ];
 
     return (
-        <div style={{ background: '#F5F7FA' }}>
+        <div style={{ background: token.colorBgLayout }}>
             <ProTable<BusinessMappingRule>
                 headerTitle="业务逻辑映射规则 (Business Rules)"
                 actionRef={actionRef}

@@ -69,7 +69,7 @@ export const VisualGuardrailsBuilder: React.FC<VisualGuardrailsBuilderProps> = (
         else setPreset('CUSTOM');
     }, [value]);
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+     
     const handlePresetChange = (e: any) => {
         const newPreset = e.target.value;
         setPreset(newPreset);

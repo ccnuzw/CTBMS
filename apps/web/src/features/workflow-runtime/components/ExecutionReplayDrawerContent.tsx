@@ -198,7 +198,7 @@ export const ExecutionReplayDrawerContent: React.FC<ExecutionReplayDrawerContent
                                         isReadOnly={true}
                                         viewMode="replay"
                                         executionData={{
-                                            // eslint-disable-next-line @typescript-eslint/no-explicit-any -- untyped API response iteration
+                                             
                                             history: replayBundle?.timeline?.map((stat: any) => ({
                                                 nodeId: stat.nodeId,
                                                 status: stat.status,

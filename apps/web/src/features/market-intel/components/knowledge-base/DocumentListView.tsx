@@ -1,5 +1,5 @@
 import React, { useMemo } from 'react';
-import { Table, Tag, Space, Typography, Button, Tooltip } from 'antd';
+import { Table, Tag, Space, Typography, Button, Tooltip , theme } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import { EyeOutlined, StarOutlined, StarFilled } from '@ant-design/icons';
 import { IntelSourceType, INTEL_SOURCE_TYPE_LABELS, ReviewStatus } from '@packages/types';
@@ -38,6 +38,7 @@ export const DocumentListView: React.FC<DocumentListViewProps> = ({
     pagination
 }) => {
     const { isFavorite, toggleFavorite } = useFavoritesStore();
+    const { token } = theme.useToken();
     const { data: dictionaries } = useDictionaries(['INTEL_SOURCE_TYPE']);
 
     const sourceTypeMeta = useMemo(() => {
@@ -83,7 +84,7 @@ export const DocumentListView: React.FC<DocumentListViewProps> = ({
                         type="text"
                         size="small"
                         icon={isFavorite(record.id) ?
-                            <StarFilled style={{ color: '#faad14' }} /> :
+                            <StarFilled style={{ color: token.colorWarning }} /> :
                             <StarOutlined />
                         }
                         onClick={(e) => {
@@ -113,7 +114,7 @@ export const DocumentListView: React.FC<DocumentListViewProps> = ({
                     ? (title.length > 50 ? title.substring(0, 50) + '...' : title)
                     : '未命名文档';
                 return (
-                    <Text strong onClick={() => onPreview(record)} style={{ cursor: 'pointer', color: '#1890ff' }}>
+                    <Text strong onClick={() => onPreview(record)} style={{ cursor: 'pointer', color: token.colorPrimary }}>
                         {displayTitle}
                     </Text>
                 );

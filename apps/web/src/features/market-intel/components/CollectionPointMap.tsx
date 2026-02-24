@@ -37,9 +37,9 @@ const createColoredIcon = (color: string) => {
   });
 };
 
-const redIcon = createColoredIcon('#ff4d4f'); // Unassigned
-const blueIcon = createColoredIcon('#1890ff'); // Assigned
-const greenIcon = createColoredIcon('#52c41a'); // Assigned to current user
+const redIcon = createColoredIcon('#ff4d4f'); // Ant Design colorError default
+const blueIcon = createColoredIcon('#1677ff'); // Ant Design colorPrimary default
+const greenIcon = createColoredIcon('#52c41a'); // Ant Design colorSuccess default
 
 const POINT_TYPE_LABELS_FALLBACK: Record<string, string> = {
   PORT: '港口',
@@ -50,14 +50,14 @@ const POINT_TYPE_LABELS_FALLBACK: Record<string, string> = {
 };
 
 interface CollectionPointMapProps {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- map points data
+   
   points: any[];
   selectedUserId: string | null;
   onAssign: (pointId: string) => void;
   onUnassign: (pointId: string) => void;
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any -- map points data
+ 
 const FitBounds = ({ points }: { points: any[] }) => {
   const map = useMap();
 

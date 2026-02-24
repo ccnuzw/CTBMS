@@ -53,7 +53,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({ editor }) => {
     }, [editor]);
 
     const handleColorChange = useCallback(
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- color value callback
+         
         (color: any) => {
             const hex = typeof color === 'string' ? color : color.toHexString();
             editor.chain().focus().setColor(hex).run();
@@ -156,7 +156,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({ editor }) => {
                 {/* 颜色选择 */}
                 <ColorPicker
                     size="small"
-                    value={editor.getAttributes('textStyle').color || '#000000'}
+                    value={editor.getAttributes('textStyle').color || token.colorText}
                     onChange={handleColorChange}
                 />
 
