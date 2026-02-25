@@ -5,6 +5,7 @@ import { ToolHandlerRegistryService } from './tool-handler-registry.service';
 import { CalculateSumMockHandler } from './handlers/calculate-sum.handler';
 import { KnowledgeQueryToolHandler } from './handlers/knowledge-query.handler';
 import { KnowledgeModule } from '../knowledge/knowledge.module';
+import { AgentSkillGovernanceJob } from './agent-skill-governance.job';
 
 @Global()
 @Module({
@@ -13,6 +14,7 @@ import { KnowledgeModule } from '../knowledge/knowledge.module';
     providers: [
         AgentSkillService,
         ToolHandlerRegistryService,
+        AgentSkillGovernanceJob,
         CalculateSumMockHandler,
         KnowledgeQueryToolHandler
     ],

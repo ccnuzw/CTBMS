@@ -323,7 +323,7 @@ async function main() {
         exportTaskId: exportResult.body.exportTaskId,
         channel: 'DINGTALK',
         target: 'ops-group-01',
-        content: '请查收最新报告。',
+        templateCode: 'MORNING_BRIEF',
         sendRawFile: true,
       }),
     });
@@ -340,6 +340,7 @@ async function main() {
     assert.ok(String((payload.attachment as Record<string, unknown>)?.downloadUrl ?? '').includes('/report-exports/'));
     assert.equal(payload2.channel, 'DINGTALK');
     assert.equal(payload2.target, 'ops-group-01');
+    assert.equal(payload2.templateCode, 'MORNING_BRIEF');
   } finally {
     if (conversationSessionId) {
       await prisma.conversationSession.deleteMany({ where: { id: conversationSessionId } });

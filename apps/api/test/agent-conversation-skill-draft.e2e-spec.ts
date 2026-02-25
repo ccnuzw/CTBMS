@@ -267,6 +267,39 @@ async function main() {
     assert.ok(overview.body.activeRuntimeGrants >= 1);
     assert.ok(overview.body.highRiskPendingReview >= 1);
 
+    await prisma.agentSkillRuntimeGrant.update({
+      where: { id: String(createDraft.body.runtimeGrantId) },
+      data: {
+        expiresAt: new Date(Date.now() - 60 * 1000),
+      },
+    });
+
+    const housekeeping = await fetchJson<{
+      expiredGrantCount: number;
+      disabledDraftCount: number;
+    }>(`${baseUrl}/agent-skills/governance/housekeeping`, {
+      method: 'POST',
+      headers: {
+        'x-virtual-user-id': ownerUserId,
+      },
+    });
+    assert.equal(housekeeping.status, 201);
+    assert.ok(housekeeping.body.expiredGrantCount >= 1);
+
+    const grantsAfterHousekeeping = await fetchJson<Array<{ id: string; status: string }>>(
+      `${baseUrl}/agent-skills/drafts/${createDraft.body.draftId}/runtime-grants`,
+      {
+        headers: {
+          'x-virtual-user-id': ownerUserId,
+        },
+      },
+    );
+    assert.equal(grantsAfterHousekeeping.status, 200);
+    const mutatedGrant = grantsAfterHousekeeping.body.find(
+      (item) => item.id === String(createDraft.body.runtimeGrantId),
+    );
+    assert.equal(mutatedGrant?.status, 'EXPIRED');
+
     const approveHighRiskByOwner = await fetchJson<{ code?: string }>(
       `${baseUrl}/agent-skills/drafts/${createHighRiskDraft.body.draftId}/review`,
       {

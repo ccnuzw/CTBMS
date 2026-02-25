@@ -50,6 +50,12 @@ export const DeliverConversationEmailSchema = z.object({
 });
 
 export const DeliveryChannelEnum = z.enum(['EMAIL', 'DINGTALK', 'WECOM', 'FEISHU']);
+export const DeliveryTemplateCodeEnum = z.enum([
+  'DEFAULT',
+  'MORNING_BRIEF',
+  'WEEKLY_REVIEW',
+  'RISK_ALERT',
+]);
 
 export const DeliverConversationSchema = z.object({
   exportTaskId: z.string().uuid(),
@@ -58,6 +64,7 @@ export const DeliverConversationSchema = z.object({
   target: z.string().trim().max(240).optional(),
   subject: z.string().trim().max(200).optional(),
   content: z.string().trim().max(5000).optional(),
+  templateCode: DeliveryTemplateCodeEnum.default('DEFAULT'),
   sendRawFile: z.boolean().default(true),
   metadata: z.record(z.unknown()).optional(),
 });

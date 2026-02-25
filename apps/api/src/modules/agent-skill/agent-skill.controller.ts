@@ -204,4 +204,9 @@ export class AgentSkillController {
             Number.isFinite(parsedLimit) ? parsedLimit : undefined,
         );
     }
+
+    @Post('governance/housekeeping')
+    async governanceHousekeeping(@Request() req: AuthRequest) {
+        return this.agentSkillService.runGovernanceHousekeeping(this.getUserId(req));
+    }
 }

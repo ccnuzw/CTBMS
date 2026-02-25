@@ -482,6 +482,64 @@ export class AgentSkillService {
     });
   }
 
+  async runGovernanceHousekeeping(userId?: string) {
+    const now = new Date();
+    const expired = await this.prisma.agentSkillRuntimeGrant.findMany({
+      where: {
+        status: 'ACTIVE',
+        expiresAt: { lte: now },
+        ownerUserId: userId || undefined,
+      },
+      select: {
+        id: true,
+        draftId: true,
+        ownerUserId: true,
+      },
+      take: 500,
+    });
+
+    let draftDisabledCount = 0;
+    for (const grant of expired) {
+      await this.prisma.agentSkillRuntimeGrant.update({
+        where: { id: grant.id },
+        data: {
+          status: 'EXPIRED',
+        },
+      });
+      await this.logGovernanceEvent({
+        ownerUserId: grant.ownerUserId,
+        draftId: grant.draftId,
+        runtimeGrantId: grant.id,
+        eventType: 'RUNTIME_GRANT_EXPIRED',
+        message: `运行时授权自动过期：${grant.id}`,
+      });
+
+      const activeCount = await this.prisma.agentSkillRuntimeGrant.count({
+        where: {
+          draftId: grant.draftId,
+          status: 'ACTIVE',
+          expiresAt: { gt: now },
+        },
+      });
+      if (activeCount === 0) {
+        const updatedDraft = await this.prisma.agentSkillDraft.update({
+          where: { id: grant.draftId },
+          data: { provisionalEnabled: false },
+          select: { provisionalEnabled: true },
+        });
+        if (!updatedDraft.provisionalEnabled) {
+          draftDisabledCount += 1;
+        }
+      }
+    }
+
+    return {
+      checkedAt: now,
+      expiredGrantCount: expired.length,
+      disabledDraftCount: draftDisabledCount,
+    };
+  }
+
   private async logGovernanceEvent(input: {
     ownerUserId: string;
     draftId?: string;

@@ -186,6 +186,24 @@ async function main() {
     );
     assert.equal(reuseResp.status, 201);
     assert.ok(['SLOT_FILLING', 'PLAN_PREVIEW', 'EXECUTING'].includes(reuseResp.body.state));
+
+    const naturalReuse = await fetchJson<{ state: string }>(
+      `${baseUrl}/agent-conversations/sessions/${conversationSessionId}/turns`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-virtual-user-id': ownerUserId },
+        body: JSON.stringify({
+          message: `请基于[asset:${planAsset?.id}]继续输出结论和风险摘要。`,
+        }),
+      },
+    );
+    assert.equal(naturalReuse.status, 201);
+    assert.ok(['SLOT_FILLING', 'PLAN_PREVIEW', 'EXECUTING'].includes(naturalReuse.body.state));
+
+    const refCount = await prisma.conversationAssetRef.count({
+      where: { sessionId: conversationSessionId },
+    });
+    assert.ok(refCount >= 2);
   } finally {
     if (conversationSessionId) {
       await prisma.conversationSession.deleteMany({ where: { id: conversationSessionId } });

@@ -244,6 +244,7 @@
   "exportTaskId": "et_xxx",
   "channel": "DINGTALK",
   "target": "ops-group-01",
+  "templateCode": "MORNING_BRIEF",
   "content": "请查收最新报告",
   "sendRawFile": true
 }
@@ -252,6 +253,7 @@
 说明：
 
 - `channel` 支持 `EMAIL | DINGTALK | WECOM | FEISHU`
+- `templateCode` 支持 `DEFAULT | MORNING_BRIEF | WEEKLY_REVIEW | RISK_ALERT`
 - `EMAIL` 需要 `to`，其他渠道需要 `target`
 - `sendRawFile=true` 表示优先发送原文件
 
@@ -462,6 +464,11 @@
 
 说明：服务端会把该资产注入上下文并继续执行新一轮对话。
 
+自然语言引用写法（无需调用复用接口）：
+
+- 在用户消息中写 `"请基于[asset:<assetId>]继续"`
+- 或 `"请基于资产#<assetId>继续"`
+
 ## 7. Skill Draft 接口
 
 ## 7.1 创建草稿
@@ -566,6 +573,8 @@
 - `POST /agent-skills/runtime-grants/:grantId/revoke`
 - `POST /agent-skills/runtime-grants/:grantId/use`
 - `GET /agent-skills/governance/overview`
+- `GET /agent-skills/governance/events?draftId=...&limit=20`
+- `POST /agent-skills/governance/housekeeping`
 
 说明：
 

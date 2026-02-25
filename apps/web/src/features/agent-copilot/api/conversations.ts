@@ -122,6 +122,7 @@ export interface ExportResponse {
 }
 
 export type DeliveryChannel = 'EMAIL' | 'DINGTALK' | 'WECOM' | 'FEISHU';
+export type DeliveryTemplateCode = 'DEFAULT' | 'MORNING_BRIEF' | 'WEEKLY_REVIEW' | 'RISK_ALERT';
 
 export interface DeliverResponse {
   deliveryTaskId: string;
@@ -237,6 +238,12 @@ export interface SkillGovernanceEvent {
   message: string;
   payload?: Record<string, unknown> | null;
   createdAt: string;
+}
+
+export interface SkillGovernanceHousekeepingResult {
+  checkedAt: string;
+  expiredGrantCount: number;
+  disabledDraftCount: number;
 }
 
 export interface ScheduleResolutionResult {
@@ -394,6 +401,7 @@ export const useDeliverConversation = () => {
       target?: string;
       subject?: string;
       content?: string;
+      templateCode?: DeliveryTemplateCode;
       sendRawFile?: boolean;
       metadata?: Record<string, unknown>;
     }) => {
@@ -759,6 +767,23 @@ export const useSkillGovernanceEvents = (draftId?: string) =>
     },
     enabled: Boolean(draftId),
   });
+
+export const useSkillGovernanceHousekeeping = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async () => {
+      const res = await apiClient.post<SkillGovernanceHousekeepingResult>(
+        '/agent-skills/governance/housekeeping',
+      );
+      return res.data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['agent-copilot', 'skill-governance-overview'] });
+      queryClient.invalidateQueries({ queryKey: ['agent-copilot', 'skill-governance-events'] });
+      queryClient.invalidateQueries({ queryKey: ['agent-copilot', 'skill-runtime-grants'] });
+    },
+  });
+};
 
 export const useResolveScheduleCommand = () => {
   const queryClient = useQueryClient();

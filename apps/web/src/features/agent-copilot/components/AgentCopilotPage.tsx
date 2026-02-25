@@ -54,6 +54,7 @@ import {
   useReviewSkillDraft,
   useConsumeSkillRuntimeGrant,
   useSkillGovernanceEvents,
+  useSkillGovernanceHousekeeping,
   useSkillGovernanceOverview,
   useSkillDraftRuntimeGrants,
   useUpdateConversationSubscription,
@@ -138,6 +139,9 @@ export const AgentCopilotPage: React.FC = () => {
   const [emailModalOpen, setEmailModalOpen] = useState(false);
   const [emailTo, setEmailTo] = useState('');
   const [deliveryChannel, setDeliveryChannel] = useState<'EMAIL' | 'DINGTALK' | 'WECOM' | 'FEISHU'>('EMAIL');
+  const [deliveryTemplateCode, setDeliveryTemplateCode] = useState<
+    'DEFAULT' | 'MORNING_BRIEF' | 'WEEKLY_REVIEW' | 'RISK_ALERT'
+  >('DEFAULT');
   const [deliveryTarget, setDeliveryTarget] = useState('');
   const [sendRawFile, setSendRawFile] = useState(true);
   const [templateModalOpen, setTemplateModalOpen] = useState(false);
@@ -174,6 +178,7 @@ export const AgentCopilotPage: React.FC = () => {
   const publishSkillDraftMutation = usePublishSkillDraft();
   const revokeRuntimeGrantMutation = useRevokeSkillRuntimeGrant();
   const consumeRuntimeGrantMutation = useConsumeSkillRuntimeGrant();
+  const governanceHousekeepingMutation = useSkillGovernanceHousekeeping();
   const governanceOverviewQuery = useSkillGovernanceOverview();
   const personalPromptTemplateQuery = useCopilotPromptTemplates('PERSONAL');
   const teamPromptTemplateQuery = useCopilotPromptTemplates('TEAM');
@@ -477,6 +482,17 @@ export const AgentCopilotPage: React.FC = () => {
     }
   };
 
+  const handleGovernanceHousekeeping = async () => {
+    try {
+      const result = await governanceHousekeepingMutation.mutateAsync();
+      message.success(
+        `治理清理完成：过期授权 ${result.expiredGrantCount}，禁用草稿 ${result.disabledDraftCount}`,
+      );
+    } catch (error) {
+      showCopilotError(error, '治理清理失败');
+    }
+  };
+
   const handleCreateSession = async () => {
     try {
       const session = await createSessionMutation.mutateAsync({
@@ -714,8 +730,7 @@ export const AgentCopilotPage: React.FC = () => {
         channel: deliveryChannel,
         to,
         target: deliveryChannel === 'EMAIL' ? undefined : deliveryTarget.trim(),
-        subject: 'CTBMS 对话助手分析报告',
-        content: '您好，附件为本次对话分析报告，请查收。',
+        templateCode: deliveryTemplateCode,
         sendRawFile,
       });
       if (result.data.status === 'SENT') {
@@ -1242,6 +1257,7 @@ export const AgentCopilotPage: React.FC = () => {
                         loading={deliverMutation.isPending}
                         onClick={() => {
                           setDeliveryChannel('EMAIL');
+                          setDeliveryTemplateCode('DEFAULT');
                           setEmailModalOpen(true);
                         }}
                         disabled={!latestArtifact?.exportTaskId}
@@ -1252,6 +1268,7 @@ export const AgentCopilotPage: React.FC = () => {
                         loading={deliverMutation.isPending}
                         onClick={() => {
                           setDeliveryChannel('DINGTALK');
+                          setDeliveryTemplateCode('MORNING_BRIEF');
                           setEmailModalOpen(true);
                         }}
                         disabled={!latestArtifact?.exportTaskId}
@@ -1262,6 +1279,7 @@ export const AgentCopilotPage: React.FC = () => {
                         loading={deliverMutation.isPending}
                         onClick={() => {
                           setDeliveryChannel('WECOM');
+                          setDeliveryTemplateCode('WEEKLY_REVIEW');
                           setEmailModalOpen(true);
                         }}
                         disabled={!latestArtifact?.exportTaskId}
@@ -1272,6 +1290,7 @@ export const AgentCopilotPage: React.FC = () => {
                         loading={deliverMutation.isPending}
                         onClick={() => {
                           setDeliveryChannel('FEISHU');
+                          setDeliveryTemplateCode('RISK_ALERT');
                           setEmailModalOpen(true);
                         }}
                         disabled={!latestArtifact?.exportTaskId}
@@ -1470,11 +1489,20 @@ export const AgentCopilotPage: React.FC = () => {
                     )}
 
                     {governanceOverviewQuery.data ? (
-                      <Alert
-                        type={governanceOverviewQuery.data.highRiskPendingReview > 0 ? 'warning' : 'info'}
-                        showIcon
-                        message={`治理看板：活跃授权 ${governanceOverviewQuery.data.activeRuntimeGrants}，1小时内过期 ${governanceOverviewQuery.data.runtimeGrantsExpiringIn1h}，高风险待审 ${governanceOverviewQuery.data.highRiskPendingReview}`}
-                      />
+                      <Space direction="vertical" style={{ width: '100%' }}>
+                        <Alert
+                          type={governanceOverviewQuery.data.highRiskPendingReview > 0 ? 'warning' : 'info'}
+                          showIcon
+                          message={`治理看板：活跃授权 ${governanceOverviewQuery.data.activeRuntimeGrants}，1小时内过期 ${governanceOverviewQuery.data.runtimeGrantsExpiringIn1h}，高风险待审 ${governanceOverviewQuery.data.highRiskPendingReview}`}
+                        />
+                        <Button
+                          size="small"
+                          loading={governanceHousekeepingMutation.isPending}
+                          onClick={handleGovernanceHousekeeping}
+                        >
+                          立即治理清理
+                        </Button>
+                      </Space>
                     ) : null}
 
                     {governanceEventsQuery.data?.length ? (
@@ -1632,6 +1660,18 @@ export const AgentCopilotPage: React.FC = () => {
               { label: '飞书', value: 'FEISHU' },
             ]}
             onChange={(value) => setDeliveryChannel(value as 'EMAIL' | 'DINGTALK' | 'WECOM' | 'FEISHU')}
+          />
+          <Segmented
+            value={deliveryTemplateCode}
+            options={[
+              { label: '通用模板', value: 'DEFAULT' },
+              { label: '晨报模板', value: 'MORNING_BRIEF' },
+              { label: '周报模板', value: 'WEEKLY_REVIEW' },
+              { label: '风险模板', value: 'RISK_ALERT' },
+            ]}
+            onChange={(value) =>
+              setDeliveryTemplateCode(value as 'DEFAULT' | 'MORNING_BRIEF' | 'WEEKLY_REVIEW' | 'RISK_ALERT')
+            }
           />
           {deliveryChannel === 'EMAIL' ? (
             <>

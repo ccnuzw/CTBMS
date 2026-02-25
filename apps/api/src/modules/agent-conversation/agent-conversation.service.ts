@@ -153,37 +153,66 @@ export class AgentConversationService {
       return null;
     }
 
+    const referencedAssetIds = this.extractAssetReferenceIds(dto.message);
+    const contextReferencedAssetId = this.pickString(dto.contextPatch?.reusedAssetId);
+    const requestedAssetIds = [
+      ...(contextReferencedAssetId ? [contextReferencedAssetId] : []),
+      ...referencedAssetIds,
+    ]
+      .filter((id): id is string => this.isUuid(id))
+      .filter((id, index, arr) => arr.indexOf(id) === index);
+
+    const referencedAssets = requestedAssetIds.length
+      ? await this.prisma.conversationAsset.findMany({
+          where: {
+            sessionId,
+            id: { in: requestedAssetIds },
+          },
+          select: { id: true, title: true, assetType: true },
+        })
+      : [];
+
+    const effectiveContextPatch: Record<string, unknown> = {
+      ...(dto.contextPatch ?? {}),
+    };
+
+    if (!effectiveContextPatch.reusedAssetId && referencedAssets.length > 0) {
+      effectiveContextPatch.reusedAssetId = referencedAssets[0].id;
+    }
+
+    if (referencedAssets.length > 0) {
+      effectiveContextPatch.reusedAssets = referencedAssets.map((asset: { id: string; title: string; assetType: string }) => ({
+        assetId: asset.id,
+        title: asset.title,
+        assetType: asset.assetType,
+      }));
+    }
+
     const userTurn = await this.prisma.conversationTurn.create({
       data: {
         sessionId,
         role: 'USER',
         content: dto.message,
-        structuredPayload: this.toJson(dto.contextPatch),
+        structuredPayload: this.toJson(effectiveContextPatch),
       },
     });
 
-    const reusedAssetId = this.pickString(dto.contextPatch?.reusedAssetId);
-    if (reusedAssetId && this.isUuid(reusedAssetId)) {
-      const reusedAsset = await this.prisma.conversationAsset.findFirst({
-        where: { id: reusedAssetId, sessionId },
+    for (const asset of referencedAssets) {
+      await this.prisma.conversationAssetRef.create({
+        data: {
+          sessionId,
+          turnId: userTurn.id,
+          assetId: asset.id,
+          note: 'user_context_reuse',
+        },
       });
-      if (reusedAsset) {
-        await this.prisma.conversationAssetRef.create({
-          data: {
-            sessionId,
-            turnId: userTurn.id,
-            assetId: reusedAsset.id,
-            note: 'user_context_reuse',
-          },
-        });
-      }
     }
 
     const intent = this.detectIntent(dto.message, session.currentIntent);
     const mergedSlots = this.mergeSlots(
       this.normalizeSlots(session.currentSlots),
       this.extractSlots(dto.message),
-      dto.contextPatch,
+      effectiveContextPatch,
     );
 
     const requiredSlots = this.requiredSlotsByIntent(intent);
@@ -247,7 +276,7 @@ export class AgentConversationService {
     if (
       proposedPlan &&
       nextPlanVersion &&
-      this.shouldAutoExecute(dto.contextPatch)
+      this.shouldAutoExecute(effectiveContextPatch)
     ) {
       const execution = await this.confirmPlan(
         userId,
@@ -593,6 +622,7 @@ export class AgentConversationService {
       to: dto.to,
       subject: dto.subject,
       content: dto.content,
+      templateCode: 'DEFAULT',
       sendRawFile: true,
     });
   }
@@ -637,6 +667,9 @@ export class AgentConversationService {
 
     const deliveryTaskId = `delivery_${randomUUID()}`;
     const webhookUrl = this.resolveDeliveryWebhook(channel);
+    const normalizedTemplate = this.normalizeDeliveryTemplateCode(dto.templateCode);
+    const subject = this.resolveDeliverySubject(channel, normalizedTemplate, dto.subject);
+    const content = this.resolveDeliveryContent(channel, normalizedTemplate, dto.content);
 
     let status: 'QUEUED' | 'SENT' | 'FAILED' = 'QUEUED';
     let errorMessage: string | null = null;
@@ -659,8 +692,9 @@ export class AgentConversationService {
             exportTaskId: exportTask.id,
             to: dto.to,
             target: dto.target,
-            subject: dto.subject || 'CTBMS 对话助手分析报告',
-            content: dto.content || '请查收本次对话分析结果。',
+            subject,
+            content,
+            templateCode: normalizedTemplate,
             metadata: dto.metadata,
             attachment: {
               fileName,
@@ -697,7 +731,8 @@ export class AgentConversationService {
           status,
           to: dto.to,
           target: dto.target,
-          subject: dto.subject,
+          subject,
+          templateCode: normalizedTemplate,
           errorMessage,
         } as Prisma.InputJsonValue,
       },
@@ -714,6 +749,8 @@ export class AgentConversationService {
         status,
         to: dto.to,
         target: dto.target,
+        subject,
+        templateCode: normalizedTemplate,
         errorMessage,
       },
       sourceExecutionId: exportTask.workflowExecutionId,
@@ -1372,6 +1409,85 @@ export class AgentConversationService {
       return explicit;
     }
     return true;
+  }
+
+  private extractAssetReferenceIds(message: string): string[] {
+    const ids = new Set<string>();
+    const patterns = [
+      /\[asset:([0-9a-fA-F-]{36})\]/g,
+      /资产#([0-9a-fA-F-]{36})/g,
+      /asset#([0-9a-fA-F-]{36})/gi,
+    ];
+    for (const pattern of patterns) {
+      let match: RegExpExecArray | null = pattern.exec(message);
+      while (match) {
+        const id = match[1];
+        if (this.isUuid(id)) {
+          ids.add(id);
+        }
+        match = pattern.exec(message);
+      }
+    }
+    return Array.from(ids);
+  }
+
+  private normalizeDeliveryTemplateCode(templateCode: unknown):
+    | 'DEFAULT'
+    | 'MORNING_BRIEF'
+    | 'WEEKLY_REVIEW'
+    | 'RISK_ALERT' {
+    if (templateCode === 'MORNING_BRIEF') {
+      return 'MORNING_BRIEF';
+    }
+    if (templateCode === 'WEEKLY_REVIEW') {
+      return 'WEEKLY_REVIEW';
+    }
+    if (templateCode === 'RISK_ALERT') {
+      return 'RISK_ALERT';
+    }
+    return 'DEFAULT';
+  }
+
+  private resolveDeliverySubject(
+    channel: 'EMAIL' | 'DINGTALK' | 'WECOM' | 'FEISHU',
+    templateCode: 'DEFAULT' | 'MORNING_BRIEF' | 'WEEKLY_REVIEW' | 'RISK_ALERT',
+    customSubject?: string,
+  ) {
+    if (customSubject?.trim()) {
+      return customSubject.trim();
+    }
+    const channelName = this.channelDisplayName(channel);
+    if (templateCode === 'MORNING_BRIEF') {
+      return `${channelName}晨报 - CTBMS 对话助手`;
+    }
+    if (templateCode === 'WEEKLY_REVIEW') {
+      return `${channelName}周复盘 - CTBMS 对话助手`;
+    }
+    if (templateCode === 'RISK_ALERT') {
+      return `${channelName}风险提示 - CTBMS 对话助手`;
+    }
+    return 'CTBMS 对话助手分析报告';
+  }
+
+  private resolveDeliveryContent(
+    channel: 'EMAIL' | 'DINGTALK' | 'WECOM' | 'FEISHU',
+    templateCode: 'DEFAULT' | 'MORNING_BRIEF' | 'WEEKLY_REVIEW' | 'RISK_ALERT',
+    customContent?: string,
+  ) {
+    if (customContent?.trim()) {
+      return customContent.trim();
+    }
+    const channelName = this.channelDisplayName(channel);
+    if (templateCode === 'MORNING_BRIEF') {
+      return `${channelName}晨报已生成，请查收附件原文件与摘要。`;
+    }
+    if (templateCode === 'WEEKLY_REVIEW') {
+      return `${channelName}周度复盘已生成，请查收本周关键结论和风险提示。`;
+    }
+    if (templateCode === 'RISK_ALERT') {
+      return `${channelName}风险告警已触发，请优先查看风险暴露与应对建议。`;
+    }
+    return '请查收本次对话分析结果。';
   }
 
   private resolveDeliveryWebhook(channel: 'EMAIL' | 'DINGTALK' | 'WECOM' | 'FEISHU') {
