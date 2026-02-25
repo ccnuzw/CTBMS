@@ -31,6 +31,7 @@ import {
 import { getApiError } from '../../../api/client';
 import {
   CopilotPromptScope,
+  DeliveryChannelProfile,
   useConfirmConversationPlan,
   useConversationBacktest,
   useConversationConflicts,
@@ -40,6 +41,7 @@ import {
   useConversationResult,
   useConversationSessions,
   useCopilotPromptTemplates,
+  useCopilotDeliveryProfiles,
   useCreateConversationSubscription,
   useCreateConversationSession,
   useCreateConversationBacktest,
@@ -62,16 +64,81 @@ import {
   usePublishSkillDraft,
   useResolveScheduleCommand,
   useUpsertCopilotPromptTemplates,
+  useUpsertCopilotDeliveryProfiles,
 } from '../api/conversations';
 
 const { Text, Title, Paragraph } = Typography;
 
 const QUICK_PROMPT_STORAGE_KEY_PREFIX = 'ctbms.agent.copilot.quick-prompts.v1';
+const COPILOT_DIAG_STORAGE_KEY = 'ctbms.agent.copilot.diag.v1';
+const DEFAULT_VISIBLE_TURN_COUNT = 40;
+const LOAD_MORE_TURN_STEP = 40;
+const TURN_CONTENT_PREVIEW_LIMIT = 3000;
+const RESULT_ANALYSIS_PREVIEW_LIMIT = 4000;
 
 type QuickPromptTemplate = {
   key: string;
   label: string;
   prompt: string;
+};
+
+const isSameQuickPromptTemplates = (
+  left: QuickPromptTemplate[],
+  right: QuickPromptTemplate[],
+): boolean => {
+  if (left.length !== right.length) {
+    return false;
+  }
+  return left.every(
+    (item, index) =>
+      item.key === right[index]?.key &&
+      item.label === right[index]?.label &&
+      item.prompt === right[index]?.prompt,
+  );
+};
+
+const toSafeText = (value: unknown): string => {
+  if (typeof value === 'string') {
+    return value;
+  }
+  if (typeof value === 'number' || typeof value === 'boolean' || typeof value === 'bigint') {
+    return String(value);
+  }
+  if (value === null || value === undefined) {
+    return '';
+  }
+  try {
+    return JSON.stringify(value, null, 2);
+  } catch {
+    return String(value);
+  }
+};
+
+const appendCopilotDiagEvent = (event: {
+  type: string;
+  sessionId?: string;
+  meta?: Record<string, unknown>;
+}) => {
+  if (typeof window === 'undefined') {
+    return;
+  }
+  try {
+    const raw = window.localStorage.getItem(COPILOT_DIAG_STORAGE_KEY);
+    const current = raw ? (JSON.parse(raw) as Array<Record<string, unknown>>) : [];
+    const events = Array.isArray(current) ? current : [];
+    events.push({
+      ts: new Date().toISOString(),
+      type: event.type,
+      sessionId: event.sessionId,
+      meta: event.meta,
+    });
+    if (events.length > 80) {
+      events.splice(0, events.length - 80);
+    }
+    window.localStorage.setItem(COPILOT_DIAG_STORAGE_KEY, JSON.stringify(events));
+  } catch {
+    // ignore diagnostics write failure
+  }
 };
 
 const getOppositeScope = (scope: CopilotPromptScope): CopilotPromptScope =>
@@ -145,6 +212,8 @@ export const AgentCopilotPage: React.FC = () => {
   const [deliveryTarget, setDeliveryTarget] = useState('');
   const [sendRawFile, setSendRawFile] = useState(true);
   const [templateModalOpen, setTemplateModalOpen] = useState(false);
+  const [deliveryProfileModalOpen, setDeliveryProfileModalOpen] = useState(false);
+  const [deliveryProfileEditor, setDeliveryProfileEditor] = useState('[]');
   const [templateEditor, setTemplateEditor] = useState('');
   const [templateScope, setTemplateScope] = useState<CopilotPromptScope>('PERSONAL');
   const [templateMode, setTemplateMode] = useState<'FORM' | 'JSON'>('FORM');
@@ -153,6 +222,9 @@ export const AgentCopilotPage: React.FC = () => {
   const [subscriptionName, setSubscriptionName] = useState('每周玉米复盘订阅');
   const [subscriptionCronExpr, setSubscriptionCronExpr] = useState('0 0 8 * * 1');
   const [scheduleInstruction, setScheduleInstruction] = useState('每周一9点发到企业微信群ops-group-01');
+  const [visibleTurnCount, setVisibleTurnCount] = useState(DEFAULT_VISIBLE_TURN_COUNT);
+  const [expandedTurnMap, setExpandedTurnMap] = useState<Record<string, boolean>>({});
+  const [expandResultAnalysis, setExpandResultAnalysis] = useState(false);
   const timelineRef = useRef<HTMLDivElement | null>(null);
   const templateFileInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -183,23 +255,58 @@ export const AgentCopilotPage: React.FC = () => {
   const personalPromptTemplateQuery = useCopilotPromptTemplates('PERSONAL');
   const teamPromptTemplateQuery = useCopilotPromptTemplates('TEAM');
   const upsertPromptTemplatesMutation = useUpsertCopilotPromptTemplates();
+  const personalDeliveryProfileQuery = useCopilotDeliveryProfiles('PERSONAL');
+  const teamDeliveryProfileQuery = useCopilotDeliveryProfiles('TEAM');
+  const upsertDeliveryProfilesMutation = useUpsertCopilotDeliveryProfiles();
 
   const activePromptTemplate =
     templateScope === 'PERSONAL' ? personalPromptTemplateQuery.data : teamPromptTemplateQuery.data;
   const oppositePromptTemplate =
     templateScope === 'PERSONAL' ? teamPromptTemplateQuery.data : personalPromptTemplateQuery.data;
+  const activeDeliveryProfileBinding =
+    templateScope === 'PERSONAL' ? personalDeliveryProfileQuery.data : teamDeliveryProfileQuery.data;
 
   const latestPlan = useMemo(() => detailQuery.data?.plans?.[0], [detailQuery.data?.plans]);
   const latestAssistantTurn = useMemo(
     () => [...(detailQuery.data?.turns ?? [])].reverse().find((turn) => turn.role === 'ASSISTANT'),
     [detailQuery.data?.turns],
   );
+  const sessionList = Array.isArray(sessionsQuery.data?.data) ? sessionsQuery.data.data : [];
+  const allTurns = detailQuery.data?.turns ?? [];
+  const hiddenTurnCount = Math.max(0, allTurns.length - visibleTurnCount);
+  const visibleTurns = useMemo(
+    () => (hiddenTurnCount > 0 ? allTurns.slice(-visibleTurnCount) : allTurns),
+    [allTurns, hiddenTurnCount, visibleTurnCount],
+  );
   const latestAssistantPayload = (latestAssistantTurn?.structuredPayload ?? {}) as {
     missingSlots?: string[];
     proposedPlan?: Record<string, unknown> | null;
+    reuseResolution?: {
+      explicitAssetRefCount?: number;
+      followupAssetRefCount?: number;
+      semanticAssetRefCount?: number;
+      semanticResolution?: {
+        selectedAssetId?: string;
+        selectedAssetTitle?: string;
+        candidateCount?: number;
+        ambiguous?: boolean;
+        topCandidates?: Array<{
+          id: string;
+          title: string;
+          assetType: string;
+          score: number;
+        }>;
+      };
+    };
   };
-  const missingSlots = latestAssistantPayload.missingSlots ?? [];
+  const missingSlots = Array.isArray(latestAssistantPayload.missingSlots)
+    ? latestAssistantPayload.missingSlots.filter((item): item is string => typeof item === 'string')
+    : [];
   const proposedPlanFromTurn = latestAssistantPayload.proposedPlan ?? null;
+  const latestReuseResolution = latestAssistantPayload.reuseResolution;
+  const latestSemanticCandidates = Array.isArray(latestReuseResolution?.semanticResolution?.topCandidates)
+    ? latestReuseResolution.semanticResolution.topCandidates
+    : [];
   const latestBacktestJobId = useMemo(() => {
     return [...(detailQuery.data?.turns ?? [])]
       .reverse()
@@ -220,6 +327,11 @@ export const AgentCopilotPage: React.FC = () => {
   const conflictsQuery = useConversationConflicts(activeSessionId);
   const assetsQuery = useConversationAssets(activeSessionId);
   const reuseAssetMutation = useReuseConversationAsset();
+  const subscriptionList = Array.isArray(subscriptionsQuery.data) ? subscriptionsQuery.data : [];
+  const conflictList = Array.isArray(conflictsQuery.data?.conflicts) ? conflictsQuery.data.conflicts : [];
+  const governanceEvents = Array.isArray(governanceEventsQuery.data) ? governanceEventsQuery.data : [];
+  const runtimeGrants = Array.isArray(runtimeGrantsQuery.data) ? runtimeGrantsQuery.data : [];
+  const conversationAssets = Array.isArray(assetsQuery.data) ? assetsQuery.data : [];
 
   const deliveryLogs = useMemo(() => {
     return (detailQuery.data?.turns ?? [])
@@ -235,6 +347,25 @@ export const AgentCopilotPage: React.FC = () => {
       }))
       .reverse();
   }, [detailQuery.data?.turns]);
+  const activeDeliveryProfiles = useMemo(() => {
+    const raw = (activeDeliveryProfileBinding?.metadata as Record<string, unknown> | undefined)?.profiles;
+    if (!Array.isArray(raw)) {
+      return [] as DeliveryChannelProfile[];
+    }
+    return raw
+      .map((item) => item as Record<string, unknown>)
+      .map((item, index) => ({
+        id: typeof item.id === 'string' ? item.id : `profile-${index + 1}`,
+        channel: (item.channel as DeliveryChannelProfile['channel']) || 'EMAIL',
+        target: typeof item.target === 'string' ? item.target : undefined,
+        to: Array.isArray(item.to) ? item.to.filter((v) => typeof v === 'string') : undefined,
+        templateCode: (item.templateCode as DeliveryChannelProfile['templateCode']) || 'DEFAULT',
+        sendRawFile: typeof item.sendRawFile === 'boolean' ? item.sendRawFile : true,
+        description: typeof item.description === 'string' ? item.description : undefined,
+        isDefault: Boolean(item.isDefault),
+      }))
+      .filter((item) => ['EMAIL', 'DINGTALK', 'WECOM', 'FEISHU'].includes(item.channel));
+  }, [activeDeliveryProfileBinding?.metadata]);
   const planSnapshot = (latestPlan?.planSnapshot ?? null) as
     | {
         planId?: string;
@@ -242,11 +373,37 @@ export const AgentCopilotPage: React.FC = () => {
         estimatedCost?: { token?: number; latencyMs?: number };
       }
     | null;
+  const planSkills = Array.isArray(planSnapshot?.skills)
+    ? planSnapshot.skills.filter((item): item is string => typeof item === 'string')
+    : [];
+  const resultAnalysisText = toSafeText(resultQuery.data?.result?.analysis ?? '-');
 
   const showCopilotError = (error: unknown, fallback: string) => {
     const apiError = getApiError(error);
     const codeMsg = apiError.code ? copilotErrorMessageByCode[apiError.code] : null;
+    appendCopilotDiagEvent({
+      type: 'error',
+      sessionId: activeSessionId,
+      meta: { fallback, code: apiError.code, message: apiError.message },
+    });
     message.error(codeMsg || apiError.message || fallback);
+  };
+
+  const handleExportDiagnostics = () => {
+    try {
+      const raw = window.localStorage.getItem(COPILOT_DIAG_STORAGE_KEY);
+      const payload = raw || '[]';
+      const blob = new Blob([payload], { type: 'application/json;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `ctbms-agent-copilot-diag-${Date.now()}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+      message.success('诊断日志已导出');
+    } catch {
+      message.error('诊断日志导出失败');
+    }
   };
 
   const handleCreateSubscription = async () => {
@@ -387,6 +544,21 @@ export const AgentCopilotPage: React.FC = () => {
     }
   };
 
+  const handleSelectSemanticCandidate = async (rank: number) => {
+    if (!activeSessionId) {
+      return;
+    }
+    try {
+      await sendTurnMutation.mutateAsync({
+        sessionId: activeSessionId,
+        message: `请用第${rank}个继续输出更新后的结论。`,
+      });
+      message.success(`已按第${rank}候选继续执行`);
+    } catch (error) {
+      showCopilotError(error, '候选选择失败');
+    }
+  };
+
   const handleSandboxSkillDraft = async () => {
     if (!latestSkillDraftId) {
       message.warning('暂无可测试的 Skill Draft');
@@ -510,6 +682,11 @@ export const AgentCopilotPage: React.FC = () => {
     if (!content) {
       return;
     }
+    appendCopilotDiagEvent({
+      type: 'turn.send.start',
+      sessionId: activeSessionId,
+      meta: { inputLength: content.length },
+    });
 
     let targetSessionId = activeSessionId;
     if (!targetSessionId) {
@@ -528,6 +705,10 @@ export const AgentCopilotPage: React.FC = () => {
     try {
       await sendTurnMutation.mutateAsync({ sessionId: targetSessionId, message: content });
       setInput('');
+      appendCopilotDiagEvent({
+        type: 'turn.send.success',
+        sessionId: targetSessionId,
+      });
     } catch (error) {
       showCopilotError(error, '发送失败，请稍后重试');
     }
@@ -568,6 +749,11 @@ export const AgentCopilotPage: React.FC = () => {
         sessionId: activeSessionId,
         planId: planSnapshot.planId,
         planVersion: latestPlan.version,
+      });
+      appendCopilotDiagEvent({
+        type: 'plan.confirm.success',
+        sessionId: activeSessionId,
+        meta: { planId: planSnapshot.planId, planVersion: latestPlan.version },
       });
       message.success('计划已确认，任务执行中');
     } catch (error) {
@@ -610,11 +796,62 @@ export const AgentCopilotPage: React.FC = () => {
   }, [resultQuery.data?.status, detailQuery.data?.state, latestPlan, artifacts.length, deliveryLogs]);
 
   useEffect(() => {
+    setVisibleTurnCount(DEFAULT_VISIBLE_TURN_COUNT);
+    setExpandedTurnMap({});
+    setExpandResultAnalysis(false);
+    appendCopilotDiagEvent({
+      type: 'session.changed',
+      sessionId: activeSessionId,
+    });
+  }, [activeSessionId]);
+
+  useEffect(() => {
+    appendCopilotDiagEvent({
+      type: 'turns.updated',
+      sessionId: activeSessionId,
+      meta: {
+        totalTurns: allTurns.length,
+        visibleTurns: Math.min(visibleTurnCount, allTurns.length),
+      },
+    });
+  }, [activeSessionId, allTurns.length, visibleTurnCount]);
+
+  useEffect(() => {
+    const onWindowError = (event: ErrorEvent) => {
+      appendCopilotDiagEvent({
+        type: 'window.error',
+        sessionId: activeSessionId,
+        meta: {
+          message: event.message,
+          source: event.filename,
+          line: event.lineno,
+          col: event.colno,
+        },
+      });
+    };
+    const onUnhandledRejection = (event: PromiseRejectionEvent) => {
+      appendCopilotDiagEvent({
+        type: 'window.unhandledrejection',
+        sessionId: activeSessionId,
+        meta: {
+          reason: toSafeText(event.reason),
+        },
+      });
+    };
+    window.addEventListener('error', onWindowError);
+    window.addEventListener('unhandledrejection', onUnhandledRejection);
+    return () => {
+      window.removeEventListener('error', onWindowError);
+      window.removeEventListener('unhandledrejection', onUnhandledRejection);
+    };
+  }, [activeSessionId]);
+
+  useEffect(() => {
     if (!timelineRef.current) {
       return;
     }
     timelineRef.current.scrollTop = timelineRef.current.scrollHeight;
-  }, [detailQuery.data?.turns, sendTurnMutation.isSuccess]);
+  }, [visibleTurns.length, sendTurnMutation.isSuccess]);
 
   useEffect(() => {
     const remoteTemplates = (activePromptTemplate?.metadata as Record<string, unknown> | undefined)
@@ -638,7 +875,7 @@ export const AgentCopilotPage: React.FC = () => {
       })
       .filter((item): item is QuickPromptTemplate => Boolean(item));
     if (normalized.length) {
-      setQuickPrompts(normalized);
+      setQuickPrompts((prev) => (isSameQuickPromptTemplates(prev, normalized) ? prev : normalized));
     }
   }, [activePromptTemplate]);
 
@@ -667,7 +904,7 @@ export const AgentCopilotPage: React.FC = () => {
         })
         .filter((item): item is QuickPromptTemplate => Boolean(item));
       if (normalized.length) {
-        setQuickPrompts(normalized);
+        setQuickPrompts((prev) => (isSameQuickPromptTemplates(prev, normalized) ? prev : normalized));
       }
     } catch {
       // ignore invalid cache
@@ -692,6 +929,11 @@ export const AgentCopilotPage: React.FC = () => {
         title: '对话助手分析报告',
         sections: ['CONCLUSION', 'EVIDENCE', 'DEBATE_PROCESS', 'RISK_ASSESSMENT'],
       });
+      appendCopilotDiagEvent({
+        type: 'result.export.success',
+        sessionId: activeSessionId,
+        meta: { workflowExecutionId },
+      });
       message.success('已触发导出，请稍后刷新结果查看下载链接');
     } catch (error) {
       showCopilotError(error, '导出失败');
@@ -707,18 +949,25 @@ export const AgentCopilotPage: React.FC = () => {
       message.warning('请先导出报告');
       return;
     }
+    const profile =
+      activeDeliveryProfiles.find((item) => item.channel === deliveryChannel && item.isDefault) ||
+      activeDeliveryProfiles.find((item) => item.channel === deliveryChannel);
+
     const to =
       deliveryChannel === 'EMAIL'
         ? emailTo
             .split(',')
             .map((item) => item.trim())
             .filter(Boolean)
+            .concat(profile?.to ?? [])
+            .filter((value, index, arr) => arr.indexOf(value) === index)
         : [];
     if (deliveryChannel === 'EMAIL' && !to.length) {
       message.warning('请输入收件邮箱');
       return;
     }
-    if (deliveryChannel !== 'EMAIL' && !deliveryTarget.trim()) {
+    const resolvedTarget = deliveryChannel === 'EMAIL' ? undefined : deliveryTarget.trim() || profile?.target;
+    if (deliveryChannel !== 'EMAIL' && !resolvedTarget) {
       message.warning('请输入投递目标，例如群ID或机器人标识');
       return;
     }
@@ -729,9 +978,18 @@ export const AgentCopilotPage: React.FC = () => {
         exportTaskId: latestArtifact.exportTaskId,
         channel: deliveryChannel,
         to,
-        target: deliveryChannel === 'EMAIL' ? undefined : deliveryTarget.trim(),
-        templateCode: deliveryTemplateCode,
-        sendRawFile,
+        target: resolvedTarget,
+        templateCode: profile?.templateCode || deliveryTemplateCode,
+        sendRawFile: profile?.sendRawFile ?? sendRawFile,
+      });
+      appendCopilotDiagEvent({
+        type: 'delivery.send.result',
+        sessionId: activeSessionId,
+        meta: {
+          channel: deliveryChannel,
+          status: result.data.status,
+          exportTaskId: latestArtifact.exportTaskId,
+        },
       });
       if (result.data.status === 'SENT') {
         message.success('投递已发送');
@@ -749,6 +1007,44 @@ export const AgentCopilotPage: React.FC = () => {
     setTemplateDraft(quickPrompts);
     setTemplateEditor(JSON.stringify(quickPrompts, null, 2));
     setTemplateModalOpen(true);
+  };
+
+  const openDeliveryProfileModal = () => {
+    setDeliveryProfileEditor(JSON.stringify(activeDeliveryProfiles, null, 2));
+    setDeliveryProfileModalOpen(true);
+  };
+
+  const handleSaveDeliveryProfiles = async () => {
+    try {
+      const parsed = JSON.parse(deliveryProfileEditor) as Array<Record<string, unknown>>;
+      if (!Array.isArray(parsed)) {
+        message.error('配置格式错误，需为数组');
+        return;
+      }
+
+      const normalized = parsed
+        .map((item, index) => ({
+          id: typeof item.id === 'string' ? item.id : `profile-${index + 1}`,
+          channel: (item.channel as DeliveryChannelProfile['channel']) || 'EMAIL',
+          target: typeof item.target === 'string' ? item.target : undefined,
+          to: Array.isArray(item.to) ? item.to.filter((v) => typeof v === 'string') : undefined,
+          templateCode: (item.templateCode as DeliveryChannelProfile['templateCode']) || 'DEFAULT',
+          sendRawFile: typeof item.sendRawFile === 'boolean' ? item.sendRawFile : true,
+          description: typeof item.description === 'string' ? item.description : undefined,
+          isDefault: Boolean(item.isDefault),
+        }))
+        .filter((item) => ['EMAIL', 'DINGTALK', 'WECOM', 'FEISHU'].includes(item.channel));
+
+      await upsertDeliveryProfilesMutation.mutateAsync({
+        scope: templateScope,
+        bindingId: activeDeliveryProfileBinding?.id,
+        profiles: normalized,
+      });
+      message.success('投递配置中心保存成功');
+      setDeliveryProfileModalOpen(false);
+    } catch {
+      message.error('投递配置 JSON 解析失败');
+    }
   };
 
   const normalizeTemplateArray = (input: Array<Record<string, unknown>>) => {
@@ -956,7 +1252,9 @@ export const AgentCopilotPage: React.FC = () => {
             >
               顶部导出 PDF
             </Button>
+            <Button onClick={handleExportDiagnostics}>导出诊断</Button>
             <Button onClick={openTemplateModal}>管理模板</Button>
+            <Button onClick={openDeliveryProfileModal}>投递配置中心</Button>
             <Button type="primary" icon={<PlusOutlined />} onClick={handleCreateSession}>
               新建会话
             </Button>
@@ -967,10 +1265,10 @@ export const AgentCopilotPage: React.FC = () => {
       <Row gutter={16}>
         <Col span={6}>
           <Card title="会话列表" bodyStyle={{ padding: 8 }}>
-            {sessionsQuery.data?.data?.length ? (
+            {sessionList.length ? (
               <List
                 size="small"
-                dataSource={sessionsQuery.data.data}
+                dataSource={sessionList}
                 renderItem={(item) => (
                   <List.Item
                     style={{
@@ -1004,26 +1302,66 @@ export const AgentCopilotPage: React.FC = () => {
         <Col span={12}>
           <Card title="对话区" bodyStyle={{ height: 640, display: 'flex', flexDirection: 'column' }}>
             <div ref={timelineRef} style={{ flex: 1, overflow: 'auto', marginBottom: 12 }}>
-              {detailQuery.data?.turns?.length ? (
+              {allTurns.length ? (
                 <Space direction="vertical" style={{ width: '100%' }} size={12}>
-                  {detailQuery.data.turns.map((turn) => (
-                    <div
-                      key={turn.id}
-                      style={{
-                        alignSelf: turn.role === 'USER' ? 'flex-end' : 'flex-start',
-                        maxWidth: '85%',
-                        background: turn.role === 'USER' ? '#e6f4ff' : '#fafafa',
-                        border: '1px solid #f0f0f0',
-                        borderRadius: 10,
-                        padding: '10px 12px',
-                      }}
-                    >
-                      <Text type="secondary" style={{ fontSize: 12 }}>
-                        {turn.role}
-                      </Text>
-                      <Paragraph style={{ margin: '4px 0 0 0', whiteSpace: 'pre-wrap' }}>{turn.content}</Paragraph>
-                    </div>
-                  ))}
+                  {hiddenTurnCount > 0 ? (
+                    <Button size="small" block onClick={() => setVisibleTurnCount((prev) => prev + LOAD_MORE_TURN_STEP)}>
+                      加载更早消息（剩余 {hiddenTurnCount} 条）
+                    </Button>
+                  ) : null}
+                  {visibleTurns.map((turn) => {
+                    const roleText = toSafeText(turn.role || 'UNKNOWN');
+                    const contentText = toSafeText(turn.content);
+                    const isLongContent = contentText.length > TURN_CONTENT_PREVIEW_LIMIT;
+                    const isExpanded = Boolean(expandedTurnMap[turn.id]);
+                    const displayedContent =
+                      isLongContent && !isExpanded
+                        ? `${contentText.slice(0, TURN_CONTENT_PREVIEW_LIMIT)}\n...(内容较长，已折叠)`
+                        : contentText;
+
+                    return (
+                      <div
+                        key={turn.id}
+                        style={{
+                          alignSelf: roleText === 'USER' ? 'flex-end' : 'flex-start',
+                          maxWidth: '85%',
+                          background: roleText === 'USER' ? '#e6f4ff' : '#fafafa',
+                          border: '1px solid #f0f0f0',
+                          borderRadius: 10,
+                          padding: '10px 12px',
+                        }}
+                      >
+                        <Text type="secondary" style={{ fontSize: 12 }}>
+                          {roleText}
+                        </Text>
+                        <div
+                          style={{
+                            marginTop: 4,
+                            whiteSpace: 'pre-wrap',
+                            wordBreak: 'break-word',
+                            lineHeight: 1.6,
+                          }}
+                        >
+                          {displayedContent}
+                        </div>
+                        {isLongContent ? (
+                          <Button
+                            size="small"
+                            type="link"
+                            style={{ padding: 0, marginTop: 6 }}
+                            onClick={() => {
+                              setExpandedTurnMap((prev) => ({
+                                ...prev,
+                                [turn.id]: !prev[turn.id],
+                              }));
+                            }}
+                          >
+                            {isExpanded ? '收起' : '展开全文'}
+                          </Button>
+                        ) : null}
+                      </div>
+                    );
+                  })}
                 </Space>
               ) : (
                 <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="在左侧选择会话并开始提问" />
@@ -1084,7 +1422,7 @@ export const AgentCopilotPage: React.FC = () => {
                 <div>
                   <Text type="secondary">Skills</Text>
                   <div>
-                    {(planSnapshot?.skills ?? []).map((skill) => (
+                    {planSkills.map((skill) => (
                       <Tag key={skill}>{skill}</Tag>
                     ))}
                   </div>
@@ -1145,7 +1483,7 @@ export const AgentCopilotPage: React.FC = () => {
 
                   <List
                     size="small"
-                    dataSource={subscriptionsQuery.data ?? []}
+                    dataSource={subscriptionList}
                     locale={{ emptyText: '暂无订阅' }}
                     renderItem={(item) => (
                       <List.Item
@@ -1233,7 +1571,21 @@ export const AgentCopilotPage: React.FC = () => {
                       status={resultQuery.data.status === 'FAILED' ? 'exception' : 'active'}
                     />
                     <Text strong>分析结论</Text>
-                    <Paragraph style={{ whiteSpace: 'pre-wrap' }}>{resultQuery.data.result.analysis || '-'}</Paragraph>
+                    <Paragraph style={{ whiteSpace: 'pre-wrap' }}>
+                      {expandResultAnalysis || resultAnalysisText.length <= RESULT_ANALYSIS_PREVIEW_LIMIT
+                        ? resultAnalysisText
+                        : `${resultAnalysisText.slice(0, RESULT_ANALYSIS_PREVIEW_LIMIT)}\n...(内容较长，已折叠)`}
+                    </Paragraph>
+                    {resultAnalysisText.length > RESULT_ANALYSIS_PREVIEW_LIMIT ? (
+                      <Button
+                        size="small"
+                        type="link"
+                        style={{ padding: 0, marginTop: -4, width: 'fit-content' }}
+                        onClick={() => setExpandResultAnalysis((prev) => !prev)}
+                      >
+                        {expandResultAnalysis ? '收起结论' : '展开完整结论'}
+                      </Button>
+                    ) : null}
 
                     <Divider style={{ margin: '8px 0' }} />
                     <Space wrap>
@@ -1407,25 +1759,25 @@ export const AgentCopilotPage: React.FC = () => {
                         <Divider style={{ margin: '8px 0' }} />
                         <Text strong>冲突消解</Text>
                         <Alert
-                          type={conflictsQuery.data.conflicts.length > 0 ? 'warning' : 'success'}
+                          type={conflictList.length > 0 ? 'warning' : 'success'}
                           showIcon
                           message={`一致性分：${Math.round(conflictsQuery.data.consistencyScore * 100)}%`}
                           description={
-                            conflictsQuery.data.conflicts.length > 0
-                              ? `检测到 ${conflictsQuery.data.conflicts.length} 条冲突，请关注来源差异。`
+                            conflictList.length > 0
+                              ? `检测到 ${conflictList.length} 条冲突，请关注来源差异。`
                               : '未检测到显著冲突'
                           }
                         />
-                        {conflictsQuery.data.conflicts.length > 0 ? (
+                        {conflictList.length > 0 ? (
                           <List
                             size="small"
-                            dataSource={conflictsQuery.data.conflicts}
+                            dataSource={conflictList}
                             renderItem={(item) => (
                               <List.Item>
                                 <Space direction="vertical" size={2} style={{ width: '100%' }}>
                                   <Text strong>{item.topic}</Text>
                                   <Text type="secondary" style={{ fontSize: 12 }}>
-                                    来源: {item.sources.join(' vs ')}
+                                    来源: {Array.isArray(item.sources) ? item.sources.join(' vs ') : '-'}
                                   </Text>
                                   <Text type="secondary" style={{ fontSize: 12 }}>
                                     消解: {item.resolution || '-'} / {item.reason || '-'}
@@ -1505,10 +1857,10 @@ export const AgentCopilotPage: React.FC = () => {
                       </Space>
                     ) : null}
 
-                    {governanceEventsQuery.data?.length ? (
+                    {governanceEvents.length ? (
                       <List
                         size="small"
-                        dataSource={governanceEventsQuery.data.slice(0, 8)}
+                        dataSource={governanceEvents.slice(0, 8)}
                         renderItem={(item) => (
                           <List.Item>
                             <Space direction="vertical" size={2} style={{ width: '100%' }}>
@@ -1525,14 +1877,14 @@ export const AgentCopilotPage: React.FC = () => {
                       />
                     ) : null}
 
-                    {runtimeGrantsQuery.data?.length ? (
+                    {runtimeGrants.length ? (
                       <>
                         <Text strong style={{ marginTop: 4 }}>
                           低风险先用后审授权
                         </Text>
                         <List
                           size="small"
-                          dataSource={runtimeGrantsQuery.data}
+                          dataSource={runtimeGrants}
                           renderItem={(item) => (
                             <List.Item
                               actions={
@@ -1577,9 +1929,42 @@ export const AgentCopilotPage: React.FC = () => {
 
                     <Divider style={{ margin: '8px 0' }} />
                     <Text strong>会话资产复用</Text>
+                    {latestReuseResolution ? (
+                      <Space direction="vertical" style={{ width: '100%' }}>
+                        <Alert
+                          type={latestReuseResolution.semanticResolution?.ambiguous ? 'warning' : 'info'}
+                          showIcon
+                          message={
+                            latestReuseResolution.semanticResolution?.selectedAssetTitle
+                              ? `本轮已复用：${latestReuseResolution.semanticResolution.selectedAssetTitle}`
+                              : `本轮复用资产 ${latestReuseResolution.explicitAssetRefCount ?? 0} 项`
+                          }
+                          description={
+                            latestReuseResolution.semanticResolution?.ambiguous
+                              ? `检测到 ${latestReuseResolution.semanticResolution.candidateCount ?? 0} 个候选，已自动选择最相关结果。`
+                              : latestReuseResolution.followupAssetRefCount
+                                ? `本轮按候选序号复用 ${latestReuseResolution.followupAssetRefCount} 项。`
+                                : undefined
+                          }
+                        />
+                        {latestSemanticCandidates.length > 1 ? (
+                          <Space wrap>
+                            {latestSemanticCandidates.slice(0, 3).map((candidate, index) => (
+                              <Button
+                                key={candidate.id}
+                                size="small"
+                                onClick={() => void handleSelectSemanticCandidate(index + 1)}
+                              >
+                                用第{index + 1}个：{candidate.title}
+                              </Button>
+                            ))}
+                          </Space>
+                        ) : null}
+                      </Space>
+                    ) : null}
                     <List
                       size="small"
-                      dataSource={(assetsQuery.data ?? []).slice(0, 8)}
+                      dataSource={conversationAssets.slice(0, 8)}
                       locale={{ emptyText: '暂无可复用资产' }}
                       renderItem={(item) => (
                         <List.Item
@@ -1798,6 +2183,29 @@ export const AgentCopilotPage: React.FC = () => {
               autoSize={{ minRows: 12, maxRows: 20 }}
             />
           )}
+        </Space>
+      </Modal>
+
+      <Modal
+        title="投递配置中心"
+        open={deliveryProfileModalOpen}
+        onOk={handleSaveDeliveryProfiles}
+        onCancel={() => setDeliveryProfileModalOpen(false)}
+        confirmLoading={upsertDeliveryProfilesMutation.isPending}
+        width={760}
+      >
+        <Space direction="vertical" style={{ width: '100%' }}>
+          <Alert
+            type="info"
+            showIcon
+            message="使用 JSON 管理各渠道默认投递目标与模板"
+            description="字段建议：id/channel/isDefault/target/to/templateCode/sendRawFile/description"
+          />
+          <Input.TextArea
+            value={deliveryProfileEditor}
+            onChange={(e) => setDeliveryProfileEditor(e.target.value)}
+            autoSize={{ minRows: 12, maxRows: 22 }}
+          />
         </Space>
       </Modal>
     </Space>

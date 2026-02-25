@@ -187,7 +187,7 @@ async function main() {
     assert.equal(reuseResp.status, 201);
     assert.ok(['SLOT_FILLING', 'PLAN_PREVIEW', 'EXECUTING'].includes(reuseResp.body.state));
 
-    const naturalReuse = await fetchJson<{ state: string }>(
+    const explicitNaturalReuse = await fetchJson<{ state: string }>(
       `${baseUrl}/agent-conversations/sessions/${conversationSessionId}/turns`,
       {
         method: 'POST',
@@ -197,13 +197,85 @@ async function main() {
         }),
       },
     );
-    assert.equal(naturalReuse.status, 201);
-    assert.ok(['SLOT_FILLING', 'PLAN_PREVIEW', 'EXECUTING'].includes(naturalReuse.body.state));
+    assert.equal(explicitNaturalReuse.status, 201);
+    assert.ok(['SLOT_FILLING', 'PLAN_PREVIEW', 'EXECUTING'].includes(explicitNaturalReuse.body.state));
+
+    const semanticNaturalReuse = await fetchJson<{
+      state: string;
+      reuseResolution?: {
+        semanticResolution?: {
+          candidateCount?: number;
+          topCandidates?: Array<{ id: string; title: string }>;
+        };
+      };
+    }>(
+      `${baseUrl}/agent-conversations/sessions/${conversationSessionId}/turns`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-virtual-user-id': ownerUserId },
+        body: JSON.stringify({
+          message: '请基于最近一次计划继续补充执行步骤。',
+        }),
+      },
+    );
+    assert.equal(semanticNaturalReuse.status, 201);
+    assert.ok(['SLOT_FILLING', 'PLAN_PREVIEW', 'EXECUTING'].includes(semanticNaturalReuse.body.state));
+    const candidateCount = semanticNaturalReuse.body.reuseResolution?.semanticResolution?.candidateCount ?? 0;
+    assert.ok(candidateCount >= 1);
+
+    const followupByRank = await fetchJson<{
+      state: string;
+      reuseResolution?: {
+        followupAssetRefCount?: number;
+      };
+    }>(`${baseUrl}/agent-conversations/sessions/${conversationSessionId}/turns`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-virtual-user-id': ownerUserId },
+      body: JSON.stringify({
+        message: '请用第2个继续补充风险说明。',
+      }),
+    });
+    assert.equal(followupByRank.status, 201);
+    assert.ok(['SLOT_FILLING', 'PLAN_PREVIEW', 'EXECUTING'].includes(followupByRank.body.state));
+    assert.ok((followupByRank.body.reuseResolution?.followupAssetRefCount ?? 0) >= 0);
+
+    const semanticNaturalReuseRound2 = await fetchJson<{
+      state: string;
+      reuseResolution?: {
+        semanticResolution?: {
+          candidateCount?: number;
+        };
+      };
+    }>(`${baseUrl}/agent-conversations/sessions/${conversationSessionId}/turns`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-virtual-user-id': ownerUserId },
+      body: JSON.stringify({
+        message: '请基于最近一次计划继续补充执行步骤并标注风险优先级。',
+      }),
+    });
+    assert.equal(semanticNaturalReuseRound2.status, 201);
+    assert.ok(['SLOT_FILLING', 'PLAN_PREVIEW', 'EXECUTING'].includes(semanticNaturalReuseRound2.body.state));
+
+    const followupPreviousRound = await fetchJson<{
+      state: string;
+      reuseResolution?: {
+        followupAssetRefCount?: number;
+      };
+    }>(`${baseUrl}/agent-conversations/sessions/${conversationSessionId}/turns`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-virtual-user-id': ownerUserId },
+      body: JSON.stringify({
+        message: '还是用上轮第2个继续输出。',
+      }),
+    });
+    assert.equal(followupPreviousRound.status, 201);
+    assert.ok(['SLOT_FILLING', 'PLAN_PREVIEW', 'EXECUTING'].includes(followupPreviousRound.body.state));
+    assert.ok((followupPreviousRound.body.reuseResolution?.followupAssetRefCount ?? 0) >= 0);
 
     const refCount = await prisma.conversationAssetRef.count({
       where: { sessionId: conversationSessionId },
     });
-    assert.ok(refCount >= 2);
+    assert.ok(refCount >= 3);
   } finally {
     if (conversationSessionId) {
       await prisma.conversationSession.deleteMany({ where: { id: conversationSessionId } });

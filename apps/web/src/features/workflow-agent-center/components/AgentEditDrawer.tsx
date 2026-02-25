@@ -286,22 +286,29 @@ export const AgentEditDrawer: React.FC<AgentEditDrawerProps> = ({
                     <Collapse
                         ghost
                         style={{ backgroundColor: token.colorFillQuaternary, borderRadius: 8 }}
-                    >
-                        <Collapse.Panel key="runtime" header="⚙️ 运行策略 (按需展开)">
-                            <Form.Item name="timeoutSeconds" label="超时控制 (秒)" rules={[{ required: true }]}>
-                                <InputNumber min={1000} max={300000} style={{ width: '100%' }} />
-                            </Form.Item>
-                            <RetryPolicyForm name="retryPolicy" />
-                            <Form.Item name="templateSource" label="模板来源" rules={[{ required: true }]}>
-                                <Select
-                                    options={[
-                                        { label: '私有 (仅当前租户可见)', value: 'PRIVATE' },
-                                        { label: '公共 (共享到模板市场)', value: 'PUBLIC' },
-                                    ]}
-                                />
-                            </Form.Item>
-                        </Collapse.Panel>
-                    </Collapse>
+                        items={[
+                            {
+                                key: 'runtime',
+                                label: '⚙️ 运行策略 (按需展开)',
+                                children: (
+                                    <>
+                                        <Form.Item name="timeoutSeconds" label="超时控制 (秒)" rules={[{ required: true }]}>
+                                            <InputNumber min={1000} max={300000} style={{ width: '100%' }} />
+                                        </Form.Item>
+                                        <RetryPolicyForm name="retryPolicy" />
+                                        <Form.Item name="templateSource" label="模板来源" rules={[{ required: true }]}>
+                                            <Select
+                                                options={[
+                                                    { label: '私有 (仅当前租户可见)', value: 'PRIVATE' },
+                                                    { label: '公共 (共享到模板市场)', value: 'PUBLIC' },
+                                                ]}
+                                            />
+                                        </Form.Item>
+                                    </>
+                                ),
+                            },
+                        ]}
+                    />
                 </Space>
             ),
         },

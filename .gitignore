@@ -126,6 +126,7 @@ dist/
 
 # Uploads
 apps/api/uploads/
+apps/api/tmp/report-exports/
 
 # HtmlDemo
 apps/web/htmldemo

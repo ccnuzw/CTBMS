@@ -17,6 +17,10 @@
 ## 3. 质量与治理
 
 1. 错误码规范：`docs/aiagnet-chat/CTBMS对话式AI智能体-错误码规范-v1.md`
+2. 对话原生 UAT 自动验收报告：`docs/aiagnet-chat/CTBMS对话原生智能体-UAT自动验收报告-v2.md`
+3. 监控与告警基线：`docs/aiagnet-chat/CTBMS对话原生智能体-监控与告警基线-v2.md`
+4. 灰度与回滚演练记录：`docs/aiagnet-chat/CTBMS对话原生智能体-灰度与回滚演练记录-v2.md`
+5. 上线门禁总结：`docs/aiagnet-chat/CTBMS对话原生智能体-上线门禁总结-v2.md`
 
 ## 4. 当前实现状态（摘要）
 

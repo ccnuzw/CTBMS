@@ -65,6 +65,10 @@
     "workflow:quality:validation:guidance:self-check": "node scripts/workflow-quality-gate-validation-guidance-self-check.mjs",
     "workflow:quality:report:summary": "node scripts/workflow-quality-gate-report-summary.mjs",
     "agent:pre-release": "pnpm --filter @packages/types build && pnpm --filter api exec prisma db push && pnpm workflow:type-check:split && pnpm --filter api run test:e2e:agent-suite",
+    "agent:uat-report": "node scripts/agent-chat-native-uat-report.mjs",
+    "agent:ops-report": "node scripts/agent-ops-monitoring-report.mjs",
+    "agent:gray-rollback-report": "node scripts/agent-gray-rollback-drill-report.mjs",
+    "agent:release-gate-summary": "node scripts/agent-release-gate-summary.mjs",
     "format": "prettier --write \"**/*.{ts,tsx,md}\""
   },
   "devDependencies": {

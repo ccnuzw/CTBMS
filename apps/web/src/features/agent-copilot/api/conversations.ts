@@ -65,6 +65,25 @@ export interface TurnResponse {
   confirmRequired: boolean;
   autoExecuted?: boolean;
   executionId?: string;
+  reuseResolution?: {
+    explicitAssetRefCount?: number;
+    followupAssetRefCount?: number;
+    semanticAssetRefCount?: number;
+    semanticResolution?: {
+      requestedType?: string | null;
+      candidateCount?: number;
+      selectedAssetId?: string;
+      selectedAssetTitle?: string;
+      selectedScore?: number;
+      ambiguous?: boolean;
+      topCandidates?: Array<{
+        id: string;
+        title: string;
+        assetType: string;
+        score: number;
+      }>;
+    };
+  };
 }
 
 export interface ConversationAsset {
@@ -259,6 +278,7 @@ export interface ScheduleResolutionResult {
 }
 
 const COPILOT_PROMPT_BINDING_TYPE = 'AGENT_COPILOT_PROMPTS';
+const COPILOT_DELIVERY_PROFILE_BINDING_TYPE = 'AGENT_COPILOT_DELIVERY_PROFILES';
 
 export type CopilotPromptScope = 'PERSONAL' | 'TEAM';
 
@@ -267,6 +287,23 @@ const scopeToTargetId = (scope: CopilotPromptScope) =>
 
 const scopeToTargetCode = (scope: CopilotPromptScope) =>
   scope === 'TEAM' ? 'agent-copilot-quick-prompts-team' : 'agent-copilot-quick-prompts-personal';
+
+const deliveryProfileScopeToTargetId = (scope: CopilotPromptScope) =>
+  scope === 'TEAM' ? 'team-delivery-default' : 'personal-delivery-default';
+
+const deliveryProfileScopeToTargetCode = (scope: CopilotPromptScope) =>
+  scope === 'TEAM' ? 'agent-copilot-delivery-profiles-team' : 'agent-copilot-delivery-profiles-personal';
+
+export interface DeliveryChannelProfile {
+  id: string;
+  channel: DeliveryChannel;
+  target?: string;
+  to?: string[];
+  templateCode?: DeliveryTemplateCode;
+  sendRawFile?: boolean;
+  description?: string;
+  isDefault?: boolean;
+}
 
 export const useConversationSessions = (params?: {
   state?: ConversationState;
@@ -466,6 +503,58 @@ export const useUpsertCopilotPromptTemplates = () => {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['agent-copilot', 'prompt-templates'] });
+    },
+  });
+};
+
+export const useCopilotDeliveryProfiles = (scope: CopilotPromptScope) =>
+  useQuery<UserConfigBindingDto | null>({
+    queryKey: ['agent-copilot', 'delivery-profiles', scope],
+    queryFn: async () => {
+      const res = await apiClient.get<UserConfigBindingPageDto>('/user-config-bindings', {
+        params: {
+          bindingType: COPILOT_DELIVERY_PROFILE_BINDING_TYPE,
+          page: 1,
+          pageSize: 100,
+        },
+      });
+      const targetId = deliveryProfileScopeToTargetId(scope);
+      return res.data.data.find((item) => item.targetId === targetId) ?? null;
+    },
+  });
+
+export const useUpsertCopilotDeliveryProfiles = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (payload: {
+      scope: CopilotPromptScope;
+      bindingId?: string;
+      profiles: DeliveryChannelProfile[];
+    }) => {
+      if (payload.bindingId) {
+        const dto: UpdateUserConfigBindingDto = {
+          metadata: { profiles: payload.profiles },
+        };
+        const res = await apiClient.put<UserConfigBindingDto>(
+          `/user-config-bindings/${payload.bindingId}`,
+          dto,
+        );
+        return res.data;
+      }
+
+      const dto: CreateUserConfigBindingDto = {
+        bindingType: COPILOT_DELIVERY_PROFILE_BINDING_TYPE,
+        targetId: deliveryProfileScopeToTargetId(payload.scope),
+        targetCode: deliveryProfileScopeToTargetCode(payload.scope),
+        metadata: { profiles: payload.profiles },
+        isActive: true,
+        priority: 100,
+      };
+      const res = await apiClient.post<UserConfigBindingDto>('/user-config-bindings', dto);
+      return res.data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['agent-copilot', 'delivery-profiles'] });
     },
   });
 };

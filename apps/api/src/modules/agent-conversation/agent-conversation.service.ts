@@ -66,6 +66,9 @@ type ConversationSessionQueryDto = {
   pageSize?: number;
 };
 
+const SESSION_DETAIL_TURN_LIMIT = 80;
+const SESSION_DETAIL_PLAN_LIMIT = 20;
+
 @Injectable()
 export class AgentConversationService {
   constructor(
@@ -127,12 +130,12 @@ export class AgentConversationService {
       where: { id: sessionId, ownerUserId: userId },
       include: {
         turns: {
-          orderBy: { createdAt: 'asc' },
-          take: 200,
+          orderBy: { createdAt: 'desc' },
+          take: SESSION_DETAIL_TURN_LIMIT,
         },
         plans: {
           orderBy: { version: 'desc' },
-          take: 20,
+          take: SESSION_DETAIL_PLAN_LIMIT,
         },
       },
     });
@@ -140,6 +143,9 @@ export class AgentConversationService {
     if (!session) {
       return null;
     }
+
+    // Return latest window in chronological order for stable timeline rendering.
+    session.turns = [...session.turns].sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
 
     return session;
   }
@@ -154,10 +160,16 @@ export class AgentConversationService {
     }
 
     const referencedAssetIds = this.extractAssetReferenceIds(dto.message);
+    const followupResolved = await this.resolveFollowupAssetReference(sessionId, dto.message);
+    const followupReferencedAssetIds = followupResolved.assetIds;
+    const semanticResolved = await this.resolveSemanticAssetReferences(sessionId, dto.message);
+    const semanticReferencedAssetIds = semanticResolved.assetIds;
     const contextReferencedAssetId = this.pickString(dto.contextPatch?.reusedAssetId);
     const requestedAssetIds = [
       ...(contextReferencedAssetId ? [contextReferencedAssetId] : []),
       ...referencedAssetIds,
+      ...followupReferencedAssetIds,
+      ...semanticReferencedAssetIds,
     ]
       .filter((id): id is string => this.isUuid(id))
       .filter((id, index, arr) => arr.indexOf(id) === index);
@@ -186,6 +198,13 @@ export class AgentConversationService {
         title: asset.title,
         assetType: asset.assetType,
       }));
+      effectiveContextPatch.reuseResolution = {
+        explicitAssetRefCount: referencedAssetIds.length,
+        followupAssetRefCount: followupReferencedAssetIds.length,
+        semanticAssetRefCount: semanticReferencedAssetIds.length,
+        followupResolution: followupResolved.resolution,
+        semanticResolution: semanticResolved.resolution,
+      };
     }
 
     const userTurn = await this.prisma.conversationTurn.create({
@@ -292,23 +311,33 @@ export class AgentConversationService {
       }
     }
 
+    const reuseReceipt = this.buildReuseReceiptMessage(
+      referencedAssets,
+      effectiveContextPatch.reuseResolution as Record<string, unknown> | undefined,
+    );
+
     const assistantMessage = hasMissingSlots
       ? this.buildSlotPrompt(missingSlots)
       : autoExecution
         ? '我已生成计划并自动开始执行。你可以继续补充要求，结果会在当前会话持续更新。'
         : '我已完成计划编排。请确认执行，或告诉我需要调整的参数。';
 
+    const assistantMessageWithReuse = reuseReceipt
+      ? `${assistantMessage}\n${reuseReceipt}`
+      : assistantMessage;
+
     await this.prisma.conversationTurn.create({
       data: {
         sessionId,
         role: 'ASSISTANT',
-        content: assistantMessage,
+        content: assistantMessageWithReuse,
         structuredPayload: {
           intent,
           missingSlots,
           proposedPlan,
           autoExecuted: Boolean(autoExecution),
           executionId: autoExecution?.executionId,
+          reuseResolution: effectiveContextPatch.reuseResolution,
         } as Prisma.InputJsonValue,
       },
     });
@@ -328,7 +357,7 @@ export class AgentConversationService {
     });
 
     return {
-      assistantMessage,
+      assistantMessage: assistantMessageWithReuse,
       state: autoExecution ? 'EXECUTING' : state,
       intent,
       missingSlots,
@@ -336,6 +365,7 @@ export class AgentConversationService {
       confirmRequired: !hasMissingSlots && !autoExecution,
       autoExecuted: Boolean(autoExecution),
       executionId: autoExecution?.executionId,
+      reuseResolution: effectiveContextPatch.reuseResolution,
     };
   }
 
@@ -652,13 +682,22 @@ export class AgentConversationService {
     }
 
     const channel = dto.channel;
-    if (channel === 'EMAIL' && (!dto.to || dto.to.length === 0)) {
+    const profileDefaults = await this.resolveDeliveryProfileDefaults(userId, channel);
+    const to = channel === 'EMAIL' ? this.mergeDeliveryRecipients(dto.to, profileDefaults.to) : undefined;
+    const target =
+      channel === 'EMAIL' ? undefined : dto.target?.trim() || profileDefaults.target?.trim() || undefined;
+    const normalizedTemplate = this.normalizeDeliveryTemplateCode(
+      dto.templateCode ?? profileDefaults.templateCode,
+    );
+    const sendRawFile = dto.sendRawFile ?? profileDefaults.sendRawFile ?? true;
+
+    if (channel === 'EMAIL' && (!to || to.length === 0)) {
       throw new BadRequestException({
         code: 'CONV_DELIVERY_TARGET_REQUIRED',
         message: '邮件投递至少需要一个收件人',
       });
     }
-    if (channel !== 'EMAIL' && !dto.target) {
+    if (channel !== 'EMAIL' && !target) {
       throw new BadRequestException({
         code: 'CONV_DELIVERY_TARGET_REQUIRED',
         message: '请提供投递目标（群ID或接收端标识）',
@@ -667,7 +706,6 @@ export class AgentConversationService {
 
     const deliveryTaskId = `delivery_${randomUUID()}`;
     const webhookUrl = this.resolveDeliveryWebhook(channel);
-    const normalizedTemplate = this.normalizeDeliveryTemplateCode(dto.templateCode);
     const subject = this.resolveDeliverySubject(channel, normalizedTemplate, dto.subject);
     const content = this.resolveDeliveryContent(channel, normalizedTemplate, dto.content);
 
@@ -690,8 +728,8 @@ export class AgentConversationService {
             deliveryTaskId,
             channel,
             exportTaskId: exportTask.id,
-            to: dto.to,
-            target: dto.target,
+            to,
+            target,
             subject,
             content,
             templateCode: normalizedTemplate,
@@ -699,7 +737,7 @@ export class AgentConversationService {
             attachment: {
               fileName,
               downloadUrl,
-              mode: dto.sendRawFile ? 'RAW_FILE' : 'EXPORT_FILE',
+              mode: sendRawFile ? 'RAW_FILE' : 'EXPORT_FILE',
             },
           }),
         });
@@ -729,8 +767,8 @@ export class AgentConversationService {
           channel,
           exportTaskId: exportTask.id,
           status,
-          to: dto.to,
-          target: dto.target,
+          to,
+          target,
           subject,
           templateCode: normalizedTemplate,
           errorMessage,
@@ -747,8 +785,8 @@ export class AgentConversationService {
         channel,
         exportTaskId: exportTask.id,
         status,
-        to: dto.to,
-        target: dto.target,
+        to,
+        target,
         subject,
         templateCode: normalizedTemplate,
         errorMessage,
@@ -1431,6 +1469,305 @@ export class AgentConversationService {
     return Array.from(ids);
   }
 
+  private async resolveFollowupAssetReference(
+    sessionId: string,
+    message: string,
+  ): Promise<{
+    assetIds: string[];
+    resolution: Record<string, unknown> | null;
+  }> {
+    const rank = this.extractOrdinalReference(message);
+    if (!rank) {
+      return {
+        assetIds: [],
+        resolution: null,
+      };
+    }
+
+    const roundOffset = this.extractFollowupRoundOffset(message);
+
+    const assistants = await this.prisma.conversationTurn.findMany({
+      where: {
+        sessionId,
+        role: 'ASSISTANT',
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 20,
+      select: {
+        structuredPayload: true,
+      },
+    });
+
+    const candidateTurns = assistants.filter((turn) => {
+      const payload = this.toRecord(turn.structuredPayload);
+      const reuseResolution = this.toRecord(payload.reuseResolution);
+      const semanticResolution = this.toRecord(reuseResolution.semanticResolution);
+      const topCandidatesRaw = semanticResolution.topCandidates;
+      return Array.isArray(topCandidatesRaw) && topCandidatesRaw.length > 0;
+    });
+
+    const selectedTurn = candidateTurns[Math.min(roundOffset, Math.max(candidateTurns.length - 1, 0))];
+    if (!selectedTurn) {
+      return {
+        assetIds: [],
+        resolution: {
+          mode: 'followup',
+          roundOffset,
+          requestedRank: rank,
+          candidateTurnCount: 0,
+        },
+      };
+    }
+
+    const payload = this.toRecord(selectedTurn.structuredPayload);
+    const reuseResolution = this.toRecord(payload.reuseResolution);
+    const semanticResolution = this.toRecord(reuseResolution.semanticResolution);
+    const topCandidatesRaw = semanticResolution.topCandidates;
+    const topCandidates = Array.isArray(topCandidatesRaw)
+      ? topCandidatesRaw.map((item) => this.toRecord(item))
+      : [];
+    const selected = topCandidates[rank - 1];
+    const selectedId = this.pickString(selected.id);
+    if (selectedId && this.isUuid(selectedId)) {
+      return {
+        assetIds: [selectedId],
+        resolution: {
+          mode: 'followup',
+          roundOffset,
+          requestedRank: rank,
+          selectedAssetId: selectedId,
+          selectedAssetTitle: this.pickString(selected.title),
+          candidateTurnCount: candidateTurns.length,
+          candidateCount: topCandidates.length,
+        },
+      };
+    }
+    return {
+      assetIds: [],
+      resolution: {
+        mode: 'followup',
+        roundOffset,
+        requestedRank: rank,
+        candidateTurnCount: candidateTurns.length,
+        candidateCount: topCandidates.length,
+      },
+    };
+  }
+
+  private extractFollowupRoundOffset(message: string): number {
+    if (message.includes('上上轮') || message.includes('前两轮')) {
+      return 2;
+    }
+    if (message.includes('上轮') || message.includes('上一轮')) {
+      return 1;
+    }
+    if (message.includes('这轮') || message.includes('本轮')) {
+      return 0;
+    }
+    return 0;
+  }
+
+  private extractOrdinalReference(message: string): number | null {
+    const directMatch = message.match(/第\s*(\d+)\s*个/);
+    if (directMatch) {
+      const index = Number(directMatch[1]);
+      if (Number.isFinite(index) && index >= 1 && index <= 10) {
+        return index;
+      }
+    }
+
+    if (message.includes('第一个') || message.includes('第一条')) {
+      return 1;
+    }
+    if (message.includes('第二个') || message.includes('第二条')) {
+      return 2;
+    }
+    if (message.includes('第三个') || message.includes('第三条')) {
+      return 3;
+    }
+    return null;
+  }
+
+  private shouldResolveSemanticAssetReference(message: string): boolean {
+    const normalized = message.toLowerCase();
+    return (
+      normalized.includes('基于') ||
+      normalized.includes('沿用') ||
+      normalized.includes('复用') ||
+      normalized.includes('参考') ||
+      normalized.includes('继续用') ||
+      normalized.includes('用上') ||
+      normalized.includes('上一次') ||
+      normalized.includes('最近一次') ||
+      normalized.includes('最新')
+    );
+  }
+
+  private inferSemanticAssetType(message: string):
+    | 'PLAN'
+    | 'EXECUTION'
+    | 'RESULT_SUMMARY'
+    | 'EXPORT_FILE'
+    | 'BACKTEST_SUMMARY'
+    | 'CONFLICT_SUMMARY'
+    | 'SKILL_DRAFT'
+    | null {
+    if (message.includes('回测')) {
+      return 'BACKTEST_SUMMARY';
+    }
+    if (message.includes('冲突')) {
+      return 'CONFLICT_SUMMARY';
+    }
+    if (message.includes('导出') || message.includes('原文件') || message.includes('报告文件')) {
+      return 'EXPORT_FILE';
+    }
+    if (message.includes('草稿') || message.toLowerCase().includes('skill')) {
+      return 'SKILL_DRAFT';
+    }
+    if (message.includes('执行实例')) {
+      return 'EXECUTION';
+    }
+    if (message.includes('计划')) {
+      return 'PLAN';
+    }
+    if (message.includes('结果') || message.includes('结论') || message.includes('分析')) {
+      return 'RESULT_SUMMARY';
+    }
+    return null;
+  }
+
+  private inferSemanticAssetOffset(message: string): number {
+    if (message.includes('上上次') || message.includes('倒数第二') || message.includes('第二新')) {
+      return 1;
+    }
+    return 0;
+  }
+
+  private async resolveSemanticAssetReferences(
+    sessionId: string,
+    message: string,
+  ): Promise<{
+    assetIds: string[];
+    resolution: Record<string, unknown> | null;
+  }> {
+    if (!this.shouldResolveSemanticAssetReference(message)) {
+      return {
+        assetIds: [],
+        resolution: null,
+      };
+    }
+
+    const assetType = this.inferSemanticAssetType(message);
+    const offset = this.inferSemanticAssetOffset(message);
+    const explicitDisambiguated = offset > 0;
+
+    const assets = await this.prisma.conversationAsset.findMany({
+      where: {
+        sessionId,
+        assetType: assetType || undefined,
+      },
+      orderBy: [{ createdAt: 'desc' }],
+      take: 30,
+      select: {
+        id: true,
+        title: true,
+        assetType: true,
+        createdAt: true,
+      },
+    });
+
+    if (!assets.length) {
+      return {
+        assetIds: [],
+        resolution: {
+          mode: 'semantic',
+          requestedType: assetType,
+          candidateCount: 0,
+          ambiguous: false,
+        },
+      };
+    }
+
+    const ranked = assets
+      .map((asset, index) => {
+        const recencyScore = Math.max(0, 100 - index * 3);
+        const keywordScore = this.computeSemanticKeywordScore(message, asset.title);
+        const typeBonus = assetType ? (asset.assetType === assetType ? 20 : -10) : 0;
+        return {
+          ...asset,
+          score: recencyScore + keywordScore + typeBonus,
+        };
+      })
+      .sort((a, b) => b.score - a.score);
+
+    const picked = ranked[Math.min(offset, ranked.length - 1)] ?? ranked[0];
+    const ambiguous = ranked.length > 1 && !explicitDisambiguated;
+
+    return {
+      assetIds: picked ? [picked.id] : [],
+      resolution: {
+        mode: 'semantic',
+        requestedType: assetType,
+        candidateCount: ranked.length,
+        selectedAssetId: picked?.id,
+        selectedAssetTitle: picked?.title,
+        selectedScore: picked?.score,
+        ambiguous,
+        topCandidates: ranked.slice(0, 3).map((item) => ({
+          id: item.id,
+          title: item.title,
+          assetType: item.assetType,
+          score: item.score,
+        })),
+      },
+    };
+  }
+
+  private computeSemanticKeywordScore(message: string, title: string): number {
+    const normalizedMessage = message.toLowerCase();
+    const normalizedTitle = title.toLowerCase();
+    const keywords = ['回测', '计划', '结果', '结论', '导出', '冲突', '草稿', '报告', 'risk', 'weekly'];
+    return keywords.reduce((score, keyword) => {
+      if (normalizedMessage.includes(keyword) && normalizedTitle.includes(keyword)) {
+        return score + 10;
+      }
+      return score;
+    }, 0);
+  }
+
+  private buildReuseReceiptMessage(
+    referencedAssets: Array<{ id: string; title: string; assetType: string }>,
+    resolution?: Record<string, unknown>,
+  ) {
+    const semantic = this.toRecord(resolution?.semanticResolution);
+    const followup = this.toRecord(resolution?.followupResolution);
+    const ambiguous = semantic.ambiguous === true;
+    const candidateCount = this.normalizeNumber(semantic.candidateCount);
+    const topCandidatesRaw = semantic.topCandidates;
+    const topCandidates = Array.isArray(topCandidatesRaw)
+      ? topCandidatesRaw.map((item) => this.toRecord(item)).slice(0, 3)
+      : [];
+
+    if (!referencedAssets.length) {
+      if (candidateCount === 0) {
+        return '未匹配到可复用资产。你可以说“用最近一次回测结果”或直接使用 [asset:<id>]。';
+      }
+      return '';
+    }
+
+    const selected = referencedAssets[0];
+    if (this.pickString(followup.selectedAssetId)) {
+      return `已按序号复用资产：${selected.title}。`;
+    }
+    if (ambiguous && candidateCount > 1) {
+      const candidateTips = topCandidates
+        .map((item, index) => `${index + 1}.${this.pickString(item.title) || this.pickString(item.id) || '-'}`)
+        .join('；');
+      return `已为你匹配并复用资产：${selected.title}（候选 ${candidateCount} 项，已自动选择最相关项。可回复“用第2个”重新指定。候选：${candidateTips}）`;
+    }
+    return `已复用资产：${selected.title}。`;
+  }
+
   private normalizeDeliveryTemplateCode(templateCode: unknown):
     | 'DEFAULT'
     | 'MORNING_BRIEF'
@@ -1504,6 +1841,72 @@ export class AgentConversationService {
       return process.env.FEISHU_DELIVERY_WEBHOOK_URL?.trim();
     }
     return null;
+  }
+
+  private mergeDeliveryRecipients(primary?: string[], fallback?: string[]): string[] {
+    const merged = [...(primary ?? []), ...(fallback ?? [])]
+      .map((item) => item.trim())
+      .filter(Boolean);
+    return merged.filter((item, index) => merged.indexOf(item) === index);
+  }
+
+  private async resolveDeliveryProfileDefaults(
+    userId: string,
+    channel: 'EMAIL' | 'DINGTALK' | 'WECOM' | 'FEISHU',
+  ): Promise<{
+    to?: string[];
+    target?: string;
+    templateCode?: 'DEFAULT' | 'MORNING_BRIEF' | 'WEEKLY_REVIEW' | 'RISK_ALERT';
+    sendRawFile?: boolean;
+  }> {
+    const bindings = await this.prisma.userConfigBinding.findMany({
+      where: {
+        userId,
+        bindingType: 'AGENT_COPILOT_DELIVERY_PROFILES',
+        isActive: true,
+      },
+      orderBy: [{ priority: 'desc' }, { updatedAt: 'desc' }],
+      take: 10,
+      select: {
+        metadata: true,
+      },
+    });
+
+    for (const binding of bindings) {
+      const metadata = this.toRecord(binding.metadata);
+      const rawProfiles = metadata.profiles;
+      if (!Array.isArray(rawProfiles)) {
+        continue;
+      }
+
+      const profiles = rawProfiles.map((item) => this.toRecord(item));
+      const channelProfiles = profiles.filter((profile) => this.pickString(profile.channel) === channel);
+      if (!channelProfiles.length) {
+        continue;
+      }
+
+      const selected =
+        channelProfiles.find((profile) => Boolean(profile.isDefault)) ?? channelProfiles[0] ?? null;
+      if (!selected) {
+        continue;
+      }
+
+      const to = Array.isArray(selected.to)
+        ? selected.to
+            .map((item) => this.pickString(item))
+            .filter((item): item is string => Boolean(item))
+        : undefined;
+      const rawTemplateCode = this.pickString(selected.templateCode);
+
+      return {
+        to,
+        target: this.pickString(selected.target) ?? undefined,
+        templateCode: rawTemplateCode ? this.normalizeDeliveryTemplateCode(rawTemplateCode) : undefined,
+        sendRawFile: typeof selected.sendRawFile === 'boolean' ? selected.sendRawFile : undefined,
+      };
+    }
+
+    return {};
   }
 
   private channelDisplayName(channel: 'EMAIL' | 'DINGTALK' | 'WECOM' | 'FEISHU') {

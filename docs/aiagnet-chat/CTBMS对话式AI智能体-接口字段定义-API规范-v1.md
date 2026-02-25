@@ -614,3 +614,27 @@
 5. `SubscriptionStatus`：`ACTIVE | PAUSED | FAILED | ARCHIVED`
 6. `BacktestStatus`：`QUEUED | RUNNING | COMPLETED | FAILED`
 7. `ConversationAssetType`：`PLAN | EXECUTION | RESULT_SUMMARY | EXPORT_FILE | BACKTEST_SUMMARY | CONFLICT_SUMMARY | SKILL_DRAFT | NOTE`
+
+## 9. 配置中心（投递配置）
+
+投递配置中心通过 `user-config-bindings` 存储，`bindingType` 使用：
+
+- `AGENT_COPILOT_DELIVERY_PROFILES`
+
+建议 `metadata` 结构：
+
+```json
+{
+  "profiles": [
+    {
+      "id": "ops-wecom",
+      "channel": "WECOM",
+      "target": "ops-group-01",
+      "templateCode": "WEEKLY_REVIEW",
+      "sendRawFile": true,
+      "isDefault": true,
+      "description": "运营群默认周报"
+    }
+  ]
+}
+```

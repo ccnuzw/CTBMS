@@ -12,6 +12,7 @@ import { WorkflowExecutionModule } from '../src/modules/workflow-execution';
 import { AgentConversationModule } from '../src/modules/agent-conversation';
 import { ReportExportModule } from '../src/modules/report-export';
 import { AgentSkillModule } from '../src/modules/agent-skill';
+import { UserConfigBindingModule } from '../src/modules/user-config-binding';
 import { PrismaModule } from '../src/prisma';
 
 @Module({
@@ -19,6 +20,7 @@ import { PrismaModule } from '../src/prisma';
     ScheduleModule.forRoot(),
     PrismaModule,
     AgentSkillModule,
+    UserConfigBindingModule,
     WorkflowDefinitionModule,
     WorkflowExecutionModule,
     ReportExportModule,
@@ -149,6 +151,42 @@ async function main() {
         name: `Agent Conversation Delivery ${token}`,
       },
     });
+
+    const createDeliveryProfileBinding = await fetchJson<{ id: string }>(`${baseUrl}/user-config-bindings`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-virtual-user-id': ownerUserId,
+      },
+      body: JSON.stringify({
+        bindingType: 'AGENT_COPILOT_DELIVERY_PROFILES',
+        targetId: 'personal-delivery-default',
+        targetCode: 'agent-copilot-delivery-profiles-personal',
+        metadata: {
+          profiles: [
+            {
+              id: 'p-email-default',
+              channel: 'EMAIL',
+              to: [`${token}@mail.test`],
+              templateCode: 'DEFAULT',
+              sendRawFile: true,
+              isDefault: true,
+            },
+            {
+              id: 'p-wecom-default',
+              channel: 'WECOM',
+              target: 'ops-profile-default',
+              templateCode: 'WEEKLY_REVIEW',
+              sendRawFile: true,
+              isDefault: true,
+            },
+          ],
+        },
+        isActive: true,
+        priority: 100,
+      }),
+    });
+    assert.equal(createDeliveryProfileBinding.status, 201);
 
     const rulePack = await prisma.decisionRulePack.create({
       data: {
@@ -331,16 +369,51 @@ async function main() {
     assert.equal(deliverToDingTalk.body.status, 'SENT');
     assert.equal(deliverToDingTalk.body.channel, 'DINGTALK');
 
-    assert.ok(webhookPayloads.length > 1, '投递 webhook 应至少被调用两次');
-    const payload = webhookPayloads[0];
-    const payload2 = webhookPayloads[1];
-    assert.equal(payload.exportTaskId, exportResult.body.exportTaskId);
-    assert.equal(payload.channel, 'EMAIL');
-    assert.equal(payload.subject, 'E2E Delivery');
-    assert.ok(String((payload.attachment as Record<string, unknown>)?.downloadUrl ?? '').includes('/report-exports/'));
-    assert.equal(payload2.channel, 'DINGTALK');
-    assert.equal(payload2.target, 'ops-group-01');
-    assert.equal(payload2.templateCode, 'MORNING_BRIEF');
+    const deliverByDefaultProfile = await fetchJson<{
+      deliveryTaskId: string;
+      channel: string;
+      status: string;
+      errorMessage?: string | null;
+    }>(`${baseUrl}/agent-conversations/sessions/${conversationSessionId}/deliver`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-virtual-user-id': ownerUserId,
+      },
+      body: JSON.stringify({
+        exportTaskId: exportResult.body.exportTaskId,
+        channel: 'WECOM',
+      }),
+    });
+    assert.equal(deliverByDefaultProfile.status, 201);
+    assert.equal(deliverByDefaultProfile.body.status, 'SENT');
+    assert.equal(deliverByDefaultProfile.body.channel, 'WECOM');
+
+    assert.ok(webhookPayloads.length >= 3, '投递 webhook 应至少被调用三次');
+    const emailPayload = webhookPayloads.find((item) => item.channel === 'EMAIL');
+    const dingTalkPayload = webhookPayloads.find((item) => item.channel === 'DINGTALK');
+    const wecomPayload = webhookPayloads.find((item) => item.channel === 'WECOM');
+
+    assert.ok(emailPayload, '缺少 EMAIL webhook payload');
+    assert.equal(emailPayload?.exportTaskId, exportResult.body.exportTaskId);
+    assert.equal(emailPayload?.subject, 'E2E Delivery');
+    assert.ok(
+      String((emailPayload?.attachment as Record<string, unknown> | undefined)?.downloadUrl ?? '').includes(
+        '/report-exports/',
+      ),
+    );
+
+    assert.ok(dingTalkPayload, '缺少 DINGTALK webhook payload');
+    assert.equal(dingTalkPayload?.target, 'ops-group-01');
+    assert.equal(dingTalkPayload?.templateCode, 'MORNING_BRIEF');
+
+    assert.ok(wecomPayload, '缺少 WECOM webhook payload');
+    assert.equal(wecomPayload?.target, 'ops-profile-default');
+    assert.equal(wecomPayload?.templateCode, 'WEEKLY_REVIEW');
+    assert.equal(
+      (wecomPayload?.attachment as Record<string, unknown> | undefined)?.mode,
+      'RAW_FILE',
+    );
   } finally {
     if (conversationSessionId) {
       await prisma.conversationSession.deleteMany({ where: { id: conversationSessionId } });

@@ -457,6 +457,7 @@ export const AgentProfilePage: React.FC = () => {
       <Modal
         title="新建智能体"
         open={visible}
+        forceRender
         onCancel={() => {
           setVisible(false);
           setIsAgentCodeCustomized(false);
@@ -758,6 +759,7 @@ export const AgentProfilePage: React.FC = () => {
             {
               key: 'status',
               label: '状态',
+              span: 2,
               children: selectedAgent ? (
                 <Tag color={selectedAgent.isActive ? 'green' : 'red'}>
                   {getAgentStatusLabel(selectedAgent.isActive)}

@@ -64,8 +64,8 @@ export const DeliverConversationSchema = z.object({
   target: z.string().trim().max(240).optional(),
   subject: z.string().trim().max(200).optional(),
   content: z.string().trim().max(5000).optional(),
-  templateCode: DeliveryTemplateCodeEnum.default('DEFAULT'),
-  sendRawFile: z.boolean().default(true),
+  templateCode: DeliveryTemplateCodeEnum.optional(),
+  sendRawFile: z.boolean().optional(),
   metadata: z.record(z.unknown()).optional(),
 });
 
