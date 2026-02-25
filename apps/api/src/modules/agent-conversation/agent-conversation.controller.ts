@@ -16,11 +16,15 @@ import {
   ConfirmConversationPlanRequest,
   ConversationSessionQueryRequest,
   CreateConversationBacktestRequest,
+  CreateSkillDraftRequest,
   CreateConversationSubscriptionRequest,
   CreateConversationSessionRequest,
   CreateConversationTurnRequest,
+  DeliverConversationRequest,
   DeliverConversationEmailRequest,
+  ResolveConversationScheduleRequest,
   ExportConversationResultRequest,
+  ReuseConversationAssetRequest,
   UpdateConversationSubscriptionRequest,
 } from './dto';
 
@@ -136,6 +140,22 @@ export class AgentConversationController {
     return result;
   }
 
+  @Post(':sessionId/deliver')
+  async deliver(
+    @Request() req: AuthRequest,
+    @Param('sessionId') sessionId: string,
+    @Body() dto: DeliverConversationRequest,
+  ) {
+    const result = await this.service.deliver(this.getUserId(req), sessionId, dto);
+    if (!result) {
+      throw new NotFoundException({
+        code: 'CONV_SESSION_NOT_FOUND',
+        message: '会话不存在或无权限访问',
+      });
+    }
+    return result;
+  }
+
   @Get(':sessionId/subscriptions')
   async listSubscriptions(@Request() req: AuthRequest, @Param('sessionId') sessionId: string) {
     const result = await this.service.listSubscriptions(this.getUserId(req), sessionId);
@@ -175,6 +195,22 @@ export class AgentConversationController {
       throw new NotFoundException({
         code: 'CONV_SUB_NOT_FOUND',
         message: '订阅不存在或无权限访问',
+      });
+    }
+    return result;
+  }
+
+  @Post(':sessionId/schedules/resolve')
+  async resolveSchedule(
+    @Request() req: AuthRequest,
+    @Param('sessionId') sessionId: string,
+    @Body() dto: ResolveConversationScheduleRequest,
+  ) {
+    const result = await this.service.resolveScheduleCommand(this.getUserId(req), sessionId, dto);
+    if (!result) {
+      throw new NotFoundException({
+        code: 'CONV_SESSION_NOT_FOUND',
+        message: '会话不存在或无权限访问',
       });
     }
     return result;
@@ -241,6 +277,51 @@ export class AgentConversationController {
       throw new NotFoundException({
         code: 'CONV_SESSION_NOT_FOUND',
         message: '会话不存在或无权限访问',
+      });
+    }
+    return result;
+  }
+
+  @Post(':sessionId/capability-gap/skill-draft')
+  async createSkillDraft(
+    @Request() req: AuthRequest,
+    @Param('sessionId') sessionId: string,
+    @Body() dto: CreateSkillDraftRequest,
+  ) {
+    const result = await this.service.createSkillDraft(this.getUserId(req), sessionId, dto);
+    if (!result) {
+      throw new NotFoundException({
+        code: 'CONV_SESSION_NOT_FOUND',
+        message: '会话不存在或无权限访问',
+      });
+    }
+    return result;
+  }
+
+  @Get(':sessionId/assets')
+  async listAssets(@Request() req: AuthRequest, @Param('sessionId') sessionId: string) {
+    const result = await this.service.listAssets(this.getUserId(req), sessionId);
+    if (!result) {
+      throw new NotFoundException({
+        code: 'CONV_SESSION_NOT_FOUND',
+        message: '会话不存在或无权限访问',
+      });
+    }
+    return result;
+  }
+
+  @Post(':sessionId/assets/:assetId/reuse')
+  async reuseAsset(
+    @Request() req: AuthRequest,
+    @Param('sessionId') sessionId: string,
+    @Param('assetId') assetId: string,
+    @Body() dto: ReuseConversationAssetRequest,
+  ) {
+    const result = await this.service.reuseAsset(this.getUserId(req), sessionId, assetId, dto);
+    if (!result) {
+      throw new NotFoundException({
+        code: 'CONV_ASSET_NOT_FOUND',
+        message: '会话资产不存在或无权限访问',
       });
     }
     return result;

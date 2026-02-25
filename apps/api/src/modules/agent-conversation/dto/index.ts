@@ -1,10 +1,15 @@
 import { createZodDto } from 'nestjs-zod';
 import {
   CreateConversationBacktestSchema,
+  CreateSkillDraftSchema,
   CreateConversationSubscriptionSchema,
   ConfirmConversationPlanSchema,
   CreateConversationSessionSchema,
   CreateConversationTurnSchema,
+  DeliverConversationEmailSchema,
+  DeliverConversationSchema,
+  ResolveConversationScheduleSchema,
+  ReuseConversationAssetSchema,
   UpdateConversationSubscriptionSchema,
   ExportConversationResultSchema,
 } from '@packages/types';
@@ -18,6 +23,10 @@ export class CreateConversationSubscriptionRequest extends createZodDto(
   CreateConversationSubscriptionSchema,
 ) {}
 export class CreateConversationBacktestRequest extends createZodDto(CreateConversationBacktestSchema) {}
+export class CreateSkillDraftRequest extends createZodDto(CreateSkillDraftSchema) {}
+export class ReuseConversationAssetRequest extends createZodDto(ReuseConversationAssetSchema) {}
+export class DeliverConversationRequest extends createZodDto(DeliverConversationSchema) {}
+export class ResolveConversationScheduleRequest extends createZodDto(ResolveConversationScheduleSchema) {}
 export class UpdateConversationSubscriptionRequest extends createZodDto(
   UpdateConversationSubscriptionSchema,
 ) {}
@@ -41,10 +50,4 @@ const ConversationSessionQuerySchema = z.object({
 });
 export class ConversationSessionQueryRequest extends createZodDto(ConversationSessionQuerySchema) {}
 
-const DeliverConversationEmailSchema = z.object({
-  exportTaskId: z.string().uuid(),
-  to: z.array(z.string().email()).min(1),
-  subject: z.string().trim().min(1).max(200),
-  content: z.string().trim().min(1).max(5000),
-});
 export class DeliverConversationEmailRequest extends createZodDto(DeliverConversationEmailSchema) {}

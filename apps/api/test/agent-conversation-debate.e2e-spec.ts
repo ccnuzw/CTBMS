@@ -320,6 +320,9 @@ async function main() {
       body: JSON.stringify({
         message:
           '请就东北玉米未来三个月是否存在缺口并涨价进行辩论，时间最近一个月，区域东北，裁判策略 JUDGE_AGENT。',
+        contextPatch: {
+          autoExecute: false,
+        },
       }),
     });
     assert.equal(sendTurn.status, 201);

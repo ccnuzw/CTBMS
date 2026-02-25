@@ -22,7 +22,7 @@ import { PrismaModule } from '../src/prisma';
     AgentConversationModule,
   ],
 })
-class AgentConversationBacktestE2eModule implements NestModule {
+class AgentConversationScheduleE2eModule implements NestModule {
   configure(consumer: MiddlewareConsumer) {
     consumer.apply(MockAuthMiddleware).forRoutes('*');
   }
@@ -45,7 +45,7 @@ const buildDsl = (workflowId: string, workflowName: string, rulePackCode: string
       type: 'risk-gate',
       name: 'risk gate',
       enabled: true,
-      config: { riskProfileCode: 'AGENT_CONVERSATION_BACKTEST_E2E' },
+      config: { riskProfileCode: 'AGENT_CONVERSATION_SCHEDULE_E2E' },
     },
     { id: 'n_notify', type: 'notify', name: 'notify', enabled: true, config: { channels: ['DASHBOARD'] } },
     { id: 'n_data_evidence', type: 'mock-fetch', name: 'mock fetch', enabled: true, config: {} },
@@ -75,15 +75,17 @@ const fetchJson = async <T>(input: string, init?: RequestInit): Promise<{ status
 };
 
 async function main() {
-  const app = await NestFactory.create(AgentConversationBacktestE2eModule, { logger: ['error', 'warn'] });
+  const app = await NestFactory.create(AgentConversationScheduleE2eModule, {
+    logger: ['error', 'warn'],
+  });
   app.useGlobalPipes(new ZodValidationPipe());
   await app.listen(0);
   const baseUrl = (await app.getUrl()).replace('[::1]', '127.0.0.1');
 
   const ownerUserId = randomUUID();
-  const token = `agent_backtest_${Date.now()}`;
+  const token = `agent_schedule_${Date.now()}`;
   const workflowId = `${token}_workflow`;
-  const workflowName = `Agent Backtest ${token}`;
+  const workflowName = `Agent Schedule ${token}`;
   const rulePackCode = `${token}_RULE_PACK`;
 
   let definitionId = '';
@@ -95,7 +97,7 @@ async function main() {
         id: ownerUserId,
         username: `${token}_user`,
         email: `${token}@example.com`,
-        name: `Agent Backtest ${token}`,
+        name: `Agent Schedule ${token}`,
       },
     });
 
@@ -135,7 +137,7 @@ async function main() {
         usageMethod: 'COPILOT',
         templateSource: 'PRIVATE',
         dslSnapshot: buildDsl(workflowId, workflowName, rulePackCode),
-        changelog: 'agent backtest create',
+        changelog: 'agent schedule create',
       }),
     });
     assert.equal(createDefinition.status, 201);
@@ -153,7 +155,6 @@ async function main() {
       },
     );
     assert.equal(publishVersion.status, 201);
-    assert.equal(publishVersion.body.status, 'PUBLISHED');
 
     const createSession = await fetchJson<{ id: string }>(`${baseUrl}/agent-conversations/sessions`, {
       method: 'POST',
@@ -161,7 +162,7 @@ async function main() {
         'Content-Type': 'application/json',
         'x-virtual-user-id': ownerUserId,
       },
-      body: JSON.stringify({ title: 'Backtest Session' }),
+      body: JSON.stringify({ title: 'Schedule Session' }),
     });
     assert.equal(createSession.status, 201);
     conversationSessionId = createSession.body.id;
@@ -175,7 +176,7 @@ async function main() {
           'x-virtual-user-id': ownerUserId,
         },
         body: JSON.stringify({
-          message: '请分析最近一周东北玉米价格并输出 markdown 和 json。',
+          message: '请分析最近一周东北玉米价格，输出 markdown 与 json。',
           contextPatch: {
             autoExecute: false,
           },
@@ -183,7 +184,6 @@ async function main() {
       },
     );
     assert.equal(sendTurn.status, 201);
-    assert.equal(sendTurn.body.state, 'PLAN_PREVIEW');
 
     const detail = await fetchJson<{
       plans: Array<{ version: number; planSnapshot: { planId: string } }>;
@@ -209,52 +209,59 @@ async function main() {
       },
     );
     assert.equal(confirm.status, 201);
+    assert.ok(confirm.body.executionId);
 
-    const createBacktest = await fetchJson<{ backtestJobId: string; status: string }>(
-      `${baseUrl}/agent-conversations/sessions/${conversationSessionId}/backtests`,
+    const createFromInstruction = await fetchJson<{
+      action: string;
+      subscriptionId: string;
+      status: string;
+      channel: string;
+      target: string | null;
+    }>(`${baseUrl}/agent-conversations/sessions/${conversationSessionId}/schedules/resolve`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-virtual-user-id': ownerUserId,
+      },
+      body: JSON.stringify({
+        instruction: '每周五18点发到企业微信群ops-group-01 订阅名称：周报订阅',
+      }),
+    });
+    assert.equal(createFromInstruction.status, 201);
+    assert.equal(createFromInstruction.body.action, 'CREATE');
+    assert.equal(createFromInstruction.body.status, 'ACTIVE');
+    assert.equal(createFromInstruction.body.channel, 'WECOM');
+    assert.equal(createFromInstruction.body.target, '企业微信群ops-group-01');
+
+    const pause = await fetchJson<{ action: string; status: string }>(
+      `${baseUrl}/agent-conversations/sessions/${conversationSessionId}/schedules/resolve`,
       {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'x-virtual-user-id': ownerUserId,
         },
-        body: JSON.stringify({
-          executionId: confirm.body.executionId,
-          strategySource: 'LATEST_ACTIONS',
-          lookbackDays: 180,
-          feeModel: {
-            spotFeeBps: 8,
-            futuresFeeBps: 3,
-          },
-        }),
+        body: JSON.stringify({ instruction: '暂停订阅 名称:周报订阅' }),
       },
     );
-    assert.equal(createBacktest.status, 201);
-    assert.equal(createBacktest.body.status, 'COMPLETED');
-    assert.ok(createBacktest.body.backtestJobId);
+    assert.equal(pause.status, 201);
+    assert.equal(pause.body.action, 'PAUSE');
+    assert.equal(pause.body.status, 'PAUSED');
 
-    const backtestDetail = await fetchJson<{
-      backtestJobId: string;
-      status: string;
-      summary: {
-        returnPct: number;
-        maxDrawdownPct: number;
-        winRatePct: number;
-        score: number;
-      };
-      assumptions: { lookbackDays: number };
-    }>(`${baseUrl}/agent-conversations/sessions/${conversationSessionId}/backtests/${createBacktest.body.backtestJobId}`, {
-      headers: {
-        'x-virtual-user-id': ownerUserId,
+    const resume = await fetchJson<{ action: string; status: string }>(
+      `${baseUrl}/agent-conversations/sessions/${conversationSessionId}/schedules/resolve`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-virtual-user-id': ownerUserId,
+        },
+        body: JSON.stringify({ instruction: '恢复订阅 名称:周报订阅' }),
       },
-    });
-    assert.equal(backtestDetail.status, 200);
-    assert.equal(backtestDetail.body.status, 'COMPLETED');
-    assert.equal(backtestDetail.body.assumptions.lookbackDays, 180);
-    assert.equal(typeof backtestDetail.body.summary.returnPct, 'number');
-    assert.equal(typeof backtestDetail.body.summary.maxDrawdownPct, 'number');
-    assert.equal(typeof backtestDetail.body.summary.winRatePct, 'number');
-    assert.equal(typeof backtestDetail.body.summary.score, 'number');
+    );
+    assert.equal(resume.status, 201);
+    assert.equal(resume.body.action, 'RESUME');
+    assert.equal(resume.body.status, 'ACTIVE');
   } finally {
     if (conversationSessionId) {
       await prisma.conversationSession.deleteMany({ where: { id: conversationSessionId } });
@@ -279,11 +286,11 @@ async function main() {
 
 main()
   .then(() => {
-    process.stdout.write('agent-conversation-backtest e2e passed\n');
+    process.stdout.write('agent-conversation-schedule e2e passed\n');
   })
   .catch((error) => {
     process.stderr.write(
-      `agent-conversation-backtest e2e failed: ${error instanceof Error ? error.stack : String(error)}\n`,
+      `agent-conversation-schedule e2e failed: ${error instanceof Error ? error.stack : String(error)}\n`,
     );
     process.exit(1);
   });

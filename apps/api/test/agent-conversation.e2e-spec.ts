@@ -216,6 +216,8 @@ async function main() {
     const sendTurn = await fetchJson<{
       state: string;
       confirmRequired: boolean;
+      autoExecuted?: boolean;
+      executionId?: string;
       proposedPlan: { planId: string } | null;
       missingSlots: string[];
     }>(`${baseUrl}/agent-conversations/sessions/${conversationSessionId}/turns`, {
@@ -230,10 +232,15 @@ async function main() {
       }),
     });
     assert.equal(sendTurn.status, 201);
-    assert.equal(sendTurn.body.state, 'PLAN_PREVIEW');
-    assert.equal(sendTurn.body.confirmRequired, true);
+    assert.ok(['PLAN_PREVIEW', 'EXECUTING'].includes(sendTurn.body.state));
     assert.ok(sendTurn.body.proposedPlan?.planId);
     assert.equal(sendTurn.body.missingSlots.length, 0);
+
+    if (sendTurn.body.autoExecuted) {
+      assert.equal(sendTurn.body.confirmRequired, false);
+      executionId = String(sendTurn.body.executionId ?? '');
+      assert.ok(executionId);
+    }
 
     const sessionDetail = await fetchJson<{
       plans: Array<{ id: string; version: number; planSnapshot: { planId: string } }>;
@@ -246,25 +253,27 @@ async function main() {
     assert.ok(sessionDetail.body.plans.length > 0);
     const latestPlan = sessionDetail.body.plans[0];
 
-    const confirmPlan = await fetchJson<{
-      accepted: boolean;
-      executionId: string;
-      status: string;
-    }>(`${baseUrl}/agent-conversations/sessions/${conversationSessionId}/plan/confirm`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-virtual-user-id': ownerUserId,
-      },
-      body: JSON.stringify({
-        planId: latestPlan.planSnapshot.planId,
-        planVersion: latestPlan.version,
-      }),
-    });
-    assert.equal(confirmPlan.status, 201);
-    assert.equal(confirmPlan.body.accepted, true);
-    assert.equal(confirmPlan.body.status, 'EXECUTING');
-    executionId = confirmPlan.body.executionId;
+    if (!executionId) {
+      const confirmPlan = await fetchJson<{
+        accepted: boolean;
+        executionId: string;
+        status: string;
+      }>(`${baseUrl}/agent-conversations/sessions/${conversationSessionId}/plan/confirm`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-virtual-user-id': ownerUserId,
+        },
+        body: JSON.stringify({
+          planId: latestPlan.planSnapshot.planId,
+          planVersion: latestPlan.version,
+        }),
+      });
+      assert.equal(confirmPlan.status, 201);
+      assert.equal(confirmPlan.body.accepted, true);
+      assert.equal(confirmPlan.body.status, 'EXECUTING');
+      executionId = confirmPlan.body.executionId;
+    }
 
     let latestResultStatus = '';
     let finalResultBody: {

@@ -175,7 +175,12 @@ async function main() {
           'Content-Type': 'application/json',
           'x-virtual-user-id': ownerUserId,
         },
-        body: JSON.stringify({ message: '请分析最近一周东北玉米价格并输出 markdown 和 json。' }),
+        body: JSON.stringify({
+          message: '请分析最近一周东北玉米价格并输出 markdown 和 json。',
+          contextPatch: {
+            autoExecute: false,
+          },
+        }),
       },
     );
     assert.equal(sendTurn.status, 201);

@@ -233,6 +233,39 @@
 }
 ```
 
+## 3.3 多渠道投递（统一 Adapter）
+
+- `POST /agent-conversations/sessions/:sessionId/deliver`
+
+请求（示例）：
+
+```json
+{
+  "exportTaskId": "et_xxx",
+  "channel": "DINGTALK",
+  "target": "ops-group-01",
+  "content": "请查收最新报告",
+  "sendRawFile": true
+}
+```
+
+说明：
+
+- `channel` 支持 `EMAIL | DINGTALK | WECOM | FEISHU`
+- `EMAIL` 需要 `to`，其他渠道需要 `target`
+- `sendRawFile=true` 表示优先发送原文件
+
+响应（示例）：
+
+```json
+{
+  "deliveryTaskId": "dt_xxx",
+  "channel": "DINGTALK",
+  "status": "SENT",
+  "errorMessage": null
+}
+```
+
 ## 4. 订阅接口
 
 ## 4.1 创建订阅
@@ -290,6 +323,34 @@
   "updatedAt": "2026-02-26T09:00:00.000Z"
 }
 ```
+
+## 4.3 自然语言调度指令
+
+- `POST /agent-conversations/sessions/:sessionId/schedules/resolve`
+
+请求：
+
+```json
+{
+  "instruction": "每周五18点发到企业微信群ops-group-01 订阅名称：周报订阅"
+}
+```
+
+响应（示例）：
+
+```json
+{
+  "action": "CREATE",
+  "subscriptionId": "sub_xxx",
+  "status": "ACTIVE",
+  "cronExpr": "0 0 18 * * 5",
+  "timezone": "Asia/Shanghai",
+  "channel": "WECOM",
+  "target": "企业微信群ops-group-01"
+}
+```
+
+支持动作：`CREATE | UPDATE | PAUSE | RESUME | RUN`
 
 ## 5. 回测接口
 
@@ -368,6 +429,39 @@
 }
 ```
 
+## 6.2 查询会话资产
+
+- `GET /agent-conversations/sessions/:sessionId/assets`
+
+响应（示例）：
+
+```json
+[
+  {
+    "id": "asset_xxx",
+    "assetType": "PLAN",
+    "title": "执行计划 v3",
+    "payload": {
+      "planId": "plan_xxx"
+    }
+  }
+]
+```
+
+## 6.3 复用会话资产
+
+- `POST /agent-conversations/sessions/:sessionId/assets/:assetId/reuse`
+
+请求：
+
+```json
+{
+  "message": "请基于这个结果继续补充风险策略"
+}
+```
+
+说明：服务端会把该资产注入上下文并继续执行新一轮对话。
+
 ## 7. Skill Draft 接口
 
 ## 7.1 创建草稿
@@ -411,14 +505,94 @@
 }
 ```
 
+## 7.3 提交审批
+
+- `POST /agent-skills/drafts/:draftId/submit-review`
+
 响应：
 
 ```json
 {
-  "testRunId": "sr_xxx",
-  "status": "PASSED",
-  "passedCount": 1,
-  "failedCount": 0
+  "draftId": "sd_xxx",
+  "status": "READY_FOR_REVIEW"
+}
+```
+
+## 7.4 审批决策
+
+- `POST /agent-skills/drafts/:draftId/review`
+
+请求：
+
+```json
+{
+  "action": "APPROVE",
+  "comment": "验证通过"
+}
+```
+
+响应：
+
+```json
+{
+  "draftId": "sd_xxx",
+  "status": "APPROVED",
+  "reviewComment": "验证通过"
+}
+```
+
+## 7.5 发布 Skill
+
+- `POST /agent-skills/drafts/:draftId/publish`
+
+响应：
+
+```json
+{
+  "draftId": "sd_xxx",
+  "status": "PUBLISHED",
+  "publishedSkillId": "skill_xxx"
+}
+```
+
+## 7.6 查询草稿
+
+- `GET /agent-skills/drafts/:draftId`
+- `GET /agent-skills/drafts?status=READY_FOR_REVIEW`
+
+## 7.7 Runtime Grant（低风险先用后审）
+
+- `GET /agent-skills/drafts/:draftId/runtime-grants`
+- `POST /agent-skills/runtime-grants/:grantId/revoke`
+- `POST /agent-skills/runtime-grants/:grantId/use`
+- `GET /agent-skills/governance/overview`
+
+说明：
+
+- 仅低风险（`riskLevel=LOW` 且无副作用）Draft 会自动创建 `ACTIVE` 授权。
+- 授权具备过期时间与使用次数上限，可人工撤销。
+
+`/agent-skills/runtime-grants/:grantId/use` 响应：
+
+```json
+{
+  "id": "grant_xxx",
+  "status": "ACTIVE",
+  "useCount": 3,
+  "maxUseCount": 30
+}
+```
+
+`/agent-skills/governance/overview` 响应：
+
+```json
+{
+  "activeRuntimeGrants": 2,
+  "runtimeGrantsExpiringIn1h": 1,
+  "highRiskPendingReview": 1,
+  "draftStats": [
+    { "riskLevel": "LOW", "status": "PUBLISHED", "_count": { "_all": 3 } }
+  ]
 }
 ```
 
@@ -430,3 +604,4 @@
 4. `SkillDraftStatus`：`DRAFT | SANDBOX_TESTING | READY_FOR_REVIEW | APPROVED | REJECTED | PUBLISHED`
 5. `SubscriptionStatus`：`ACTIVE | PAUSED | FAILED | ARCHIVED`
 6. `BacktestStatus`：`QUEUED | RUNNING | COMPLETED | FAILED`
+7. `ConversationAssetType`：`PLAN | EXECUTION | RESULT_SUMMARY | EXPORT_FILE | BACKTEST_SUMMARY | CONFLICT_SUMMARY | SKILL_DRAFT | NOTE`

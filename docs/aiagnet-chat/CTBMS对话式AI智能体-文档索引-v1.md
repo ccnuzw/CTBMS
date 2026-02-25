@@ -3,8 +3,9 @@
 ## 1. 产品与范围
 
 1. 产品需求文档（PRD）：`docs/aiagnet-chat/CTBMS对话式AI智能体-产品需求文档-PRD-v1.md`
-2. 开发启动清单：`docs/aiagnet-chat/CTBMS对话式AI智能体-开发启动清单-v1.md`
-3. 上线发布清单：`docs/aiagnet-chat/CTBMS对话式AI智能体-上线发布清单-v1.md`
+2. 对话原生产品蓝图（v2）：`docs/aiagnet-chat/CTBMS对话原生智能体-产品蓝图-v2.md`
+3. 开发启动清单：`docs/aiagnet-chat/CTBMS对话式AI智能体-开发启动清单-v1.md`
+4. 上线发布清单：`docs/aiagnet-chat/CTBMS对话式AI智能体-上线发布清单-v1.md`
 
 ## 2. 技术设计
 

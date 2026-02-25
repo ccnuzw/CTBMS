@@ -2,11 +2,16 @@ import { BadRequestException, Injectable } from '@nestjs/common';
 import { PrismaService } from '../../prisma';
 import type {
   CreateConversationBacktestDto,
+  CreateSkillDraftDto,
   CreateConversationSubscriptionDto,
   ConfirmConversationPlanDto,
   CreateConversationSessionDto,
   CreateConversationTurnDto,
+  DeliverConversationDto,
+  DeliverConversationEmailDto,
   ExportConversationResultDto,
+  ResolveConversationScheduleDto,
+  ReuseConversationAssetDto,
   UpdateConversationSubscriptionDto,
 } from '@packages/types';
 import { Prisma } from '@prisma/client';
@@ -52,13 +57,6 @@ type ProposedPlan = {
     token: number;
     latencyMs: number;
   };
-};
-
-type DeliverConversationEmailDto = {
-  exportTaskId: string;
-  to: string[];
-  subject: string;
-  content: string;
 };
 
 type ConversationSessionQueryDto = {
@@ -155,7 +153,7 @@ export class AgentConversationService {
       return null;
     }
 
-    await this.prisma.conversationTurn.create({
+    const userTurn = await this.prisma.conversationTurn.create({
       data: {
         sessionId,
         role: 'USER',
@@ -163,6 +161,23 @@ export class AgentConversationService {
         structuredPayload: this.toJson(dto.contextPatch),
       },
     });
+
+    const reusedAssetId = this.pickString(dto.contextPatch?.reusedAssetId);
+    if (reusedAssetId && this.isUuid(reusedAssetId)) {
+      const reusedAsset = await this.prisma.conversationAsset.findFirst({
+        where: { id: reusedAssetId, sessionId },
+      });
+      if (reusedAsset) {
+        await this.prisma.conversationAssetRef.create({
+          data: {
+            sessionId,
+            turnId: userTurn.id,
+            assetId: reusedAsset.id,
+            note: 'user_context_reuse',
+          },
+        });
+      }
+    }
 
     const intent = this.detectIntent(dto.message, session.currentIntent);
     const mergedSlots = this.mergeSlots(
@@ -195,25 +210,64 @@ export class AgentConversationService {
           },
         };
 
-    const assistantMessage = hasMissingSlots
-      ? this.buildSlotPrompt(missingSlots)
-      : '我已完成计划编排。请确认执行，或告诉我需要调整的参数。';
-
+    let nextPlanVersion: number | null = null;
     if (proposedPlan) {
       const latestPlan = await this.prisma.conversationPlan.findFirst({
         where: { sessionId },
         orderBy: { version: 'desc' },
       });
-      const nextVersion = (latestPlan?.version ?? 0) + 1;
+      nextPlanVersion = (latestPlan?.version ?? 0) + 1;
       await this.prisma.conversationPlan.create({
         data: {
           sessionId,
-          version: nextVersion,
+          version: nextPlanVersion,
           planType: proposedPlan.planType,
           planSnapshot: proposedPlan as Prisma.InputJsonValue,
         },
       });
+      await this.createConversationAsset({
+        sessionId,
+        assetType: 'PLAN',
+        title: `执行计划 v${nextPlanVersion}`,
+        payload: proposedPlan,
+        sourceTurnId: userTurn.id,
+        sourcePlanVersion: nextPlanVersion,
+      });
     }
+
+    let autoExecution:
+      | {
+          accepted: boolean;
+          executionId: string;
+          status: string;
+          traceId: string;
+        }
+      | undefined;
+
+    if (
+      proposedPlan &&
+      nextPlanVersion &&
+      this.shouldAutoExecute(dto.contextPatch)
+    ) {
+      const execution = await this.confirmPlan(
+        userId,
+        sessionId,
+        {
+          planId: proposedPlan.planId,
+          planVersion: nextPlanVersion,
+        },
+        { recordTurn: false },
+      );
+      if (execution) {
+        autoExecution = execution;
+      }
+    }
+
+    const assistantMessage = hasMissingSlots
+      ? this.buildSlotPrompt(missingSlots)
+      : autoExecution
+        ? '我已生成计划并自动开始执行。你可以继续补充要求，结果会在当前会话持续更新。'
+        : '我已完成计划编排。请确认执行，或告诉我需要调整的参数。';
 
     await this.prisma.conversationTurn.create({
       data: {
@@ -224,6 +278,8 @@ export class AgentConversationService {
           intent,
           missingSlots,
           proposedPlan,
+          autoExecuted: Boolean(autoExecution),
+          executionId: autoExecution?.executionId,
         } as Prisma.InputJsonValue,
       },
     });
@@ -233,7 +289,7 @@ export class AgentConversationService {
       data: {
         currentIntent: intent,
         currentSlots: mergedSlots,
-        state,
+        state: autoExecution ? 'EXECUTING' : state,
         latestPlanType:
           proposedPlan?.planType === 'DEBATE_PLAN' ? 'DEBATE_PLAN' : proposedPlan ? 'RUN_PLAN' : null,
         latestPlanSnapshot: proposedPlan
@@ -244,15 +300,22 @@ export class AgentConversationService {
 
     return {
       assistantMessage,
-      state,
+      state: autoExecution ? 'EXECUTING' : state,
       intent,
       missingSlots,
       proposedPlan,
-      confirmRequired: !hasMissingSlots,
+      confirmRequired: !hasMissingSlots && !autoExecution,
+      autoExecuted: Boolean(autoExecution),
+      executionId: autoExecution?.executionId,
     };
   }
 
-  async confirmPlan(userId: string, sessionId: string, dto: ConfirmConversationPlanDto) {
+  async confirmPlan(
+    userId: string,
+    sessionId: string,
+    dto: ConfirmConversationPlanDto,
+    options?: { recordTurn?: boolean },
+  ) {
     const session = await this.prisma.conversationSession.findFirst({
       where: { id: sessionId, ownerUserId: userId },
     });
@@ -334,17 +397,33 @@ export class AgentConversationService {
       },
     });
 
-    await this.prisma.conversationTurn.create({
-      data: {
-        sessionId,
-        role: 'ASSISTANT',
-        content: '已确认执行计划，任务已启动。',
-        structuredPayload: {
-          executionId: execution.id,
-          planVersion: dto.planVersion,
-        } as Prisma.InputJsonValue,
+    await this.createConversationAsset({
+      sessionId,
+      assetType: 'EXECUTION',
+      title: `执行实例 ${execution.id.slice(0, 8)}`,
+      payload: {
+        executionId: execution.id,
+        planVersion: dto.planVersion,
+        workflowDefinitionId,
+        paramSnapshot: compiledParamSnapshot,
       },
+      sourceExecutionId: execution.id,
+      sourcePlanVersion: dto.planVersion,
     });
+
+    if (options?.recordTurn !== false) {
+      await this.prisma.conversationTurn.create({
+        data: {
+          sessionId,
+          role: 'ASSISTANT',
+          content: '已确认执行计划，任务已启动。',
+          structuredPayload: {
+            executionId: execution.id,
+            planVersion: dto.planVersion,
+          } as Prisma.InputJsonValue,
+        },
+      });
+    }
 
     return {
       accepted: true,
@@ -407,6 +486,20 @@ export class AgentConversationService {
     const outputRecord = this.toRecord(execution.outputSnapshot);
     const result = this.normalizeResult(outputRecord);
     const status = this.mapExecutionStatus(execution.status);
+
+    if (status === 'DONE') {
+      await this.createConversationAsset({
+        sessionId,
+        assetType: 'RESULT_SUMMARY',
+        title: `分析结论 ${execution.id.slice(0, 8)}`,
+        payload: {
+          executionId: execution.id,
+          result,
+          status,
+        },
+        sourceExecutionId: execution.id,
+      });
+    }
 
     const nextState: SessionState =
       status === 'DONE' ? 'DONE' : status === 'FAILED' ? 'FAILED' : 'RESULT_DELIVERY';
@@ -472,6 +565,19 @@ export class AgentConversationService {
       },
     });
 
+    await this.createConversationAsset({
+      sessionId,
+      assetType: 'EXPORT_FILE',
+      title: `导出文件 ${dto.format}`,
+      payload: {
+        exportTaskId: exportTask.id,
+        format: dto.format,
+        workflowExecutionId,
+        status: exportTask.status,
+      },
+      sourceExecutionId: workflowExecutionId,
+    });
+
     return {
       exportTaskId: exportTask.id,
       status: exportTask.status,
@@ -481,6 +587,17 @@ export class AgentConversationService {
   }
 
   async deliverEmail(userId: string, sessionId: string, dto: DeliverConversationEmailDto) {
+    return this.deliver(userId, sessionId, {
+      exportTaskId: dto.exportTaskId,
+      channel: 'EMAIL',
+      to: dto.to,
+      subject: dto.subject,
+      content: dto.content,
+      sendRawFile: true,
+    });
+  }
+
+  async deliver(userId: string, sessionId: string, dto: DeliverConversationDto) {
     const session = await this.prisma.conversationSession.findFirst({
       where: { id: sessionId, ownerUserId: userId },
     });
@@ -504,17 +621,33 @@ export class AgentConversationService {
       });
     }
 
+    const channel = dto.channel;
+    if (channel === 'EMAIL' && (!dto.to || dto.to.length === 0)) {
+      throw new BadRequestException({
+        code: 'CONV_DELIVERY_TARGET_REQUIRED',
+        message: '邮件投递至少需要一个收件人',
+      });
+    }
+    if (channel !== 'EMAIL' && !dto.target) {
+      throw new BadRequestException({
+        code: 'CONV_DELIVERY_TARGET_REQUIRED',
+        message: '请提供投递目标（群ID或接收端标识）',
+      });
+    }
+
     const deliveryTaskId = `delivery_${randomUUID()}`;
-    const webhookUrl = process.env.MAIL_DELIVERY_WEBHOOK_URL?.trim();
+    const webhookUrl = this.resolveDeliveryWebhook(channel);
 
     let status: 'QUEUED' | 'SENT' | 'FAILED' = 'QUEUED';
     let errorMessage: string | null = null;
 
     if (!webhookUrl) {
       status = 'FAILED';
-      errorMessage = '未配置 MAIL_DELIVERY_WEBHOOK_URL，无法实际投递邮件';
+      errorMessage = `未配置 ${channel} 投递 webhook，无法实际投递`; 
     } else {
       try {
+        const fileName = `report-export-${exportTask.id}.${String(exportTask.format).toLowerCase()}`;
+        const downloadUrl = `/report-exports/${exportTask.id}/download`;
         const response = await fetch(webhookUrl, {
           method: 'POST',
           headers: {
@@ -522,13 +655,17 @@ export class AgentConversationService {
           },
           body: JSON.stringify({
             deliveryTaskId,
+            channel,
             exportTaskId: exportTask.id,
             to: dto.to,
-            subject: dto.subject,
-            content: dto.content,
+            target: dto.target,
+            subject: dto.subject || 'CTBMS 对话助手分析报告',
+            content: dto.content || '请查收本次对话分析结果。',
+            metadata: dto.metadata,
             attachment: {
-              fileName: `report-export-${exportTask.id}.${String(exportTask.format).toLowerCase()}`,
-              downloadUrl: `/report-exports/${exportTask.id}/download`,
+              fileName,
+              downloadUrl,
+              mode: dto.sendRawFile ? 'RAW_FILE' : 'EXPORT_FILE',
             },
           }),
         });
@@ -537,7 +674,7 @@ export class AgentConversationService {
           status = 'SENT';
         } else {
           status = 'FAILED';
-          errorMessage = `邮件投递网关返回 ${response.status}`;
+          errorMessage = `${channel} 投递网关返回 ${response.status}`;
         }
       } catch (error) {
         status = 'FAILED';
@@ -551,21 +688,40 @@ export class AgentConversationService {
         role: 'ASSISTANT',
         content:
           status === 'SENT'
-            ? `邮件已发送至 ${dto.to.join(', ')}。`
-            : `邮件发送失败：${errorMessage ?? '未知错误'}。`,
+            ? `${this.channelDisplayName(channel)} 投递已发送。`
+            : `${this.channelDisplayName(channel)} 投递失败：${errorMessage ?? '未知错误'}。`,
         structuredPayload: {
           deliveryTaskId,
+          channel,
           exportTaskId: exportTask.id,
           status,
           to: dto.to,
+          target: dto.target,
           subject: dto.subject,
           errorMessage,
         } as Prisma.InputJsonValue,
       },
     });
 
+    await this.createConversationAsset({
+      sessionId,
+      assetType: 'NOTE',
+      title: `${this.channelDisplayName(channel)}投递${status === 'SENT' ? '成功' : '失败'}`,
+      payload: {
+        deliveryTaskId,
+        channel,
+        exportTaskId: exportTask.id,
+        status,
+        to: dto.to,
+        target: dto.target,
+        errorMessage,
+      },
+      sourceExecutionId: exportTask.workflowExecutionId,
+    });
+
     return {
       deliveryTaskId,
+      channel,
       status,
       errorMessage,
     };
@@ -646,6 +802,19 @@ export class AgentConversationService {
             summary,
           } as Prisma.InputJsonValue,
         },
+      });
+
+      await this.createConversationAsset({
+        sessionId,
+        assetType: 'BACKTEST_SUMMARY',
+        title: `回测结果 ${completed.id.slice(0, 8)}`,
+        payload: {
+          backtestJobId: completed.id,
+          summary,
+          metrics,
+          status: completed.status,
+        },
+        sourceExecutionId: workflowExecutionId,
       });
 
       return {
@@ -739,6 +908,27 @@ export class AgentConversationService {
 
     const consistencyScore = this.computeConflictConsistencyScore(conflicts);
 
+    if (conflicts.length) {
+      await this.createConversationAsset({
+        sessionId,
+        assetType: 'CONFLICT_SUMMARY',
+        title: `冲突摘要 ${new Date().toISOString().slice(0, 10)}`,
+        payload: {
+          consistencyScore,
+          conflicts: conflicts.slice(0, 10).map((item) => ({
+            conflictId: item.id,
+            topic: item.topic,
+            sourceA: item.sourceA,
+            sourceB: item.sourceB,
+            resolution: item.resolution,
+            resolutionReason: item.resolutionReason,
+            consistencyScore: item.consistencyScore,
+          })),
+        },
+        sourceExecutionId: session.latestExecutionId ?? null,
+      });
+    }
+
     return {
       consistencyScore,
       conflicts: conflicts.map((item) => ({
@@ -750,6 +940,167 @@ export class AgentConversationService {
         consistencyScore: item.consistencyScore,
       })),
     };
+  }
+
+  async createSkillDraft(userId: string, sessionId: string, dto: CreateSkillDraftDto) {
+    const session = await this.prisma.conversationSession.findFirst({
+      where: { id: sessionId, ownerUserId: userId },
+    });
+    if (!session) {
+      return null;
+    }
+
+    const derivedRisk = this.resolveSkillRisk(dto);
+    const draftSpec = {
+      gapType: dto.gapType,
+      requiredCapability: dto.requiredCapability,
+      suggestedSkillCode: dto.suggestedSkillCode,
+      sourceSessionId: sessionId,
+      sourceIntent: session.currentIntent,
+      riskLevel: derivedRisk.riskLevel,
+      sideEffectRisk: derivedRisk.sideEffectRisk,
+    };
+
+    const draft = await this.prisma.agentSkillDraft.create({
+      data: {
+        sessionId,
+        ownerUserId: userId,
+        gapType: dto.gapType,
+        requiredCapability: dto.requiredCapability,
+        suggestedSkillCode: dto.suggestedSkillCode,
+        draftSpec: draftSpec as Prisma.InputJsonValue,
+        status: 'DRAFT',
+        riskLevel: derivedRisk.riskLevel,
+        sideEffectRisk: derivedRisk.sideEffectRisk,
+        provisionalEnabled: derivedRisk.allowRuntimeGrant,
+      },
+    });
+
+    await this.prisma.agentSkillGovernanceEvent.create({
+      data: {
+        ownerUserId: userId,
+        draftId: draft.id,
+        eventType: 'DRAFT_CREATED',
+        message: `Skill Draft 已创建：${draft.id}`,
+        payload: {
+          riskLevel: derivedRisk.riskLevel,
+          sideEffectRisk: derivedRisk.sideEffectRisk,
+        } as Prisma.InputJsonValue,
+      },
+    });
+
+    let runtimeGrantId: string | null = null;
+    if (derivedRisk.allowRuntimeGrant) {
+      const runtimeGrant = await this.prisma.agentSkillRuntimeGrant.create({
+        data: {
+          draftId: draft.id,
+          sessionId,
+          ownerUserId: userId,
+          status: 'ACTIVE',
+          maxUseCount: 30,
+          expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+        },
+      });
+      runtimeGrantId = runtimeGrant.id;
+
+      await this.prisma.agentSkillGovernanceEvent.create({
+        data: {
+          ownerUserId: userId,
+          draftId: draft.id,
+          runtimeGrantId: runtimeGrant.id,
+          eventType: 'RUNTIME_GRANT_CREATED',
+          message: `运行时授权已创建：${runtimeGrant.id}`,
+          payload: {
+            maxUseCount: runtimeGrant.maxUseCount,
+            expiresAt: runtimeGrant.expiresAt,
+          } as Prisma.InputJsonValue,
+        },
+      });
+    }
+
+    await this.prisma.conversationTurn.create({
+      data: {
+        sessionId,
+        role: 'ASSISTANT',
+        content: `已创建 Skill Draft：${dto.suggestedSkillCode}`,
+        structuredPayload: {
+          draftId: draft.id,
+          status: draft.status,
+          reviewRequired: true,
+          riskLevel: derivedRisk.riskLevel,
+          provisionalEnabled: derivedRisk.allowRuntimeGrant,
+          runtimeGrantId,
+        } as Prisma.InputJsonValue,
+      },
+    });
+
+    await this.createConversationAsset({
+      sessionId,
+      assetType: 'SKILL_DRAFT',
+      title: `Skill Draft ${dto.suggestedSkillCode}`,
+      payload: {
+        draftId: draft.id,
+        gapType: dto.gapType,
+        requiredCapability: dto.requiredCapability,
+        suggestedSkillCode: dto.suggestedSkillCode,
+        status: draft.status,
+      },
+      sourceTurnId: null,
+    });
+
+    return {
+      draftId: draft.id,
+      status: draft.status,
+      reviewRequired: true,
+      riskLevel: derivedRisk.riskLevel,
+      provisionalEnabled: derivedRisk.allowRuntimeGrant,
+      runtimeGrantId,
+    };
+  }
+
+  async listAssets(userId: string, sessionId: string) {
+    const session = await this.prisma.conversationSession.findFirst({
+      where: { id: sessionId, ownerUserId: userId },
+    });
+    if (!session) {
+      return null;
+    }
+
+    return this.prisma.conversationAsset.findMany({
+      where: { sessionId },
+      orderBy: [{ createdAt: 'desc' }],
+      take: 100,
+    });
+  }
+
+  async reuseAsset(
+    userId: string,
+    sessionId: string,
+    assetId: string,
+    dto: ReuseConversationAssetDto,
+  ) {
+    const session = await this.prisma.conversationSession.findFirst({
+      where: { id: sessionId, ownerUserId: userId },
+    });
+    if (!session) {
+      return null;
+    }
+
+    const asset = await this.prisma.conversationAsset.findFirst({
+      where: { id: assetId, sessionId },
+    });
+    if (!asset) {
+      return null;
+    }
+
+    const reuseMessage = dto.message?.trim() || `请基于资产「${asset.title}」继续处理。`;
+    return this.createTurn(userId, sessionId, {
+      message: reuseMessage,
+      contextPatch: {
+        ...(dto.contextPatch ?? {}),
+        reusedAssetId: asset.id,
+      },
+    });
   }
 
   async listSubscriptions(userId: string, sessionId: string) {
@@ -883,6 +1234,122 @@ export class AgentConversationService {
     return this.runSubscription(subscription.id, 'RERUN', userId);
   }
 
+  async resolveScheduleCommand(
+    userId: string,
+    sessionId: string,
+    dto: ResolveConversationScheduleDto,
+  ) {
+    const session = await this.prisma.conversationSession.findFirst({
+      where: { id: sessionId, ownerUserId: userId },
+    });
+    if (!session) {
+      return null;
+    }
+
+    const parsed = this.parseScheduleInstruction(dto.instruction);
+    let result: Record<string, unknown>;
+
+    if (parsed.action === 'CREATE') {
+      const created = await this.createSubscription(userId, sessionId, {
+        name: parsed.subscriptionName,
+        cronExpr: parsed.cronExpr,
+        timezone: parsed.timezone,
+        deliveryConfig: {
+          channel: parsed.channel,
+          target: parsed.target,
+        },
+      });
+      if (!created) {
+        return null;
+      }
+      result = {
+        action: 'CREATE',
+        subscriptionId: created.id,
+        status: created.status,
+        cronExpr: created.cronExpr,
+        timezone: created.timezone,
+        nextRunAt: created.nextRunAt,
+        channel: parsed.channel,
+        target: parsed.target,
+      };
+    } else {
+      const subscription = await this.pickTargetSubscription(
+        userId,
+        sessionId,
+        parsed.subscriptionName,
+      );
+      if (!subscription) {
+        throw new BadRequestException({
+          code: 'CONV_SCHEDULE_SUB_NOT_FOUND',
+          message: '未找到可操作的订阅，请先创建订阅或指定名称',
+        });
+      }
+
+      if (parsed.action === 'PAUSE') {
+        const updated = await this.updateSubscription(userId, sessionId, subscription.id, {
+          status: 'PAUSED',
+        });
+        result = {
+          action: 'PAUSE',
+          subscriptionId: subscription.id,
+          status: updated?.status,
+        };
+      } else if (parsed.action === 'RESUME') {
+        const updated = await this.updateSubscription(userId, sessionId, subscription.id, {
+          status: 'ACTIVE',
+        });
+        result = {
+          action: 'RESUME',
+          subscriptionId: subscription.id,
+          status: updated?.status,
+          nextRunAt: updated?.nextRunAt,
+        };
+      } else if (parsed.action === 'RUN') {
+        const run = await this.runSubscriptionNow(userId, sessionId, subscription.id);
+        result = {
+          action: 'RUN',
+          subscriptionId: subscription.id,
+          runId: run?.runId,
+          status: run?.status,
+        };
+      } else {
+        const updated = await this.updateSubscription(userId, sessionId, subscription.id, {
+          cronExpr: parsed.cronExpr,
+          timezone: parsed.timezone,
+          status: 'ACTIVE',
+          deliveryConfig: {
+            channel: parsed.channel,
+            target: parsed.target,
+          },
+        });
+        result = {
+          action: 'UPDATE',
+          subscriptionId: subscription.id,
+          status: updated?.status,
+          cronExpr: updated?.cronExpr,
+          timezone: updated?.timezone,
+          nextRunAt: updated?.nextRunAt,
+          channel: parsed.channel,
+          target: parsed.target,
+        };
+      }
+    }
+
+    await this.prisma.conversationTurn.create({
+      data: {
+        sessionId,
+        role: 'ASSISTANT',
+        content: this.buildScheduleResolutionMessage(result),
+        structuredPayload: {
+          scheduleResolution: result,
+          instruction: dto.instruction,
+        } as Prisma.InputJsonValue,
+      },
+    });
+
+    return result;
+  }
+
   async processDueSubscriptions() {
     const now = new Date();
     const dueSubscriptions = await this.prisma.conversationSubscription.findMany({
@@ -897,6 +1364,260 @@ export class AgentConversationService {
     for (const subscription of dueSubscriptions) {
       await this.runSubscription(subscription.id, 'SCHEDULED', subscription.ownerUserId);
     }
+  }
+
+  private shouldAutoExecute(contextPatch?: Record<string, unknown>): boolean {
+    const explicit = contextPatch?.autoExecute;
+    if (typeof explicit === 'boolean') {
+      return explicit;
+    }
+    return true;
+  }
+
+  private resolveDeliveryWebhook(channel: 'EMAIL' | 'DINGTALK' | 'WECOM' | 'FEISHU') {
+    if (channel === 'EMAIL') {
+      return process.env.MAIL_DELIVERY_WEBHOOK_URL?.trim();
+    }
+    if (channel === 'DINGTALK') {
+      return process.env.DINGTALK_DELIVERY_WEBHOOK_URL?.trim();
+    }
+    if (channel === 'WECOM') {
+      return process.env.WECOM_DELIVERY_WEBHOOK_URL?.trim();
+    }
+    if (channel === 'FEISHU') {
+      return process.env.FEISHU_DELIVERY_WEBHOOK_URL?.trim();
+    }
+    return null;
+  }
+
+  private channelDisplayName(channel: 'EMAIL' | 'DINGTALK' | 'WECOM' | 'FEISHU') {
+    if (channel === 'EMAIL') {
+      return '邮件';
+    }
+    if (channel === 'DINGTALK') {
+      return '钉钉';
+    }
+    if (channel === 'WECOM') {
+      return '企业微信';
+    }
+    return '飞书';
+  }
+
+  private parseScheduleInstruction(instruction: string): {
+    action: 'CREATE' | 'UPDATE' | 'PAUSE' | 'RESUME' | 'RUN';
+    subscriptionName: string;
+    cronExpr: string;
+    timezone: string;
+    channel: 'EMAIL' | 'DINGTALK' | 'WECOM' | 'FEISHU';
+    target: string | null;
+  } {
+    const text = instruction.trim();
+    const normalized = text.toLowerCase();
+
+    const action = normalized.includes('暂停') || normalized.includes('停用')
+      ? 'PAUSE'
+      : normalized.includes('恢复') || normalized.includes('启用') || normalized.includes('开启')
+        ? 'RESUME'
+        : normalized.includes('补跑') || normalized.includes('立即执行') || normalized.includes('马上执行')
+          ? 'RUN'
+          : normalized.includes('修改') || normalized.includes('改成') || normalized.includes('改为')
+            ? 'UPDATE'
+            : 'CREATE';
+
+    const channel: 'EMAIL' | 'DINGTALK' | 'WECOM' | 'FEISHU' = normalized.includes('钉钉')
+      ? 'DINGTALK'
+      : normalized.includes('企微') || normalized.includes('企业微信')
+        ? 'WECOM'
+        : normalized.includes('飞书')
+          ? 'FEISHU'
+          : 'EMAIL';
+
+    const targetMatch = text.match(/(?:发到|发送到|推送到|到)\s*([^，。\s]+)/);
+    const target = targetMatch ? targetMatch[1] : null;
+
+    const nameMatch = text.match(/(?:订阅名|订阅名称|名称)[:：]?\s*([^，。\s]+)/);
+    const subscriptionName = nameMatch?.[1] ?? `对话订阅-${new Date().toISOString().slice(0, 10)}`;
+
+    const cronExpr = this.inferCronExprFromInstruction(text);
+
+    return {
+      action,
+      subscriptionName,
+      cronExpr,
+      timezone: 'Asia/Shanghai',
+      channel,
+      target,
+    };
+  }
+
+  private inferCronExprFromInstruction(text: string): string {
+    const timeMatch = text.match(/(\d{1,2})\s*(?:点|:|时)(\d{1,2})?/);
+    const hour = Math.max(0, Math.min(23, Number(timeMatch?.[1] ?? 9)));
+    const minute = Math.max(0, Math.min(59, Number(timeMatch?.[2] ?? 0)));
+
+    if (text.includes('每周')) {
+      const day = text.includes('周一')
+        ? 1
+        : text.includes('周二')
+          ? 2
+          : text.includes('周三')
+            ? 3
+            : text.includes('周四')
+              ? 4
+              : text.includes('周五')
+                ? 5
+                : text.includes('周六')
+                  ? 6
+                  : text.includes('周日') || text.includes('周天')
+                    ? 0
+                    : 1;
+      return `0 ${minute} ${hour} * * ${day}`;
+    }
+
+    if (text.includes('每月')) {
+      const dayMatch = text.match(/每月\s*(\d{1,2})\s*(?:号|日)?/);
+      const day = Math.max(1, Math.min(28, Number(dayMatch?.[1] ?? 1)));
+      return `0 ${minute} ${hour} ${day} * *`;
+    }
+
+    return `0 ${minute} ${hour} * * *`;
+  }
+
+  private async pickTargetSubscription(
+    userId: string,
+    sessionId: string,
+    subscriptionName?: string,
+  ) {
+    if (subscriptionName) {
+      const named = await this.prisma.conversationSubscription.findFirst({
+        where: {
+          ownerUserId: userId,
+          sessionId,
+          name: {
+            contains: subscriptionName,
+            mode: 'insensitive',
+          },
+        },
+        orderBy: { updatedAt: 'desc' },
+      });
+      if (named) {
+        return named;
+      }
+    }
+
+    return this.prisma.conversationSubscription.findFirst({
+      where: { ownerUserId: userId, sessionId },
+      orderBy: { updatedAt: 'desc' },
+    });
+  }
+
+  private buildScheduleResolutionMessage(result: Record<string, unknown>) {
+    const action = this.pickString(result.action) || 'UNKNOWN';
+    const status = this.pickString(result.status) || '-';
+    const subscriptionId = this.pickString(result.subscriptionId) || '-';
+    if (action === 'RUN') {
+      return `已执行订阅补跑：${subscriptionId}，状态 ${status}。`;
+    }
+    if (action === 'PAUSE') {
+      return `已暂停订阅：${subscriptionId}。`;
+    }
+    if (action === 'RESUME') {
+      return `已恢复订阅：${subscriptionId}，状态 ${status}。`;
+    }
+    if (action === 'UPDATE') {
+      return `已更新订阅：${subscriptionId}，状态 ${status}。`;
+    }
+    return `已创建订阅：${subscriptionId}，状态 ${status}。`;
+  }
+
+  private async createConversationAsset(input: {
+    sessionId: string;
+    assetType:
+      | 'PLAN'
+      | 'EXECUTION'
+      | 'RESULT_SUMMARY'
+      | 'EXPORT_FILE'
+      | 'BACKTEST_SUMMARY'
+      | 'CONFLICT_SUMMARY'
+      | 'SKILL_DRAFT'
+      | 'NOTE';
+    title: string;
+    payload: Record<string, unknown>;
+    sourceTurnId?: string | null;
+    sourceExecutionId?: string | null;
+    sourcePlanVersion?: number | null;
+    tags?: Record<string, unknown> | null;
+  }) {
+    const duplicate = await this.prisma.conversationAsset.findFirst({
+      where: {
+        sessionId: input.sessionId,
+        assetType: input.assetType,
+        sourceExecutionId: input.sourceExecutionId ?? null,
+        sourcePlanVersion: input.sourcePlanVersion ?? null,
+        title: input.title,
+      },
+      select: { id: true },
+    });
+    if (duplicate) {
+      return duplicate;
+    }
+
+    return this.prisma.conversationAsset.create({
+      data: {
+        sessionId: input.sessionId,
+        assetType: input.assetType,
+        title: input.title,
+        payload: input.payload as Prisma.InputJsonValue,
+        sourceTurnId: input.sourceTurnId ?? null,
+        sourceExecutionId: input.sourceExecutionId ?? null,
+        sourcePlanVersion: input.sourcePlanVersion ?? null,
+        tags: input.tags ? (input.tags as Prisma.InputJsonValue) : Prisma.JsonNull,
+      },
+    });
+  }
+
+  private resolveSkillRisk(dto: CreateSkillDraftDto): {
+    riskLevel: 'LOW' | 'MEDIUM' | 'HIGH';
+    sideEffectRisk: boolean;
+    allowRuntimeGrant: boolean;
+  } {
+    const message = `${dto.gapType} ${dto.requiredCapability} ${dto.suggestedSkillCode}`.toLowerCase();
+    const explicitRisk = dto.riskLevel;
+    const explicitSideEffect = dto.sideEffectRisk === true;
+
+    const hasHighRiskKeyword =
+      message.includes('下单') ||
+      message.includes('自动下单') ||
+      message.includes('交易执行') ||
+      message.includes('写库') ||
+      message.includes('扣费') ||
+      message.includes('payment') ||
+      message.includes('trade execution') ||
+      message.includes('place order') ||
+      message.includes('create order');
+
+    const hasMediumRiskKeyword =
+      message.includes('外发') ||
+      message.includes('推送') ||
+      message.includes('webhook') ||
+      message.includes('send');
+
+    const riskLevel: 'LOW' | 'MEDIUM' | 'HIGH' = explicitRisk
+      ? explicitRisk
+      : hasHighRiskKeyword
+        ? 'HIGH'
+        : hasMediumRiskKeyword
+          ? 'MEDIUM'
+          : 'LOW';
+
+    const sideEffectRisk = explicitSideEffect || riskLevel !== 'LOW';
+    const allowRuntimeGrant = riskLevel === 'LOW' && !sideEffectRisk;
+
+    return {
+      riskLevel,
+      sideEffectRisk,
+      allowRuntimeGrant,
+    };
   }
 
   private detectIntent(message: string, currentIntent?: string | null): IntentCode {

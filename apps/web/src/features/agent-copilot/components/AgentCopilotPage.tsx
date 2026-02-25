@@ -34,6 +34,7 @@ import {
   useConfirmConversationPlan,
   useConversationBacktest,
   useConversationConflicts,
+  useConversationAssets,
   useConversationSubscriptions,
   useConversationDetail,
   useConversationResult,
@@ -42,11 +43,23 @@ import {
   useCreateConversationSubscription,
   useCreateConversationSession,
   useCreateConversationBacktest,
-  useDeliverConversationEmail,
+  useCreateSkillDraft,
+  useDeliverConversation,
   useExportConversationResult,
   useRunConversationSubscription,
   useSendConversationTurn,
+  useReuseConversationAsset,
+  useSubmitSkillDraftReview,
+  useSandboxSkillDraft,
+  useReviewSkillDraft,
+  useConsumeSkillRuntimeGrant,
+  useSkillGovernanceEvents,
+  useSkillGovernanceOverview,
+  useSkillDraftRuntimeGrants,
   useUpdateConversationSubscription,
+  useRevokeSkillRuntimeGrant,
+  usePublishSkillDraft,
+  useResolveScheduleCommand,
   useUpsertCopilotPromptTemplates,
 } from '../api/conversations';
 
@@ -103,11 +116,19 @@ const copilotErrorMessageByCode: Record<string, string> = {
   CONV_EXPORT_EXECUTION_NOT_FOUND: '没有可导出的执行结果，请先运行任务。',
   CONV_EXPORT_TASK_NOT_FOUND: '导出任务不存在或无权限访问。',
   CONV_EXPORT_TASK_NOT_READY: '导出任务尚未完成，请稍后再发送邮箱。',
+  CONV_DELIVERY_TARGET_REQUIRED: '请补充投递目标信息。',
   CONV_SUB_PLAN_NOT_FOUND: '未找到可订阅计划，请先确认并执行计划。',
   CONV_SUB_NOT_FOUND: '订阅不存在或无权限访问。',
   CONV_BACKTEST_EXECUTION_NOT_FOUND: '未找到可回测的执行实例，请先完成一次执行。',
   CONV_BACKTEST_NOT_FOUND: '回测任务不存在或无权限访问。',
   CONV_BACKTEST_RUN_FAILED: '回测执行失败，请稍后重试。',
+  SKILL_DRAFT_NOT_FOUND: 'Skill Draft 不存在或无权限访问。',
+  SKILL_RUNTIME_GRANT_NOT_FOUND: '运行时授权不存在或无权限访问。',
+  SKILL_RUNTIME_GRANT_INACTIVE: '运行时授权已失效。',
+  SKILL_RUNTIME_GRANT_EXPIRED: '运行时授权已过期。',
+  SKILL_REVIEWER_CONFLICT: '高风险草稿不能由创建者本人审批通过。',
+  SKILL_HIGH_RISK_REVIEW_REQUIRED: '高风险草稿必须由非创建者审批后才能发布。',
+  CONV_SCHEDULE_SUB_NOT_FOUND: '未找到可操作订阅，请先创建或指定正确名称。',
 };
 
 export const AgentCopilotPage: React.FC = () => {
@@ -116,6 +137,9 @@ export const AgentCopilotPage: React.FC = () => {
   const [input, setInput] = useState('');
   const [emailModalOpen, setEmailModalOpen] = useState(false);
   const [emailTo, setEmailTo] = useState('');
+  const [deliveryChannel, setDeliveryChannel] = useState<'EMAIL' | 'DINGTALK' | 'WECOM' | 'FEISHU'>('EMAIL');
+  const [deliveryTarget, setDeliveryTarget] = useState('');
+  const [sendRawFile, setSendRawFile] = useState(true);
   const [templateModalOpen, setTemplateModalOpen] = useState(false);
   const [templateEditor, setTemplateEditor] = useState('');
   const [templateScope, setTemplateScope] = useState<CopilotPromptScope>('PERSONAL');
@@ -124,6 +148,7 @@ export const AgentCopilotPage: React.FC = () => {
   const [quickPrompts, setQuickPrompts] = useState<QuickPromptTemplate[]>(defaultQuickPrompts);
   const [subscriptionName, setSubscriptionName] = useState('每周玉米复盘订阅');
   const [subscriptionCronExpr, setSubscriptionCronExpr] = useState('0 0 8 * * 1');
+  const [scheduleInstruction, setScheduleInstruction] = useState('每周一9点发到企业微信群ops-group-01');
   const timelineRef = useRef<HTMLDivElement | null>(null);
   const templateFileInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -135,12 +160,21 @@ export const AgentCopilotPage: React.FC = () => {
   const sendTurnMutation = useSendConversationTurn();
   const confirmPlanMutation = useConfirmConversationPlan();
   const exportMutation = useExportConversationResult();
-  const deliverMutation = useDeliverConversationEmail();
+  const deliverMutation = useDeliverConversation();
   const subscriptionsQuery = useConversationSubscriptions(activeSessionId);
   const createSubscriptionMutation = useCreateConversationSubscription();
   const updateSubscriptionMutation = useUpdateConversationSubscription();
   const runSubscriptionMutation = useRunConversationSubscription();
+  const resolveScheduleMutation = useResolveScheduleCommand();
   const createBacktestMutation = useCreateConversationBacktest();
+  const createSkillDraftMutation = useCreateSkillDraft();
+  const sandboxSkillDraftMutation = useSandboxSkillDraft();
+  const submitSkillDraftReviewMutation = useSubmitSkillDraftReview();
+  const reviewSkillDraftMutation = useReviewSkillDraft();
+  const publishSkillDraftMutation = usePublishSkillDraft();
+  const revokeRuntimeGrantMutation = useRevokeSkillRuntimeGrant();
+  const consumeRuntimeGrantMutation = useConsumeSkillRuntimeGrant();
+  const governanceOverviewQuery = useSkillGovernanceOverview();
   const personalPromptTemplateQuery = useCopilotPromptTemplates('PERSONAL');
   const teamPromptTemplateQuery = useCopilotPromptTemplates('TEAM');
   const upsertPromptTemplatesMutation = useUpsertCopilotPromptTemplates();
@@ -169,8 +203,18 @@ export const AgentCopilotPage: React.FC = () => {
       | string
       | undefined;
   }, [detailQuery.data?.turns]);
+  const latestSkillDraftId = useMemo(() => {
+    return [...(detailQuery.data?.turns ?? [])]
+      .reverse()
+      .map((turn) => turn.structuredPayload as Record<string, unknown> | undefined)
+      .find((payload) => payload && typeof payload.draftId === 'string')?.draftId as string | undefined;
+  }, [detailQuery.data?.turns]);
+  const governanceEventsQuery = useSkillGovernanceEvents(latestSkillDraftId);
+  const runtimeGrantsQuery = useSkillDraftRuntimeGrants(latestSkillDraftId);
   const backtestQuery = useConversationBacktest(activeSessionId, latestBacktestJobId);
   const conflictsQuery = useConversationConflicts(activeSessionId);
+  const assetsQuery = useConversationAssets(activeSessionId);
+  const reuseAssetMutation = useReuseConversationAsset();
 
   const deliveryLogs = useMemo(() => {
     return (detailQuery.data?.turns ?? [])
@@ -179,6 +223,8 @@ export const AgentCopilotPage: React.FC = () => {
       .filter((payload) => payload && typeof payload.deliveryTaskId === 'string')
       .map((payload) => ({
         deliveryTaskId: String(payload?.deliveryTaskId ?? ''),
+        channel: String(payload?.channel ?? 'EMAIL'),
+        target: typeof payload?.target === 'string' ? payload.target : null,
         status: String(payload?.status ?? 'UNKNOWN'),
         errorMessage: typeof payload?.errorMessage === 'string' ? payload.errorMessage : null,
       }))
@@ -217,6 +263,26 @@ export const AgentCopilotPage: React.FC = () => {
       message.success('订阅创建成功');
     } catch (error) {
       showCopilotError(error, '订阅创建失败');
+    }
+  };
+
+  const handleResolveSchedule = async () => {
+    if (!activeSessionId) {
+      message.warning('请先选择会话');
+      return;
+    }
+    if (!scheduleInstruction.trim()) {
+      message.warning('请输入调度指令');
+      return;
+    }
+    try {
+      const result = await resolveScheduleMutation.mutateAsync({
+        sessionId: activeSessionId,
+        instruction: scheduleInstruction,
+      });
+      message.success(`调度已解析并执行：${result.data.action}`);
+    } catch (error) {
+      showCopilotError(error, '调度指令执行失败');
     }
   };
 
@@ -279,6 +345,135 @@ export const AgentCopilotPage: React.FC = () => {
       message.success(`回测任务已创建：${created.data.backtestJobId}`);
     } catch (error) {
       showCopilotError(error, '回测创建失败');
+    }
+  };
+
+  const handleCreateSkillDraft = async () => {
+    if (!activeSessionId) {
+      message.warning('请先选择会话');
+      return;
+    }
+    try {
+      const result = await createSkillDraftMutation.mutateAsync({
+        sessionId: activeSessionId,
+        gapType: 'MISSING_EXTERNAL_DATA_SOURCE',
+        requiredCapability: '需要补充外部市场数据抓取能力以提高结论覆盖度',
+        suggestedSkillCode: `market_gap_${Date.now()}`,
+      });
+      message.success(`Skill Draft 已创建：${result.data.draftId}`);
+    } catch (error) {
+      showCopilotError(error, '创建 Skill Draft 失败');
+    }
+  };
+
+  const handleReuseAsset = async (assetId: string, title: string) => {
+    if (!activeSessionId) {
+      return;
+    }
+    try {
+      await reuseAssetMutation.mutateAsync({
+        sessionId: activeSessionId,
+        assetId,
+        message: `请基于「${title}」继续分析，并输出更新后的结论。`,
+      });
+      message.success('已基于历史结果继续执行');
+    } catch (error) {
+      showCopilotError(error, '复用失败');
+    }
+  };
+
+  const handleSandboxSkillDraft = async () => {
+    if (!latestSkillDraftId) {
+      message.warning('暂无可测试的 Skill Draft');
+      return;
+    }
+    try {
+      const result = await sandboxSkillDraftMutation.mutateAsync({
+        draftId: latestSkillDraftId,
+        testCases: [
+          {
+            input: { symbol: 'C', date: '2026-02-25', market: 'DCE' },
+            expectContains: ['symbol'],
+          },
+        ],
+      });
+      message.success(`沙箱测试完成：${result.status}（${result.passedCount}/${result.passedCount + result.failedCount}）`);
+    } catch (error) {
+      showCopilotError(error, '沙箱测试失败');
+    }
+  };
+
+  const handleSubmitSkillDraftReview = async () => {
+    if (!latestSkillDraftId) {
+      message.warning('暂无可提交的 Skill Draft');
+      return;
+    }
+    try {
+      const result = await submitSkillDraftReviewMutation.mutateAsync(latestSkillDraftId);
+      message.success(`已提交审批：${result.status}`);
+    } catch (error) {
+      showCopilotError(error, '提交审批失败');
+    }
+  };
+
+  const handleApproveSkillDraft = async () => {
+    if (!latestSkillDraftId) {
+      message.warning('暂无可审批的 Skill Draft');
+      return;
+    }
+    try {
+      const result = await reviewSkillDraftMutation.mutateAsync({
+        draftId: latestSkillDraftId,
+        action: 'APPROVE',
+        comment: '自动化验收通过',
+      });
+      message.success(`审批完成：${result.status}`);
+    } catch (error) {
+      showCopilotError(error, '审批失败');
+    }
+  };
+
+  const handlePublishSkillDraft = async () => {
+    if (!latestSkillDraftId) {
+      message.warning('暂无可发布的 Skill Draft');
+      return;
+    }
+    try {
+      const result = await publishSkillDraftMutation.mutateAsync(latestSkillDraftId);
+      message.success(`发布完成：${result.status}`);
+    } catch (error) {
+      showCopilotError(error, '发布失败');
+    }
+  };
+
+  const handleRevokeRuntimeGrant = async (grantId: string) => {
+    if (!latestSkillDraftId) {
+      return;
+    }
+    try {
+      await revokeRuntimeGrantMutation.mutateAsync({
+        draftId: latestSkillDraftId,
+        grantId,
+        reason: 'manual revoke from copilot',
+      });
+      message.success('已撤销运行时授权');
+    } catch (error) {
+      showCopilotError(error, '撤销授权失败');
+    }
+  };
+
+  const handleConsumeRuntimeGrant = async (grantId: string) => {
+    if (!latestSkillDraftId) {
+      return;
+    }
+    try {
+      await consumeRuntimeGrantMutation.mutateAsync({
+        draftId: latestSkillDraftId,
+        grantId,
+      });
+      message.success('已记录一次运行时授权使用');
+    } catch (error) {
+      showCopilotError(error, '记录授权使用失败');
     }
   };
 
@@ -487,7 +682,7 @@ export const AgentCopilotPage: React.FC = () => {
     }
   };
 
-  const handleSendEmail = async () => {
+  const handleSendDelivery = async () => {
     if (!activeSessionId) {
       message.warning('请先选择会话');
       return;
@@ -496,12 +691,19 @@ export const AgentCopilotPage: React.FC = () => {
       message.warning('请先导出报告');
       return;
     }
-    const to = emailTo
-      .split(',')
-      .map((item) => item.trim())
-      .filter(Boolean);
-    if (!to.length) {
+    const to =
+      deliveryChannel === 'EMAIL'
+        ? emailTo
+            .split(',')
+            .map((item) => item.trim())
+            .filter(Boolean)
+        : [];
+    if (deliveryChannel === 'EMAIL' && !to.length) {
       message.warning('请输入收件邮箱');
+      return;
+    }
+    if (deliveryChannel !== 'EMAIL' && !deliveryTarget.trim()) {
+      message.warning('请输入投递目标，例如群ID或机器人标识');
       return;
     }
 
@@ -509,18 +711,21 @@ export const AgentCopilotPage: React.FC = () => {
       const result = await deliverMutation.mutateAsync({
         sessionId: activeSessionId,
         exportTaskId: latestArtifact.exportTaskId,
+        channel: deliveryChannel,
         to,
+        target: deliveryChannel === 'EMAIL' ? undefined : deliveryTarget.trim(),
         subject: 'CTBMS 对话助手分析报告',
         content: '您好，附件为本次对话分析报告，请查收。',
+        sendRawFile,
       });
       if (result.data.status === 'SENT') {
-        message.success('邮件已发送');
+        message.success('投递已发送');
         setEmailModalOpen(false);
       } else {
-        message.warning(result.data.errorMessage || '邮件发送失败');
+        message.warning(result.data.errorMessage || '投递发送失败');
       }
     } catch (error) {
-      showCopilotError(error, '邮件投递失败');
+      showCopilotError(error, '投递失败');
     }
   };
 
@@ -909,6 +1114,20 @@ export const AgentCopilotPage: React.FC = () => {
                     创建订阅
                   </Button>
 
+                  <Input.TextArea
+                    value={scheduleInstruction}
+                    onChange={(e) => setScheduleInstruction(e.target.value)}
+                    autoSize={{ minRows: 2, maxRows: 4 }}
+                    placeholder="自然语言调度，例如：每周五18点发到钉钉群ops"
+                  />
+                  <Button
+                    onClick={handleResolveSchedule}
+                    loading={resolveScheduleMutation.isPending}
+                    block
+                  >
+                    自然语言配置调度
+                  </Button>
+
                   <List
                     size="small"
                     dataSource={subscriptionsQuery.data ?? []}
@@ -1021,10 +1240,43 @@ export const AgentCopilotPage: React.FC = () => {
                       <Button
                         icon={<MailOutlined />}
                         loading={deliverMutation.isPending}
-                        onClick={() => setEmailModalOpen(true)}
+                        onClick={() => {
+                          setDeliveryChannel('EMAIL');
+                          setEmailModalOpen(true);
+                        }}
                         disabled={!latestArtifact?.exportTaskId}
                       >
-                        发送邮箱
+                        发送渠道
+                      </Button>
+                      <Button
+                        loading={deliverMutation.isPending}
+                        onClick={() => {
+                          setDeliveryChannel('DINGTALK');
+                          setEmailModalOpen(true);
+                        }}
+                        disabled={!latestArtifact?.exportTaskId}
+                      >
+                        发钉钉
+                      </Button>
+                      <Button
+                        loading={deliverMutation.isPending}
+                        onClick={() => {
+                          setDeliveryChannel('WECOM');
+                          setEmailModalOpen(true);
+                        }}
+                        disabled={!latestArtifact?.exportTaskId}
+                      >
+                        发企微
+                      </Button>
+                      <Button
+                        loading={deliverMutation.isPending}
+                        onClick={() => {
+                          setDeliveryChannel('FEISHU');
+                          setEmailModalOpen(true);
+                        }}
+                        disabled={!latestArtifact?.exportTaskId}
+                      >
+                        发飞书
                       </Button>
                       {latestArtifact?.downloadUrl ? (
                         <Button
@@ -1075,7 +1327,7 @@ export const AgentCopilotPage: React.FC = () => {
                     {deliveryLogs.length ? (
                       <>
                         <Divider style={{ margin: '8px 0' }} />
-                        <Text strong>邮件投递记录</Text>
+                        <Text strong>投递记录</Text>
                         <List
                           size="small"
                           dataSource={deliveryLogs}
@@ -1083,6 +1335,7 @@ export const AgentCopilotPage: React.FC = () => {
                             <List.Item>
                               <Space direction="vertical" size={2} style={{ width: '100%' }}>
                                 <Space>
+                                  <Tag>{item.channel}</Tag>
                                   <Tag color={item.status === 'SENT' ? 'success' : item.status === 'FAILED' ? 'error' : 'processing'}>
                                     {item.status}
                                   </Tag>
@@ -1090,6 +1343,11 @@ export const AgentCopilotPage: React.FC = () => {
                                     {item.deliveryTaskId}
                                   </Text>
                                 </Space>
+                                {item.target ? (
+                                  <Text type="secondary" style={{ fontSize: 12 }}>
+                                    目标: {item.target}
+                                  </Text>
+                                ) : null}
                                 {item.errorMessage ? (
                                   <Text type="danger" style={{ fontSize: 12 }}>
                                     {item.errorMessage}
@@ -1160,6 +1418,166 @@ export const AgentCopilotPage: React.FC = () => {
                         ) : null}
                       </>
                     ) : null}
+
+                    <Divider style={{ margin: '8px 0' }} />
+                    <Text strong>Skill Draft 审批流</Text>
+                    <Space wrap>
+                      <Button
+                        onClick={handleCreateSkillDraft}
+                        loading={createSkillDraftMutation.isPending}
+                        icon={<PlusOutlined />}
+                      >
+                        创建 Draft
+                      </Button>
+                      <Button
+                        onClick={handleSandboxSkillDraft}
+                        loading={sandboxSkillDraftMutation.isPending}
+                        disabled={!latestSkillDraftId}
+                      >
+                        沙箱测试
+                      </Button>
+                      <Button
+                        onClick={handleSubmitSkillDraftReview}
+                        loading={submitSkillDraftReviewMutation.isPending}
+                        disabled={!latestSkillDraftId}
+                      >
+                        提交审批
+                      </Button>
+                      <Button
+                        onClick={handleApproveSkillDraft}
+                        loading={reviewSkillDraftMutation.isPending}
+                        disabled={!latestSkillDraftId}
+                      >
+                        审批通过
+                      </Button>
+                      <Button
+                        type="primary"
+                        onClick={handlePublishSkillDraft}
+                        loading={publishSkillDraftMutation.isPending}
+                        disabled={!latestSkillDraftId}
+                      >
+                        发布 Skill
+                      </Button>
+                    </Space>
+                    {latestSkillDraftId ? (
+                      <Text type="secondary" style={{ fontSize: 12 }}>
+                        当前 Draft: {latestSkillDraftId}
+                      </Text>
+                    ) : (
+                      <Text type="secondary" style={{ fontSize: 12 }}>
+                        暂无 Draft
+                      </Text>
+                    )}
+
+                    {governanceOverviewQuery.data ? (
+                      <Alert
+                        type={governanceOverviewQuery.data.highRiskPendingReview > 0 ? 'warning' : 'info'}
+                        showIcon
+                        message={`治理看板：活跃授权 ${governanceOverviewQuery.data.activeRuntimeGrants}，1小时内过期 ${governanceOverviewQuery.data.runtimeGrantsExpiringIn1h}，高风险待审 ${governanceOverviewQuery.data.highRiskPendingReview}`}
+                      />
+                    ) : null}
+
+                    {governanceEventsQuery.data?.length ? (
+                      <List
+                        size="small"
+                        dataSource={governanceEventsQuery.data.slice(0, 8)}
+                        renderItem={(item) => (
+                          <List.Item>
+                            <Space direction="vertical" size={2} style={{ width: '100%' }}>
+                              <Space>
+                                <Tag>{item.eventType}</Tag>
+                                <Text>{item.message}</Text>
+                              </Space>
+                              <Text type="secondary" style={{ fontSize: 12 }}>
+                                {new Date(item.createdAt).toLocaleString('zh-CN')}
+                              </Text>
+                            </Space>
+                          </List.Item>
+                        )}
+                      />
+                    ) : null}
+
+                    {runtimeGrantsQuery.data?.length ? (
+                      <>
+                        <Text strong style={{ marginTop: 4 }}>
+                          低风险先用后审授权
+                        </Text>
+                        <List
+                          size="small"
+                          dataSource={runtimeGrantsQuery.data}
+                          renderItem={(item) => (
+                            <List.Item
+                              actions={
+                                item.status === 'ACTIVE'
+                                  ? [
+                                      <Button
+                                        key="use"
+                                        size="small"
+                                        loading={consumeRuntimeGrantMutation.isPending}
+                                        onClick={() => void handleConsumeRuntimeGrant(item.id)}
+                                      >
+                                        记录使用
+                                      </Button>,
+                                      <Button
+                                        key="revoke"
+                                        size="small"
+                                        loading={revokeRuntimeGrantMutation.isPending}
+                                        onClick={() => void handleRevokeRuntimeGrant(item.id)}
+                                      >
+                                        撤销
+                                      </Button>,
+                                    ]
+                                  : []
+                              }
+                            >
+                              <Space direction="vertical" size={2} style={{ width: '100%' }}>
+                                <Space>
+                                  <Tag color={item.status === 'ACTIVE' ? 'success' : 'default'}>{item.status}</Tag>
+                                  <Text type="secondary" style={{ fontSize: 12 }}>
+                                    使用 {item.useCount}/{item.maxUseCount}
+                                  </Text>
+                                </Space>
+                                <Text type="secondary" style={{ fontSize: 12 }}>
+                                  过期: {new Date(item.expiresAt).toLocaleString('zh-CN')}
+                                </Text>
+                              </Space>
+                            </List.Item>
+                          )}
+                        />
+                      </>
+                    ) : null}
+
+                    <Divider style={{ margin: '8px 0' }} />
+                    <Text strong>会话资产复用</Text>
+                    <List
+                      size="small"
+                      dataSource={(assetsQuery.data ?? []).slice(0, 8)}
+                      locale={{ emptyText: '暂无可复用资产' }}
+                      renderItem={(item) => (
+                        <List.Item
+                          actions={[
+                            <Button
+                              key="reuse"
+                              size="small"
+                              loading={reuseAssetMutation.isPending}
+                              onClick={() => void handleReuseAsset(item.id, item.title)}
+                            >
+                              继续基于此结果
+                            </Button>,
+                          ]}
+                        >
+                          <Space direction="vertical" size={2} style={{ width: '100%' }}>
+                            <Space>
+                              <Tag>{item.assetType}</Tag>
+                              <Text strong>{item.title}</Text>
+                            </Space>
+                            <Text type="secondary" style={{ fontSize: 12 }}>
+                              {new Date(item.createdAt).toLocaleString('zh-CN')}
+                            </Text>
+                          </Space>
+                        </List.Item>
+                      )}
+                    />
                   </Space>
                 ) : (
                   <Text type="secondary">暂无执行结果</Text>
@@ -1198,21 +1616,47 @@ export const AgentCopilotPage: React.FC = () => {
       </Row>
 
       <Modal
-        title="发送报告到邮箱"
+        title="发送报告"
         open={emailModalOpen}
-        onOk={handleSendEmail}
+        onOk={handleSendDelivery}
         onCancel={() => setEmailModalOpen(false)}
         confirmLoading={deliverMutation.isPending}
       >
         <Space direction="vertical" style={{ width: '100%' }}>
-          <Text type="secondary">多个邮箱请使用英文逗号分隔</Text>
-          <Input
-            placeholder="例如：user@example.com,ops@example.com"
-            value={emailTo}
-            onChange={(e) => setEmailTo(e.target.value)}
+          <Segmented
+            value={deliveryChannel}
+            options={[
+              { label: '邮箱', value: 'EMAIL' },
+              { label: '钉钉', value: 'DINGTALK' },
+              { label: '企微', value: 'WECOM' },
+              { label: '飞书', value: 'FEISHU' },
+            ]}
+            onChange={(value) => setDeliveryChannel(value as 'EMAIL' | 'DINGTALK' | 'WECOM' | 'FEISHU')}
           />
+          {deliveryChannel === 'EMAIL' ? (
+            <>
+              <Text type="secondary">多个邮箱请使用英文逗号分隔</Text>
+              <Input
+                placeholder="例如：user@example.com,ops@example.com"
+                value={emailTo}
+                onChange={(e) => setEmailTo(e.target.value)}
+              />
+            </>
+          ) : (
+            <>
+              <Text type="secondary">输入渠道目标，例如群ID、机器人标识或 webhook target</Text>
+              <Input
+                placeholder="例如：ops-group-01"
+                value={deliveryTarget}
+                onChange={(e) => setDeliveryTarget(e.target.value)}
+              />
+            </>
+          )}
+          <Button type={sendRawFile ? 'primary' : 'default'} onClick={() => setSendRawFile((v) => !v)}>
+            {sendRawFile ? '当前发送原文件' : '当前发送导出文件'}
+          </Button>
           {!latestArtifact?.exportTaskId ? (
-            <Alert type="warning" message="请先导出报告，再发送邮箱" showIcon />
+            <Alert type="warning" message="请先导出报告，再发送" showIcon />
           ) : null}
         </Space>
       </Modal>

@@ -2090,6 +2090,50 @@ enum BacktestStatus {
   FAILED
 }
 
+enum SkillDraftStatus {
+  DRAFT
+  SANDBOX_TESTING
+  READY_FOR_REVIEW
+  APPROVED
+  REJECTED
+  PUBLISHED
+}
+
+enum SkillRiskLevel {
+  LOW
+  MEDIUM
+  HIGH
+}
+
+enum SkillRuntimeGrantStatus {
+  ACTIVE
+  REVOKED
+  EXPIRED
+}
+
+enum SkillGovernanceEventType {
+  DRAFT_CREATED
+  REVIEW_SUBMITTED
+  REVIEW_APPROVED
+  REVIEW_REJECTED
+  PUBLISHED
+  RUNTIME_GRANT_CREATED
+  RUNTIME_GRANT_USED
+  RUNTIME_GRANT_REVOKED
+  RUNTIME_GRANT_EXPIRED
+}
+
+enum ConversationAssetType {
+  PLAN
+  EXECUTION
+  RESULT_SUMMARY
+  EXPORT_FILE
+  BACKTEST_SUMMARY
+  CONFLICT_SUMMARY
+  SKILL_DRAFT
+  NOTE
+}
+
 model WorkflowDefinition {
   id                String                   @id @default(uuid())
   workflowId        String                   @unique
@@ -2408,9 +2452,99 @@ model AgentSkill {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  publishedDrafts AgentSkillDraft[]
+
   @@index([ownerUserId, isActive])
   @@index([templateSource, isActive])
   @@index([handlerCode])
+}
+
+model AgentSkillDraft {
+  id                 String           @id @default(uuid())
+  sessionId          String
+  ownerUserId        String
+  gapType            String
+  requiredCapability String           @db.Text
+  suggestedSkillCode String
+  draftSpec          Json
+  status             SkillDraftStatus @default(DRAFT)
+  riskLevel          SkillRiskLevel   @default(LOW)
+  sideEffectRisk     Boolean          @default(false)
+  provisionalEnabled Boolean          @default(false)
+  reviewComment      String?          @db.Text
+  reviewedByUserId   String?
+  reviewedAt         DateTime?
+  publishedSkillId   String?
+  createdAt          DateTime         @default(now())
+  updatedAt          DateTime         @updatedAt
+
+  session        ConversationSession     @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  publishedSkill AgentSkill?             @relation(fields: [publishedSkillId], references: [id])
+  testRuns       AgentSkillDraftTestRun[]
+  runtimeGrants  AgentSkillRuntimeGrant[]
+  governanceEvents AgentSkillGovernanceEvent[]
+
+  @@index([ownerUserId, status, updatedAt])
+  @@index([sessionId, createdAt])
+}
+
+model AgentSkillRuntimeGrant {
+  id          String                 @id @default(uuid())
+  draftId     String
+  sessionId   String
+  ownerUserId String
+  status      SkillRuntimeGrantStatus @default(ACTIVE)
+  maxUseCount Int                    @default(30)
+  useCount    Int                    @default(0)
+  expiresAt   DateTime
+  revokeReason String?
+  revokedAt   DateTime?
+  createdAt   DateTime               @default(now())
+  updatedAt   DateTime               @updatedAt
+
+  draft   AgentSkillDraft      @relation(fields: [draftId], references: [id], onDelete: Cascade)
+  session ConversationSession  @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  governanceEvents AgentSkillGovernanceEvent[]
+
+  @@index([draftId, status])
+  @@index([sessionId, status])
+  @@index([ownerUserId, status])
+}
+
+model AgentSkillGovernanceEvent {
+  id             String                  @id @default(uuid())
+  ownerUserId    String
+  draftId        String?
+  runtimeGrantId String?
+  eventType      SkillGovernanceEventType
+  message        String
+  payload        Json?
+  createdAt      DateTime                @default(now())
+
+  draft       AgentSkillDraft?         @relation(fields: [draftId], references: [id], onDelete: SetNull)
+  runtimeGrant AgentSkillRuntimeGrant? @relation(fields: [runtimeGrantId], references: [id], onDelete: SetNull)
+
+  @@index([ownerUserId, createdAt])
+  @@index([draftId, createdAt])
+  @@index([runtimeGrantId, createdAt])
+  @@index([eventType, createdAt])
+}
+
+model AgentSkillDraftTestRun {
+  id             String   @id @default(uuid())
+  draftId        String
+  status         String   @default("RUNNING") // RUNNING | PASSED | FAILED
+  inputSnapshot  Json
+  resultSnapshot Json?
+  passedCount    Int      @default(0)
+  failedCount    Int      @default(0)
+  createdAt      DateTime @default(now())
+  completedAt    DateTime?
+
+  draft AgentSkillDraft @relation(fields: [draftId], references: [id], onDelete: Cascade)
+
+  @@index([draftId, createdAt])
+  @@index([status, createdAt])
 }
 
 model ParameterSet {
@@ -2797,6 +2931,10 @@ model ConversationSession {
   subscriptions ConversationSubscription[]
   backtests     ConversationBacktestJob[]
   conflicts     ConversationConflictRecord[]
+  skillDrafts   AgentSkillDraft[]
+  skillRuntimeGrants AgentSkillRuntimeGrant[]
+  assets        ConversationAsset[]
+  assetRefs     ConversationAssetRef[]
 
   @@index([ownerUserId, createdAt])
   @@index([state, updatedAt])
@@ -2812,9 +2950,48 @@ model ConversationTurn {
   latencyMs         Int?
   createdAt         DateTime         @default(now())
 
-  session ConversationSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  session   ConversationSession   @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  assetRefs ConversationAssetRef[]
 
   @@index([sessionId, createdAt])
+}
+
+model ConversationAsset {
+  id                String                @id @default(uuid())
+  sessionId         String
+  assetType         ConversationAssetType
+  title             String
+  payload           Json
+  sourceTurnId      String?
+  sourceExecutionId String?
+  sourcePlanVersion Int?
+  tags              Json?
+  createdAt         DateTime              @default(now())
+  updatedAt         DateTime              @updatedAt
+
+  session ConversationSession    @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  refs    ConversationAssetRef[]
+
+  @@index([sessionId, createdAt])
+  @@index([assetType, createdAt])
+  @@index([sourceExecutionId])
+}
+
+model ConversationAssetRef {
+  id        String   @id @default(uuid())
+  sessionId String
+  turnId    String
+  assetId   String
+  note      String?
+  createdAt DateTime @default(now())
+
+  session ConversationSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  turn    ConversationTurn    @relation(fields: [turnId], references: [id], onDelete: Cascade)
+  asset   ConversationAsset   @relation(fields: [assetId], references: [id], onDelete: Cascade)
+
+  @@index([sessionId, createdAt])
+  @@index([turnId])
+  @@index([assetId])
 }
 
 model ConversationPlan {

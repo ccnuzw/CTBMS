@@ -63,6 +63,29 @@ export interface TurnResponse {
   missingSlots: string[];
   proposedPlan?: Record<string, unknown> | null;
   confirmRequired: boolean;
+  autoExecuted?: boolean;
+  executionId?: string;
+}
+
+export interface ConversationAsset {
+  id: string;
+  sessionId: string;
+  assetType:
+    | 'PLAN'
+    | 'EXECUTION'
+    | 'RESULT_SUMMARY'
+    | 'EXPORT_FILE'
+    | 'BACKTEST_SUMMARY'
+    | 'CONFLICT_SUMMARY'
+    | 'SKILL_DRAFT'
+    | 'NOTE';
+  title: string;
+  payload: Record<string, unknown>;
+  sourceTurnId?: string | null;
+  sourceExecutionId?: string | null;
+  sourcePlanVersion?: number | null;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface ConfirmResponse {
@@ -98,8 +121,11 @@ export interface ExportResponse {
   downloadUrl?: string | null;
 }
 
-export interface DeliverEmailResponse {
+export type DeliveryChannel = 'EMAIL' | 'DINGTALK' | 'WECOM' | 'FEISHU';
+
+export interface DeliverResponse {
   deliveryTaskId: string;
+  channel: DeliveryChannel;
   status: 'QUEUED' | 'SENT' | 'FAILED';
   errorMessage?: string | null;
 }
@@ -155,6 +181,74 @@ export interface ConversationConflictItem {
 export interface ConversationConflictsResponse {
   consistencyScore: number;
   conflicts: ConversationConflictItem[];
+}
+
+export interface SkillDraftSummary {
+  draftId: string;
+  status: 'DRAFT' | 'SANDBOX_TESTING' | 'READY_FOR_REVIEW' | 'APPROVED' | 'REJECTED' | 'PUBLISHED';
+  reviewRequired?: boolean;
+}
+
+export interface SkillDraftSandboxResult {
+  testRunId: string;
+  status: 'PASSED' | 'FAILED';
+  passedCount: number;
+  failedCount: number;
+}
+
+export interface SkillRuntimeGrant {
+  id: string;
+  draftId: string;
+  sessionId: string;
+  status: 'ACTIVE' | 'REVOKED' | 'EXPIRED';
+  maxUseCount: number;
+  useCount: number;
+  expiresAt: string;
+  revokeReason?: string | null;
+  revokedAt?: string | null;
+}
+
+export interface SkillGovernanceOverview {
+  activeRuntimeGrants: number;
+  runtimeGrantsExpiringIn1h: number;
+  highRiskPendingReview: number;
+  draftStats: Array<{
+    riskLevel: 'LOW' | 'MEDIUM' | 'HIGH';
+    status: 'DRAFT' | 'SANDBOX_TESTING' | 'READY_FOR_REVIEW' | 'APPROVED' | 'REJECTED' | 'PUBLISHED';
+    _count: { _all: number };
+  }>;
+}
+
+export interface SkillGovernanceEvent {
+  id: string;
+  ownerUserId: string;
+  draftId?: string | null;
+  runtimeGrantId?: string | null;
+  eventType:
+    | 'DRAFT_CREATED'
+    | 'REVIEW_SUBMITTED'
+    | 'REVIEW_APPROVED'
+    | 'REVIEW_REJECTED'
+    | 'PUBLISHED'
+    | 'RUNTIME_GRANT_CREATED'
+    | 'RUNTIME_GRANT_USED'
+    | 'RUNTIME_GRANT_REVOKED'
+    | 'RUNTIME_GRANT_EXPIRED';
+  message: string;
+  payload?: Record<string, unknown> | null;
+  createdAt: string;
+}
+
+export interface ScheduleResolutionResult {
+  action: 'CREATE' | 'UPDATE' | 'PAUSE' | 'RESUME' | 'RUN';
+  subscriptionId: string;
+  status?: string;
+  cronExpr?: string;
+  timezone?: string;
+  nextRunAt?: string | null;
+  channel?: DeliveryChannel;
+  target?: string | null;
+  runId?: string;
 }
 
 const COPILOT_PROMPT_BINDING_TYPE = 'AGENT_COPILOT_PROMPTS';
@@ -289,19 +383,23 @@ export const useExportConversationResult = () => {
   });
 };
 
-export const useDeliverConversationEmail = () => {
+export const useDeliverConversation = () => {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async (payload: {
       sessionId: string;
       exportTaskId: string;
-      to: string[];
-      subject: string;
-      content: string;
+      channel: DeliveryChannel;
+      to?: string[];
+      target?: string;
+      subject?: string;
+      content?: string;
+      sendRawFile?: boolean;
+      metadata?: Record<string, unknown>;
     }) => {
       const { sessionId, ...body } = payload;
-      const res = await apiClient.post<DeliverEmailResponse>(
-        `/agent-conversations/sessions/${sessionId}/deliver/email`,
+      const res = await apiClient.post<DeliverResponse>(
+        `/agent-conversations/sessions/${sessionId}/deliver`,
         body,
       );
       return { sessionId, data: res.data };
@@ -498,3 +596,185 @@ export const useConversationConflicts = (sessionId?: string) =>
     },
     enabled: Boolean(sessionId),
   });
+
+export const useConversationAssets = (sessionId?: string) =>
+  useQuery<ConversationAsset[]>({
+    queryKey: ['agent-copilot', 'assets', sessionId],
+    queryFn: async () => {
+      const res = await apiClient.get<ConversationAsset[]>(`/agent-conversations/sessions/${sessionId}/assets`);
+      return res.data;
+    },
+    enabled: Boolean(sessionId),
+  });
+
+export const useReuseConversationAsset = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (payload: {
+      sessionId: string;
+      assetId: string;
+      message?: string;
+      contextPatch?: Record<string, unknown>;
+    }) => {
+      const { sessionId, assetId, ...body } = payload;
+      const res = await apiClient.post<TurnResponse>(
+        `/agent-conversations/sessions/${sessionId}/assets/${assetId}/reuse`,
+        body,
+      );
+      return { sessionId, data: res.data };
+    },
+    onSuccess: ({ sessionId }) => {
+      queryClient.invalidateQueries({ queryKey: ['agent-copilot', 'session', sessionId] });
+      queryClient.invalidateQueries({ queryKey: ['agent-copilot', 'sessions'] });
+      queryClient.invalidateQueries({ queryKey: ['agent-copilot', 'result', sessionId] });
+      queryClient.invalidateQueries({ queryKey: ['agent-copilot', 'assets', sessionId] });
+    },
+  });
+};
+
+export const useCreateSkillDraft = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (payload: {
+      sessionId: string;
+      gapType: string;
+      requiredCapability: string;
+      suggestedSkillCode: string;
+    }) => {
+      const { sessionId, ...body } = payload;
+      const res = await apiClient.post<SkillDraftSummary>(
+        `/agent-conversations/sessions/${sessionId}/capability-gap/skill-draft`,
+        body,
+      );
+      return { sessionId, data: res.data };
+    },
+    onSuccess: ({ sessionId }) => {
+      queryClient.invalidateQueries({ queryKey: ['agent-copilot', 'session', sessionId] });
+    },
+  });
+};
+
+export const useSandboxSkillDraft = () =>
+  useMutation({
+    mutationFn: async (payload: {
+      draftId: string;
+      testCases: Array<{ input: Record<string, unknown>; expectContains: string[] }>;
+    }) => {
+      const res = await apiClient.post<SkillDraftSandboxResult>(
+        `/agent-skills/drafts/${payload.draftId}/sandbox-test`,
+        {
+          testCases: payload.testCases,
+        },
+      );
+      return res.data;
+    },
+  });
+
+export const useSubmitSkillDraftReview = () =>
+  useMutation({
+    mutationFn: async (draftId: string) => {
+      const res = await apiClient.post<SkillDraftSummary>(`/agent-skills/drafts/${draftId}/submit-review`);
+      return res.data;
+    },
+  });
+
+export const useReviewSkillDraft = () =>
+  useMutation({
+    mutationFn: async (payload: { draftId: string; action: 'APPROVE' | 'REJECT'; comment?: string }) => {
+      const res = await apiClient.post<SkillDraftSummary>(`/agent-skills/drafts/${payload.draftId}/review`, {
+        action: payload.action,
+        comment: payload.comment,
+      });
+      return res.data;
+    },
+  });
+
+export const usePublishSkillDraft = () =>
+  useMutation({
+    mutationFn: async (draftId: string) => {
+      const res = await apiClient.post<SkillDraftSummary>(`/agent-skills/drafts/${draftId}/publish`);
+      return res.data;
+    },
+  });
+
+export const useSkillDraftRuntimeGrants = (draftId?: string) =>
+  useQuery<SkillRuntimeGrant[]>({
+    queryKey: ['agent-copilot', 'skill-runtime-grants', draftId],
+    queryFn: async () => {
+      const res = await apiClient.get<SkillRuntimeGrant[]>(`/agent-skills/drafts/${draftId}/runtime-grants`);
+      return res.data;
+    },
+    enabled: Boolean(draftId),
+  });
+
+export const useRevokeSkillRuntimeGrant = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (payload: { draftId: string; grantId: string; reason?: string }) => {
+      const res = await apiClient.post<SkillRuntimeGrant>(`/agent-skills/runtime-grants/${payload.grantId}/revoke`, {
+        reason: payload.reason,
+      });
+      return { draftId: payload.draftId, data: res.data };
+    },
+    onSuccess: ({ draftId }) => {
+      queryClient.invalidateQueries({ queryKey: ['agent-copilot', 'skill-runtime-grants', draftId] });
+    },
+  });
+};
+
+export const useConsumeSkillRuntimeGrant = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (payload: { draftId: string; grantId: string }) => {
+      const res = await apiClient.post<SkillRuntimeGrant>(`/agent-skills/runtime-grants/${payload.grantId}/use`);
+      return { draftId: payload.draftId, data: res.data };
+    },
+    onSuccess: ({ draftId }) => {
+      queryClient.invalidateQueries({ queryKey: ['agent-copilot', 'skill-runtime-grants', draftId] });
+      queryClient.invalidateQueries({ queryKey: ['agent-copilot', 'skill-governance-overview'] });
+    },
+  });
+};
+
+export const useSkillGovernanceOverview = () =>
+  useQuery<SkillGovernanceOverview>({
+    queryKey: ['agent-copilot', 'skill-governance-overview'],
+    queryFn: async () => {
+      const res = await apiClient.get<SkillGovernanceOverview>('/agent-skills/governance/overview');
+      return res.data;
+    },
+  });
+
+export const useSkillGovernanceEvents = (draftId?: string) =>
+  useQuery<SkillGovernanceEvent[]>({
+    queryKey: ['agent-copilot', 'skill-governance-events', draftId],
+    queryFn: async () => {
+      const res = await apiClient.get<SkillGovernanceEvent[]>('/agent-skills/governance/events', {
+        params: {
+          draftId,
+          limit: 20,
+        },
+      });
+      return res.data;
+    },
+    enabled: Boolean(draftId),
+  });
+
+export const useResolveScheduleCommand = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (payload: { sessionId: string; instruction: string }) => {
+      const { sessionId, ...body } = payload;
+      const res = await apiClient.post<ScheduleResolutionResult>(
+        `/agent-conversations/sessions/${sessionId}/schedules/resolve`,
+        body,
+      );
+      return { sessionId, data: res.data };
+    },
+    onSuccess: ({ sessionId }) => {
+      queryClient.invalidateQueries({ queryKey: ['agent-copilot', 'session', sessionId] });
+      queryClient.invalidateQueries({ queryKey: ['agent-copilot', 'result', sessionId] });
+      queryClient.invalidateQueries({ queryKey: ['agent-copilot', 'subscriptions', sessionId] });
+    },
+  });
+};

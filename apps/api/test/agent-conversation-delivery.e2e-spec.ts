@@ -122,6 +122,9 @@ async function main() {
   await new Promise<void>((resolve) => webhookServer.listen(0, '127.0.0.1', () => resolve()));
   const webhookPort = (webhookServer.address() as { port: number }).port;
   process.env.MAIL_DELIVERY_WEBHOOK_URL = `http://127.0.0.1:${webhookPort}`;
+  process.env.DINGTALK_DELIVERY_WEBHOOK_URL = `http://127.0.0.1:${webhookPort}`;
+  process.env.WECOM_DELIVERY_WEBHOOK_URL = `http://127.0.0.1:${webhookPort}`;
+  process.env.FEISHU_DELIVERY_WEBHOOK_URL = `http://127.0.0.1:${webhookPort}`;
 
   const app = await NestFactory.create(AgentConversationDeliveryE2eModule, { logger: ['error', 'warn'] });
   app.useGlobalPipes(new ZodValidationPipe());
@@ -224,6 +227,9 @@ async function main() {
         },
         body: JSON.stringify({
           message: '请分析最近一周东北玉米价格并输出 markdown 和 json。',
+          contextPatch: {
+            autoExecute: false,
+          },
         }),
       },
     );
@@ -281,6 +287,7 @@ async function main() {
 
     const deliver = await fetchJson<{
       deliveryTaskId: string;
+      channel: string;
       status: string;
       errorMessage?: string | null;
     }>(`${baseUrl}/agent-conversations/sessions/${conversationSessionId}/deliver/email`, {
@@ -298,13 +305,41 @@ async function main() {
     });
     assert.equal(deliver.status, 201);
     assert.equal(deliver.body.status, 'SENT');
+    assert.equal(deliver.body.channel, 'EMAIL');
     assert.ok(deliver.body.deliveryTaskId);
 
-    assert.ok(webhookPayloads.length > 0, '邮件 webhook 应至少被调用一次');
+    const deliverToDingTalk = await fetchJson<{
+      deliveryTaskId: string;
+      channel: string;
+      status: string;
+      errorMessage?: string | null;
+    }>(`${baseUrl}/agent-conversations/sessions/${conversationSessionId}/deliver`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-virtual-user-id': ownerUserId,
+      },
+      body: JSON.stringify({
+        exportTaskId: exportResult.body.exportTaskId,
+        channel: 'DINGTALK',
+        target: 'ops-group-01',
+        content: '请查收最新报告。',
+        sendRawFile: true,
+      }),
+    });
+    assert.equal(deliverToDingTalk.status, 201);
+    assert.equal(deliverToDingTalk.body.status, 'SENT');
+    assert.equal(deliverToDingTalk.body.channel, 'DINGTALK');
+
+    assert.ok(webhookPayloads.length > 1, '投递 webhook 应至少被调用两次');
     const payload = webhookPayloads[0];
+    const payload2 = webhookPayloads[1];
     assert.equal(payload.exportTaskId, exportResult.body.exportTaskId);
+    assert.equal(payload.channel, 'EMAIL');
     assert.equal(payload.subject, 'E2E Delivery');
     assert.ok(String((payload.attachment as Record<string, unknown>)?.downloadUrl ?? '').includes('/report-exports/'));
+    assert.equal(payload2.channel, 'DINGTALK');
+    assert.equal(payload2.target, 'ops-group-01');
   } finally {
     if (conversationSessionId) {
       await prisma.conversationSession.deleteMany({ where: { id: conversationSessionId } });
@@ -326,6 +361,9 @@ async function main() {
     await prisma.$disconnect();
     await new Promise<void>((resolve) => webhookServer.close(() => resolve()));
     delete process.env.MAIL_DELIVERY_WEBHOOK_URL;
+    delete process.env.DINGTALK_DELIVERY_WEBHOOK_URL;
+    delete process.env.WECOM_DELIVERY_WEBHOOK_URL;
+    delete process.env.FEISHU_DELIVERY_WEBHOOK_URL;
   }
 }
 
