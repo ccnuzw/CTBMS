@@ -91,6 +91,8 @@ type EphemeralCapabilityPolicy = {
   publishedSkillReuseThreshold: number;
   runtimeGrantTtlHours: number;
   runtimeGrantMaxUseCount: number;
+  replayRetryableErrorCodeAllowlist: string[];
+  replayNonRetryableErrorCodeBlocklist: string[];
 };
 
 type PromotionTaskStatus =
@@ -2216,6 +2218,7 @@ export class AgentConversationService {
       maxConcurrency?: number;
       maxRetries?: number;
       replayMode?: 'RETRYABLE_ONLY' | 'ALL_FAILED';
+      errorCodes?: string[];
     },
   ) {
     const session = await this.prisma.conversationSession.findFirst({
@@ -2255,6 +2258,12 @@ export class AgentConversationService {
     }
 
     const replayMode = dto?.replayMode === 'ALL_FAILED' ? 'ALL_FAILED' : 'RETRYABLE_ONLY';
+    const policy = await this.resolveEphemeralCapabilityPolicy(userId);
+    const requestedErrorCodes = Array.isArray(dto?.errorCodes)
+      ? dto.errorCodes
+          .map((item) => this.pickString(item)?.toUpperCase())
+          .filter((item): item is string => Boolean(item))
+      : [];
 
     const failedItems = this.toArray(payload.failed)
       .map((item) => this.toRecord(item))
@@ -2268,10 +2277,13 @@ export class AgentConversationService {
     const selectedFailedItems =
       replayMode === 'ALL_FAILED'
         ? failedItems
-        : failedItems.filter((item) => this.isRetryablePromotionFailure(item.code, item.message));
+        : failedItems.filter((item) => this.isRetryablePromotionFailure(item.code, item.message, policy));
+    const finalSelectedFailedItems = requestedErrorCodes.length
+      ? selectedFailedItems.filter((item) => requestedErrorCodes.includes((item.code ?? 'UNKNOWN').toUpperCase()))
+      : selectedFailedItems;
     const taskAssetIds = Array.from(
       new Set(
-        selectedFailedItems
+        finalSelectedFailedItems
           .map((item) => item.taskAssetId)
           .filter((value): value is string => Boolean(value)),
       ),
@@ -2291,6 +2303,7 @@ export class AgentConversationService {
       sourceFailedCount: failedItems.length,
       selectedReplayCount: taskAssetIds.length,
       replayMode,
+      selectedErrorCodes: requestedErrorCodes,
       replayResult,
     };
   }
@@ -2516,18 +2529,26 @@ export class AgentConversationService {
     return /fetch failed|timeout|temporarily unavailable|network|econnreset|etimedout/i.test(errorText);
   }
 
-  private isRetryablePromotionFailure(code: string | null, message: string | null): boolean {
+  private isRetryablePromotionFailure(
+    code: string | null,
+    message: string | null,
+    policy?: EphemeralCapabilityPolicy,
+  ): boolean {
     const normalizedCode = (code ?? '').toUpperCase();
-    if (
-      [
+    const blocklist =
+      policy?.replayNonRetryableErrorCodeBlocklist ?? [
         'CONV_PROMOTION_TASK_NOT_FOUND',
         'CONV_PROMOTION_TASK_ACTION_INVALID',
         'CONV_PROMOTION_TASK_PUBLISH_BLOCKED',
         'SKILL_REVIEWER_CONFLICT',
         'SKILL_HIGH_RISK_REVIEW_REQUIRED',
-      ].includes(normalizedCode)
-    ) {
+      ];
+    if (blocklist.includes(normalizedCode)) {
       return false;
+    }
+    const allowlist = policy?.replayRetryableErrorCodeAllowlist ?? [];
+    if (allowlist.includes(normalizedCode)) {
+      return true;
     }
     const text = `${code ?? ''} ${message ?? ''}`;
     return /fetch failed|timeout|temporarily unavailable|network|econnreset|etimedout|429|5\d{2}/i.test(text);
@@ -3618,6 +3639,14 @@ export class AgentConversationService {
       publishedSkillReuseThreshold: 0.76,
       runtimeGrantTtlHours: 24,
       runtimeGrantMaxUseCount: 30,
+      replayRetryableErrorCodeAllowlist: ['NETWORK_ERROR', 'TIMEOUT', 'FETCH_FAILED', 'HTTP_429', 'HTTP_5XX'],
+      replayNonRetryableErrorCodeBlocklist: [
+        'CONV_PROMOTION_TASK_NOT_FOUND',
+        'CONV_PROMOTION_TASK_ACTION_INVALID',
+        'CONV_PROMOTION_TASK_PUBLISH_BLOCKED',
+        'SKILL_REVIEWER_CONFLICT',
+        'SKILL_HIGH_RISK_REVIEW_REQUIRED',
+      ],
     };
 
     const binding = await this.prisma.userConfigBinding.findFirst({
@@ -3648,6 +3677,15 @@ export class AgentConversationService {
       }
       return Math.max(min, Math.min(max, Math.round(parsed)));
     };
+    const toStringArray = (value: unknown, fallback: string[]) => {
+      if (!Array.isArray(value)) {
+        return fallback;
+      }
+      const normalized = value
+        .map((item) => this.pickString(item)?.toUpperCase())
+        .filter((item): item is string => Boolean(item));
+      return normalized.length ? Array.from(new Set(normalized)) : fallback;
+    };
 
     return {
       draftSemanticReuseThreshold: toScore(metadata.draftSemanticReuseThreshold, defaults.draftSemanticReuseThreshold),
@@ -3661,6 +3699,14 @@ export class AgentConversationService {
         defaults.runtimeGrantMaxUseCount,
         1,
         200,
+      ),
+      replayRetryableErrorCodeAllowlist: toStringArray(
+        metadata.replayRetryableErrorCodeAllowlist,
+        defaults.replayRetryableErrorCodeAllowlist,
+      ),
+      replayNonRetryableErrorCodeBlocklist: toStringArray(
+        metadata.replayNonRetryableErrorCodeBlocklist,
+        defaults.replayNonRetryableErrorCodeBlocklist,
       ),
     };
   }

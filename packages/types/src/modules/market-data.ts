@@ -47,6 +47,61 @@ export const CreateReconciliationJobSchema = z.object({
   }),
 });
 
+export const ReconciliationJobStatusEnum = z.enum(['PENDING', 'RUNNING', 'DONE', 'FAILED']);
+
+export const ReconciliationJobSortByEnum = z.enum([
+  'createdAt',
+  'startedAt',
+  'finishedAt',
+  'status',
+  'dataset',
+]);
+
+export const SortOrderEnum = z.enum(['asc', 'desc']);
+
+const BooleanQuerySchema = z.preprocess((value) => {
+  if (typeof value === 'boolean') {
+    return value;
+  }
+  if (typeof value === 'string') {
+    const normalized = value.trim().toLowerCase();
+    if (['true', '1', 'yes', 'on'].includes(normalized)) {
+      return true;
+    }
+    if (['false', '0', 'no', 'off'].includes(normalized)) {
+      return false;
+    }
+  }
+  return value;
+}, z.boolean());
+
+export const ListReconciliationJobsQuerySchema = z
+  .object({
+    page: z.coerce.number().int().min(1).default(1),
+    pageSize: z.coerce.number().int().min(1).max(100).default(20),
+    dataset: ReconciliationDatasetEnum.optional(),
+    status: ReconciliationJobStatusEnum.optional(),
+    pass: BooleanQuerySchema.optional(),
+    createdAtFrom: z.string().datetime().optional(),
+    createdAtTo: z.string().datetime().optional(),
+    sortBy: ReconciliationJobSortByEnum.default('createdAt'),
+    sortOrder: SortOrderEnum.default('desc'),
+  })
+  .superRefine((value, ctx) => {
+    if (!value.createdAtFrom || !value.createdAtTo) {
+      return;
+    }
+    const from = new Date(value.createdAtFrom).getTime();
+    const to = new Date(value.createdAtTo).getTime();
+    if (from > to) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'createdAtFrom 必须小于或等于 createdAtTo',
+        path: ['createdAtFrom'],
+      });
+    }
+  });
+
 export const MarketDataQuerySchema = z.object({
   dataset: ReconciliationDatasetEnum,
   dimensions: z.record(z.unknown()).optional(),
@@ -120,6 +175,10 @@ export type ReconciliationDataset = z.infer<typeof ReconciliationDatasetEnum>;
 export type StandardizationPreviewDto = z.infer<typeof StandardizationPreviewSchema>;
 export type MarketDataLineageQueryDto = z.infer<typeof MarketDataLineageQuerySchema>;
 export type CreateReconciliationJobDto = z.infer<typeof CreateReconciliationJobSchema>;
+export type ReconciliationJobStatus = z.infer<typeof ReconciliationJobStatusEnum>;
+export type ReconciliationJobSortBy = z.infer<typeof ReconciliationJobSortByEnum>;
+export type SortOrder = z.infer<typeof SortOrderEnum>;
+export type ListReconciliationJobsQueryDto = z.infer<typeof ListReconciliationJobsQuerySchema>;
 export type MarketDataQueryDto = z.infer<typeof MarketDataQuerySchema>;
 export type AggregateOp = z.infer<typeof AggregateOpEnum>;
 export type MarketDataAggregateMetricDto = z.infer<typeof MarketDataAggregateMetricSchema>;

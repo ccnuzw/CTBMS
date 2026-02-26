@@ -20,7 +20,22 @@ import { randomUUID } from 'node:crypto';
 import { PrismaService } from '../../prisma';
 
 type StandardDataset = 'SPOT_PRICE' | 'FUTURES_QUOTE' | 'MARKET_EVENT';
+type ReconciliationJobStatus = 'PENDING' | 'RUNNING' | 'DONE' | 'FAILED';
+type ReconciliationListSortBy = 'createdAt' | 'startedAt' | 'finishedAt' | 'status' | 'dataset';
+type ReconciliationListSortOrder = 'asc' | 'desc';
 type AggregateOp = 'sum' | 'avg' | 'min' | 'max' | 'count';
+
+interface ListReconciliationJobsQueryInput {
+  page?: number;
+  pageSize?: number;
+  dataset?: ReconciliationDataset;
+  status?: ReconciliationJobStatus;
+  pass?: boolean;
+  createdAtFrom?: string;
+  createdAtTo?: string;
+  sortBy?: ReconciliationListSortBy;
+  sortOrder?: ReconciliationListSortOrder;
+}
 
 interface MarketDataAggregateMetricInput {
   field: string;
@@ -37,12 +52,13 @@ interface StandardizedQueryOptions {
 
 interface ReconciliationJob {
   jobId: string;
-  status: 'PENDING' | 'RUNNING' | 'DONE' | 'FAILED';
+  status: ReconciliationJobStatus;
   dataset: ReconciliationDataset;
   createdByUserId: string;
   createdAt: string;
   startedAt?: string;
   finishedAt?: string;
+  summaryPass?: boolean;
   summary?: ReconciliationSummaryDto;
   sampleDiffs?: Array<Record<string, unknown>>;
   error?: string;
@@ -57,12 +73,40 @@ interface PersistedReconciliationJobRow {
   startedAt: unknown;
   finishedAt: unknown;
   summary: unknown;
+  summaryPass: unknown;
   errorMessage: string | null;
 }
 
 interface PersistedReconciliationDiffRow {
   payload: unknown;
 }
+
+interface ReconciliationJobListResult {
+  items: Array<{
+    jobId: string;
+    status: ReconciliationJobStatus;
+    dataset: ReconciliationDataset;
+    createdAt: string;
+    startedAt?: string;
+    finishedAt?: string;
+    summaryPass?: boolean;
+    summary?: ReconciliationSummaryDto;
+    error?: string;
+  }>;
+  page: number;
+  pageSize: number;
+  total: number;
+  totalPages: number;
+  storage: 'database' | 'in-memory';
+}
+
+const RECONCILIATION_SORT_COLUMN_MAP: Record<ReconciliationListSortBy, string> = {
+  createdAt: '"createdAt"',
+  startedAt: '"startedAt"',
+  finishedAt: '"finishedAt"',
+  status: '"status"',
+  dataset: '"dataset"',
+};
 
 const COMMODITY_CODE_MAP: Record<string, string> = {
   玉米: 'CORN',
@@ -321,6 +365,7 @@ export class MarketDataService {
 
       const summary = await this.runReconciliation(dto);
       job.summary = summary.summary;
+      job.summaryPass = this.resolveSummaryPass(job.summary);
       job.sampleDiffs = summary.sampleDiffs;
       job.status = 'DONE';
       job.finishedAt = new Date().toISOString();
@@ -343,6 +388,81 @@ export class MarketDataService {
     };
   }
 
+  async listReconciliationJobs(userId: string, query: ListReconciliationJobsQueryInput) {
+    const page = Math.max(1, query.page ?? 1);
+    const pageSize = Math.min(100, Math.max(1, query.pageSize ?? 20));
+    const dataset = query.dataset;
+    const status = query.status;
+    const pass = query.pass;
+    const createdAtFrom = this.parseOptionalDate(query.createdAtFrom);
+    const createdAtTo = this.parseOptionalDate(query.createdAtTo);
+    const sortBy = this.normalizeReconciliationSortBy(query.sortBy);
+    const sortOrder = this.normalizeReconciliationSortOrder(query.sortOrder);
+
+    if (createdAtFrom && createdAtTo && createdAtFrom.getTime() > createdAtTo.getTime()) {
+      throw new BadRequestException('createdAtFrom must be <= createdAtTo');
+    }
+
+    const persisted = await this.listPersistedReconciliationJobs(userId, page, pageSize, {
+      dataset,
+      status,
+      pass,
+      createdAtFrom,
+      createdAtTo,
+      sortBy,
+      sortOrder,
+    });
+    if (persisted) {
+      return persisted;
+    }
+
+    const filteredJobs = Array.from(this.reconciliationJobs.values())
+      .filter((job) => job.createdByUserId === userId)
+      .filter((job) => (!dataset ? true : job.dataset === dataset))
+      .filter((job) => (!status ? true : job.status === status))
+      .filter((job) =>
+        pass === undefined ? true : this.resolveSummaryPass(job.summary, job.summaryPass) === pass,
+      )
+      .filter((job) => {
+        const createdAtMs = Date.parse(job.createdAt);
+        if (!Number.isFinite(createdAtMs)) {
+          return false;
+        }
+        if (createdAtFrom && createdAtMs < createdAtFrom.getTime()) {
+          return false;
+        }
+        if (createdAtTo && createdAtMs > createdAtTo.getTime()) {
+          return false;
+        }
+        return true;
+      })
+      .sort((a, b) => this.compareReconciliationJobs(a, b, sortBy, sortOrder));
+
+    const total = filteredJobs.length;
+    const totalPages = Math.ceil(total / pageSize) || 1;
+    const start = (page - 1) * pageSize;
+    const items = filteredJobs.slice(start, start + pageSize).map((job) => ({
+      jobId: job.jobId,
+      status: job.status,
+      dataset: job.dataset,
+      createdAt: job.createdAt,
+      startedAt: job.startedAt,
+      finishedAt: job.finishedAt,
+      summaryPass: this.resolveSummaryPass(job.summary, job.summaryPass),
+      summary: job.summary,
+      error: job.error,
+    }));
+
+    return {
+      items,
+      page,
+      pageSize,
+      total,
+      totalPages,
+      storage: 'in-memory' as const,
+    };
+  }
+
   async getReconciliationJob(userId: string, jobId: string) {
     const persisted = await this.findPersistedReconciliationJob(jobId);
     if (persisted) {
@@ -357,6 +477,7 @@ export class MarketDataService {
         createdAt: persisted.createdAt,
         startedAt: persisted.startedAt,
         finishedAt: persisted.finishedAt,
+        summaryPass: this.resolveSummaryPass(persisted.summary, persisted.summaryPass),
         summary: persisted.summary,
         sampleDiffs: persisted.sampleDiffs,
         error: persisted.error,
@@ -379,6 +500,7 @@ export class MarketDataService {
       createdAt: job.createdAt,
       startedAt: job.startedAt,
       finishedAt: job.finishedAt,
+      summaryPass: this.resolveSummaryPass(job.summary, job.summaryPass),
       summary: job.summary,
       sampleDiffs: job.sampleDiffs ?? [],
       error: job.error,
@@ -501,6 +623,497 @@ export class MarketDataService {
     }
 
     return Math.max(...numericValues);
+  }
+
+  private async persistReconciliationJobSnapshot(
+    job: ReconciliationJob,
+    dto?: CreateReconciliationJobDto,
+  ) {
+    if (this.reconciliationPersistenceUnavailable) {
+      return;
+    }
+
+    const timeRangeFrom = dto?.timeRange?.from ? new Date(dto.timeRange.from) : null;
+    const timeRangeTo = dto?.timeRange?.to ? new Date(dto.timeRange.to) : null;
+
+    const safeFrom =
+      timeRangeFrom && Number.isFinite(timeRangeFrom.getTime())
+        ? timeRangeFrom
+        : (null as Date | null);
+    const safeTo =
+      timeRangeTo && Number.isFinite(timeRangeTo.getTime()) ? timeRangeTo : (null as Date | null);
+
+    const dimensions = dto?.dimensions ? JSON.stringify(dto.dimensions) : null;
+    const threshold = dto?.threshold ? JSON.stringify(dto.threshold) : null;
+    const summary = job.summary ? JSON.stringify(job.summary) : null;
+    const summaryPass = this.resolveSummaryPass(job.summary) ?? null;
+
+    try {
+      await this.prisma.$executeRawUnsafe(
+        `INSERT INTO "DataReconciliationJob"
+          ("id", "jobId", "status", "dataset", "timeRangeFrom", "timeRangeTo", "dimensions", "threshold", "summary", "summaryPass", "errorMessage", "createdByUserId", "createdAt", "startedAt", "finishedAt", "updatedAt")
+         VALUES
+          ($1, $2, $3::"ReconcileJobStatus", $4, $5, $6, $7::jsonb, $8::jsonb, $9::jsonb, $10, $11, $12, $13, $14, $15, $16)
+         ON CONFLICT ("jobId") DO UPDATE SET
+          "status" = EXCLUDED."status",
+          "dataset" = EXCLUDED."dataset",
+          "timeRangeFrom" = COALESCE(EXCLUDED."timeRangeFrom", "DataReconciliationJob"."timeRangeFrom"),
+          "timeRangeTo" = COALESCE(EXCLUDED."timeRangeTo", "DataReconciliationJob"."timeRangeTo"),
+          "dimensions" = COALESCE(EXCLUDED."dimensions", "DataReconciliationJob"."dimensions"),
+          "threshold" = COALESCE(EXCLUDED."threshold", "DataReconciliationJob"."threshold"),
+          "summary" = EXCLUDED."summary",
+          "summaryPass" = EXCLUDED."summaryPass",
+          "errorMessage" = EXCLUDED."errorMessage",
+          "startedAt" = EXCLUDED."startedAt",
+          "finishedAt" = EXCLUDED."finishedAt",
+          "updatedAt" = EXCLUDED."updatedAt"`,
+        job.jobId,
+        job.jobId,
+        job.status,
+        job.dataset,
+        safeFrom,
+        safeTo,
+        dimensions,
+        threshold,
+        summary,
+        summaryPass,
+        job.error ?? null,
+        job.createdByUserId,
+        new Date(job.createdAt),
+        job.startedAt ? new Date(job.startedAt) : null,
+        job.finishedAt ? new Date(job.finishedAt) : null,
+        new Date(),
+      );
+    } catch (error) {
+      if (this.isReconciliationPersistenceMissingTableError(error)) {
+        this.disableReconciliationPersistence('persist snapshot', error);
+        return;
+      }
+      this.logger.error(
+        `Persist reconciliation snapshot failed for job ${job.jobId}: ${this.stringifyError(error)}`,
+      );
+    }
+  }
+
+  private async replacePersistedReconciliationDiffs(
+    jobId: string,
+    sampleDiffs: Array<Record<string, unknown>>,
+  ) {
+    if (this.reconciliationPersistenceUnavailable) {
+      return;
+    }
+
+    try {
+      await this.prisma.$executeRawUnsafe(
+        `DELETE FROM "DataReconciliationDiff" WHERE "jobId" = $1`,
+        jobId,
+      );
+
+      for (const diff of sampleDiffs) {
+        const diffType = typeof diff.diffType === 'string' ? diff.diffType : null;
+        const businessKey = typeof diff.businessKey === 'string' ? diff.businessKey : null;
+        await this.prisma.$executeRawUnsafe(
+          `INSERT INTO "DataReconciliationDiff"
+            ("id", "jobId", "diffType", "businessKey", "payload", "createdAt")
+           VALUES
+            ($1, $2, $3, $4, $5::jsonb, $6)`,
+          randomUUID(),
+          jobId,
+          diffType,
+          businessKey,
+          JSON.stringify(diff),
+          new Date(),
+        );
+      }
+    } catch (error) {
+      if (this.isReconciliationPersistenceMissingTableError(error)) {
+        this.disableReconciliationPersistence('persist diffs', error);
+        return;
+      }
+      this.logger.error(
+        `Persist reconciliation diffs failed for job ${jobId}: ${this.stringifyError(error)}`,
+      );
+    }
+  }
+
+  private async listPersistedReconciliationJobs(
+    userId: string,
+    page: number,
+    pageSize: number,
+    options: {
+      dataset?: ReconciliationDataset;
+      status?: ReconciliationJobStatus;
+      pass?: boolean;
+      createdAtFrom?: Date;
+      createdAtTo?: Date;
+      sortBy: ReconciliationListSortBy;
+      sortOrder: ReconciliationListSortOrder;
+    },
+  ): Promise<ReconciliationJobListResult | null> {
+    if (this.reconciliationPersistenceUnavailable) {
+      return null;
+    }
+
+    try {
+      const { dataset, status, pass, createdAtFrom, createdAtTo, sortBy, sortOrder } = options;
+      const whereParts: string[] = ['"createdByUserId" = $1'];
+      const whereParams: unknown[] = [userId];
+
+      if (dataset) {
+        whereParts.push(`"dataset" = $${whereParams.length + 1}`);
+        whereParams.push(dataset);
+      }
+      if (status) {
+        whereParts.push(`"status" = $${whereParams.length + 1}::"ReconcileJobStatus"`);
+        whereParams.push(status);
+      }
+      if (pass !== undefined) {
+        whereParts.push(`"summaryPass" = $${whereParams.length + 1}`);
+        whereParams.push(pass);
+      }
+      if (createdAtFrom) {
+        whereParts.push(`"createdAt" >= $${whereParams.length + 1}`);
+        whereParams.push(createdAtFrom);
+      }
+      if (createdAtTo) {
+        whereParts.push(`"createdAt" <= $${whereParams.length + 1}`);
+        whereParams.push(createdAtTo);
+      }
+
+      const whereClause = `WHERE ${whereParts.join(' AND ')}`;
+      const orderByColumn = RECONCILIATION_SORT_COLUMN_MAP[sortBy];
+      const orderByDirection = sortOrder === 'asc' ? 'ASC' : 'DESC';
+
+      const totalRows = await this.prisma.$queryRawUnsafe<Array<{ total: number | string }>>(
+        `SELECT COUNT(*)::int AS "total"
+         FROM "DataReconciliationJob"
+         ${whereClause}`,
+        ...whereParams,
+      );
+
+      const total = Number(totalRows[0]?.total ?? 0);
+      const totalPages = Math.ceil(total / pageSize) || 1;
+      const offset = (page - 1) * pageSize;
+
+      const rows = await this.prisma.$queryRawUnsafe<PersistedReconciliationJobRow[]>(
+        `SELECT
+           "jobId",
+           "status",
+           "dataset",
+           "createdByUserId",
+           "createdAt",
+           "startedAt",
+           "finishedAt",
+           "summary",
+           "summaryPass",
+           "errorMessage"
+         FROM "DataReconciliationJob"
+         ${whereClause}
+         ORDER BY ${orderByColumn} ${orderByDirection}, "createdAt" DESC, "jobId" DESC
+         LIMIT $${whereParams.length + 1}
+         OFFSET $${whereParams.length + 2}`,
+        ...whereParams,
+        pageSize,
+        offset,
+      );
+
+      const items = rows.map((row) => {
+        const summary = this.parseJsonValue<ReconciliationSummaryDto>(row.summary);
+        return {
+          jobId: row.jobId,
+          status: this.normalizeReconciliationStatus(row.status),
+          dataset: this.normalizeReconciliationDataset(row.dataset),
+          createdAt: this.toIsoString(row.createdAt) ?? new Date().toISOString(),
+          startedAt: this.toIsoString(row.startedAt),
+          finishedAt: this.toIsoString(row.finishedAt),
+          summaryPass: this.resolveSummaryPass(summary, row.summaryPass),
+          summary,
+          error: row.errorMessage ?? undefined,
+        };
+      });
+
+      return {
+        items,
+        page,
+        pageSize,
+        total,
+        totalPages,
+        storage: 'database',
+      };
+    } catch (error) {
+      if (this.isReconciliationPersistenceMissingTableError(error)) {
+        this.disableReconciliationPersistence('list persisted jobs', error);
+        return null;
+      }
+      this.logger.error(`List persisted reconciliation jobs failed: ${this.stringifyError(error)}`);
+      return null;
+    }
+  }
+
+  private async findPersistedReconciliationJob(jobId: string): Promise<ReconciliationJob | null> {
+    if (this.reconciliationPersistenceUnavailable) {
+      return null;
+    }
+
+    try {
+      const rows = await this.prisma.$queryRawUnsafe<PersistedReconciliationJobRow[]>(
+        `SELECT
+           "jobId",
+           "status",
+           "dataset",
+           "createdByUserId",
+           "createdAt",
+           "startedAt",
+           "finishedAt",
+           "summary",
+           "summaryPass",
+           "errorMessage"
+         FROM "DataReconciliationJob"
+         WHERE "jobId" = $1
+         LIMIT 1`,
+        jobId,
+      );
+
+      if (rows.length === 0) {
+        return null;
+      }
+
+      const diffRows = await this.prisma.$queryRawUnsafe<PersistedReconciliationDiffRow[]>(
+        `SELECT "payload"
+         FROM "DataReconciliationDiff"
+         WHERE "jobId" = $1
+         ORDER BY "createdAt" ASC
+         LIMIT 20`,
+        jobId,
+      );
+
+      const row = rows[0];
+      const summary = this.parseJsonValue<ReconciliationSummaryDto>(row.summary);
+      return {
+        jobId: row.jobId,
+        status: this.normalizeReconciliationStatus(row.status),
+        dataset: this.normalizeReconciliationDataset(row.dataset),
+        createdByUserId: row.createdByUserId,
+        createdAt: this.toIsoString(row.createdAt) ?? new Date().toISOString(),
+        startedAt: this.toIsoString(row.startedAt),
+        finishedAt: this.toIsoString(row.finishedAt),
+        summaryPass: this.resolveSummaryPass(summary, row.summaryPass),
+        summary,
+        sampleDiffs: diffRows
+          .map((item) => this.parseJsonValue<Record<string, unknown>>(item.payload))
+          .filter((item): item is Record<string, unknown> => !!item),
+        error: row.errorMessage ?? undefined,
+      };
+    } catch (error) {
+      if (this.isReconciliationPersistenceMissingTableError(error)) {
+        this.disableReconciliationPersistence('read persisted job', error);
+        return null;
+      }
+      this.logger.error(`Read persisted reconciliation job failed: ${this.stringifyError(error)}`);
+      return null;
+    }
+  }
+
+  private resolveSummaryPass(
+    summary?: ReconciliationSummaryDto,
+    rawSummaryPass?: unknown,
+  ): boolean | undefined {
+    const parsedSummaryPass = this.parseOptionalBoolean(rawSummaryPass);
+    if (parsedSummaryPass !== undefined) {
+      return parsedSummaryPass;
+    }
+    if (summary && typeof summary.pass === 'boolean') {
+      return summary.pass;
+    }
+    return undefined;
+  }
+
+  private parseOptionalBoolean(value: unknown): boolean | undefined {
+    if (typeof value === 'boolean') {
+      return value;
+    }
+    if (typeof value === 'number') {
+      if (value === 1) {
+        return true;
+      }
+      if (value === 0) {
+        return false;
+      }
+      return undefined;
+    }
+    if (typeof value === 'string') {
+      const normalized = value.trim().toLowerCase();
+      if (['true', '1', 'yes', 'on'].includes(normalized)) {
+        return true;
+      }
+      if (['false', '0', 'no', 'off'].includes(normalized)) {
+        return false;
+      }
+    }
+    return undefined;
+  }
+
+  private parseOptionalDate(value: string | undefined): Date | undefined {
+    if (!value) {
+      return undefined;
+    }
+    const parsed = new Date(value);
+    if (!Number.isFinite(parsed.getTime())) {
+      throw new BadRequestException(`Invalid datetime value: ${value}`);
+    }
+    return parsed;
+  }
+
+  private normalizeReconciliationSortBy(sortBy?: string): ReconciliationListSortBy {
+    if (!sortBy) {
+      return 'createdAt';
+    }
+    const candidate = sortBy as ReconciliationListSortBy;
+    if (Object.prototype.hasOwnProperty.call(RECONCILIATION_SORT_COLUMN_MAP, candidate)) {
+      return candidate;
+    }
+    return 'createdAt';
+  }
+
+  private normalizeReconciliationSortOrder(sortOrder?: string): ReconciliationListSortOrder {
+    if (!sortOrder) {
+      return 'desc';
+    }
+    return sortOrder.toLowerCase() === 'asc' ? 'asc' : 'desc';
+  }
+
+  private compareReconciliationJobs(
+    a: ReconciliationJob,
+    b: ReconciliationJob,
+    sortBy: ReconciliationListSortBy,
+    sortOrder: ReconciliationListSortOrder,
+  ): number {
+    const aValue = this.getReconciliationSortValue(a, sortBy);
+    const bValue = this.getReconciliationSortValue(b, sortBy);
+    const direction = sortOrder === 'asc' ? 1 : -1;
+    const tieBreaker =
+      sortOrder === 'asc'
+        ? a.createdAt.localeCompare(b.createdAt)
+        : b.createdAt.localeCompare(a.createdAt);
+
+    if (aValue === null && bValue === null) {
+      return tieBreaker;
+    }
+    if (aValue === null) {
+      return 1;
+    }
+    if (bValue === null) {
+      return -1;
+    }
+
+    if (aValue < bValue) {
+      return -1 * direction;
+    }
+    if (aValue > bValue) {
+      return 1 * direction;
+    }
+
+    return tieBreaker;
+  }
+
+  private getReconciliationSortValue(
+    job: ReconciliationJob,
+    sortBy: ReconciliationListSortBy,
+  ): number | string | null {
+    if (sortBy === 'status') {
+      return job.status;
+    }
+    if (sortBy === 'dataset') {
+      return job.dataset;
+    }
+
+    const value =
+      sortBy === 'createdAt'
+        ? job.createdAt
+        : sortBy === 'startedAt'
+          ? job.startedAt
+          : job.finishedAt;
+    if (!value) {
+      return null;
+    }
+
+    const timestamp = Date.parse(value);
+    return Number.isFinite(timestamp) ? timestamp : null;
+  }
+
+  private normalizeReconciliationStatus(status: string): ReconciliationJob['status'] {
+    if (status === 'PENDING' || status === 'RUNNING' || status === 'DONE' || status === 'FAILED') {
+      return status;
+    }
+    return 'FAILED';
+  }
+
+  private normalizeReconciliationDataset(dataset: string): ReconciliationDataset {
+    if (dataset === 'SPOT_PRICE' || dataset === 'FUTURES_QUOTE' || dataset === 'MARKET_EVENT') {
+      return dataset;
+    }
+    return 'SPOT_PRICE';
+  }
+
+  private toIsoString(value: unknown): string | undefined {
+    if (value === null || value === undefined) {
+      return undefined;
+    }
+    const parsed = value instanceof Date ? value : new Date(String(value));
+    if (!Number.isFinite(parsed.getTime())) {
+      return undefined;
+    }
+    return parsed.toISOString();
+  }
+
+  private parseJsonValue<T>(value: unknown): T | undefined {
+    if (value === null || value === undefined) {
+      return undefined;
+    }
+    if (typeof value === 'string') {
+      try {
+        return JSON.parse(value) as T;
+      } catch {
+        return undefined;
+      }
+    }
+    return value as T;
+  }
+
+  private isReconciliationPersistenceMissingTableError(error: unknown) {
+    const code =
+      typeof error === 'object' && error !== null && 'code' in error
+        ? String((error as { code?: unknown }).code)
+        : '';
+    if (code === 'P2021') {
+      return true;
+    }
+
+    const message = this.stringifyError(error).toLowerCase();
+    const containsTable =
+      message.includes('datareconciliationjob') || message.includes('datareconciliationdiff');
+    const containsEnum = message.includes('reconcilejobstatus');
+    const missingTableHint =
+      message.includes('does not exist') ||
+      message.includes('relation') ||
+      message.includes('undefined') ||
+      message.includes('42704') ||
+      message.includes('p2021');
+    return (containsTable || containsEnum) && missingTableHint;
+  }
+
+  private disableReconciliationPersistence(operation: string, error: unknown) {
+    if (this.reconciliationPersistenceUnavailable) {
+      return;
+    }
+    this.reconciliationPersistenceUnavailable = true;
+    this.logger.warn(
+      `Reconciliation persistence disabled (${operation}): ${this.stringifyError(error)}`,
+    );
+  }
+
+  private stringifyError(error: unknown): string {
+    return error instanceof Error ? error.message : String(error);
   }
 
   private async runReconciliation(dto: CreateReconciliationJobDto): Promise<{

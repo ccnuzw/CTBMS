@@ -298,7 +298,9 @@ Query:
     "draftSemanticReuseThreshold": 0.72,
     "publishedSkillReuseThreshold": 0.76,
     "runtimeGrantTtlHours": 24,
-    "runtimeGrantMaxUseCount": 30
+    "runtimeGrantMaxUseCount": 30,
+    "replayRetryableErrorCodeAllowlist": ["NETWORK_ERROR", "TIMEOUT", "FETCH_FAILED", "HTTP_429", "HTTP_5XX"],
+    "replayNonRetryableErrorCodeBlocklist": ["CONV_PROMOTION_TASK_NOT_FOUND", "CONV_PROMOTION_TASK_ACTION_INVALID", "CONV_PROMOTION_TASK_PUBLISH_BLOCKED", "SKILL_REVIEWER_CONFLICT", "SKILL_HIGH_RISK_REVIEW_REQUIRED"]
   },
   "stats": {
     "draftStatus": [{ "key": "DRAFT", "count": 4 }],
@@ -323,7 +325,9 @@ Query:
     "draftSemanticReuseThreshold": 0.72,
     "publishedSkillReuseThreshold": 0.76,
     "runtimeGrantTtlHours": 24,
-    "runtimeGrantMaxUseCount": 30
+    "runtimeGrantMaxUseCount": 30,
+    "replayRetryableErrorCodeAllowlist": ["NETWORK_ERROR", "TIMEOUT", "FETCH_FAILED", "HTTP_429", "HTTP_5XX"],
+    "replayNonRetryableErrorCodeBlocklist": ["CONV_PROMOTION_TASK_NOT_FOUND", "CONV_PROMOTION_TASK_ACTION_INVALID", "CONV_PROMOTION_TASK_PUBLISH_BLOCKED", "SKILL_REVIEWER_CONFLICT", "SKILL_HIGH_RISK_REVIEW_REQUIRED"]
   }
 }
 ```
@@ -345,7 +349,9 @@ Query:
     "draftSemanticReuseThreshold": 0.72,
     "publishedSkillReuseThreshold": 0.76,
     "runtimeGrantTtlHours": 24,
-    "runtimeGrantMaxUseCount": 30
+    "runtimeGrantMaxUseCount": 30,
+    "replayRetryableErrorCodeAllowlist": ["NETWORK_ERROR", "TIMEOUT", "FETCH_FAILED", "HTTP_429", "HTTP_5XX"],
+    "replayNonRetryableErrorCodeBlocklist": ["CONV_PROMOTION_TASK_NOT_FOUND", "CONV_PROMOTION_TASK_ACTION_INVALID", "CONV_PROMOTION_TASK_PUBLISH_BLOCKED", "SKILL_REVIEWER_CONFLICT", "SKILL_HIGH_RISK_REVIEW_REQUIRED"]
   },
   "recommendations": {
     "promoteDraftCandidates": [
@@ -460,6 +466,7 @@ Query:
 ```json
 {
   "replayMode": "RETRYABLE_ONLY",
+  "errorCodes": ["HTTP_429", "FETCH_FAILED"],
   "maxConcurrency": 6,
   "maxRetries": 1
 }
@@ -479,6 +486,7 @@ Query:
   "sourceFailedCount": 2,
   "selectedReplayCount": 1,
   "replayMode": "RETRYABLE_ONLY",
+  "selectedErrorCodes": ["HTTP_429"],
   "replayResult": {
     "action": "SYNC_DRAFT_STATUS",
     "batchId": "b5e8...",

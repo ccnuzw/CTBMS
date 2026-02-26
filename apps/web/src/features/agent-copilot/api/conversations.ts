@@ -434,6 +434,7 @@ export interface EphemeralPromotionTaskBatchReplayResult {
   sourceFailedCount: number;
   selectedReplayCount: number;
   replayMode: 'RETRYABLE_ONLY' | 'ALL_FAILED';
+  selectedErrorCodes?: string[];
   replayResult: EphemeralPromotionTaskBatchUpdateResult;
 }
 
@@ -487,6 +488,8 @@ export interface EphemeralCapabilityPolicy {
   publishedSkillReuseThreshold: number;
   runtimeGrantTtlHours: number;
   runtimeGrantMaxUseCount: number;
+  replayRetryableErrorCodeAllowlist: string[];
+  replayNonRetryableErrorCodeBlocklist: string[];
 }
 
 const capabilityRoutingPolicyTargetId = 'agent-capability-routing-policy-default';
@@ -1437,6 +1440,7 @@ export const useReplayFailedEphemeralPromotionTaskBatch = () => {
       maxConcurrency?: number;
       maxRetries?: number;
       replayMode?: 'RETRYABLE_ONLY' | 'ALL_FAILED';
+      errorCodes?: string[];
     }) => {
       const { sessionId, batchAssetId, ...body } = payload;
       const res = await apiClient.post<EphemeralPromotionTaskBatchReplayResult>(

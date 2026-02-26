@@ -318,7 +318,45 @@
 }
 ```
 
-### 3.5.2 查询对账任务结果
+### 3.5.2 查询对账任务列表
+
+- `GET /market-data/reconciliation/jobs?page=1&pageSize=20&dataset=SPOT_PRICE&status=DONE&pass=true&createdAtFrom=2026-02-01T00:00:00Z&createdAtTo=2026-02-29T23:59:59Z&sortBy=createdAt&sortOrder=desc`
+
+说明：
+
+- `sortBy` 白名单：`createdAt | startedAt | finishedAt | status | dataset`
+- `sortOrder`：`asc | desc`
+- `pass`：可选，`true | false`，用于筛选对账结论（`summary.pass`）
+
+响应：
+
+```json
+{
+  "items": [
+    {
+      "jobId": "rc_job_xxx",
+      "status": "DONE",
+      "dataset": "SPOT_PRICE",
+      "createdAt": "2026-02-27T08:00:00.000Z",
+      "startedAt": "2026-02-27T08:00:01.000Z",
+      "finishedAt": "2026-02-27T08:00:20.000Z",
+      "summary": {
+        "diffRate": 0.004,
+        "missingRate": 0.001,
+        "conflictRate": 0.012,
+        "pass": true
+      }
+    }
+  ],
+  "page": 1,
+  "pageSize": 20,
+  "total": 8,
+  "totalPages": 1,
+  "storage": "database"
+}
+```
+
+### 3.5.3 查询单个对账任务结果
 
 - `GET /market-data/reconciliation/jobs/:jobId`
 

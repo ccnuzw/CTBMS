@@ -122,6 +122,46 @@ const DEFAULT_EPHEMERAL_CAPABILITY_POLICY: EphemeralCapabilityPolicy = {
   publishedSkillReuseThreshold: 0.76,
   runtimeGrantTtlHours: 24,
   runtimeGrantMaxUseCount: 30,
+  replayRetryableErrorCodeAllowlist: ['NETWORK_ERROR', 'TIMEOUT', 'FETCH_FAILED', 'HTTP_429', 'HTTP_5XX'],
+  replayNonRetryableErrorCodeBlocklist: [
+    'CONV_PROMOTION_TASK_NOT_FOUND',
+    'CONV_PROMOTION_TASK_ACTION_INVALID',
+    'CONV_PROMOTION_TASK_PUBLISH_BLOCKED',
+    'SKILL_REVIEWER_CONFLICT',
+    'SKILL_HIGH_RISK_REVIEW_REQUIRED',
+  ],
+};
+
+const RETRY_POLICY_PRESET_NETWORK: Pick<
+  EphemeralCapabilityPolicy,
+  'replayRetryableErrorCodeAllowlist' | 'replayNonRetryableErrorCodeBlocklist'
+> = {
+  replayRetryableErrorCodeAllowlist: ['NETWORK_ERROR', 'TIMEOUT', 'FETCH_FAILED', 'HTTP_429', 'HTTP_5XX'],
+  replayNonRetryableErrorCodeBlocklist: [
+    'CONV_PROMOTION_TASK_NOT_FOUND',
+    'CONV_PROMOTION_TASK_ACTION_INVALID',
+    'CONV_PROMOTION_TASK_PUBLISH_BLOCKED',
+    'SKILL_REVIEWER_CONFLICT',
+    'SKILL_HIGH_RISK_REVIEW_REQUIRED',
+  ],
+};
+
+const RETRY_POLICY_PRESET_STRICT: Pick<
+  EphemeralCapabilityPolicy,
+  'replayRetryableErrorCodeAllowlist' | 'replayNonRetryableErrorCodeBlocklist'
+> = {
+  replayRetryableErrorCodeAllowlist: ['HTTP_429'],
+  replayNonRetryableErrorCodeBlocklist: [
+    'CONV_PROMOTION_TASK_NOT_FOUND',
+    'CONV_PROMOTION_TASK_ACTION_INVALID',
+    'CONV_PROMOTION_TASK_PUBLISH_BLOCKED',
+    'SKILL_REVIEWER_CONFLICT',
+    'SKILL_HIGH_RISK_REVIEW_REQUIRED',
+    'HTTP_5XX',
+    'NETWORK_ERROR',
+    'TIMEOUT',
+    'FETCH_FAILED',
+  ],
 };
 
 type QuickPromptTemplate = {
@@ -722,16 +762,11 @@ export const AgentCopilotPage: React.FC = () => {
     ephemeralPromotionTaskBatches.find((item) => item.batchAssetId === selectedPromotionBatchAssetId) ?? null;
   const isRetryableBatchFailure = (item: { code?: string | null; message?: string | null }) => {
     const code = String(item.code || '').toUpperCase();
-    if (
-      [
-        'CONV_PROMOTION_TASK_NOT_FOUND',
-        'CONV_PROMOTION_TASK_ACTION_INVALID',
-        'CONV_PROMOTION_TASK_PUBLISH_BLOCKED',
-        'SKILL_REVIEWER_CONFLICT',
-        'SKILL_HIGH_RISK_REVIEW_REQUIRED',
-      ].includes(code)
-    ) {
+    if ((ephemeralCapabilityPolicy.replayNonRetryableErrorCodeBlocklist || []).includes(code)) {
       return false;
+    }
+    if ((ephemeralCapabilityPolicy.replayRetryableErrorCodeAllowlist || []).includes(code)) {
+      return true;
     }
     const text = `${item.code || ''} ${item.message || ''}`;
     return /fetch failed|timeout|temporarily unavailable|network|econnreset|etimedout|429|5\d{2}/i.test(text);
@@ -858,6 +893,15 @@ export const AgentCopilotPage: React.FC = () => {
       }
       return Math.max(min, Math.min(max, Math.round(parsed)));
     };
+    const parseStringArray = (value: unknown, fallback: string[]) => {
+      if (!Array.isArray(value)) {
+        return fallback;
+      }
+      const normalized = value
+        .map((item) => (typeof item === 'string' ? item.trim().toUpperCase() : ''))
+        .filter(Boolean);
+      return normalized.length ? Array.from(new Set(normalized)) : fallback;
+    };
 
     return {
       draftSemanticReuseThreshold: parseScore(
@@ -879,6 +923,14 @@ export const AgentCopilotPage: React.FC = () => {
         DEFAULT_EPHEMERAL_CAPABILITY_POLICY.runtimeGrantMaxUseCount,
         1,
         200,
+      ),
+      replayRetryableErrorCodeAllowlist: parseStringArray(
+        metadata.replayRetryableErrorCodeAllowlist,
+        DEFAULT_EPHEMERAL_CAPABILITY_POLICY.replayRetryableErrorCodeAllowlist,
+      ),
+      replayNonRetryableErrorCodeBlocklist: parseStringArray(
+        metadata.replayNonRetryableErrorCodeBlocklist,
+        DEFAULT_EPHEMERAL_CAPABILITY_POLICY.replayNonRetryableErrorCodeBlocklist,
       ),
     } as EphemeralCapabilityPolicy;
   }, [ephemeralCapabilityPolicyBinding?.metadata]);
@@ -1796,11 +1848,23 @@ export const AgentCopilotPage: React.FC = () => {
   };
 
   const handleSaveEphemeralPolicy = async () => {
+    const normalizeCodeList = (list: string[]) =>
+      Array.from(
+        new Set(
+          list
+            .map((item) => item.trim().toUpperCase())
+            .filter(Boolean),
+        ),
+      );
     const policy: EphemeralCapabilityPolicy = {
       draftSemanticReuseThreshold: Math.max(0, Math.min(1, ephemeralPolicyDraft.draftSemanticReuseThreshold)),
       publishedSkillReuseThreshold: Math.max(0, Math.min(1, ephemeralPolicyDraft.publishedSkillReuseThreshold)),
       runtimeGrantTtlHours: Math.max(1, Math.min(168, Math.round(ephemeralPolicyDraft.runtimeGrantTtlHours))),
       runtimeGrantMaxUseCount: Math.max(1, Math.min(200, Math.round(ephemeralPolicyDraft.runtimeGrantMaxUseCount))),
+      replayRetryableErrorCodeAllowlist: normalizeCodeList(ephemeralPolicyDraft.replayRetryableErrorCodeAllowlist),
+      replayNonRetryableErrorCodeBlocklist: normalizeCodeList(
+        ephemeralPolicyDraft.replayNonRetryableErrorCodeBlocklist,
+      ),
     };
 
     try {
@@ -1813,6 +1877,16 @@ export const AgentCopilotPage: React.FC = () => {
     } catch {
       message.error('临时能力策略保存失败');
     }
+  };
+
+  const handleApplyRetryPolicyPreset = (preset: 'NETWORK' | 'STRICT') => {
+    const next = preset === 'NETWORK' ? RETRY_POLICY_PRESET_NETWORK : RETRY_POLICY_PRESET_STRICT;
+    setEphemeralPolicyDraft((prev) => ({
+      ...prev,
+      replayRetryableErrorCodeAllowlist: [...next.replayRetryableErrorCodeAllowlist],
+      replayNonRetryableErrorCodeBlocklist: [...next.replayNonRetryableErrorCodeBlocklist],
+    }));
+    message.success(preset === 'NETWORK' ? '已应用网络波动型模板' : '已应用严格型模板');
   };
 
   const handleExportRoutingSummary = () => {
@@ -2280,6 +2354,71 @@ export const AgentCopilotPage: React.FC = () => {
     anchor.remove();
     URL.revokeObjectURL(url);
     message.success('已导出批次记录');
+  };
+
+  const handleExportPromotionBatchFailedRows = () => {
+    if (!selectedPromotionBatch) {
+      message.warning('请先选择批次');
+      return;
+    }
+    if (!selectedPromotionBatchFailedRows.length) {
+      message.warning('当前筛选条件下没有失败项');
+      return;
+    }
+    const header = ['taskAssetId', 'errorCode', 'retryable', 'message'];
+    const escapeCsv = (value: unknown) => `"${String(value ?? '').replace(/"/g, '""')}"`;
+    const rows = selectedPromotionBatchFailedRows.map((item) =>
+      [
+        item.taskAssetId || '',
+        item.code || 'UNKNOWN',
+        isRetryableBatchFailure(item) ? 'YES' : 'NO',
+        item.message,
+      ]
+        .map((value) => escapeCsv(value))
+        .join(','),
+    );
+    const csv = [header.join(','), ...rows].join('\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = `promotion-batch-failed-${selectedPromotionBatch.batchId.slice(0, 8)}-${Date.now()}.csv`;
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    URL.revokeObjectURL(url);
+    message.success('已导出失败项');
+  };
+
+  const handleReplayBySelectedErrorCode = async () => {
+    if (!activeSessionId) {
+      message.warning('请先选择会话');
+      return;
+    }
+    if (!selectedPromotionBatch) {
+      message.warning('请先选择批次');
+      return;
+    }
+    if (promotionBatchCodeFilter === 'ALL') {
+      message.warning('请先选择一个错误码后再执行按错误码重放');
+      return;
+    }
+    try {
+      const result = await replayFailedPromotionBatchMutation.mutateAsync({
+        sessionId: activeSessionId,
+        batchAssetId: selectedPromotionBatch.batchAssetId,
+        maxConcurrency: 6,
+        maxRetries: 1,
+        replayMode: 'ALL_FAILED',
+        errorCodes: [promotionBatchCodeFilter],
+      });
+      const replay = result.data.replayResult;
+      message.success(
+        `按错误码重放完成：${promotionBatchCodeFilter}，选择 ${result.data.selectedReplayCount}，成功 ${replay.succeededCount}，失败 ${replay.failedCount}`,
+      );
+    } catch (error) {
+      showCopilotError(error, '按错误码重放失败');
+    }
   };
 
   const normalizeTemplateArray = (input: Array<Record<string, unknown>>) => {
@@ -3836,6 +3975,20 @@ export const AgentCopilotPage: React.FC = () => {
                 </Button>
               ))}
             </Space>
+            <Space wrap>
+              <Button size="small" onClick={handleExportPromotionBatchFailedRows}>
+                导出当前失败项
+              </Button>
+              <Button
+                size="small"
+                type="primary"
+                disabled={promotionBatchCodeFilter === 'ALL'}
+                loading={replayFailedPromotionBatchMutation.isPending}
+                onClick={() => void handleReplayBySelectedErrorCode()}
+              >
+                按错误码重放
+              </Button>
+            </Space>
             <List
               size="small"
               dataSource={selectedPromotionBatchFailedPageRows}
@@ -4300,6 +4453,12 @@ export const AgentCopilotPage: React.FC = () => {
             >
               恢复推荐默认值
             </Button>
+            <Button size="small" onClick={() => handleApplyRetryPolicyPreset('NETWORK')}>
+              应用网络波动型
+            </Button>
+            <Button size="small" onClick={() => handleApplyRetryPolicyPreset('STRICT')}>
+              应用严格型
+            </Button>
           </Space>
           <Card size="small">
             <Space direction="vertical" style={{ width: '100%' }} size={12}>
@@ -4361,6 +4520,38 @@ export const AgentCopilotPage: React.FC = () => {
                     setEphemeralPolicyDraft((prev) => ({
                       ...prev,
                       runtimeGrantMaxUseCount: typeof value === 'number' ? value : prev.runtimeGrantMaxUseCount,
+                    }))
+                  }
+                />
+              </Space>
+              <Space direction="vertical" style={{ width: '100%' }} size={4}>
+                <Text>可重试错误码白名单（每行一个）</Text>
+                <Input.TextArea
+                  autoSize={{ minRows: 3, maxRows: 6 }}
+                  value={ephemeralPolicyDraft.replayRetryableErrorCodeAllowlist.join('\n')}
+                  onChange={(e) =>
+                    setEphemeralPolicyDraft((prev) => ({
+                      ...prev,
+                      replayRetryableErrorCodeAllowlist: e.target.value
+                        .split('\n')
+                        .map((item) => item.trim().toUpperCase())
+                        .filter(Boolean),
+                    }))
+                  }
+                />
+              </Space>
+              <Space direction="vertical" style={{ width: '100%' }} size={4}>
+                <Text>不可重试错误码黑名单（每行一个）</Text>
+                <Input.TextArea
+                  autoSize={{ minRows: 3, maxRows: 6 }}
+                  value={ephemeralPolicyDraft.replayNonRetryableErrorCodeBlocklist.join('\n')}
+                  onChange={(e) =>
+                    setEphemeralPolicyDraft((prev) => ({
+                      ...prev,
+                      replayNonRetryableErrorCodeBlocklist: e.target.value
+                        .split('\n')
+                        .map((item) => item.trim().toUpperCase())
+                        .filter(Boolean),
                     }))
                   }
                 />

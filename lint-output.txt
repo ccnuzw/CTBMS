@@ -1,0 +1,19 @@
+
+> ctbms-monorepo@ lint /Users/mac/Progame/CTBMS
+> pnpm -r --if-present run lint
+
+Scope: 6 of 7 workspace projects
+apps/api lint$ eslint "{src,apps,libs,test}/**/*.ts" --fix
+apps/web lint$ eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0
+apps/api lint: Done
+apps/web lint: /Users/mac/Progame/CTBMS/apps/web/src/features/agent-copilot/components/AgentCopilotPage.tsx
+apps/web lint:    252:54  error  Unnecessary escape character: \.  no-useless-escape
+apps/web lint:    254:63  error  Unnecessary escape character: \.  no-useless-escape
+apps/web lint:   2726:27  error  Redundant Boolean call            no-extra-boolean-cast
+apps/web lint: ✖ 3 problems (3 errors, 0 warnings)
+apps/web lint:   1 error and 0 warnings potentially fixable with the `--fix` option.
+apps/web lint: Failed
+/Users/mac/Progame/CTBMS/apps/web:
+ ERR_PNPM_RECURSIVE_RUN_FIRST_FAIL  web@0.0.1 lint: `eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0`
+Exit status 1
+ ELIFECYCLE  Command failed with exit code 1.

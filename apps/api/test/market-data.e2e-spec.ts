@@ -125,9 +125,42 @@ async function main() {
     assert.equal(reconcileCreated.body.success, true);
     assert.ok(reconcileCreated.body.data.jobId.length > 0);
 
+    const createdAtFrom = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+    const createdAtTo = new Date().toISOString();
+
+    const reconcileList = await fetchJson<{
+      success: boolean;
+      data: {
+        items: Array<{ jobId: string; status: string; dataset: string }>;
+        page: number;
+        pageSize: number;
+        total: number;
+        totalPages: number;
+        storage: string;
+      };
+      traceId: string;
+      ts: string;
+    }>(
+      `${baseUrl}/market-data/reconciliation/jobs?page=1&pageSize=20&dataset=SPOT_PRICE&status=DONE&createdAtFrom=${encodeURIComponent(createdAtFrom)}&createdAtTo=${encodeURIComponent(createdAtTo)}&sortBy=createdAt&sortOrder=desc`,
+      {
+        method: 'GET',
+        headers: {
+          'x-virtual-user-id': 'admin-user',
+        },
+      },
+    );
+    assert.equal(reconcileList.status, 200);
+    assert.equal(reconcileList.body.success, true);
+    assert.equal(reconcileList.body.data.page, 1);
+    assert.equal(reconcileList.body.data.pageSize, 20);
+    assert.ok(reconcileList.body.data.total >= 1);
+    assert.ok(
+      reconcileList.body.data.items.some((item) => item.jobId === reconcileCreated.body.data.jobId),
+    );
+
     const reconcileDetail = await fetchJson<{
       success: boolean;
-      data: { jobId: string; status: string };
+      data: { jobId: string; status: string; summary?: { pass?: boolean } };
       traceId: string;
       ts: string;
     }>(`${baseUrl}/market-data/reconciliation/jobs/${reconcileCreated.body.data.jobId}`, {
@@ -139,6 +172,39 @@ async function main() {
     assert.equal(reconcileDetail.status, 200);
     assert.equal(reconcileDetail.body.success, true);
     assert.equal(reconcileDetail.body.data.jobId, reconcileCreated.body.data.jobId);
+
+    const pass = reconcileDetail.body.data.summary?.pass;
+    if (typeof pass === 'boolean') {
+      const reconcileListWithPass = await fetchJson<{
+        success: boolean;
+        data: {
+          items: Array<{ jobId: string }>;
+          page: number;
+          pageSize: number;
+          total: number;
+          totalPages: number;
+          storage: string;
+        };
+        traceId: string;
+        ts: string;
+      }>(
+        `${baseUrl}/market-data/reconciliation/jobs?page=1&pageSize=20&pass=${pass ? 'true' : 'false'}`,
+        {
+          method: 'GET',
+          headers: {
+            'x-virtual-user-id': 'admin-user',
+          },
+        },
+      );
+
+      assert.equal(reconcileListWithPass.status, 200);
+      assert.equal(reconcileListWithPass.body.success, true);
+      assert.ok(
+        reconcileListWithPass.body.data.items.some(
+          (item) => item.jobId === reconcileCreated.body.data.jobId,
+        ),
+      );
+    }
 
     console.log('Market data e2e checks passed.');
   } finally {

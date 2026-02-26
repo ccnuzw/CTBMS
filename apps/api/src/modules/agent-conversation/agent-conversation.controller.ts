@@ -551,7 +551,13 @@ export class AgentConversationController {
     @Request() req: AuthRequest,
     @Param('sessionId') sessionId: string,
     @Param('batchAssetId') batchAssetId: string,
-    @Body() dto: { maxConcurrency?: number; maxRetries?: number; replayMode?: 'RETRYABLE_ONLY' | 'ALL_FAILED' },
+    @Body()
+    dto: {
+      maxConcurrency?: number;
+      maxRetries?: number;
+      replayMode?: 'RETRYABLE_ONLY' | 'ALL_FAILED';
+      errorCodes?: string[];
+    },
   ) {
     const result = await this.service.replayFailedEphemeralCapabilityPromotionTaskBatch(
       this.getUserId(req),

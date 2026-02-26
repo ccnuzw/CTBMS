@@ -13,6 +13,7 @@ import type { Request as ExpressRequest } from 'express';
 import { randomUUID } from 'node:crypto';
 import {
   CreateReconciliationJobRequest,
+  ListReconciliationJobsRequest,
   MarketDataAggregateRequest,
   MarketDataQueryRequest,
   MarketDataLineageQueryRequest,
@@ -92,6 +93,15 @@ export class MarketDataController {
     @Request() req: AuthRequest,
   ) {
     const data = await this.marketDataService.createReconciliationJob(this.getUserId(req), dto);
+    return this.success(req, data);
+  }
+
+  @Get('reconciliation/jobs')
+  async listReconciliationJobs(
+    @Query() query: ListReconciliationJobsRequest,
+    @Request() req: AuthRequest,
+  ) {
+    const data = await this.marketDataService.listReconciliationJobs(this.getUserId(req), query);
     return this.success(req, data);
   }
 
