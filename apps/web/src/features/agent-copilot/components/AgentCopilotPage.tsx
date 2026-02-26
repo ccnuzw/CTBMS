@@ -6,7 +6,9 @@ import {
   Card,
   Col,
   Divider,
+  Drawer,
   Empty,
+  Grid,
   Input,
   Modal,
   List,
@@ -20,15 +22,19 @@ import {
 } from 'antd';
 import {
   BulbOutlined,
+  CheckCircleOutlined,
   DownloadOutlined,
+  ExclamationCircleOutlined,
   MailOutlined,
   MessageOutlined,
   PlayCircleOutlined,
   PlusOutlined,
   SendOutlined,
+  SyncOutlined,
   UploadOutlined,
 } from '@ant-design/icons';
 import { getApiError } from '../../../api/client';
+import { useVirtualUser } from '../../auth/virtual-user';
 import {
   CopilotPromptScope,
   DeliveryChannelProfile,
@@ -75,6 +81,13 @@ const DEFAULT_VISIBLE_TURN_COUNT = 40;
 const LOAD_MORE_TURN_STEP = 40;
 const TURN_CONTENT_PREVIEW_LIMIT = 3000;
 const RESULT_ANALYSIS_PREVIEW_LIMIT = 4000;
+const SYSTEM_MESSAGE_COLLAPSE_MIN_LENGTH = 240;
+const ASSISTANT_MESSAGE_COLLAPSE_MIN_LENGTH = 1200;
+const SYSTEM_SUMMARY_PREVIEW_LENGTH = 80;
+const ASSISTANT_SUMMARY_PREVIEW_LENGTH = 160;
+const ASSISTANT_SUMMARY_MAX_HEADINGS = 3;
+const ASSISTANT_SUMMARY_MAX_BULLETS = 4;
+const SYSTEM_SUMMARY_MAX_KEYS = 5;
 
 type QuickPromptTemplate = {
   key: string;
@@ -112,6 +125,62 @@ const toSafeText = (value: unknown): string => {
   } catch {
     return String(value);
   }
+};
+
+const summarizeStructuredMessage = (raw: string): string => {
+  const text = raw.trim();
+  if (!text) {
+    return '系统消息';
+  }
+  try {
+    const parsed = JSON.parse(text) as Record<string, unknown>;
+    const state = typeof parsed.state === 'string' ? parsed.state : null;
+    const status = typeof parsed.status === 'string' ? parsed.status : null;
+    const message = typeof parsed.message === 'string' ? parsed.message : null;
+    const action = typeof parsed.action === 'string' ? parsed.action : null;
+    const phase = typeof parsed.phase === 'string' ? parsed.phase : null;
+    const parts = [state, status, action, phase, message].filter((item): item is string => Boolean(item));
+    if (parts.length) {
+      return `系统消息摘要：${parts.slice(0, 3).join(' / ')}`;
+    }
+    const keys = Object.keys(parsed);
+    if (keys.length) {
+      return `系统消息摘要：包含 ${keys.slice(0, SYSTEM_SUMMARY_MAX_KEYS).join('、')} 等字段`;
+    }
+  } catch {
+    // ignore
+  }
+  return `系统消息摘要：${text.slice(0, SYSTEM_SUMMARY_PREVIEW_LENGTH)}${text.length > SYSTEM_SUMMARY_PREVIEW_LENGTH ? '...' : ''}`;
+};
+
+const summarizeAssistantMessage = (raw: string): string => {
+  const text = raw.trim();
+  if (!text) {
+    return '助手已生成回复。';
+  }
+  const lines = text
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean);
+  const headingLines = lines.filter((line) => /^#{1,3}\s+/.test(line)).slice(0, ASSISTANT_SUMMARY_MAX_HEADINGS);
+  const bulletLines = lines
+    .filter((line) => /^[-*]\s+/.test(line) || /^\d+[\.)]\s+/.test(line))
+    .slice(0, ASSISTANT_SUMMARY_MAX_BULLETS)
+    .map((line) => line.replace(/^[-*]\s+/, '').replace(/^\d+[\.)]\s+/, ''));
+  const intro = lines.find((line) => !/^#{1,3}\s+/.test(line)) || '';
+
+  if (headingLines.length || bulletLines.length) {
+    const parts: string[] = [];
+    if (headingLines.length) {
+      parts.push(`主题：${headingLines.map((line) => line.replace(/^#{1,3}\s+/, '')).join(' / ')}`);
+    }
+    if (bulletLines.length) {
+      parts.push(`要点：${bulletLines.join('；')}`);
+    }
+    return parts.join('\n');
+  }
+
+  return `结论摘要：${intro.slice(0, ASSISTANT_SUMMARY_PREVIEW_LENGTH)}${intro.length > ASSISTANT_SUMMARY_PREVIEW_LENGTH ? '...' : ''}`;
 };
 
 const appendCopilotDiagEvent = (event: {
@@ -173,6 +242,114 @@ const stateColor: Record<string, string> = {
   FAILED: 'error',
 };
 
+const sessionStateLabel: Record<string, string> = {
+  INTENT_CAPTURE: '待理解',
+  SLOT_FILLING: '待补充信息',
+  PLAN_PREVIEW: '方案预览',
+  USER_CONFIRM: '待确认',
+  EXECUTING: '执行中',
+  RESULT_DELIVERY: '结果整理中',
+  DONE: '已完成',
+  FAILED: '执行失败',
+};
+
+const planTypeLabel: Record<string, string> = {
+  RUN_PLAN: '执行方案',
+  DEBATE_PLAN: '多方案讨论',
+};
+
+const subscriptionStatusLabel: Record<string, string> = {
+  ACTIVE: '已开启',
+  PAUSED: '已暂停',
+  FAILED: '失败',
+  ARCHIVED: '已归档',
+};
+
+const deliveryStatusLabel: Record<string, string> = {
+  SENT: '已发送',
+  FAILED: '发送失败',
+};
+
+const backtestStatusLabel: Record<string, string> = {
+  QUEUED: '排队中',
+  RUNNING: '进行中',
+  COMPLETED: '已完成',
+  FAILED: '失败',
+};
+
+const statusColor: Record<string, string> = {
+  ACTIVE: 'success',
+  PAUSED: 'default',
+  FAILED: 'error',
+  ARCHIVED: 'default',
+  SENT: 'success',
+  EXPIRED: 'default',
+  REVOKED: 'default',
+};
+
+const channelLabel: Record<string, string> = {
+  EMAIL: '邮箱',
+  DINGTALK: '钉钉',
+  WECOM: '企业微信',
+  FEISHU: '飞书',
+};
+
+const runtimeGrantStatusLabel: Record<string, string> = {
+  ACTIVE: '生效中',
+  EXPIRED: '已过期',
+  REVOKED: '已撤销',
+};
+
+const governanceEventLabel: Record<string, string> = {
+  DRAFT_CREATED: '已创建草稿',
+  REVIEW_SUBMITTED: '已提交审核',
+  REVIEW_APPROVED: '审核通过',
+  REVIEW_REJECTED: '审核拒绝',
+  PUBLISHED: '已发布',
+  RUNTIME_GRANT_CREATED: '已创建试用权限',
+  RUNTIME_GRANT_REVOKED: '试用权限已撤销',
+  RUNTIME_GRANT_EXPIRED: '试用权限已过期',
+  RUNTIME_GRANT_USED: '试用权限已使用',
+};
+
+const assetTypeLabel: Record<string, string> = {
+  PLAN: '执行方案',
+  EXECUTION: '执行记录',
+  RESULT_SUMMARY: '结果摘要',
+  EXPORT_FILE: '导出文件',
+  BACKTEST_SUMMARY: '验证结果',
+  CONFLICT_SUMMARY: '一致性检查',
+  SKILL_DRAFT: '能力草稿',
+};
+
+const formatGovernanceEventMessage = (item: {
+  eventType: string;
+  message: string;
+  payload?: Record<string, unknown> | null;
+}): string => {
+  const payload = item.payload && typeof item.payload === 'object' ? item.payload : null;
+  if (item.eventType === 'RUNTIME_GRANT_USED') {
+    const useCount = Number(payload?.useCount ?? NaN);
+    const maxUseCount = Number(payload?.maxUseCount ?? NaN);
+    if (Number.isFinite(useCount) && Number.isFinite(maxUseCount)) {
+      return `试用权限使用进度：${useCount}/${maxUseCount}`;
+    }
+  }
+  if (item.eventType === 'RUNTIME_GRANT_REVOKED') {
+    const reason = typeof payload?.reason === 'string' ? payload.reason : '';
+    return reason ? `撤销原因：${reason}` : '已手动撤销试用权限';
+  }
+  if (item.eventType === 'REVIEW_APPROVED' || item.eventType === 'REVIEW_REJECTED') {
+    const comment = typeof payload?.comment === 'string' ? payload.comment : '';
+    return comment ? `审核意见：${comment}` : '审核已完成';
+  }
+  if (item.eventType === 'PUBLISHED') {
+    const skillCode = typeof payload?.skillCode === 'string' ? payload.skillCode : '';
+    return skillCode ? `已发布并更新能力：${skillCode}` : '已发布到可用能力库';
+  }
+  return item.message;
+};
+
 const copilotErrorMessageByCode: Record<string, string> = {
   CONV_SESSION_NOT_FOUND: '会话不存在或无权限访问，请刷新后重试。',
   CONV_RESULT_NOT_FOUND: '会话结果不可见，请确认任务是否已执行。',
@@ -190,7 +367,7 @@ const copilotErrorMessageByCode: Record<string, string> = {
   CONV_BACKTEST_EXECUTION_NOT_FOUND: '未找到可回测的执行实例，请先完成一次执行。',
   CONV_BACKTEST_NOT_FOUND: '回测任务不存在或无权限访问。',
   CONV_BACKTEST_RUN_FAILED: '回测执行失败，请稍后重试。',
-  SKILL_DRAFT_NOT_FOUND: 'Skill Draft 不存在或无权限访问。',
+  SKILL_DRAFT_NOT_FOUND: '能力草稿不存在或无权限访问。',
   SKILL_RUNTIME_GRANT_NOT_FOUND: '运行时授权不存在或无权限访问。',
   SKILL_RUNTIME_GRANT_INACTIVE: '运行时授权已失效。',
   SKILL_RUNTIME_GRANT_EXPIRED: '运行时授权已过期。',
@@ -211,6 +388,7 @@ export const AgentCopilotPage: React.FC = () => {
   >('DEFAULT');
   const [deliveryTarget, setDeliveryTarget] = useState('');
   const [sendRawFile, setSendRawFile] = useState(true);
+  const [deliveryAdvancedOpen, setDeliveryAdvancedOpen] = useState(false);
   const [templateModalOpen, setTemplateModalOpen] = useState(false);
   const [deliveryProfileModalOpen, setDeliveryProfileModalOpen] = useState(false);
   const [deliveryProfileEditor, setDeliveryProfileEditor] = useState('[]');
@@ -225,8 +403,25 @@ export const AgentCopilotPage: React.FC = () => {
   const [visibleTurnCount, setVisibleTurnCount] = useState(DEFAULT_VISIBLE_TURN_COUNT);
   const [expandedTurnMap, setExpandedTurnMap] = useState<Record<string, boolean>>({});
   const [expandResultAnalysis, setExpandResultAnalysis] = useState(false);
+  const [detailDrawerOpen, setDetailDrawerOpen] = useState(false);
+  const [detailTab, setDetailTab] = useState<'progress' | 'result' | 'delivery' | 'schedule' | 'advanced'>(
+    'progress',
+  );
+  const [showAllDeliveryLogs, setShowAllDeliveryLogs] = useState(false);
+  const [showAllArtifacts, setShowAllArtifacts] = useState(false);
+  const [showAllSubscriptions, setShowAllSubscriptions] = useState(false);
+  const [showAllGovernanceEvents, setShowAllGovernanceEvents] = useState(false);
+  const [backtestDetailModalOpen, setBacktestDetailModalOpen] = useState(false);
+  const [conflictDetailModalOpen, setConflictDetailModalOpen] = useState(false);
   const timelineRef = useRef<HTMLDivElement | null>(null);
   const templateFileInputRef = useRef<HTMLInputElement | null>(null);
+  const screens = Grid.useBreakpoint();
+  const { currentUser } = useVirtualUser();
+  const isAdminUser = useMemo(() => {
+    const roleNames = Array.isArray(currentUser?.roleNames) ? currentUser.roleNames : [];
+    return roleNames.some((role) => ['SUPER_ADMIN', 'ADMIN'].includes(String(role).toUpperCase()));
+  }, [currentUser?.roleNames]);
+  const compactActionSize = screens.xs ? 'middle' : 'small';
 
   const sessionsQuery = useConversationSessions({ page: 1, pageSize: 50 });
   const detailQuery = useConversationDetail(activeSessionId);
@@ -366,6 +561,31 @@ export const AgentCopilotPage: React.FC = () => {
       }))
       .filter((item) => ['EMAIL', 'DINGTALK', 'WECOM', 'FEISHU'].includes(item.channel));
   }, [activeDeliveryProfileBinding?.metadata]);
+  const activeDeliveryChannelProfile = useMemo(() => {
+    return (
+      activeDeliveryProfiles.find((item) => item.channel === deliveryChannel && item.isDefault) ||
+      activeDeliveryProfiles.find((item) => item.channel === deliveryChannel)
+    );
+  }, [activeDeliveryProfiles, deliveryChannel]);
+  const deliveryPreview = useMemo(() => {
+    const resolvedTo =
+      deliveryChannel === 'EMAIL'
+        ? emailTo
+            .split(',')
+            .map((item) => item.trim())
+            .filter(Boolean)
+            .concat(activeDeliveryChannelProfile?.to ?? [])
+            .filter((value, index, arr) => arr.indexOf(value) === index)
+        : [];
+    const manualTarget = deliveryTarget.trim();
+    const resolvedTarget = deliveryChannel === 'EMAIL' ? '' : manualTarget || activeDeliveryChannelProfile?.target || '';
+    return {
+      resolvedTo,
+      resolvedTarget,
+      useDefaultTo: deliveryChannel === 'EMAIL' && !emailTo.trim() && Boolean(activeDeliveryChannelProfile?.to?.length),
+      useDefaultTarget: deliveryChannel !== 'EMAIL' && !manualTarget && Boolean(activeDeliveryChannelProfile?.target),
+    };
+  }, [deliveryChannel, emailTo, deliveryTarget, activeDeliveryChannelProfile]);
   const planSnapshot = (latestPlan?.planSnapshot ?? null) as
     | {
         planId?: string;
@@ -522,9 +742,9 @@ export const AgentCopilotPage: React.FC = () => {
         requiredCapability: '需要补充外部市场数据抓取能力以提高结论覆盖度',
         suggestedSkillCode: `market_gap_${Date.now()}`,
       });
-      message.success(`Skill Draft 已创建：${result.data.draftId}`);
+      message.success(`能力草稿已创建：${result.data.draftId}`);
     } catch (error) {
-      showCopilotError(error, '创建 Skill Draft 失败');
+      showCopilotError(error, '创建能力草稿失败');
     }
   };
 
@@ -561,7 +781,7 @@ export const AgentCopilotPage: React.FC = () => {
 
   const handleSandboxSkillDraft = async () => {
     if (!latestSkillDraftId) {
-      message.warning('暂无可测试的 Skill Draft');
+      message.warning('暂无可测试的能力草稿');
       return;
     }
     try {
@@ -582,7 +802,7 @@ export const AgentCopilotPage: React.FC = () => {
 
   const handleSubmitSkillDraftReview = async () => {
     if (!latestSkillDraftId) {
-      message.warning('暂无可提交的 Skill Draft');
+      message.warning('暂无可提交的能力草稿');
       return;
     }
     try {
@@ -595,7 +815,7 @@ export const AgentCopilotPage: React.FC = () => {
 
   const handleApproveSkillDraft = async () => {
     if (!latestSkillDraftId) {
-      message.warning('暂无可审批的 Skill Draft');
+      message.warning('暂无可审批的能力草稿');
       return;
     }
     try {
@@ -612,7 +832,7 @@ export const AgentCopilotPage: React.FC = () => {
 
   const handlePublishSkillDraft = async () => {
     if (!latestSkillDraftId) {
-      message.warning('暂无可发布的 Skill Draft');
+      message.warning('暂无可发布的能力草稿');
       return;
     }
     try {
@@ -763,6 +983,55 @@ export const AgentCopilotPage: React.FC = () => {
 
   const artifacts = resultQuery.data?.artifacts ?? [];
   const latestArtifact = artifacts[0];
+  const visibleDeliveryLogs = showAllDeliveryLogs ? deliveryLogs : deliveryLogs.slice(0, 3);
+  const visibleArtifacts = showAllArtifacts ? artifacts : artifacts.slice(0, 3);
+  const visibleSubscriptions = showAllSubscriptions ? subscriptionList : subscriptionList.slice(0, 5);
+  const visibleGovernanceEvents = showAllGovernanceEvents ? governanceEvents : governanceEvents.slice(0, 5);
+  const currentStatus = String(resultQuery.data?.status ?? detailQuery.data?.state ?? 'INTENT_CAPTURE');
+  const statusText = sessionStateLabel[currentStatus] || currentStatus;
+  const statusMeta = useMemo(() => {
+    if (currentStatus === 'FAILED') {
+      return {
+        icon: <ExclamationCircleOutlined style={{ color: '#cf1322' }} />,
+        tone: '#fff1f0',
+      };
+    }
+    if (['DONE', 'RESULT_DELIVERY'].includes(currentStatus)) {
+      return {
+        icon: <CheckCircleOutlined style={{ color: '#389e0d' }} />,
+        tone: '#f6ffed',
+      };
+    }
+    if (['EXECUTING', 'PLAN_PREVIEW', 'USER_CONFIRM'].includes(currentStatus)) {
+      return {
+        icon: <SyncOutlined spin style={{ color: '#1677ff' }} />,
+        tone: '#e6f4ff',
+      };
+    }
+    return {
+      icon: <PlayCircleOutlined style={{ color: '#595959' }} />,
+      tone: '#fafafa',
+    };
+  }, [currentStatus]);
+  const nextActionHint = useMemo(() => {
+    if (!latestPlan) {
+      return '建议下一步：先描述你的问题场景（时间范围、区域、你最关心的目标）。';
+    }
+    if (!latestPlan.isConfirmed) {
+      return '建议下一步：先在“进展”里确认执行，然后等待结果生成。';
+    }
+    if (resultQuery.data?.status === 'EXECUTING') {
+      return '建议下一步：任务执行中，可继续补充要求，我会自动吸收。';
+    }
+    if (resultQuery.data?.result) {
+      return '建议下一步：查看结果后可直接发送报告，或设置定时自动发送。';
+    }
+    return '建议下一步：查看进展，确认当前阶段。';
+  }, [latestPlan, resultQuery.data?.result, resultQuery.data?.status]);
+  const openDetailTab = (tab: 'progress' | 'result' | 'delivery' | 'schedule' | 'advanced') => {
+    setDetailTab(tab);
+    setDetailDrawerOpen(true);
+  };
   const executionTimeline = useMemo(() => {
     const state = resultQuery.data?.status ?? detailQuery.data?.state ?? 'INTENT_CAPTURE';
     const delivered = deliveryLogs.some((item) => item.status === 'SENT');
@@ -799,6 +1068,10 @@ export const AgentCopilotPage: React.FC = () => {
     setVisibleTurnCount(DEFAULT_VISIBLE_TURN_COUNT);
     setExpandedTurnMap({});
     setExpandResultAnalysis(false);
+    setShowAllDeliveryLogs(false);
+    setShowAllArtifacts(false);
+    setShowAllSubscriptions(false);
+    setShowAllGovernanceEvents(false);
     appendCopilotDiagEvent({
       type: 'session.changed',
       sessionId: activeSessionId,
@@ -911,6 +1184,18 @@ export const AgentCopilotPage: React.FC = () => {
     }
   }, [activePromptTemplate?.id, templateScope]);
 
+  useEffect(() => {
+    if (!emailModalOpen) {
+      return;
+    }
+    if (activeDeliveryChannelProfile?.templateCode) {
+      setDeliveryTemplateCode(activeDeliveryChannelProfile.templateCode);
+    }
+    if (typeof activeDeliveryChannelProfile?.sendRawFile === 'boolean') {
+      setSendRawFile(activeDeliveryChannelProfile.sendRawFile);
+    }
+  }, [emailModalOpen, activeDeliveryChannelProfile]);
+
   const handleExportPdf = async () => {
     if (!activeSessionId) {
       message.warning('请先选择会话');
@@ -949,26 +1234,24 @@ export const AgentCopilotPage: React.FC = () => {
       message.warning('请先导出报告');
       return;
     }
-    const profile =
-      activeDeliveryProfiles.find((item) => item.channel === deliveryChannel && item.isDefault) ||
-      activeDeliveryProfiles.find((item) => item.channel === deliveryChannel);
+    const profile = activeDeliveryChannelProfile;
 
-    const to =
-      deliveryChannel === 'EMAIL'
-        ? emailTo
-            .split(',')
-            .map((item) => item.trim())
-            .filter(Boolean)
-            .concat(profile?.to ?? [])
-            .filter((value, index, arr) => arr.indexOf(value) === index)
-        : [];
+    const to = deliveryPreview.resolvedTo;
     if (deliveryChannel === 'EMAIL' && !to.length) {
-      message.warning('请输入收件邮箱');
+      message.warning(
+        isAdminUser
+          ? '请补一个接收邮箱，或先在配置中心设置默认邮箱。'
+          : '请补一个接收邮箱后再发送。',
+      );
       return;
     }
-    const resolvedTarget = deliveryChannel === 'EMAIL' ? undefined : deliveryTarget.trim() || profile?.target;
+    const resolvedTarget = deliveryChannel === 'EMAIL' ? undefined : deliveryPreview.resolvedTarget || undefined;
     if (deliveryChannel !== 'EMAIL' && !resolvedTarget) {
-      message.warning('请输入投递目标，例如群ID或机器人标识');
+      message.warning(
+        isAdminUser
+          ? '请补一个接收位置，或先在配置中心设置默认接收位置。'
+          : '请补一个接收位置（例如群ID或机器人标识）后再发送。',
+      );
       return;
     }
 
@@ -1241,7 +1524,7 @@ export const AgentCopilotPage: React.FC = () => {
             <Title level={4} style={{ margin: 0 }}>
               对话助手
             </Title>
-            <Text type="secondary">多轮对话生成计划并执行工作流</Text>
+            <Text type="secondary">像聊天一样提问，我会给你结果并协助发送</Text>
           </Space>
           <Space>
             <Button
@@ -1250,11 +1533,11 @@ export const AgentCopilotPage: React.FC = () => {
               loading={exportMutation.isPending}
               disabled={!resultQuery.data?.executionId}
             >
-              顶部导出 PDF
+              导出报告 PDF
             </Button>
-            <Button onClick={handleExportDiagnostics}>导出诊断</Button>
-            <Button onClick={openTemplateModal}>管理模板</Button>
-            <Button onClick={openDeliveryProfileModal}>投递配置中心</Button>
+            {isAdminUser ? <Button onClick={handleExportDiagnostics}>导出诊断</Button> : null}
+            {isAdminUser ? <Button onClick={openTemplateModal}>管理模板</Button> : null}
+            {isAdminUser ? <Button onClick={openDeliveryProfileModal}>投递配置中心</Button> : null}
             <Button type="primary" icon={<PlusOutlined />} onClick={handleCreateSession}>
               新建会话
             </Button>
@@ -1263,7 +1546,7 @@ export const AgentCopilotPage: React.FC = () => {
       </Card>
 
       <Row gutter={16}>
-        <Col span={6}>
+        <Col xs={24} md={8} lg={6}>
           <Card title="会话列表" bodyStyle={{ padding: 8 }}>
             {sessionList.length ? (
               <List
@@ -1284,7 +1567,9 @@ export const AgentCopilotPage: React.FC = () => {
                         {item.title || '未命名会话'}
                       </Text>
                       <Space>
-                        <Tag color={stateColor[item.state] || 'default'}>{item.state}</Tag>
+                        <Tag color={stateColor[item.state] || 'default'}>
+                          {sessionStateLabel[item.state] || item.state}
+                        </Tag>
                         <Text type="secondary" style={{ fontSize: 12 }}>
                           {new Date(item.updatedAt).toLocaleString('zh-CN')}
                         </Text>
@@ -1299,8 +1584,8 @@ export const AgentCopilotPage: React.FC = () => {
           </Card>
         </Col>
 
-        <Col span={12}>
-          <Card title="对话区" bodyStyle={{ height: 640, display: 'flex', flexDirection: 'column' }}>
+        <Col xs={24} md={16} lg={18}>
+          <Card title="对话区" bodyStyle={{ height: 700, display: 'flex', flexDirection: 'column' }}>
             <div ref={timelineRef} style={{ flex: 1, overflow: 'auto', marginBottom: 12 }}>
               {allTurns.length ? (
                 <Space direction="vertical" style={{ width: '100%' }} size={12}>
@@ -1312,10 +1597,16 @@ export const AgentCopilotPage: React.FC = () => {
                   {visibleTurns.map((turn) => {
                     const roleText = toSafeText(turn.role || 'UNKNOWN');
                     const contentText = toSafeText(turn.content);
+                    const looksLikeStructured =
+                      roleText === 'SYSTEM' &&
+                      contentText.length > SYSTEM_MESSAGE_COLLAPSE_MIN_LENGTH &&
+                      (contentText.trim().startsWith('{') || contentText.trim().startsWith('['));
+                    const looksLikeLongAssistantReply =
+                      roleText === 'ASSISTANT' && contentText.length > ASSISTANT_MESSAGE_COLLAPSE_MIN_LENGTH;
                     const isLongContent = contentText.length > TURN_CONTENT_PREVIEW_LIMIT;
                     const isExpanded = Boolean(expandedTurnMap[turn.id]);
                     const displayedContent =
-                      isLongContent && !isExpanded
+                      (isLongContent || looksLikeStructured || looksLikeLongAssistantReply) && !isExpanded
                         ? `${contentText.slice(0, TURN_CONTENT_PREVIEW_LIMIT)}\n...(内容较长，已折叠)`
                         : contentText;
 
@@ -1332,7 +1623,7 @@ export const AgentCopilotPage: React.FC = () => {
                         }}
                       >
                         <Text type="secondary" style={{ fontSize: 12 }}>
-                          {roleText}
+                          {roleText === 'USER' ? '我' : roleText === 'ASSISTANT' ? '助手' : '系统'}
                         </Text>
                         <div
                           style={{
@@ -1342,9 +1633,13 @@ export const AgentCopilotPage: React.FC = () => {
                             lineHeight: 1.6,
                           }}
                         >
-                          {displayedContent}
+                          {looksLikeStructured && !isExpanded
+                            ? summarizeStructuredMessage(contentText)
+                            : looksLikeLongAssistantReply && !isExpanded
+                              ? summarizeAssistantMessage(contentText)
+                              : displayedContent}
                         </div>
-                        {isLongContent ? (
+                        {isLongContent || looksLikeStructured || looksLikeLongAssistantReply ? (
                           <Button
                             size="small"
                             type="link"
@@ -1356,7 +1651,13 @@ export const AgentCopilotPage: React.FC = () => {
                               }));
                             }}
                           >
-                            {isExpanded ? '收起' : '展开全文'}
+                            {isExpanded
+                              ? '收起'
+                              : looksLikeStructured
+                                ? '展开系统详情'
+                                : looksLikeLongAssistantReply
+                                  ? '展开完整回复'
+                                  : '展开全文'}
                           </Button>
                         ) : null}
                       </div>
@@ -1387,7 +1688,7 @@ export const AgentCopilotPage: React.FC = () => {
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 autoSize={{ minRows: 2, maxRows: 4 }}
-                placeholder="输入你的业务问题，例如：请分析最近一周东北玉米价格并给出三个月建议"
+                placeholder="直接说你的问题，例如：分析最近一周东北玉米价格并给出三个月建议"
                 onPressEnter={(e) => {
                   if (!e.shiftKey) {
                     e.preventDefault();
@@ -1404,337 +1705,171 @@ export const AgentCopilotPage: React.FC = () => {
                 发送
               </Button>
             </Space.Compact>
+
+            <Card size="small" style={{ marginTop: 12, background: statusMeta.tone, borderColor: '#d9d9d9' }}>
+              <Space direction="vertical" style={{ width: '100%' }} size={10}>
+                <Space>
+                  {statusMeta.icon}
+                  <Text strong>{statusText}</Text>
+                </Space>
+                <Space wrap>
+                  <Tag color={stateColor[currentStatus] || 'default'}>{statusText}</Tag>
+                  {latestPlan ? <Tag color="blue">{planTypeLabel[latestPlan.planType] || latestPlan.planType}</Tag> : null}
+                  {latestPlan ? <Tag>第 {latestPlan.version} 版</Tag> : null}
+                </Space>
+                <Text type="secondary">
+                  {resultQuery.data?.result
+                    ? `已生成结论，当前置信度约 ${Math.round((resultQuery.data.result.confidence || 0) * 100)}%。`
+                    : latestPlan
+                      ? '方案已准备好，你可以继续提问，或查看详情并执行后续动作。'
+                      : '先提问，我会自动理解需求并给出可执行方案。'}
+                </Text>
+                <Text style={{ fontSize: 13 }}>{nextActionHint}</Text>
+                <Space wrap>
+                  <Button style={{ minHeight: 36 }} onClick={() => openDetailTab('progress')}>
+                    查看进展
+                  </Button>
+                  <Button style={{ minHeight: 36 }} onClick={() => openDetailTab('result')}>
+                    查看结果
+                  </Button>
+                  <Button style={{ minHeight: 36 }} onClick={() => openDetailTab('delivery')} disabled={!latestArtifact?.exportTaskId}>
+                    发送报告
+                  </Button>
+                  <Button style={{ minHeight: 36 }} onClick={() => openDetailTab('schedule')}>
+                    定时发送
+                  </Button>
+                  {isAdminUser ? (
+                    <Button style={{ minHeight: 36 }} onClick={() => openDetailTab('advanced')}>
+                      管理工具
+                    </Button>
+                  ) : null}
+                </Space>
+              </Space>
+            </Card>
           </Card>
         </Col>
+      </Row>
 
-        <Col span={6}>
-          <Card title="计划与结果" bodyStyle={{ minHeight: 640 }}>
-            {latestPlan ? (
-              <Space direction="vertical" style={{ width: '100%' }} size={12}>
-                <div>
-                  <Text type="secondary">计划类型</Text>
-                  <div>
-                    <Tag color="blue">{latestPlan.planType}</Tag>
-                    <Tag>v{latestPlan.version}</Tag>
-                  </div>
-                </div>
+      <Drawer
+        title="会话详情"
+        open={detailDrawerOpen}
+        width={screens.md ? 460 : '100%'}
+        onClose={() => setDetailDrawerOpen(false)}
+        destroyOnClose={false}
+      >
+        <Space direction="vertical" style={{ width: '100%' }} size={12}>
+          <Segmented
+            block
+            value={detailTab}
+            options={[
+              { label: '进展', value: 'progress' },
+              { label: '结果', value: 'result' },
+              { label: '发送', value: 'delivery' },
+              { label: '定时', value: 'schedule' },
+              ...(isAdminUser ? [{ label: '高级', value: 'advanced' as const }] : []),
+            ]}
+            onChange={(value) => setDetailTab(value as 'progress' | 'result' | 'delivery' | 'schedule' | 'advanced')}
+          />
 
-                <div>
-                  <Text type="secondary">Skills</Text>
-                  <div>
-                    {planSkills.map((skill) => (
-                      <Tag key={skill}>{skill}</Tag>
-                    ))}
-                  </div>
-                </div>
-
-                <div>
-                  <Text type="secondary">预估成本</Text>
-                  <div>
-                    <Text>
-                      token: {planSnapshot?.estimatedCost?.token ?? '-'} / latency:{' '}
-                      {planSnapshot?.estimatedCost?.latencyMs ?? '-'}ms
-                    </Text>
-                  </div>
-                </div>
-
-                <div>
-                  <Text type="secondary">计划ID</Text>
-                  <div>
-                    <Text code>{String(planSnapshot?.planId ?? '-')}</Text>
-                  </div>
-                </div>
-
-                <Divider style={{ margin: '8px 0' }} />
-                <Text strong>订阅任务</Text>
-                <Space direction="vertical" style={{ width: '100%' }} size={8}>
-                  <Input
-                    value={subscriptionName}
-                    onChange={(e) => setSubscriptionName(e.target.value)}
-                    placeholder="订阅名称"
-                  />
-                  <Input
-                    value={subscriptionCronExpr}
-                    onChange={(e) => setSubscriptionCronExpr(e.target.value)}
-                    placeholder="cron 表达式，例如 0 0 8 * * 1"
-                  />
-                  <Button
-                    onClick={handleCreateSubscription}
-                    loading={createSubscriptionMutation.isPending}
-                    disabled={!latestPlan}
-                    block
-                  >
-                    创建订阅
-                  </Button>
-
-                  <Input.TextArea
-                    value={scheduleInstruction}
-                    onChange={(e) => setScheduleInstruction(e.target.value)}
-                    autoSize={{ minRows: 2, maxRows: 4 }}
-                    placeholder="自然语言调度，例如：每周五18点发到钉钉群ops"
-                  />
-                  <Button
-                    onClick={handleResolveSchedule}
-                    loading={resolveScheduleMutation.isPending}
-                    block
-                  >
-                    自然语言配置调度
-                  </Button>
-
-                  <List
-                    size="small"
-                    dataSource={subscriptionList}
-                    locale={{ emptyText: '暂无订阅' }}
-                    renderItem={(item) => (
-                      <List.Item
-                        actions={[
-                          <Button
-                            key="toggle"
-                            size="small"
-                            loading={updateSubscriptionMutation.isPending}
-                            onClick={() =>
-                              void handleToggleSubscription(
-                                item.id,
-                                item.status as 'ACTIVE' | 'PAUSED' | 'FAILED' | 'ARCHIVED',
-                              )
-                            }
-                          >
-                            {item.status === 'ACTIVE' ? '暂停' : '恢复'}
-                          </Button>,
-                          <Button
-                            key="rerun"
-                            size="small"
-                            loading={runSubscriptionMutation.isPending}
-                            onClick={() => void handleRunSubscriptionNow(item.id)}
-                          >
-                            补跑
-                          </Button>,
-                        ]}
-                      >
-                        <Space direction="vertical" size={2} style={{ width: '100%' }}>
-                          <Space>
-                            <Text strong>{item.name}</Text>
-                            <Tag color={item.status === 'ACTIVE' ? 'success' : 'default'}>{item.status}</Tag>
-                          </Space>
-                          <Text type="secondary" style={{ fontSize: 12 }}>
-                            cron: {item.cronExpr}
-                          </Text>
-                          <Text type="secondary" style={{ fontSize: 12 }}>
-                            下次执行: {item.nextRunAt ? new Date(item.nextRunAt).toLocaleString('zh-CN') : '-'}
-                          </Text>
-                        </Space>
-                      </List.Item>
-                    )}
-                  />
-                </Space>
-
-                <Button
-                  type="primary"
-                  icon={<PlayCircleOutlined />}
-                  loading={confirmPlanMutation.isPending}
-                  onClick={handleConfirmPlan}
-                  disabled={latestPlan.isConfirmed}
-                  block
-                >
-                  {latestPlan.isConfirmed ? '计划已确认' : '确认执行'}
-                </Button>
-
-                <Divider />
-
-                <div>
-                  <Text strong>执行时间线</Text>
-                  <Timeline
-                    style={{ marginTop: 8 }}
-                    items={executionTimeline.map((item) => ({
-                      color: item.done ? 'green' : 'gray',
-                      children: (
-                        <Space>
-                          <Text>{item.label}</Text>
-                          <Tag color={item.done ? 'success' : 'default'}>{item.done ? '完成' : '待处理'}</Tag>
-                        </Space>
-                      ),
-                    }))}
-                  />
-                </div>
-
-                {resultQuery.data?.result ? (
-                  <Space direction="vertical" size={8} style={{ width: '100%' }}>
-                    <Alert
-                      type={resultQuery.data.status === 'FAILED' ? 'error' : 'info'}
-                      message={`状态：${resultQuery.data.status}`}
-                      description={resultQuery.data.error ?? `置信度：${resultQuery.data.result.confidence}`}
-                      showIcon
-                    />
-                    <Progress
-                      percent={Math.max(0, Math.min(100, Math.round(resultQuery.data.result.confidence * 100)))}
-                      size="small"
-                      status={resultQuery.data.status === 'FAILED' ? 'exception' : 'active'}
-                    />
-                    <Text strong>分析结论</Text>
-                    <Paragraph style={{ whiteSpace: 'pre-wrap' }}>
-                      {expandResultAnalysis || resultAnalysisText.length <= RESULT_ANALYSIS_PREVIEW_LIMIT
-                        ? resultAnalysisText
-                        : `${resultAnalysisText.slice(0, RESULT_ANALYSIS_PREVIEW_LIMIT)}\n...(内容较长，已折叠)`}
-                    </Paragraph>
-                    {resultAnalysisText.length > RESULT_ANALYSIS_PREVIEW_LIMIT ? (
-                      <Button
-                        size="small"
-                        type="link"
-                        style={{ padding: 0, marginTop: -4, width: 'fit-content' }}
-                        onClick={() => setExpandResultAnalysis((prev) => !prev)}
-                      >
-                        {expandResultAnalysis ? '收起结论' : '展开完整结论'}
-                      </Button>
-                    ) : null}
-
-                    <Divider style={{ margin: '8px 0' }} />
-                    <Space wrap>
-                      <Button
-                        icon={<PlayCircleOutlined />}
-                        loading={createBacktestMutation.isPending}
-                        onClick={handleCreateBacktest}
-                        disabled={!resultQuery.data?.executionId}
-                      >
-                        发起回测
-                      </Button>
-                      <Button
-                        icon={<DownloadOutlined />}
-                        loading={exportMutation.isPending}
-                        onClick={handleExportPdf}
-                      >
-                        导出 PDF
-                      </Button>
-                      <Button
-                        icon={<MailOutlined />}
-                        loading={deliverMutation.isPending}
-                        onClick={() => {
-                          setDeliveryChannel('EMAIL');
-                          setDeliveryTemplateCode('DEFAULT');
-                          setEmailModalOpen(true);
-                        }}
-                        disabled={!latestArtifact?.exportTaskId}
-                      >
-                        发送渠道
-                      </Button>
-                      <Button
-                        loading={deliverMutation.isPending}
-                        onClick={() => {
-                          setDeliveryChannel('DINGTALK');
-                          setDeliveryTemplateCode('MORNING_BRIEF');
-                          setEmailModalOpen(true);
-                        }}
-                        disabled={!latestArtifact?.exportTaskId}
-                      >
-                        发钉钉
-                      </Button>
-                      <Button
-                        loading={deliverMutation.isPending}
-                        onClick={() => {
-                          setDeliveryChannel('WECOM');
-                          setDeliveryTemplateCode('WEEKLY_REVIEW');
-                          setEmailModalOpen(true);
-                        }}
-                        disabled={!latestArtifact?.exportTaskId}
-                      >
-                        发企微
-                      </Button>
-                      <Button
-                        loading={deliverMutation.isPending}
-                        onClick={() => {
-                          setDeliveryChannel('FEISHU');
-                          setDeliveryTemplateCode('RISK_ALERT');
-                          setEmailModalOpen(true);
-                        }}
-                        disabled={!latestArtifact?.exportTaskId}
-                      >
-                        发飞书
-                      </Button>
-                      {latestArtifact?.downloadUrl ? (
-                        <Button
-                          type="link"
-                          href={latestArtifact.downloadUrl}
-                          target="_blank"
-                          rel="noreferrer"
-                        >
-                          下载附件
-                        </Button>
-                      ) : null}
+          {detailTab === 'progress' ? (
+            <Space direction="vertical" style={{ width: '100%' }} size={10}>
+              <Text strong>执行进展</Text>
+              <Timeline
+                items={executionTimeline.map((item) => ({
+                  color: item.done ? 'green' : 'gray',
+                  children: (
+                    <Space>
+                      <Text>{item.label}</Text>
+                      <Tag color={item.done ? 'success' : 'default'}>{item.done ? '完成' : '待处理'}</Tag>
                     </Space>
+                  ),
+                }))}
+              />
+              {latestPlan ? (
+                <Card size="small">
+                  <Space direction="vertical" size={4}>
+                    <Text type="secondary">方案类型</Text>
+                    <Text>{planTypeLabel[latestPlan.planType] || latestPlan.planType}</Text>
+                    <Text type="secondary">使用的工具</Text>
+                    <Space wrap>
+                      {planSkills.map((skill) => (
+                        <Tag key={skill}>{skill}</Tag>
+                      ))}
+                    </Space>
+                    <Text type="secondary">预计耗时</Text>
+                    <Text>{planSnapshot?.estimatedCost?.latencyMs ?? '-'} ms</Text>
+                  </Space>
+                </Card>
+              ) : (
+                <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无执行方案" />
+              )}
+              <Button
+                type="primary"
+                icon={<PlayCircleOutlined />}
+                loading={confirmPlanMutation.isPending}
+                onClick={handleConfirmPlan}
+                disabled={!latestPlan || latestPlan.isConfirmed}
+                block
+              >
+                {latestPlan?.isConfirmed ? '方案已确认' : '确认并开始执行'}
+              </Button>
+            </Space>
+          ) : null}
 
-                    {artifacts.length ? (
-                      <>
-                        <Divider style={{ margin: '8px 0' }} />
-                        <Text strong>导出任务</Text>
-                        <List
-                          size="small"
-                          dataSource={artifacts}
-                          renderItem={(item) => (
-                            <List.Item
-                              actions={
-                                item.downloadUrl
-                                  ? [
-                                      <a key="download" href={item.downloadUrl} target="_blank" rel="noreferrer">
-                                        下载
-                                      </a>,
-                                    ]
-                                  : []
-                              }
-                            >
-                              <Space>
-                                <Tag>{item.type}</Tag>
-                                <Tag color={item.status === 'COMPLETED' ? 'success' : 'processing'}>
-                                  {item.status}
-                                </Tag>
-                                <Text type="secondary" style={{ fontSize: 12 }}>
-                                  {item.exportTaskId}
-                                </Text>
-                              </Space>
-                            </List.Item>
-                          )}
-                        />
-                      </>
+          {detailTab === 'result' ? (
+            <Space direction="vertical" style={{ width: '100%' }} size={10}>
+              {resultQuery.data?.result ? (
+                <>
+                  <Alert
+                    type={resultQuery.data.status === 'FAILED' ? 'error' : 'info'}
+                    showIcon
+                    message={`当前状态：${sessionStateLabel[resultQuery.data.status] || resultQuery.data.status}`}
+                    description={resultQuery.data.error ?? `置信度：${resultQuery.data.result.confidence}`}
+                  />
+                  <Progress
+                    percent={Math.max(0, Math.min(100, Math.round(resultQuery.data.result.confidence * 100)))}
+                    size="small"
+                    status={resultQuery.data.status === 'FAILED' ? 'exception' : 'active'}
+                  />
+                  <Text strong>分析结论</Text>
+                  <Paragraph style={{ whiteSpace: 'pre-wrap', marginBottom: 0 }}>
+                    {expandResultAnalysis || resultAnalysisText.length <= RESULT_ANALYSIS_PREVIEW_LIMIT
+                      ? resultAnalysisText
+                      : `${resultAnalysisText.slice(0, RESULT_ANALYSIS_PREVIEW_LIMIT)}\n...(内容较长，已折叠)`}
+                  </Paragraph>
+                  {resultAnalysisText.length > RESULT_ANALYSIS_PREVIEW_LIMIT ? (
+                    <Button
+                      size="small"
+                      type="link"
+                      style={{ padding: 0, width: 'fit-content' }}
+                      onClick={() => setExpandResultAnalysis((prev) => !prev)}
+                    >
+                      {expandResultAnalysis ? '收起结论' : '展开完整结论'}
+                    </Button>
+                  ) : null}
+
+                  <Space wrap>
+                    <Button
+                      icon={<PlayCircleOutlined />}
+                      loading={createBacktestMutation.isPending}
+                      onClick={handleCreateBacktest}
+                      disabled={!resultQuery.data?.executionId}
+                    >
+                      验证效果
+                    </Button>
+                    <Button icon={<DownloadOutlined />} loading={exportMutation.isPending} onClick={handleExportPdf}>
+                      导出报告 PDF
+                    </Button>
+                    {latestArtifact?.downloadUrl ? (
+                      <Button type="link" href={latestArtifact.downloadUrl} target="_blank" rel="noreferrer">
+                        下载最新附件
+                      </Button>
                     ) : null}
+                  </Space>
 
-                    {deliveryLogs.length ? (
-                      <>
-                        <Divider style={{ margin: '8px 0' }} />
-                        <Text strong>投递记录</Text>
-                        <List
-                          size="small"
-                          dataSource={deliveryLogs}
-                          renderItem={(item) => (
-                            <List.Item>
-                              <Space direction="vertical" size={2} style={{ width: '100%' }}>
-                                <Space>
-                                  <Tag>{item.channel}</Tag>
-                                  <Tag color={item.status === 'SENT' ? 'success' : item.status === 'FAILED' ? 'error' : 'processing'}>
-                                    {item.status}
-                                  </Tag>
-                                  <Text type="secondary" style={{ fontSize: 12 }}>
-                                    {item.deliveryTaskId}
-                                  </Text>
-                                </Space>
-                                {item.target ? (
-                                  <Text type="secondary" style={{ fontSize: 12 }}>
-                                    目标: {item.target}
-                                  </Text>
-                                ) : null}
-                                {item.errorMessage ? (
-                                  <Text type="danger" style={{ fontSize: 12 }}>
-                                    {item.errorMessage}
-                                  </Text>
-                                ) : null}
-                              </Space>
-                            </List.Item>
-                          )}
-                        />
-                      </>
-                    ) : null}
-
-                    {backtestQuery.data ? (
-                      <>
-                        <Divider style={{ margin: '8px 0' }} />
-                        <Text strong>回测结果</Text>
+                  {backtestQuery.data ? (
+                    <Card size="small">
+                      <Space direction="vertical" style={{ width: '100%' }} size={6}>
                         <Alert
                           type={
                             backtestQuery.data.status === 'FAILED'
@@ -1743,299 +1878,561 @@ export const AgentCopilotPage: React.FC = () => {
                                 ? 'success'
                                 : 'info'
                           }
-                          message={`状态：${backtestQuery.data.status}`}
+                          showIcon
+                          message={`验证状态：${backtestStatusLabel[backtestQuery.data.status] || backtestQuery.data.status}`}
                           description={
                             backtestQuery.data.status === 'COMPLETED'
-                              ? `收益 ${backtestQuery.data.summary?.returnPct ?? '-'}%，最大回撤 ${backtestQuery.data.summary?.maxDrawdownPct ?? '-'}%，胜率 ${backtestQuery.data.summary?.winRatePct ?? '-'}%，评分 ${backtestQuery.data.summary?.score ?? '-'}。`
-                              : backtestQuery.data.errorMessage || '回测处理中'
+                              ? `收益 ${backtestQuery.data.summary?.returnPct ?? '-'}%，胜率 ${backtestQuery.data.summary?.winRatePct ?? '-'}%。`
+                              : backtestQuery.data.errorMessage || '验证处理中'
                           }
-                          showIcon
                         />
-                      </>
-                    ) : null}
+                        <Button size="small" onClick={() => setBacktestDetailModalOpen(true)}>
+                          查看验证详情
+                        </Button>
+                      </Space>
+                    </Card>
+                  ) : null}
 
-                    {conflictsQuery.data ? (
-                      <>
-                        <Divider style={{ margin: '8px 0' }} />
-                        <Text strong>冲突消解</Text>
+                  {conflictsQuery.data ? (
+                    <Card size="small">
+                      <Space direction="vertical" style={{ width: '100%' }} size={6}>
                         <Alert
                           type={conflictList.length > 0 ? 'warning' : 'success'}
                           showIcon
-                          message={`一致性分：${Math.round(conflictsQuery.data.consistencyScore * 100)}%`}
+                          message={`一致性：${Math.round(conflictsQuery.data.consistencyScore * 100)}%`}
                           description={
                             conflictList.length > 0
-                              ? `检测到 ${conflictList.length} 条冲突，请关注来源差异。`
+                              ? `检测到 ${conflictList.length} 条来源差异。`
                               : '未检测到显著冲突'
                           }
                         />
                         {conflictList.length > 0 ? (
-                          <List
-                            size="small"
-                            dataSource={conflictList}
-                            renderItem={(item) => (
-                              <List.Item>
-                                <Space direction="vertical" size={2} style={{ width: '100%' }}>
-                                  <Text strong>{item.topic}</Text>
-                                  <Text type="secondary" style={{ fontSize: 12 }}>
-                                    来源: {Array.isArray(item.sources) ? item.sources.join(' vs ') : '-'}
-                                  </Text>
-                                  <Text type="secondary" style={{ fontSize: 12 }}>
-                                    消解: {item.resolution || '-'} / {item.reason || '-'}
-                                  </Text>
-                                </Space>
-                              </List.Item>
-                            )}
-                          />
-                        ) : null}
-                      </>
-                    ) : null}
-
-                    <Divider style={{ margin: '8px 0' }} />
-                    <Text strong>Skill Draft 审批流</Text>
-                    <Space wrap>
-                      <Button
-                        onClick={handleCreateSkillDraft}
-                        loading={createSkillDraftMutation.isPending}
-                        icon={<PlusOutlined />}
-                      >
-                        创建 Draft
-                      </Button>
-                      <Button
-                        onClick={handleSandboxSkillDraft}
-                        loading={sandboxSkillDraftMutation.isPending}
-                        disabled={!latestSkillDraftId}
-                      >
-                        沙箱测试
-                      </Button>
-                      <Button
-                        onClick={handleSubmitSkillDraftReview}
-                        loading={submitSkillDraftReviewMutation.isPending}
-                        disabled={!latestSkillDraftId}
-                      >
-                        提交审批
-                      </Button>
-                      <Button
-                        onClick={handleApproveSkillDraft}
-                        loading={reviewSkillDraftMutation.isPending}
-                        disabled={!latestSkillDraftId}
-                      >
-                        审批通过
-                      </Button>
-                      <Button
-                        type="primary"
-                        onClick={handlePublishSkillDraft}
-                        loading={publishSkillDraftMutation.isPending}
-                        disabled={!latestSkillDraftId}
-                      >
-                        发布 Skill
-                      </Button>
-                    </Space>
-                    {latestSkillDraftId ? (
-                      <Text type="secondary" style={{ fontSize: 12 }}>
-                        当前 Draft: {latestSkillDraftId}
-                      </Text>
-                    ) : (
-                      <Text type="secondary" style={{ fontSize: 12 }}>
-                        暂无 Draft
-                      </Text>
-                    )}
-
-                    {governanceOverviewQuery.data ? (
-                      <Space direction="vertical" style={{ width: '100%' }}>
-                        <Alert
-                          type={governanceOverviewQuery.data.highRiskPendingReview > 0 ? 'warning' : 'info'}
-                          showIcon
-                          message={`治理看板：活跃授权 ${governanceOverviewQuery.data.activeRuntimeGrants}，1小时内过期 ${governanceOverviewQuery.data.runtimeGrantsExpiringIn1h}，高风险待审 ${governanceOverviewQuery.data.highRiskPendingReview}`}
-                        />
-                        <Button
-                          size="small"
-                          loading={governanceHousekeepingMutation.isPending}
-                          onClick={handleGovernanceHousekeeping}
-                        >
-                          立即治理清理
-                        </Button>
-                      </Space>
-                    ) : null}
-
-                    {governanceEvents.length ? (
-                      <List
-                        size="small"
-                        dataSource={governanceEvents.slice(0, 8)}
-                        renderItem={(item) => (
-                          <List.Item>
-                            <Space direction="vertical" size={2} style={{ width: '100%' }}>
-                              <Space>
-                                <Tag>{item.eventType}</Tag>
-                                <Text>{item.message}</Text>
-                              </Space>
-                              <Text type="secondary" style={{ fontSize: 12 }}>
-                                {new Date(item.createdAt).toLocaleString('zh-CN')}
-                              </Text>
-                            </Space>
-                          </List.Item>
-                        )}
-                      />
-                    ) : null}
-
-                    {runtimeGrants.length ? (
-                      <>
-                        <Text strong style={{ marginTop: 4 }}>
-                          低风险先用后审授权
-                        </Text>
-                        <List
-                          size="small"
-                          dataSource={runtimeGrants}
-                          renderItem={(item) => (
-                            <List.Item
-                              actions={
-                                item.status === 'ACTIVE'
-                                  ? [
-                                      <Button
-                                        key="use"
-                                        size="small"
-                                        loading={consumeRuntimeGrantMutation.isPending}
-                                        onClick={() => void handleConsumeRuntimeGrant(item.id)}
-                                      >
-                                        记录使用
-                                      </Button>,
-                                      <Button
-                                        key="revoke"
-                                        size="small"
-                                        loading={revokeRuntimeGrantMutation.isPending}
-                                        onClick={() => void handleRevokeRuntimeGrant(item.id)}
-                                      >
-                                        撤销
-                                      </Button>,
-                                    ]
-                                  : []
-                              }
-                            >
-                              <Space direction="vertical" size={2} style={{ width: '100%' }}>
-                                <Space>
-                                  <Tag color={item.status === 'ACTIVE' ? 'success' : 'default'}>{item.status}</Tag>
-                                  <Text type="secondary" style={{ fontSize: 12 }}>
-                                    使用 {item.useCount}/{item.maxUseCount}
-                                  </Text>
-                                </Space>
-                                <Text type="secondary" style={{ fontSize: 12 }}>
-                                  过期: {new Date(item.expiresAt).toLocaleString('zh-CN')}
-                                </Text>
-                              </Space>
-                            </List.Item>
-                          )}
-                        />
-                      </>
-                    ) : null}
-
-                    <Divider style={{ margin: '8px 0' }} />
-                    <Text strong>会话资产复用</Text>
-                    {latestReuseResolution ? (
-                      <Space direction="vertical" style={{ width: '100%' }}>
-                        <Alert
-                          type={latestReuseResolution.semanticResolution?.ambiguous ? 'warning' : 'info'}
-                          showIcon
-                          message={
-                            latestReuseResolution.semanticResolution?.selectedAssetTitle
-                              ? `本轮已复用：${latestReuseResolution.semanticResolution.selectedAssetTitle}`
-                              : `本轮复用资产 ${latestReuseResolution.explicitAssetRefCount ?? 0} 项`
-                          }
-                          description={
-                            latestReuseResolution.semanticResolution?.ambiguous
-                              ? `检测到 ${latestReuseResolution.semanticResolution.candidateCount ?? 0} 个候选，已自动选择最相关结果。`
-                              : latestReuseResolution.followupAssetRefCount
-                                ? `本轮按候选序号复用 ${latestReuseResolution.followupAssetRefCount} 项。`
-                                : undefined
-                          }
-                        />
-                        {latestSemanticCandidates.length > 1 ? (
-                          <Space wrap>
-                            {latestSemanticCandidates.slice(0, 3).map((candidate, index) => (
-                              <Button
-                                key={candidate.id}
-                                size="small"
-                                onClick={() => void handleSelectSemanticCandidate(index + 1)}
-                              >
-                                用第{index + 1}个：{candidate.title}
-                              </Button>
-                            ))}
-                          </Space>
+                          <Button size="small" onClick={() => setConflictDetailModalOpen(true)}>
+                            查看一致性详情
+                          </Button>
                         ) : null}
                       </Space>
-                    ) : null}
-                    <List
-                      size="small"
-                      dataSource={conversationAssets.slice(0, 8)}
-                      locale={{ emptyText: '暂无可复用资产' }}
-                      renderItem={(item) => (
-                        <List.Item
-                          actions={[
-                            <Button
-                              key="reuse"
-                              size="small"
-                              loading={reuseAssetMutation.isPending}
-                              onClick={() => void handleReuseAsset(item.id, item.title)}
-                            >
-                              继续基于此结果
-                            </Button>,
-                          ]}
-                        >
-                          <Space direction="vertical" size={2} style={{ width: '100%' }}>
-                            <Space>
-                              <Tag>{item.assetType}</Tag>
-                              <Text strong>{item.title}</Text>
-                            </Space>
-                            <Text type="secondary" style={{ fontSize: 12 }}>
-                              {new Date(item.createdAt).toLocaleString('zh-CN')}
-                            </Text>
-                          </Space>
-                        </List.Item>
-                      )}
-                    />
-                  </Space>
-                ) : (
-                  <Text type="secondary">暂无执行结果</Text>
-                )}
+                    </Card>
+                  ) : null}
+                </>
+              ) : (
+                <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="还没有结果，先发送问题或确认执行" />
+              )}
+            </Space>
+          ) : null}
 
-                {(missingSlots.length > 0 || proposedPlanFromTurn) && (
-                  <>
-                    <Divider style={{ margin: '8px 0' }} />
-                    <Text strong>结构化提示</Text>
-                    {missingSlots.length > 0 ? (
-                      <Alert
-                        type="warning"
-                        showIcon
-                        message="待补充槽位"
-                        description={missingSlots.join('、')}
-                      />
-                    ) : null}
-                    {proposedPlanFromTurn ? (
-                      <Card size="small" style={{ marginTop: 8 }}>
-                        <Space direction="vertical" size={4}>
-                          <Text type="secondary">计划ID</Text>
-                          <Text code>{String(proposedPlanFromTurn.planId ?? '-')}</Text>
-                          <Text type="secondary">计划类型</Text>
-                          <Tag color="blue">{String(proposedPlanFromTurn.planType ?? '-')}</Tag>
-                        </Space>
-                      </Card>
-                    ) : null}
-                  </>
-                )}
+          {detailTab === 'delivery' ? (
+            <Space direction="vertical" style={{ width: '100%' }} size={10}>
+              <Text strong>发送报告</Text>
+              <Space wrap>
+                <Button
+                  icon={<MailOutlined />}
+                  loading={deliverMutation.isPending}
+                  onClick={() => {
+                    setDeliveryChannel('EMAIL');
+                    setDeliveryTemplateCode('DEFAULT');
+                    setDeliveryAdvancedOpen(false);
+                    setEmailModalOpen(true);
+                  }}
+                  disabled={!latestArtifact?.exportTaskId}
+                >
+                  发到邮箱
+                </Button>
+                <Button
+                  loading={deliverMutation.isPending}
+                  onClick={() => {
+                    setDeliveryChannel('DINGTALK');
+                    setDeliveryTemplateCode('MORNING_BRIEF');
+                    setDeliveryAdvancedOpen(false);
+                    setEmailModalOpen(true);
+                  }}
+                  disabled={!latestArtifact?.exportTaskId}
+                >
+                  发到钉钉
+                </Button>
+                <Button
+                  loading={deliverMutation.isPending}
+                  onClick={() => {
+                    setDeliveryChannel('WECOM');
+                    setDeliveryTemplateCode('WEEKLY_REVIEW');
+                    setDeliveryAdvancedOpen(false);
+                    setEmailModalOpen(true);
+                  }}
+                  disabled={!latestArtifact?.exportTaskId}
+                >
+                  发到企业微信
+                </Button>
+                <Button
+                  loading={deliverMutation.isPending}
+                  onClick={() => {
+                    setDeliveryChannel('FEISHU');
+                    setDeliveryTemplateCode('RISK_ALERT');
+                    setDeliveryAdvancedOpen(false);
+                    setEmailModalOpen(true);
+                  }}
+                  disabled={!latestArtifact?.exportTaskId}
+                >
+                  发到飞书
+                </Button>
               </Space>
+
+              <Text strong>最近发送记录</Text>
+              <List
+                size="small"
+                dataSource={visibleDeliveryLogs}
+                locale={{ emptyText: '暂无发送记录' }}
+                renderItem={(item) => (
+                  <List.Item>
+                    <Space direction="vertical" size={2} style={{ width: '100%' }}>
+                      <Space>
+                        <Tag>{channelLabel[item.channel] || item.channel}</Tag>
+                        <Tag color={statusColor[item.status] || 'processing'}>
+                          {deliveryStatusLabel[item.status] || item.status}
+                        </Tag>
+                      </Space>
+                      {item.target ? (
+                        <Text type="secondary" style={{ fontSize: 12 }}>
+                          目标：{item.target}
+                        </Text>
+                      ) : null}
+                      {item.errorMessage ? (
+                        <Text type="danger" style={{ fontSize: 12 }}>
+                          {item.errorMessage}
+                        </Text>
+                      ) : null}
+                    </Space>
+                  </List.Item>
+                )}
+              />
+              {deliveryLogs.length > 3 ? (
+                <Button type="link" style={{ padding: 0, width: 'fit-content' }} onClick={() => setShowAllDeliveryLogs((v) => !v)}>
+                  {showAllDeliveryLogs ? '收起发送记录' : `查看全部发送记录（${deliveryLogs.length}）`}
+                </Button>
+              ) : null}
+
+              {artifacts.length > 0 ? (
+                <>
+                  <List
+                    size="small"
+                    dataSource={visibleArtifacts}
+                    renderItem={(item) => (
+                      <List.Item
+                        actions={
+                          item.downloadUrl
+                            ? [
+                                <a key="download" href={item.downloadUrl} target="_blank" rel="noreferrer">
+                                  下载
+                                </a>,
+                              ]
+                            : []
+                        }
+                      >
+                        <Space>
+                          <Tag>{item.type}</Tag>
+                          <Tag color={item.status === 'COMPLETED' ? 'success' : 'processing'}>
+                            {item.status === 'COMPLETED' ? '已完成' : item.status}
+                          </Tag>
+                        </Space>
+                      </List.Item>
+                    )}
+                  />
+                  {artifacts.length > 3 ? (
+                    <Button type="link" style={{ padding: 0, width: 'fit-content' }} onClick={() => setShowAllArtifacts((v) => !v)}>
+                      {showAllArtifacts ? '收起导出记录' : `查看全部导出记录（${artifacts.length}）`}
+                    </Button>
+                  ) : null}
+                </>
+              ) : null}
+            </Space>
+          ) : null}
+
+          {detailTab === 'schedule' ? (
+            <Space direction="vertical" style={{ width: '100%' }} size={10}>
+              <Text strong>定时发送</Text>
+              <Input value={subscriptionName} onChange={(e) => setSubscriptionName(e.target.value)} placeholder="任务名称" />
+              <Input
+                value={subscriptionCronExpr}
+                onChange={(e) => setSubscriptionCronExpr(e.target.value)}
+                placeholder="执行时间（cron），例如 0 0 8 * * 1"
+              />
+              <Button
+                type="primary"
+                onClick={handleCreateSubscription}
+                loading={createSubscriptionMutation.isPending}
+                disabled={!latestPlan}
+                block
+              >
+                创建定时任务
+              </Button>
+              <Input.TextArea
+                value={scheduleInstruction}
+                onChange={(e) => setScheduleInstruction(e.target.value)}
+                autoSize={{ minRows: 2, maxRows: 4 }}
+                placeholder="也可以直接说：每周一9点发到企业微信群ops-group-01"
+              />
+              <Button onClick={handleResolveSchedule} loading={resolveScheduleMutation.isPending} block>
+                用自然语言配置
+              </Button>
+
+              <List
+                size="small"
+                dataSource={visibleSubscriptions}
+                locale={{ emptyText: '暂无定时任务' }}
+                renderItem={(item) => (
+                  <List.Item
+                    actions={[
+                      <Button
+                        key="toggle"
+                        size={compactActionSize}
+                        loading={updateSubscriptionMutation.isPending}
+                        onClick={() =>
+                          void handleToggleSubscription(
+                            item.id,
+                            item.status as 'ACTIVE' | 'PAUSED' | 'FAILED' | 'ARCHIVED',
+                          )
+                        }
+                      >
+                        {item.status === 'ACTIVE' ? '暂停' : '恢复'}
+                      </Button>,
+                      <Button
+                        key="rerun"
+                        size={compactActionSize}
+                        loading={runSubscriptionMutation.isPending}
+                        onClick={() => void handleRunSubscriptionNow(item.id)}
+                      >
+                        立即补跑
+                      </Button>,
+                    ]}
+                  >
+                    <Space direction="vertical" size={2} style={{ width: '100%' }}>
+                      <Space>
+                        <Text strong>{item.name}</Text>
+                        <Tag color={statusColor[item.status] || 'default'}>
+                          {subscriptionStatusLabel[item.status] || item.status}
+                        </Tag>
+                      </Space>
+                      <Text type="secondary" style={{ fontSize: 12 }}>
+                        时间：{item.cronExpr}
+                      </Text>
+                      <Text type="secondary" style={{ fontSize: 12 }}>
+                        下次执行：{item.nextRunAt ? new Date(item.nextRunAt).toLocaleString('zh-CN') : '-'}
+                      </Text>
+                    </Space>
+                  </List.Item>
+                )}
+              />
+              {subscriptionList.length > 5 ? (
+                <Button type="link" style={{ padding: 0, width: 'fit-content' }} onClick={() => setShowAllSubscriptions((v) => !v)}>
+                  {showAllSubscriptions ? '收起定时任务' : `查看全部定时任务（${subscriptionList.length}）`}
+                </Button>
+              ) : null}
+            </Space>
+          ) : null}
+
+          {detailTab === 'advanced' && isAdminUser ? (
+            <Space direction="vertical" style={{ width: '100%' }} size={10}>
+              <Space wrap>
+                <Button onClick={openTemplateModal}>管理快捷模板</Button>
+                <Button onClick={openDeliveryProfileModal}>投递配置中心</Button>
+                <Button onClick={handleExportDiagnostics}>导出诊断</Button>
+              </Space>
+
+              <Divider style={{ margin: '4px 0' }} />
+              <Text strong>能力草稿与安全管理</Text>
+              <Space wrap>
+                <Button onClick={handleCreateSkillDraft} loading={createSkillDraftMutation.isPending} icon={<PlusOutlined />}>
+                  创建能力草稿
+                </Button>
+                <Button
+                  onClick={handleSandboxSkillDraft}
+                  loading={sandboxSkillDraftMutation.isPending}
+                  disabled={!latestSkillDraftId}
+                >
+                  沙箱测试
+                </Button>
+                <Button
+                  onClick={handleSubmitSkillDraftReview}
+                  loading={submitSkillDraftReviewMutation.isPending}
+                  disabled={!latestSkillDraftId}
+                >
+                  提交审核
+                </Button>
+                <Button
+                  onClick={handleApproveSkillDraft}
+                  loading={reviewSkillDraftMutation.isPending}
+                  disabled={!latestSkillDraftId}
+                >
+                  审核通过
+                </Button>
+                <Button
+                  type="primary"
+                  onClick={handlePublishSkillDraft}
+                  loading={publishSkillDraftMutation.isPending}
+                  disabled={!latestSkillDraftId}
+                >
+                  发布能力
+                </Button>
+              </Space>
+              {latestSkillDraftId ? (
+                <Text type="secondary" style={{ fontSize: 12 }}>
+                  当前草稿 ID：{latestSkillDraftId}
+                </Text>
+              ) : (
+                <Text type="secondary" style={{ fontSize: 12 }}>
+                  暂无能力草稿
+                </Text>
+              )}
+
+              {governanceOverviewQuery.data ? (
+                <Space direction="vertical" style={{ width: '100%' }}>
+                  <Alert
+                    type={governanceOverviewQuery.data.highRiskPendingReview > 0 ? 'warning' : 'info'}
+                    showIcon
+                    message={`安全看板：活跃试用权限 ${governanceOverviewQuery.data.activeRuntimeGrants}，1小时内过期 ${governanceOverviewQuery.data.runtimeGrantsExpiringIn1h}，高风险待审 ${governanceOverviewQuery.data.highRiskPendingReview}`}
+                  />
+                  <Button
+                    size="small"
+                    loading={governanceHousekeepingMutation.isPending}
+                    onClick={handleGovernanceHousekeeping}
+                  >
+                    立即清理
+                  </Button>
+                </Space>
+              ) : null}
+
+              {runtimeGrants.length ? (
+                <List
+                  size="small"
+                  dataSource={runtimeGrants}
+                  renderItem={(item) => (
+                    <List.Item
+                      actions={
+                        item.status === 'ACTIVE'
+                          ? [
+                              <Button
+                                key="use"
+                                size={compactActionSize}
+                                loading={consumeRuntimeGrantMutation.isPending}
+                                onClick={() => void handleConsumeRuntimeGrant(item.id)}
+                              >
+                                记录使用
+                              </Button>,
+                              <Button
+                                key="revoke"
+                                size={compactActionSize}
+                                loading={revokeRuntimeGrantMutation.isPending}
+                                onClick={() => void handleRevokeRuntimeGrant(item.id)}
+                              >
+                                撤销
+                              </Button>,
+                            ]
+                          : []
+                      }
+                    >
+                      <Space direction="vertical" size={2} style={{ width: '100%' }}>
+                        <Space>
+                          <Tag color={statusColor[item.status] || 'default'}>
+                            {runtimeGrantStatusLabel[item.status] || item.status}
+                          </Tag>
+                          <Text type="secondary" style={{ fontSize: 12 }}>
+                            使用 {item.useCount}/{item.maxUseCount}
+                          </Text>
+                        </Space>
+                        <Text type="secondary" style={{ fontSize: 12 }}>
+                          过期：{new Date(item.expiresAt).toLocaleString('zh-CN')}
+                        </Text>
+                      </Space>
+                    </List.Item>
+                  )}
+                />
+              ) : null}
+
+              {governanceEvents.length ? (
+                <>
+                  <List
+                    size="small"
+                    dataSource={visibleGovernanceEvents}
+                    renderItem={(item) => (
+                      <List.Item>
+                        <Space direction="vertical" size={2} style={{ width: '100%' }}>
+                          <Space>
+                            <Tag>{governanceEventLabel[item.eventType] || item.eventType}</Tag>
+                            <Text>{formatGovernanceEventMessage(item)}</Text>
+                          </Space>
+                          <Text type="secondary" style={{ fontSize: 12 }}>
+                            {new Date(item.createdAt).toLocaleString('zh-CN')}
+                          </Text>
+                        </Space>
+                      </List.Item>
+                    )}
+                  />
+                  {governanceEvents.length > 5 ? (
+                    <Button
+                      type="link"
+                      style={{ padding: 0, width: 'fit-content' }}
+                      onClick={() => setShowAllGovernanceEvents((v) => !v)}
+                    >
+                      {showAllGovernanceEvents ? '收起治理记录' : `查看全部治理记录（${governanceEvents.length}）`}
+                    </Button>
+                  ) : null}
+                </>
+              ) : null}
+
+              <Divider style={{ margin: '4px 0' }} />
+              <Text strong>会话结果复用</Text>
+              {latestReuseResolution ? (
+                <Alert
+                  type={latestReuseResolution.semanticResolution?.ambiguous ? 'warning' : 'info'}
+                  showIcon
+                  message={
+                    latestReuseResolution.semanticResolution?.selectedAssetTitle
+                      ? `本轮已复用：${latestReuseResolution.semanticResolution.selectedAssetTitle}`
+                      : `本轮复用资产 ${latestReuseResolution.explicitAssetRefCount ?? 0} 项`
+                  }
+                />
+              ) : null}
+              {latestSemanticCandidates.length > 1 ? (
+                <Space wrap>
+                  {latestSemanticCandidates.slice(0, 3).map((candidate, index) => (
+                    <Button key={candidate.id} size={compactActionSize} onClick={() => void handleSelectSemanticCandidate(index + 1)}>
+                      用第{index + 1}个：{candidate.title}
+                    </Button>
+                  ))}
+                </Space>
+              ) : null}
+              <List
+                size="small"
+                dataSource={conversationAssets.slice(0, 8)}
+                locale={{ emptyText: '暂无可复用资产' }}
+                renderItem={(item) => (
+                  <List.Item
+                    actions={[
+                      <Button
+                        key="reuse"
+                        size="small"
+                        loading={reuseAssetMutation.isPending}
+                        onClick={() => void handleReuseAsset(item.id, item.title)}
+                      >
+                        继续基于此结果
+                      </Button>,
+                    ]}
+                  >
+                    <Space direction="vertical" size={2} style={{ width: '100%' }}>
+                      <Space>
+                        <Tag>{assetTypeLabel[item.assetType] || item.assetType}</Tag>
+                        <Text strong>{item.title}</Text>
+                      </Space>
+                      <Text type="secondary" style={{ fontSize: 12 }}>
+                        {new Date(item.createdAt).toLocaleString('zh-CN')}
+                      </Text>
+                    </Space>
+                  </List.Item>
+                )}
+              />
+
+              {(missingSlots.length > 0 || proposedPlanFromTurn) && (
+                <>
+                  <Divider style={{ margin: '4px 0' }} />
+                  {missingSlots.length > 0 ? (
+                    <Alert type="warning" showIcon message="待补充信息" description={missingSlots.join('、')} />
+                  ) : null}
+                  {proposedPlanFromTurn ? (
+                    <Card size="small">
+                      <Space direction="vertical" size={4}>
+                        <Text type="secondary">方案 ID</Text>
+                        <Text code>{String(proposedPlanFromTurn.planId ?? '-')}</Text>
+                        <Text type="secondary">方案类型</Text>
+                        <Tag color="blue">{String(proposedPlanFromTurn.planType ?? '-')}</Tag>
+                      </Space>
+                    </Card>
+                  ) : null}
+                </>
+              )}
+            </Space>
+          ) : null}
+        </Space>
+      </Drawer>
+
+      <Modal
+        title="验证详情"
+        open={backtestDetailModalOpen}
+        footer={null}
+        onCancel={() => setBacktestDetailModalOpen(false)}
+      >
+        {backtestQuery.data ? (
+          <Space direction="vertical" style={{ width: '100%' }} size={8}>
+            <Alert
+              type={
+                backtestQuery.data.status === 'FAILED'
+                  ? 'error'
+                  : backtestQuery.data.status === 'COMPLETED'
+                    ? 'success'
+                    : 'info'
+              }
+              showIcon
+              message={`状态：${backtestStatusLabel[backtestQuery.data.status] || backtestQuery.data.status}`}
+            />
+            {backtestQuery.data.status === 'COMPLETED' ? (
+              <Card size="small">
+                <Space direction="vertical" size={4}>
+                  <Text>收益：{backtestQuery.data.summary?.returnPct ?? '-'}%</Text>
+                  <Text>最大回撤：{backtestQuery.data.summary?.maxDrawdownPct ?? '-'}%</Text>
+                  <Text>胜率：{backtestQuery.data.summary?.winRatePct ?? '-'}%</Text>
+                  <Text>评分：{backtestQuery.data.summary?.score ?? '-'}</Text>
+                </Space>
+              </Card>
             ) : (
-              <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无计划" />
+              <Text type="secondary">{backtestQuery.data.errorMessage || '验证处理中'}</Text>
             )}
-          </Card>
-        </Col>
-      </Row>
+          </Space>
+        ) : (
+          <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无验证结果" />
+        )}
+      </Modal>
+
+      <Modal
+        title="一致性详情"
+        open={conflictDetailModalOpen}
+        footer={null}
+        onCancel={() => setConflictDetailModalOpen(false)}
+      >
+        {conflictList.length ? (
+          <List
+            size="small"
+            dataSource={conflictList}
+            renderItem={(item) => (
+              <List.Item>
+                <Space direction="vertical" size={2} style={{ width: '100%' }}>
+                  <Text strong>{item.topic}</Text>
+                  <Text type="secondary" style={{ fontSize: 12 }}>
+                    来源：{Array.isArray(item.sources) ? item.sources.join(' vs ') : '-'}
+                  </Text>
+                  <Text type="secondary" style={{ fontSize: 12 }}>
+                    处理建议：{item.resolution || '-'} / {item.reason || '-'}
+                  </Text>
+                </Space>
+              </List.Item>
+            )}
+          />
+        ) : (
+          <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无冲突详情" />
+        )}
+      </Modal>
 
       <Modal
         title="发送报告"
         open={emailModalOpen}
         onOk={handleSendDelivery}
-        onCancel={() => setEmailModalOpen(false)}
+        okText={deliveryChannel === 'EMAIL' ? '发送到邮箱' : `发送到${channelLabel[deliveryChannel] || deliveryChannel}`}
+        cancelText="取消"
+        onCancel={() => {
+          setEmailModalOpen(false);
+          setDeliveryAdvancedOpen(false);
+        }}
         confirmLoading={deliverMutation.isPending}
       >
         <Space direction="vertical" style={{ width: '100%' }}>
+          <Text type="secondary">先选择发送渠道，再补充必要信息。默认会优先使用你的配置中心设置。</Text>
           <Segmented
             value={deliveryChannel}
             options={[
@@ -2046,21 +2443,60 @@ export const AgentCopilotPage: React.FC = () => {
             ]}
             onChange={(value) => setDeliveryChannel(value as 'EMAIL' | 'DINGTALK' | 'WECOM' | 'FEISHU')}
           />
-          <Segmented
-            value={deliveryTemplateCode}
-            options={[
-              { label: '通用模板', value: 'DEFAULT' },
-              { label: '晨报模板', value: 'MORNING_BRIEF' },
-              { label: '周报模板', value: 'WEEKLY_REVIEW' },
-              { label: '风险模板', value: 'RISK_ALERT' },
-            ]}
-            onChange={(value) =>
-              setDeliveryTemplateCode(value as 'DEFAULT' | 'MORNING_BRIEF' | 'WEEKLY_REVIEW' | 'RISK_ALERT')
+          {activeDeliveryChannelProfile ? (
+            <Alert
+              type="info"
+              showIcon
+              message={`已匹配默认配置：${channelLabel[deliveryChannel] || deliveryChannel}`}
+              description={
+                deliveryChannel === 'EMAIL'
+                  ? `默认收件人：${(activeDeliveryChannelProfile.to || []).join('、') || '未配置'}`
+                  : `默认接收位置：${activeDeliveryChannelProfile.target || '未配置'}`
+              }
+            />
+          ) : null}
+          {!activeDeliveryChannelProfile ? (
+            <Alert
+              type="warning"
+              showIcon
+              message="当前渠道暂无默认配置"
+              description="你可以先手动填写接收信息，之后再保存为默认配置。"
+            />
+          ) : null}
+          {isAdminUser ? (
+            <Button
+              type="link"
+              style={{ padding: 0, width: 'fit-content' }}
+              onClick={() => {
+                setEmailModalOpen(false);
+                setDeliveryAdvancedOpen(false);
+                openDeliveryProfileModal();
+              }}
+            >
+              去配置中心维护默认发送设置
+            </Button>
+          ) : null}
+          <Alert
+            type="info"
+            showIcon
+            message={
+              deliveryChannel === 'EMAIL'
+                ? `当前将发送给：${deliveryPreview.resolvedTo.length ? deliveryPreview.resolvedTo.join('、') : '未设置'}`
+                : `当前将发送到：${deliveryPreview.resolvedTarget || '未设置'}`
+            }
+            description={
+              deliveryChannel === 'EMAIL'
+                ? deliveryPreview.useDefaultTo
+                  ? '发送策略：未填写收件人时，自动使用默认收件人。'
+                  : '发送策略：优先使用你当前输入的收件人。'
+                : deliveryPreview.useDefaultTarget
+                  ? '发送策略：未填写接收位置时，自动使用默认接收位置。'
+                  : '发送策略：优先使用你当前输入的接收位置。'
             }
           />
           {deliveryChannel === 'EMAIL' ? (
             <>
-              <Text type="secondary">多个邮箱请使用英文逗号分隔</Text>
+              <Text type="secondary">收件人（可留空，自动使用默认收件人；多个邮箱用英文逗号分隔）</Text>
               <Input
                 placeholder="例如：user@example.com,ops@example.com"
                 value={emailTo}
@@ -2069,7 +2505,7 @@ export const AgentCopilotPage: React.FC = () => {
             </>
           ) : (
             <>
-              <Text type="secondary">输入渠道目标，例如群ID、机器人标识或 webhook target</Text>
+              <Text type="secondary">接收位置（可留空，自动使用默认接收位置）</Text>
               <Input
                 placeholder="例如：ops-group-01"
                 value={deliveryTarget}
@@ -2077,9 +2513,29 @@ export const AgentCopilotPage: React.FC = () => {
               />
             </>
           )}
-          <Button type={sendRawFile ? 'primary' : 'default'} onClick={() => setSendRawFile((v) => !v)}>
-            {sendRawFile ? '当前发送原文件' : '当前发送导出文件'}
+
+          <Button type="link" style={{ padding: 0, width: 'fit-content' }} onClick={() => setDeliveryAdvancedOpen((v) => !v)}>
+            {deliveryAdvancedOpen ? '收起高级选项' : '展开高级选项'}
           </Button>
+          {deliveryAdvancedOpen ? (
+            <Space direction="vertical" style={{ width: '100%' }} size={8}>
+              <Segmented
+                value={deliveryTemplateCode}
+                options={[
+                  { label: '通用模板', value: 'DEFAULT' },
+                  { label: '晨报模板', value: 'MORNING_BRIEF' },
+                  { label: '周报模板', value: 'WEEKLY_REVIEW' },
+                  { label: '风险模板', value: 'RISK_ALERT' },
+                ]}
+                onChange={(value) =>
+                  setDeliveryTemplateCode(value as 'DEFAULT' | 'MORNING_BRIEF' | 'WEEKLY_REVIEW' | 'RISK_ALERT')
+                }
+              />
+              <Button type={sendRawFile ? 'primary' : 'default'} onClick={() => setSendRawFile((v) => !v)}>
+                {sendRawFile ? '当前发送原文件' : '当前发送导出文件'}
+              </Button>
+            </Space>
+          ) : null}
           {!latestArtifact?.exportTaskId ? (
             <Alert type="warning" message="请先导出报告，再发送" showIcon />
           ) : null}
