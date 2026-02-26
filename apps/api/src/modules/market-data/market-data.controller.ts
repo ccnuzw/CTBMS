@@ -12,6 +12,7 @@ import {
 import type { Request as ExpressRequest } from 'express';
 import { randomUUID } from 'node:crypto';
 import {
+  CancelReconciliationJobRequest,
   CreateReconciliationJobRequest,
   ListReconciliationJobsRequest,
   MarketDataAggregateRequest,
@@ -120,6 +121,20 @@ export class MarketDataController {
     @Request() req: AuthRequest,
   ) {
     const data = await this.marketDataService.retryReconciliationJob(this.getUserId(req), jobId);
+    return this.success(req, data);
+  }
+
+  @Post('reconciliation/jobs/:jobId/cancel')
+  async cancelReconciliationJob(
+    @Param('jobId', ParseUUIDPipe) jobId: string,
+    @Body() dto: CancelReconciliationJobRequest,
+    @Request() req: AuthRequest,
+  ) {
+    const data = await this.marketDataService.cancelReconciliationJob(
+      this.getUserId(req),
+      jobId,
+      dto.reason,
+    );
     return this.success(req, data);
   }
 

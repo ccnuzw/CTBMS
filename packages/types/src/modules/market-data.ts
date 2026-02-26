@@ -47,7 +47,17 @@ export const CreateReconciliationJobSchema = z.object({
   }),
 });
 
-export const ReconciliationJobStatusEnum = z.enum(['PENDING', 'RUNNING', 'DONE', 'FAILED']);
+export const CancelReconciliationJobSchema = z.object({
+  reason: z.string().trim().min(1).max(200).optional(),
+});
+
+export const ReconciliationJobStatusEnum = z.enum([
+  'PENDING',
+  'RUNNING',
+  'DONE',
+  'FAILED',
+  'CANCELLED',
+]);
 
 export const ReconciliationJobSortByEnum = z.enum([
   'createdAt',
@@ -175,6 +185,7 @@ export type ReconciliationDataset = z.infer<typeof ReconciliationDatasetEnum>;
 export type StandardizationPreviewDto = z.infer<typeof StandardizationPreviewSchema>;
 export type MarketDataLineageQueryDto = z.infer<typeof MarketDataLineageQuerySchema>;
 export type CreateReconciliationJobDto = z.infer<typeof CreateReconciliationJobSchema>;
+export type CancelReconciliationJobDto = z.infer<typeof CancelReconciliationJobSchema>;
 export type ReconciliationJobStatus = z.infer<typeof ReconciliationJobStatusEnum>;
 export type ReconciliationJobSortBy = z.infer<typeof ReconciliationJobSortByEnum>;
 export type SortOrder = z.infer<typeof SortOrderEnum>;

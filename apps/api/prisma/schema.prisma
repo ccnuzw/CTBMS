@@ -2667,6 +2667,7 @@ enum ReconcileJobStatus {
   RUNNING
   DONE
   FAILED
+  CANCELLED
 }
 
 model DataReconciliationJob {
@@ -2691,6 +2692,8 @@ model DataReconciliationJob {
   createdAt       DateTime @default(now())
   startedAt       DateTime?
   finishedAt      DateTime?
+  cancelledAt     DateTime?
+  cancelReason    String?  @db.Text
   updatedAt       DateTime @updatedAt
 
   diffs DataReconciliationDiff[]
@@ -2701,6 +2704,7 @@ model DataReconciliationJob {
   @@index([summaryPass, status, createdAt])
   @@index([retriedFromJobId, createdAt])
   @@index([createdByUserId, retryCount, createdAt])
+  @@index([status, cancelledAt, createdAt])
 }
 
 model DataReconciliationDiff {

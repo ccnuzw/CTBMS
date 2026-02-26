@@ -201,6 +201,22 @@ async function main() {
       assert.equal(reconcileDetail.body.data.summaryPass, reconcileDetail.body.data.summary.pass);
     }
 
+    const cancelDone = await fetchJson<{
+      statusCode: number;
+      message: string | string[];
+      error: string;
+    }>(`${baseUrl}/market-data/reconciliation/jobs/${reconcileCreated.body.data.jobId}/cancel`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-virtual-user-id': 'admin-user',
+      },
+      body: JSON.stringify({
+        reason: 'manual-cancel-test',
+      }),
+    });
+    assert.equal(cancelDone.status, 400);
+
     const retry = await fetchJson<{
       success: boolean;
       data: {

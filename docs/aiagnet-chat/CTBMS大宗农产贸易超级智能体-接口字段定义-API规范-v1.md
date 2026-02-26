@@ -330,6 +330,7 @@
 - `sortOrder`：`asc | desc`
 - `pass`：可选，`true | false`，用于筛选对账结论（`summary.pass`）
 - `retryCount`：首次任务为 `0`，每次重试 +1；`retriedFromJobId` 标记来源任务
+- `status` 可选值：`PENDING | RUNNING | DONE | FAILED | CANCELLED`
 
 响应：
 
@@ -402,6 +403,40 @@
   "retriedFromJobId": "rc_job_xxx"
 }
 ```
+
+说明：
+
+- 仅允许重试 `DONE | FAILED | CANCELLED` 状态任务。
+
+### 3.5.5 取消对账任务
+
+- `POST /market-data/reconciliation/jobs/:jobId/cancel`
+
+请求：
+
+```json
+{
+  "reason": "manual cancel from console"
+}
+```
+
+响应：
+
+```json
+{
+  "jobId": "rc_job_xxx",
+  "status": "CANCELLED",
+  "dataset": "SPOT_PRICE",
+  "retriedFromJobId": null,
+  "retryCount": 0,
+  "cancelledAt": "2026-02-27T08:20:00.000Z",
+  "cancelReason": "manual cancel from console"
+}
+```
+
+说明：
+
+- 仅允许取消 `PENDING | RUNNING` 状态任务。
 
 ## 4. 指标中心 API
 

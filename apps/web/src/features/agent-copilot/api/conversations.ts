@@ -497,6 +497,7 @@ const capabilityRoutingPolicyTargetId = 'agent-capability-routing-policy-default
 const capabilityRoutingPolicyTargetCode = 'agent-capability-routing-policy-default';
 const ephemeralCapabilityPolicyTargetId = 'agent-ephemeral-capability-policy-default';
 const ephemeralCapabilityPolicyTargetCode = 'agent-ephemeral-capability-policy-default';
+const ephemeralPolicyAuditBindingType = 'AGENT_EPHEMERAL_POLICY_AUDIT';
 
 export interface DeliveryChannelProfile {
   id: string;
@@ -507,6 +508,14 @@ export interface DeliveryChannelProfile {
   sendRawFile?: boolean;
   description?: string;
   isDefault?: boolean;
+}
+
+export interface EphemeralCapabilityPolicyAuditItem {
+  id: string;
+  targetCode?: string | null;
+  metadata?: Record<string, unknown> | null;
+  updatedAt?: string | Date;
+  createdAt?: string | Date;
 }
 
 export const useConversationSessions = (params?: {
@@ -856,6 +865,27 @@ export const useUpsertEphemeralCapabilityPolicy = () => {
     },
   });
 };
+
+export const useEphemeralCapabilityPolicyAudits = (limit = 20) =>
+  useQuery<EphemeralCapabilityPolicyAuditItem[]>({
+    queryKey: ['agent-copilot', 'ephemeral-capability-policy-audits', limit],
+    queryFn: async () => {
+      const res = await apiClient.get<UserConfigBindingPageDto>('/user-config-bindings', {
+        params: {
+          bindingType: ephemeralPolicyAuditBindingType,
+          page: 1,
+          pageSize: Math.min(Math.max(limit, 1), 100),
+        },
+      });
+      return res.data.data.map((item) => ({
+        id: item.id,
+        targetCode: item.targetCode,
+        metadata: (item.metadata as Record<string, unknown> | null | undefined) ?? null,
+        updatedAt: item.updatedAt,
+        createdAt: item.createdAt,
+      }));
+    },
+  });
 
 export const useConversationSubscriptions = (sessionId?: string) =>
   useQuery<SubscriptionItem[]>({

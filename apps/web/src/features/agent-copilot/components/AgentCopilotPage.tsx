@@ -44,6 +44,7 @@ import {
   useCapabilityRoutingPolicy,
   EphemeralCapabilityPolicy,
   useEphemeralCapabilityPolicy,
+  useEphemeralCapabilityPolicyAudits,
   useConfirmConversationPlan,
   useConversationBacktest,
   useConversationConflicts,
@@ -104,6 +105,7 @@ const RESULT_ANALYSIS_PREVIEW_LIMIT = 4000;
 const PROMOTION_BATCH_FAILED_PAGE_SIZE = 8;
 const SYSTEM_MESSAGE_COLLAPSE_MIN_LENGTH = 240;
 const PROMOTION_FILTERS_STORAGE_KEY = 'agent-copilot-promotion-filters-v1';
+const EPHEMERAL_POLICY_AUDIT_STORAGE_KEY = 'agent-copilot-ephemeral-policy-audit-v1';
 const ASSISTANT_MESSAGE_COLLAPSE_MIN_LENGTH = 1200;
 const SYSTEM_SUMMARY_PREVIEW_LENGTH = 80;
 const ASSISTANT_SUMMARY_PREVIEW_LENGTH = 160;
@@ -577,9 +579,20 @@ export const AgentCopilotPage: React.FC = () => {
   >('ALL');
   const [promotionBatchFailedPage, setPromotionBatchFailedPage] = useState(1);
   const [promotionBatchCodeFilter, setPromotionBatchCodeFilter] = useState<string>('ALL');
+  const [selectedReplayErrorCodes, setSelectedReplayErrorCodes] = useState<string[]>([]);
   const [promotionBatchFlow, setPromotionBatchFlow] = useState<
     'IDLE' | 'SUBMIT_REVIEW' | 'APPROVE' | 'PUBLISH'
   >('IDLE');
+  const [ephemeralPolicyAuditHistory, setEphemeralPolicyAuditHistory] = useState<
+    Array<{
+      id: string;
+      savedAt: string;
+      retryableAllowlist: string[];
+      nonRetryableBlocklist: string[];
+      runtimeGrantTtlHours: number;
+      runtimeGrantMaxUseCount: number;
+    }>
+  >([]);
   const [backtestDetailModalOpen, setBacktestDetailModalOpen] = useState(false);
   const [conflictDetailModalOpen, setConflictDetailModalOpen] = useState(false);
   const timelineRef = useRef<HTMLDivElement | null>(null);
@@ -655,6 +668,33 @@ export const AgentCopilotPage: React.FC = () => {
     }
   }, [activeSessionId, promotionTaskStatusFilter, promotionBatchActionFilter, promotionBatchOutcomeFilter]);
 
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+    try {
+      const raw = window.localStorage.getItem(EPHEMERAL_POLICY_AUDIT_STORAGE_KEY);
+      if (!raw) {
+        return;
+      }
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) {
+        setEphemeralPolicyAuditHistory(
+          parsed.filter((item) => item && typeof item === 'object').slice(0, 20) as Array<{
+            id: string;
+            savedAt: string;
+            retryableAllowlist: string[];
+            nonRetryableBlocklist: string[];
+            runtimeGrantTtlHours: number;
+            runtimeGrantMaxUseCount: number;
+          }>,
+        );
+      }
+    } catch {
+      // ignore local audit restore failures
+    }
+  }, []);
+
   const sessionsQuery = useConversationSessions({ page: 1, pageSize: 50 });
   const detailQuery = useConversationDetail(activeSessionId);
   const resultQuery = useConversationResult(activeSessionId);
@@ -688,6 +728,7 @@ export const AgentCopilotPage: React.FC = () => {
   const capabilityRoutingPolicyQuery = useCapabilityRoutingPolicy();
   const upsertCapabilityRoutingPolicyMutation = useUpsertCapabilityRoutingPolicy();
   const ephemeralCapabilityPolicyQuery = useEphemeralCapabilityPolicy();
+  const ephemeralCapabilityPolicyAuditsQuery = useEphemeralCapabilityPolicyAudits(20);
   const upsertEphemeralCapabilityPolicyMutation = useUpsertEphemeralCapabilityPolicy();
 
   const activePromptTemplate =
@@ -998,6 +1039,56 @@ export const AgentCopilotPage: React.FC = () => {
       ),
     } as EphemeralCapabilityPolicy;
   }, [ephemeralCapabilityPolicyBinding?.metadata]);
+  const serverEphemeralPolicyAuditHistory = useMemo(() => {
+    const rows = Array.isArray(ephemeralCapabilityPolicyAuditsQuery.data)
+      ? ephemeralCapabilityPolicyAuditsQuery.data
+      : [];
+    return rows
+      .map((item) => {
+        const metadata = (item.metadata as Record<string, unknown> | undefined) ?? {};
+        const after =
+          metadata.after && typeof metadata.after === 'object' && !Array.isArray(metadata.after)
+            ? (metadata.after as Record<string, unknown>)
+            : {};
+        const toStringArray = (value: unknown): string[] => {
+          if (!Array.isArray(value)) {
+            return [];
+          }
+          return value
+            .map((entry) => (typeof entry === 'string' ? entry.trim().toUpperCase() : ''))
+            .filter(Boolean);
+        };
+        const toInt = (value: unknown, fallback: number) => {
+          if (typeof value === 'number' && Number.isFinite(value)) {
+            return Math.round(value);
+          }
+          if (typeof value === 'string') {
+            const parsed = Number(value);
+            if (Number.isFinite(parsed)) {
+              return Math.round(parsed);
+            }
+          }
+          return fallback;
+        };
+        const savedAt =
+          (typeof metadata.auditedAt === 'string' && metadata.auditedAt) ||
+          (typeof item.updatedAt === 'string' ? item.updatedAt : undefined) ||
+          (typeof item.createdAt === 'string' ? item.createdAt : undefined) ||
+          new Date().toISOString();
+        return {
+          id: item.id,
+          savedAt,
+          retryableAllowlist: toStringArray(after.replayRetryableErrorCodeAllowlist),
+          nonRetryableBlocklist: toStringArray(after.replayNonRetryableErrorCodeBlocklist),
+          runtimeGrantTtlHours: toInt(after.runtimeGrantTtlHours, 24),
+          runtimeGrantMaxUseCount: toInt(after.runtimeGrantMaxUseCount, 30),
+        };
+      })
+      .filter((row) => row.retryableAllowlist.length || row.nonRetryableBlocklist.length)
+      .slice(0, 20);
+  }, [ephemeralCapabilityPolicyAuditsQuery.data]);
+  const displayedEphemeralPolicyAuditHistory =
+    serverEphemeralPolicyAuditHistory.length > 0 ? serverEphemeralPolicyAuditHistory : ephemeralPolicyAuditHistory;
   const deliveryPreview = useMemo(() => {
     const resolvedTo =
       deliveryChannel === 'EMAIL'
@@ -1936,6 +2027,21 @@ export const AgentCopilotPage: React.FC = () => {
         bindingId: ephemeralCapabilityPolicyBinding?.id,
         policy,
       });
+      const nextAudit = [
+        {
+          id: `${Date.now()}-${Math.random().toString(16).slice(2, 8)}`,
+          savedAt: new Date().toISOString(),
+          retryableAllowlist: policy.replayRetryableErrorCodeAllowlist,
+          nonRetryableBlocklist: policy.replayNonRetryableErrorCodeBlocklist,
+          runtimeGrantTtlHours: policy.runtimeGrantTtlHours,
+          runtimeGrantMaxUseCount: policy.runtimeGrantMaxUseCount,
+        },
+        ...ephemeralPolicyAuditHistory,
+      ].slice(0, 20);
+      setEphemeralPolicyAuditHistory(nextAudit);
+      if (typeof window !== 'undefined') {
+        window.localStorage.setItem(EPHEMERAL_POLICY_AUDIT_STORAGE_KEY, JSON.stringify(nextAudit));
+      }
       message.success('临时能力策略保存成功');
       setEphemeralPolicyModalOpen(false);
     } catch {
@@ -2297,8 +2403,15 @@ export const AgentCopilotPage: React.FC = () => {
     setSelectedPromotionBatchAssetId(batchAssetId);
     setPromotionBatchErrorFilter('ALL');
     setPromotionBatchCodeFilter('ALL');
+    setSelectedReplayErrorCodes([]);
     setPromotionBatchFailedPage(1);
     setPromotionBatchDrawerOpen(true);
+  };
+
+  const handleToggleReplayErrorCode = (code: string) => {
+    setSelectedReplayErrorCodes((prev) =>
+      prev.includes(code) ? prev.filter((item) => item !== code) : [...prev, code],
+    );
   };
 
   const handleReplayFailedPromotionBatch = async (
@@ -2465,8 +2578,8 @@ export const AgentCopilotPage: React.FC = () => {
       message.warning('请先选择批次');
       return;
     }
-    if (promotionBatchCodeFilter === 'ALL') {
-      message.warning('请先选择一个错误码后再执行按错误码重放');
+    if (!selectedReplayErrorCodes.length) {
+      message.warning('请先选择至少一个错误码后再执行重放');
       return;
     }
     try {
@@ -2476,11 +2589,11 @@ export const AgentCopilotPage: React.FC = () => {
         maxConcurrency: 6,
         maxRetries: 1,
         replayMode: 'ALL_FAILED',
-        errorCodes: [promotionBatchCodeFilter],
+        errorCodes: selectedReplayErrorCodes,
       });
       const replay = result.data.replayResult;
       message.success(
-        `按错误码重放完成：${promotionBatchCodeFilter}，选择 ${result.data.selectedReplayCount}，成功 ${replay.succeededCount}，失败 ${replay.failedCount}`,
+        `按错误码重放完成：${selectedReplayErrorCodes.join(', ')}，选择 ${result.data.selectedReplayCount}，成功 ${replay.succeededCount}，失败 ${replay.failedCount}`,
       );
     } catch (error) {
       showCopilotError(error, '按错误码重放失败');
@@ -4047,13 +4160,29 @@ export const AgentCopilotPage: React.FC = () => {
               ))}
             </Space>
             <Space wrap>
+              <Text type="secondary">重放错误码：</Text>
+              {selectedPromotionBatchCodeStats.slice(0, 12).map((item) => (
+                <Button
+                  key={`replay-${item.code}`}
+                  size="small"
+                  type={selectedReplayErrorCodes.includes(item.code) ? 'primary' : 'default'}
+                  onClick={() => handleToggleReplayErrorCode(item.code)}
+                >
+                  {item.code}
+                </Button>
+              ))}
+              <Button size="small" onClick={() => setSelectedReplayErrorCodes([])}>
+                清空选择
+              </Button>
+            </Space>
+            <Space wrap>
               <Button size="small" onClick={handleExportPromotionBatchFailedRows}>
                 导出当前失败项
               </Button>
               <Button
                 size="small"
                 type="primary"
-                disabled={promotionBatchCodeFilter === 'ALL'}
+                disabled={!selectedReplayErrorCodes.length}
                 loading={replayFailedPromotionBatchMutation.isPending}
                 onClick={() => void handleReplayBySelectedErrorCode()}
               >
@@ -4531,6 +4660,36 @@ export const AgentCopilotPage: React.FC = () => {
               应用严格型
             </Button>
           </Space>
+          <Card size="small">
+            <Space direction="vertical" style={{ width: '100%' }} size={8}>
+              <Text strong>策略变更审计（最近20次）</Text>
+              <Text type="secondary" style={{ fontSize: 12 }}>
+                当前服务端版本更新时间：
+                {ephemeralCapabilityPolicyBinding?.updatedAt
+                  ? new Date(ephemeralCapabilityPolicyBinding.updatedAt).toLocaleString('zh-CN')
+                  : '-'}
+              </Text>
+              <List
+                size="small"
+                dataSource={displayedEphemeralPolicyAuditHistory.slice(0, 6)}
+                loading={ephemeralCapabilityPolicyAuditsQuery.isLoading}
+                locale={{ emptyText: '暂无审计记录（首次保存策略后自动生成）' }}
+                renderItem={(item) => (
+                  <List.Item>
+                    <Space direction="vertical" size={2} style={{ width: '100%' }}>
+                      <Text type="secondary" style={{ fontSize: 12 }}>
+                        {new Date(item.savedAt).toLocaleString('zh-CN')} · TTL {item.runtimeGrantTtlHours}h · MaxUse{' '}
+                        {item.runtimeGrantMaxUseCount}
+                      </Text>
+                      <Text type="secondary" style={{ fontSize: 12 }}>
+                        白名单 {item.retryableAllowlist.length} 项 / 黑名单 {item.nonRetryableBlocklist.length} 项
+                      </Text>
+                    </Space>
+                  </List.Item>
+                )}
+              />
+            </Space>
+          </Card>
           <Card size="small">
             <Space direction="vertical" style={{ width: '100%' }} size={12}>
               <Space style={{ justifyContent: 'space-between', width: '100%' }}>

@@ -10,6 +10,7 @@ export const UserConfigBindingTypeEnum = z.enum([
   'AGENT_COPILOT_DELIVERY_PROFILES',
   'AGENT_CAPABILITY_ROUTING_POLICY',
   'AGENT_EPHEMERAL_CAPABILITY_POLICY',
+  'AGENT_EPHEMERAL_POLICY_AUDIT',
 ]);
 
 export const UserConfigBindingSchema = z.object({

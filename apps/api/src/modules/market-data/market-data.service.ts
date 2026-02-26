@@ -20,7 +20,7 @@ import { randomUUID } from 'node:crypto';
 import { PrismaService } from '../../prisma';
 
 type StandardDataset = 'SPOT_PRICE' | 'FUTURES_QUOTE' | 'MARKET_EVENT';
-type ReconciliationJobStatus = 'PENDING' | 'RUNNING' | 'DONE' | 'FAILED';
+type ReconciliationJobStatus = 'PENDING' | 'RUNNING' | 'DONE' | 'FAILED' | 'CANCELLED';
 type ReconciliationListSortBy = 'createdAt' | 'startedAt' | 'finishedAt' | 'status' | 'dataset';
 type ReconciliationListSortOrder = 'asc' | 'desc';
 type AggregateOp = 'sum' | 'avg' | 'min' | 'max' | 'count';
@@ -60,6 +60,8 @@ interface ReconciliationJob {
   createdAt: string;
   startedAt?: string;
   finishedAt?: string;
+  cancelledAt?: string;
+  cancelReason?: string;
   summaryPass?: boolean;
   summary?: ReconciliationSummaryDto;
   sampleDiffs?: Array<Record<string, unknown>>;
@@ -77,6 +79,8 @@ interface PersistedReconciliationJobRow {
   createdAt: unknown;
   startedAt: unknown;
   finishedAt: unknown;
+  cancelledAt: unknown;
+  cancelReason: string | null;
   summary: unknown;
   summaryPass: unknown;
   errorMessage: string | null;
@@ -107,6 +111,8 @@ interface ReconciliationJobListResult {
     createdAt: string;
     startedAt?: string;
     finishedAt?: string;
+    cancelledAt?: string;
+    cancelReason?: string;
     summaryPass?: boolean;
     summary?: ReconciliationSummaryDto;
     error?: string;
@@ -447,8 +453,8 @@ export class MarketDataService {
     if (!retryRequest) {
       throw new BadRequestException('source reconciliation job payload unavailable');
     }
-    if (sourceStatus === 'RUNNING') {
-      throw new BadRequestException('cannot retry a running reconciliation job');
+    if (!sourceStatus || !['DONE', 'FAILED', 'CANCELLED'].includes(sourceStatus)) {
+      throw new BadRequestException('can only retry DONE/FAILED/CANCELLED reconciliation jobs');
     }
 
     const retried = await this.createReconciliationJob(userId, retryRequest, {
@@ -457,6 +463,67 @@ export class MarketDataService {
     });
     return {
       ...retried,
+    };
+  }
+
+  async cancelReconciliationJob(userId: string, jobId: string, reason?: string) {
+    const normalizedReason = reason?.trim() || 'manual_cancel';
+
+    const persisted = await this.findPersistedReconciliationJob(jobId);
+    if (persisted) {
+      if (persisted.createdByUserId !== userId) {
+        throw new ForbiddenException('no permission to cancel this job');
+      }
+
+      if (!['PENDING', 'RUNNING'].includes(persisted.status)) {
+        throw new BadRequestException('can only cancel PENDING/RUNNING reconciliation jobs');
+      }
+
+      const cancelledAt = new Date().toISOString();
+      persisted.status = 'CANCELLED';
+      persisted.cancelledAt = cancelledAt;
+      persisted.cancelReason = normalizedReason;
+      persisted.finishedAt = cancelledAt;
+      await this.persistReconciliationJobSnapshot(persisted);
+
+      return {
+        jobId: persisted.jobId,
+        status: persisted.status,
+        dataset: persisted.dataset,
+        retriedFromJobId: persisted.retriedFromJobId ?? null,
+        retryCount: this.parseRetryCount(persisted.retryCount),
+        cancelledAt: persisted.cancelledAt,
+        cancelReason: persisted.cancelReason,
+      };
+    }
+
+    const job = this.reconciliationJobs.get(jobId);
+    if (!job) {
+      throw new NotFoundException('reconciliation job not found');
+    }
+    if (job.createdByUserId !== userId) {
+      throw new ForbiddenException('no permission to cancel this job');
+    }
+
+    if (!['PENDING', 'RUNNING'].includes(job.status)) {
+      throw new BadRequestException('can only cancel PENDING/RUNNING reconciliation jobs');
+    }
+
+    const cancelledAt = new Date().toISOString();
+    job.status = 'CANCELLED';
+    job.cancelledAt = cancelledAt;
+    job.cancelReason = normalizedReason;
+    job.finishedAt = cancelledAt;
+    await this.persistReconciliationJobSnapshot(job, job.request);
+
+    return {
+      jobId: job.jobId,
+      status: job.status,
+      dataset: job.dataset,
+      retriedFromJobId: job.retriedFromJobId ?? null,
+      retryCount: this.parseRetryCount(job.retryCount),
+      cancelledAt: job.cancelledAt,
+      cancelReason: job.cancelReason,
     };
   }
 
@@ -522,6 +589,8 @@ export class MarketDataService {
       createdAt: job.createdAt,
       startedAt: job.startedAt,
       finishedAt: job.finishedAt,
+      cancelledAt: job.cancelledAt,
+      cancelReason: job.cancelReason,
       summaryPass: this.resolveSummaryPass(job.summary, job.summaryPass),
       summary: job.summary,
       error: job.error,
@@ -553,6 +622,8 @@ export class MarketDataService {
         createdAt: persisted.createdAt,
         startedAt: persisted.startedAt,
         finishedAt: persisted.finishedAt,
+        cancelledAt: persisted.cancelledAt,
+        cancelReason: persisted.cancelReason,
         summaryPass: this.resolveSummaryPass(persisted.summary, persisted.summaryPass),
         summary: persisted.summary,
         sampleDiffs: persisted.sampleDiffs,
@@ -578,6 +649,8 @@ export class MarketDataService {
       createdAt: job.createdAt,
       startedAt: job.startedAt,
       finishedAt: job.finishedAt,
+      cancelledAt: job.cancelledAt,
+      cancelReason: job.cancelReason,
       summaryPass: this.resolveSummaryPass(job.summary, job.summaryPass),
       summary: job.summary,
       sampleDiffs: job.sampleDiffs ?? [],
@@ -724,16 +797,20 @@ export class MarketDataService {
     const dimensions = dto?.dimensions ? JSON.stringify(dto.dimensions) : null;
     const threshold = dto?.threshold ? JSON.stringify(dto.threshold) : null;
     const summary = job.summary ? JSON.stringify(job.summary) : null;
-    const summaryPass = this.resolveSummaryPass(job.summary) ?? null;
+    const summaryPass = this.resolveSummaryPass(job.summary, job.summaryPass) ?? null;
     const retriedFromJobId = job.retriedFromJobId ?? null;
     const retryCount = this.parseRetryCount(job.retryCount);
+    const cancelledAt = job.cancelledAt ? new Date(job.cancelledAt) : null;
+    const safeCancelledAt =
+      cancelledAt && Number.isFinite(cancelledAt.getTime()) ? cancelledAt : (null as Date | null);
+    const cancelReason = job.cancelReason?.trim() || null;
 
     try {
       await this.prisma.$executeRawUnsafe(
         `INSERT INTO "DataReconciliationJob"
-          ("id", "jobId", "status", "dataset", "retriedFromJobId", "retryCount", "timeRangeFrom", "timeRangeTo", "dimensions", "threshold", "summary", "summaryPass", "errorMessage", "createdByUserId", "createdAt", "startedAt", "finishedAt", "updatedAt")
+          ("id", "jobId", "status", "dataset", "retriedFromJobId", "retryCount", "timeRangeFrom", "timeRangeTo", "dimensions", "threshold", "summary", "summaryPass", "errorMessage", "createdByUserId", "createdAt", "startedAt", "finishedAt", "cancelledAt", "cancelReason", "updatedAt")
          VALUES
-          ($1, $2, $3::"ReconcileJobStatus", $4, $5, $6, $7, $8, $9::jsonb, $10::jsonb, $11::jsonb, $12, $13, $14, $15, $16, $17, $18)
+          ($1, $2, $3::"ReconcileJobStatus", $4, $5, $6, $7, $8, $9::jsonb, $10::jsonb, $11::jsonb, $12, $13, $14, $15, $16, $17, $18, $19, $20)
          ON CONFLICT ("jobId") DO UPDATE SET
           "status" = EXCLUDED."status",
           "dataset" = EXCLUDED."dataset",
@@ -748,6 +825,8 @@ export class MarketDataService {
           "errorMessage" = EXCLUDED."errorMessage",
           "startedAt" = EXCLUDED."startedAt",
           "finishedAt" = EXCLUDED."finishedAt",
+          "cancelledAt" = EXCLUDED."cancelledAt",
+          "cancelReason" = EXCLUDED."cancelReason",
           "updatedAt" = EXCLUDED."updatedAt"`,
         job.jobId,
         job.jobId,
@@ -766,6 +845,8 @@ export class MarketDataService {
         new Date(job.createdAt),
         job.startedAt ? new Date(job.startedAt) : null,
         job.finishedAt ? new Date(job.finishedAt) : null,
+        safeCancelledAt,
+        cancelReason,
         new Date(),
       );
     } catch (error) {
@@ -890,6 +971,8 @@ export class MarketDataService {
            "createdAt",
            "startedAt",
            "finishedAt",
+           "cancelledAt",
+           "cancelReason",
            "summary",
            "summaryPass",
            "errorMessage"
@@ -914,6 +997,8 @@ export class MarketDataService {
           createdAt: this.toIsoString(row.createdAt) ?? new Date().toISOString(),
           startedAt: this.toIsoString(row.startedAt),
           finishedAt: this.toIsoString(row.finishedAt),
+          cancelledAt: this.toIsoString(row.cancelledAt),
+          cancelReason: row.cancelReason ?? undefined,
           summaryPass: this.resolveSummaryPass(summary, row.summaryPass),
           summary,
           error: row.errorMessage ?? undefined,
@@ -955,6 +1040,8 @@ export class MarketDataService {
            "createdAt",
            "startedAt",
            "finishedAt",
+           "cancelledAt",
+           "cancelReason",
            "summary",
            "summaryPass",
            "errorMessage"
@@ -989,6 +1076,8 @@ export class MarketDataService {
         createdAt: this.toIsoString(row.createdAt) ?? new Date().toISOString(),
         startedAt: this.toIsoString(row.startedAt),
         finishedAt: this.toIsoString(row.finishedAt),
+        cancelledAt: this.toIsoString(row.cancelledAt),
+        cancelReason: row.cancelReason ?? undefined,
         summaryPass: this.resolveSummaryPass(summary, row.summaryPass),
         summary,
         sampleDiffs: diffRows
@@ -1242,7 +1331,13 @@ export class MarketDataService {
   }
 
   private normalizeReconciliationStatus(status: string): ReconciliationJob['status'] {
-    if (status === 'PENDING' || status === 'RUNNING' || status === 'DONE' || status === 'FAILED') {
+    if (
+      status === 'PENDING' ||
+      status === 'RUNNING' ||
+      status === 'DONE' ||
+      status === 'FAILED' ||
+      status === 'CANCELLED'
+    ) {
       return status;
     }
     return 'FAILED';
@@ -1296,6 +1391,8 @@ export class MarketDataService {
     const containsColumn = message.includes('summarypass');
     const containsRetryColumn =
       message.includes('retriedfromjobid') || message.includes('retrycount');
+    const containsCancelColumn =
+      message.includes('cancelledat') || message.includes('cancelreason');
     const missingTableHint =
       message.includes('does not exist') ||
       message.includes('relation') ||
@@ -1303,9 +1400,15 @@ export class MarketDataService {
       message.includes('undefined') ||
       message.includes('42703') ||
       message.includes('42704') ||
+      message.includes('invalid input value for enum') ||
       message.includes('p2021');
     return (
-      (containsTable || containsEnum || containsColumn || containsRetryColumn) && missingTableHint
+      (containsTable ||
+        containsEnum ||
+        containsColumn ||
+        containsRetryColumn ||
+        containsCancelColumn) &&
+      missingTableHint
     );
   }
 
