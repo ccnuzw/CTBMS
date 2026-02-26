@@ -329,6 +329,7 @@ async function main() {
         routeType: string;
         selectedSource?: string | null;
         selectedWorkflowDefinitionId?: string | null;
+        routePolicyDetails?: Record<string, unknown>;
       }>
     >(`${baseUrl}/agent-conversations/sessions/${conversationSessionId}/capability-routing-logs?routeType=WORKFLOW_REUSE`, {
       headers: {
@@ -343,6 +344,26 @@ async function main() {
         (item) => item.selectedWorkflowDefinitionId && item.selectedWorkflowDefinitionId.length > 0,
       ),
     );
+    assert.ok(routingLogs.body.some((item) => Boolean(item.routePolicyDetails)));
+
+    const routingSummary = await fetchJson<{
+      sampleWindow: { window: string; totalLogs: number; analyzedLimit: number };
+      effectivePolicies: {
+        capabilityRoutingPolicy: Record<string, unknown>;
+        ephemeralCapabilityPolicy: Record<string, unknown>;
+      };
+      stats: { routeType: Array<{ key: string; count: number }> };
+    }>(`${baseUrl}/agent-conversations/sessions/${conversationSessionId}/capability-routing-summary`, {
+      headers: {
+        'x-virtual-user-id': ownerUserId,
+      },
+    });
+    assert.equal(routingSummary.status, 200);
+    assert.ok(['1h', '24h', '7d'].includes(routingSummary.body.sampleWindow.window));
+    assert.ok(routingSummary.body.sampleWindow.totalLogs >= 1);
+    assert.ok(Array.isArray(routingSummary.body.stats.routeType));
+    assert.ok(Boolean(routingSummary.body.effectivePolicies.capabilityRoutingPolicy));
+    assert.ok(Boolean(routingSummary.body.effectivePolicies.ephemeralCapabilityPolicy));
   } finally {
     if (conversationSessionId) {
       await prisma.conversationSession.deleteMany({ where: { id: conversationSessionId } });

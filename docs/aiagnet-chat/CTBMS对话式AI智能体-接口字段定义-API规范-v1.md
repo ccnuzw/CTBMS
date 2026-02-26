@@ -182,6 +182,7 @@ Query:
 
 1. `routeType`（可选）：`WORKFLOW_REUSE`/`SKILL_DRAFT_REUSE`/`SKILL_DRAFT_CREATE`
 2. `limit`（可选）：1-200，默认 50
+3. `window`（可选）：`1h`/`24h`/`7d`，默认 `24h`
 
 响应：
 
@@ -197,10 +198,193 @@ Query:
     "selectedDraftId": null,
     "selectedSkillCode": null,
     "routePolicy": ["USER_PRIVATE", "TEAM_OR_PUBLIC"],
+    "routePolicyDetails": {
+      "capabilityRoutingPolicy": {
+        "allowOwnerPool": true,
+        "allowPublicPool": true,
+        "preferOwnerFirst": true,
+        "minOwnerScore": 0,
+        "minPublicScore": 0.35
+      },
+      "ephemeralCapabilityPolicy": {
+        "draftSemanticReuseThreshold": 0.72,
+        "publishedSkillReuseThreshold": 0.76,
+        "runtimeGrantTtlHours": 24,
+        "runtimeGrantMaxUseCount": 30
+      }
+    },
     "reason": "命中用户私有工作流，优先复用",
     "createdAt": "2026-02-26T10:20:00.000Z"
   }
 ]
+```
+
+## 1.6 能力路由汇总
+
+- `GET /agent-conversations/sessions/:sessionId/capability-routing-summary`
+
+Query:
+
+1. `limit`（可选）：20-500，默认 200
+2. `window`（可选）：`1h`/`24h`/`7d`，默认 `24h`
+
+响应：
+
+```json
+{
+  "sampleWindow": {
+    "window": "24h",
+    "totalLogs": 12,
+    "analyzedLimit": 200
+  },
+  "effectivePolicies": {
+    "capabilityRoutingPolicy": {
+      "allowOwnerPool": true,
+      "allowPublicPool": true,
+      "preferOwnerFirst": true,
+      "minOwnerScore": 0,
+      "minPublicScore": 0.35
+    },
+    "ephemeralCapabilityPolicy": {
+      "draftSemanticReuseThreshold": 0.72,
+      "publishedSkillReuseThreshold": 0.76,
+      "runtimeGrantTtlHours": 24,
+      "runtimeGrantMaxUseCount": 30
+    }
+  },
+  "stats": {
+    "routeType": [
+      { "key": "WORKFLOW_REUSE", "count": 7 },
+      { "key": "SKILL_DRAFT_REUSE", "count": 5 }
+    ],
+    "selectedSource": [
+      { "key": "USER_PRIVATE", "count": 8 },
+      { "key": "PUBLISHED_SKILL", "count": 4 }
+    ]
+  },
+  "trend": [
+    {
+      "bucket": "2026-02-26T17",
+      "total": 6,
+      "byRouteType": {
+        "WORKFLOW_REUSE": 4,
+        "SKILL_DRAFT_REUSE": 2
+      }
+    }
+  ]
+}
+```
+
+## 1.7 临时能力汇总
+
+- `GET /agent-conversations/sessions/:sessionId/ephemeral-capabilities/summary`
+
+Query:
+
+1. `window`（可选）：`1h`/`24h`/`7d`，默认 `24h`
+
+响应：
+
+```json
+{
+  "window": "24h",
+  "totals": {
+    "drafts": 8,
+    "runtimeGrants": 5,
+    "expiringRuntimeGrantsIn24h": 2,
+    "staleDrafts": 1
+  },
+  "policy": {
+    "draftSemanticReuseThreshold": 0.72,
+    "publishedSkillReuseThreshold": 0.76,
+    "runtimeGrantTtlHours": 24,
+    "runtimeGrantMaxUseCount": 30
+  },
+  "stats": {
+    "draftStatus": [{ "key": "DRAFT", "count": 4 }],
+    "grantStatus": [{ "key": "ACTIVE", "count": 3 }],
+    "topSkillCodes": [{ "key": "skill_xxx", "count": 2 }]
+  }
+}
+```
+
+## 1.8 临时能力治理清理
+
+- `POST /agent-conversations/sessions/:sessionId/ephemeral-capabilities/housekeeping`
+
+响应：
+
+```json
+{
+  "checkedAt": "2026-02-26T17:30:00.000Z",
+  "expiredGrantCount": 1,
+  "disabledDraftCount": 2,
+  "policy": {
+    "draftSemanticReuseThreshold": 0.72,
+    "publishedSkillReuseThreshold": 0.76,
+    "runtimeGrantTtlHours": 24,
+    "runtimeGrantMaxUseCount": 30
+  }
+}
+```
+
+## 1.9 临时能力进化方案（预览）
+
+- `GET /agent-conversations/sessions/:sessionId/ephemeral-capabilities/evolution-plan`
+
+Query:
+
+1. `window`（可选）：`1h`/`24h`/`7d`，默认 `24h`
+
+响应（节选）：
+
+```json
+{
+  "window": "24h",
+  "policy": {
+    "draftSemanticReuseThreshold": 0.72,
+    "publishedSkillReuseThreshold": 0.76,
+    "runtimeGrantTtlHours": 24,
+    "runtimeGrantMaxUseCount": 30
+  },
+  "recommendations": {
+    "promoteDraftCandidates": [
+      {
+        "draftId": "ds_xxx",
+        "suggestedSkillCode": "skill_xxx",
+        "hitCount": 3,
+        "reason": "复用命中较高，建议进入发布评审"
+      }
+    ],
+    "staleDraftCandidates": [],
+    "expiredGrantCandidates": []
+  },
+  "metrics": {
+    "totalRoutingLogs": 12,
+    "uniqueDraftHits": 4,
+    "uniqueSkillCodeHits": 3
+  }
+}
+```
+
+## 1.10 临时能力进化方案（执行）
+
+- `POST /agent-conversations/sessions/:sessionId/ephemeral-capabilities/evolution-apply`
+
+Query:
+
+1. `window`（可选）：`1h`/`24h`/`7d`，默认 `24h`
+
+响应：
+
+```json
+{
+  "checkedAt": "2026-02-26T18:20:00.000Z",
+  "window": "24h",
+  "expiredGrantCount": 1,
+  "disabledDraftCount": 2,
+  "promoteSuggestionCount": 3
+}
 ```
 
 ## 2. 辩论接口

@@ -23,6 +23,19 @@ type Sub2ApiChatResponse = {
 export class Sub2ApiProvider implements IAIProvider {
   private readonly logger = new Logger(Sub2ApiProvider.name);
 
+  private normalizeBaseUrl(apiUrl?: string): string {
+    let baseUrl = (apiUrl || 'https://sub2api.526566.xyz').replace(/\/+$/, '');
+
+    // Guard against endpoint URLs being stored as base URL.
+    // e.g. .../v1/models, .../v1/chat/completions, .../v1/responses
+    baseUrl = baseUrl.replace(/\/chat\/completions$/, '');
+    baseUrl = baseUrl.replace(/\/completions$/, '');
+    baseUrl = baseUrl.replace(/\/responses$/, '');
+    baseUrl = baseUrl.replace(/\/models$/, '');
+
+    return baseUrl;
+  }
+
   private buildHeaders(options: AIRequestOptions): Record<string, string> {
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
@@ -42,7 +55,7 @@ export class Sub2ApiProvider implements IAIProvider {
   }
 
   private getEndpoint(options: AIRequestOptions, type: 'chat' | 'models'): string {
-    const baseUrl = (options.apiUrl || 'https://sub2api.526566.xyz').replace(/\/+$/, '');
+    const baseUrl = this.normalizeBaseUrl(options.apiUrl);
 
     // Wire API: responses (Codex protocol)
     const wireApi = options.wireApi || 'chat'; // default to chat if not specified? or rely on user config
@@ -71,6 +84,49 @@ export class Sub2ApiProvider implements IAIProvider {
     throw new Error(`Unknown endpoint type: ${type}`);
   }
 
+  private toResponsesInput(messages: Array<{ role: string; content: string }>) {
+    return messages.map((m) => ({
+      role: m.role,
+      content: [{ type: 'input_text', text: m.content }],
+    }));
+  }
+
+  private extractResponsesContent(data: unknown): string {
+    if (!data || typeof data !== 'object') return '';
+    const typed = data as {
+      output_text?: string;
+      output?: Array<{
+        content?: string | Array<{ type?: string; text?: string }>;
+      }>;
+      choices?: Array<{ message?: { content?: string } }>;
+    };
+
+    if (typed.output_text && typed.output_text.length > 0) {
+      return typed.output_text;
+    }
+
+    const chunks: string[] = [];
+    for (const item of typed.output || []) {
+      if (typeof item.content === 'string') {
+        chunks.push(item.content);
+        continue;
+      }
+      if (Array.isArray(item.content)) {
+        for (const part of item.content) {
+          if (part && typeof part.text === 'string' && part.text.length > 0) {
+            chunks.push(part.text);
+          }
+        }
+      }
+    }
+
+    if (chunks.length > 0) {
+      return chunks.join('\n');
+    }
+
+    return typed.choices?.[0]?.message?.content || '';
+  }
+
   async generateResponse(
     systemPrompt: string,
     userPrompt: string,
@@ -84,28 +140,17 @@ export class Sub2ApiProvider implements IAIProvider {
     let body: Record<string, unknown>;
 
     if (wireApi === 'responses') {
-      // Codex / Responses Protocol
+      // OpenAI Responses Protocol
       body = {
         model: options.modelName,
-        prompt: userPrompt, // Responses API uses 'prompt' usually, not messages? Or maybe messages.
-        // Based on Codex API:
-        // It often accepts 'prompt' for completion-style or 'messages' for chat-style wrapped in response object
-        // Research says "responses" API is for newer Codex.
-        // Let's support both but default to 'prompt' if it's strictly code completion,
-        // OR 'messages' if it's chat.
-        // Given the valid 'messages' usage in user examples for sub2api, let's try 'messages' first if available.
-        // But standard OpenAI "completions" use 'prompt'.
-        // "Responses" API might use 'messages'.
-        // Let's assume standard OpenAI Chat structure but sent to /responses endpoint with extra fields.
-        messages: [
+        input: this.toResponsesInput([
           { role: 'system', content: systemPrompt },
           { role: 'user', content: userPrompt },
-        ],
-        model_reasoning_effort: 'high', // Hardcoded high for now or configurable?
-        disable_response_storage: true, // From user config example
-        max_tokens: options.maxTokens,
+        ]),
+        max_output_tokens: options.maxTokens,
         temperature: options.temperature,
         top_p: options.topP,
+        stream: false,
       };
     } else {
       // Standard OpenAI
@@ -139,17 +184,7 @@ export class Sub2ApiProvider implements IAIProvider {
       };
 
       if (wireApi === 'responses') {
-        // Parse 'Response' object
-        // content might be in data.output[0].content or something similar
-        // OpenAI Response object: output: [{ content: "..." }]
-        if (data.output && Array.isArray(data.output) && data.output.length > 0) {
-          return data.output[0].content || '';
-        }
-        // Fallback: check standard choices
-        if (data.choices && data.choices.length > 0) {
-          return data.choices[0].message?.content || '';
-        }
-        return JSON.stringify(data); // Fallback for debugging
+        return this.extractResponsesContent(data);
       }
 
       // Standard
@@ -198,8 +233,14 @@ export class Sub2ApiProvider implements IAIProvider {
     };
 
     if (options.wireApi === 'responses') {
-      body.model_reasoning_effort = 'high';
-      body.disable_response_storage = true;
+      body.input = this.toResponsesInput(
+        messages
+          .filter((m) => m.role === 'system' || m.role === 'user' || m.role === 'assistant')
+          .map((m) => ({ role: m.role, content: m.content || '' })),
+      );
+      body.max_output_tokens = options.maxTokens ?? 8192;
+      body.stream = false;
+      delete body.messages;
     }
 
     try {
@@ -217,12 +258,10 @@ export class Sub2ApiProvider implements IAIProvider {
       const data = (await response.json()) as Sub2ApiChatResponse;
 
       if (options.wireApi === 'responses') {
-        if (data.output && Array.isArray(data.output) && data.output.length > 0) {
-          return {
-            content: data.output[0].content || null,
-            tool_calls: data.output[0].tool_calls,
-          };
-        }
+        return {
+          content: this.extractResponsesContent(data) || null,
+          tool_calls: data.output?.[0]?.tool_calls,
+        };
       }
 
       const choiceMessage = data.choices?.[0]?.message;
@@ -261,10 +300,9 @@ export class Sub2ApiProvider implements IAIProvider {
         wireApi === 'responses'
           ? {
               model: options.modelName,
-              messages: [{ role: 'user', content: 'Hello' }],
-              model_reasoning_effort: 'high',
-              disable_response_storage: true,
-              max_tokens: 10,
+              input: this.toResponsesInput([{ role: 'user', content: 'Hello' }]),
+              max_output_tokens: 10,
+              stream: false,
             }
           : {
               model: options.modelName,
@@ -302,8 +340,7 @@ export class Sub2ApiProvider implements IAIProvider {
       let content = '';
 
       if (wireApi === 'responses') {
-        if (data.output && data.output[0]) content = data.output[0].content || '';
-        else if (data.choices && data.choices[0]) content = data.choices[0].message?.content || '';
+        content = this.extractResponsesContent(data);
       } else {
         content = data.choices?.[0]?.message?.content || '';
       }
@@ -338,7 +375,7 @@ export class Sub2ApiProvider implements IAIProvider {
       const data = (await response.json()) as { data?: Array<{ id: string }> };
       const models = (data.data || []).map((m) => m.id).sort();
 
-      return { models, activeUrl: url };
+      return { models, activeUrl: this.normalizeBaseUrl(options.apiUrl) };
     } catch (error) {
       this.logger.error('Sub2API getModels failed', error);
       throw error;

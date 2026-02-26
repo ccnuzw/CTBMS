@@ -67,6 +67,15 @@ import {
   useSandboxSkillDraft,
   useReviewSkillDraft,
   useCapabilityRoutingLogs,
+  useCapabilityRoutingSummary,
+  useEphemeralCapabilitySummary,
+  useEphemeralCapabilityEvolutionPlan,
+  useEphemeralPromotionTasks,
+  useEphemeralPromotionTaskSummary,
+  useApplyEphemeralCapabilityEvolutionPlan,
+  useUpdateEphemeralPromotionTask,
+  useBatchUpdateEphemeralPromotionTasks,
+  useRunEphemeralCapabilityHousekeeping,
   useConsumeSkillRuntimeGrant,
   useSkillGovernanceEvents,
   useSkillGovernanceHousekeeping,
@@ -361,6 +370,14 @@ const capabilityRouteTypeLabel: Record<string, string> = {
   SKILL_DRAFT_CREATE: '新建能力草稿',
 };
 
+const promotionTaskStatusLabel: Record<string, string> = {
+  PENDING_REVIEW: '待处理',
+  IN_REVIEW: '审核中',
+  APPROVED: '已通过',
+  REJECTED: '已拒绝',
+  PUBLISHED: '已发布',
+};
+
 const formatGovernanceEventMessage = (item: {
   eventType: string;
   message: string;
@@ -389,6 +406,33 @@ const formatGovernanceEventMessage = (item: {
   return item.message;
 };
 
+const formatRoutePolicyDetails = (details?: Record<string, unknown>) => {
+  if (!details) {
+    return '';
+  }
+  const capability =
+    details.capabilityRoutingPolicy && typeof details.capabilityRoutingPolicy === 'object'
+      ? (details.capabilityRoutingPolicy as Record<string, unknown>)
+      : null;
+  const ephemeral =
+    details.ephemeralCapabilityPolicy && typeof details.ephemeralCapabilityPolicy === 'object'
+      ? (details.ephemeralCapabilityPolicy as Record<string, unknown>)
+      : null;
+
+  const parts: string[] = [];
+  if (capability) {
+    parts.push(
+      `路由策略：私有池${capability.allowOwnerPool ? '开' : '关'}，公共池${capability.allowPublicPool ? '开' : '关'}，私有优先${capability.preferOwnerFirst ? '开' : '关'}`,
+    );
+  }
+  if (ephemeral) {
+    parts.push(
+      `临时策略：草稿阈值${String(ephemeral.draftSemanticReuseThreshold ?? '-')}, 发布阈值${String(ephemeral.publishedSkillReuseThreshold ?? '-')}, 授权${String(ephemeral.runtimeGrantTtlHours ?? '-')}h/${String(ephemeral.runtimeGrantMaxUseCount ?? '-')}次`,
+    );
+  }
+  return parts.join('；');
+};
+
 const copilotErrorMessageByCode: Record<string, string> = {
   CONV_SESSION_NOT_FOUND: '会话不存在或无权限访问，请刷新后重试。',
   CONV_RESULT_NOT_FOUND: '会话结果不可见，请确认任务是否已执行。',
@@ -413,6 +457,9 @@ const copilotErrorMessageByCode: Record<string, string> = {
   SKILL_REVIEWER_CONFLICT: '高风险草稿不能由创建者本人审批通过。',
   SKILL_HIGH_RISK_REVIEW_REQUIRED: '高风险草稿必须由非创建者审批后才能发布。',
   CONV_SCHEDULE_SUB_NOT_FOUND: '未找到可操作订阅，请先创建或指定正确名称。',
+  CONV_PROMOTION_TASK_NOT_FOUND: '能力晋升任务不存在，请刷新后重试。',
+  CONV_PROMOTION_TASK_PUBLISH_BLOCKED: '草稿尚未发布，请先发布能力后再同步任务状态。',
+  CONV_PROMOTION_TASK_ACTION_INVALID: '任务操作无效，请刷新页面后重试。',
 };
 
 export const AgentCopilotPage: React.FC = () => {
@@ -459,6 +506,10 @@ export const AgentCopilotPage: React.FC = () => {
   const [showAllArtifacts, setShowAllArtifacts] = useState(false);
   const [showAllSubscriptions, setShowAllSubscriptions] = useState(false);
   const [showAllGovernanceEvents, setShowAllGovernanceEvents] = useState(false);
+  const [routingSummaryWindow, setRoutingSummaryWindow] = useState<'1h' | '24h' | '7d'>('24h');
+  const [promotionTaskStatusFilter, setPromotionTaskStatusFilter] = useState<
+    'ALL' | 'PENDING_REVIEW' | 'IN_REVIEW' | 'APPROVED' | 'REJECTED' | 'PUBLISHED'
+  >('ALL');
   const [backtestDetailModalOpen, setBacktestDetailModalOpen] = useState(false);
   const [conflictDetailModalOpen, setConflictDetailModalOpen] = useState(false);
   const timelineRef = useRef<HTMLDivElement | null>(null);
@@ -577,7 +628,31 @@ export const AgentCopilotPage: React.FC = () => {
       .find((payload) => payload && typeof payload.draftId === 'string')?.draftId as string | undefined;
   }, [detailQuery.data?.turns]);
   const governanceEventsQuery = useSkillGovernanceEvents(latestSkillDraftId);
-  const capabilityRoutingLogsQuery = useCapabilityRoutingLogs(activeSessionId, { limit: 20 });
+  const capabilityRoutingLogsQuery = useCapabilityRoutingLogs(activeSessionId, {
+    limit: 20,
+    window: routingSummaryWindow,
+  });
+  const capabilityRoutingSummaryQuery = useCapabilityRoutingSummary(activeSessionId, {
+    limit: 200,
+    window: routingSummaryWindow,
+  });
+  const ephemeralCapabilitySummaryQuery = useEphemeralCapabilitySummary(activeSessionId, {
+    window: routingSummaryWindow,
+  });
+  const ephemeralEvolutionPlanQuery = useEphemeralCapabilityEvolutionPlan(activeSessionId, {
+    window: routingSummaryWindow,
+  });
+  const ephemeralPromotionTasksQuery = useEphemeralPromotionTasks(activeSessionId, {
+    window: routingSummaryWindow,
+    status: promotionTaskStatusFilter === 'ALL' ? undefined : promotionTaskStatusFilter,
+  });
+  const ephemeralPromotionTaskSummaryQuery = useEphemeralPromotionTaskSummary(activeSessionId, {
+    window: routingSummaryWindow,
+  });
+  const applyEphemeralEvolutionMutation = useApplyEphemeralCapabilityEvolutionPlan();
+  const updateEphemeralPromotionTaskMutation = useUpdateEphemeralPromotionTask();
+  const batchUpdateEphemeralPromotionTasksMutation = useBatchUpdateEphemeralPromotionTasks();
+  const runEphemeralHousekeepingMutation = useRunEphemeralCapabilityHousekeeping();
   const runtimeGrantsQuery = useSkillDraftRuntimeGrants(latestSkillDraftId);
   const backtestQuery = useConversationBacktest(activeSessionId, latestBacktestJobId);
   const conflictsQuery = useConversationConflicts(activeSessionId);
@@ -587,6 +662,13 @@ export const AgentCopilotPage: React.FC = () => {
   const conflictList = Array.isArray(conflictsQuery.data?.conflicts) ? conflictsQuery.data.conflicts : [];
   const governanceEvents = Array.isArray(governanceEventsQuery.data) ? governanceEventsQuery.data : [];
   const capabilityRoutingLogs = Array.isArray(capabilityRoutingLogsQuery.data) ? capabilityRoutingLogsQuery.data : [];
+  const capabilityRoutingSummary = capabilityRoutingSummaryQuery.data;
+  const ephemeralCapabilitySummary = ephemeralCapabilitySummaryQuery.data;
+  const ephemeralEvolutionPlan = ephemeralEvolutionPlanQuery.data;
+  const ephemeralPromotionTasks = Array.isArray(ephemeralPromotionTasksQuery.data)
+    ? ephemeralPromotionTasksQuery.data
+    : [];
+  const ephemeralPromotionTaskSummary = ephemeralPromotionTaskSummaryQuery.data;
   const runtimeGrants = Array.isArray(runtimeGrantsQuery.data) ? runtimeGrantsQuery.data : [];
   const conversationAssets = Array.isArray(assetsQuery.data) ? assetsQuery.data : [];
 
@@ -1626,6 +1708,233 @@ export const AgentCopilotPage: React.FC = () => {
     } catch {
       message.error('临时能力策略保存失败');
     }
+  };
+
+  const handleExportRoutingSummary = () => {
+    if (!capabilityRoutingSummary) {
+      message.warning('暂无可导出的路由汇总数据');
+      return;
+    }
+    const routeTypeLines = capabilityRoutingSummary.stats.routeType
+      .map((item) => `- ${capabilityRouteTypeLabel[item.key] || item.key}: ${item.count}`)
+      .join('\n');
+    const sourceLines = capabilityRoutingSummary.stats.selectedSource
+      .map((item) => `- ${item.key}: ${item.count}`)
+      .join('\n');
+    const trendLines = capabilityRoutingSummary.trend
+      .map((item) => `- ${item.bucket}: 总计 ${item.total}，分布 ${JSON.stringify(item.byRouteType)}`)
+      .join('\n');
+
+    const markdown = [
+      '# 能力路由汇总报告',
+      '',
+      `- 会话ID: ${activeSessionId ?? '-'}`,
+      `- 时间窗口: ${capabilityRoutingSummary.sampleWindow.window}`,
+      `- 样本数量: ${capabilityRoutingSummary.sampleWindow.totalLogs}`,
+      `- 分析上限: ${capabilityRoutingSummary.sampleWindow.analyzedLimit}`,
+      '',
+      '## 路由类型分布',
+      routeTypeLines || '- 无',
+      '',
+      '## 来源分布',
+      sourceLines || '- 无',
+      '',
+      '## 生效策略',
+      `- 路由策略: ${JSON.stringify(capabilityRoutingSummary.effectivePolicies.capabilityRoutingPolicy)}`,
+      `- 临时策略: ${JSON.stringify(capabilityRoutingSummary.effectivePolicies.ephemeralCapabilityPolicy)}`,
+      '',
+      '## 趋势（按小时）',
+      trendLines || '- 无',
+      '',
+    ].join('\n');
+
+    const blob = new Blob([markdown], { type: 'text/markdown;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = `capability-routing-summary-${Date.now()}.md`;
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    URL.revokeObjectURL(url);
+    message.success('已导出路由汇总报告');
+  };
+
+  const handleRunEphemeralHousekeeping = async () => {
+    if (!activeSessionId) {
+      message.warning('请先选择会话');
+      return;
+    }
+    try {
+      const result = await runEphemeralHousekeepingMutation.mutateAsync({ sessionId: activeSessionId });
+      message.success(
+        `临时能力清理完成：过期授权 ${result.data.expiredGrantCount}，关闭临时授权草稿 ${result.data.disabledDraftCount}`,
+      );
+    } catch {
+      message.error('临时能力清理失败');
+    }
+  };
+
+  const handleApplyEphemeralEvolution = async () => {
+    if (!activeSessionId) {
+      message.warning('请先选择会话');
+      return;
+    }
+    try {
+      const result = await applyEphemeralEvolutionMutation.mutateAsync({
+        sessionId: activeSessionId,
+        window: routingSummaryWindow,
+      });
+      message.success(
+        `进化方案已执行：过期授权 ${result.data.expiredGrantCount}，关闭草稿 ${result.data.disabledDraftCount}，晋升建议 ${result.data.promoteSuggestionCount}，任务生成 ${result.data.promotionTaskCount ?? 0}`,
+      );
+    } catch {
+      message.error('进化方案执行失败');
+    }
+  };
+
+  const handleUpdatePromotionTask = async (
+    taskAssetId: string,
+    action: 'START_REVIEW' | 'MARK_APPROVED' | 'MARK_REJECTED' | 'MARK_PUBLISHED' | 'SYNC_DRAFT_STATUS',
+    comment?: string,
+  ) => {
+    if (!activeSessionId) {
+      message.warning('请先选择会话');
+      return;
+    }
+    try {
+      const result = await updateEphemeralPromotionTaskMutation.mutateAsync({
+        sessionId: activeSessionId,
+        taskAssetId,
+        action,
+        comment,
+      });
+      const status = result.data.task?.status || '-';
+      message.success(`晋升任务状态已更新：${promotionTaskStatusLabel[status] || status}`);
+    } catch (error) {
+      showCopilotError(error, '晋升任务更新失败');
+    }
+  };
+
+  const handleSubmitReviewForTask = async (taskAssetId: string, draftId: string) => {
+    try {
+      await submitSkillDraftReviewMutation.mutateAsync(draftId);
+      await handleUpdatePromotionTask(taskAssetId, 'START_REVIEW', '已提交能力审核');
+      message.success('已提交审核，并更新晋升任务状态');
+    } catch (error) {
+      showCopilotError(error, '提交审核失败');
+    }
+  };
+
+  const handleApproveForTask = async (taskAssetId: string, draftId: string) => {
+    try {
+      await reviewSkillDraftMutation.mutateAsync({
+        draftId,
+        action: 'APPROVE',
+        comment: '由晋升任务流程触发审批通过',
+      });
+      await handleUpdatePromotionTask(taskAssetId, 'MARK_APPROVED', '草稿审批通过');
+      message.success('草稿审批通过，并更新晋升任务状态');
+    } catch (error) {
+      showCopilotError(error, '审批失败');
+    }
+  };
+
+  const handlePublishForTask = async (taskAssetId: string, draftId: string) => {
+    try {
+      await publishSkillDraftMutation.mutateAsync(draftId);
+      await handleUpdatePromotionTask(taskAssetId, 'MARK_PUBLISHED', '草稿已发布到能力库');
+      message.success('已发布能力，并更新晋升任务状态');
+    } catch (error) {
+      showCopilotError(error, '发布失败');
+    }
+  };
+
+  const handleBatchSyncPromotionTasks = async () => {
+    if (!activeSessionId) {
+      message.warning('请先选择会话');
+      return;
+    }
+    try {
+      const result = await batchUpdateEphemeralPromotionTasksMutation.mutateAsync({
+        sessionId: activeSessionId,
+        action: 'SYNC_DRAFT_STATUS',
+        window: routingSummaryWindow,
+        status: promotionTaskStatusFilter === 'ALL' ? undefined : promotionTaskStatusFilter,
+        comment: '批量同步草稿状态',
+      });
+      message.success(
+        `批量同步完成：成功 ${result.data.succeededCount}，失败 ${result.data.failedCount}`,
+      );
+    } catch (error) {
+      showCopilotError(error, '批量同步失败');
+    }
+  };
+
+  const handleBatchMarkReviewing = async () => {
+    if (!activeSessionId) {
+      message.warning('请先选择会话');
+      return;
+    }
+    try {
+      const result = await batchUpdateEphemeralPromotionTasksMutation.mutateAsync({
+        sessionId: activeSessionId,
+        action: 'START_REVIEW',
+        window: routingSummaryWindow,
+        status: promotionTaskStatusFilter === 'ALL' ? 'PENDING_REVIEW' : promotionTaskStatusFilter,
+        comment: '批量推进至审核中',
+      });
+      message.success(
+        `批量推进完成：成功 ${result.data.succeededCount}，失败 ${result.data.failedCount}`,
+      );
+    } catch (error) {
+      showCopilotError(error, '批量推进失败');
+    }
+  };
+
+  const handleExportPromotionTasks = () => {
+    if (!ephemeralPromotionTasks.length) {
+      message.warning('暂无可导出的晋升任务');
+      return;
+    }
+    const header = [
+      'taskAssetId',
+      'suggestedSkillCode',
+      'status',
+      'draftStatus',
+      'hitCount',
+      'reason',
+      'lastAction',
+      'lastActionAt',
+      'createdAt',
+    ];
+    const escapeCsv = (value: unknown) => `"${String(value ?? '').replace(/"/g, '""')}"`;
+    const rows = ephemeralPromotionTasks.map((task) =>
+      [
+        task.taskAssetId,
+        task.suggestedSkillCode,
+        task.status,
+        task.draftStatus || '',
+        task.hitCount,
+        task.reason || '',
+        task.lastAction || '',
+        task.lastActionAt || '',
+        task.createdAt,
+      ]
+        .map((value) => escapeCsv(value))
+        .join(','),
+    );
+    const csv = [header.join(','), ...rows].join('\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = `promotion-tasks-${Date.now()}.csv`;
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    URL.revokeObjectURL(url);
+    message.success('已导出晋升任务');
   };
 
   const normalizeTemplateArray = (input: Array<Record<string, unknown>>) => {
@@ -2691,6 +3000,220 @@ export const AgentCopilotPage: React.FC = () => {
 
               <Divider style={{ margin: '4px 0' }} />
               <Text strong>能力路由记录</Text>
+              <Space style={{ justifyContent: 'space-between', width: '100%' }}>
+                <Segmented
+                  size="small"
+                  value={routingSummaryWindow}
+                  options={[
+                    { label: '近1小时', value: '1h' },
+                    { label: '近24小时', value: '24h' },
+                    { label: '近7天', value: '7d' },
+                  ]}
+                  onChange={(value) => setRoutingSummaryWindow(value as '1h' | '24h' | '7d')}
+                />
+                <Button size="small" onClick={handleExportRoutingSummary}>
+                  导出汇总报告
+                </Button>
+              </Space>
+              {ephemeralCapabilitySummary ? (
+                <Card size="small">
+                  <Space direction="vertical" style={{ width: '100%' }} size={6}>
+                    <Text type="secondary" style={{ fontSize: 12 }}>
+                      临时能力概览：草稿 {ephemeralCapabilitySummary.totals.drafts}，授权 {ephemeralCapabilitySummary.totals.runtimeGrants}，24h 内到期 {ephemeralCapabilitySummary.totals.expiringRuntimeGrantsIn24h}，陈旧草稿 {ephemeralCapabilitySummary.totals.staleDrafts}
+                    </Text>
+                    <Text type="secondary" style={{ fontSize: 12 }}>
+                      热门能力：
+                      {ephemeralCapabilitySummary.stats.topSkillCodes
+                        .slice(0, 3)
+                        .map((item) => `${item.key}(${item.count})`)
+                        .join(' / ') || '-'}
+                    </Text>
+                    <Space>
+                      <Button
+                        size="small"
+                        loading={runEphemeralHousekeepingMutation.isPending}
+                        onClick={handleRunEphemeralHousekeeping}
+                      >
+                        立即清理临时能力
+                      </Button>
+                      <Button
+                        size="small"
+                        type="primary"
+                        loading={applyEphemeralEvolutionMutation.isPending}
+                        onClick={handleApplyEphemeralEvolution}
+                      >
+                        执行进化方案
+                      </Button>
+                    </Space>
+                    {ephemeralEvolutionPlan ? (
+                      <>
+                        <Text type="secondary" style={{ fontSize: 12 }}>
+                          进化建议：晋升候选 {ephemeralEvolutionPlan.recommendations.promoteDraftCandidates.length}，陈旧草稿 {ephemeralEvolutionPlan.recommendations.staleDraftCandidates.length}，过期授权 {ephemeralEvolutionPlan.recommendations.expiredGrantCandidates.length}
+                        </Text>
+                        <Text type="secondary" style={{ fontSize: 12 }}>
+                          热门候选：
+                          {ephemeralEvolutionPlan.recommendations.promoteDraftCandidates
+                            .slice(0, 3)
+                            .map((item) => `${item.suggestedSkillCode}(${item.hitCount})`)
+                            .join(' / ') || '-'}
+                        </Text>
+                        {ephemeralPromotionTaskSummary ? (
+                          <Text type="secondary" style={{ fontSize: 12 }}>
+                            任务概览：总计 {ephemeralPromotionTaskSummary.totalTasks}，待处理 {ephemeralPromotionTaskSummary.pendingActionCount}，已关联发布 {ephemeralPromotionTaskSummary.publishedLinkedCount}
+                          </Text>
+                        ) : null}
+                        <Space style={{ justifyContent: 'space-between', width: '100%' }} wrap>
+                          <Segmented
+                            size="small"
+                            value={promotionTaskStatusFilter}
+                            options={[
+                              { label: '全部', value: 'ALL' },
+                              { label: '待处理', value: 'PENDING_REVIEW' },
+                              { label: '审核中', value: 'IN_REVIEW' },
+                              { label: '已通过', value: 'APPROVED' },
+                              { label: '已拒绝', value: 'REJECTED' },
+                              { label: '已发布', value: 'PUBLISHED' },
+                            ]}
+                            onChange={(value) =>
+                              setPromotionTaskStatusFilter(
+                                value as
+                                  | 'ALL'
+                                  | 'PENDING_REVIEW'
+                                  | 'IN_REVIEW'
+                                  | 'APPROVED'
+                                  | 'REJECTED'
+                                  | 'PUBLISHED',
+                              )
+                            }
+                          />
+                          <Space wrap>
+                            <Button
+                              size="small"
+                              loading={batchUpdateEphemeralPromotionTasksMutation.isPending}
+                              onClick={handleBatchSyncPromotionTasks}
+                            >
+                              批量同步状态
+                            </Button>
+                            <Button
+                              size="small"
+                              loading={batchUpdateEphemeralPromotionTasksMutation.isPending}
+                              onClick={handleBatchMarkReviewing}
+                            >
+                              批量推进审核中
+                            </Button>
+                            <Button size="small" onClick={handleExportPromotionTasks}>
+                              导出任务清单
+                            </Button>
+                          </Space>
+                        </Space>
+                        <List
+                          size="small"
+                          dataSource={ephemeralPromotionTasks.slice(0, 6)}
+                          locale={{ emptyText: '暂无晋升任务，执行进化方案后会自动生成' }}
+                          renderItem={(task) => (
+                            <List.Item
+                              actions={[
+                                <Button
+                                  key="sync"
+                                  size="small"
+                                  loading={updateEphemeralPromotionTaskMutation.isPending}
+                                  onClick={() => void handleUpdatePromotionTask(task.taskAssetId, 'SYNC_DRAFT_STATUS')}
+                                >
+                                  同步状态
+                                </Button>,
+                                <Button
+                                  key="submit"
+                                  size="small"
+                                  onClick={() => void handleSubmitReviewForTask(task.taskAssetId, task.draftId)}
+                                  loading={submitSkillDraftReviewMutation.isPending}
+                                >
+                                  提交审核
+                                </Button>,
+                                <Button
+                                  key="approve"
+                                  size="small"
+                                  onClick={() => void handleApproveForTask(task.taskAssetId, task.draftId)}
+                                  loading={reviewSkillDraftMutation.isPending}
+                                >
+                                  审核通过
+                                </Button>,
+                                <Button
+                                  key="publish"
+                                  size="small"
+                                  type="primary"
+                                  onClick={() => void handlePublishForTask(task.taskAssetId, task.draftId)}
+                                  loading={publishSkillDraftMutation.isPending}
+                                >
+                                  发布能力
+                                </Button>,
+                              ]}
+                            >
+                              <Space direction="vertical" size={2} style={{ width: '100%' }}>
+                                <Space wrap>
+                                  <Tag color={task.status === 'PUBLISHED' ? 'green' : task.status === 'REJECTED' ? 'red' : 'blue'}>
+                                    {promotionTaskStatusLabel[task.status] || task.status}
+                                  </Tag>
+                                  <Text strong>{task.suggestedSkillCode}</Text>
+                                  <Text type="secondary">命中 {task.hitCount}</Text>
+                                  <Text type="secondary">草稿状态 {task.draftStatus || '-'}</Text>
+                                </Space>
+                                {task.reason ? (
+                                  <Text type="secondary" style={{ fontSize: 12 }}>
+                                    {task.reason}
+                                  </Text>
+                                ) : null}
+                                <Text type="secondary" style={{ fontSize: 12 }}>
+                                  {task.lastActionAt
+                                    ? `最近操作：${task.lastAction || '-'}（${new Date(task.lastActionAt).toLocaleString('zh-CN')}）`
+                                    : `创建时间：${new Date(task.createdAt).toLocaleString('zh-CN')}`}
+                                </Text>
+                              </Space>
+                            </List.Item>
+                          )}
+                        />
+                      </>
+                    ) : null}
+                  </Space>
+                </Card>
+              ) : null}
+              {capabilityRoutingSummary ? (
+                <Card size="small">
+                  <Space direction="vertical" style={{ width: '100%' }} size={6}>
+                    <Text type="secondary" style={{ fontSize: 12 }}>
+                      最近样本：{capabilityRoutingSummary.sampleWindow.totalLogs} 条（窗口上限 {capabilityRoutingSummary.sampleWindow.analyzedLimit}）
+                    </Text>
+                    <Text type="secondary" style={{ fontSize: 12 }}>
+                      类型分布：
+                      {capabilityRoutingSummary.stats.routeType
+                        .slice(0, 3)
+                        .map((item) => `${capabilityRouteTypeLabel[item.key] || item.key} ${item.count}`)
+                        .join(' / ') || '-'}
+                    </Text>
+                    <Text type="secondary" style={{ fontSize: 12 }}>
+                      来源分布：
+                      {capabilityRoutingSummary.stats.selectedSource
+                        .slice(0, 3)
+                        .map((item) => `${item.key} ${item.count}`)
+                        .join(' / ') || '-'}
+                    </Text>
+                    <Text type="secondary" style={{ fontSize: 12 }}>
+                      当前生效策略：
+                      {formatRoutePolicyDetails({
+                        capabilityRoutingPolicy:
+                          capabilityRoutingSummary.effectivePolicies.capabilityRoutingPolicy as unknown as Record<
+                            string,
+                            unknown
+                          >,
+                        ephemeralCapabilityPolicy:
+                          capabilityRoutingSummary.effectivePolicies.ephemeralCapabilityPolicy as unknown as Record<
+                            string,
+                            unknown
+                          >,
+                      })}
+                    </Text>
+                  </Space>
+                </Card>
+              ) : null}
               <List
                 size="small"
                 dataSource={capabilityRoutingLogs.slice(0, 8)}
@@ -2705,6 +3228,11 @@ export const AgentCopilotPage: React.FC = () => {
                       <Text type="secondary" style={{ fontSize: 12 }}>
                         分数：{Number.isFinite(item.selectedScore) ? item.selectedScore.toFixed(3) : '-'}
                       </Text>
+                      {item.routePolicyDetails ? (
+                        <Text type="secondary" style={{ fontSize: 12 }}>
+                          {formatRoutePolicyDetails(item.routePolicyDetails)}
+                        </Text>
+                      ) : null}
                       {item.reason ? (
                         <Text type="secondary" style={{ fontSize: 12 }}>
                           {item.reason}
@@ -3120,6 +3648,14 @@ export const AgentCopilotPage: React.FC = () => {
             message="用于控制能力复用顺序与命中阈值（普通用户无感）"
             description="建议默认：优先私有池，其次公共池。阈值越高，复用越保守。"
           />
+          <Space>
+            <Button
+              size="small"
+              onClick={() => setRoutingPolicyDraft(DEFAULT_CAPABILITY_ROUTING_POLICY)}
+            >
+              恢复推荐默认值
+            </Button>
+          </Space>
           <Card size="small">
             <Space direction="vertical" style={{ width: '100%' }} size={12}>
               <Space style={{ justifyContent: 'space-between', width: '100%' }}>
@@ -3208,6 +3744,14 @@ export const AgentCopilotPage: React.FC = () => {
             message="控制临时能力复用阈值与运行时授权策略"
             description="建议先保持默认，再根据 UAT 指标逐步微调。"
           />
+          <Space>
+            <Button
+              size="small"
+              onClick={() => setEphemeralPolicyDraft(DEFAULT_EPHEMERAL_CAPABILITY_POLICY)}
+            >
+              恢复推荐默认值
+            </Button>
+          </Space>
           <Card size="small">
             <Space direction="vertical" style={{ width: '100%' }} size={12}>
               <Space style={{ justifyContent: 'space-between', width: '100%' }}>

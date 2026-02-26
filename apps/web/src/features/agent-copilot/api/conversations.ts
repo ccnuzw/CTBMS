@@ -277,7 +277,135 @@ export interface CapabilityRoutingLog {
   selectedSkillCode?: string | null;
   routePolicy: string[];
   reason?: string | null;
+  routePolicyDetails?: Record<string, unknown>;
   createdAt: string;
+}
+
+export interface CapabilityRoutingSummary {
+  sampleWindow: {
+    window: '1h' | '24h' | '7d';
+    totalLogs: number;
+    analyzedLimit: number;
+  };
+  effectivePolicies: {
+    capabilityRoutingPolicy: CapabilityRoutingPolicy;
+    ephemeralCapabilityPolicy: EphemeralCapabilityPolicy;
+  };
+  stats: {
+    routeType: Array<{ key: string; count: number }>;
+    selectedSource: Array<{ key: string; count: number }>;
+  };
+  trend: Array<{
+    bucket: string;
+    total: number;
+    byRouteType: Record<string, number>;
+  }>;
+}
+
+export interface EphemeralCapabilitySummary {
+  window: '1h' | '24h' | '7d';
+  totals: {
+    drafts: number;
+    runtimeGrants: number;
+    expiringRuntimeGrantsIn24h: number;
+    staleDrafts: number;
+  };
+  policy: EphemeralCapabilityPolicy;
+  stats: {
+    draftStatus: Array<{ key: string; count: number }>;
+    grantStatus: Array<{ key: string; count: number }>;
+    topSkillCodes: Array<{ key: string; count: number }>;
+  };
+}
+
+export interface EphemeralCapabilityHousekeepingResult {
+  checkedAt: string;
+  expiredGrantCount: number;
+  disabledDraftCount: number;
+  policy: EphemeralCapabilityPolicy;
+}
+
+export interface EphemeralCapabilityEvolutionPlan {
+  window: '1h' | '24h' | '7d';
+  policy: EphemeralCapabilityPolicy;
+  recommendations: {
+    promoteDraftCandidates: Array<{
+      draftId: string;
+      suggestedSkillCode: string;
+      hitCount: number;
+      reason: string;
+    }>;
+    staleDraftCandidates: Array<{
+      draftId: string;
+      suggestedSkillCode: string;
+      status: string;
+      updatedAt: string;
+    }>;
+    expiredGrantCandidates: Array<{
+      grantId: string;
+      draftId: string;
+      expiresAt: string;
+    }>;
+  };
+  metrics: {
+    totalRoutingLogs: number;
+    uniqueDraftHits: number;
+    uniqueSkillCodeHits: number;
+  };
+}
+
+export interface EphemeralCapabilityEvolutionApplyResult {
+  checkedAt: string;
+  window: '1h' | '24h' | '7d';
+  expiredGrantCount: number;
+  disabledDraftCount: number;
+  promoteSuggestionCount: number;
+  promotionTaskCount?: number;
+}
+
+export interface EphemeralPromotionTaskItem {
+  taskAssetId: string;
+  title: string;
+  draftId: string;
+  suggestedSkillCode: string;
+  hitCount: number;
+  reason?: string | null;
+  window?: string | null;
+  status: 'PENDING_REVIEW' | 'IN_REVIEW' | 'APPROVED' | 'REJECTED' | 'PUBLISHED';
+  generatedAt?: string | null;
+  lastAction?: string | null;
+  lastActionAt?: string | null;
+  lastActionBy?: string | null;
+  lastComment?: string | null;
+  publishedSkillId?: string | null;
+  draftStatus?: string | null;
+  draftUpdatedAt?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface EphemeralPromotionTaskUpdateResult {
+  task: EphemeralPromotionTaskItem;
+}
+
+export interface EphemeralPromotionTaskSummary {
+  window: '1h' | '24h' | '7d';
+  totalTasks: number;
+  pendingActionCount: number;
+  publishedLinkedCount: number;
+  stats: {
+    byStatus: Array<{ key: string; count: number }>;
+    byDraftStatus: Array<{ key: string; count: number }>;
+  };
+}
+
+export interface EphemeralPromotionTaskBatchUpdateResult {
+  action: string;
+  requestedCount: number;
+  succeededCount: number;
+  failedCount: number;
+  succeeded: Array<{ taskAssetId: string; status: string }>;
+  failed: Array<{ taskAssetId: string; code?: string; message: string }>;
 }
 
 export interface SkillGovernanceHousekeepingResult {
@@ -1013,10 +1141,17 @@ export const useSkillGovernanceHousekeeping = () => {
 
 export const useCapabilityRoutingLogs = (
   sessionId?: string,
-  query?: { routeType?: string; limit?: number },
+  query?: { routeType?: string; limit?: number; window?: '1h' | '24h' | '7d' },
 ) =>
   useQuery<CapabilityRoutingLog[]>({
-    queryKey: ['agent-copilot', 'capability-routing-logs', sessionId, query?.routeType, query?.limit],
+    queryKey: [
+      'agent-copilot',
+      'capability-routing-logs',
+      sessionId,
+      query?.routeType,
+      query?.limit,
+      query?.window,
+    ],
     queryFn: async () => {
       const res = await apiClient.get<CapabilityRoutingLog[]>(
         `/agent-conversations/sessions/${sessionId}/capability-routing-logs`,
@@ -1024,6 +1159,7 @@ export const useCapabilityRoutingLogs = (
           params: {
             routeType: query?.routeType,
             limit: query?.limit,
+            window: query?.window,
           },
         },
       );
@@ -1031,6 +1167,205 @@ export const useCapabilityRoutingLogs = (
     },
     enabled: Boolean(sessionId),
   });
+
+export const useCapabilityRoutingSummary = (
+  sessionId?: string,
+  query?: { limit?: number; window?: '1h' | '24h' | '7d' },
+) =>
+  useQuery<CapabilityRoutingSummary>({
+    queryKey: ['agent-copilot', 'capability-routing-summary', sessionId, query?.limit, query?.window],
+    queryFn: async () => {
+      const res = await apiClient.get<CapabilityRoutingSummary>(
+        `/agent-conversations/sessions/${sessionId}/capability-routing-summary`,
+        {
+          params: {
+            limit: query?.limit,
+            window: query?.window,
+          },
+        },
+      );
+      return res.data;
+    },
+    enabled: Boolean(sessionId),
+  });
+
+export const useEphemeralCapabilitySummary = (
+  sessionId?: string,
+  query?: { window?: '1h' | '24h' | '7d' },
+) =>
+  useQuery<EphemeralCapabilitySummary>({
+    queryKey: ['agent-copilot', 'ephemeral-capability-summary', sessionId, query?.window],
+    queryFn: async () => {
+      const res = await apiClient.get<EphemeralCapabilitySummary>(
+        `/agent-conversations/sessions/${sessionId}/ephemeral-capabilities/summary`,
+        {
+          params: {
+            window: query?.window,
+          },
+        },
+      );
+      return res.data;
+    },
+    enabled: Boolean(sessionId),
+  });
+
+export const useRunEphemeralCapabilityHousekeeping = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (payload: { sessionId: string }) => {
+      const res = await apiClient.post<EphemeralCapabilityHousekeepingResult>(
+        `/agent-conversations/sessions/${payload.sessionId}/ephemeral-capabilities/housekeeping`,
+      );
+      return { sessionId: payload.sessionId, data: res.data };
+    },
+    onSuccess: ({ sessionId }) => {
+      queryClient.invalidateQueries({ queryKey: ['agent-copilot', 'ephemeral-capability-summary', sessionId] });
+      queryClient.invalidateQueries({ queryKey: ['agent-copilot', 'capability-routing-logs', sessionId] });
+      queryClient.invalidateQueries({ queryKey: ['agent-copilot', 'session', sessionId] });
+    },
+  });
+};
+
+export const useEphemeralCapabilityEvolutionPlan = (
+  sessionId?: string,
+  query?: { window?: '1h' | '24h' | '7d' },
+) =>
+  useQuery<EphemeralCapabilityEvolutionPlan>({
+    queryKey: ['agent-copilot', 'ephemeral-capability-evolution-plan', sessionId, query?.window],
+    queryFn: async () => {
+      const res = await apiClient.get<EphemeralCapabilityEvolutionPlan>(
+        `/agent-conversations/sessions/${sessionId}/ephemeral-capabilities/evolution-plan`,
+        {
+          params: {
+            window: query?.window,
+          },
+        },
+      );
+      return res.data;
+    },
+    enabled: Boolean(sessionId),
+  });
+
+export const useApplyEphemeralCapabilityEvolutionPlan = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (payload: { sessionId: string; window?: '1h' | '24h' | '7d' }) => {
+      const res = await apiClient.post<EphemeralCapabilityEvolutionApplyResult>(
+        `/agent-conversations/sessions/${payload.sessionId}/ephemeral-capabilities/evolution-apply`,
+        undefined,
+        {
+          params: {
+            window: payload.window,
+          },
+        },
+      );
+      return { sessionId: payload.sessionId, data: res.data };
+    },
+    onSuccess: ({ sessionId }) => {
+      queryClient.invalidateQueries({ queryKey: ['agent-copilot', 'ephemeral-capability-summary', sessionId] });
+      queryClient.invalidateQueries({ queryKey: ['agent-copilot', 'ephemeral-capability-evolution-plan', sessionId] });
+      queryClient.invalidateQueries({ queryKey: ['agent-copilot', 'capability-routing-logs', sessionId] });
+      queryClient.invalidateQueries({ queryKey: ['agent-copilot', 'session', sessionId] });
+    },
+  });
+};
+
+export const useEphemeralPromotionTasks = (
+  sessionId?: string,
+  query?: { window?: '1h' | '24h' | '7d'; status?: string },
+) =>
+  useQuery<EphemeralPromotionTaskItem[]>({
+    queryKey: ['agent-copilot', 'ephemeral-promotion-tasks', sessionId, query?.window, query?.status],
+    queryFn: async () => {
+      const res = await apiClient.get<EphemeralPromotionTaskItem[]>(
+        `/agent-conversations/sessions/${sessionId}/ephemeral-capabilities/promotion-tasks`,
+        {
+          params: {
+            window: query?.window,
+            status: query?.status,
+          },
+        },
+      );
+      return res.data;
+    },
+    enabled: Boolean(sessionId),
+  });
+
+export const useEphemeralPromotionTaskSummary = (
+  sessionId?: string,
+  query?: { window?: '1h' | '24h' | '7d' },
+) =>
+  useQuery<EphemeralPromotionTaskSummary>({
+    queryKey: ['agent-copilot', 'ephemeral-promotion-task-summary', sessionId, query?.window],
+    queryFn: async () => {
+      const res = await apiClient.get<EphemeralPromotionTaskSummary>(
+        `/agent-conversations/sessions/${sessionId}/ephemeral-capabilities/promotion-tasks/summary`,
+        {
+          params: {
+            window: query?.window,
+          },
+        },
+      );
+      return res.data;
+    },
+    enabled: Boolean(sessionId),
+  });
+
+export const useUpdateEphemeralPromotionTask = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (payload: {
+      sessionId: string;
+      taskAssetId: string;
+      action: 'START_REVIEW' | 'MARK_APPROVED' | 'MARK_REJECTED' | 'MARK_PUBLISHED' | 'SYNC_DRAFT_STATUS';
+      comment?: string;
+    }) => {
+      const { sessionId, taskAssetId, action, comment } = payload;
+      const res = await apiClient.patch<EphemeralPromotionTaskUpdateResult>(
+        `/agent-conversations/sessions/${sessionId}/ephemeral-capabilities/promotion-tasks/${taskAssetId}`,
+        {
+          action,
+          comment,
+        },
+      );
+      return { sessionId, data: res.data };
+    },
+    onSuccess: ({ sessionId }) => {
+      queryClient.invalidateQueries({ queryKey: ['agent-copilot', 'ephemeral-promotion-tasks', sessionId] });
+      queryClient.invalidateQueries({ queryKey: ['agent-copilot', 'ephemeral-capability-evolution-plan', sessionId] });
+      queryClient.invalidateQueries({ queryKey: ['agent-copilot', 'assets', sessionId] });
+      queryClient.invalidateQueries({ queryKey: ['agent-copilot', 'session', sessionId] });
+    },
+  });
+};
+
+export const useBatchUpdateEphemeralPromotionTasks = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (payload: {
+      sessionId: string;
+      action: 'START_REVIEW' | 'MARK_APPROVED' | 'MARK_REJECTED' | 'MARK_PUBLISHED' | 'SYNC_DRAFT_STATUS';
+      comment?: string;
+      taskAssetIds?: string[];
+      window?: '1h' | '24h' | '7d';
+      status?: string;
+    }) => {
+      const { sessionId, ...body } = payload;
+      const res = await apiClient.post<EphemeralPromotionTaskBatchUpdateResult>(
+        `/agent-conversations/sessions/${sessionId}/ephemeral-capabilities/promotion-tasks/batch`,
+        body,
+      );
+      return { sessionId, data: res.data };
+    },
+    onSuccess: ({ sessionId }) => {
+      queryClient.invalidateQueries({ queryKey: ['agent-copilot', 'ephemeral-promotion-tasks', sessionId] });
+      queryClient.invalidateQueries({ queryKey: ['agent-copilot', 'ephemeral-promotion-task-summary', sessionId] });
+      queryClient.invalidateQueries({ queryKey: ['agent-copilot', 'ephemeral-capability-evolution-plan', sessionId] });
+      queryClient.invalidateQueries({ queryKey: ['agent-copilot', 'assets', sessionId] });
+      queryClient.invalidateQueries({ queryKey: ['agent-copilot', 'session', sessionId] });
+    },
+  });
+};
 
 export const useResolveScheduleCommand = () => {
   const queryClient = useQueryClient();

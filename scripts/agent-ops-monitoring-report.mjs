@@ -6,42 +6,65 @@ const root = process.cwd();
 const reportPath = resolve(root, 'docs/aiagnet-chat/CTBMS对话原生智能体-监控与告警基线-v2.md');
 const uatPath = resolve(root, 'docs/aiagnet-chat/CTBMS对话原生智能体-UAT自动验收报告-v2.md');
 
-const runCommand = (command) => {
+const runCommand = (
+  command,
+  options = {
+    retries: 0,
+    retryOn: () => false,
+  },
+) => {
   const startedAt = new Date();
-  try {
-    execSync(command, {
-      cwd: root,
-      stdio: 'pipe',
-      encoding: 'utf8',
-      maxBuffer: 10 * 1024 * 1024,
-    });
-    const endedAt = new Date();
-    return {
-      command,
-      status: 'PASS',
-      startedAt,
-      endedAt,
-      durationSec: Number(((endedAt.getTime() - startedAt.getTime()) / 1000).toFixed(2)),
-      snippet: 'ok',
-    };
-  } catch (error) {
-    const endedAt = new Date();
-    const raw =
-      typeof error?.stdout === 'string'
-        ? error.stdout
-        : typeof error?.stderr === 'string'
-          ? error.stderr
-          : String(error);
-    return {
-      command,
-      status: 'FAIL',
-      startedAt,
-      endedAt,
-      durationSec: Number(((endedAt.getTime() - startedAt.getTime()) / 1000).toFixed(2)),
-      snippet: raw.split('\n').slice(-20).join('\n'),
-    };
+  let attempt = 0;
+  let lastFailure = null;
+
+  while (attempt <= options.retries) {
+    try {
+      execSync(command, {
+        cwd: root,
+        stdio: 'pipe',
+        encoding: 'utf8',
+        maxBuffer: 10 * 1024 * 1024,
+      });
+      const endedAt = new Date();
+      return {
+        command,
+        status: 'PASS',
+        startedAt,
+        endedAt,
+        durationSec: Number(((endedAt.getTime() - startedAt.getTime()) / 1000).toFixed(2)),
+        snippet:
+          attempt > 0
+            ? `ok (recovered after retry #${attempt})`
+            : 'ok',
+      };
+    } catch (error) {
+      const raw =
+        typeof error?.stdout === 'string'
+          ? error.stdout
+          : typeof error?.stderr === 'string'
+            ? error.stderr
+            : String(error);
+      lastFailure = raw;
+      if (attempt >= options.retries || !options.retryOn(raw)) {
+        break;
+      }
+      attempt += 1;
+    }
   }
+
+  const endedAt = new Date();
+  return {
+    command,
+    status: 'FAIL',
+    startedAt,
+    endedAt,
+    durationSec: Number(((endedAt.getTime() - startedAt.getTime()) / 1000).toFixed(2)),
+    snippet: (lastFailure ?? '').split('\n').slice(-20).join('\n'),
+  };
 };
+
+const isTransientLlmError = (output) =>
+  /Gemini REST fallback failed|GoogleGenerativeAI Error|fetch failed/i.test(output);
 
 const uatStatus = (() => {
   if (!existsSync(uatPath)) {
@@ -59,7 +82,10 @@ const uatStatus = (() => {
 
 const checks = [
   runCommand('pnpm workflow:type-check:split'),
-  runCommand('pnpm --filter api run test:e2e:agent-suite'),
+  runCommand('pnpm --filter api run test:e2e:agent-suite', {
+    retries: 1,
+    retryOn: isTransientLlmError,
+  }),
 ];
 
 const generatedAt = new Date();

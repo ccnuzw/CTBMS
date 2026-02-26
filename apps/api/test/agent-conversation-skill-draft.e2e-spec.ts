@@ -206,6 +206,23 @@ async function main() {
     assert.equal(createSession.status, 201);
     conversationSessionId = createSession.body.id;
 
+    await prisma.userConfigBinding.create({
+      data: {
+        userId: ownerUserId,
+        bindingType: 'AGENT_EPHEMERAL_CAPABILITY_POLICY',
+        targetId: 'agent-ephemeral-capability-policy-default',
+        targetCode: 'agent-ephemeral-capability-policy-default',
+        metadata: {
+          draftSemanticReuseThreshold: 0.7,
+          publishedSkillReuseThreshold: 0.75,
+          runtimeGrantTtlHours: 12,
+          runtimeGrantMaxUseCount: 5,
+        } as Prisma.InputJsonValue,
+        isActive: true,
+        priority: 200,
+      },
+    });
+
     const createDraft = await fetchJson<{
       draftId: string;
       status: string;
@@ -261,8 +278,13 @@ async function main() {
     );
 
     const routingLogs = await fetchJson<
-      Array<{ routeType: string; selectedDraftId?: string | null; selectedSource?: string | null }>
-    >(`${baseUrl}/agent-conversations/sessions/${conversationSessionId}/capability-routing-logs?routeType=SKILL_DRAFT_REUSE`, {
+      Array<{
+        routeType: string;
+        selectedDraftId?: string | null;
+        selectedSource?: string | null;
+        routePolicyDetails?: Record<string, unknown>;
+      }>
+    >(`${baseUrl}/agent-conversations/sessions/${conversationSessionId}/capability-routing-logs?routeType=SKILL_DRAFT_REUSE&window=24h`, {
       headers: {
         'x-virtual-user-id': ownerUserId,
       },
@@ -271,6 +293,155 @@ async function main() {
     assert.ok(routingLogs.body.length > 0);
     assert.ok(routingLogs.body.every((item) => item.routeType === 'SKILL_DRAFT_REUSE'));
     assert.ok(routingLogs.body.some((item) => item.selectedDraftId === createDraft.body.draftId));
+    assert.ok(routingLogs.body.some((item) => Boolean(item.routePolicyDetails)));
+
+    const ephemeralSummary = await fetchJson<{
+      window: string;
+      totals: {
+        drafts: number;
+        runtimeGrants: number;
+      };
+      policy: {
+        runtimeGrantMaxUseCount: number;
+        runtimeGrantTtlHours: number;
+      };
+    }>(`${baseUrl}/agent-conversations/sessions/${conversationSessionId}/ephemeral-capabilities/summary?window=24h`, {
+      headers: {
+        'x-virtual-user-id': ownerUserId,
+      },
+    });
+    assert.equal(ephemeralSummary.status, 200);
+    assert.equal(ephemeralSummary.body.window, '24h');
+    assert.ok(ephemeralSummary.body.totals.drafts >= 1);
+    assert.equal(ephemeralSummary.body.policy.runtimeGrantMaxUseCount, 5);
+    assert.equal(ephemeralSummary.body.policy.runtimeGrantTtlHours, 12);
+
+    const evolutionPlan = await fetchJson<{
+      window: string;
+      recommendations: {
+        promoteDraftCandidates: Array<{ draftId: string; suggestedSkillCode: string; hitCount: number }>;
+      };
+    }>(`${baseUrl}/agent-conversations/sessions/${conversationSessionId}/ephemeral-capabilities/evolution-plan?window=24h`, {
+      headers: {
+        'x-virtual-user-id': ownerUserId,
+      },
+    });
+    assert.equal(evolutionPlan.status, 200);
+    assert.equal(evolutionPlan.body.window, '24h');
+    assert.ok(Array.isArray(evolutionPlan.body.recommendations.promoteDraftCandidates));
+
+    const evolutionApply = await fetchJson<{
+      window: string;
+      expiredGrantCount: number;
+      disabledDraftCount: number;
+      promoteSuggestionCount: number;
+    }>(`${baseUrl}/agent-conversations/sessions/${conversationSessionId}/ephemeral-capabilities/evolution-apply?window=24h`, {
+      method: 'POST',
+      headers: {
+        'x-virtual-user-id': ownerUserId,
+      },
+    });
+    assert.equal(evolutionApply.status, 201);
+    assert.equal(evolutionApply.body.window, '24h');
+    assert.equal(typeof evolutionApply.body.promoteSuggestionCount, 'number');
+
+    const promotionTasks = await fetchJson<
+      Array<{
+        taskAssetId: string;
+        draftId: string;
+        suggestedSkillCode: string;
+        status: string;
+      }>
+    >(
+      `${baseUrl}/agent-conversations/sessions/${conversationSessionId}/ephemeral-capabilities/promotion-tasks?window=24h`,
+      {
+        headers: {
+          'x-virtual-user-id': ownerUserId,
+        },
+      },
+    );
+    assert.equal(promotionTasks.status, 200);
+    assert.ok(Array.isArray(promotionTasks.body));
+
+    if (promotionTasks.body.length > 0) {
+      const firstTask = promotionTasks.body[0];
+      assert.ok(firstTask.taskAssetId);
+      assert.ok(firstTask.draftId);
+      assert.ok(firstTask.suggestedSkillCode);
+
+      const markReviewing = await fetchJson<{ task: { status: string } }>(
+        `${baseUrl}/agent-conversations/sessions/${conversationSessionId}/ephemeral-capabilities/promotion-tasks/${firstTask.taskAssetId}`,
+        {
+          method: 'PATCH',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-virtual-user-id': ownerUserId,
+          },
+          body: JSON.stringify({
+            action: 'START_REVIEW',
+            comment: 'e2e mark reviewing',
+          }),
+        },
+      );
+      assert.equal(markReviewing.status, 200);
+      assert.equal(markReviewing.body.task.status, 'IN_REVIEW');
+
+      const promotionSummary = await fetchJson<{
+        window: string;
+        totalTasks: number;
+        pendingActionCount: number;
+        stats: {
+          byStatus: Array<{ key: string; count: number }>;
+        };
+      }>(
+        `${baseUrl}/agent-conversations/sessions/${conversationSessionId}/ephemeral-capabilities/promotion-tasks/summary?window=24h`,
+        {
+          headers: {
+            'x-virtual-user-id': ownerUserId,
+          },
+        },
+      );
+      assert.equal(promotionSummary.status, 200);
+      assert.equal(promotionSummary.body.window, '24h');
+      assert.ok(promotionSummary.body.totalTasks >= 1);
+      assert.ok(Array.isArray(promotionSummary.body.stats.byStatus));
+
+      const batchSync = await fetchJson<{
+        action: string;
+        requestedCount: number;
+        succeededCount: number;
+      }>(
+        `${baseUrl}/agent-conversations/sessions/${conversationSessionId}/ephemeral-capabilities/promotion-tasks/batch`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-virtual-user-id': ownerUserId,
+          },
+          body: JSON.stringify({
+            action: 'SYNC_DRAFT_STATUS',
+            taskAssetIds: [firstTask.taskAssetId],
+          }),
+        },
+      );
+      assert.equal(batchSync.status, 201);
+      assert.equal(batchSync.body.action, 'SYNC_DRAFT_STATUS');
+      assert.equal(batchSync.body.requestedCount, 1);
+      assert.equal(batchSync.body.succeededCount, 1);
+    }
+
+    const ephemeralHousekeeping = await fetchJson<{
+      expiredGrantCount: number;
+      disabledDraftCount: number;
+      checkedAt: string;
+    }>(`${baseUrl}/agent-conversations/sessions/${conversationSessionId}/ephemeral-capabilities/housekeeping`, {
+      method: 'POST',
+      headers: {
+        'x-virtual-user-id': ownerUserId,
+      },
+    });
+    assert.equal(ephemeralHousekeeping.status, 201);
+    assert.equal(typeof ephemeralHousekeeping.body.checkedAt, 'string');
 
     const reusePublishedSkill = await fetchJson<{
       draftId: string;
@@ -298,7 +469,7 @@ async function main() {
     assert.equal(reusePublishedSkill.body.reuseSource, 'PUBLISHED_SKILL');
     assert.equal(reusePublishedSkill.body.runtimeGrantId ?? null, null);
 
-    const runtimeGrants = await fetchJson<Array<{ id: string; status: string }>>(
+    const runtimeGrants = await fetchJson<Array<{ id: string; status: string; maxUseCount: number }>>(
       `${baseUrl}/agent-skills/drafts/${createDraft.body.draftId}/runtime-grants`,
       {
         headers: {
@@ -308,6 +479,7 @@ async function main() {
     );
     assert.equal(runtimeGrants.status, 200);
     assert.ok(runtimeGrants.body.some((item) => item.status === 'ACTIVE'));
+    assert.ok(runtimeGrants.body.some((item) => item.maxUseCount === 5));
 
     const createHighRiskDraft = await fetchJson<{
       draftId: string;

@@ -337,10 +337,21 @@ export class AIModelService {
 
       const providerCandidates: AIProvider[] = (() => {
         if (providerType === 'auto') return ['openai', 'google'];
+
+        // If configKey is specified and no explicit provider override is provided,
+        // pin resolution to the config's provider to avoid cross-provider fallback.
+        if (configKey && !providerType && resolvedConfig?.provider) {
+          return [resolvedConfig.provider as AIProvider];
+        }
+
         const requested = providerType as AIProvider | undefined;
         if (requested) return [requested];
-        if (resolvedConfig?.provider)
-          return [resolvedConfig.provider as AIProvider, 'openai', 'google'];
+
+        if (resolvedConfig?.provider) {
+          const ordered: AIProvider[] = [resolvedConfig.provider as AIProvider, 'openai', 'google'];
+          return Array.from(new Set<AIProvider>(ordered));
+        }
+
         return ['openai', 'google'];
       })();
 

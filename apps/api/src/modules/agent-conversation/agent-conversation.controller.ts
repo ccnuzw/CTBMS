@@ -316,12 +316,199 @@ export class AgentConversationController {
     @Param('sessionId') sessionId: string,
     @Query('routeType') routeType?: string,
     @Query('limit') limit?: string,
+    @Query('window') window?: '1h' | '24h' | '7d',
   ) {
     const parsedLimit = limit ? Number(limit) : undefined;
     const result = await this.service.listCapabilityRoutingLogs(this.getUserId(req), sessionId, {
       routeType,
       limit: Number.isFinite(parsedLimit) ? parsedLimit : undefined,
+      window,
     });
+    if (!result) {
+      throw new NotFoundException({
+        code: 'CONV_SESSION_NOT_FOUND',
+        message: '会话不存在或无权限访问',
+      });
+    }
+    return result;
+  }
+
+  @Get(':sessionId/capability-routing-summary')
+  async getCapabilityRoutingSummary(
+    @Request() req: AuthRequest,
+    @Param('sessionId') sessionId: string,
+    @Query('limit') limit?: string,
+    @Query('window') window?: '1h' | '24h' | '7d',
+  ) {
+    const parsedLimit = limit ? Number(limit) : undefined;
+    const result = await this.service.getCapabilityRoutingSummary(this.getUserId(req), sessionId, {
+      limit: Number.isFinite(parsedLimit) ? parsedLimit : undefined,
+      window,
+    });
+    if (!result) {
+      throw new NotFoundException({
+        code: 'CONV_SESSION_NOT_FOUND',
+        message: '会话不存在或无权限访问',
+      });
+    }
+    return result;
+  }
+
+  @Get(':sessionId/ephemeral-capabilities/summary')
+  async getEphemeralCapabilitySummary(
+    @Request() req: AuthRequest,
+    @Param('sessionId') sessionId: string,
+    @Query('window') window?: '1h' | '24h' | '7d',
+  ) {
+    const result = await this.service.getEphemeralCapabilitySummary(this.getUserId(req), sessionId, {
+      window,
+    });
+    if (!result) {
+      throw new NotFoundException({
+        code: 'CONV_SESSION_NOT_FOUND',
+        message: '会话不存在或无权限访问',
+      });
+    }
+    return result;
+  }
+
+  @Post(':sessionId/ephemeral-capabilities/housekeeping')
+  async runEphemeralCapabilityHousekeeping(
+    @Request() req: AuthRequest,
+    @Param('sessionId') sessionId: string,
+  ) {
+    const result = await this.service.runEphemeralCapabilityHousekeeping(this.getUserId(req), sessionId);
+    if (!result) {
+      throw new NotFoundException({
+        code: 'CONV_SESSION_NOT_FOUND',
+        message: '会话不存在或无权限访问',
+      });
+    }
+    return result;
+  }
+
+  @Get(':sessionId/ephemeral-capabilities/evolution-plan')
+  async getEphemeralCapabilityEvolutionPlan(
+    @Request() req: AuthRequest,
+    @Param('sessionId') sessionId: string,
+    @Query('window') window?: '1h' | '24h' | '7d',
+  ) {
+    const result = await this.service.getEphemeralCapabilityEvolutionPlan(this.getUserId(req), sessionId, {
+      window,
+    });
+    if (!result) {
+      throw new NotFoundException({
+        code: 'CONV_SESSION_NOT_FOUND',
+        message: '会话不存在或无权限访问',
+      });
+    }
+    return result;
+  }
+
+  @Post(':sessionId/ephemeral-capabilities/evolution-apply')
+  async applyEphemeralCapabilityEvolutionPlan(
+    @Request() req: AuthRequest,
+    @Param('sessionId') sessionId: string,
+    @Query('window') window?: '1h' | '24h' | '7d',
+  ) {
+    const result = await this.service.applyEphemeralCapabilityEvolutionPlan(this.getUserId(req), sessionId, {
+      window,
+    });
+    if (!result) {
+      throw new NotFoundException({
+        code: 'CONV_SESSION_NOT_FOUND',
+        message: '会话不存在或无权限访问',
+      });
+    }
+    return result;
+  }
+
+  @Get(':sessionId/ephemeral-capabilities/promotion-tasks')
+  async listEphemeralCapabilityPromotionTasks(
+    @Request() req: AuthRequest,
+    @Param('sessionId') sessionId: string,
+    @Query('window') window?: '1h' | '24h' | '7d',
+    @Query('status') status?: string,
+  ) {
+    const result = await this.service.listEphemeralCapabilityPromotionTasks(
+      this.getUserId(req),
+      sessionId,
+      {
+        window,
+        status,
+      },
+    );
+    if (!result) {
+      throw new NotFoundException({
+        code: 'CONV_SESSION_NOT_FOUND',
+        message: '会话不存在或无权限访问',
+      });
+    }
+    return result;
+  }
+
+  @Get(':sessionId/ephemeral-capabilities/promotion-tasks/summary')
+  async getEphemeralCapabilityPromotionTaskSummary(
+    @Request() req: AuthRequest,
+    @Param('sessionId') sessionId: string,
+    @Query('window') window?: '1h' | '24h' | '7d',
+  ) {
+    const result = await this.service.getEphemeralCapabilityPromotionTaskSummary(
+      this.getUserId(req),
+      sessionId,
+      {
+        window,
+      },
+    );
+    if (!result) {
+      throw new NotFoundException({
+        code: 'CONV_SESSION_NOT_FOUND',
+        message: '会话不存在或无权限访问',
+      });
+    }
+    return result;
+  }
+
+  @Patch(':sessionId/ephemeral-capabilities/promotion-tasks/:taskAssetId')
+  async updateEphemeralCapabilityPromotionTask(
+    @Request() req: AuthRequest,
+    @Param('sessionId') sessionId: string,
+    @Param('taskAssetId') taskAssetId: string,
+    @Body() dto: { action: string; comment?: string },
+  ) {
+    const result = await this.service.updateEphemeralCapabilityPromotionTask(
+      this.getUserId(req),
+      sessionId,
+      taskAssetId,
+      dto,
+    );
+    if (!result) {
+      throw new NotFoundException({
+        code: 'CONV_SESSION_NOT_FOUND',
+        message: '会话不存在或无权限访问',
+      });
+    }
+    return result;
+  }
+
+  @Post(':sessionId/ephemeral-capabilities/promotion-tasks/batch')
+  async batchUpdateEphemeralCapabilityPromotionTasks(
+    @Request() req: AuthRequest,
+    @Param('sessionId') sessionId: string,
+    @Body()
+    dto: {
+      action: string;
+      comment?: string;
+      taskAssetIds?: string[];
+      window?: '1h' | '24h' | '7d';
+      status?: string;
+    },
+  ) {
+    const result = await this.service.batchUpdateEphemeralCapabilityPromotionTasks(
+      this.getUserId(req),
+      sessionId,
+      dto,
+    );
     if (!result) {
       throw new NotFoundException({
         code: 'CONV_SESSION_NOT_FOUND',

@@ -5,6 +5,14 @@ import { IAIProvider, AIRequestOptions, AIMessage, AIChatResponse } from './base
 export class OpenAIProvider implements IAIProvider {
   private readonly logger = new Logger(OpenAIProvider.name);
 
+  private toMs(seconds: number | undefined, fallbackMs: number, maxMs?: number): number {
+    const baseMs =
+      typeof seconds === 'number' && Number.isFinite(seconds) && seconds > 0
+        ? seconds * 1000
+        : fallbackMs;
+    return typeof maxMs === 'number' ? Math.min(baseMs, maxMs) : baseMs;
+  }
+
   private buildHeaders(options: AIRequestOptions): Record<string, string> | undefined {
     const authType = options.authType === 'custom' ? 'bearer' : options.authType || 'bearer';
     return this.buildHeadersForAuthMode(options, authType);
@@ -40,12 +48,39 @@ export class OpenAIProvider implements IAIProvider {
     return ['bearer', 'x-api-key', 'api-key'];
   }
 
+  private buildModelListUrl(apiUrl: string | undefined, options: AIRequestOptions): string {
+    const baseUrl = (apiUrl || 'https://api.openai.com/v1').replace(/\/+$/, '');
+    const modelsPath = options.pathOverrides?.models;
+
+    let url: URL;
+    if (modelsPath) {
+      if (modelsPath.startsWith('http://') || modelsPath.startsWith('https://')) {
+        url = new URL(modelsPath);
+      } else {
+        const normalizedPath = modelsPath.startsWith('/') ? modelsPath : `/${modelsPath}`;
+        url = new URL(`${baseUrl}${normalizedPath}`);
+      }
+    } else {
+      url = new URL(`${baseUrl}/models`);
+    }
+
+    if (options.queryParams) {
+      for (const [key, value] of Object.entries(options.queryParams)) {
+        if (value !== undefined && value !== null && String(value).length > 0) {
+          url.searchParams.set(key, String(value));
+        }
+      }
+    }
+
+    return url.toString();
+  }
+
   private async fetchModelsDirect(
     apiUrl: string | undefined,
     options: AIRequestOptions,
   ): Promise<string[]> {
-    const baseUrl = (apiUrl || 'https://api.openai.com/v1').replace(/\/+$/, '');
-    const response = await fetch(`${baseUrl}/models`, {
+    const url = this.buildModelListUrl(apiUrl, options);
+    const response = await fetch(url, {
       headers: this.buildHeaders(options),
     });
     if (!response.ok) {
@@ -53,7 +88,10 @@ export class OpenAIProvider implements IAIProvider {
       throw new Error(`${response.status} ${errorText}`);
     }
     const data = (await response.json()) as { data?: Array<{ id?: string }> };
-    return (data.data || []).map((model) => model.id || '').filter(Boolean);
+    return (data.data || [])
+      .map((model) => model.id || '')
+      .filter(Boolean)
+      .sort();
   }
 
   private async callChatCompletionFetch(
@@ -118,6 +156,97 @@ export class OpenAIProvider implements IAIProvider {
     return data.choices?.[0]?.text || '';
   }
 
+  private extractResponsesContent(data: unknown): string {
+    if (!data || typeof data !== 'object') return '';
+    const typed = data as {
+      output_text?: string;
+      output?: Array<{
+        content?: string | Array<{ type?: string; text?: string }>;
+      }>;
+      choices?: Array<{ message?: { content?: string } }>;
+    };
+
+    if (typed.output_text && typed.output_text.length > 0) {
+      return typed.output_text;
+    }
+
+    const chunks: string[] = [];
+    for (const item of typed.output || []) {
+      if (typeof item.content === 'string') {
+        chunks.push(item.content);
+        continue;
+      }
+      if (Array.isArray(item.content)) {
+        for (const part of item.content) {
+          if (part && typeof part.text === 'string' && part.text.length > 0) {
+            chunks.push(part.text);
+          }
+        }
+      }
+    }
+    if (chunks.length > 0) {
+      return chunks.join('\n');
+    }
+
+    return typed.choices?.[0]?.message?.content || '';
+  }
+
+  private async callResponsesFetch(
+    baseUrl: string,
+    options: AIRequestOptions,
+    prompt: string,
+    authMode: 'bearer' | 'api-key' | 'x-api-key' | 'none',
+  ): Promise<string> {
+    const url = `${baseUrl.replace(/\/+$/, '')}/responses`;
+
+    const primaryBody: Record<string, unknown> = {
+      model: options.modelName,
+      input: [
+        {
+          role: 'user',
+          content: [{ type: 'input_text', text: prompt }],
+        },
+      ],
+      max_output_tokens: options.maxTokens ?? 8192,
+      temperature: options.temperature ?? 0.3,
+      top_p: options.topP,
+      stream: false,
+    };
+
+    const tryRequest = async (body: Record<string, unknown>): Promise<string> => {
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(this.buildHeadersForAuthMode(options, authMode) || {}),
+        },
+        body: JSON.stringify(body),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`${response.status} ${errorText}`);
+      }
+
+      const data = await response.json();
+      return this.extractResponsesContent(data);
+    };
+
+    try {
+      return await tryRequest(primaryBody);
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : String(error);
+      // Some compatible gateways still prefer simple string input.
+      if (/^400\b/.test(msg)) {
+        return tryRequest({
+          ...primaryBody,
+          input: prompt,
+        });
+      }
+      throw error;
+    }
+  }
+
   private async callWithCompatFallback(
     baseUrl: string,
     options: AIRequestOptions,
@@ -126,6 +255,7 @@ export class OpenAIProvider implements IAIProvider {
   ): Promise<{ content: string; authMode?: string; pathUsed?: string }> {
     const primaryBase = baseUrl.replace(/\/+$/, '');
     const authModes = this.resolveAuthModes(options);
+    const preferResponses = options.wireApi === 'responses';
 
     const parseStatus = (message: string): number | undefined => {
       const match = message.match(/^(\d{3})\b/);
@@ -135,6 +265,20 @@ export class OpenAIProvider implements IAIProvider {
     let lastError: Error | undefined;
 
     for (const authMode of authModes) {
+      if (preferResponses) {
+        try {
+          const content = await this.callResponsesFetch(primaryBase, options, prompt, authMode);
+          return { content, authMode, pathUsed: '/responses' };
+        } catch (error) {
+          const msg = error instanceof Error ? error.message : String(error);
+          const status = parseStatus(msg);
+          lastError = error instanceof Error ? error : new Error(msg);
+          if ((status === 401 || status === 403) && authModes.length > 1) {
+            continue;
+          }
+        }
+      }
+
       try {
         const content = await this.callChatCompletionFetch(
           primaryBase,
@@ -152,18 +296,49 @@ export class OpenAIProvider implements IAIProvider {
           continue;
         }
 
-        if (options.allowCompatPathFallback && (status === 404 || status === 405)) {
+        if (options.allowCompatPathFallback && (status === 400 || status === 404 || status === 405)) {
+          const compatOrder = preferResponses
+            ? (['responses', 'completions'] as const)
+            : (['completions', 'responses'] as const);
+
+          let recovered = false;
+          for (const endpoint of compatOrder) {
+            try {
+              if (endpoint === 'completions') {
+                const content = await this.callCompletionFetch(primaryBase, options, prompt, authMode);
+                return { content, authMode, pathUsed: '/completions' };
+              }
+              const content = await this.callResponsesFetch(primaryBase, options, prompt, authMode);
+              return { content, authMode, pathUsed: '/responses' };
+            } catch (fallbackError) {
+              const fallbackMsg =
+                fallbackError instanceof Error ? fallbackError.message : String(fallbackError);
+              const fallbackStatus = parseStatus(fallbackMsg);
+              if ((fallbackStatus === 401 || fallbackStatus === 403) && authModes.length > 1) {
+                recovered = true;
+                break;
+              }
+              lastError = fallbackError instanceof Error ? fallbackError : new Error(fallbackMsg);
+            }
+          }
+
+          if (recovered) {
+            continue;
+          }
+        }
+
+        if (!preferResponses) {
           try {
-            const content = await this.callCompletionFetch(primaryBase, options, prompt, authMode);
-            return { content, authMode, pathUsed: '/completions' };
-          } catch (fallbackError) {
+            const content = await this.callResponsesFetch(primaryBase, options, prompt, authMode);
+            return { content, authMode, pathUsed: '/responses' };
+          } catch (responsesError) {
             const fallbackMsg =
-              fallbackError instanceof Error ? fallbackError.message : String(fallbackError);
+              responsesError instanceof Error ? responsesError.message : String(responsesError);
             const fallbackStatus = parseStatus(fallbackMsg);
             if ((fallbackStatus === 401 || fallbackStatus === 403) && authModes.length > 1) {
               continue;
             }
-            lastError = fallbackError instanceof Error ? fallbackError : new Error(fallbackMsg);
+            lastError = responsesError instanceof Error ? responsesError : new Error(fallbackMsg);
           }
         }
 
@@ -365,8 +540,21 @@ export class OpenAIProvider implements IAIProvider {
   }
 
   async getModels(options: AIRequestOptions): Promise<{ models: string[]; activeUrl?: string }> {
+    if (options.modelFetchMode === 'manual') {
+      return { models: [], activeUrl: options.apiUrl };
+    }
+
+    if (options.modelFetchMode === 'custom' && !options.pathOverrides?.models) {
+      return { models: [], activeUrl: options.apiUrl };
+    }
+
+    const shouldPreferDirect =
+      options.modelFetchMode === 'custom' || Boolean(options.pathOverrides?.models);
+
     try {
-      const models = await this.fetchModels(options.apiUrl, options);
+      const models = shouldPreferDirect
+        ? await this.fetchModelsDirect(options.apiUrl, options)
+        : await this.fetchModels(options.apiUrl, options);
       return { models, activeUrl: options.apiUrl };
     } catch (error) {
       this.logger.warn(
@@ -383,27 +571,33 @@ export class OpenAIProvider implements IAIProvider {
       }
 
       // Probing logic
-      if (options.apiUrl && options.allowUrlProbe !== false) {
+      const hasAbsoluteModelPath =
+        (options.pathOverrides?.models || '').startsWith('http://') ||
+        (options.pathOverrides?.models || '').startsWith('https://');
+
+      if (options.apiUrl && options.allowUrlProbe !== false && !hasAbsoluteModelPath) {
         const variations = this.getUrlVariations(options.apiUrl);
         for (const url of variations) {
           if (url === options.apiUrl) continue; // Already tried
           try {
             this.logger.log(`Probing model URL: ${url}`);
-            const models = await this.fetchModels(url, options);
-            this.logger.log(`Successfully found models at ${url}`);
-            return { models, activeUrl: url };
-          } catch (e) {
-            try {
-              const models = await this.fetchModelsDirect(url, options);
-              if (models.length > 0) {
-                return { models, activeUrl: url };
-              }
-            } catch (directError) {
-              this.logger.warn(
-                `Direct fetch failed for ${url}: ${directError instanceof Error ? directError.message : String(directError)}`,
-              );
+            if (!shouldPreferDirect) {
+              const models = await this.fetchModels(url, options);
+              this.logger.log(`Successfully found models at ${url}`);
+              return { models, activeUrl: url };
             }
-            continue;
+          } catch (e) {
+            void e;
+          }
+          try {
+            const models = await this.fetchModelsDirect(url, options);
+            if (models.length > 0) {
+              return { models, activeUrl: url };
+            }
+          } catch (directError) {
+            this.logger.warn(
+              `Direct fetch failed for ${url}: ${directError instanceof Error ? directError.message : String(directError)}`,
+            );
           }
         }
       }
@@ -444,7 +638,7 @@ export class OpenAIProvider implements IAIProvider {
     const client = new OpenAI({
       apiKey: options.apiKey,
       baseURL: apiUrl || 'https://api.openai.com/v1',
-      timeout: options.timeoutSeconds ? Math.min(options.timeoutSeconds, 10000) : 10000, // shorter timeout for probing
+      timeout: this.toMs(options.timeoutSeconds, 10000, 10000), // shorter timeout for probing
       maxRetries: 0, // No internal retries, we handle it
       dangerouslyAllowBrowser: true,
       defaultHeaders: this.buildHeaders(options),
@@ -458,7 +652,7 @@ export class OpenAIProvider implements IAIProvider {
     return new OpenAI({
       apiKey: options.apiKey,
       baseURL: options.apiUrl || 'https://api.openai.com/v1',
-      timeout: options.timeoutSeconds || 30000,
+      timeout: this.toMs(options.timeoutSeconds, 30000),
       maxRetries: options.maxRetries ?? 3,
       defaultHeaders: this.buildHeaders(options),
     });

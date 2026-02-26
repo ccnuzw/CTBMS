@@ -93,6 +93,20 @@ type EphemeralCapabilityPolicy = {
   runtimeGrantMaxUseCount: number;
 };
 
+type PromotionTaskStatus =
+  | 'PENDING_REVIEW'
+  | 'IN_REVIEW'
+  | 'APPROVED'
+  | 'REJECTED'
+  | 'PUBLISHED';
+
+type PromotionTaskAction =
+  | 'START_REVIEW'
+  | 'MARK_APPROVED'
+  | 'MARK_REJECTED'
+  | 'MARK_PUBLISHED'
+  | 'SYNC_DRAFT_STATUS';
+
 const SESSION_DETAIL_TURN_LIMIT = 80;
 const SESSION_DETAIL_PLAN_LIMIT = 20;
 
@@ -324,6 +338,9 @@ export class AgentConversationService {
         selectedWorkflowDefinitionId: proposedPlan.workflowDefinitionId,
         intent,
         missingSlots,
+        routePolicyDetails: {
+          capabilityRoutingPolicy: routingPolicy,
+        },
       });
     }
 
@@ -1149,6 +1166,10 @@ export class AgentConversationService {
         selectedScore: reuseCandidate.reuseReason === 'EXACT_CODE' ? 1 : 0.72,
         intent: session.currentIntent,
         reason: '复用已有能力草稿，避免重复创建。',
+        routePolicyDetails: {
+          capabilityRoutingPolicy: routingPolicy,
+          ephemeralCapabilityPolicy: ephemeralPolicy,
+        },
       });
 
       return {
@@ -1223,6 +1244,10 @@ export class AgentConversationService {
         selectedScore: reusablePublishedSkill.score,
         intent: session.currentIntent,
         reason: '命中可用已发布能力，复用能力并建立本用户映射草稿。',
+        routePolicyDetails: {
+          capabilityRoutingPolicy: routingPolicy,
+          ephemeralCapabilityPolicy: ephemeralPolicy,
+        },
       });
 
       return {
@@ -1343,6 +1368,10 @@ export class AgentConversationService {
       selectedScore: 0,
       intent: session.currentIntent,
       reason: '未命中可复用草稿，创建新草稿。',
+      routePolicyDetails: {
+        capabilityRoutingPolicy: routingPolicy,
+        ephemeralCapabilityPolicy: ephemeralPolicy,
+      },
     });
 
     return {
@@ -1375,7 +1404,7 @@ export class AgentConversationService {
   async listCapabilityRoutingLogs(
     userId: string,
     sessionId: string,
-    query?: { routeType?: string; limit?: number },
+    query?: { routeType?: string; limit?: number; window?: '1h' | '24h' | '7d' },
   ) {
     const session = await this.prisma.conversationSession.findFirst({
       where: { id: sessionId, ownerUserId: userId },
@@ -1387,6 +1416,7 @@ export class AgentConversationService {
 
     const limit = Math.max(1, Math.min(200, query?.limit ?? 50));
     const routeTypeFilter = this.pickString(query?.routeType)?.toUpperCase();
+    const createdAfter = this.resolveRoutingWindowStart(query?.window);
     const notes = await this.prisma.conversationAsset.findMany({
       where: {
         sessionId,
@@ -1394,6 +1424,13 @@ export class AgentConversationService {
         title: {
           startsWith: '能力路由日志',
         },
+        ...(createdAfter
+          ? {
+              createdAt: {
+                gte: createdAfter,
+              },
+            }
+          : {}),
       },
       orderBy: [{ createdAt: 'desc' }],
       take: 300,
@@ -1423,9 +1460,896 @@ export class AgentConversationService {
           ? payload.routePolicy.filter((value): value is string => typeof value === 'string')
           : [],
         reason: this.pickString(payload.reason),
+        routePolicyDetails: this.toRecord(payload.routePolicyDetails),
         createdAt: item.createdAt,
       };
     });
+  }
+
+  async getCapabilityRoutingSummary(
+    userId: string,
+    sessionId: string,
+    query?: { limit?: number; window?: '1h' | '24h' | '7d' },
+  ) {
+    const session = await this.prisma.conversationSession.findFirst({
+      where: { id: sessionId, ownerUserId: userId },
+      select: { id: true },
+    });
+    if (!session) {
+      return null;
+    }
+
+    const effectiveCapabilityRoutingPolicy = await this.resolveCapabilityRoutingPolicy(userId);
+    const effectiveEphemeralCapabilityPolicy = await this.resolveEphemeralCapabilityPolicy(userId);
+    const limit = Math.max(20, Math.min(500, query?.limit ?? 200));
+    const createdAfter = this.resolveRoutingWindowStart(query?.window);
+
+    const notes = await this.prisma.conversationAsset.findMany({
+      where: {
+        sessionId,
+        assetType: 'NOTE',
+        title: {
+          startsWith: '能力路由日志',
+        },
+        ...(createdAfter
+          ? {
+              createdAt: {
+                gte: createdAfter,
+              },
+            }
+          : {}),
+      },
+      orderBy: [{ createdAt: 'desc' }],
+      take: limit,
+    });
+
+    const routeTypeStats = new Map<string, number>();
+    const selectedSourceStats = new Map<string, number>();
+    const trendBuckets = new Map<string, { total: number; byRouteType: Record<string, number> }>();
+
+    for (const item of notes) {
+      const payload = this.toRecord(item.payload);
+      const routeType = this.pickString(payload.routeType) ?? 'UNKNOWN';
+      const selectedSource = this.pickString(payload.selectedSource) ?? 'UNKNOWN';
+
+      routeTypeStats.set(routeType, (routeTypeStats.get(routeType) ?? 0) + 1);
+      selectedSourceStats.set(selectedSource, (selectedSourceStats.get(selectedSource) ?? 0) + 1);
+
+      const bucketKey = item.createdAt.toISOString().slice(0, 13);
+      const bucket = trendBuckets.get(bucketKey) ?? { total: 0, byRouteType: {} };
+      bucket.total += 1;
+      bucket.byRouteType[routeType] = (bucket.byRouteType[routeType] ?? 0) + 1;
+      trendBuckets.set(bucketKey, bucket);
+    }
+
+    const toSortedArray = (statMap: Map<string, number>) =>
+      Array.from(statMap.entries())
+        .map(([key, count]) => ({ key, count }))
+        .sort((a, b) => b.count - a.count);
+
+    const trend = Array.from(trendBuckets.entries())
+      .map(([bucket, value]) => ({
+        bucket,
+        total: value.total,
+        byRouteType: value.byRouteType,
+      }))
+      .sort((a, b) => (a.bucket < b.bucket ? -1 : 1));
+
+    return {
+      sampleWindow: {
+        window: query?.window ?? '24h',
+        totalLogs: notes.length,
+        analyzedLimit: limit,
+      },
+      effectivePolicies: {
+        capabilityRoutingPolicy: effectiveCapabilityRoutingPolicy,
+        ephemeralCapabilityPolicy: effectiveEphemeralCapabilityPolicy,
+      },
+      stats: {
+        routeType: toSortedArray(routeTypeStats),
+        selectedSource: toSortedArray(selectedSourceStats),
+      },
+      trend,
+    };
+  }
+
+  async getEphemeralCapabilitySummary(
+    userId: string,
+    sessionId: string,
+    query?: { window?: '1h' | '24h' | '7d' },
+  ) {
+    const session = await this.prisma.conversationSession.findFirst({
+      where: { id: sessionId, ownerUserId: userId },
+      select: { id: true },
+    });
+    if (!session) {
+      return null;
+    }
+
+    const effectivePolicy = await this.resolveEphemeralCapabilityPolicy(userId);
+    const createdAfter = this.resolveRoutingWindowStart(query?.window);
+    const now = new Date();
+    const staleDraftBefore = new Date(now.getTime() - effectivePolicy.runtimeGrantTtlHours * 3 * 60 * 60 * 1000);
+
+    const drafts = await this.prisma.agentSkillDraft.findMany({
+      where: {
+        sessionId,
+        ...(createdAfter
+          ? {
+              createdAt: {
+                gte: createdAfter,
+              },
+            }
+          : {}),
+      },
+      select: {
+        id: true,
+        status: true,
+        suggestedSkillCode: true,
+        updatedAt: true,
+        provisionalEnabled: true,
+      },
+      orderBy: [{ createdAt: 'desc' }],
+      take: 500,
+    });
+
+    const grants = await this.prisma.agentSkillRuntimeGrant.findMany({
+      where: {
+        sessionId,
+        ...(createdAfter
+          ? {
+              createdAt: {
+                gte: createdAfter,
+              },
+            }
+          : {}),
+      },
+      select: {
+        id: true,
+        status: true,
+        expiresAt: true,
+        useCount: true,
+        maxUseCount: true,
+      },
+      orderBy: [{ createdAt: 'desc' }],
+      take: 500,
+    });
+
+    const draftStatusStats = new Map<string, number>();
+    const grantStatusStats = new Map<string, number>();
+    const skillCodeStats = new Map<string, number>();
+
+    for (const draft of drafts) {
+      draftStatusStats.set(draft.status, (draftStatusStats.get(draft.status) ?? 0) + 1);
+      skillCodeStats.set(draft.suggestedSkillCode, (skillCodeStats.get(draft.suggestedSkillCode) ?? 0) + 1);
+    }
+    for (const grant of grants) {
+      grantStatusStats.set(grant.status, (grantStatusStats.get(grant.status) ?? 0) + 1);
+    }
+
+    const expiringIn24h = grants.filter(
+      (grant) => grant.status === 'ACTIVE' && grant.expiresAt > now && grant.expiresAt <= new Date(now.getTime() + 24 * 60 * 60 * 1000),
+    ).length;
+
+    const staleDrafts = drafts.filter(
+      (draft) =>
+        ['DRAFT', 'SANDBOX_TESTING', 'READY_FOR_REVIEW'].includes(draft.status) &&
+        draft.updatedAt < staleDraftBefore &&
+        draft.provisionalEnabled,
+    ).length;
+
+    const toSortedArray = (statMap: Map<string, number>) =>
+      Array.from(statMap.entries())
+        .map(([key, count]) => ({ key, count }))
+        .sort((a, b) => b.count - a.count);
+
+    return {
+      window: query?.window ?? '24h',
+      totals: {
+        drafts: drafts.length,
+        runtimeGrants: grants.length,
+        expiringRuntimeGrantsIn24h: expiringIn24h,
+        staleDrafts,
+      },
+      policy: effectivePolicy,
+      stats: {
+        draftStatus: toSortedArray(draftStatusStats),
+        grantStatus: toSortedArray(grantStatusStats),
+        topSkillCodes: toSortedArray(skillCodeStats).slice(0, 10),
+      },
+    };
+  }
+
+  async runEphemeralCapabilityHousekeeping(userId: string, sessionId: string) {
+    const session = await this.prisma.conversationSession.findFirst({
+      where: { id: sessionId, ownerUserId: userId },
+      select: { id: true },
+    });
+    if (!session) {
+      return null;
+    }
+
+    const policy = await this.resolveEphemeralCapabilityPolicy(userId);
+    const now = new Date();
+    const staleDraftBefore = new Date(now.getTime() - policy.runtimeGrantTtlHours * 3 * 60 * 60 * 1000);
+
+    const expiredGrants = await this.prisma.agentSkillRuntimeGrant.updateMany({
+      where: {
+        sessionId,
+        status: 'ACTIVE',
+        expiresAt: { lt: now },
+      },
+      data: {
+        status: 'EXPIRED',
+      },
+    });
+
+    const disabledDrafts = await this.prisma.agentSkillDraft.updateMany({
+      where: {
+        sessionId,
+        status: {
+          in: ['DRAFT', 'SANDBOX_TESTING', 'READY_FOR_REVIEW'],
+        },
+        provisionalEnabled: true,
+        updatedAt: {
+          lt: staleDraftBefore,
+        },
+      },
+      data: {
+        provisionalEnabled: false,
+      },
+    });
+
+    await this.createConversationAsset({
+      sessionId,
+      assetType: 'NOTE',
+      title: '临时能力治理清理',
+      payload: {
+        expiredGrantCount: expiredGrants.count,
+        disabledDraftCount: disabledDrafts.count,
+        policy,
+        checkedAt: now.toISOString(),
+      },
+      tags: {
+        housekeeping: true,
+      },
+    });
+
+    return {
+      checkedAt: now.toISOString(),
+      expiredGrantCount: expiredGrants.count,
+      disabledDraftCount: disabledDrafts.count,
+      policy,
+    };
+  }
+
+  async getEphemeralCapabilityEvolutionPlan(
+    userId: string,
+    sessionId: string,
+    query?: { window?: '1h' | '24h' | '7d' },
+  ) {
+    const session = await this.prisma.conversationSession.findFirst({
+      where: { id: sessionId, ownerUserId: userId },
+      select: { id: true },
+    });
+    if (!session) {
+      return null;
+    }
+
+    const policy = await this.resolveEphemeralCapabilityPolicy(userId);
+    const createdAfter = this.resolveRoutingWindowStart(query?.window);
+    const staleDraftBefore = new Date(Date.now() - policy.runtimeGrantTtlHours * 3 * 60 * 60 * 1000);
+
+    const routingLogs = await this.listCapabilityRoutingLogs(userId, sessionId, {
+      routeType: 'SKILL_DRAFT_REUSE',
+      limit: 300,
+      window: query?.window,
+    });
+
+    const draftHitMap = new Map<string, number>();
+    const skillCodeHitMap = new Map<string, number>();
+    for (const log of routingLogs ?? []) {
+      const draftId = this.pickString((log as unknown as Record<string, unknown>).selectedDraftId);
+      const skillCode = this.pickString((log as unknown as Record<string, unknown>).selectedSkillCode);
+      if (draftId) {
+        draftHitMap.set(draftId, (draftHitMap.get(draftId) ?? 0) + 1);
+      }
+      if (skillCode) {
+        skillCodeHitMap.set(skillCode, (skillCodeHitMap.get(skillCode) ?? 0) + 1);
+      }
+    }
+
+    const drafts = await this.prisma.agentSkillDraft.findMany({
+      where: {
+        sessionId,
+        ...(createdAfter
+          ? {
+              createdAt: {
+                gte: createdAfter,
+              },
+            }
+          : {}),
+      },
+      select: {
+        id: true,
+        status: true,
+        suggestedSkillCode: true,
+        updatedAt: true,
+        provisionalEnabled: true,
+        publishedSkillId: true,
+      },
+      orderBy: [{ updatedAt: 'desc' }],
+      take: 500,
+    });
+
+    const promoteDraftCandidates = drafts
+      .map((draft) => ({
+        draftId: draft.id,
+        suggestedSkillCode: draft.suggestedSkillCode,
+        hitCount: draftHitMap.get(draft.id) ?? 0,
+        reason: draft.publishedSkillId
+          ? '已映射到发布能力，可进入能力池优先级提升评估'
+          : '复用命中较高，建议进入发布评审',
+      }))
+      .filter((item) => item.hitCount >= 2)
+      .slice(0, 20);
+
+    const staleDraftCandidates = drafts
+      .filter(
+        (draft) =>
+          ['DRAFT', 'SANDBOX_TESTING', 'READY_FOR_REVIEW'].includes(draft.status) &&
+          draft.provisionalEnabled &&
+          draft.updatedAt < staleDraftBefore,
+      )
+      .map((draft) => ({
+        draftId: draft.id,
+        suggestedSkillCode: draft.suggestedSkillCode,
+        status: draft.status,
+        updatedAt: draft.updatedAt,
+      }))
+      .slice(0, 50);
+
+    const grants = await this.prisma.agentSkillRuntimeGrant.findMany({
+      where: {
+        sessionId,
+        status: 'ACTIVE',
+      },
+      select: {
+        id: true,
+        draftId: true,
+        expiresAt: true,
+      },
+      orderBy: [{ expiresAt: 'asc' }],
+      take: 300,
+    });
+
+    const expiredGrantCandidates = grants
+      .filter((grant) => grant.expiresAt < new Date())
+      .map((grant) => ({
+        grantId: grant.id,
+        draftId: grant.draftId,
+        expiresAt: grant.expiresAt,
+      }));
+
+    return {
+      window: query?.window ?? '24h',
+      policy,
+      recommendations: {
+        promoteDraftCandidates,
+        staleDraftCandidates,
+        expiredGrantCandidates,
+      },
+      metrics: {
+        totalRoutingLogs: (routingLogs ?? []).length,
+        uniqueDraftHits: draftHitMap.size,
+        uniqueSkillCodeHits: skillCodeHitMap.size,
+      },
+    };
+  }
+
+  async applyEphemeralCapabilityEvolutionPlan(userId: string, sessionId: string, query?: { window?: '1h' | '24h' | '7d' }) {
+    const plan = await this.getEphemeralCapabilityEvolutionPlan(userId, sessionId, query);
+    if (!plan) {
+      return null;
+    }
+
+    const now = new Date();
+    const expiredGrantIds = plan.recommendations.expiredGrantCandidates.map((item) => item.grantId);
+    const staleDraftIds = plan.recommendations.staleDraftCandidates.map((item) => item.draftId);
+
+    const expiredGrantResult = expiredGrantIds.length
+      ? await this.prisma.agentSkillRuntimeGrant.updateMany({
+          where: {
+            id: { in: expiredGrantIds },
+            status: 'ACTIVE',
+          },
+          data: {
+            status: 'EXPIRED',
+          },
+        })
+      : { count: 0 };
+
+    const staleDraftResult = staleDraftIds.length
+      ? await this.prisma.agentSkillDraft.updateMany({
+          where: {
+            id: { in: staleDraftIds },
+            provisionalEnabled: true,
+          },
+          data: {
+            provisionalEnabled: false,
+          },
+        })
+      : { count: 0 };
+
+    const promotionTaskCount = await this.createPromotionTaskAssets(
+      sessionId,
+      plan.recommendations.promoteDraftCandidates,
+      plan.window,
+    );
+
+    await this.createConversationAsset({
+      sessionId,
+      assetType: 'NOTE',
+      title: '临时能力进化执行记录',
+      payload: {
+        checkedAt: now.toISOString(),
+        expiredGrantCount: expiredGrantResult.count,
+        disabledDraftCount: staleDraftResult.count,
+        promoteSuggestionCount: plan.recommendations.promoteDraftCandidates.length,
+        promotionTaskCount,
+        window: plan.window,
+      },
+      tags: {
+        housekeeping: true,
+        evolution: true,
+      },
+    });
+
+    return {
+      checkedAt: now.toISOString(),
+      window: plan.window,
+      expiredGrantCount: expiredGrantResult.count,
+      disabledDraftCount: staleDraftResult.count,
+      promoteSuggestionCount: plan.recommendations.promoteDraftCandidates.length,
+      promotionTaskCount,
+    };
+  }
+
+  async listEphemeralCapabilityPromotionTasks(
+    userId: string,
+    sessionId: string,
+    query?: { window?: '1h' | '24h' | '7d'; status?: string },
+  ) {
+    const session = await this.prisma.conversationSession.findFirst({
+      where: { id: sessionId, ownerUserId: userId },
+      select: { id: true },
+    });
+    if (!session) {
+      return null;
+    }
+
+    const createdAfter = this.resolveRoutingWindowStart(query?.window);
+    const statusFilter = this.normalizePromotionTaskStatus(query?.status);
+    const assets = await this.prisma.conversationAsset.findMany({
+      where: {
+        sessionId,
+        assetType: 'NOTE',
+        title: {
+          startsWith: '能力晋升任务',
+        },
+        ...(createdAfter
+          ? {
+              createdAt: {
+                gte: createdAfter,
+              },
+            }
+          : {}),
+      },
+      orderBy: [{ createdAt: 'desc' }],
+      take: 300,
+    });
+
+    const parsed = assets
+      .map((asset) => this.toPromotionTask(asset))
+      .filter((item): item is NonNullable<typeof item> => Boolean(item));
+
+    const draftIds = parsed
+      .map((item) => item.draftId)
+      .filter((value): value is string => Boolean(value));
+    const uniqueDraftIds = Array.from(new Set(draftIds));
+    const drafts = uniqueDraftIds.length
+      ? await this.prisma.agentSkillDraft.findMany({
+          where: {
+            id: {
+              in: uniqueDraftIds,
+            },
+          },
+          select: {
+            id: true,
+            status: true,
+            publishedSkillId: true,
+            updatedAt: true,
+          },
+        })
+      : [];
+    const draftMap = new Map(drafts.map((item) => [item.id, item]));
+
+    const enriched = parsed.map((item) => {
+      const draft = item.draftId ? draftMap.get(item.draftId) : null;
+      return {
+        ...item,
+        draftStatus: draft?.status ?? null,
+        publishedSkillId: item.publishedSkillId ?? draft?.publishedSkillId ?? null,
+        draftUpdatedAt: draft?.updatedAt ?? null,
+      };
+    });
+
+    return statusFilter ? enriched.filter((item) => item.status === statusFilter) : enriched;
+  }
+
+  async getEphemeralCapabilityPromotionTaskSummary(
+    userId: string,
+    sessionId: string,
+    query?: { window?: '1h' | '24h' | '7d' },
+  ) {
+    const tasks = await this.listEphemeralCapabilityPromotionTasks(userId, sessionId, query);
+    if (!tasks) {
+      return null;
+    }
+
+    const statusStats = new Map<string, number>();
+    const draftStatusStats = new Map<string, number>();
+    let publishedLinkedCount = 0;
+    let pendingActionCount = 0;
+
+    for (const item of tasks) {
+      statusStats.set(item.status, (statusStats.get(item.status) ?? 0) + 1);
+      const draftStatus = this.pickString(item.draftStatus) ?? 'UNKNOWN';
+      draftStatusStats.set(draftStatus, (draftStatusStats.get(draftStatus) ?? 0) + 1);
+      if (item.publishedSkillId) {
+        publishedLinkedCount += 1;
+      }
+      if (['PENDING_REVIEW', 'IN_REVIEW', 'APPROVED'].includes(item.status)) {
+        pendingActionCount += 1;
+      }
+    }
+
+    const toSortedArray = (statMap: Map<string, number>) =>
+      Array.from(statMap.entries())
+        .map(([key, count]) => ({ key, count }))
+        .sort((a, b) => b.count - a.count);
+
+    return {
+      window: query?.window ?? '24h',
+      totalTasks: tasks.length,
+      pendingActionCount,
+      publishedLinkedCount,
+      stats: {
+        byStatus: toSortedArray(statusStats),
+        byDraftStatus: toSortedArray(draftStatusStats),
+      },
+    };
+  }
+
+  async batchUpdateEphemeralCapabilityPromotionTasks(
+    userId: string,
+    sessionId: string,
+    dto: {
+      action: string;
+      comment?: string;
+      taskAssetIds?: string[];
+      window?: '1h' | '24h' | '7d';
+      status?: string;
+    },
+  ) {
+    const session = await this.prisma.conversationSession.findFirst({
+      where: { id: sessionId, ownerUserId: userId },
+      select: { id: true },
+    });
+    if (!session) {
+      return null;
+    }
+
+    const explicitTaskIds = Array.isArray(dto.taskAssetIds)
+      ? dto.taskAssetIds.filter((id): id is string => typeof id === 'string' && id.length > 0)
+      : [];
+
+    const taskIds = explicitTaskIds.length
+      ? explicitTaskIds
+      : (
+          await this.listEphemeralCapabilityPromotionTasks(userId, sessionId, {
+            window: dto.window,
+            status: dto.status,
+          })
+        )
+          ?.map((item) => item.taskAssetId)
+          .filter((id): id is string => typeof id === 'string' && id.length > 0) ?? [];
+
+    const uniqueTaskIds = Array.from(new Set(taskIds));
+    const succeeded: Array<{ taskAssetId: string; status: string }> = [];
+    const failed: Array<{ taskAssetId: string; code?: string; message: string }> = [];
+
+    for (const taskAssetId of uniqueTaskIds) {
+      try {
+        const updated = await this.updateEphemeralCapabilityPromotionTask(userId, sessionId, taskAssetId, {
+          action: dto.action,
+          comment: dto.comment,
+        });
+        const status = this.pickString(updated?.task?.status) ?? 'UNKNOWN';
+        succeeded.push({ taskAssetId, status });
+      } catch (error) {
+        if (error instanceof BadRequestException) {
+          const response = error.getResponse() as Record<string, unknown>;
+          failed.push({
+            taskAssetId,
+            code: this.pickString(response.code) ?? undefined,
+            message: this.pickString(response.message) ?? '批量更新失败',
+          });
+        } else {
+          failed.push({
+            taskAssetId,
+            message: error instanceof Error ? error.message : String(error),
+          });
+        }
+      }
+    }
+
+    return {
+      action: dto.action,
+      requestedCount: uniqueTaskIds.length,
+      succeededCount: succeeded.length,
+      failedCount: failed.length,
+      succeeded,
+      failed,
+    };
+  }
+
+  async updateEphemeralCapabilityPromotionTask(
+    userId: string,
+    sessionId: string,
+    taskAssetId: string,
+    dto: { action: string; comment?: string },
+  ) {
+    const session = await this.prisma.conversationSession.findFirst({
+      where: { id: sessionId, ownerUserId: userId },
+      select: { id: true },
+    });
+    if (!session) {
+      return null;
+    }
+
+    const taskAsset = await this.prisma.conversationAsset.findFirst({
+      where: {
+        id: taskAssetId,
+        sessionId,
+        assetType: 'NOTE',
+      },
+    });
+    if (!taskAsset || !taskAsset.title.startsWith('能力晋升任务')) {
+      throw new BadRequestException({
+        code: 'CONV_PROMOTION_TASK_NOT_FOUND',
+        message: '能力晋升任务不存在或不属于当前会话',
+      });
+    }
+
+    const action = String(dto.action || '').toUpperCase() as PromotionTaskAction;
+    const currentPayload = this.toRecord(taskAsset.payload);
+    const currentStatus = this.normalizePromotionTaskStatus(currentPayload.status) ?? 'PENDING_REVIEW';
+    const nextPayload: Record<string, unknown> = {
+      ...currentPayload,
+    };
+    const draftId = this.pickString(currentPayload.draftId);
+    const draft = draftId
+      ? await this.prisma.agentSkillDraft.findUnique({
+          where: { id: draftId },
+          select: {
+            id: true,
+            status: true,
+            publishedSkillId: true,
+          },
+        })
+      : null;
+
+    const resolveStatusByDraft = (status: string | null | undefined): PromotionTaskStatus => {
+      if (status === 'PUBLISHED') {
+        return 'PUBLISHED';
+      }
+      if (status === 'APPROVED') {
+        return 'APPROVED';
+      }
+      if (status === 'REJECTED') {
+        return 'REJECTED';
+      }
+      return 'IN_REVIEW';
+    };
+
+    let nextStatus: PromotionTaskStatus = currentStatus;
+    if (action === 'START_REVIEW') {
+      nextStatus = 'IN_REVIEW';
+    } else if (action === 'MARK_APPROVED') {
+      nextStatus = 'APPROVED';
+    } else if (action === 'MARK_REJECTED') {
+      nextStatus = 'REJECTED';
+    } else if (action === 'MARK_PUBLISHED') {
+      if (!draft?.publishedSkillId) {
+        throw new BadRequestException({
+          code: 'CONV_PROMOTION_TASK_PUBLISH_BLOCKED',
+          message: '该草稿尚未发布，请先完成发布后再标记为已发布',
+        });
+      }
+      nextStatus = 'PUBLISHED';
+      nextPayload.publishedSkillId = draft.publishedSkillId;
+    } else if (action === 'SYNC_DRAFT_STATUS') {
+      nextStatus = resolveStatusByDraft(draft?.status);
+      nextPayload.publishedSkillId = draft?.publishedSkillId ?? this.pickString(currentPayload.publishedSkillId);
+    } else {
+      throw new BadRequestException({
+        code: 'CONV_PROMOTION_TASK_ACTION_INVALID',
+        message: '不支持的能力晋升任务操作',
+      });
+    }
+
+    nextPayload.status = nextStatus;
+    nextPayload.lastAction = action;
+    nextPayload.lastActionAt = new Date().toISOString();
+    nextPayload.lastActionBy = userId;
+    if (dto.comment?.trim()) {
+      nextPayload.lastComment = dto.comment.trim();
+    }
+
+    const updated = await this.prisma.conversationAsset.update({
+      where: { id: taskAsset.id },
+      data: {
+        payload: nextPayload as Prisma.InputJsonValue,
+      },
+    });
+
+    await this.createConversationAsset({
+      sessionId,
+      assetType: 'NOTE',
+      title: `能力晋升任务状态变更 ${this.pickString(currentPayload.suggestedSkillCode) ?? ''}`.trim(),
+      payload: {
+        taskAssetId: taskAsset.id,
+        draftId,
+        action,
+        fromStatus: currentStatus,
+        toStatus: nextStatus,
+        comment: dto.comment?.trim() || null,
+      },
+      tags: {
+        taskType: 'PROMOTION_TASK',
+        taskAssetId: taskAsset.id,
+      },
+    });
+
+    const task = this.toPromotionTask(updated);
+    return {
+      task,
+    };
+  }
+
+  private async createPromotionTaskAssets(
+    sessionId: string,
+    candidates: Array<{ draftId: string; suggestedSkillCode: string; hitCount: number; reason: string }>,
+    window: '1h' | '24h' | '7d',
+  ): Promise<number> {
+    if (!candidates.length) {
+      return 0;
+    }
+
+    const existing = await this.prisma.conversationAsset.findMany({
+      where: {
+        sessionId,
+        assetType: 'NOTE',
+        title: {
+          startsWith: '能力晋升任务',
+        },
+      },
+      select: {
+        payload: true,
+      },
+      take: 500,
+      orderBy: [{ createdAt: 'desc' }],
+    });
+
+    const existingDraftIds = new Set<string>();
+    for (const item of existing) {
+      const payload = this.toRecord(item.payload);
+      const draftId = this.pickString(payload.draftId);
+      if (draftId) {
+        existingDraftIds.add(draftId);
+      }
+    }
+
+    let created = 0;
+    for (const candidate of candidates) {
+      if (existingDraftIds.has(candidate.draftId)) {
+        continue;
+      }
+      await this.createConversationAsset({
+        sessionId,
+        assetType: 'NOTE',
+        title: `能力晋升任务 ${candidate.suggestedSkillCode}`,
+        payload: {
+          draftId: candidate.draftId,
+          suggestedSkillCode: candidate.suggestedSkillCode,
+          hitCount: candidate.hitCount,
+          reason: candidate.reason,
+          window,
+          status: 'PENDING_REVIEW',
+          generatedAt: new Date().toISOString(),
+        },
+        tags: {
+          taskType: 'PROMOTION_TASK',
+          draftId: candidate.draftId,
+        },
+      });
+      created += 1;
+    }
+
+    return created;
+  }
+
+  private normalizePromotionTaskStatus(input: unknown): PromotionTaskStatus | null {
+    const value = this.pickString(input)?.toUpperCase();
+    if (!value) {
+      return null;
+    }
+    if (['PENDING_REVIEW', 'IN_REVIEW', 'APPROVED', 'REJECTED', 'PUBLISHED'].includes(value)) {
+      return value as PromotionTaskStatus;
+    }
+    return null;
+  }
+
+  private toPromotionTask(asset: {
+    id: string;
+    title: string;
+    payload: Prisma.JsonValue;
+    createdAt: Date;
+    updatedAt: Date;
+  }) {
+    const payload = this.toRecord(asset.payload);
+    const status = this.normalizePromotionTaskStatus(payload.status);
+    const draftId = this.pickString(payload.draftId);
+    const suggestedSkillCode = this.pickString(payload.suggestedSkillCode);
+    const hitCount = this.normalizeNumber(payload.hitCount);
+    if (!draftId || !suggestedSkillCode) {
+      return null;
+    }
+    return {
+      taskAssetId: asset.id,
+      title: asset.title,
+      draftId,
+      suggestedSkillCode,
+      hitCount: Number.isFinite(hitCount) ? hitCount : 0,
+      reason: this.pickString(payload.reason),
+      window: this.pickString(payload.window),
+      status: status ?? 'PENDING_REVIEW',
+      generatedAt: this.pickString(payload.generatedAt),
+      lastAction: this.pickString(payload.lastAction),
+      lastActionAt: this.pickString(payload.lastActionAt),
+      lastActionBy: this.pickString(payload.lastActionBy),
+      lastComment: this.pickString(payload.lastComment),
+      publishedSkillId: this.pickString(payload.publishedSkillId),
+      createdAt: asset.createdAt,
+      updatedAt: asset.updatedAt,
+    };
+  }
+
+  private resolveRoutingWindowStart(window?: '1h' | '24h' | '7d'): Date | null {
+    if (!window) {
+      return new Date(Date.now() - 24 * 60 * 60 * 1000);
+    }
+    if (window === '1h') {
+      return new Date(Date.now() - 60 * 60 * 1000);
+    }
+    if (window === '24h') {
+      return new Date(Date.now() - 24 * 60 * 60 * 1000);
+    }
+    if (window === '7d') {
+      return new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+    }
+    return null;
   }
 
   async reuseAsset(
@@ -2483,6 +3407,7 @@ export class AgentConversationService {
       intent?: string | null;
       missingSlots?: string[];
       reason?: string;
+      routePolicyDetails?: Record<string, unknown>;
     },
   ) {
     const key = this.computeRoutingDecisionKey(payload);
