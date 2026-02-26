@@ -90,6 +90,18 @@ interface PersistedReconciliationDiffRow {
   payload: unknown;
 }
 
+interface PersistedReconciliationGateRow {
+  jobId: string;
+  status: string;
+  retriedFromJobId: string | null;
+  retryCount: unknown;
+  summaryPass: unknown;
+  createdAt: unknown;
+  finishedAt: unknown;
+  cancelledAt: unknown;
+  dimensions: unknown;
+}
+
 interface PersistedReconciliationJobRetryRow {
   createdByUserId: string;
   status: string;
@@ -122,6 +134,19 @@ interface ReconciliationJobListResult {
   total: number;
   totalPages: number;
   storage: 'database' | 'in-memory';
+}
+
+interface ReconciliationGateSnapshot {
+  jobId: string;
+  status: ReconciliationJobStatus;
+  retriedFromJobId: string | null;
+  retryCount: number;
+  summaryPass?: boolean;
+  createdAt: string;
+  finishedAt?: string;
+  cancelledAt?: string;
+  dimensions?: Record<string, unknown>;
+  source: 'database' | 'in-memory';
 }
 
 const RECONCILIATION_SORT_COLUMN_MAP: Record<ReconciliationListSortBy, string> = {
@@ -659,6 +684,48 @@ export class MarketDataService {
     };
   }
 
+  async getLatestReconciliationSnapshot(
+    dataset: StandardDataset,
+    filters?: Record<string, unknown>,
+  ): Promise<ReconciliationGateSnapshot | null> {
+    const normalizedDimensions = this.normalizeReconciliationGateDimensions(dataset, filters);
+
+    const persisted = await this.findLatestPersistedReconciliationForGate(
+      dataset,
+      normalizedDimensions,
+    );
+    if (persisted) {
+      return persisted;
+    }
+
+    const inMemoryCandidate = Array.from(this.reconciliationJobs.values())
+      .filter((job) => job.dataset === dataset)
+      .filter((job) =>
+        this.matchesReconciliationGateDimensions(job.request?.dimensions, normalizedDimensions),
+      )
+      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())[0];
+
+    if (!inMemoryCandidate) {
+      return null;
+    }
+
+    return {
+      jobId: inMemoryCandidate.jobId,
+      status: inMemoryCandidate.status,
+      retriedFromJobId: inMemoryCandidate.retriedFromJobId ?? null,
+      retryCount: this.parseRetryCount(inMemoryCandidate.retryCount),
+      summaryPass: this.resolveSummaryPass(
+        inMemoryCandidate.summary,
+        inMemoryCandidate.summaryPass,
+      ),
+      createdAt: inMemoryCandidate.createdAt,
+      finishedAt: inMemoryCandidate.finishedAt,
+      cancelledAt: inMemoryCandidate.cancelledAt,
+      dimensions: this.extractScalarDimensions(inMemoryCandidate.request?.dimensions),
+      source: 'in-memory',
+    };
+  }
+
   async queryStandardizedData(dataset: StandardDataset, options: StandardizedQueryOptions) {
     const limit = options.limit ?? 100;
 
@@ -1023,6 +1090,74 @@ export class MarketDataService {
     }
   }
 
+  private async findLatestPersistedReconciliationForGate(
+    dataset: StandardDataset,
+    normalizedDimensions: Record<string, unknown>,
+  ): Promise<ReconciliationGateSnapshot | null> {
+    if (this.reconciliationPersistenceUnavailable) {
+      return null;
+    }
+
+    try {
+      const whereParts = ['"dataset" = $1'];
+      const whereParams: unknown[] = [dataset];
+
+      if (Object.keys(normalizedDimensions).length > 0) {
+        whereParts.push(
+          `("dimensions" IS NULL OR "dimensions" @> $${whereParams.length + 1}::jsonb)`,
+        );
+        whereParams.push(JSON.stringify(normalizedDimensions));
+      }
+
+      const rows = await this.prisma.$queryRawUnsafe<PersistedReconciliationGateRow[]>(
+        `SELECT
+           "jobId",
+           "status",
+           "retriedFromJobId",
+           "retryCount",
+           "summaryPass",
+           "createdAt",
+           "finishedAt",
+           "cancelledAt",
+           "dimensions"
+         FROM "DataReconciliationJob"
+         WHERE ${whereParts.join(' AND ')}
+         ORDER BY "createdAt" DESC, "jobId" DESC
+         LIMIT 1`,
+        ...whereParams,
+      );
+
+      if (rows.length === 0) {
+        return null;
+      }
+
+      const row = rows[0];
+      return {
+        jobId: row.jobId,
+        status: this.normalizeReconciliationStatus(row.status),
+        retriedFromJobId: row.retriedFromJobId ?? null,
+        retryCount: this.parseRetryCount(row.retryCount),
+        summaryPass: this.parseOptionalBoolean(row.summaryPass),
+        createdAt: this.toIsoString(row.createdAt) ?? new Date().toISOString(),
+        finishedAt: this.toIsoString(row.finishedAt),
+        cancelledAt: this.toIsoString(row.cancelledAt),
+        dimensions: this.extractScalarDimensions(
+          this.parseJsonValue<Record<string, unknown>>(row.dimensions),
+        ),
+        source: 'database',
+      };
+    } catch (error) {
+      if (this.isReconciliationPersistenceMissingTableError(error)) {
+        this.disableReconciliationPersistence('read latest reconciliation for gate', error);
+        return null;
+      }
+      this.logger.error(
+        `Read latest reconciliation for gate failed: ${this.stringifyError(error)}`,
+      );
+      return null;
+    }
+  }
+
   private async findPersistedReconciliationJob(jobId: string): Promise<ReconciliationJob | null> {
     if (this.reconciliationPersistenceUnavailable) {
       return null;
@@ -1227,6 +1362,132 @@ export class MarketDataService {
       throw new BadRequestException(`Invalid datetime value: ${value}`);
     }
     return parsed;
+  }
+
+  private normalizeReconciliationGateDimensions(
+    dataset: StandardDataset,
+    filters?: Record<string, unknown>,
+  ): Record<string, unknown> {
+    if (!filters) {
+      return {};
+    }
+
+    const dimensions: Record<string, unknown> = {};
+
+    if (dataset === 'SPOT_PRICE') {
+      const commodityRaw = this.getFilterString(filters, ['commodityCode', 'commodity']);
+      if (commodityRaw) {
+        dimensions.commodityCode = this.normalizeCommodityCode(commodityRaw);
+      }
+      const regionCode = this.getFilterString(filters, ['regionCode']);
+      if (regionCode) {
+        dimensions.regionCode = regionCode;
+      }
+    }
+
+    if (dataset === 'FUTURES_QUOTE') {
+      const contractCode = this.getFilterString(filters, ['contractCode']);
+      if (contractCode) {
+        dimensions.contractCode = contractCode;
+      }
+      const exchangeCode = this.getFilterString(filters, ['exchangeCode', 'exchange']);
+      if (exchangeCode) {
+        dimensions.exchangeCode = exchangeCode;
+      }
+    }
+
+    if (dataset === 'MARKET_EVENT') {
+      const eventType = this.getFilterString(filters, ['eventType']);
+      if (eventType) {
+        dimensions.eventType = eventType.toUpperCase();
+      }
+      const contentType = this.getFilterString(filters, ['contentType']);
+      if (contentType) {
+        dimensions.contentType = contentType.toUpperCase();
+      }
+    }
+
+    return this.extractScalarDimensions(dimensions) ?? {};
+  }
+
+  private matchesReconciliationGateDimensions(
+    jobDimensions: Record<string, unknown> | undefined,
+    requestedDimensions: Record<string, unknown>,
+  ): boolean {
+    if (Object.keys(requestedDimensions).length === 0) {
+      return true;
+    }
+
+    const normalizedJobDimensions = this.extractScalarDimensions(jobDimensions);
+    if (!normalizedJobDimensions) {
+      return true;
+    }
+
+    for (const [key, expectedValue] of Object.entries(requestedDimensions)) {
+      const actualValue = normalizedJobDimensions[key];
+      if (actualValue === undefined || actualValue === null) {
+        continue;
+      }
+      if (!this.isEquivalentDimensionValue(actualValue, expectedValue)) {
+        return false;
+      }
+    }
+
+    return true;
+  }
+
+  private extractScalarDimensions(
+    input: Record<string, unknown> | undefined,
+  ): Record<string, unknown> | undefined {
+    if (!input || typeof input !== 'object' || Array.isArray(input)) {
+      return undefined;
+    }
+
+    const normalized: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(input)) {
+      if (typeof value === 'string') {
+        const trimmed = value.trim();
+        if (trimmed.length > 0) {
+          normalized[key] = trimmed;
+        }
+        continue;
+      }
+
+      if (typeof value === 'number' && Number.isFinite(value)) {
+        normalized[key] = value;
+        continue;
+      }
+
+      if (typeof value === 'boolean') {
+        normalized[key] = value;
+      }
+    }
+
+    if (Object.keys(normalized).length === 0) {
+      return undefined;
+    }
+
+    return normalized;
+  }
+
+  private isEquivalentDimensionValue(actualValue: unknown, expectedValue: unknown): boolean {
+    if (typeof actualValue === 'string' || typeof expectedValue === 'string') {
+      return (
+        String(actualValue).trim().toUpperCase() === String(expectedValue).trim().toUpperCase()
+      );
+    }
+
+    const actualNumber = this.parseFiniteNumber(actualValue);
+    const expectedNumber = this.parseFiniteNumber(expectedValue);
+    if (actualNumber !== undefined && expectedNumber !== undefined) {
+      return actualNumber === expectedNumber;
+    }
+
+    if (typeof actualValue === 'boolean' && typeof expectedValue === 'boolean') {
+      return actualValue === expectedValue;
+    }
+
+    return actualValue === expectedValue;
   }
 
   private parseFiniteNumber(value: unknown): number | undefined {

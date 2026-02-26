@@ -493,10 +493,14 @@ export interface EphemeralCapabilityPolicy {
   replayNonRetryableErrorCodeBlocklist: string[];
 }
 
+export type EphemeralPolicyScope = 'PERSONAL' | 'TEAM';
+
 const capabilityRoutingPolicyTargetId = 'agent-capability-routing-policy-default';
 const capabilityRoutingPolicyTargetCode = 'agent-capability-routing-policy-default';
-const ephemeralCapabilityPolicyTargetId = 'agent-ephemeral-capability-policy-default';
-const ephemeralCapabilityPolicyTargetCode = 'agent-ephemeral-capability-policy-default';
+const ephemeralCapabilityPolicyTargetId = (scope: EphemeralPolicyScope) =>
+  scope === 'TEAM' ? 'agent-ephemeral-capability-policy-team-default' : 'agent-ephemeral-capability-policy-default';
+const ephemeralCapabilityPolicyTargetCode = (scope: EphemeralPolicyScope) =>
+  scope === 'TEAM' ? 'agent-ephemeral-capability-policy-team-default' : 'agent-ephemeral-capability-policy-default';
 const ephemeralPolicyAuditBindingType = 'AGENT_EPHEMERAL_POLICY_AUDIT';
 
 export interface DeliveryChannelProfile {
@@ -819,9 +823,9 @@ export const useUpsertCapabilityRoutingPolicy = () => {
   });
 };
 
-export const useEphemeralCapabilityPolicy = () =>
+export const useEphemeralCapabilityPolicy = (scope: EphemeralPolicyScope = 'PERSONAL') =>
   useQuery<UserConfigBindingDto | null>({
-    queryKey: ['agent-copilot', 'ephemeral-capability-policy'],
+    queryKey: ['agent-copilot', 'ephemeral-capability-policy', scope],
     queryFn: async () => {
       const res = await apiClient.get<UserConfigBindingPageDto>('/user-config-bindings', {
         params: {
@@ -830,14 +834,15 @@ export const useEphemeralCapabilityPolicy = () =>
           pageSize: 20,
         },
       });
-      return res.data.data.find((item) => item.targetId === ephemeralCapabilityPolicyTargetId) ?? null;
+      return res.data.data.find((item) => item.targetId === ephemeralCapabilityPolicyTargetId(scope)) ?? null;
     },
   });
 
 export const useUpsertEphemeralCapabilityPolicy = () => {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async (payload: { bindingId?: string; policy: EphemeralCapabilityPolicy }) => {
+    mutationFn: async (payload: { bindingId?: string; policy: EphemeralCapabilityPolicy; scope?: EphemeralPolicyScope }) => {
+      const scope = payload.scope ?? 'PERSONAL';
       if (payload.bindingId) {
         const dto: UpdateUserConfigBindingDto = {
           metadata: payload.policy as unknown as Record<string, unknown>,
@@ -851,8 +856,8 @@ export const useUpsertEphemeralCapabilityPolicy = () => {
 
       const dto: CreateUserConfigBindingDto = {
         bindingType: EPHEMERAL_CAPABILITY_POLICY_BINDING_TYPE,
-        targetId: ephemeralCapabilityPolicyTargetId,
-        targetCode: ephemeralCapabilityPolicyTargetCode,
+        targetId: ephemeralCapabilityPolicyTargetId(scope),
+        targetCode: ephemeralCapabilityPolicyTargetCode(scope),
         metadata: payload.policy as unknown as Record<string, unknown>,
         isActive: true,
         priority: 100,
@@ -860,19 +865,28 @@ export const useUpsertEphemeralCapabilityPolicy = () => {
       const res = await apiClient.post<UserConfigBindingDto>('/user-config-bindings', dto);
       return res.data;
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['agent-copilot', 'ephemeral-capability-policy'] });
+    onSuccess: (_data, variables) => {
+      const scope = variables.scope ?? 'PERSONAL';
+      queryClient.invalidateQueries({ queryKey: ['agent-copilot', 'ephemeral-capability-policy', scope] });
+      queryClient.invalidateQueries({ queryKey: ['agent-copilot', 'ephemeral-capability-policy-audits', scope] });
+      queryClient.invalidateQueries({ queryKey: ['agent-copilot', 'ephemeral-capability-policy-audit-summary', scope] });
     },
   });
 };
 
-export const useEphemeralCapabilityPolicyAudits = (limit = 20) =>
+export const useEphemeralCapabilityPolicyAudits = (
+  scope: EphemeralPolicyScope = 'PERSONAL',
+  limit = 20,
+  filters?: { action?: string; changedKey?: string },
+) =>
   useQuery<EphemeralCapabilityPolicyAuditItem[]>({
-    queryKey: ['agent-copilot', 'ephemeral-capability-policy-audits', limit],
+    queryKey: ['agent-copilot', 'ephemeral-capability-policy-audits', scope, limit, filters?.action, filters?.changedKey],
     queryFn: async () => {
-      const res = await apiClient.get<UserConfigBindingPageDto>('/user-config-bindings', {
+      const res = await apiClient.get<UserConfigBindingPageDto>('/user-config-bindings/ephemeral-policy-audits/list', {
         params: {
-          bindingType: ephemeralPolicyAuditBindingType,
+          scope,
+          action: filters?.action,
+          changedKey: filters?.changedKey,
           page: 1,
           pageSize: Math.min(Math.max(limit, 1), 100),
         },
@@ -886,6 +900,38 @@ export const useEphemeralCapabilityPolicyAudits = (limit = 20) =>
       }));
     },
   });
+
+export const useEphemeralCapabilityPolicyAuditSummary = (
+  scope: EphemeralPolicyScope = 'PERSONAL',
+  pageSize = 100,
+) =>
+  useQuery<{ scope: string; total: number; stats: { action: Array<{ key: string; count: number }>; changedKey: Array<{ key: string; count: number }> } }>({
+    queryKey: ['agent-copilot', 'ephemeral-capability-policy-audit-summary', scope, pageSize],
+    queryFn: async () => {
+      const res = await apiClient.get('/user-config-bindings/ephemeral-policy-audits/summary', {
+        params: {
+          scope,
+          pageSize,
+        },
+      });
+      return res.data;
+    },
+  });
+
+export const useRollbackEphemeralCapabilityPolicyAudit = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (payload: { auditId: string; scope?: EphemeralPolicyScope }) => {
+      const res = await apiClient.post(`/user-config-bindings/ephemeral-policy-audits/${payload.auditId}/rollback`);
+      return { scope: payload.scope ?? 'PERSONAL', data: res.data };
+    },
+    onSuccess: ({ scope }) => {
+      queryClient.invalidateQueries({ queryKey: ['agent-copilot', 'ephemeral-capability-policy', scope] });
+      queryClient.invalidateQueries({ queryKey: ['agent-copilot', 'ephemeral-capability-policy-audits', scope] });
+      queryClient.invalidateQueries({ queryKey: ['agent-copilot', 'ephemeral-capability-policy-audit-summary', scope] });
+    },
+  });
+};
 
 export const useConversationSubscriptions = (sessionId?: string) =>
   useQuery<SubscriptionItem[]>({

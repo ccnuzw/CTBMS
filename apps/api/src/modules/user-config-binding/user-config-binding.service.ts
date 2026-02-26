@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import type {
   CreateUserConfigBindingDto,
   UpdateUserConfigBindingDto,
@@ -155,6 +155,142 @@ export class UserConfigBindingService {
     return { deleted: true };
   }
 
+  async findEphemeralPolicyAudits(
+    userId: string,
+    query?: {
+      scope?: 'PERSONAL' | 'TEAM';
+      action?: string;
+      changedKey?: string;
+      page?: number;
+      pageSize?: number;
+    },
+  ) {
+    const where: Prisma.UserConfigBindingWhereInput = {
+      userId,
+      bindingType: 'AGENT_EPHEMERAL_POLICY_AUDIT',
+      isActive: true,
+    };
+    const page = query?.page && query.page > 0 ? query.page : 1;
+    const pageSize = query?.pageSize && query.pageSize > 0 ? Math.min(query.pageSize, 100) : 20;
+
+    const [data, total] = await Promise.all([
+      this.prisma.userConfigBinding.findMany({
+        where,
+        orderBy: [{ createdAt: 'desc' }],
+        skip: (page - 1) * pageSize,
+        take: pageSize,
+      }),
+      this.prisma.userConfigBinding.count({ where }),
+    ]);
+
+    const actionFilter = query?.action?.trim().toUpperCase();
+    const changedKeyFilter = query?.changedKey?.trim();
+    const scopeFilter = query?.scope;
+    const filtered = data.filter((item) => {
+      const metadata = this.toRecord(item.metadata);
+      const action = this.pickString(metadata.action)?.toUpperCase();
+      const scope = this.pickString(metadata.scope)?.toUpperCase();
+      const changedKeys = Array.isArray(metadata.changedKeys)
+        ? metadata.changedKeys.map((entry) => (typeof entry === 'string' ? entry : '')).filter(Boolean)
+        : [];
+      if (actionFilter && action !== actionFilter) {
+        return false;
+      }
+      if (scopeFilter && scope !== scopeFilter) {
+        return false;
+      }
+      if (changedKeyFilter && !changedKeys.includes(changedKeyFilter)) {
+        return false;
+      }
+      return true;
+    });
+
+    return {
+      data: filtered,
+      total,
+      page,
+      pageSize,
+      totalPages: Math.ceil(total / pageSize),
+    };
+  }
+
+  async summarizeEphemeralPolicyAudits(userId: string, query?: { scope?: 'PERSONAL' | 'TEAM'; pageSize?: number }) {
+    const audits = await this.findEphemeralPolicyAudits(userId, {
+      scope: query?.scope,
+      page: 1,
+      pageSize: query?.pageSize ?? 100,
+    });
+    const actionStats = new Map<string, number>();
+    const changedKeyStats = new Map<string, number>();
+
+    for (const item of audits.data) {
+      const metadata = this.toRecord(item.metadata);
+      const action = this.pickString(metadata.action) ?? 'UNKNOWN';
+      actionStats.set(action, (actionStats.get(action) ?? 0) + 1);
+      const changedKeys = Array.isArray(metadata.changedKeys)
+        ? metadata.changedKeys.map((entry) => (typeof entry === 'string' ? entry : '')).filter(Boolean)
+        : [];
+      for (const key of changedKeys) {
+        changedKeyStats.set(key, (changedKeyStats.get(key) ?? 0) + 1);
+      }
+    }
+
+    const toArray = (mapping: Map<string, number>) =>
+      Array.from(mapping.entries())
+        .map(([key, count]) => ({ key, count }))
+        .sort((a, b) => b.count - a.count);
+
+    return {
+      scope: query?.scope ?? 'PERSONAL',
+      total: audits.data.length,
+      stats: {
+        action: toArray(actionStats),
+        changedKey: toArray(changedKeyStats),
+      },
+    };
+  }
+
+  async rollbackEphemeralPolicyAudit(userId: string, auditId: string) {
+    const audit = await this.prisma.userConfigBinding.findFirst({
+      where: {
+        id: auditId,
+        userId,
+        bindingType: 'AGENT_EPHEMERAL_POLICY_AUDIT',
+      },
+    });
+    if (!audit) {
+      throw new NotFoundException('审计记录不存在');
+    }
+
+    const metadata = this.toRecord(audit.metadata);
+    const sourceBindingId = this.pickString(metadata.sourceBindingId) ?? this.pickString(audit.targetCode);
+    const after = this.toRecord(metadata.after);
+    if (!sourceBindingId || !Object.keys(after).length) {
+      throw new BadRequestException('审计记录缺少可回滚的策略快照');
+    }
+
+    const targetBinding = await this.prisma.userConfigBinding.findFirst({
+      where: {
+        id: sourceBindingId,
+        userId,
+        bindingType: 'AGENT_EPHEMERAL_CAPABILITY_POLICY',
+      },
+    });
+    if (!targetBinding) {
+      throw new NotFoundException('目标策略不存在，无法回滚');
+    }
+
+    const updated = await this.update(userId, targetBinding.id, {
+      metadata: after,
+    });
+
+    return {
+      rolledBackFromAuditId: audit.id,
+      targetBindingId: targetBinding.id,
+      updated,
+    };
+  }
+
   private async createEphemeralPolicyAuditIfNeeded(input: {
     userId: string;
     action: 'UPSERT_CREATE' | 'UPSERT_UPDATE' | 'UPDATE';
@@ -163,9 +299,10 @@ export class UserConfigBindingService {
     beforeMetadata: Prisma.JsonValue | null | undefined;
     afterMetadata: Prisma.JsonValue | null | undefined;
   }) {
-    if (input.targetId !== 'agent-ephemeral-capability-policy-default') {
+    if (!input.targetId.startsWith('agent-ephemeral-capability-policy-')) {
       return;
     }
+    const scope = input.targetId.includes('-team-') ? 'TEAM' : 'PERSONAL';
 
     const before = this.toRecord(input.beforeMetadata);
     const after = this.toRecord(input.afterMetadata);
@@ -185,6 +322,7 @@ export class UserConfigBindingService {
           before,
           after,
           changedKeys,
+          scope,
           auditedAt: new Date().toISOString(),
         } as Prisma.InputJsonValue,
         isActive: true,
@@ -198,5 +336,13 @@ export class UserConfigBindingService {
       return {};
     }
     return value as Record<string, unknown>;
+  }
+
+  private pickString(value: unknown): string | null {
+    if (typeof value !== 'string') {
+      return null;
+    }
+    const normalized = value.trim();
+    return normalized.length ? normalized : null;
   }
 }
