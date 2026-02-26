@@ -387,6 +387,109 @@ Query:
 }
 ```
 
+## 1.11 晋升任务批处理（并发/重试）
+
+- `POST /agent-conversations/sessions/:sessionId/ephemeral-capabilities/promotion-tasks/batch`
+
+请求：
+
+```json
+{
+  "action": "SYNC_DRAFT_STATUS",
+  "taskAssetIds": ["ca_task_xxx"],
+  "window": "24h",
+  "status": "PENDING_REVIEW",
+  "maxConcurrency": 6,
+  "maxRetries": 1,
+  "comment": "批量同步草稿状态"
+}
+```
+
+响应：
+
+```json
+{
+  "action": "SYNC_DRAFT_STATUS",
+  "batchId": "b4d7...",
+  "batchAssetId": "ca_batch_xxx",
+  "requestedCount": 12,
+  "succeededCount": 10,
+  "failedCount": 2,
+  "succeeded": [{ "taskAssetId": "ca_task_1", "status": "IN_REVIEW" }],
+  "failed": [{ "taskAssetId": "ca_task_2", "code": "CONV_PROMOTION_TASK_PUBLISH_BLOCKED", "message": "该草稿尚未发布" }]
+}
+```
+
+## 1.12 晋升批次记录列表
+
+- `GET /agent-conversations/sessions/:sessionId/ephemeral-capabilities/promotion-task-batches`
+
+Query:
+
+1. `window`（可选）：`1h`/`24h`/`7d`，默认 `24h`
+2. `action`（可选）：`START_REVIEW`/`MARK_APPROVED`/`MARK_REJECTED`/`MARK_PUBLISHED`/`SYNC_DRAFT_STATUS`
+3. `limit`（可选）：默认 `20`，最大 `100`
+
+响应（节选）：
+
+```json
+[
+  {
+    "batchAssetId": "ca_batch_xxx",
+    "batchId": "b4d7...",
+    "action": "SYNC_DRAFT_STATUS",
+    "requestedCount": 12,
+    "succeededCount": 10,
+    "failedCount": 2,
+    "maxConcurrency": 6,
+    "maxRetries": 1,
+    "failed": [
+      { "taskAssetId": "ca_task_2", "code": "CONV_PROMOTION_TASK_PUBLISH_BLOCKED", "message": "该草稿尚未发布" }
+    ],
+    "createdAt": "2026-02-26T18:00:00.000Z"
+  }
+]
+```
+
+## 1.13 晋升批次失败重放
+
+- `POST /agent-conversations/sessions/:sessionId/ephemeral-capabilities/promotion-task-batches/:batchAssetId/replay-failed`
+
+请求：
+
+```json
+{
+  "replayMode": "RETRYABLE_ONLY",
+  "maxConcurrency": 6,
+  "maxRetries": 1
+}
+```
+
+`replayMode` 说明：
+
+- `RETRYABLE_ONLY`：仅重放可重试错误（网络/超时/5xx/429 等）
+- `ALL_FAILED`：重放全部失败项
+
+响应：
+
+```json
+{
+  "sourceBatchAssetId": "ca_batch_xxx",
+  "sourceAction": "SYNC_DRAFT_STATUS",
+  "sourceFailedCount": 2,
+  "selectedReplayCount": 1,
+  "replayMode": "RETRYABLE_ONLY",
+  "replayResult": {
+    "action": "SYNC_DRAFT_STATUS",
+    "batchId": "b5e8...",
+    "batchAssetId": "ca_batch_yyy",
+    "requestedCount": 1,
+    "succeededCount": 1,
+    "failedCount": 0
+  }
+}
+```
+
 ## 2. 辩论接口
 
 ## 2.1 启动辩论计划

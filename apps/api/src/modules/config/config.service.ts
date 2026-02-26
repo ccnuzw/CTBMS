@@ -1,715 +1,857 @@
-
 import { BadRequestException, Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AIModelConfig, BusinessMappingRule, DictionaryItem, Prisma } from '@prisma/client';
 import {
-    CreateDictionaryDomainDto,
-    UpdateDictionaryDomainDto,
-    CreateDictionaryItemDto,
-    UpdateDictionaryItemDto,
+  CreateDictionaryDomainDto,
+  UpdateDictionaryDomainDto,
+  CreateDictionaryItemDto,
+  UpdateDictionaryItemDto,
 } from './dto/dictionary.dto';
 import { CreateAIModelConfigDto } from './dto/create-ai-model-config.dto';
 
-type WorkflowAgentStrictModeSource = 'DB' | 'ENV' | 'DEFAULT';
+type WorkflowRuntimeFlagSource = 'DB' | 'ENV' | 'DEFAULT';
 
 @Injectable()
 export class ConfigService implements OnModuleInit {
-    private readonly logger = new Logger(ConfigService.name);
-    private static readonly WORKFLOW_RUNTIME_FLAG_DOMAIN_CODE = 'WORKFLOW_RUNTIME_FLAGS';
-    private static readonly WORKFLOW_AGENT_STRICT_MODE_CODE = 'WORKFLOW_AGENT_STRICT_MODE';
+  private readonly logger = new Logger(ConfigService.name);
+  private static readonly WORKFLOW_RUNTIME_FLAG_DOMAIN_CODE = 'WORKFLOW_RUNTIME_FLAGS';
+  private static readonly WORKFLOW_AGENT_STRICT_MODE_CODE = 'WORKFLOW_AGENT_STRICT_MODE';
+  private static readonly WORKFLOW_STANDARDIZED_READ_MODE_CODE = 'WORKFLOW_STANDARDIZED_READ_MODE';
 
-    // Cache
-    private mappingRulesCache: Map<string, BusinessMappingRule[]> = new Map();
-    private aiConfigCache: Map<string, AIModelConfig> = new Map();
-    private dictionaryCache: Map<string, DictionaryItem[]> = new Map();
-    private cacheLastUpdated: number = 0;
-    private readonly CACHE_TTL_MS = 60 * 1000; // 1 minute generic cache
+  // Cache
+  private mappingRulesCache: Map<string, BusinessMappingRule[]> = new Map();
+  private aiConfigCache: Map<string, AIModelConfig> = new Map();
+  private dictionaryCache: Map<string, DictionaryItem[]> = new Map();
+  private cacheLastUpdated: number = 0;
+  private readonly CACHE_TTL_MS = 60 * 1000; // 1 minute generic cache
 
-    constructor(private readonly prisma: PrismaService) { }
+  constructor(private readonly prisma: PrismaService) {}
 
-    private parseBooleanFlag(value: unknown): boolean | null {
-        if (typeof value === 'boolean') {
-            return value;
-        }
-        if (typeof value === 'number' && Number.isFinite(value)) {
-            if (value === 1) return true;
-            if (value === 0) return false;
-        }
-        if (typeof value === 'string') {
-            const normalized = value.trim().toLowerCase();
-            if (!normalized) return null;
-            if (['1', 'true', 'yes', 'on', 'enabled'].includes(normalized)) return true;
-            if (['0', 'false', 'no', 'off', 'disabled'].includes(normalized)) return false;
-        }
-        return null;
+  private parseBooleanFlag(value: unknown): boolean | null {
+    if (typeof value === 'boolean') {
+      return value;
     }
-
-    private parseStrictModeFromMeta(meta: Prisma.JsonValue | null): boolean | null {
-        if (meta === null) {
-            return null;
-        }
-        if (typeof meta === 'object' && !Array.isArray(meta)) {
-            const enabledValue = (meta as Record<string, unknown>).enabled;
-            const parsed = this.parseBooleanFlag(enabledValue);
-            if (parsed !== null) {
-                return parsed;
-            }
-        }
-        return this.parseBooleanFlag(meta);
+    if (typeof value === 'number' && Number.isFinite(value)) {
+      if (value === 1) return true;
+      if (value === 0) return false;
     }
-
-    private normalizeNullableString(value?: string | null): string | null | undefined {
-        if (value === undefined) return undefined;
-        if (value === null) return null;
-        const trimmed = value.trim();
-        return trimmed.length > 0 ? trimmed : null;
+    if (typeof value === 'string') {
+      const normalized = value.trim().toLowerCase();
+      if (!normalized) return null;
+      if (['1', 'true', 'yes', 'on', 'enabled'].includes(normalized)) return true;
+      if (['0', 'false', 'no', 'off', 'disabled'].includes(normalized)) return false;
     }
+    return null;
+  }
 
-    private normalizeMeta(meta: unknown): Prisma.InputJsonValue | typeof Prisma.DbNull | undefined {
-        if (meta === undefined) return undefined;
-        if (meta === null) return Prisma.DbNull;
-        if (typeof meta === 'string') {
-            const trimmed = meta.trim();
-            if (!trimmed) return Prisma.DbNull;
-            try {
-                return JSON.parse(trimmed) as Prisma.InputJsonValue;
-            } catch (error) {
-                throw new BadRequestException('meta 字段必须是合法 JSON');
-            }
-        }
-        return meta as Prisma.InputJsonValue;
+  private parseWorkflowRuntimeFlagFromMeta(meta: Prisma.JsonValue | null): boolean | null {
+    if (meta === null) {
+      return null;
     }
-
-    async onModuleInit() {
-        await this.refreshCache();
+    if (typeof meta === 'object' && !Array.isArray(meta)) {
+      const enabledValue = (meta as Record<string, unknown>).enabled;
+      const parsed = this.parseBooleanFlag(enabledValue);
+      if (parsed !== null) {
+        return parsed;
+      }
     }
+    return this.parseBooleanFlag(meta);
+  }
 
-    /**
-     * Refresh all configuration caches
-     */
-    async refreshCache() {
-        try {
-            // 1. Load Rules
-            const rules = await this.prisma.businessMappingRule.findMany({
-                where: { isActive: true },
-                orderBy: { priority: 'desc' },
-            });
+  private normalizeNullableString(value?: string | null): string | null | undefined {
+    if (value === undefined) return undefined;
+    if (value === null) return null;
+    const trimmed = value.trim();
+    return trimmed.length > 0 ? trimmed : null;
+  }
 
-            this.mappingRulesCache.clear();
-            for (const rule of rules) {
-                if (!this.mappingRulesCache.has(rule.domain)) {
-                    this.mappingRulesCache.set(rule.domain, []);
-                }
-                this.mappingRulesCache.get(rule.domain)?.push(rule);
-            }
-
-            // 2. Load AI Configs
-            const aiConfigs = await this.prisma.aIModelConfig.findMany({
-                where: { isActive: true },
-            });
-
-            this.aiConfigCache.clear();
-            for (const conf of aiConfigs) {
-                this.aiConfigCache.set(conf.configKey, conf);
-            }
-
-            // 3. Load Dictionaries
-            const dictDomains = await this.prisma.dictionaryDomain.findMany({
-                where: { isActive: true },
-                include: {
-                    items: {
-                        where: { isActive: true },
-                        orderBy: { sortOrder: 'asc' },
-                    },
-                },
-            });
-
-            this.dictionaryCache.clear();
-            for (const domain of dictDomains) {
-                this.dictionaryCache.set(domain.code, domain.items);
-            }
-
-            this.cacheLastUpdated = Date.now();
-            this.logger.log(
-                `Configuration cache refreshed: ${rules.length} rules, ${aiConfigs.length} AI models, ${dictDomains.length} dictionaries.`
-            );
-        } catch (error) {
-            this.logger.error('Failed to refresh configuration cache', error);
-        }
+  private normalizeMeta(meta: unknown): Prisma.InputJsonValue | typeof Prisma.DbNull | undefined {
+    if (meta === undefined) return undefined;
+    if (meta === null) return Prisma.DbNull;
+    if (typeof meta === 'string') {
+      const trimmed = meta.trim();
+      if (!trimmed) return Prisma.DbNull;
+      try {
+        return JSON.parse(trimmed) as Prisma.InputJsonValue;
+      } catch (error) {
+        throw new BadRequestException('meta 字段必须是合法 JSON');
+      }
     }
+    return meta as Prisma.InputJsonValue;
+  }
 
-    /**
-     * Get AI Model Config
-     */
-    async getAIModelConfig(key: string = 'DEFAULT'): Promise<AIModelConfig | null> {
-        // Simple cache check
-        if (Date.now() - this.cacheLastUpdated > this.CACHE_TTL_MS) {
-            await this.refreshCache();
+  async onModuleInit() {
+    await this.refreshCache();
+  }
+
+  /**
+   * Refresh all configuration caches
+   */
+  async refreshCache() {
+    try {
+      // 1. Load Rules
+      const rules = await this.prisma.businessMappingRule.findMany({
+        where: { isActive: true },
+        orderBy: { priority: 'desc' },
+      });
+
+      this.mappingRulesCache.clear();
+      for (const rule of rules) {
+        if (!this.mappingRulesCache.has(rule.domain)) {
+          this.mappingRulesCache.set(rule.domain, []);
         }
-        return this.aiConfigCache.get(key) || null;
-    }
+        this.mappingRulesCache.get(rule.domain)?.push(rule);
+      }
 
-    /**
-     * Get All AI Model Configs
-     */
-    async getAllAIModelConfigs(includeInactive: boolean = false): Promise<AIModelConfig[]> {
-        if (Date.now() - this.cacheLastUpdated > this.CACHE_TTL_MS) {
-            await this.refreshCache();
-        }
+      // 2. Load AI Configs
+      const aiConfigs = await this.prisma.aIModelConfig.findMany({
+        where: { isActive: true },
+      });
 
-        if (includeInactive) {
-            return this.prisma.aIModelConfig.findMany({
-                orderBy: { configKey: 'asc' }
-            });
-        }
+      this.aiConfigCache.clear();
+      for (const conf of aiConfigs) {
+        this.aiConfigCache.set(conf.configKey, conf);
+      }
 
-        return Array.from(this.aiConfigCache.values());
-    }
-
-    async getWorkflowAgentStrictMode(): Promise<{
-        enabled: boolean;
-        source: WorkflowAgentStrictModeSource;
-        updatedAt: string | null;
-    }> {
-        const strictModeItem = await this.prisma.dictionaryItem.findUnique({
-            where: {
-                domainCode_code: {
-                    domainCode: ConfigService.WORKFLOW_RUNTIME_FLAG_DOMAIN_CODE,
-                    code: ConfigService.WORKFLOW_AGENT_STRICT_MODE_CODE,
-                },
-            },
-            select: {
-                meta: true,
-                updatedAt: true,
-            },
-        });
-
-        if (strictModeItem) {
-            const parsedFromMeta = this.parseStrictModeFromMeta(strictModeItem.meta as Prisma.JsonValue | null);
-            if (parsedFromMeta !== null) {
-                return {
-                    enabled: parsedFromMeta,
-                    source: 'DB',
-                    updatedAt: strictModeItem.updatedAt.toISOString(),
-                };
-            }
-        }
-
-        const parsedFromEnv = this.parseBooleanFlag(process.env.WORKFLOW_AGENT_STRICT_MODE);
-        if (parsedFromEnv !== null) {
-            return {
-                enabled: parsedFromEnv,
-                source: 'ENV',
-                updatedAt: null,
-            };
-        }
-
-        return {
-            enabled: false,
-            source: 'DEFAULT',
-            updatedAt: null,
-        };
-    }
-
-    async setWorkflowAgentStrictMode(
-        enabled: boolean,
-        updatedBy?: string,
-    ): Promise<{
-        enabled: boolean;
-        source: WorkflowAgentStrictModeSource;
-        updatedAt: string | null;
-    }> {
-        if (typeof enabled !== 'boolean') {
-            throw new BadRequestException('enabled 必须是布尔值');
-        }
-
-        const updateMeta = {
-            enabled,
-            updatedBy: updatedBy ?? null,
-            updatedAt: new Date().toISOString(),
-        } as Prisma.InputJsonValue;
-
-        await this.prisma.$transaction(async (tx) => {
-            await tx.dictionaryDomain.upsert({
-                where: { code: ConfigService.WORKFLOW_RUNTIME_FLAG_DOMAIN_CODE },
-                update: {
-                    name: '工作流运行时开关',
-                    description: '工作流执行相关的系统运行开关',
-                    category: 'WORKFLOW',
-                    usageHint: '用于控制工作流执行期的全局行为',
-                    usageLocations: ['system/config/ai-models'],
-                    isSystemDomain: true,
-                    isActive: true,
-                },
-                create: {
-                    code: ConfigService.WORKFLOW_RUNTIME_FLAG_DOMAIN_CODE,
-                    name: '工作流运行时开关',
-                    description: '工作流执行相关的系统运行开关',
-                    category: 'WORKFLOW',
-                    usageHint: '用于控制工作流执行期的全局行为',
-                    usageLocations: ['system/config/ai-models'],
-                    isSystemDomain: true,
-                    isActive: true,
-                },
-            });
-
-            await tx.dictionaryItem.upsert({
-                where: {
-                    domainCode_code: {
-                        domainCode: ConfigService.WORKFLOW_RUNTIME_FLAG_DOMAIN_CODE,
-                        code: ConfigService.WORKFLOW_AGENT_STRICT_MODE_CODE,
-                    },
-                },
-                update: {
-                    label: 'Agent 鉴权严格模式',
-                    sortOrder: 100,
-                    isActive: true,
-                    meta: updateMeta,
-                },
-                create: {
-                    domainCode: ConfigService.WORKFLOW_RUNTIME_FLAG_DOMAIN_CODE,
-                    code: ConfigService.WORKFLOW_AGENT_STRICT_MODE_CODE,
-                    label: 'Agent 鉴权严格模式',
-                    sortOrder: 100,
-                    isActive: true,
-                    meta: updateMeta,
-                },
-            });
-        });
-
-        await this.refreshCache();
-        return this.getWorkflowAgentStrictMode();
-    }
-
-    /**
-     * Delete AI Model Config
-     */
-    async deleteAIModelConfig(key: string) {
-        await this.prisma.aIModelConfig.delete({
-            where: { configKey: key }
-        });
-        await this.refreshCache();
-        return { success: true };
-    }
-
-    /**
-     * Get Dictionary Items by domain
-     */
-    async getDictionary(domain: string, includeInactive: boolean = false): Promise<DictionaryItem[]> {
-        if (!domain) return [];
-
-        if (!includeInactive) {
-            if (Date.now() - this.cacheLastUpdated > this.CACHE_TTL_MS) {
-                await this.refreshCache();
-            }
-            return this.dictionaryCache.get(domain) || [];
-        }
-
-        return this.prisma.dictionaryItem.findMany({
-            where: { domainCode: domain },
+      // 3. Load Dictionaries
+      const dictDomains = await this.prisma.dictionaryDomain.findMany({
+        where: { isActive: true },
+        include: {
+          items: {
+            where: { isActive: true },
             orderBy: { sortOrder: 'asc' },
-        });
+          },
+        },
+      });
+
+      this.dictionaryCache.clear();
+      for (const domain of dictDomains) {
+        this.dictionaryCache.set(domain.code, domain.items);
+      }
+
+      this.cacheLastUpdated = Date.now();
+      this.logger.log(
+        `Configuration cache refreshed: ${rules.length} rules, ${aiConfigs.length} AI models, ${dictDomains.length} dictionaries.`,
+      );
+    } catch (error) {
+      this.logger.error('Failed to refresh configuration cache', error);
+    }
+  }
+
+  /**
+   * Get AI Model Config
+   */
+  async getAIModelConfig(key: string = 'DEFAULT'): Promise<AIModelConfig | null> {
+    // Simple cache check
+    if (Date.now() - this.cacheLastUpdated > this.CACHE_TTL_MS) {
+      await this.refreshCache();
+    }
+    return this.aiConfigCache.get(key) || null;
+  }
+
+  /**
+   * Get All AI Model Configs
+   */
+  async getAllAIModelConfigs(includeInactive: boolean = false): Promise<AIModelConfig[]> {
+    if (Date.now() - this.cacheLastUpdated > this.CACHE_TTL_MS) {
+      await this.refreshCache();
     }
 
-    /**
-     * Get Dictionary Items for multiple domains
-     */
-    async getDictionaries(domains: string[] = [], includeInactive: boolean = false): Promise<Record<string, DictionaryItem[]>> {
-        if (!domains.length) return {};
-
-        if (!includeInactive) {
-            if (Date.now() - this.cacheLastUpdated > this.CACHE_TTL_MS) {
-                await this.refreshCache();
-            }
-            return domains.reduce<Record<string, DictionaryItem[]>>((acc, code) => {
-                acc[code] = this.dictionaryCache.get(code) || [];
-                return acc;
-            }, {});
-        }
-
-        const items = await this.prisma.dictionaryItem.findMany({
-            where: { domainCode: { in: domains } },
-            orderBy: [{ domainCode: 'asc' }, { sortOrder: 'asc' }],
-        });
-
-        return items.reduce<Record<string, DictionaryItem[]>>((acc, item) => {
-            if (!acc[item.domainCode]) acc[item.domainCode] = [];
-            acc[item.domainCode].push(item);
-            return acc;
-        }, {});
+    if (includeInactive) {
+      return this.prisma.aIModelConfig.findMany({
+        orderBy: { configKey: 'asc' },
+      });
     }
 
-    /**
-     * Dictionary Domain CRUD
-     */
-    async getDictionaryDomains(includeInactive: boolean = false) {
-        return this.prisma.dictionaryDomain.findMany({
-            where: includeInactive ? {} : { isActive: true },
-            orderBy: { code: 'asc' },
-            include: {
-                _count: {
-                    select: { items: true },
-                },
-            },
-        });
-    }
+    return Array.from(this.aiConfigCache.values());
+  }
 
-    async createDictionaryDomain(data: CreateDictionaryDomainDto) {
-        const code = data.code?.trim();
-        const name = data.name?.trim();
-        if (!code) throw new BadRequestException('字典域编码不能为空');
-        if (!name) throw new BadRequestException('字典域名称不能为空');
+  async getWorkflowAgentStrictMode(): Promise<{
+    enabled: boolean;
+    source: WorkflowRuntimeFlagSource;
+    updatedAt: string | null;
+  }> {
+    const strictModeItem = await this.prisma.dictionaryItem.findUnique({
+      where: {
+        domainCode_code: {
+          domainCode: ConfigService.WORKFLOW_RUNTIME_FLAG_DOMAIN_CODE,
+          code: ConfigService.WORKFLOW_AGENT_STRICT_MODE_CODE,
+        },
+      },
+      select: {
+        meta: true,
+        updatedAt: true,
+      },
+    });
 
-        const created = await this.prisma.dictionaryDomain.create({
-            data: {
-                code,
-                name,
-                description: this.normalizeNullableString(data.description),
-                isActive: data.isActive ?? true,
-            },
-        });
-        await this.refreshCache();
-        return created;
-    }
-
-    async updateDictionaryDomain(code: string, data: UpdateDictionaryDomainDto) {
-        const update: Prisma.DictionaryDomainUpdateInput = {};
-        if (data.name !== undefined) update.name = data.name.trim();
-        if (data.description !== undefined) update.description = this.normalizeNullableString(data.description);
-        if (data.isActive !== undefined) update.isActive = data.isActive;
-        const updated = await this.prisma.dictionaryDomain.update({
-            where: { code },
-            data: update,
-        });
-        await this.refreshCache();
-        return updated;
-    }
-
-    async disableDictionaryDomain(code: string) {
-        const updated = await this.prisma.dictionaryDomain.update({
-            where: { code },
-            data: { isActive: false },
-        });
-        await this.refreshCache();
-        return updated;
-    }
-
-    /**
-     * Dictionary Items CRUD
-     */
-    async getDictionaryItems(domainCode: string, includeInactive: boolean = false) {
-        return this.prisma.dictionaryItem.findMany({
-            where: {
-                domainCode,
-                ...(includeInactive ? {} : { isActive: true }),
-            },
-            orderBy: [{ sortOrder: 'asc' }, { code: 'asc' }],
-        });
-    }
-
-    async createDictionaryItem(domainCode: string, data: CreateDictionaryItemDto) {
-        const code = data.code?.trim();
-        const label = data.label?.trim();
-        if (!code) throw new BadRequestException('字典项编码不能为空');
-        if (!label) throw new BadRequestException('字典项名称不能为空');
-
-        const created = await this.prisma.dictionaryItem.create({
-            data: {
-                domainCode,
-                code,
-                label,
-                sortOrder: data.sortOrder ?? 0,
-                isActive: data.isActive ?? true,
-                parentCode: this.normalizeNullableString(data.parentCode),
-                meta: this.normalizeMeta(data.meta),
-            },
-        });
-        await this.refreshCache();
-        return created;
-    }
-
-    async updateDictionaryItem(domainCode: string, itemCode: string, data: UpdateDictionaryItemDto) {
-        const update: Prisma.DictionaryItemUpdateInput = {};
-        if (data.label !== undefined) update.label = data.label.trim();
-        if (data.sortOrder !== undefined) update.sortOrder = data.sortOrder;
-        if (data.isActive !== undefined) update.isActive = data.isActive;
-        if (data.parentCode !== undefined) update.parentCode = this.normalizeNullableString(data.parentCode);
-
-        const meta = this.normalizeMeta(data.meta);
-        if (meta !== undefined) update.meta = meta;
-
-        const updated = await this.prisma.dictionaryItem.update({
-            where: {
-                domainCode_code: {
-                    domainCode,
-                    code: itemCode,
-                },
-            },
-            data: update,
-        });
-        await this.refreshCache();
-        return updated;
-    }
-
-    async disableDictionaryItem(domainCode: string, itemCode: string) {
-        const updated = await this.prisma.dictionaryItem.update({
-            where: {
-                domainCode_code: {
-                    domainCode,
-                    code: itemCode,
-                },
-            },
-            data: { isActive: false },
-        });
-        await this.refreshCache();
-        return updated;
-    }
-
-    /**
-     * 物理删除字典项（仅当无业务数据引用时允许）
-     */
-    async deleteDictionaryItem(domainCode: string, itemCode: string): Promise<{ success: boolean; message: string }> {
-        // 1. 检查引用
-        const refCheck = await this.checkDictionaryItemReferences(domainCode, itemCode);
-        if (refCheck.total > 0) {
-            const refDetails = refCheck.references.map(r => `${r.table}(${r.count}条)`).join(', ');
-            throw new BadRequestException(
-                `无法删除：该字典项仍有 ${refCheck.total} 条业务数据引用（${refDetails}）`,
-            );
-        }
-
-        // 2. 执行物理删除
-        await this.prisma.dictionaryItem.delete({
-            where: {
-                domainCode_code: {
-                    domainCode,
-                    code: itemCode,
-                },
-            },
-        });
-
-        await this.refreshCache();
-        return { success: true, message: '字典项已永久删除' };
-    }
-
-
-    /**
-     * 字典域 → 业务表引用配置
-     * 用于检查字典项是否被业务数据引用
-     * isEnum: 字段是否为枚举类型（需要 PostgreSQL 类型转换）
-     * enumName: 枚举类型名称
-     */
-    private static readonly DICTIONARY_REFERENCE_CONFIG: Record<
-        string,
-        Array<{ table: string; field: string; isArray?: boolean; isEnum?: boolean; enumName?: string }>
-    > = {
-            USER_STATUS: [{ table: 'User', field: 'status', isEnum: true, enumName: 'UserStatus' }],
-            ENTITY_STATUS: [
-                { table: 'Organization', field: 'status', isEnum: true, enumName: 'EntityStatus' },
-                { table: 'Department', field: 'status', isEnum: true, enumName: 'EntityStatus' },
-                { table: 'Role', field: 'status', isEnum: true, enumName: 'EntityStatus' },
-                { table: 'CollectionPoint', field: 'status', isEnum: true, enumName: 'EntityStatus' },
-                { table: 'Enterprise', field: 'status', isEnum: true, enumName: 'EntityStatus' },
-            ],
-            GENDER: [{ table: 'User', field: 'gender', isEnum: true, enumName: 'Gender' }],
-            ORGANIZATION_TYPE: [{ table: 'Organization', field: 'type', isEnum: true, enumName: 'OrganizationType' }],
-            COLLECTION_POINT_TYPE: [{ table: 'CollectionPoint', field: 'type', isEnum: true, enumName: 'CollectionPointType' }],
-            ENTERPRISE_TYPE: [{ table: 'Enterprise', field: 'types', isArray: true }],
-            INFO_STATUS: [{ table: 'MarketInfo', field: 'status', isEnum: true, enumName: 'InfoStatus' }],
-            COMMODITY: [
-                { table: 'PriceData', field: 'commodity' },
-                { table: 'PriceSubmission', field: 'commodity' },
-                { table: 'IntelTask', field: 'commodity' },
-                { table: 'CollectionPointAssignment', field: 'commodity' },
-            ],
-            PRICE_SUB_TYPE: [{ table: 'PriceData', field: 'subType', isEnum: true, enumName: 'PriceSubType' }],
-            PRICE_SOURCE_TYPE: [{ table: 'PriceData', field: 'sourceType', isEnum: true, enumName: 'PriceSourceType' }],
-            INTEL_CATEGORY: [{ table: 'IntelFeed', field: 'category', isEnum: true, enumName: 'IntelCategory' }],
-            INTEL_SOURCE_TYPE: [{ table: 'IntelFeed', field: 'sourceType', isEnum: true, enumName: 'IntelSourceType' }],
-            INTEL_TASK_TYPE: [{ table: 'IntelTask', field: 'type', isEnum: true, enumName: 'IntelTaskType' }],
-            REPORT_TYPE: [{ table: 'ResearchReport', field: 'type' }],
+    if (strictModeItem) {
+      const parsedFromMeta = this.parseWorkflowRuntimeFlagFromMeta(
+        strictModeItem.meta as Prisma.JsonValue | null,
+      );
+      if (parsedFromMeta !== null) {
+        return {
+          enabled: parsedFromMeta,
+          source: 'DB',
+          updatedAt: strictModeItem.updatedAt.toISOString(),
         };
-
-
-    /**
-     * 检查字典项引用数量
-     * @param domainCode 字典域编码
-     * @param itemCode 字典项编码
-     * @returns 引用统计信息
-     */
-    async checkDictionaryItemReferences(
-        domainCode: string,
-        itemCode: string,
-    ): Promise<{ total: number; references: Array<{ table: string; count: number }> }> {
-        const config = ConfigService.DICTIONARY_REFERENCE_CONFIG[domainCode];
-
-        if (!config || config.length === 0) {
-            return { total: 0, references: [] };
-        }
-
-        const references: Array<{ table: string; count: number }> = [];
-        let total = 0;
-
-        for (const ref of config) {
-            try {
-                let count = 0;
-                let sql: string;
-
-                if (ref.isArray) {
-                    // 数组字段查询
-                    sql = `SELECT COUNT(*) as count FROM "${ref.table}" WHERE $1 = ANY("${ref.field}")`;
-                } else if (ref.isEnum && ref.enumName) {
-                    // 枚举字段查询 - 需要类型转换
-                    sql = `SELECT COUNT(*) as count FROM "${ref.table}" WHERE "${ref.field}" = $1::"${ref.enumName}"`;
-                } else {
-                    // 普通字符串字段查询
-                    sql = `SELECT COUNT(*) as count FROM "${ref.table}" WHERE "${ref.field}" = $1`;
-                }
-
-                const result = await this.prisma.$queryRawUnsafe<[{ count: bigint }]>(sql, itemCode);
-                count = Number(result[0]?.count || 0);
-
-                if (count > 0) {
-                    references.push({ table: ref.table, count });
-                    total += count;
-                }
-            } catch (error) {
-                this.logger.warn(`检查 ${ref.table}.${ref.field} 引用失败: ${error}`);
-            }
-        }
-
-        return { total, references };
+      }
     }
 
-
-    /**
-     * Evaluate mapping rules for a given domain and text
-     */
-    evaluateMappingRule(domain: string, input: string, defaultValue?: string): string {
-        const rules = this.mappingRulesCache.get(domain) || [];
-
-        for (const rule of rules) {
-            const pattern = rule.pattern;
-            let matched = false;
-
-            switch (rule.matchMode) {
-                case 'EXACT':
-                    matched = input === pattern;
-                    break;
-                case 'CONTAINS':
-                    matched = input.includes(pattern);
-                    break;
-                case 'REGEX':
-                    try {
-                        const regex = new RegExp(pattern);
-                        matched = regex.test(input);
-                    } catch (e) {
-                        this.logger.warn(`Invalid regex pattern in rule ${rule.id}: ${pattern}`);
-                    }
-                    break;
-                default: // Default to CONTAINS
-                    matched = input.includes(pattern);
-            }
-
-            if (matched) {
-                return rule.targetValue;
-            }
-        }
-
-        return defaultValue || input; // Return original if no match (or default value)
+    const parsedFromEnv = this.parseBooleanFlag(process.env.WORKFLOW_AGENT_STRICT_MODE);
+    if (parsedFromEnv !== null) {
+      return {
+        enabled: parsedFromEnv,
+        source: 'ENV',
+        updatedAt: null,
+      };
     }
 
-    /**
-     * CRUD: Create Rule
-     */
-    async createMappingRule(data: Prisma.BusinessMappingRuleCreateInput) {
-        const rule = await this.prisma.businessMappingRule.create({ data });
+    return {
+      enabled: false,
+      source: 'DEFAULT',
+      updatedAt: null,
+    };
+  }
+
+  async setWorkflowAgentStrictMode(
+    enabled: boolean,
+    updatedBy?: string,
+  ): Promise<{
+    enabled: boolean;
+    source: WorkflowRuntimeFlagSource;
+    updatedAt: string | null;
+  }> {
+    if (typeof enabled !== 'boolean') {
+      throw new BadRequestException('enabled 必须是布尔值');
+    }
+
+    const updateMeta = {
+      enabled,
+      updatedBy: updatedBy ?? null,
+      updatedAt: new Date().toISOString(),
+    } as Prisma.InputJsonValue;
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.dictionaryDomain.upsert({
+        where: { code: ConfigService.WORKFLOW_RUNTIME_FLAG_DOMAIN_CODE },
+        update: {
+          name: '工作流运行时开关',
+          description: '工作流执行相关的系统运行开关',
+          category: 'WORKFLOW',
+          usageHint: '用于控制工作流执行期的全局行为',
+          usageLocations: ['system/config/ai-models'],
+          isSystemDomain: true,
+          isActive: true,
+        },
+        create: {
+          code: ConfigService.WORKFLOW_RUNTIME_FLAG_DOMAIN_CODE,
+          name: '工作流运行时开关',
+          description: '工作流执行相关的系统运行开关',
+          category: 'WORKFLOW',
+          usageHint: '用于控制工作流执行期的全局行为',
+          usageLocations: ['system/config/ai-models'],
+          isSystemDomain: true,
+          isActive: true,
+        },
+      });
+
+      await tx.dictionaryItem.upsert({
+        where: {
+          domainCode_code: {
+            domainCode: ConfigService.WORKFLOW_RUNTIME_FLAG_DOMAIN_CODE,
+            code: ConfigService.WORKFLOW_AGENT_STRICT_MODE_CODE,
+          },
+        },
+        update: {
+          label: 'Agent 鉴权严格模式',
+          sortOrder: 100,
+          isActive: true,
+          meta: updateMeta,
+        },
+        create: {
+          domainCode: ConfigService.WORKFLOW_RUNTIME_FLAG_DOMAIN_CODE,
+          code: ConfigService.WORKFLOW_AGENT_STRICT_MODE_CODE,
+          label: 'Agent 鉴权严格模式',
+          sortOrder: 100,
+          isActive: true,
+          meta: updateMeta,
+        },
+      });
+    });
+
+    await this.refreshCache();
+    return this.getWorkflowAgentStrictMode();
+  }
+
+  async getWorkflowStandardizedReadMode(): Promise<{
+    enabled: boolean;
+    source: WorkflowRuntimeFlagSource;
+    updatedAt: string | null;
+  }> {
+    const standardizedReadItem = await this.prisma.dictionaryItem.findUnique({
+      where: {
+        domainCode_code: {
+          domainCode: ConfigService.WORKFLOW_RUNTIME_FLAG_DOMAIN_CODE,
+          code: ConfigService.WORKFLOW_STANDARDIZED_READ_MODE_CODE,
+        },
+      },
+      select: {
+        meta: true,
+        updatedAt: true,
+      },
+    });
+
+    if (standardizedReadItem) {
+      const parsedFromMeta = this.parseWorkflowRuntimeFlagFromMeta(
+        standardizedReadItem.meta as Prisma.JsonValue | null,
+      );
+      if (parsedFromMeta !== null) {
+        return {
+          enabled: parsedFromMeta,
+          source: 'DB',
+          updatedAt: standardizedReadItem.updatedAt.toISOString(),
+        };
+      }
+    }
+
+    const parsedFromEnv = this.parseBooleanFlag(
+      process.env.WORKFLOW_STANDARDIZED_READ_MODE ?? process.env.WORKFLOW_STANDARDIZED_READ_ENABLED,
+    );
+    if (parsedFromEnv !== null) {
+      return {
+        enabled: parsedFromEnv,
+        source: 'ENV',
+        updatedAt: null,
+      };
+    }
+
+    return {
+      enabled: false,
+      source: 'DEFAULT',
+      updatedAt: null,
+    };
+  }
+
+  async setWorkflowStandardizedReadMode(
+    enabled: boolean,
+    updatedBy?: string,
+  ): Promise<{
+    enabled: boolean;
+    source: WorkflowRuntimeFlagSource;
+    updatedAt: string | null;
+  }> {
+    if (typeof enabled !== 'boolean') {
+      throw new BadRequestException('enabled 必须是布尔值');
+    }
+
+    const updateMeta = {
+      enabled,
+      updatedBy: updatedBy ?? null,
+      updatedAt: new Date().toISOString(),
+    } as Prisma.InputJsonValue;
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.dictionaryDomain.upsert({
+        where: { code: ConfigService.WORKFLOW_RUNTIME_FLAG_DOMAIN_CODE },
+        update: {
+          name: '工作流运行时开关',
+          description: '工作流执行相关的系统运行开关',
+          category: 'WORKFLOW',
+          usageHint: '用于控制工作流执行期的全局行为',
+          usageLocations: ['system/config/ai-models'],
+          isSystemDomain: true,
+          isActive: true,
+        },
+        create: {
+          code: ConfigService.WORKFLOW_RUNTIME_FLAG_DOMAIN_CODE,
+          name: '工作流运行时开关',
+          description: '工作流执行相关的系统运行开关',
+          category: 'WORKFLOW',
+          usageHint: '用于控制工作流执行期的全局行为',
+          usageLocations: ['system/config/ai-models'],
+          isSystemDomain: true,
+          isActive: true,
+        },
+      });
+
+      await tx.dictionaryItem.upsert({
+        where: {
+          domainCode_code: {
+            domainCode: ConfigService.WORKFLOW_RUNTIME_FLAG_DOMAIN_CODE,
+            code: ConfigService.WORKFLOW_STANDARDIZED_READ_MODE_CODE,
+          },
+        },
+        update: {
+          label: '标准化读模型开关',
+          sortOrder: 110,
+          isActive: true,
+          meta: updateMeta,
+        },
+        create: {
+          domainCode: ConfigService.WORKFLOW_RUNTIME_FLAG_DOMAIN_CODE,
+          code: ConfigService.WORKFLOW_STANDARDIZED_READ_MODE_CODE,
+          label: '标准化读模型开关',
+          sortOrder: 110,
+          isActive: true,
+          meta: updateMeta,
+        },
+      });
+    });
+
+    await this.refreshCache();
+    return this.getWorkflowStandardizedReadMode();
+  }
+
+  /**
+   * Delete AI Model Config
+   */
+  async deleteAIModelConfig(key: string) {
+    await this.prisma.aIModelConfig.delete({
+      where: { configKey: key },
+    });
+    await this.refreshCache();
+    return { success: true };
+  }
+
+  /**
+   * Get Dictionary Items by domain
+   */
+  async getDictionary(domain: string, includeInactive: boolean = false): Promise<DictionaryItem[]> {
+    if (!domain) return [];
+
+    if (!includeInactive) {
+      if (Date.now() - this.cacheLastUpdated > this.CACHE_TTL_MS) {
         await this.refreshCache();
-        return rule;
+      }
+      return this.dictionaryCache.get(domain) || [];
     }
 
-    /**
-     * CRUD: Update Rule
-     */
-    async updateMappingRule(id: string, data: Prisma.BusinessMappingRuleUpdateInput) {
-        const rule = await this.prisma.businessMappingRule.update({
-            where: { id },
-            data,
-        });
+    return this.prisma.dictionaryItem.findMany({
+      where: { domainCode: domain },
+      orderBy: { sortOrder: 'asc' },
+    });
+  }
+
+  /**
+   * Get Dictionary Items for multiple domains
+   */
+  async getDictionaries(
+    domains: string[] = [],
+    includeInactive: boolean = false,
+  ): Promise<Record<string, DictionaryItem[]>> {
+    if (!domains.length) return {};
+
+    if (!includeInactive) {
+      if (Date.now() - this.cacheLastUpdated > this.CACHE_TTL_MS) {
         await this.refreshCache();
-        return rule;
+      }
+      return domains.reduce<Record<string, DictionaryItem[]>>((acc, code) => {
+        acc[code] = this.dictionaryCache.get(code) || [];
+        return acc;
+      }, {});
     }
 
-    /**
-     * CRUD: Delete Rule
-     */
-    async deleteMappingRule(id: string) {
-        await this.prisma.businessMappingRule.delete({ where: { id } });
-        await this.refreshCache();
+    const items = await this.prisma.dictionaryItem.findMany({
+      where: { domainCode: { in: domains } },
+      orderBy: [{ domainCode: 'asc' }, { sortOrder: 'asc' }],
+    });
+
+    return items.reduce<Record<string, DictionaryItem[]>>((acc, item) => {
+      if (!acc[item.domainCode]) acc[item.domainCode] = [];
+      acc[item.domainCode].push(item);
+      return acc;
+    }, {});
+  }
+
+  /**
+   * Dictionary Domain CRUD
+   */
+  async getDictionaryDomains(includeInactive: boolean = false) {
+    return this.prisma.dictionaryDomain.findMany({
+      where: includeInactive ? {} : { isActive: true },
+      orderBy: { code: 'asc' },
+      include: {
+        _count: {
+          select: { items: true },
+        },
+      },
+    });
+  }
+
+  async createDictionaryDomain(data: CreateDictionaryDomainDto) {
+    const code = data.code?.trim();
+    const name = data.name?.trim();
+    if (!code) throw new BadRequestException('字典域编码不能为空');
+    if (!name) throw new BadRequestException('字典域名称不能为空');
+
+    const created = await this.prisma.dictionaryDomain.create({
+      data: {
+        code,
+        name,
+        description: this.normalizeNullableString(data.description),
+        isActive: data.isActive ?? true,
+      },
+    });
+    await this.refreshCache();
+    return created;
+  }
+
+  async updateDictionaryDomain(code: string, data: UpdateDictionaryDomainDto) {
+    const update: Prisma.DictionaryDomainUpdateInput = {};
+    if (data.name !== undefined) update.name = data.name.trim();
+    if (data.description !== undefined)
+      update.description = this.normalizeNullableString(data.description);
+    if (data.isActive !== undefined) update.isActive = data.isActive;
+    const updated = await this.prisma.dictionaryDomain.update({
+      where: { code },
+      data: update,
+    });
+    await this.refreshCache();
+    return updated;
+  }
+
+  async disableDictionaryDomain(code: string) {
+    const updated = await this.prisma.dictionaryDomain.update({
+      where: { code },
+      data: { isActive: false },
+    });
+    await this.refreshCache();
+    return updated;
+  }
+
+  /**
+   * Dictionary Items CRUD
+   */
+  async getDictionaryItems(domainCode: string, includeInactive: boolean = false) {
+    return this.prisma.dictionaryItem.findMany({
+      where: {
+        domainCode,
+        ...(includeInactive ? {} : { isActive: true }),
+      },
+      orderBy: [{ sortOrder: 'asc' }, { code: 'asc' }],
+    });
+  }
+
+  async createDictionaryItem(domainCode: string, data: CreateDictionaryItemDto) {
+    const code = data.code?.trim();
+    const label = data.label?.trim();
+    if (!code) throw new BadRequestException('字典项编码不能为空');
+    if (!label) throw new BadRequestException('字典项名称不能为空');
+
+    const created = await this.prisma.dictionaryItem.create({
+      data: {
+        domainCode,
+        code,
+        label,
+        sortOrder: data.sortOrder ?? 0,
+        isActive: data.isActive ?? true,
+        parentCode: this.normalizeNullableString(data.parentCode),
+        meta: this.normalizeMeta(data.meta),
+      },
+    });
+    await this.refreshCache();
+    return created;
+  }
+
+  async updateDictionaryItem(domainCode: string, itemCode: string, data: UpdateDictionaryItemDto) {
+    const update: Prisma.DictionaryItemUpdateInput = {};
+    if (data.label !== undefined) update.label = data.label.trim();
+    if (data.sortOrder !== undefined) update.sortOrder = data.sortOrder;
+    if (data.isActive !== undefined) update.isActive = data.isActive;
+    if (data.parentCode !== undefined)
+      update.parentCode = this.normalizeNullableString(data.parentCode);
+
+    const meta = this.normalizeMeta(data.meta);
+    if (meta !== undefined) update.meta = meta;
+
+    const updated = await this.prisma.dictionaryItem.update({
+      where: {
+        domainCode_code: {
+          domainCode,
+          code: itemCode,
+        },
+      },
+      data: update,
+    });
+    await this.refreshCache();
+    return updated;
+  }
+
+  async disableDictionaryItem(domainCode: string, itemCode: string) {
+    const updated = await this.prisma.dictionaryItem.update({
+      where: {
+        domainCode_code: {
+          domainCode,
+          code: itemCode,
+        },
+      },
+      data: { isActive: false },
+    });
+    await this.refreshCache();
+    return updated;
+  }
+
+  /**
+   * 物理删除字典项（仅当无业务数据引用时允许）
+   */
+  async deleteDictionaryItem(
+    domainCode: string,
+    itemCode: string,
+  ): Promise<{ success: boolean; message: string }> {
+    // 1. 检查引用
+    const refCheck = await this.checkDictionaryItemReferences(domainCode, itemCode);
+    if (refCheck.total > 0) {
+      const refDetails = refCheck.references.map((r) => `${r.table}(${r.count}条)`).join(', ');
+      throw new BadRequestException(
+        `无法删除：该字典项仍有 ${refCheck.total} 条业务数据引用（${refDetails}）`,
+      );
     }
 
-    /**
-     * CRUD: Get Rules (List)
-     */
-    async getRules(domain?: string) {
-        return this.prisma.businessMappingRule.findMany({
-            where: domain ? { domain } : {},
-            orderBy: [{ domain: 'asc' }, { priority: 'desc' }],
-        });
+    // 2. 执行物理删除
+    await this.prisma.dictionaryItem.delete({
+      where: {
+        domainCode_code: {
+          domainCode,
+          code: itemCode,
+        },
+      },
+    });
+
+    await this.refreshCache();
+    return { success: true, message: '字典项已永久删除' };
+  }
+
+  /**
+   * 字典域 → 业务表引用配置
+   * 用于检查字典项是否被业务数据引用
+   * isEnum: 字段是否为枚举类型（需要 PostgreSQL 类型转换）
+   * enumName: 枚举类型名称
+   */
+  private static readonly DICTIONARY_REFERENCE_CONFIG: Record<
+    string,
+    Array<{ table: string; field: string; isArray?: boolean; isEnum?: boolean; enumName?: string }>
+  > = {
+    USER_STATUS: [{ table: 'User', field: 'status', isEnum: true, enumName: 'UserStatus' }],
+    ENTITY_STATUS: [
+      { table: 'Organization', field: 'status', isEnum: true, enumName: 'EntityStatus' },
+      { table: 'Department', field: 'status', isEnum: true, enumName: 'EntityStatus' },
+      { table: 'Role', field: 'status', isEnum: true, enumName: 'EntityStatus' },
+      { table: 'CollectionPoint', field: 'status', isEnum: true, enumName: 'EntityStatus' },
+      { table: 'Enterprise', field: 'status', isEnum: true, enumName: 'EntityStatus' },
+    ],
+    GENDER: [{ table: 'User', field: 'gender', isEnum: true, enumName: 'Gender' }],
+    ORGANIZATION_TYPE: [
+      { table: 'Organization', field: 'type', isEnum: true, enumName: 'OrganizationType' },
+    ],
+    COLLECTION_POINT_TYPE: [
+      { table: 'CollectionPoint', field: 'type', isEnum: true, enumName: 'CollectionPointType' },
+    ],
+    ENTERPRISE_TYPE: [{ table: 'Enterprise', field: 'types', isArray: true }],
+    INFO_STATUS: [{ table: 'MarketInfo', field: 'status', isEnum: true, enumName: 'InfoStatus' }],
+    COMMODITY: [
+      { table: 'PriceData', field: 'commodity' },
+      { table: 'PriceSubmission', field: 'commodity' },
+      { table: 'IntelTask', field: 'commodity' },
+      { table: 'CollectionPointAssignment', field: 'commodity' },
+    ],
+    PRICE_SUB_TYPE: [
+      { table: 'PriceData', field: 'subType', isEnum: true, enumName: 'PriceSubType' },
+    ],
+    PRICE_SOURCE_TYPE: [
+      { table: 'PriceData', field: 'sourceType', isEnum: true, enumName: 'PriceSourceType' },
+    ],
+    INTEL_CATEGORY: [
+      { table: 'IntelFeed', field: 'category', isEnum: true, enumName: 'IntelCategory' },
+    ],
+    INTEL_SOURCE_TYPE: [
+      { table: 'IntelFeed', field: 'sourceType', isEnum: true, enumName: 'IntelSourceType' },
+    ],
+    INTEL_TASK_TYPE: [
+      { table: 'IntelTask', field: 'type', isEnum: true, enumName: 'IntelTaskType' },
+    ],
+    REPORT_TYPE: [{ table: 'ResearchReport', field: 'type' }],
+  };
+
+  /**
+   * 检查字典项引用数量
+   * @param domainCode 字典域编码
+   * @param itemCode 字典项编码
+   * @returns 引用统计信息
+   */
+  async checkDictionaryItemReferences(
+    domainCode: string,
+    itemCode: string,
+  ): Promise<{ total: number; references: Array<{ table: string; count: number }> }> {
+    const config = ConfigService.DICTIONARY_REFERENCE_CONFIG[domainCode];
+
+    if (!config || config.length === 0) {
+      return { total: 0, references: [] };
     }
 
-    /**
-     * CRUD: Config AI Model
-     */
-    async upsertAIModelConfig(key: string, data: CreateAIModelConfigDto) {
-        const { configKey: ignoredConfigKey, ...updateData } = data;
-        void ignoredConfigKey;
-        const updateInput = updateData as Prisma.AIModelConfigUncheckedUpdateInput;
+    const references: Array<{ table: string; count: number }> = [];
+    let total = 0;
 
-        // Transaction handling for isDefault exclusivity
-        return this.prisma.$transaction(async (tx) => {
-            // If setting as default, unset others
-            if (data.isDefault) {
-                await tx.aIModelConfig.updateMany({
-                    where: { configKey: { not: key }, isDefault: true },
-                    data: { isDefault: false },
-                });
-            }
+    for (const ref of config) {
+      try {
+        let count = 0;
+        let sql: string;
 
-            const config = await tx.aIModelConfig.upsert({
-                where: { configKey: key },
-                create: { ...data, configKey: key },
-                update: updateInput,
-            });
-
-            return config;
-        }).then(async (res) => {
-            await this.refreshCache();
-            return res;
-        });
-    }
-
-    /**
-     * Get Default AI Config
-     * Priority: isDefault=true > configKey='DEFAULT' > First Available
-     */
-    async getDefaultAIConfig(): Promise<AIModelConfig | null> {
-        if (Date.now() - this.cacheLastUpdated > this.CACHE_TTL_MS) {
-            await this.refreshCache();
+        if (ref.isArray) {
+          // 数组字段查询
+          sql = `SELECT COUNT(*) as count FROM "${ref.table}" WHERE $1 = ANY("${ref.field}")`;
+        } else if (ref.isEnum && ref.enumName) {
+          // 枚举字段查询 - 需要类型转换
+          sql = `SELECT COUNT(*) as count FROM "${ref.table}" WHERE "${ref.field}" = $1::"${ref.enumName}"`;
+        } else {
+          // 普通字符串字段查询
+          sql = `SELECT COUNT(*) as count FROM "${ref.table}" WHERE "${ref.field}" = $1`;
         }
 
-        const configs = Array.from(this.aiConfigCache.values());
+        const result = await this.prisma.$queryRawUnsafe<[{ count: bigint }]>(sql, itemCode);
+        count = Number(result[0]?.count || 0);
 
-        // 1. Check for explicit default
-        const explicitDefault = configs.find(c => c.isDefault && c.isActive);
-        if (explicitDefault) return explicitDefault;
-
-        // 2. Check for legacy 'DEFAULT' key
-        const legacyDefault = configs.find(c => c.configKey === 'DEFAULT' && c.isActive);
-        if (legacyDefault) return legacyDefault;
-
-        // 3. Fallback to first active
-        const firstActive = configs.find(c => c.isActive);
-        return firstActive || null;
+        if (count > 0) {
+          references.push({ table: ref.table, count });
+          total += count;
+        }
+      } catch (error) {
+        this.logger.warn(`检查 ${ref.table}.${ref.field} 引用失败: ${error}`);
+      }
     }
+
+    return { total, references };
+  }
+
+  /**
+   * Evaluate mapping rules for a given domain and text
+   */
+  evaluateMappingRule(domain: string, input: string, defaultValue?: string): string {
+    const rules = this.mappingRulesCache.get(domain) || [];
+
+    for (const rule of rules) {
+      const pattern = rule.pattern;
+      let matched = false;
+
+      switch (rule.matchMode) {
+        case 'EXACT':
+          matched = input === pattern;
+          break;
+        case 'CONTAINS':
+          matched = input.includes(pattern);
+          break;
+        case 'REGEX':
+          try {
+            const regex = new RegExp(pattern);
+            matched = regex.test(input);
+          } catch (e) {
+            this.logger.warn(`Invalid regex pattern in rule ${rule.id}: ${pattern}`);
+          }
+          break;
+        default: // Default to CONTAINS
+          matched = input.includes(pattern);
+      }
+
+      if (matched) {
+        return rule.targetValue;
+      }
+    }
+
+    return defaultValue || input; // Return original if no match (or default value)
+  }
+
+  /**
+   * CRUD: Create Rule
+   */
+  async createMappingRule(data: Prisma.BusinessMappingRuleCreateInput) {
+    const rule = await this.prisma.businessMappingRule.create({ data });
+    await this.refreshCache();
+    return rule;
+  }
+
+  /**
+   * CRUD: Update Rule
+   */
+  async updateMappingRule(id: string, data: Prisma.BusinessMappingRuleUpdateInput) {
+    const rule = await this.prisma.businessMappingRule.update({
+      where: { id },
+      data,
+    });
+    await this.refreshCache();
+    return rule;
+  }
+
+  /**
+   * CRUD: Delete Rule
+   */
+  async deleteMappingRule(id: string) {
+    await this.prisma.businessMappingRule.delete({ where: { id } });
+    await this.refreshCache();
+  }
+
+  /**
+   * CRUD: Get Rules (List)
+   */
+  async getRules(domain?: string) {
+    return this.prisma.businessMappingRule.findMany({
+      where: domain ? { domain } : {},
+      orderBy: [{ domain: 'asc' }, { priority: 'desc' }],
+    });
+  }
+
+  /**
+   * CRUD: Config AI Model
+   */
+  async upsertAIModelConfig(key: string, data: CreateAIModelConfigDto) {
+    const { configKey: ignoredConfigKey, ...updateData } = data;
+    void ignoredConfigKey;
+    const updateInput = updateData as Prisma.AIModelConfigUncheckedUpdateInput;
+
+    // Transaction handling for isDefault exclusivity
+    return this.prisma
+      .$transaction(async (tx) => {
+        // If setting as default, unset others
+        if (data.isDefault) {
+          await tx.aIModelConfig.updateMany({
+            where: { configKey: { not: key }, isDefault: true },
+            data: { isDefault: false },
+          });
+        }
+
+        const config = await tx.aIModelConfig.upsert({
+          where: { configKey: key },
+          create: { ...data, configKey: key },
+          update: updateInput,
+        });
+
+        return config;
+      })
+      .then(async (res) => {
+        await this.refreshCache();
+        return res;
+      });
+  }
+
+  /**
+   * Get Default AI Config
+   * Priority: isDefault=true > configKey='DEFAULT' > First Available
+   */
+  async getDefaultAIConfig(): Promise<AIModelConfig | null> {
+    if (Date.now() - this.cacheLastUpdated > this.CACHE_TTL_MS) {
+      await this.refreshCache();
+    }
+
+    const configs = Array.from(this.aiConfigCache.values());
+
+    // 1. Check for explicit default
+    const explicitDefault = configs.find((c) => c.isDefault && c.isActive);
+    if (explicitDefault) return explicitDefault;
+
+    // 2. Check for legacy 'DEFAULT' key
+    const legacyDefault = configs.find((c) => c.configKey === 'DEFAULT' && c.isActive);
+    if (legacyDefault) return legacyDefault;
+
+    // 3. Fallback to first active
+    const firstActive = configs.find((c) => c.isActive);
+    return firstActive || null;
+  }
 }

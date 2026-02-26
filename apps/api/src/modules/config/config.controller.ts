@@ -1,158 +1,164 @@
-
 import { Controller, Get, Post, Put, Delete, Body, Param, Query } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { ConfigService } from './config.service';
 import {
-    CreateDictionaryDomainDto,
-    UpdateDictionaryDomainDto,
-    CreateDictionaryItemDto,
-    UpdateDictionaryItemDto,
+  CreateDictionaryDomainDto,
+  UpdateDictionaryDomainDto,
+  CreateDictionaryItemDto,
+  UpdateDictionaryItemDto,
 } from './dto/dictionary.dto';
 import { CreateAIModelConfigDto } from './dto/create-ai-model-config.dto';
 
 @Controller('config')
 export class ConfigController {
-    constructor(private readonly configService: ConfigService) { }
+  constructor(private readonly configService: ConfigService) {}
 
-    @Post('refresh')
-    async refreshCache() {
-        await this.configService.refreshCache();
-        return { success: true, message: 'Cache refreshed' };
-    }
+  @Post('refresh')
+  async refreshCache() {
+    await this.configService.refreshCache();
+    return { success: true, message: 'Cache refreshed' };
+  }
 
-    // ===== Rules =====
+  // ===== Rules =====
 
-    @Get('rules')
-    async getRules(@Query('domain') domain?: string) {
-        return this.configService.getRules(domain);
-    }
+  @Get('rules')
+  async getRules(@Query('domain') domain?: string) {
+    return this.configService.getRules(domain);
+  }
 
-    @Post('rules')
-    async createRule(@Body() body: Prisma.BusinessMappingRuleCreateInput) {
-        return this.configService.createMappingRule(body);
-    }
+  @Post('rules')
+  async createRule(@Body() body: Prisma.BusinessMappingRuleCreateInput) {
+    return this.configService.createMappingRule(body);
+  }
 
-    @Put('rules/:id')
-    async updateRule(@Param('id') id: string, @Body() body: Prisma.BusinessMappingRuleUpdateInput) {
-        return this.configService.updateMappingRule(id, body);
-    }
+  @Put('rules/:id')
+  async updateRule(@Param('id') id: string, @Body() body: Prisma.BusinessMappingRuleUpdateInput) {
+    return this.configService.updateMappingRule(id, body);
+  }
 
-    @Delete('rules/:id')
-    async deleteRule(@Param('id') id: string) {
-        return this.configService.deleteMappingRule(id);
-    }
+  @Delete('rules/:id')
+  async deleteRule(@Param('id') id: string) {
+    return this.configService.deleteMappingRule(id);
+  }
 
-    // ===== AI Config =====
+  // ===== AI Config =====
 
-    @Get('ai-models')
-    async getAllAIConfigs(@Query('includeInactive') includeInactive?: string) {
-        return this.configService.getAllAIModelConfigs(includeInactive === 'true');
-    }
+  @Get('ai-models')
+  async getAllAIConfigs(@Query('includeInactive') includeInactive?: string) {
+    return this.configService.getAllAIModelConfigs(includeInactive === 'true');
+  }
 
-    @Get('ai-models/:key')
-    async getAIConfig(@Param('key') key: string) {
-        return this.configService.getAIModelConfig(key);
-    }
+  @Get('ai-models/:key')
+  async getAIConfig(@Param('key') key: string) {
+    return this.configService.getAIModelConfig(key);
+  }
 
-    @Post('ai-models')
-    async saveAIConfig(@Body() body: CreateAIModelConfigDto) {
-        return this.configService.upsertAIModelConfig(body.configKey, body);
-    }
+  @Post('ai-models')
+  async saveAIConfig(@Body() body: CreateAIModelConfigDto) {
+    return this.configService.upsertAIModelConfig(body.configKey, body);
+  }
 
-    @Delete('ai-models/:key')
-    async deleteAIConfig(@Param('key') key: string) {
-        return this.configService.deleteAIModelConfig(key);
-    }
+  @Delete('ai-models/:key')
+  async deleteAIConfig(@Param('key') key: string) {
+    return this.configService.deleteAIModelConfig(key);
+  }
 
-    @Get('workflow-agent-strict-mode')
-    async getWorkflowAgentStrictMode() {
-        return this.configService.getWorkflowAgentStrictMode();
-    }
+  @Get('workflow-agent-strict-mode')
+  async getWorkflowAgentStrictMode() {
+    return this.configService.getWorkflowAgentStrictMode();
+  }
 
-    @Put('workflow-agent-strict-mode')
-    async setWorkflowAgentStrictMode(
-        @Body() body: { enabled: boolean; updatedBy?: string },
-    ) {
-        return this.configService.setWorkflowAgentStrictMode(body.enabled, body.updatedBy);
-    }
+  @Put('workflow-agent-strict-mode')
+  async setWorkflowAgentStrictMode(@Body() body: { enabled: boolean; updatedBy?: string }) {
+    return this.configService.setWorkflowAgentStrictMode(body.enabled, body.updatedBy);
+  }
 
-    // ===== Dictionaries =====
-    @Get('dictionary-domains')
-    async getDictionaryDomains(@Query('includeInactive') includeInactive?: string) {
-        return this.configService.getDictionaryDomains(includeInactive === 'true');
-    }
+  @Get('workflow-standardized-read-mode')
+  async getWorkflowStandardizedReadMode() {
+    return this.configService.getWorkflowStandardizedReadMode();
+  }
 
-    @Post('dictionary-domains')
-    async createDictionaryDomain(@Body() body: CreateDictionaryDomainDto) {
-        return this.configService.createDictionaryDomain(body);
-    }
+  @Put('workflow-standardized-read-mode')
+  async setWorkflowStandardizedReadMode(@Body() body: { enabled: boolean; updatedBy?: string }) {
+    return this.configService.setWorkflowStandardizedReadMode(body.enabled, body.updatedBy);
+  }
 
-    @Put('dictionary-domains/:code')
-    async updateDictionaryDomain(@Param('code') code: string, @Body() body: UpdateDictionaryDomainDto) {
-        return this.configService.updateDictionaryDomain(code, body);
-    }
+  // ===== Dictionaries =====
+  @Get('dictionary-domains')
+  async getDictionaryDomains(@Query('includeInactive') includeInactive?: string) {
+    return this.configService.getDictionaryDomains(includeInactive === 'true');
+  }
 
-    @Delete('dictionary-domains/:code')
-    async deleteDictionaryDomain(@Param('code') code: string) {
-        return this.configService.disableDictionaryDomain(code);
-    }
+  @Post('dictionary-domains')
+  async createDictionaryDomain(@Body() body: CreateDictionaryDomainDto) {
+    return this.configService.createDictionaryDomain(body);
+  }
 
-    @Get('dictionary-domains/:code/items')
-    async getDictionaryItems(
-        @Param('code') code: string,
-        @Query('includeInactive') includeInactive?: string
-    ) {
-        return this.configService.getDictionaryItems(code, includeInactive === 'true');
-    }
+  @Put('dictionary-domains/:code')
+  async updateDictionaryDomain(
+    @Param('code') code: string,
+    @Body() body: UpdateDictionaryDomainDto,
+  ) {
+    return this.configService.updateDictionaryDomain(code, body);
+  }
 
-    @Post('dictionary-domains/:code/items')
-    async createDictionaryItem(@Param('code') code: string, @Body() body: CreateDictionaryItemDto) {
-        return this.configService.createDictionaryItem(code, body);
-    }
+  @Delete('dictionary-domains/:code')
+  async deleteDictionaryDomain(@Param('code') code: string) {
+    return this.configService.disableDictionaryDomain(code);
+  }
 
-    @Put('dictionary-domains/:code/items/:itemCode')
-    async updateDictionaryItem(
-        @Param('code') code: string,
-        @Param('itemCode') itemCode: string,
-        @Body() body: UpdateDictionaryItemDto
-    ) {
-        return this.configService.updateDictionaryItem(code, itemCode, body);
-    }
+  @Get('dictionary-domains/:code/items')
+  async getDictionaryItems(
+    @Param('code') code: string,
+    @Query('includeInactive') includeInactive?: string,
+  ) {
+    return this.configService.getDictionaryItems(code, includeInactive === 'true');
+  }
 
-    @Delete('dictionary-domains/:code/items/:itemCode')
-    async deleteDictionaryItem(
-        @Param('code') code: string,
-        @Param('itemCode') itemCode: string
-    ) {
-        return this.configService.deleteDictionaryItem(code, itemCode);
-    }
+  @Post('dictionary-domains/:code/items')
+  async createDictionaryItem(@Param('code') code: string, @Body() body: CreateDictionaryItemDto) {
+    return this.configService.createDictionaryItem(code, body);
+  }
 
-    @Get('dictionary-domains/:code/items/:itemCode/references')
-    async checkDictionaryItemReferences(
-        @Param('code') code: string,
-        @Param('itemCode') itemCode: string
-    ) {
-        return this.configService.checkDictionaryItemReferences(code, itemCode);
-    }
+  @Put('dictionary-domains/:code/items/:itemCode')
+  async updateDictionaryItem(
+    @Param('code') code: string,
+    @Param('itemCode') itemCode: string,
+    @Body() body: UpdateDictionaryItemDto,
+  ) {
+    return this.configService.updateDictionaryItem(code, itemCode, body);
+  }
 
+  @Delete('dictionary-domains/:code/items/:itemCode')
+  async deleteDictionaryItem(@Param('code') code: string, @Param('itemCode') itemCode: string) {
+    return this.configService.deleteDictionaryItem(code, itemCode);
+  }
 
-    @Get('dictionaries')
-    async getDictionaries(
-        @Query('domains') domains?: string,
-        @Query('includeInactive') includeInactive?: string
-    ) {
-        const domainList = (domains || '')
-            .split(',')
-            .map((d) => d.trim())
-            .filter(Boolean);
-        return this.configService.getDictionaries(domainList, includeInactive === 'true');
-    }
+  @Get('dictionary-domains/:code/items/:itemCode/references')
+  async checkDictionaryItemReferences(
+    @Param('code') code: string,
+    @Param('itemCode') itemCode: string,
+  ) {
+    return this.configService.checkDictionaryItemReferences(code, itemCode);
+  }
 
-    @Get('dictionaries/:domain')
-    async getDictionary(
-        @Param('domain') domain: string,
-        @Query('includeInactive') includeInactive?: string
-    ) {
-        return this.configService.getDictionary(domain, includeInactive === 'true');
-    }
+  @Get('dictionaries')
+  async getDictionaries(
+    @Query('domains') domains?: string,
+    @Query('includeInactive') includeInactive?: string,
+  ) {
+    const domainList = (domains || '')
+      .split(',')
+      .map((d) => d.trim())
+      .filter(Boolean);
+    return this.configService.getDictionaries(domainList, includeInactive === 'true');
+  }
+
+  @Get('dictionaries/:domain')
+  async getDictionary(
+    @Param('domain') domain: string,
+    @Query('includeInactive') includeInactive?: string,
+  ) {
+    return this.configService.getDictionary(domain, includeInactive === 'true');
+  }
 }

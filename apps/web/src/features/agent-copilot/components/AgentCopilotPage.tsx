@@ -528,6 +528,12 @@ export const AgentCopilotPage: React.FC = () => {
   const [promotionBatchErrorFilter, setPromotionBatchErrorFilter] = useState<'ALL' | 'RETRYABLE' | 'NON_RETRYABLE'>(
     'ALL',
   );
+  const [promotionBatchActionFilter, setPromotionBatchActionFilter] = useState<
+    'ALL' | 'START_REVIEW' | 'MARK_APPROVED' | 'MARK_REJECTED' | 'MARK_PUBLISHED' | 'SYNC_DRAFT_STATUS'
+  >('ALL');
+  const [promotionBatchOutcomeFilter, setPromotionBatchOutcomeFilter] = useState<
+    'ALL' | 'HAS_FAILURE' | 'ALL_SUCCESS'
+  >('ALL');
   const [promotionBatchFailedPage, setPromotionBatchFailedPage] = useState(1);
   const [promotionBatchCodeFilter, setPromotionBatchCodeFilter] = useState<string>('ALL');
   const [promotionBatchFlow, setPromotionBatchFlow] = useState<
@@ -674,6 +680,7 @@ export const AgentCopilotPage: React.FC = () => {
   });
   const ephemeralPromotionTaskBatchesQuery = useEphemeralPromotionTaskBatches(activeSessionId, {
     window: routingSummaryWindow,
+    action: promotionBatchActionFilter === 'ALL' ? undefined : promotionBatchActionFilter,
     limit: 20,
   });
   const applyEphemeralEvolutionMutation = useApplyEphemeralCapabilityEvolutionPlan();
@@ -700,6 +707,17 @@ export const AgentCopilotPage: React.FC = () => {
   const ephemeralPromotionTaskBatches = Array.isArray(ephemeralPromotionTaskBatchesQuery.data)
     ? ephemeralPromotionTaskBatchesQuery.data
     : [];
+  const filteredPromotionTaskBatches = useMemo(() => {
+    return ephemeralPromotionTaskBatches.filter((item) => {
+      if (promotionBatchOutcomeFilter === 'HAS_FAILURE') {
+        return item.failedCount > 0;
+      }
+      if (promotionBatchOutcomeFilter === 'ALL_SUCCESS') {
+        return item.failedCount <= 0;
+      }
+      return true;
+    });
+  }, [ephemeralPromotionTaskBatches, promotionBatchOutcomeFilter]);
   const selectedPromotionBatch =
     ephemeralPromotionTaskBatches.find((item) => item.batchAssetId === selectedPromotionBatchAssetId) ?? null;
   const isRetryableBatchFailure = (item: { code?: string | null; message?: string | null }) => {
@@ -2215,6 +2233,55 @@ export const AgentCopilotPage: React.FC = () => {
     message.success('已导出晋升任务');
   };
 
+  const handleExportPromotionBatches = () => {
+    if (!filteredPromotionTaskBatches.length) {
+      message.warning('暂无可导出的批次记录');
+      return;
+    }
+    const header = [
+      'batchAssetId',
+      'batchId',
+      'action',
+      'requestedCount',
+      'succeededCount',
+      'failedCount',
+      'maxConcurrency',
+      'maxRetries',
+      'window',
+      'statusFilter',
+      'createdAt',
+    ];
+    const escapeCsv = (value: unknown) => `"${String(value ?? '').replace(/"/g, '""')}"`;
+    const rows = filteredPromotionTaskBatches.map((item) =>
+      [
+        item.batchAssetId,
+        item.batchId,
+        item.action,
+        item.requestedCount,
+        item.succeededCount,
+        item.failedCount,
+        item.maxConcurrency,
+        item.maxRetries,
+        item.window || '',
+        item.statusFilter || '',
+        item.createdAt,
+      ]
+        .map((value) => escapeCsv(value))
+        .join(','),
+    );
+    const csv = [header.join(','), ...rows].join('\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = `promotion-task-batches-${Date.now()}.csv`;
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    URL.revokeObjectURL(url);
+    message.success('已导出批次记录');
+  };
+
   const normalizeTemplateArray = (input: Array<Record<string, unknown>>) => {
     return input
       .map((item) => {
@@ -3474,9 +3541,55 @@ export const AgentCopilotPage: React.FC = () => {
                         <Text type="secondary" style={{ fontSize: 12 }}>
                           批次记录（最近20条）
                         </Text>
+                        <Space style={{ justifyContent: 'space-between', width: '100%' }} wrap>
+                          <Space wrap>
+                            <Segmented
+                              size="small"
+                              value={promotionBatchActionFilter}
+                              options={[
+                                { label: '全部动作', value: 'ALL' },
+                                { label: '同步状态', value: 'SYNC_DRAFT_STATUS' },
+                                { label: '推进审核', value: 'START_REVIEW' },
+                                { label: '标记通过', value: 'MARK_APPROVED' },
+                                { label: '标记发布', value: 'MARK_PUBLISHED' },
+                              ]}
+                              onChange={(value) =>
+                                setPromotionBatchActionFilter(
+                                  value as
+                                    | 'ALL'
+                                    | 'START_REVIEW'
+                                    | 'MARK_APPROVED'
+                                    | 'MARK_REJECTED'
+                                    | 'MARK_PUBLISHED'
+                                    | 'SYNC_DRAFT_STATUS',
+                                )
+                              }
+                            />
+                            <Segmented
+                              size="small"
+                              value={promotionBatchOutcomeFilter}
+                              options={[
+                                { label: '全部结果', value: 'ALL' },
+                                { label: '有失败', value: 'HAS_FAILURE' },
+                                { label: '全成功', value: 'ALL_SUCCESS' },
+                              ]}
+                              onChange={(value) =>
+                                setPromotionBatchOutcomeFilter(value as 'ALL' | 'HAS_FAILURE' | 'ALL_SUCCESS')
+                              }
+                            />
+                          </Space>
+                          <Space>
+                            <Text type="secondary" style={{ fontSize: 12 }}>
+                              当前筛选 {filteredPromotionTaskBatches.length} 条
+                            </Text>
+                            <Button size="small" onClick={handleExportPromotionBatches}>
+                              导出批次清单
+                            </Button>
+                          </Space>
+                        </Space>
                         <List
                           size="small"
-                          dataSource={ephemeralPromotionTaskBatches.slice(0, 6)}
+                          dataSource={filteredPromotionTaskBatches.slice(0, 6)}
                           locale={{ emptyText: '暂无批次记录' }}
                           renderItem={(batch) => (
                             <List.Item

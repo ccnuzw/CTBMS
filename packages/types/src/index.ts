@@ -23,3 +23,4 @@ export * from './modules/futures-sim.js';
 export * from './modules/user-config-binding.js';
 export * from './modules/connector.js';
 export * from './modules/agent-conversation.js';
+export * from './modules/market-data.js';

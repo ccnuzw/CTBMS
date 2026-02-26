@@ -2662,6 +2662,56 @@ model DataConnector {
   @@index([connectorType, isActive])
 }
 
+enum ReconcileJobStatus {
+  PENDING
+  RUNNING
+  DONE
+  FAILED
+}
+
+model DataReconciliationJob {
+  id String @id @default(uuid())
+
+  jobId  String             @unique
+  dataset String
+  status ReconcileJobStatus @default(PENDING)
+
+  timeRangeFrom DateTime?
+  timeRangeTo   DateTime?
+  dimensions    Json?
+  threshold     Json?
+
+  summary      Json?
+  errorMessage String? @db.Text
+
+  createdByUserId String
+  createdAt       DateTime @default(now())
+  startedAt       DateTime?
+  finishedAt      DateTime?
+  updatedAt       DateTime @updatedAt
+
+  diffs DataReconciliationDiff[]
+
+  @@index([dataset, status, createdAt])
+  @@index([createdByUserId, createdAt])
+}
+
+model DataReconciliationDiff {
+  id String @id @default(uuid())
+
+  jobId String
+
+  diffType    String?
+  businessKey String?
+  payload     Json
+  createdAt   DateTime @default(now())
+
+  job DataReconciliationJob @relation(fields: [jobId], references: [jobId], onDelete: Cascade)
+
+  @@index([jobId, createdAt])
+  @@index([diffType, createdAt])
+}
+
 // =============================================
 // MVP: Simplified Agent Config Models
 // =============================================

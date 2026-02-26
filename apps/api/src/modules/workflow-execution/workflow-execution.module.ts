@@ -38,9 +38,19 @@ import { AIProviderFactory } from '../ai/providers/provider.factory';
 import { AgentProfileModule } from '../agent-profile';
 import { DecisionRecordModule } from '../decision-record/decision-record.module';
 import { KnowledgeModule } from '../knowledge/knowledge.module';
+import { MarketDataModule } from '../market-data';
+import { ConfigModule } from '../config/config.module';
 
 @Module({
-  imports: [DebateTraceModule, WorkflowExperimentModule, AgentProfileModule, DecisionRecordModule, KnowledgeModule],
+  imports: [
+    ConfigModule,
+    DebateTraceModule,
+    WorkflowExperimentModule,
+    AgentProfileModule,
+    DecisionRecordModule,
+    KnowledgeModule,
+    MarketDataModule,
+  ],
 
   controllers: [WorkflowExecutionController],
   providers: [
@@ -92,4 +102,4 @@ import { KnowledgeModule } from '../knowledge/knowledge.module';
     WorkflowExecutionRunnerService,
   ],
 })
-export class WorkflowExecutionModule { }
+export class WorkflowExecutionModule {}
