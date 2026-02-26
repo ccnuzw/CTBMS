@@ -1,5 +1,7 @@
 # CTBMS 对话原生智能体产品蓝图 v2.0
 
+> 修订说明（2026-02-26）：针对“普通用户无感 + 自由式对话 + LLM 主驾驶”目标，已新增专项文档：`docs/aiagnet-chat/CTBMS自由对话万能助手-产品设计-v1.md`、`docs/aiagnet-chat/CTBMS自由对话万能助手-施工标准与规范-v1.md`、`docs/aiagnet-chat/CTBMS自由对话万能助手-施工任务分解-WBS-v1.md`、`docs/aiagnet-chat/CTBMS自由对话智能助手-改造升级落地计划-v1.md`。本文档继续作为总体蓝图，详细施工以专项文档为准。
+
 ## 1. 目标重定义
 
 - 从“对话触发工作流”升级为“对话即系统本身（Chat-Native）”。

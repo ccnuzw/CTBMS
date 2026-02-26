@@ -84,6 +84,13 @@ export interface TurnResponse {
       }>;
     };
   };
+  replyOptions?: Array<{
+    id: string;
+    label: string;
+    mode: 'SEND' | 'OPEN_TAB';
+    value?: string;
+    tab?: 'progress' | 'result' | 'delivery' | 'schedule';
+  }>;
 }
 
 export interface ConversationAsset {
@@ -256,6 +263,20 @@ export interface SkillGovernanceEvent {
     | 'RUNTIME_GRANT_EXPIRED';
   message: string;
   payload?: Record<string, unknown> | null;
+  createdAt: string;
+}
+
+export interface CapabilityRoutingLog {
+  id: string;
+  title: string;
+  routeType: 'WORKFLOW_REUSE' | 'SKILL_DRAFT_REUSE' | 'SKILL_DRAFT_CREATE' | string;
+  selectedSource?: string | null;
+  selectedScore: number;
+  selectedWorkflowDefinitionId?: string | null;
+  selectedDraftId?: string | null;
+  selectedSkillCode?: string | null;
+  routePolicy: string[];
+  reason?: string | null;
   createdAt: string;
 }
 
@@ -873,6 +894,27 @@ export const useSkillGovernanceHousekeeping = () => {
     },
   });
 };
+
+export const useCapabilityRoutingLogs = (
+  sessionId?: string,
+  query?: { routeType?: string; limit?: number },
+) =>
+  useQuery<CapabilityRoutingLog[]>({
+    queryKey: ['agent-copilot', 'capability-routing-logs', sessionId, query?.routeType, query?.limit],
+    queryFn: async () => {
+      const res = await apiClient.get<CapabilityRoutingLog[]>(
+        `/agent-conversations/sessions/${sessionId}/capability-routing-logs`,
+        {
+          params: {
+            routeType: query?.routeType,
+            limit: query?.limit,
+          },
+        },
+      );
+      return res.data;
+    },
+    enabled: Boolean(sessionId),
+  });
 
 export const useResolveScheduleCommand = () => {
   const queryClient = useQueryClient();

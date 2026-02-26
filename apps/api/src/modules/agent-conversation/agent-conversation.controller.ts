@@ -310,6 +310,27 @@ export class AgentConversationController {
     return result;
   }
 
+  @Get(':sessionId/capability-routing-logs')
+  async listCapabilityRoutingLogs(
+    @Request() req: AuthRequest,
+    @Param('sessionId') sessionId: string,
+    @Query('routeType') routeType?: string,
+    @Query('limit') limit?: string,
+  ) {
+    const parsedLimit = limit ? Number(limit) : undefined;
+    const result = await this.service.listCapabilityRoutingLogs(this.getUserId(req), sessionId, {
+      routeType,
+      limit: Number.isFinite(parsedLimit) ? parsedLimit : undefined,
+    });
+    if (!result) {
+      throw new NotFoundException({
+        code: 'CONV_SESSION_NOT_FOUND',
+        message: '会话不存在或无权限访问',
+      });
+    }
+    return result;
+  }
+
   @Post(':sessionId/assets/:assetId/reuse')
   async reuseAsset(
     @Request() req: AuthRequest,

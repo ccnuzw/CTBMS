@@ -18,6 +18,8 @@ import { Prisma } from '@prisma/client';
 import { randomUUID } from 'node:crypto';
 import { WorkflowExecutionService } from '../workflow-execution';
 import { ReportExportService } from '../report-export';
+import { AIModelService } from '../ai/ai-model.service';
+import { AIProviderFactory } from '../ai/providers/provider.factory';
 
 type SessionState =
   | 'INTENT_CAPTURE'
@@ -51,6 +53,8 @@ type ProposedPlan = {
   planType: 'RUN_PLAN' | 'DEBATE_PLAN';
   intent: IntentCode;
   workflowDefinitionId: string | null;
+  workflowReuseSource?: 'USER_PRIVATE' | 'TEAM_OR_PUBLIC' | 'NONE';
+  workflowMatchScore?: number;
   skills: string[];
   paramSnapshot: SlotMap;
   estimatedCost: {
@@ -59,11 +63,27 @@ type ProposedPlan = {
   };
 };
 
+type ReplyOption = {
+  id: string;
+  label: string;
+  mode: 'SEND' | 'OPEN_TAB';
+  value?: string;
+  tab?: 'progress' | 'result' | 'delivery' | 'schedule';
+};
+
 type ConversationSessionQueryDto = {
   state?: SessionState;
   keyword?: string;
   page?: number;
   pageSize?: number;
+};
+
+type CapabilityRoutingPolicy = {
+  allowOwnerPool: boolean;
+  allowPublicPool: boolean;
+  preferOwnerFirst: boolean;
+  minOwnerScore: number;
+  minPublicScore: number;
 };
 
 const SESSION_DETAIL_TURN_LIMIT = 80;
@@ -75,6 +95,8 @@ export class AgentConversationService {
     private readonly prisma: PrismaService,
     private readonly workflowExecutionService: WorkflowExecutionService,
     private readonly reportExportService: ReportExportService,
+    private readonly aiModelService: AIModelService,
+    private readonly aiProviderFactory: AIProviderFactory,
   ) {}
 
   async createSession(userId: string, dto: CreateConversationSessionDto) {
@@ -237,16 +259,22 @@ export class AgentConversationService {
     const requiredSlots = this.requiredSlotsByIntent(intent);
     const missingSlots = requiredSlots.filter((key) => this.isSlotMissing(mergedSlots[key]));
     const hasMissingSlots = missingSlots.length > 0;
+    const routingPolicy = await this.resolveCapabilityRoutingPolicy(session.ownerUserId);
 
     const state: SessionState = hasMissingSlots ? 'SLOT_FILLING' : 'PLAN_PREVIEW';
     const planId = `plan_${randomUUID()}`;
+    const workflowCandidate = hasMissingSlots
+      ? null
+      : await this.pickWorkflowDefinitionCandidate(session.ownerUserId, intent, mergedSlots, routingPolicy);
     const proposedPlan: ProposedPlan | null = hasMissingSlots
       ? null
       : {
           planId,
           planType: intent === 'DEBATE_MARKET_JUDGEMENT' ? 'DEBATE_PLAN' : 'RUN_PLAN',
           intent,
-          workflowDefinitionId: await this.pickWorkflowDefinitionId(session.ownerUserId),
+          workflowDefinitionId: workflowCandidate?.id ?? null,
+          workflowReuseSource: workflowCandidate?.reuseSource ?? 'NONE',
+          workflowMatchScore: workflowCandidate?.score ?? 0,
           skills:
             intent === 'DEBATE_MARKET_JUDGEMENT'
               ? ['price_series_query', 'knowledge_search', 'futures_quote_fetch', 'debate_round']
@@ -280,6 +308,15 @@ export class AgentConversationService {
         payload: proposedPlan,
         sourceTurnId: userTurn.id,
         sourcePlanVersion: nextPlanVersion,
+      });
+      await this.logCapabilityRoutingDecisionAsset(sessionId, {
+        routeType: 'WORKFLOW_REUSE',
+        routePolicy: ['USER_PRIVATE', 'TEAM_OR_PUBLIC'],
+        selectedSource: proposedPlan.workflowReuseSource ?? 'NONE',
+        selectedScore: proposedPlan.workflowMatchScore ?? 0,
+        selectedWorkflowDefinitionId: proposedPlan.workflowDefinitionId,
+        intent,
+        missingSlots,
       });
     }
 
@@ -325,22 +362,44 @@ export class AgentConversationService {
     const assistantMessageWithReuse = reuseReceipt
       ? `${assistantMessage}\n${reuseReceipt}`
       : assistantMessage;
+    const fallbackReplyOptions = this.buildReplyOptions({
+      hasMissingSlots,
+      missingSlots,
+      autoExecution: Boolean(autoExecution),
+      intent,
+      slots: mergedSlots,
+    });
+    const llmEnhancedReply = await this.tryEnhanceAssistantReplyWithLLM({
+      userMessage: dto.message,
+      assistantMessage: assistantMessageWithReuse,
+      hasMissingSlots,
+      missingSlots,
+      autoExecution: Boolean(autoExecution),
+      intent,
+      slots: mergedSlots,
+      fallbackReplyOptions,
+    });
+    const finalAssistantMessage = llmEnhancedReply?.assistantMessage ?? assistantMessageWithReuse;
+    const replyOptions = llmEnhancedReply?.replyOptions?.length
+      ? llmEnhancedReply.replyOptions
+      : fallbackReplyOptions;
 
     await this.prisma.conversationTurn.create({
-      data: {
-        sessionId,
-        role: 'ASSISTANT',
-        content: assistantMessageWithReuse,
-        structuredPayload: {
-          intent,
-          missingSlots,
-          proposedPlan,
-          autoExecuted: Boolean(autoExecution),
-          executionId: autoExecution?.executionId,
-          reuseResolution: effectiveContextPatch.reuseResolution,
-        } as Prisma.InputJsonValue,
-      },
-    });
+        data: {
+          sessionId,
+          role: 'ASSISTANT',
+          content: finalAssistantMessage,
+          structuredPayload: {
+            intent,
+            missingSlots,
+            proposedPlan,
+            autoExecuted: Boolean(autoExecution),
+            executionId: autoExecution?.executionId,
+            reuseResolution: effectiveContextPatch.reuseResolution,
+            replyOptions,
+          } as Prisma.InputJsonValue,
+        },
+      });
 
     await this.prisma.conversationSession.update({
       where: { id: sessionId },
@@ -357,7 +416,7 @@ export class AgentConversationService {
     });
 
     return {
-      assistantMessage: assistantMessageWithReuse,
+      assistantMessage: finalAssistantMessage,
       state: autoExecution ? 'EXECUTING' : state,
       intent,
       missingSlots,
@@ -366,6 +425,7 @@ export class AgentConversationService {
       autoExecuted: Boolean(autoExecution),
       executionId: autoExecution?.executionId,
       reuseResolution: effectiveContextPatch.reuseResolution,
+      replyOptions,
     };
   }
 
@@ -1026,6 +1086,143 @@ export class AgentConversationService {
     }
 
     const derivedRisk = this.resolveSkillRisk(dto);
+    const routingPolicy = await this.resolveCapabilityRoutingPolicy(userId);
+    const reuseCandidate = await this.findReusableSkillDraft(userId, dto);
+    if (reuseCandidate) {
+      const runtimeGrantId = await this.ensureRuntimeGrantForDraft(
+        reuseCandidate.id,
+        sessionId,
+        userId,
+        reuseCandidate.provisionalEnabled,
+      );
+      const reviewRequired = reuseCandidate.status !== 'PUBLISHED';
+
+      await this.prisma.conversationTurn.create({
+        data: {
+          sessionId,
+          role: 'ASSISTANT',
+          content: `已复用已有能力草稿：${reuseCandidate.suggestedSkillCode}`,
+          structuredPayload: {
+            draftId: reuseCandidate.id,
+            status: reuseCandidate.status,
+            reviewRequired,
+            riskLevel: reuseCandidate.riskLevel,
+            provisionalEnabled: reuseCandidate.provisionalEnabled,
+            runtimeGrantId,
+            reused: true,
+            reuseSource: reuseCandidate.reuseReason,
+          } as Prisma.InputJsonValue,
+        },
+      });
+
+      await this.createConversationAsset({
+        sessionId,
+        assetType: 'SKILL_DRAFT',
+        title: `Skill Draft ${reuseCandidate.suggestedSkillCode}`,
+        payload: {
+          draftId: reuseCandidate.id,
+          gapType: reuseCandidate.gapType,
+          requiredCapability: reuseCandidate.requiredCapability,
+          suggestedSkillCode: reuseCandidate.suggestedSkillCode,
+          status: reuseCandidate.status,
+          reused: true,
+          reuseSource: reuseCandidate.reuseReason,
+        },
+        sourceTurnId: null,
+      });
+
+      await this.logCapabilityRoutingDecisionAsset(sessionId, {
+        routeType: 'SKILL_DRAFT_REUSE',
+        routePolicy: ['USER_PRIVATE'],
+        selectedSource: reuseCandidate.reuseReason,
+        selectedDraftId: reuseCandidate.id,
+        selectedSkillCode: reuseCandidate.suggestedSkillCode,
+        selectedScore: reuseCandidate.reuseReason === 'EXACT_CODE' ? 1 : 0.72,
+        intent: session.currentIntent,
+        reason: '复用已有能力草稿，避免重复创建。',
+      });
+
+      return {
+        draftId: reuseCandidate.id,
+        status: reuseCandidate.status,
+        reviewRequired,
+        riskLevel: reuseCandidate.riskLevel,
+        provisionalEnabled: reuseCandidate.provisionalEnabled,
+        runtimeGrantId,
+        reused: true,
+        reuseSource: reuseCandidate.reuseReason,
+      };
+    }
+
+    const reusablePublishedSkill = await this.findReusablePublishedSkill(userId, dto, routingPolicy);
+    if (reusablePublishedSkill) {
+      const bridgeDraft = await this.upsertPublishedSkillBridgeDraft({
+        sessionId,
+        ownerUserId: userId,
+        dto,
+        skill: reusablePublishedSkill,
+        derivedRisk,
+      });
+
+      await this.prisma.conversationTurn.create({
+        data: {
+          sessionId,
+          role: 'ASSISTANT',
+          content: `已复用可用能力：${reusablePublishedSkill.skillCode}，无需重复创建草稿。`,
+          structuredPayload: {
+            draftId: bridgeDraft.id,
+            status: bridgeDraft.status,
+            reviewRequired: false,
+            riskLevel: bridgeDraft.riskLevel,
+            provisionalEnabled: false,
+            runtimeGrantId: null,
+            reused: true,
+            reuseSource: 'PUBLISHED_SKILL',
+            publishedSkillId: reusablePublishedSkill.id,
+          } as Prisma.InputJsonValue,
+        },
+      });
+
+      await this.createConversationAsset({
+        sessionId,
+        assetType: 'SKILL_DRAFT',
+        title: `Skill Draft ${bridgeDraft.suggestedSkillCode}`,
+        payload: {
+          draftId: bridgeDraft.id,
+          gapType: bridgeDraft.gapType,
+          requiredCapability: bridgeDraft.requiredCapability,
+          suggestedSkillCode: bridgeDraft.suggestedSkillCode,
+          status: bridgeDraft.status,
+          reused: true,
+          reuseSource: 'PUBLISHED_SKILL',
+          publishedSkillId: reusablePublishedSkill.id,
+        },
+        sourceTurnId: null,
+      });
+
+      await this.logCapabilityRoutingDecisionAsset(sessionId, {
+        routeType: 'SKILL_DRAFT_REUSE',
+        routePolicy: ['USER_PRIVATE', 'TEAM_OR_PUBLIC'],
+        selectedSource: 'PUBLISHED_SKILL',
+        selectedDraftId: bridgeDraft.id,
+        selectedSkillCode: reusablePublishedSkill.skillCode,
+        selectedScore: reusablePublishedSkill.score,
+        intent: session.currentIntent,
+        reason: '命中可用已发布能力，复用能力并建立本用户映射草稿。',
+      });
+
+      return {
+        draftId: bridgeDraft.id,
+        status: bridgeDraft.status,
+        reviewRequired: false,
+        riskLevel: bridgeDraft.riskLevel,
+        provisionalEnabled: false,
+        runtimeGrantId: null,
+        reused: true,
+        reuseSource: 'PUBLISHED_SKILL',
+      };
+    }
+
     const draftSpec = {
       gapType: dto.gapType,
       requiredCapability: dto.requiredCapability,
@@ -1123,6 +1320,17 @@ export class AgentConversationService {
       sourceTurnId: null,
     });
 
+    await this.logCapabilityRoutingDecisionAsset(sessionId, {
+      routeType: 'SKILL_DRAFT_CREATE',
+      routePolicy: ['USER_PRIVATE'],
+      selectedSource: 'NEW_DRAFT',
+      selectedDraftId: draft.id,
+      selectedSkillCode: dto.suggestedSkillCode,
+      selectedScore: 0,
+      intent: session.currentIntent,
+      reason: '未命中可复用草稿，创建新草稿。',
+    });
+
     return {
       draftId: draft.id,
       status: draft.status,
@@ -1130,6 +1338,8 @@ export class AgentConversationService {
       riskLevel: derivedRisk.riskLevel,
       provisionalEnabled: derivedRisk.allowRuntimeGrant,
       runtimeGrantId,
+      reused: false,
+      reuseSource: 'NEW_DRAFT',
     };
   }
 
@@ -1145,6 +1355,62 @@ export class AgentConversationService {
       where: { sessionId },
       orderBy: [{ createdAt: 'desc' }],
       take: 100,
+    });
+  }
+
+  async listCapabilityRoutingLogs(
+    userId: string,
+    sessionId: string,
+    query?: { routeType?: string; limit?: number },
+  ) {
+    const session = await this.prisma.conversationSession.findFirst({
+      where: { id: sessionId, ownerUserId: userId },
+      select: { id: true },
+    });
+    if (!session) {
+      return null;
+    }
+
+    const limit = Math.max(1, Math.min(200, query?.limit ?? 50));
+    const routeTypeFilter = this.pickString(query?.routeType)?.toUpperCase();
+    const notes = await this.prisma.conversationAsset.findMany({
+      where: {
+        sessionId,
+        assetType: 'NOTE',
+        title: {
+          startsWith: '能力路由日志',
+        },
+      },
+      orderBy: [{ createdAt: 'desc' }],
+      take: 300,
+    });
+
+    const filtered = notes.filter((item) => {
+      if (!routeTypeFilter) {
+        return true;
+      }
+      const payload = this.toRecord(item.payload);
+      const routeType = this.pickString(payload.routeType)?.toUpperCase();
+      return routeType === routeTypeFilter;
+    });
+
+    return filtered.slice(0, limit).map((item) => {
+      const payload = this.toRecord(item.payload);
+      return {
+        id: item.id,
+        title: item.title,
+        routeType: this.pickString(payload.routeType) ?? 'UNKNOWN',
+        selectedSource: this.pickString(payload.selectedSource),
+        selectedScore: this.normalizeNumber(payload.selectedScore),
+        selectedWorkflowDefinitionId: this.pickString(payload.selectedWorkflowDefinitionId),
+        selectedDraftId: this.pickString(payload.selectedDraftId),
+        selectedSkillCode: this.pickString(payload.selectedSkillCode),
+        routePolicy: Array.isArray(payload.routePolicy)
+          ? payload.routePolicy.filter((value): value is string => typeof value === 'string')
+          : [],
+        reason: this.pickString(payload.reason),
+        createdAt: item.createdAt,
+      };
     });
   }
 
@@ -2095,6 +2361,408 @@ export class AgentConversationService {
     });
   }
 
+  private async resolveCapabilityRoutingPolicy(userId: string): Promise<CapabilityRoutingPolicy> {
+    const defaults: CapabilityRoutingPolicy = {
+      allowOwnerPool: true,
+      allowPublicPool: true,
+      preferOwnerFirst: true,
+      minOwnerScore: 0,
+      minPublicScore: 0.35,
+    };
+
+    const binding = await this.prisma.userConfigBinding.findFirst({
+      where: {
+        userId,
+        bindingType: 'AGENT_CAPABILITY_ROUTING_POLICY',
+        isActive: true,
+      },
+      orderBy: [{ priority: 'desc' }, { updatedAt: 'desc' }],
+      select: { metadata: true },
+    });
+    if (!binding?.metadata) {
+      return defaults;
+    }
+
+    const metadata = this.toRecord(binding.metadata);
+    const toBoolean = (value: unknown, fallback: boolean) =>
+      typeof value === 'boolean' ? value : fallback;
+    const toScore = (value: unknown, fallback: number) => {
+      const parsed = typeof value === 'number' ? value : typeof value === 'string' ? Number(value) : NaN;
+      if (!Number.isFinite(parsed)) {
+        return fallback;
+      }
+      return Math.max(0, Math.min(1, parsed));
+    };
+
+    return {
+      allowOwnerPool: toBoolean(metadata.allowOwnerPool, defaults.allowOwnerPool),
+      allowPublicPool: toBoolean(metadata.allowPublicPool, defaults.allowPublicPool),
+      preferOwnerFirst: toBoolean(metadata.preferOwnerFirst, defaults.preferOwnerFirst),
+      minOwnerScore: toScore(metadata.minOwnerScore, defaults.minOwnerScore),
+      minPublicScore: toScore(metadata.minPublicScore, defaults.minPublicScore),
+    };
+  }
+
+  private async logCapabilityRoutingDecisionAsset(
+    sessionId: string,
+    payload: {
+      routeType: 'WORKFLOW_REUSE' | 'SKILL_DRAFT_REUSE' | 'SKILL_DRAFT_CREATE';
+      routePolicy: string[];
+      selectedSource: string;
+      selectedScore?: number;
+      selectedWorkflowDefinitionId?: string | null;
+      selectedDraftId?: string | null;
+      selectedSkillCode?: string | null;
+      intent?: string | null;
+      missingSlots?: string[];
+      reason?: string;
+    },
+  ) {
+    const key = this.computeRoutingDecisionKey(payload);
+    return this.createConversationAsset({
+      sessionId,
+      assetType: 'NOTE',
+      title: `能力路由日志 ${payload.routeType} ${key.slice(0, 12)}`,
+      payload: {
+        ...payload,
+        dedupeKey: key,
+        loggedAt: new Date().toISOString(),
+      },
+      tags: {
+        routeType: payload.routeType,
+        dedupeKey: key,
+      },
+    });
+  }
+
+  private computeRoutingDecisionKey(input: {
+    routeType: string;
+    selectedSource: string;
+    selectedWorkflowDefinitionId?: string | null;
+    selectedDraftId?: string | null;
+    selectedSkillCode?: string | null;
+    intent?: string | null;
+  }): string {
+    return [
+      input.routeType,
+      input.selectedSource,
+      input.selectedWorkflowDefinitionId ?? '-',
+      input.selectedDraftId ?? '-',
+      input.selectedSkillCode ?? '-',
+      input.intent ?? '-',
+    ].join('|');
+  }
+
+  private async findReusableSkillDraft(
+    ownerUserId: string,
+    dto: CreateSkillDraftDto,
+  ): Promise<
+    | {
+        id: string;
+        gapType: string;
+        requiredCapability: string;
+        suggestedSkillCode: string;
+        status: string;
+        riskLevel: 'LOW' | 'MEDIUM' | 'HIGH';
+        provisionalEnabled: boolean;
+        reuseReason: 'EXACT_CODE' | 'SEMANTIC_MATCH';
+      }
+    | null
+  > {
+    const normalizedCode = this.normalizeCapabilityText(dto.suggestedSkillCode);
+    const capabilityTokens = this.extractCapabilityTokens(`${dto.gapType} ${dto.requiredCapability}`);
+
+    const candidates = await this.prisma.agentSkillDraft.findMany({
+      where: {
+        ownerUserId,
+        status: {
+          in: ['DRAFT', 'SANDBOX_TESTING', 'READY_FOR_REVIEW', 'APPROVED', 'PUBLISHED'],
+        },
+      },
+      orderBy: [{ updatedAt: 'desc' }],
+      take: 80,
+      select: {
+        id: true,
+        gapType: true,
+        requiredCapability: true,
+        suggestedSkillCode: true,
+        status: true,
+        riskLevel: true,
+        provisionalEnabled: true,
+      },
+    });
+
+    for (const draft of candidates) {
+      if (this.normalizeCapabilityText(draft.suggestedSkillCode) === normalizedCode) {
+        return {
+          ...draft,
+          reuseReason: 'EXACT_CODE',
+        };
+      }
+    }
+
+    let bestCandidate: {
+      id: string;
+      gapType: string;
+      requiredCapability: string;
+      suggestedSkillCode: string;
+      status: string;
+      riskLevel: 'LOW' | 'MEDIUM' | 'HIGH';
+      provisionalEnabled: boolean;
+      score: number;
+    } | null = null;
+
+    for (const draft of candidates) {
+      const draftTokens = this.extractCapabilityTokens(`${draft.gapType} ${draft.requiredCapability}`);
+      const score = this.computeCapabilitySimilarity(capabilityTokens, draftTokens);
+      if (!bestCandidate || score > bestCandidate.score) {
+        bestCandidate = {
+          ...draft,
+          score,
+        };
+      }
+    }
+
+    if (bestCandidate && bestCandidate.score >= 0.72) {
+      return {
+        id: bestCandidate.id,
+        gapType: bestCandidate.gapType,
+        requiredCapability: bestCandidate.requiredCapability,
+        suggestedSkillCode: bestCandidate.suggestedSkillCode,
+        status: bestCandidate.status,
+        riskLevel: bestCandidate.riskLevel,
+        provisionalEnabled: bestCandidate.provisionalEnabled,
+        reuseReason: 'SEMANTIC_MATCH',
+      };
+    }
+
+    return null;
+  }
+
+  private async findReusablePublishedSkill(
+    ownerUserId: string,
+    dto: CreateSkillDraftDto,
+    policy: CapabilityRoutingPolicy,
+  ): Promise<
+    | {
+        id: string;
+        skillCode: string;
+        name: string;
+        description: string;
+        templateSource: string;
+        score: number;
+      }
+    | null
+  > {
+    const normalizedCode = this.normalizeCapabilityText(dto.suggestedSkillCode);
+    const capabilityTokens = this.extractCapabilityTokens(`${dto.gapType} ${dto.requiredCapability}`);
+    const whereOr: Array<Record<string, unknown>> = [];
+    if (policy.allowOwnerPool) {
+      whereOr.push({ ownerUserId });
+    }
+    if (policy.allowPublicPool) {
+      whereOr.push({ templateSource: 'PUBLIC' });
+    }
+    if (!whereOr.length) {
+      return null;
+    }
+
+    const candidates = await this.prisma.agentSkill.findMany({
+      where: {
+        isActive: true,
+        OR: whereOr,
+      },
+      orderBy: [{ updatedAt: 'desc' }],
+      take: 100,
+      select: {
+        id: true,
+        ownerUserId: true,
+        skillCode: true,
+        name: true,
+        description: true,
+        templateSource: true,
+      },
+    });
+
+    const ownerCandidates = candidates.filter((item) => item.ownerUserId === ownerUserId);
+    const publicCandidates = candidates.filter((item) => item.ownerUserId !== ownerUserId);
+
+    const preferredOrdered = policy.preferOwnerFirst
+      ? [...ownerCandidates, ...publicCandidates]
+      : [...candidates];
+
+    for (const skill of preferredOrdered) {
+      if (this.normalizeCapabilityText(skill.skillCode) === normalizedCode) {
+        if (skill.ownerUserId !== ownerUserId && !policy.allowPublicPool) {
+          continue;
+        }
+        return {
+          ...skill,
+          score: 1,
+        };
+      }
+    }
+
+    let best: {
+      id: string;
+      skillCode: string;
+      name: string;
+      description: string;
+      templateSource: string;
+      score: number;
+    } | null = null;
+
+    for (const skill of preferredOrdered) {
+      const skillTokens = this.extractCapabilityTokens(`${skill.name} ${skill.description}`);
+      const score = this.computeCapabilitySimilarity(capabilityTokens, skillTokens);
+      if (skill.ownerUserId !== ownerUserId && score < policy.minPublicScore) {
+        continue;
+      }
+      if (skill.ownerUserId === ownerUserId && score < policy.minOwnerScore) {
+        continue;
+      }
+      if (!best || score > best.score) {
+        best = {
+          ...skill,
+          score,
+        };
+      }
+    }
+
+    if (best && best.score >= 0.76) {
+      return {
+        ...best,
+        score: Number(best.score.toFixed(3)),
+      };
+    }
+
+    return null;
+  }
+
+  private async upsertPublishedSkillBridgeDraft(input: {
+    sessionId: string;
+    ownerUserId: string;
+    dto: CreateSkillDraftDto;
+    skill: {
+      id: string;
+      skillCode: string;
+      score: number;
+      templateSource: string;
+    };
+    derivedRisk: {
+      riskLevel: 'LOW' | 'MEDIUM' | 'HIGH';
+      sideEffectRisk: boolean;
+      allowRuntimeGrant: boolean;
+    };
+  }) {
+    const existing = await this.prisma.agentSkillDraft.findFirst({
+      where: {
+        ownerUserId: input.ownerUserId,
+        publishedSkillId: input.skill.id,
+      },
+      orderBy: [{ updatedAt: 'desc' }],
+    });
+    if (existing) {
+      return existing;
+    }
+
+    return this.prisma.agentSkillDraft.create({
+      data: {
+        sessionId: input.sessionId,
+        ownerUserId: input.ownerUserId,
+        gapType: input.dto.gapType,
+        requiredCapability: input.dto.requiredCapability,
+        suggestedSkillCode: input.skill.skillCode,
+        draftSpec: {
+          source: 'PUBLISHED_SKILL_REUSE',
+          score: input.skill.score,
+          templateSource: input.skill.templateSource,
+          publishedSkillId: input.skill.id,
+        } as Prisma.InputJsonValue,
+        status: 'PUBLISHED',
+        riskLevel: input.derivedRisk.riskLevel,
+        sideEffectRisk: input.derivedRisk.sideEffectRisk,
+        provisionalEnabled: false,
+        publishedSkillId: input.skill.id,
+      },
+    });
+  }
+
+  private async ensureRuntimeGrantForDraft(
+    draftId: string,
+    sessionId: string,
+    ownerUserId: string,
+    provisionalEnabled: boolean,
+  ): Promise<string | null> {
+    if (!provisionalEnabled) {
+      return null;
+    }
+    const activeGrant = await this.prisma.agentSkillRuntimeGrant.findFirst({
+      where: {
+        draftId,
+        status: 'ACTIVE',
+        expiresAt: { gt: new Date() },
+      },
+      orderBy: [{ createdAt: 'desc' }],
+      select: { id: true },
+    });
+    if (activeGrant) {
+      return activeGrant.id;
+    }
+
+    const runtimeGrant = await this.prisma.agentSkillRuntimeGrant.create({
+      data: {
+        draftId,
+        sessionId,
+        ownerUserId,
+        status: 'ACTIVE',
+        maxUseCount: 30,
+        expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+      },
+    });
+
+    await this.prisma.agentSkillGovernanceEvent.create({
+      data: {
+        ownerUserId,
+        draftId,
+        runtimeGrantId: runtimeGrant.id,
+        eventType: 'RUNTIME_GRANT_CREATED',
+        message: `运行时授权已创建：${runtimeGrant.id}`,
+        payload: {
+          maxUseCount: runtimeGrant.maxUseCount,
+          expiresAt: runtimeGrant.expiresAt,
+          reuseGenerated: true,
+        } as Prisma.InputJsonValue,
+      },
+    });
+
+    return runtimeGrant.id;
+  }
+
+  private normalizeCapabilityText(value: string): string {
+    return value.trim().toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '');
+  }
+
+  private extractCapabilityTokens(value: string): string[] {
+    const tokens = value.toLowerCase().match(/[\p{L}\p{N}]{2,}/gu) ?? [];
+    const unique = new Set(tokens.filter(Boolean));
+    return Array.from(unique);
+  }
+
+  private computeCapabilitySimilarity(baseTokens: string[], candidateTokens: string[]): number {
+    if (!baseTokens.length || !candidateTokens.length) {
+      return 0;
+    }
+    const base = new Set(baseTokens);
+    const candidate = new Set(candidateTokens);
+    const intersection = Array.from(base).filter((token) => candidate.has(token)).length;
+    const union = new Set([...base, ...candidate]).size;
+    if (union === 0) {
+      return 0;
+    }
+    return Number((intersection / union).toFixed(3));
+  }
+
   private resolveSkillRisk(dto: CreateSkillDraftDto): {
     riskLevel: 'LOW' | 'MEDIUM' | 'HIGH';
     sideEffectRisk: boolean;
@@ -2234,6 +2902,206 @@ export class AgentConversationService {
     };
     const labels = missingSlots.map((slot) => labelMap[slot] ?? slot);
     return `为了继续执行，请补充以下信息：${labels.join('、')}。`;
+  }
+
+  private buildReplyOptions(input: {
+    hasMissingSlots: boolean;
+    missingSlots: string[];
+    autoExecution: boolean;
+    intent: IntentCode;
+    slots: SlotMap;
+  }): ReplyOption[] {
+    if (input.hasMissingSlots) {
+      const targetSlot = input.missingSlots[0] || 'timeRange';
+      const defaults: Record<string, string[]> = {
+        timeRange: ['最近7天', '最近30天'],
+        region: ['东北', '华北'],
+        outputFormat: ['markdown', 'json'],
+      };
+      const values = defaults[targetSlot] ?? ['使用默认值'];
+      return [...values.slice(0, 2), '使用默认值'].map((value, index) => ({
+        id: `slot_${targetSlot}_${index + 1}`,
+        label: value,
+        mode: 'SEND',
+        value: value === '使用默认值' ? '用默认值继续' : value,
+      }));
+    }
+
+    const options: ReplyOption[] = [];
+    if (input.autoExecution) {
+      options.push({
+        id: 'view_result',
+        label: '查看结果',
+        mode: 'OPEN_TAB',
+        tab: 'result',
+      });
+    } else {
+      options.push({
+        id: 'confirm_run',
+        label: '开始执行',
+        mode: 'OPEN_TAB',
+        tab: 'progress',
+      });
+    }
+
+    const region = this.pickString(input.slots.region) ?? '华北';
+    options.push({
+      id: 'refine_region',
+      label: `改成${region === '东北' ? '华北' : '东北'}范围`,
+      mode: 'SEND',
+      value: `改成${region === '东北' ? '华北' : '东北'}范围再分析一次`,
+    });
+    options.push({
+      id: 'deliver_report',
+      label: '发送报告',
+      mode: 'OPEN_TAB',
+      tab: 'delivery',
+    });
+    options.push({
+      id: 'summarize_next_actions',
+      label: '给我三条行动建议',
+      mode: 'SEND',
+      value: '请基于当前结论给我三条可执行行动建议。',
+    });
+    options.push({
+      id: 'schedule_report',
+      label: '设置定时发送',
+      mode: 'OPEN_TAB',
+      tab: 'schedule',
+    });
+
+    return options.slice(0, 4);
+  }
+
+  private async tryEnhanceAssistantReplyWithLLM(input: {
+    userMessage: string;
+    assistantMessage: string;
+    hasMissingSlots: boolean;
+    missingSlots: string[];
+    autoExecution: boolean;
+    intent: IntentCode;
+    slots: SlotMap;
+    fallbackReplyOptions: ReplyOption[];
+  }): Promise<{ assistantMessage: string; replyOptions: ReplyOption[] } | null> {
+    if (process.env.AGENT_COPILOT_LLM_REPLY_ENABLED === 'false') {
+      return null;
+    }
+
+    const model = await this.aiModelService.getSystemModelConfig();
+    if (!model) {
+      return null;
+    }
+
+    try {
+      const provider = this.aiProviderFactory.getProvider(model.provider);
+      const systemPrompt = [
+        '你是面向普通用户的中文对话助手。',
+        '你的目标是：降低理解门槛，给出简洁可执行回复。',
+        '请严格输出 JSON，不要输出 markdown。',
+        'JSON 结构：{"assistantMessage": string, "replyOptions": [{"id": string, "label": string, "mode": "SEND"|"OPEN_TAB", "value"?: string, "tab"?: "progress"|"result"|"delivery"|"schedule"}]}',
+        '要求：assistantMessage 不超过 120 字；replyOptions 2-4 个；label 用普通中文短句。',
+      ].join('\n');
+
+      const userPrompt = JSON.stringify(
+        {
+          userMessage: input.userMessage,
+          currentAssistantDraft: input.assistantMessage,
+          state: {
+            hasMissingSlots: input.hasMissingSlots,
+            missingSlots: input.missingSlots,
+            autoExecution: input.autoExecution,
+            intent: input.intent,
+            slots: input.slots,
+          },
+          fallbackReplyOptions: input.fallbackReplyOptions,
+        },
+        null,
+        2,
+      );
+
+      const raw = await provider.generateResponse(systemPrompt, userPrompt, {
+        modelName: model.modelId,
+        apiKey: model.apiKey,
+        apiUrl: model.apiUrl,
+        temperature: 0.2,
+        maxTokens: 300,
+        timeoutSeconds: 10,
+        maxRetries: 1,
+      });
+
+      const parsed = this.parseJsonObject(raw);
+      if (!parsed) {
+        return null;
+      }
+
+      const assistantMessage = this.pickString(parsed.assistantMessage) ?? input.assistantMessage;
+      const replyOptions = this.normalizeReplyOptions(parsed.replyOptions, input.fallbackReplyOptions);
+
+      return {
+        assistantMessage,
+        replyOptions,
+      };
+    } catch {
+      return null;
+    }
+  }
+
+  private parseJsonObject(value: string): Record<string, unknown> | null {
+    const text = value.trim();
+    if (!text) {
+      return null;
+    }
+    try {
+      const parsed = JSON.parse(text);
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        return parsed as Record<string, unknown>;
+      }
+      return null;
+    } catch {
+      const block = text.match(/\{[\s\S]*\}/);
+      if (!block) {
+        return null;
+      }
+      try {
+        const parsed = JSON.parse(block[0]);
+        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+          return parsed as Record<string, unknown>;
+        }
+      } catch {
+        return null;
+      }
+      return null;
+    }
+  }
+
+  private normalizeReplyOptions(raw: unknown, fallback: ReplyOption[]): ReplyOption[] {
+    if (!Array.isArray(raw)) {
+      return fallback;
+    }
+
+    const normalized = raw
+      .map((item) => this.toRecord(item))
+      .map((item, index) => {
+        const mode = this.pickString(item.mode);
+        const normalizedMode = mode === 'OPEN_TAB' ? 'OPEN_TAB' : 'SEND';
+        const label = this.pickString(item.label) ?? '';
+        const tabRaw = this.pickString(item.tab);
+        const tab =
+          tabRaw === 'progress' || tabRaw === 'result' || tabRaw === 'delivery' || tabRaw === 'schedule'
+            ? (tabRaw as 'progress' | 'result' | 'delivery' | 'schedule')
+            : undefined;
+        return {
+          id: this.pickString(item.id) ?? `llm_option_${index + 1}`,
+          label,
+          mode: normalizedMode as 'SEND' | 'OPEN_TAB',
+          value: this.pickString(item.value) ?? undefined,
+          tab,
+        };
+      })
+      .filter((item) => item.label)
+      .slice(0, 4);
+
+    return normalized.length ? normalized : fallback;
   }
 
   private normalizeSlots(raw: unknown): SlotMap {
@@ -2484,16 +3352,140 @@ export class AgentConversationService {
     return Number(avg.toFixed(2));
   }
 
-  private async pickWorkflowDefinitionId(ownerUserId: string): Promise<string | null> {
-    const definition = await this.prisma.workflowDefinition.findFirst({
+  private async pickWorkflowDefinitionCandidate(
+    ownerUserId: string,
+    intent: IntentCode,
+    slots: SlotMap,
+    policy: CapabilityRoutingPolicy,
+  ): Promise<
+    | {
+        id: string;
+        reuseSource: 'USER_PRIVATE' | 'TEAM_OR_PUBLIC';
+        score: number;
+      }
+    | null
+  > {
+    const whereOr: Array<Record<string, unknown>> = [];
+    if (policy.allowOwnerPool) {
+      whereOr.push({ ownerUserId });
+    }
+    if (policy.allowPublicPool) {
+      whereOr.push({ templateSource: 'PUBLIC' });
+    }
+    if (!whereOr.length) {
+      return null;
+    }
+
+    const candidates = await this.prisma.workflowDefinition.findMany({
       where: {
-        OR: [{ ownerUserId }, { templateSource: 'PUBLIC' }],
+        OR: whereOr,
         isActive: true,
       },
       orderBy: [{ updatedAt: 'desc' }],
-      select: { id: true },
+      take: 50,
+      select: {
+        id: true,
+        ownerUserId: true,
+        templateSource: true,
+        isPublished: true,
+        stars: true,
+        name: true,
+        description: true,
+      },
     });
-    return definition?.id ?? null;
+
+    if (!candidates.length) {
+      return null;
+    }
+
+    const keywords = this.buildWorkflowCapabilityKeywords(intent, slots);
+    let best: { id: string; reuseSource: 'USER_PRIVATE' | 'TEAM_OR_PUBLIC'; score: number } | null = null;
+
+    for (const candidate of candidates) {
+      let score = candidate.ownerUserId === ownerUserId ? 0.45 : 0.2;
+      if (candidate.templateSource === 'PUBLIC') {
+        score += 0.08;
+      }
+      if (candidate.isPublished) {
+        score += 0.08;
+      }
+      score += Math.min(0.1, (candidate.stars ?? 0) / 1000);
+
+      const haystack = `${candidate.name} ${candidate.description ?? ''}`.toLowerCase();
+      const hitCount = keywords.filter((keyword) => haystack.includes(keyword)).length;
+      score += Math.min(0.29, hitCount * 0.06);
+
+      const normalized = Number(score.toFixed(3));
+      if (candidate.ownerUserId !== ownerUserId && normalized < policy.minPublicScore) {
+        continue;
+      }
+      if (candidate.ownerUserId === ownerUserId && normalized < policy.minOwnerScore) {
+        continue;
+      }
+
+      if (!best || normalized > best.score) {
+        best = {
+          id: candidate.id,
+          reuseSource: candidate.ownerUserId === ownerUserId ? 'USER_PRIVATE' : 'TEAM_OR_PUBLIC',
+          score: normalized,
+        };
+      }
+    }
+
+    if (policy.preferOwnerFirst) {
+      const ownerBest = candidates
+        .filter((item) => item.ownerUserId === ownerUserId)
+        .map((candidate) => {
+          let score = 0.45;
+          if (candidate.isPublished) {
+            score += 0.08;
+          }
+          score += Math.min(0.1, (candidate.stars ?? 0) / 1000);
+          const haystack = `${candidate.name} ${candidate.description ?? ''}`.toLowerCase();
+          const hitCount = keywords.filter((keyword) => haystack.includes(keyword)).length;
+          score += Math.min(0.29, hitCount * 0.06);
+          return {
+            id: candidate.id,
+            score: Number(score.toFixed(3)),
+          };
+        })
+        .filter((item) => item.score >= policy.minOwnerScore)
+        .sort((a, b) => b.score - a.score)[0];
+      if (ownerBest) {
+        return {
+          id: ownerBest.id,
+          reuseSource: 'USER_PRIVATE',
+          score: ownerBest.score,
+        };
+      }
+    }
+
+    return best;
+  }
+
+  private buildWorkflowCapabilityKeywords(intent: IntentCode, slots: SlotMap): string[] {
+    const keywords = new Set<string>();
+    if (intent === 'DEBATE_MARKET_JUDGEMENT') {
+      keywords.add('辩论');
+      keywords.add('debate');
+      keywords.add('judge');
+      keywords.add('裁判');
+    } else {
+      keywords.add('市场');
+      keywords.add('分析');
+      keywords.add('summary');
+      keywords.add('forecast');
+    }
+
+    const region = this.pickString(slots.region);
+    const timeRange = this.pickString(slots.timeRange);
+    if (region) {
+      keywords.add(region.toLowerCase());
+    }
+    if (timeRange) {
+      keywords.add(timeRange.toLowerCase());
+    }
+    return Array.from(keywords);
   }
 
   private compileExecutionParams(

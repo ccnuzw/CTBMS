@@ -220,6 +220,7 @@ async function main() {
       executionId?: string;
       proposedPlan: { planId: string } | null;
       missingSlots: string[];
+      replyOptions?: Array<{ id: string; label: string; mode: string }>;
     }>(`${baseUrl}/agent-conversations/sessions/${conversationSessionId}/turns`, {
       method: 'POST',
       headers: {
@@ -235,6 +236,8 @@ async function main() {
     assert.ok(['PLAN_PREVIEW', 'EXECUTING'].includes(sendTurn.body.state));
     assert.ok(sendTurn.body.proposedPlan?.planId);
     assert.equal(sendTurn.body.missingSlots.length, 0);
+    assert.ok(Array.isArray(sendTurn.body.replyOptions));
+    assert.ok((sendTurn.body.replyOptions ?? []).length >= 1);
 
     if (sendTurn.body.autoExecuted) {
       assert.equal(sendTurn.body.confirmRequired, false);
@@ -319,6 +322,27 @@ async function main() {
       assert.equal(typeof finalResultBody.result.analysis, 'string');
       assert.equal(typeof finalResultBody.result.confidence, 'number');
     }
+
+    const routingLogs = await fetchJson<
+      Array<{
+        id: string;
+        routeType: string;
+        selectedSource?: string | null;
+        selectedWorkflowDefinitionId?: string | null;
+      }>
+    >(`${baseUrl}/agent-conversations/sessions/${conversationSessionId}/capability-routing-logs?routeType=WORKFLOW_REUSE`, {
+      headers: {
+        'x-virtual-user-id': ownerUserId,
+      },
+    });
+    assert.equal(routingLogs.status, 200);
+    assert.ok(routingLogs.body.length > 0);
+    assert.ok(routingLogs.body.every((item) => item.routeType === 'WORKFLOW_REUSE'));
+    assert.ok(
+      routingLogs.body.some(
+        (item) => item.selectedWorkflowDefinitionId && item.selectedWorkflowDefinitionId.length > 0,
+      ),
+    );
   } finally {
     if (conversationSessionId) {
       await prisma.conversationSession.deleteMany({ where: { id: conversationSessionId } });

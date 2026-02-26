@@ -84,12 +84,14 @@ async function main() {
 
   const ownerUserId = randomUUID();
   const reviewerUserId = randomUUID();
+  const publicSkillOwnerUserId = randomUUID();
   const token = `agent_skill_draft_${Date.now()}`;
   const workflowId = `${token}_workflow`;
   const workflowName = `Agent Skill Draft ${token}`;
   const rulePackCode = `${token}_RULE_PACK`;
   const skillCode = `skill_${token}`;
   const highRiskSkillCode = `${skillCode}_high_risk`;
+  const publicSkillCode = `${skillCode}_public_pool`;
 
   let definitionId = '';
   let conversationSessionId = '';
@@ -109,6 +111,32 @@ async function main() {
         username: `${token}_reviewer`,
         email: `${token}_reviewer@example.com`,
         name: `Agent Skill Draft Reviewer ${token}`,
+      },
+    });
+    await prisma.user.create({
+      data: {
+        id: publicSkillOwnerUserId,
+        username: `${token}_public_owner`,
+        email: `${token}_public_owner@example.com`,
+        name: `Agent Skill Public Owner ${token}`,
+      },
+    });
+
+    await prisma.agentSkill.create({
+      data: {
+        skillCode: publicSkillCode,
+        name: '公开行情能力',
+        description: '用于获取交易所公开行情与持仓数据，适用于普通市场分析。',
+        parameters: {
+          type: 'object',
+          properties: {
+            symbol: { type: 'string' },
+          },
+        } as Prisma.InputJsonValue,
+        handlerCode: `skill.public.${publicSkillCode}`,
+        ownerUserId: publicSkillOwnerUserId,
+        templateSource: 'PUBLIC',
+        isActive: true,
       },
     });
 
@@ -206,6 +234,69 @@ async function main() {
     assert.equal(createDraft.body.riskLevel, 'LOW');
     assert.equal(createDraft.body.provisionalEnabled, true);
     assert.ok(createDraft.body.runtimeGrantId);
+
+    const reuseDraft = await fetchJson<{
+      draftId: string;
+      status: string;
+      reused?: boolean;
+      reuseSource?: string;
+      runtimeGrantId?: string | null;
+    }>(`${baseUrl}/agent-conversations/sessions/${conversationSessionId}/capability-gap/skill-draft`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-virtual-user-id': ownerUserId,
+      },
+      body: JSON.stringify({
+        gapType: 'MISSING_FUTURES_OPEN_API',
+        requiredCapability: '获取交易所公开持仓排名数据并做周度更新',
+        suggestedSkillCode: skillCode,
+      }),
+    });
+    assert.equal(reuseDraft.status, 201);
+    assert.equal(reuseDraft.body.draftId, createDraft.body.draftId);
+    assert.equal(reuseDraft.body.reused, true);
+    assert.ok(
+      reuseDraft.body.reuseSource === 'EXACT_CODE' || reuseDraft.body.reuseSource === 'SEMANTIC_MATCH',
+    );
+
+    const routingLogs = await fetchJson<
+      Array<{ routeType: string; selectedDraftId?: string | null; selectedSource?: string | null }>
+    >(`${baseUrl}/agent-conversations/sessions/${conversationSessionId}/capability-routing-logs?routeType=SKILL_DRAFT_REUSE`, {
+      headers: {
+        'x-virtual-user-id': ownerUserId,
+      },
+    });
+    assert.equal(routingLogs.status, 200);
+    assert.ok(routingLogs.body.length > 0);
+    assert.ok(routingLogs.body.every((item) => item.routeType === 'SKILL_DRAFT_REUSE'));
+    assert.ok(routingLogs.body.some((item) => item.selectedDraftId === createDraft.body.draftId));
+
+    const reusePublishedSkill = await fetchJson<{
+      draftId: string;
+      status: string;
+      reviewRequired: boolean;
+      reused?: boolean;
+      reuseSource?: string;
+      runtimeGrantId?: string | null;
+    }>(`${baseUrl}/agent-conversations/sessions/${conversationSessionId}/capability-gap/skill-draft`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-virtual-user-id': ownerUserId,
+      },
+      body: JSON.stringify({
+        gapType: 'MARKET_ANALYSIS_ASSIST',
+        requiredCapability: '需要一个公开可复用的行情能力',
+        suggestedSkillCode: publicSkillCode,
+      }),
+    });
+    assert.equal(reusePublishedSkill.status, 201);
+    assert.equal(reusePublishedSkill.body.status, 'PUBLISHED');
+    assert.equal(reusePublishedSkill.body.reviewRequired, false);
+    assert.equal(reusePublishedSkill.body.reused, true);
+    assert.equal(reusePublishedSkill.body.reuseSource, 'PUBLISHED_SKILL');
+    assert.equal(reusePublishedSkill.body.runtimeGrantId ?? null, null);
 
     const runtimeGrants = await fetchJson<Array<{ id: string; status: string }>>(
       `${baseUrl}/agent-skills/drafts/${createDraft.body.draftId}/runtime-grants`,
@@ -435,7 +526,9 @@ async function main() {
     if (conversationSessionId) {
       await prisma.conversationSession.deleteMany({ where: { id: conversationSessionId } });
     }
-    await prisma.agentSkill.deleteMany({ where: { skillCode: { in: [skillCode, highRiskSkillCode] } } });
+    await prisma.agentSkill.deleteMany({
+      where: { skillCode: { in: [skillCode, highRiskSkillCode, publicSkillCode] } },
+    });
     if (definitionId) {
       await prisma.workflowExecution.deleteMany({
         where: {
@@ -448,7 +541,7 @@ async function main() {
       await prisma.workflowDefinition.deleteMany({ where: { id: definitionId } });
     }
     await prisma.decisionRulePack.deleteMany({ where: { rulePackCode } });
-    await prisma.user.deleteMany({ where: { id: { in: [ownerUserId, reviewerUserId] } } });
+    await prisma.user.deleteMany({ where: { id: { in: [ownerUserId, reviewerUserId, publicSkillOwnerUserId] } } });
     await app.close();
     await prisma.$disconnect();
   }

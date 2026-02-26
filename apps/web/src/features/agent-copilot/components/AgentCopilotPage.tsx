@@ -60,6 +60,7 @@ import {
   useSubmitSkillDraftReview,
   useSandboxSkillDraft,
   useReviewSkillDraft,
+  useCapabilityRoutingLogs,
   useConsumeSkillRuntimeGrant,
   useSkillGovernanceEvents,
   useSkillGovernanceHousekeeping,
@@ -93,6 +94,16 @@ type QuickPromptTemplate = {
   key: string;
   label: string;
   prompt: string;
+};
+
+type LocalConversationTurn = {
+  id: string;
+  role: 'USER' | 'ASSISTANT' | 'SYSTEM';
+  content: string;
+  structuredPayload?: Record<string, unknown>;
+  createdAt: string;
+  pending?: boolean;
+  failed?: boolean;
 };
 
 const isSameQuickPromptTemplates = (
@@ -322,6 +333,12 @@ const assetTypeLabel: Record<string, string> = {
   SKILL_DRAFT: '能力草稿',
 };
 
+const capabilityRouteTypeLabel: Record<string, string> = {
+  WORKFLOW_REUSE: '工作流复用',
+  SKILL_DRAFT_REUSE: '能力草稿复用',
+  SKILL_DRAFT_CREATE: '新建能力草稿',
+};
+
 const formatGovernanceEventMessage = (item: {
   eventType: string;
   message: string;
@@ -400,6 +417,7 @@ export const AgentCopilotPage: React.FC = () => {
   const [subscriptionName, setSubscriptionName] = useState('每周玉米复盘订阅');
   const [subscriptionCronExpr, setSubscriptionCronExpr] = useState('0 0 8 * * 1');
   const [scheduleInstruction, setScheduleInstruction] = useState('每周一9点发到企业微信群ops-group-01');
+  const [localTurns, setLocalTurns] = useState<LocalConversationTurn[]>([]);
   const [visibleTurnCount, setVisibleTurnCount] = useState(DEFAULT_VISIBLE_TURN_COUNT);
   const [expandedTurnMap, setExpandedTurnMap] = useState<Record<string, boolean>>({});
   const [expandResultAnalysis, setExpandResultAnalysis] = useState(false);
@@ -467,7 +485,15 @@ export const AgentCopilotPage: React.FC = () => {
     [detailQuery.data?.turns],
   );
   const sessionList = Array.isArray(sessionsQuery.data?.data) ? sessionsQuery.data.data : [];
-  const allTurns = detailQuery.data?.turns ?? [];
+  const detailTurns = detailQuery.data?.turns ?? [];
+  const allTurns = useMemo(() => {
+    if (!localTurns.length) {
+      return detailTurns;
+    }
+    return [...detailTurns, ...localTurns].sort(
+      (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime(),
+    );
+  }, [detailTurns, localTurns]);
   const hiddenTurnCount = Math.max(0, allTurns.length - visibleTurnCount);
   const visibleTurns = useMemo(
     () => (hiddenTurnCount > 0 ? allTurns.slice(-visibleTurnCount) : allTurns),
@@ -517,6 +543,7 @@ export const AgentCopilotPage: React.FC = () => {
       .find((payload) => payload && typeof payload.draftId === 'string')?.draftId as string | undefined;
   }, [detailQuery.data?.turns]);
   const governanceEventsQuery = useSkillGovernanceEvents(latestSkillDraftId);
+  const capabilityRoutingLogsQuery = useCapabilityRoutingLogs(activeSessionId, { limit: 20 });
   const runtimeGrantsQuery = useSkillDraftRuntimeGrants(latestSkillDraftId);
   const backtestQuery = useConversationBacktest(activeSessionId, latestBacktestJobId);
   const conflictsQuery = useConversationConflicts(activeSessionId);
@@ -525,6 +552,7 @@ export const AgentCopilotPage: React.FC = () => {
   const subscriptionList = Array.isArray(subscriptionsQuery.data) ? subscriptionsQuery.data : [];
   const conflictList = Array.isArray(conflictsQuery.data?.conflicts) ? conflictsQuery.data.conflicts : [];
   const governanceEvents = Array.isArray(governanceEventsQuery.data) ? governanceEventsQuery.data : [];
+  const capabilityRoutingLogs = Array.isArray(capabilityRoutingLogsQuery.data) ? capabilityRoutingLogsQuery.data : [];
   const runtimeGrants = Array.isArray(runtimeGrantsQuery.data) ? runtimeGrantsQuery.data : [];
   const conversationAssets = Array.isArray(assetsQuery.data) ? assetsQuery.data : [];
 
@@ -571,11 +599,11 @@ export const AgentCopilotPage: React.FC = () => {
     const resolvedTo =
       deliveryChannel === 'EMAIL'
         ? emailTo
-            .split(',')
-            .map((item) => item.trim())
-            .filter(Boolean)
-            .concat(activeDeliveryChannelProfile?.to ?? [])
-            .filter((value, index, arr) => arr.indexOf(value) === index)
+          .split(',')
+          .map((item) => item.trim())
+          .filter(Boolean)
+          .concat(activeDeliveryChannelProfile?.to ?? [])
+          .filter((value, index, arr) => arr.indexOf(value) === index)
         : [];
     const manualTarget = deliveryTarget.trim();
     const resolvedTarget = deliveryChannel === 'EMAIL' ? '' : manualTarget || activeDeliveryChannelProfile?.target || '';
@@ -588,10 +616,10 @@ export const AgentCopilotPage: React.FC = () => {
   }, [deliveryChannel, emailTo, deliveryTarget, activeDeliveryChannelProfile]);
   const planSnapshot = (latestPlan?.planSnapshot ?? null) as
     | {
-        planId?: string;
-        skills?: string[];
-        estimatedCost?: { token?: number; latencyMs?: number };
-      }
+      planId?: string;
+      skills?: string[];
+      estimatedCost?: { token?: number; latencyMs?: number };
+    }
     | null;
   const planSkills = Array.isArray(planSnapshot?.skills)
     ? planSnapshot.skills.filter((item): item is string => typeof item === 'string')
@@ -632,7 +660,7 @@ export const AgentCopilotPage: React.FC = () => {
       return;
     }
     if (!latestPlan) {
-      message.warning('请先生成并确认计划');
+      message.warning('请先提问并等待助手准备好执行方案');
       return;
     }
     try {
@@ -710,7 +738,7 @@ export const AgentCopilotPage: React.FC = () => {
     }
     const executionId = resultQuery.data?.executionId;
     if (!executionId) {
-      message.warning('暂无可回测执行结果，请先确认并执行计划');
+      message.warning('暂无可验证结果，请先等待本轮分析完成');
       return;
     }
     try {
@@ -897,6 +925,67 @@ export const AgentCopilotPage: React.FC = () => {
     }
   };
 
+  const createOptimisticTurnPair = (content: string) => {
+    const now = new Date().toISOString();
+    const userTurnId = `local_user_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    const assistantTurnId = `local_assistant_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    setLocalTurns((prev) => [
+      ...prev,
+      {
+        id: userTurnId,
+        role: 'USER',
+        content,
+        createdAt: now,
+        pending: true,
+      },
+      {
+        id: assistantTurnId,
+        role: 'ASSISTANT',
+        content: '我正在理解你的问题并整理结果，请稍候...',
+        structuredPayload: {
+          retryMessage: content,
+          replyOptions: [
+            {
+              id: 'retry_send',
+              label: '重试发送',
+              mode: 'SEND',
+              value: content,
+            },
+          ],
+        },
+        createdAt: now,
+        pending: true,
+      },
+    ]);
+    return { userTurnId, assistantTurnId };
+  };
+
+  const clearOptimisticTurnPair = (pair: { userTurnId: string; assistantTurnId: string }) => {
+    setLocalTurns((prev) => prev.filter((item) => item.id !== pair.userTurnId && item.id !== pair.assistantTurnId));
+  };
+
+  const markOptimisticTurnPairFailed = (
+    pair: { userTurnId: string; assistantTurnId: string },
+    fallbackMessage: string,
+  ) => {
+    setLocalTurns((prev) =>
+      prev.map((item) => {
+        if (item.id === pair.userTurnId) {
+          return { ...item, pending: false, failed: true };
+        }
+        if (item.id === pair.assistantTurnId) {
+          return {
+            ...item,
+            pending: false,
+            failed: true,
+            content: fallbackMessage,
+          };
+        }
+        return item;
+      }),
+    );
+  };
+
   const handleSend = async () => {
     const content = input.trim();
     if (!content) {
@@ -922,20 +1011,27 @@ export const AgentCopilotPage: React.FC = () => {
       }
     }
 
+    setInput('');
+    const optimisticPair = createOptimisticTurnPair(content);
+
     try {
       await sendTurnMutation.mutateAsync({ sessionId: targetSessionId, message: content });
-      setInput('');
+      clearOptimisticTurnPair(optimisticPair);
       appendCopilotDiagEvent({
         type: 'turn.send.success',
         sessionId: targetSessionId,
       });
     } catch (error) {
+      markOptimisticTurnPairFailed(optimisticPair, '发送失败，请点击重试或继续输入你的问题。');
       showCopilotError(error, '发送失败，请稍后重试');
     }
   };
 
   const handleQuickPromptSend = async (prompt: string) => {
-    setInput(prompt);
+    const content = prompt.trim();
+    if (!content) {
+      return;
+    }
     let targetSessionId = activeSessionId;
     if (!targetSessionId) {
       try {
@@ -950,18 +1046,60 @@ export const AgentCopilotPage: React.FC = () => {
       }
     }
 
+    setInput('');
+    const optimisticPair = createOptimisticTurnPair(content);
+
     try {
-      await sendTurnMutation.mutateAsync({ sessionId: targetSessionId, message: prompt });
-      setInput('');
+      await sendTurnMutation.mutateAsync({ sessionId: targetSessionId, message: content });
+      clearOptimisticTurnPair(optimisticPair);
       message.success('已发送快捷问题');
     } catch (error) {
+      markOptimisticTurnPairFailed(optimisticPair, '发送失败，请点击重试或直接重新提问。');
       showCopilotError(error, '快捷问题发送失败');
+    }
+  };
+
+  const handleReplyOptionSelect = async (option: {
+    mode?: string;
+    value?: string;
+    tab?: 'progress' | 'result' | 'delivery' | 'schedule';
+  }) => {
+    if (option.mode === 'OPEN_TAB' && option.tab) {
+      openDetailTab(option.tab);
+      return;
+    }
+    const nextMessage = (option.value || '').trim();
+    if (!nextMessage) {
+      return;
+    }
+    setInput('');
+    let targetSessionId = activeSessionId;
+    if (!targetSessionId) {
+      try {
+        const session = await createSessionMutation.mutateAsync({
+          title: `会话 ${new Date().toLocaleString('zh-CN')}`,
+        });
+        targetSessionId = session.id;
+        setActiveSessionId(session.id);
+      } catch (error) {
+        showCopilotError(error, '创建会话失败，请稍后重试');
+        return;
+      }
+    }
+
+    const optimisticPair = createOptimisticTurnPair(nextMessage);
+    try {
+      await sendTurnMutation.mutateAsync({ sessionId: targetSessionId, message: nextMessage });
+      clearOptimisticTurnPair(optimisticPair);
+    } catch (error) {
+      markOptimisticTurnPairFailed(optimisticPair, '执行建议失败，请重试或换个说法。');
+      showCopilotError(error, '执行建议失败');
     }
   };
 
   const handleConfirmPlan = async () => {
     if (!activeSessionId || !latestPlan || !planSnapshot?.planId) {
-      message.warning('暂无可确认的计划');
+      message.warning('当前暂无可执行内容，请先继续提问');
       return;
     }
     try {
@@ -975,9 +1113,9 @@ export const AgentCopilotPage: React.FC = () => {
         sessionId: activeSessionId,
         meta: { planId: planSnapshot.planId, planVersion: latestPlan.version },
       });
-      message.success('计划已确认，任务执行中');
+      message.success('已开始执行，你可以继续补充要求');
     } catch (error) {
-      showCopilotError(error, '计划确认失败');
+      showCopilotError(error, '开始执行失败');
     }
   };
 
@@ -1065,6 +1203,7 @@ export const AgentCopilotPage: React.FC = () => {
   }, [resultQuery.data?.status, detailQuery.data?.state, latestPlan, artifacts.length, deliveryLogs]);
 
   useEffect(() => {
+    setLocalTurns([]);
     setVisibleTurnCount(DEFAULT_VISIBLE_TURN_COUNT);
     setExpandedTurnMap({});
     setExpandResultAnalysis(false);
@@ -1597,6 +1736,90 @@ export const AgentCopilotPage: React.FC = () => {
                   {visibleTurns.map((turn) => {
                     const roleText = toSafeText(turn.role || 'UNKNOWN');
                     const contentText = toSafeText(turn.content);
+                    const turnPayload = (turn.structuredPayload ?? {}) as Record<string, unknown>;
+                    const turnReplyOptions = Array.isArray(turnPayload.replyOptions)
+                      ? turnPayload.replyOptions
+                        .map((item) => item as Record<string, unknown>)
+                        .map((item) => {
+                          const tabValue =
+                            item.tab === 'progress' ||
+                              item.tab === 'result' ||
+                              item.tab === 'delivery' ||
+                              item.tab === 'schedule'
+                              ? (item.tab as 'progress' | 'result' | 'delivery' | 'schedule')
+                              : undefined;
+                          return {
+                            id:
+                              typeof item.id === 'string'
+                                ? item.id
+                                : `reply_${Math.random().toString(36).slice(2, 8)}`,
+                            label: typeof item.label === 'string' ? item.label : '',
+                            mode: typeof item.mode === 'string' ? item.mode : 'SEND',
+                            value: typeof item.value === 'string' ? item.value : undefined,
+                            tab: tabValue,
+                          };
+                        })
+                        .filter((item) => item.label)
+                      : [];
+                    const fallbackReplyOptions = (() => {
+                      if (roleText !== 'ASSISTANT') {
+                        return [] as Array<{
+                          id: string;
+                          label: string;
+                          mode: string;
+                          value?: string;
+                          tab?: 'progress' | 'result' | 'delivery' | 'schedule';
+                        }>;
+                      }
+                      if (Boolean((turn as LocalConversationTurn).failed)) {
+                        const retryMessage =
+                          typeof turnPayload.retryMessage === 'string' ? turnPayload.retryMessage.trim() : '';
+                        if (retryMessage) {
+                          return [
+                            {
+                              id: 'retry_send',
+                              label: '重试发送',
+                              mode: 'SEND',
+                              value: retryMessage,
+                            },
+                          ];
+                        }
+                      }
+
+                      const missing = Array.isArray(turnPayload.missingSlots)
+                        ? turnPayload.missingSlots.filter((item): item is string => typeof item === 'string')
+                        : [];
+                      if (missing.length > 0) {
+                        return [
+                          {
+                            id: 'use_default_continue',
+                            label: '用默认值继续',
+                            mode: 'SEND',
+                            value: '用默认值继续',
+                          },
+                        ];
+                      }
+
+                      const options: Array<{
+                        id: string;
+                        label: string;
+                        mode: string;
+                        value?: string;
+                        tab?: 'progress' | 'result' | 'delivery' | 'schedule';
+                      }> = [];
+                      if (currentStatus === 'EXECUTING') {
+                        options.push({ id: 'view_progress', label: '查看进展', mode: 'OPEN_TAB', tab: 'progress' });
+                      }
+                      options.push({ id: 'view_result', label: '查看结果', mode: 'OPEN_TAB', tab: 'result' });
+                      if (latestArtifact?.exportTaskId) {
+                        options.push({ id: 'send_report', label: '发送报告', mode: 'OPEN_TAB', tab: 'delivery' });
+                      }
+                      options.push({ id: 'set_schedule', label: '设置定时发送', mode: 'OPEN_TAB', tab: 'schedule' });
+                      return options.slice(0, 4);
+                    })();
+                    const finalReplyOptions = turnReplyOptions.length ? turnReplyOptions : fallbackReplyOptions;
+                    const isPendingTurn = Boolean((turn as LocalConversationTurn).pending);
+                    const isFailedTurn = Boolean((turn as LocalConversationTurn).failed);
                     const looksLikeStructured =
                       roleText === 'SYSTEM' &&
                       contentText.length > SYSTEM_MESSAGE_COLLAPSE_MIN_LENGTH &&
@@ -1617,9 +1840,10 @@ export const AgentCopilotPage: React.FC = () => {
                           alignSelf: roleText === 'USER' ? 'flex-end' : 'flex-start',
                           maxWidth: '85%',
                           background: roleText === 'USER' ? '#e6f4ff' : '#fafafa',
-                          border: '1px solid #f0f0f0',
+                          border: isFailedTurn ? '1px solid #ffccc7' : '1px solid #f0f0f0',
                           borderRadius: 10,
                           padding: '10px 12px',
+                          opacity: isPendingTurn ? 0.75 : 1,
                         }}
                       >
                         <Text type="secondary" style={{ fontSize: 12 }}>
@@ -1639,6 +1863,16 @@ export const AgentCopilotPage: React.FC = () => {
                               ? summarizeAssistantMessage(contentText)
                               : displayedContent}
                         </div>
+                        {isPendingTurn ? (
+                          <Text type="secondary" style={{ fontSize: 12 }}>
+                            处理中...
+                          </Text>
+                        ) : null}
+                        {isFailedTurn ? (
+                          <Text type="danger" style={{ fontSize: 12 }}>
+                            发送失败，可重试或改写后继续
+                          </Text>
+                        ) : null}
                         {isLongContent || looksLikeStructured || looksLikeLongAssistantReply ? (
                           <Button
                             size="small"
@@ -1659,6 +1893,19 @@ export const AgentCopilotPage: React.FC = () => {
                                   ? '展开完整回复'
                                   : '展开全文'}
                           </Button>
+                        ) : null}
+                        {roleText === 'ASSISTANT' && finalReplyOptions.length > 0 && !isPendingTurn ? (
+                          <Space wrap style={{ marginTop: 8 }}>
+                            {finalReplyOptions.slice(0, 4).map((option) => (
+                              <Button
+                                key={`${turn.id}_${option.id}`}
+                                size={compactActionSize}
+                                onClick={() => void handleReplyOptionSelect(option)}
+                              >
+                                {option.label}
+                              </Button>
+                            ))}
+                          </Space>
                         ) : null}
                       </div>
                     );
@@ -1701,6 +1948,7 @@ export const AgentCopilotPage: React.FC = () => {
                 icon={<SendOutlined />}
                 loading={sendTurnMutation.isPending}
                 onClick={handleSend}
+                style={{ height: 'auto', width: 80 }}
               >
                 发送
               </Button>
@@ -1714,14 +1962,16 @@ export const AgentCopilotPage: React.FC = () => {
                 </Space>
                 <Space wrap>
                   <Tag color={stateColor[currentStatus] || 'default'}>{statusText}</Tag>
-                  {latestPlan ? <Tag color="blue">{planTypeLabel[latestPlan.planType] || latestPlan.planType}</Tag> : null}
-                  {latestPlan ? <Tag>第 {latestPlan.version} 版</Tag> : null}
+                  {isAdminUser && latestPlan ? (
+                    <Tag color="blue">{planTypeLabel[latestPlan.planType] || latestPlan.planType}</Tag>
+                  ) : null}
+                  {isAdminUser && latestPlan ? <Tag>第 {latestPlan.version} 版</Tag> : null}
                 </Space>
                 <Text type="secondary">
                   {resultQuery.data?.result
                     ? `已生成结论，当前置信度约 ${Math.round((resultQuery.data.result.confidence || 0) * 100)}%。`
                     : latestPlan
-                      ? '方案已准备好，你可以继续提问，或查看详情并执行后续动作。'
+                      ? '我已准备好执行，你可以继续补充要求，或直接查看结果。'
                       : '先提问，我会自动理解需求并给出可执行方案。'}
                 </Text>
                 <Text style={{ fontSize: 13 }}>{nextActionHint}</Text>
@@ -2020,10 +2270,10 @@ export const AgentCopilotPage: React.FC = () => {
                         actions={
                           item.downloadUrl
                             ? [
-                                <a key="download" href={item.downloadUrl} target="_blank" rel="noreferrer">
-                                  下载
-                                </a>,
-                              ]
+                              <a key="download" href={item.downloadUrl} target="_blank" rel="noreferrer">
+                                下载
+                              </a>,
+                            ]
                             : []
                         }
                       >
@@ -2209,23 +2459,23 @@ export const AgentCopilotPage: React.FC = () => {
                       actions={
                         item.status === 'ACTIVE'
                           ? [
-                              <Button
-                                key="use"
-                                size={compactActionSize}
-                                loading={consumeRuntimeGrantMutation.isPending}
-                                onClick={() => void handleConsumeRuntimeGrant(item.id)}
-                              >
-                                记录使用
-                              </Button>,
-                              <Button
-                                key="revoke"
-                                size={compactActionSize}
-                                loading={revokeRuntimeGrantMutation.isPending}
-                                onClick={() => void handleRevokeRuntimeGrant(item.id)}
-                              >
-                                撤销
-                              </Button>,
-                            ]
+                            <Button
+                              key="use"
+                              size={compactActionSize}
+                              loading={consumeRuntimeGrantMutation.isPending}
+                              onClick={() => void handleConsumeRuntimeGrant(item.id)}
+                            >
+                              记录使用
+                            </Button>,
+                            <Button
+                              key="revoke"
+                              size={compactActionSize}
+                              loading={revokeRuntimeGrantMutation.isPending}
+                              onClick={() => void handleRevokeRuntimeGrant(item.id)}
+                            >
+                              撤销
+                            </Button>,
+                          ]
                           : []
                       }
                     >
@@ -2277,6 +2527,35 @@ export const AgentCopilotPage: React.FC = () => {
                   ) : null}
                 </>
               ) : null}
+
+              <Divider style={{ margin: '4px 0' }} />
+              <Text strong>能力路由记录</Text>
+              <List
+                size="small"
+                dataSource={capabilityRoutingLogs.slice(0, 8)}
+                locale={{ emptyText: '暂无能力路由记录' }}
+                renderItem={(item) => (
+                  <List.Item>
+                    <Space direction="vertical" size={2} style={{ width: '100%' }}>
+                      <Space>
+                        <Tag>{capabilityRouteTypeLabel[item.routeType] || item.routeType}</Tag>
+                        <Text type="secondary">来源：{item.selectedSource || '-'}</Text>
+                      </Space>
+                      <Text type="secondary" style={{ fontSize: 12 }}>
+                        分数：{Number.isFinite(item.selectedScore) ? item.selectedScore.toFixed(3) : '-'}
+                      </Text>
+                      {item.reason ? (
+                        <Text type="secondary" style={{ fontSize: 12 }}>
+                          {item.reason}
+                        </Text>
+                      ) : null}
+                      <Text type="secondary" style={{ fontSize: 12 }}>
+                        {new Date(item.createdAt).toLocaleString('zh-CN')}
+                      </Text>
+                    </Space>
+                  </List.Item>
+                )}
+              />
 
               <Divider style={{ margin: '4px 0' }} />
               <Text strong>会话结果复用</Text>
