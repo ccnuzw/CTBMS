@@ -1,6 +1,6 @@
 # CTBMS 对话原生智能体 监控与告警基线 v2
 
-- 生成时间: 2026-02-26T12:07:02.739Z
+- 生成时间: 2026-02-26T13:46:15.483Z
 - UAT 状态: PASS
 - 基线检查结论: PASS
 
@@ -19,14 +19,14 @@
 
 | 检查项 | 状态 | 耗时(秒) |
 | --- | --- | --- |
-| `pnpm workflow:type-check:split` | PASS | 44.32 |
-| `pnpm --filter api run test:e2e:agent-suite` | PASS | 394.1 |
+| `pnpm workflow:type-check:split` | PASS | 41.75 |
+| `pnpm --filter api run test:e2e:agent-suite` | PASS | 513.48 |
 
 ### pnpm workflow:type-check:split
 
 - 状态: PASS
-- 开始: 2026-02-26T11:59:44.326Z
-- 结束: 2026-02-26T12:00:28.643Z
+- 开始: 2026-02-26T13:37:00.249Z
+- 结束: 2026-02-26T13:37:42.003Z
 
 ```text
 ok
@@ -35,10 +35,10 @@ ok
 ### pnpm --filter api run test:e2e:agent-suite
 
 - 状态: PASS
-- 开始: 2026-02-26T12:00:28.643Z
-- 结束: 2026-02-26T12:07:02.739Z
+- 开始: 2026-02-26T13:37:42.003Z
+- 结束: 2026-02-26T13:46:15.483Z
 
 ```text
-ok
+ok (recovered after retry #1)
 ```
 

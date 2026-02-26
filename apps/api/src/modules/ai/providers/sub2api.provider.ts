@@ -23,6 +23,26 @@ type Sub2ApiChatResponse = {
 export class Sub2ApiProvider implements IAIProvider {
   private readonly logger = new Logger(Sub2ApiProvider.name);
 
+  private isRetriableStatus(status: number): boolean {
+    return status === 429 || status === 500 || status === 502 || status === 503 || status === 504;
+  }
+
+  private isRetriableErrorMessage(message: string): boolean {
+    const normalized = message.toLowerCase();
+    return (
+      normalized.includes('fetch failed') ||
+      normalized.includes('econnreset') ||
+      normalized.includes('etimedout') ||
+      normalized.includes('socket hang up') ||
+      normalized.includes('ssl') ||
+      normalized.includes('tls')
+    );
+  }
+
+  private async sleep(ms: number): Promise<void> {
+    await new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
   private normalizeBaseUrl(apiUrl?: string): string {
     let baseUrl = (apiUrl || 'https://sub2api.526566.xyz').replace(/\/+$/, '');
 
@@ -293,75 +313,96 @@ export class Sub2ApiProvider implements IAIProvider {
   }> {
     const wireApi = options.wireApi || 'chat';
     const url = this.getEndpoint(options, 'chat');
+    const retries = Math.max(0, options.maxRetries ?? 2);
 
-    try {
-      const headers = this.buildHeaders(options);
-      const body =
-        wireApi === 'responses'
-          ? {
-              model: options.modelName,
-              input: this.toResponsesInput([{ role: 'user', content: 'Hello' }]),
-              max_output_tokens: 10,
-              stream: false,
-            }
-          : {
-              model: options.modelName,
-              messages: [{ role: 'user', content: 'Hello' }],
-              max_tokens: 10,
-            };
-
-      const response = await fetch(url, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify(body),
-      });
-
-      if (!response.ok) {
-        const errorText = await response.text();
-
-        // Special handling for known 503 from sub2api
-        if (response.status === 503 && errorText.includes('No available accounts')) {
-          return {
-            success: false,
-            message: `Sub2API 服务端资源耗尽 (503): ${errorText}`,
-            modelId: options.modelName,
-            error: errorText,
-            pathUsed: url,
+    const headers = this.buildHeaders(options);
+    const body =
+      wireApi === 'responses'
+        ? {
+            model: options.modelName,
+            input: this.toResponsesInput([{ role: 'user', content: 'Hello' }]),
+            max_output_tokens: 10,
+            stream: false,
+          }
+        : {
+            model: options.modelName,
+            messages: [{ role: 'user', content: 'Hello' }],
+            max_tokens: 10,
           };
+
+    let lastErrorMessage = '';
+
+    for (let attempt = 0; attempt <= retries; attempt++) {
+      try {
+        const response = await fetch(url, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify(body),
+        });
+
+        if (!response.ok) {
+          const errorText = await response.text();
+          const errorMsg = `HTTP ${response.status}: ${errorText}`;
+
+          // Special handling for known 503 from sub2api
+          if (response.status === 503 && errorText.includes('No available accounts')) {
+            return {
+              success: false,
+              message: `Sub2API 服务端资源耗尽 (503): ${errorText}`,
+              modelId: options.modelName,
+              error: errorText,
+              pathUsed: url,
+            };
+          }
+
+          if (attempt < retries && this.isRetriableStatus(response.status)) {
+            await this.sleep(350 * (attempt + 1));
+            continue;
+          }
+
+          throw new Error(errorMsg);
         }
 
-        throw new Error(`HTTP ${response.status}: ${errorText}`);
+        const data = (await response.json()) as {
+          output?: Array<{ content?: string }>;
+          choices?: Array<{ message?: { content?: string } }>;
+        };
+        const content =
+          wireApi === 'responses'
+            ? this.extractResponsesContent(data)
+            : data.choices?.[0]?.message?.content || '';
+
+        return {
+          success: true,
+          message: 'Sub2API 连接成功',
+          modelId: options.modelName,
+          response: content || 'OK',
+          pathUsed: url,
+        };
+      } catch (error) {
+        lastErrorMessage = error instanceof Error ? error.message : String(error);
+        if (attempt < retries && this.isRetriableErrorMessage(lastErrorMessage)) {
+          await this.sleep(350 * (attempt + 1));
+          continue;
+        }
+
+        return {
+          success: false,
+          message: `Sub2API 连接失败: ${lastErrorMessage}`,
+          modelId: options.modelName,
+          error: lastErrorMessage,
+          pathUsed: url,
+        };
       }
-
-      const data = (await response.json()) as {
-        output?: Array<{ content?: string }>;
-        choices?: Array<{ message?: { content?: string } }>;
-      };
-      let content = '';
-
-      if (wireApi === 'responses') {
-        content = this.extractResponsesContent(data);
-      } else {
-        content = data.choices?.[0]?.message?.content || '';
-      }
-
-      return {
-        success: true,
-        message: 'Sub2API 连接成功',
-        modelId: options.modelName,
-        response: content || 'OK',
-        pathUsed: url,
-      };
-    } catch (error) {
-      const msg = error instanceof Error ? error.message : String(error);
-      return {
-        success: false,
-        message: `Sub2API 连接失败: ${msg}`,
-        modelId: options.modelName,
-        error: msg,
-        pathUsed: url,
-      };
     }
+
+    return {
+      success: false,
+      message: `Sub2API 连接失败: ${lastErrorMessage}`,
+      modelId: options.modelName,
+      error: lastErrorMessage,
+      pathUsed: url,
+    };
   }
 
   async getModels(options: AIRequestOptions): Promise<{ models: string[]; activeUrl?: string }> {

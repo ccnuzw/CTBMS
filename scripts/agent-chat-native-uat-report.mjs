@@ -37,42 +37,56 @@ const checks = [
   },
 ];
 
+const isTransientLlmError = (output) =>
+  /Gemini REST fallback failed|GoogleGenerativeAI Error|fetch failed/i.test(output);
+
 const runCheck = (item) => {
   const startedAt = new Date();
-  try {
-    execSync(item.command, {
-      cwd: root,
-      stdio: 'pipe',
-      encoding: 'utf8',
-      maxBuffer: 10 * 1024 * 1024,
-    });
-    const endedAt = new Date();
-    return {
-      ...item,
-      status: 'PASS',
-      startedAt,
-      endedAt,
-      durationSec: Number(((endedAt.getTime() - startedAt.getTime()) / 1000).toFixed(2)),
-      outputSnippet: 'ok',
-    };
-  } catch (error) {
-    const endedAt = new Date();
-    const raw =
-      typeof error?.stdout === 'string'
-        ? error.stdout
-        : typeof error?.stderr === 'string'
-          ? error.stderr
-          : String(error);
-    const snippet = raw.split('\n').slice(-25).join('\n');
-    return {
-      ...item,
-      status: 'FAIL',
-      startedAt,
-      endedAt,
-      durationSec: Number(((endedAt.getTime() - startedAt.getTime()) / 1000).toFixed(2)),
-      outputSnippet: snippet,
-    };
+  const retryCount = item.requirement === '全链路质量门禁' ? 1 : 0;
+  let attempt = 0;
+  let lastRaw = '';
+
+  while (attempt <= retryCount) {
+    try {
+      execSync(item.command, {
+        cwd: root,
+        stdio: 'pipe',
+        encoding: 'utf8',
+        maxBuffer: 10 * 1024 * 1024,
+      });
+      const endedAt = new Date();
+      return {
+        ...item,
+        status: 'PASS',
+        startedAt,
+        endedAt,
+        durationSec: Number(((endedAt.getTime() - startedAt.getTime()) / 1000).toFixed(2)),
+        outputSnippet: attempt > 0 ? `ok (recovered after retry #${attempt})` : 'ok',
+      };
+    } catch (error) {
+      lastRaw =
+        typeof error?.stdout === 'string'
+          ? error.stdout
+          : typeof error?.stderr === 'string'
+            ? error.stderr
+            : String(error);
+      if (attempt >= retryCount || !isTransientLlmError(lastRaw)) {
+        break;
+      }
+      attempt += 1;
+    }
   }
+
+  const endedAt = new Date();
+  const snippet = lastRaw.split('\n').slice(-25).join('\n');
+  return {
+    ...item,
+    status: 'FAIL',
+    startedAt,
+    endedAt,
+    durationSec: Number(((endedAt.getTime() - startedAt.getTime()) / 1000).toFixed(2)),
+    outputSnippet: snippet,
+  };
 };
 
 const results = checks.map((item) => runCheck(item));

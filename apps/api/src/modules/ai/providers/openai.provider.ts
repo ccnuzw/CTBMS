@@ -13,6 +13,40 @@ export class OpenAIProvider implements IAIProvider {
     return typeof maxMs === 'number' ? Math.min(baseMs, maxMs) : baseMs;
   }
 
+  private isRetriableStatus(status: number): boolean {
+    return status === 429 || status === 500 || status === 502 || status === 503 || status === 504;
+  }
+
+  private isRetriableErrorMessage(message: string): boolean {
+    const normalized = message.toLowerCase();
+    return (
+      normalized.includes('fetch failed') ||
+      normalized.includes('econnreset') ||
+      normalized.includes('etimedout') ||
+      normalized.includes('socket hang up') ||
+      normalized.includes('ssl') ||
+      normalized.includes('tls')
+    );
+  }
+
+  private async sleep(ms: number): Promise<void> {
+    await new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  private shouldForceCompatFallback(errorMessage: string): boolean {
+    const normalized = errorMessage.toLowerCase();
+    return (
+      normalized.includes('unsupported legacy protocol') ||
+      (normalized.includes('/v1/chat/completions') && normalized.includes('/v1/responses'))
+    );
+  }
+
+  private isOfficialOpenAIBase(apiUrl?: string): boolean {
+    if (!apiUrl) return true;
+    const normalized = apiUrl.replace(/\/+$/, '').toLowerCase();
+    return normalized === 'https://api.openai.com/v1' || normalized.startsWith('https://api.openai.com/v1/');
+  }
+
   private buildHeaders(options: AIRequestOptions): Record<string, string> | undefined {
     const authType = options.authType === 'custom' ? 'bearer' : options.authType || 'bearer';
     return this.buildHeadersForAuthMode(options, authType);
@@ -42,8 +76,8 @@ export class OpenAIProvider implements IAIProvider {
   private resolveAuthModes(
     options: AIRequestOptions,
   ): Array<'bearer' | 'x-api-key' | 'api-key' | 'none'> {
-    if (options.authType === 'bearer') return ['bearer'];
-    if (options.authType === 'api-key') return ['api-key'];
+    if (options.authType === 'bearer') return ['bearer', 'x-api-key', 'api-key'];
+    if (options.authType === 'api-key') return ['api-key', 'x-api-key', 'bearer'];
     if (options.authType === 'none') return ['none'];
     return ['bearer', 'x-api-key', 'api-key'];
   }
@@ -78,10 +112,13 @@ export class OpenAIProvider implements IAIProvider {
   private async fetchModelsDirect(
     apiUrl: string | undefined,
     options: AIRequestOptions,
+    authMode?: 'bearer' | 'api-key' | 'x-api-key' | 'none',
   ): Promise<string[]> {
     const url = this.buildModelListUrl(apiUrl, options);
     const response = await fetch(url, {
-      headers: this.buildHeaders(options),
+      headers: authMode
+        ? this.buildHeadersForAuthMode(options, authMode)
+        : this.buildHeaders(options),
     });
     if (!response.ok) {
       const errorText = await response.text();
@@ -198,6 +235,7 @@ export class OpenAIProvider implements IAIProvider {
     authMode: 'bearer' | 'api-key' | 'x-api-key' | 'none',
   ): Promise<string> {
     const url = `${baseUrl.replace(/\/+$/, '')}/responses`;
+    const retries = Math.max(0, options.maxRetries ?? 2);
 
     const primaryBody: Record<string, unknown> = {
       model: options.modelName,
@@ -214,22 +252,41 @@ export class OpenAIProvider implements IAIProvider {
     };
 
     const tryRequest = async (body: Record<string, unknown>): Promise<string> => {
-      const response = await fetch(url, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(this.buildHeadersForAuthMode(options, authMode) || {}),
-        },
-        body: JSON.stringify(body),
-      });
+      let lastError = '';
+      for (let attempt = 0; attempt <= retries; attempt++) {
+        try {
+          const response = await fetch(url, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              ...(this.buildHeadersForAuthMode(options, authMode) || {}),
+            },
+            body: JSON.stringify(body),
+          });
 
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`${response.status} ${errorText}`);
+          if (!response.ok) {
+            const errorText = await response.text();
+            lastError = `${response.status} ${errorText}`;
+
+            if (attempt < retries && this.isRetriableStatus(response.status)) {
+              await this.sleep(350 * (attempt + 1));
+              continue;
+            }
+            throw new Error(lastError);
+          }
+
+          const data = await response.json();
+          return this.extractResponsesContent(data);
+        } catch (error) {
+          lastError = error instanceof Error ? error.message : String(error);
+          if (attempt < retries && this.isRetriableErrorMessage(lastError)) {
+            await this.sleep(350 * (attempt + 1));
+            continue;
+          }
+          throw error;
+        }
       }
-
-      const data = await response.json();
-      return this.extractResponsesContent(data);
+      throw new Error(lastError || 'Responses call failed');
     };
 
     try {
@@ -386,7 +443,12 @@ export class OpenAIProvider implements IAIProvider {
       return response.choices[0]?.message?.content || '';
     } catch (error) {
       this.logger.error('OpenAI API call failed', error);
-      if (options.allowCompatPathFallback) {
+      const msg = error instanceof Error ? error.message : String(error);
+      const shouldFallback =
+        options.allowCompatPathFallback !== false ||
+        !this.isOfficialOpenAIBase(options.apiUrl) ||
+        this.shouldForceCompatFallback(msg);
+      if (shouldFallback) {
         const fallback = await this.callWithCompatFallback(
           options.apiUrl || 'https://api.openai.com/v1',
           options,
@@ -503,7 +565,11 @@ export class OpenAIProvider implements IAIProvider {
       };
     } catch (error) {
       const msg = error instanceof Error ? error.message : String(error);
-      if (options.allowCompatPathFallback) {
+      const shouldFallback =
+        options.allowCompatPathFallback !== false ||
+        !this.isOfficialOpenAIBase(options.apiUrl) ||
+        this.shouldForceCompatFallback(msg);
+      if (shouldFallback) {
         try {
           const response = await this.callWithCompatFallback(
             options.apiUrl || 'https://api.openai.com/v1',
@@ -550,10 +616,23 @@ export class OpenAIProvider implements IAIProvider {
 
     const shouldPreferDirect =
       options.modelFetchMode === 'custom' || Boolean(options.pathOverrides?.models);
+    const authModes = this.resolveAuthModes(options);
+    const fetchModelsDirectWithAuthFallback = async (url: string | undefined): Promise<string[]> => {
+      let lastError: unknown;
+      for (const authMode of authModes) {
+        try {
+          return await this.fetchModelsDirect(url, options, authMode);
+        } catch (error) {
+          lastError = error;
+          continue;
+        }
+      }
+      throw (lastError instanceof Error ? lastError : new Error(String(lastError)));
+    };
 
     try {
       const models = shouldPreferDirect
-        ? await this.fetchModelsDirect(options.apiUrl, options)
+        ? await fetchModelsDirectWithAuthFallback(options.apiUrl)
         : await this.fetchModels(options.apiUrl, options);
       return { models, activeUrl: options.apiUrl };
     } catch (error) {
@@ -562,7 +641,7 @@ export class OpenAIProvider implements IAIProvider {
       );
 
       try {
-        const models = await this.fetchModelsDirect(options.apiUrl, options);
+        const models = await fetchModelsDirectWithAuthFallback(options.apiUrl);
         return { models, activeUrl: options.apiUrl };
       } catch (directError) {
         this.logger.warn(
@@ -590,7 +669,7 @@ export class OpenAIProvider implements IAIProvider {
             void e;
           }
           try {
-            const models = await this.fetchModelsDirect(url, options);
+            const models = await fetchModelsDirectWithAuthFallback(url);
             if (models.length > 0) {
               return { models, activeUrl: url };
             }

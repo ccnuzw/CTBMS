@@ -510,6 +510,9 @@ export const AgentCopilotPage: React.FC = () => {
   const [promotionTaskStatusFilter, setPromotionTaskStatusFilter] = useState<
     'ALL' | 'PENDING_REVIEW' | 'IN_REVIEW' | 'APPROVED' | 'REJECTED' | 'PUBLISHED'
   >('ALL');
+  const [promotionBatchFlow, setPromotionBatchFlow] = useState<
+    'IDLE' | 'SUBMIT_REVIEW' | 'APPROVE' | 'PUBLISH'
+  >('IDLE');
   const [backtestDetailModalOpen, setBacktestDetailModalOpen] = useState(false);
   const [conflictDetailModalOpen, setConflictDetailModalOpen] = useState(false);
   const timelineRef = useRef<HTMLDivElement | null>(null);
@@ -1797,6 +1800,7 @@ export const AgentCopilotPage: React.FC = () => {
     taskAssetId: string,
     action: 'START_REVIEW' | 'MARK_APPROVED' | 'MARK_REJECTED' | 'MARK_PUBLISHED' | 'SYNC_DRAFT_STATUS',
     comment?: string,
+    options?: { silent?: boolean },
   ) => {
     if (!activeSessionId) {
       message.warning('请先选择会话');
@@ -1810,9 +1814,15 @@ export const AgentCopilotPage: React.FC = () => {
         comment,
       });
       const status = result.data.task?.status || '-';
-      message.success(`晋升任务状态已更新：${promotionTaskStatusLabel[status] || status}`);
+      if (!options?.silent) {
+        message.success(`晋升任务状态已更新：${promotionTaskStatusLabel[status] || status}`);
+      }
+      return result.data.task;
     } catch (error) {
-      showCopilotError(error, '晋升任务更新失败');
+      if (!options?.silent) {
+        showCopilotError(error, '晋升任务更新失败');
+      }
+      throw error;
     }
   };
 
@@ -1889,6 +1899,124 @@ export const AgentCopilotPage: React.FC = () => {
       );
     } catch (error) {
       showCopilotError(error, '批量推进失败');
+    }
+  };
+
+  const showBatchFlowResult = (
+    title: string,
+    succeeded: Array<{ taskAssetId: string; suggestedSkillCode: string }>,
+    failed: Array<{ taskAssetId: string; suggestedSkillCode: string; reason: string }>,
+  ) => {
+    if (!failed.length) {
+      message.success(`${title}完成：成功 ${succeeded.length} 条`);
+      return;
+    }
+    const failurePreview = failed
+      .slice(0, 8)
+      .map((item) => `- ${item.suggestedSkillCode} (${item.taskAssetId}): ${item.reason}`)
+      .join('\n');
+    modal.info({
+      title: `${title}完成（部分失败）`,
+      content: (
+        <Space direction="vertical" size={8} style={{ width: '100%' }}>
+          <Text>成功 {succeeded.length} 条，失败 {failed.length} 条。</Text>
+          <Text type="secondary" style={{ whiteSpace: 'pre-wrap' }}>
+            {failurePreview}
+          </Text>
+        </Space>
+      ),
+      width: 760,
+    });
+  };
+
+  const runPromotionTaskBatchFlow = async (flow: 'SUBMIT_REVIEW' | 'APPROVE' | 'PUBLISH') => {
+    if (!activeSessionId) {
+      message.warning('请先选择会话');
+      return;
+    }
+
+    const pickCandidates = () => {
+      if (flow === 'SUBMIT_REVIEW') {
+        return ephemeralPromotionTasks.filter((item) =>
+          ['PENDING_REVIEW', 'IN_REVIEW'].includes(item.status) &&
+          ['DRAFT', 'SANDBOX_TESTING'].includes(String(item.draftStatus || '')),
+        );
+      }
+      if (flow === 'APPROVE') {
+        return ephemeralPromotionTasks.filter((item) =>
+          ['IN_REVIEW', 'APPROVED'].includes(item.status) &&
+          ['READY_FOR_REVIEW', 'APPROVED'].includes(String(item.draftStatus || '')),
+        );
+      }
+      return ephemeralPromotionTasks.filter((item) =>
+        ['APPROVED', 'PUBLISHED'].includes(item.status) &&
+        ['APPROVED', 'PUBLISHED'].includes(String(item.draftStatus || '')),
+      );
+    };
+
+    const candidates = pickCandidates();
+    if (!candidates.length) {
+      message.warning('当前筛选范围内没有可执行的晋升任务');
+      return;
+    }
+
+    const succeeded: Array<{ taskAssetId: string; suggestedSkillCode: string }> = [];
+    const failed: Array<{ taskAssetId: string; suggestedSkillCode: string; reason: string }> = [];
+
+    setPromotionBatchFlow(flow);
+    try {
+      for (const item of candidates) {
+        try {
+          if (flow === 'SUBMIT_REVIEW') {
+            await submitSkillDraftReviewMutation.mutateAsync(item.draftId);
+            await handleUpdatePromotionTask(
+              item.taskAssetId,
+              'START_REVIEW',
+              '批量提交审核后自动标记审核中',
+              { silent: true },
+            );
+          } else if (flow === 'APPROVE') {
+            await reviewSkillDraftMutation.mutateAsync({
+              draftId: item.draftId,
+              action: 'APPROVE',
+              comment: '由晋升任务批处理流程审批通过',
+            });
+            await handleUpdatePromotionTask(item.taskAssetId, 'MARK_APPROVED', '批量审批通过', {
+              silent: true,
+            });
+          } else {
+            await publishSkillDraftMutation.mutateAsync(item.draftId);
+            await handleUpdatePromotionTask(item.taskAssetId, 'MARK_PUBLISHED', '批量发布能力', {
+              silent: true,
+            });
+          }
+          succeeded.push({
+            taskAssetId: item.taskAssetId,
+            suggestedSkillCode: item.suggestedSkillCode,
+          });
+        } catch (error) {
+          const apiError = getApiError(error);
+          failed.push({
+            taskAssetId: item.taskAssetId,
+            suggestedSkillCode: item.suggestedSkillCode,
+            reason: apiError?.message || (error instanceof Error ? error.message : '执行失败'),
+          });
+        }
+      }
+
+      const titleMap = {
+        SUBMIT_REVIEW: '批量提交审核',
+        APPROVE: '批量审批通过',
+        PUBLISH: '批量发布能力',
+      } as const;
+      showBatchFlowResult(titleMap[flow], succeeded, failed);
+      await Promise.all([
+        ephemeralPromotionTasksQuery.refetch(),
+        ephemeralPromotionTaskSummaryQuery.refetch(),
+        ephemeralEvolutionPlanQuery.refetch(),
+      ]);
+    } finally {
+      setPromotionBatchFlow('IDLE');
     }
   };
 
@@ -3100,6 +3228,28 @@ export const AgentCopilotPage: React.FC = () => {
                               onClick={handleBatchMarkReviewing}
                             >
                               批量推进审核中
+                            </Button>
+                            <Button
+                              size="small"
+                              loading={promotionBatchFlow === 'SUBMIT_REVIEW'}
+                              onClick={() => void runPromotionTaskBatchFlow('SUBMIT_REVIEW')}
+                            >
+                              批量提交审核
+                            </Button>
+                            <Button
+                              size="small"
+                              loading={promotionBatchFlow === 'APPROVE'}
+                              onClick={() => void runPromotionTaskBatchFlow('APPROVE')}
+                            >
+                              批量审批通过
+                            </Button>
+                            <Button
+                              size="small"
+                              type="primary"
+                              loading={promotionBatchFlow === 'PUBLISH'}
+                              onClick={() => void runPromotionTaskBatchFlow('PUBLISH')}
+                            >
+                              批量发布能力
                             </Button>
                             <Button size="small" onClick={handleExportPromotionTasks}>
                               导出任务清单

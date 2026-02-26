@@ -472,55 +472,83 @@ export const AIModelConfigPage = () => {
             return;
         }
 
-        const values = form.getFieldsValue();
-        const payloadBase = {
-            provider: values.provider,
-            apiKey: values.apiKey,
-            apiUrl: values.apiUrl,
-            authType: values.authType,
-            headers: parseJsonField(values.headers, 'Headers'),
-            queryParams: parseJsonField(values.queryParams, 'Query Params'),
-            pathOverrides: parseJsonField(values.pathOverrides, 'Path Overrides'),
-            modelFetchMode: values.modelFetchMode,
-            allowUrlProbe: values.allowUrlProbe,
-            allowCompatPathFallback: values.allowCompatPathFallback,
-            timeoutSeconds: values.timeoutSeconds,
-            maxRetries: values.maxRetries,
-            temperature: values.temperature,
-            maxTokens: values.maxTokens,
-            topP: values.topP,
+        let payloadBase: {
+            provider: string;
+            apiKey?: string;
+            apiUrl?: string;
+            authType?: 'bearer' | 'api-key' | 'custom' | 'none';
+            headers?: Record<string, string>;
+            queryParams?: Record<string, string>;
+            pathOverrides?: Record<string, string>;
+            modelFetchMode?: 'official' | 'manual' | 'custom';
+            allowUrlProbe?: boolean;
+            allowCompatPathFallback?: boolean;
+            timeoutSeconds?: number;
+            maxRetries?: number;
+            temperature?: number;
+            maxTokens?: number;
+            topP?: number;
         };
+        try {
+            const values = form.getFieldsValue();
+            payloadBase = {
+                provider: values.provider,
+                apiKey: values.apiKey,
+                apiUrl: values.apiUrl,
+                authType: values.authType,
+                headers: parseJsonField(values.headers, 'Headers'),
+                queryParams: parseJsonField(values.queryParams, 'Query Params'),
+                pathOverrides: parseJsonField(values.pathOverrides, 'Path Overrides'),
+                modelFetchMode: values.modelFetchMode,
+                allowUrlProbe: values.allowUrlProbe,
+                allowCompatPathFallback: values.allowCompatPathFallback,
+                timeoutSeconds: values.timeoutSeconds,
+                maxRetries: values.maxRetries,
+                temperature: values.temperature,
+                maxTokens: values.maxTokens,
+                topP: values.topP,
+            };
+        } catch {
+            return;
+        }
 
         setBatchTestRunning(true);
+        setBatchTestResults([]);
         blurActiveElement();
         setBatchTestVisible(true);
         const results: Array<{ model: string; success: boolean; message: string; pathUsed?: string; authMode?: string; error?: string }> = [];
 
-        for (const modelName of selectedFetchedModels) {
-            try {
-                const result = await testModelMutation.mutateAsync({
-                    ...payloadBase,
-                    modelName,
-                });
-                results.push({
-                    model: modelName,
-                    success: result.success,
-                    message: result.message,
-                    pathUsed: result.pathUsed,
-                    authMode: result.authMode,
-                    error: result.error,
-                });
-            } catch (error) {
-                results.push({
-                    model: modelName,
-                    success: false,
-                    message: '测试失败',
-                });
+        try {
+            for (const modelName of selectedFetchedModels) {
+                try {
+                    const result = await testModelMutation.mutateAsync({
+                        ...payloadBase,
+                        modelName,
+                    });
+                    results.push({
+                        model: modelName,
+                        success: result.success,
+                        message: result.message,
+                        pathUsed: result.pathUsed,
+                        authMode: result.authMode,
+                        error: result.error,
+                    });
+                } catch (error) {
+                    results.push({
+                        model: modelName,
+                        success: false,
+                        message: '测试失败',
+                    });
+                }
+                setBatchTestResults([...results]);
+                // Keep the log modal visible during long-running tests.
+                setBatchTestVisible(true);
             }
-            setBatchTestResults([...results]);
+        } finally {
+            setBatchTestRunning(false);
+            // Ensure users can still inspect the final log after completion.
+            setBatchTestVisible(true);
         }
-
-        setBatchTestRunning(false);
     };
 
     const handleTestConnection = async (record: AIModelConfig) => {
@@ -1121,12 +1149,17 @@ export const AIModelConfigPage = () => {
                 title="批量测试结果"
                 open={batchTestVisible}
                 onCancel={() => {
+                    if (batchTestRunning) {
+                        message.info('批量测试进行中，请等待完成后再关闭');
+                        return;
+                    }
                     blurActiveElement();
                     setBatchTestVisible(false);
                 }}
                 footer={(
                     <Button
                         ref={batchTestCloseBtnRef}
+                        disabled={batchTestRunning}
                         onClick={() => {
                             blurActiveElement();
                             setBatchTestVisible(false);
@@ -1136,6 +1169,8 @@ export const AIModelConfigPage = () => {
                     </Button>
                 )}
                 width={720}
+                zIndex={1200}
+                maskClosable={false}
                 focusTriggerAfterClose={false}
                 afterOpenChange={batchTestModalProps.afterOpenChange}
             >
