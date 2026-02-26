@@ -255,10 +255,11 @@ export const AIModelConfigPage = () => {
     };
 
     const handleFetchModels = async (form: Record<string, any>) => {
-        const provider = form.getFieldValue('provider');
-        const configKey = form.getFieldValue('configKey');
-        const apiKey = form.getFieldValue('apiKey');
-        const apiUrl = form.getFieldValue('apiUrl');
+        const values = form.getFieldsValue();
+        const provider = values.provider;
+        const configKey = values.configKey;
+        const apiKey = values.apiKey;
+        const apiUrl = values.apiUrl;
         if (!apiKey && !currentRow?.id) {
             message.warning('请填写 API Key 以获取模型列表');
             return;
@@ -266,11 +267,23 @@ export const AIModelConfigPage = () => {
 
         const hide = message.loading('正在获取模型列表...', 0);
         try {
+            const headers = parseJsonField(values.headers, 'Headers');
+            const queryParams = parseJsonField(values.queryParams, 'Query Params');
+            const pathOverrides = parseJsonField(values.pathOverrides, 'Path Overrides');
             const result = await fetchModelsMutation.mutateAsync({
                 provider,
                 apiKey,
                 apiUrl,
                 configKey,
+                authType: values.authType,
+                headers,
+                queryParams,
+                pathOverrides,
+                modelFetchMode: values.modelFetchMode,
+                allowUrlProbe: values.allowUrlProbe,
+                allowCompatPathFallback: values.allowCompatPathFallback,
+                timeoutSeconds: values.timeoutSeconds,
+                maxRetries: values.maxRetries,
             });
 
             const models = result.models || [];

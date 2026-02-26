@@ -6,6 +6,22 @@ import { ConfigService } from '../config/config.service';
 import { AIProviderFactory } from './providers/provider.factory';
 import { AIRequestOptions } from './providers/base.provider';
 
+type GetAvailableModelsInput = {
+  provider?: string;
+  apiKey?: string;
+  apiUrl?: string;
+  configKey?: string;
+  authType?: AIRequestOptions['authType'];
+  headers?: Record<string, string>;
+  queryParams?: Record<string, string>;
+  pathOverrides?: Record<string, string>;
+  modelFetchMode?: AIRequestOptions['modelFetchMode'];
+  allowUrlProbe?: boolean;
+  allowCompatPathFallback?: boolean;
+  timeoutSeconds?: number;
+  maxRetries?: number;
+};
+
 @Injectable()
 export class AIModelService {
   private readonly logger = new Logger(AIModelService.name);
@@ -276,7 +292,7 @@ export class AIModelService {
    * 获取可用模型列表
    */
   async getAvailableModels(
-    providerType?: string,
+    providerTypeOrInput?: string | GetAvailableModelsInput,
     apiKey?: string,
     apiUrl?: string,
     configKey?: string,
@@ -286,13 +302,24 @@ export class AIModelService {
     provider?: string;
     diagnostics?: Array<{ provider: string; message: string; activeUrl?: string }>;
   }> {
+    const input: GetAvailableModelsInput =
+      typeof providerTypeOrInput === 'string' || providerTypeOrInput === undefined
+        ? {
+            provider: providerTypeOrInput,
+            apiKey,
+            apiUrl,
+            configKey,
+          }
+        : providerTypeOrInput;
+    const providerType = input.provider;
+
     try {
       // Resolve configuration priority: Argument > DB Config > Env
-      let finalApiKey = apiKey;
-      let finalApiUrl = apiUrl;
+      let finalApiKey = input.apiKey;
+      let finalApiUrl = input.apiUrl;
 
-      const config = configKey
-        ? await this.prisma.aIModelConfig.findUnique({ where: { configKey } })
+      const config = input.configKey
+        ? await this.prisma.aIModelConfig.findUnique({ where: { configKey: input.configKey } })
         : null;
 
       // Always fetch config to have fallback values, even if some args are provided
@@ -340,7 +367,7 @@ export class AIModelService {
 
         // If configKey is specified and no explicit provider override is provided,
         // pin resolution to the config's provider to avoid cross-provider fallback.
-        if (configKey && !providerType && resolvedConfig?.provider) {
+        if (input.configKey && !providerType && resolvedConfig?.provider) {
           return [resolvedConfig.provider as AIProvider];
         }
 
@@ -357,20 +384,24 @@ export class AIModelService {
 
       for (const candidate of providerCandidates) {
         const provider = this.aiProviderFactory.getProvider(candidate);
+        const mergedPathOverrides = input.pathOverrides ?? this.resolveRecord(resolvedConfig?.pathOverrides);
         const options: AIRequestOptions = {
           modelName: 'model-listing-placeholder',
           apiKey: finalApiKey,
           apiUrl: finalApiUrl || undefined,
-          authType: resolvedConfig?.authType as AIRequestOptions['authType'],
-          headers: this.resolveRecord(resolvedConfig?.headers),
-          queryParams: this.resolveRecord(resolvedConfig?.queryParams),
-          pathOverrides: this.resolveRecord(resolvedConfig?.pathOverrides),
-          wireApi: this.resolveRecord(resolvedConfig?.pathOverrides)?.['wireApi'], // [NEW] Extract wireApi
-          modelFetchMode: resolvedConfig?.modelFetchMode as AIRequestOptions['modelFetchMode'],
-          allowUrlProbe: resolvedConfig?.allowUrlProbe ?? undefined,
-          allowCompatPathFallback: resolvedConfig?.allowCompatPathFallback ?? undefined,
-          timeoutSeconds: resolvedConfig?.timeoutSeconds ?? undefined,
-          maxRetries: resolvedConfig?.maxRetries ?? undefined,
+          authType: input.authType ?? (resolvedConfig?.authType as AIRequestOptions['authType']),
+          headers: input.headers ?? this.resolveRecord(resolvedConfig?.headers),
+          queryParams: input.queryParams ?? this.resolveRecord(resolvedConfig?.queryParams),
+          pathOverrides: mergedPathOverrides,
+          wireApi: mergedPathOverrides?.['wireApi'], // [NEW] Extract wireApi
+          modelFetchMode:
+            input.modelFetchMode ??
+            (resolvedConfig?.modelFetchMode as AIRequestOptions['modelFetchMode']),
+          allowUrlProbe: input.allowUrlProbe ?? resolvedConfig?.allowUrlProbe ?? undefined,
+          allowCompatPathFallback:
+            input.allowCompatPathFallback ?? resolvedConfig?.allowCompatPathFallback ?? undefined,
+          timeoutSeconds: input.timeoutSeconds ?? resolvedConfig?.timeoutSeconds ?? undefined,
+          maxRetries: input.maxRetries ?? resolvedConfig?.maxRetries ?? undefined,
         };
 
         try {

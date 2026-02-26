@@ -353,7 +353,10 @@ export class OpenAIProvider implements IAIProvider {
           continue;
         }
 
-        if (options.allowCompatPathFallback && (status === 400 || status === 404 || status === 405)) {
+        if (
+          options.allowCompatPathFallback !== false &&
+          (status === 400 || status === 404 || status === 405)
+        ) {
           const compatOrder = preferResponses
             ? (['responses', 'completions'] as const)
             : (['completions', 'responses'] as const);

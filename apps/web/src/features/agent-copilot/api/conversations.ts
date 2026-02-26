@@ -401,11 +401,40 @@ export interface EphemeralPromotionTaskSummary {
 
 export interface EphemeralPromotionTaskBatchUpdateResult {
   action: string;
+  batchId?: string;
+  batchAssetId?: string;
   requestedCount: number;
   succeededCount: number;
   failedCount: number;
   succeeded: Array<{ taskAssetId: string; status: string }>;
   failed: Array<{ taskAssetId: string; code?: string; message: string }>;
+}
+
+export interface EphemeralPromotionTaskBatchRecord {
+  batchAssetId: string;
+  batchId: string;
+  title: string;
+  action: string;
+  requestedCount: number;
+  succeededCount: number;
+  failedCount: number;
+  maxConcurrency: number;
+  maxRetries: number;
+  window?: string | null;
+  statusFilter?: string | null;
+  failed: Array<{ taskAssetId?: string | null; code?: string | null; message: string }>;
+  generatedAt?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface EphemeralPromotionTaskBatchReplayResult {
+  sourceBatchAssetId: string;
+  sourceAction: string;
+  sourceFailedCount: number;
+  selectedReplayCount: number;
+  replayMode: 'RETRYABLE_ONLY' | 'ALL_FAILED';
+  replayResult: EphemeralPromotionTaskBatchUpdateResult;
 }
 
 export interface SkillGovernanceHousekeepingResult {
@@ -1349,6 +1378,8 @@ export const useBatchUpdateEphemeralPromotionTasks = () => {
       taskAssetIds?: string[];
       window?: '1h' | '24h' | '7d';
       status?: string;
+      maxConcurrency?: number;
+      maxRetries?: number;
     }) => {
       const { sessionId, ...body } = payload;
       const res = await apiClient.post<EphemeralPromotionTaskBatchUpdateResult>(
@@ -1360,8 +1391,64 @@ export const useBatchUpdateEphemeralPromotionTasks = () => {
     onSuccess: ({ sessionId }) => {
       queryClient.invalidateQueries({ queryKey: ['agent-copilot', 'ephemeral-promotion-tasks', sessionId] });
       queryClient.invalidateQueries({ queryKey: ['agent-copilot', 'ephemeral-promotion-task-summary', sessionId] });
+      queryClient.invalidateQueries({ queryKey: ['agent-copilot', 'ephemeral-promotion-task-batches', sessionId] });
       queryClient.invalidateQueries({ queryKey: ['agent-copilot', 'ephemeral-capability-evolution-plan', sessionId] });
       queryClient.invalidateQueries({ queryKey: ['agent-copilot', 'assets', sessionId] });
+      queryClient.invalidateQueries({ queryKey: ['agent-copilot', 'session', sessionId] });
+    },
+  });
+};
+
+export const useEphemeralPromotionTaskBatches = (
+  sessionId?: string,
+  query?: { window?: '1h' | '24h' | '7d'; action?: string; limit?: number },
+) =>
+  useQuery<EphemeralPromotionTaskBatchRecord[]>({
+    queryKey: [
+      'agent-copilot',
+      'ephemeral-promotion-task-batches',
+      sessionId,
+      query?.window,
+      query?.action,
+      query?.limit,
+    ],
+    queryFn: async () => {
+      const res = await apiClient.get<EphemeralPromotionTaskBatchRecord[]>(
+        `/agent-conversations/sessions/${sessionId}/ephemeral-capabilities/promotion-task-batches`,
+        {
+          params: {
+            window: query?.window,
+            action: query?.action,
+            limit: query?.limit,
+          },
+        },
+      );
+      return res.data;
+    },
+    enabled: Boolean(sessionId),
+  });
+
+export const useReplayFailedEphemeralPromotionTaskBatch = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (payload: {
+      sessionId: string;
+      batchAssetId: string;
+      maxConcurrency?: number;
+      maxRetries?: number;
+      replayMode?: 'RETRYABLE_ONLY' | 'ALL_FAILED';
+    }) => {
+      const { sessionId, batchAssetId, ...body } = payload;
+      const res = await apiClient.post<EphemeralPromotionTaskBatchReplayResult>(
+        `/agent-conversations/sessions/${sessionId}/ephemeral-capabilities/promotion-task-batches/${batchAssetId}/replay-failed`,
+        body,
+      );
+      return { sessionId, data: res.data };
+    },
+    onSuccess: ({ sessionId }) => {
+      queryClient.invalidateQueries({ queryKey: ['agent-copilot', 'ephemeral-promotion-task-batches', sessionId] });
+      queryClient.invalidateQueries({ queryKey: ['agent-copilot', 'ephemeral-promotion-tasks', sessionId] });
+      queryClient.invalidateQueries({ queryKey: ['agent-copilot', 'ephemeral-promotion-task-summary', sessionId] });
       queryClient.invalidateQueries({ queryKey: ['agent-copilot', 'session', sessionId] });
     },
   });

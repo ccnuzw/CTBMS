@@ -502,11 +502,61 @@ export class AgentConversationController {
       taskAssetIds?: string[];
       window?: '1h' | '24h' | '7d';
       status?: string;
+      maxConcurrency?: number;
+      maxRetries?: number;
     },
   ) {
     const result = await this.service.batchUpdateEphemeralCapabilityPromotionTasks(
       this.getUserId(req),
       sessionId,
+      dto,
+    );
+    if (!result) {
+      throw new NotFoundException({
+        code: 'CONV_SESSION_NOT_FOUND',
+        message: '会话不存在或无权限访问',
+      });
+    }
+    return result;
+  }
+
+  @Get(':sessionId/ephemeral-capabilities/promotion-task-batches')
+  async listEphemeralCapabilityPromotionTaskBatches(
+    @Request() req: AuthRequest,
+    @Param('sessionId') sessionId: string,
+    @Query('window') window?: '1h' | '24h' | '7d',
+    @Query('action') action?: string,
+    @Query('limit') limit?: string,
+  ) {
+    const result = await this.service.listEphemeralCapabilityPromotionTaskBatches(
+      this.getUserId(req),
+      sessionId,
+      {
+        window,
+        action,
+        limit: limit ? Number(limit) : undefined,
+      },
+    );
+    if (!result) {
+      throw new NotFoundException({
+        code: 'CONV_SESSION_NOT_FOUND',
+        message: '会话不存在或无权限访问',
+      });
+    }
+    return result;
+  }
+
+  @Post(':sessionId/ephemeral-capabilities/promotion-task-batches/:batchAssetId/replay-failed')
+  async replayFailedEphemeralCapabilityPromotionTaskBatch(
+    @Request() req: AuthRequest,
+    @Param('sessionId') sessionId: string,
+    @Param('batchAssetId') batchAssetId: string,
+    @Body() dto: { maxConcurrency?: number; maxRetries?: number; replayMode?: 'RETRYABLE_ONLY' | 'ALL_FAILED' },
+  ) {
+    const result = await this.service.replayFailedEphemeralCapabilityPromotionTaskBatch(
+      this.getUserId(req),
+      sessionId,
+      batchAssetId,
       dto,
     );
     if (!result) {

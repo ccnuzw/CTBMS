@@ -329,14 +329,49 @@ export const useFetchAIModels = () => {
             apiKey,
             apiUrl,
             configKey,
-        }: { provider: string; apiKey?: string; apiUrl?: string; configKey?: string }) => {
-            const params = new URLSearchParams();
-            params.append('provider', provider);
-            if (apiKey) params.append('apiKey', apiKey);
-            if (apiUrl) params.append('apiUrl', apiUrl);
-            if (configKey) params.append('configKey', configKey);
-
-            const res = await fetch(`${AI_API_BASE}/models?${params.toString()}`);
+            authType,
+            headers,
+            queryParams,
+            pathOverrides,
+            modelFetchMode,
+            allowUrlProbe,
+            allowCompatPathFallback,
+            timeoutSeconds,
+            maxRetries,
+        }: {
+            provider: string;
+            apiKey?: string;
+            apiUrl?: string;
+            configKey?: string;
+            authType?: 'bearer' | 'api-key' | 'custom' | 'none';
+            headers?: Record<string, string>;
+            queryParams?: Record<string, string>;
+            pathOverrides?: Record<string, string>;
+            modelFetchMode?: 'official' | 'manual' | 'custom';
+            allowUrlProbe?: boolean;
+            allowCompatPathFallback?: boolean;
+            timeoutSeconds?: number;
+            maxRetries?: number;
+        }) => {
+            const res = await fetch(`${AI_API_BASE}/models`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    provider,
+                    apiKey,
+                    apiUrl,
+                    configKey,
+                    authType,
+                    headers,
+                    queryParams,
+                    pathOverrides,
+                    modelFetchMode,
+                    allowUrlProbe,
+                    allowCompatPathFallback,
+                    timeoutSeconds,
+                    maxRetries,
+                }),
+            });
             if (!res.ok) {
                 const error = await res.json().catch(() => ({}));
                 throw new Error(error.message || 'Failed to fetch models');

@@ -75,6 +75,8 @@ import {
   useApplyEphemeralCapabilityEvolutionPlan,
   useUpdateEphemeralPromotionTask,
   useBatchUpdateEphemeralPromotionTasks,
+  useEphemeralPromotionTaskBatches,
+  useReplayFailedEphemeralPromotionTaskBatch,
   useRunEphemeralCapabilityHousekeeping,
   useConsumeSkillRuntimeGrant,
   useSkillGovernanceEvents,
@@ -99,6 +101,7 @@ const DEFAULT_VISIBLE_TURN_COUNT = 40;
 const LOAD_MORE_TURN_STEP = 40;
 const TURN_CONTENT_PREVIEW_LIMIT = 3000;
 const RESULT_ANALYSIS_PREVIEW_LIMIT = 4000;
+const PROMOTION_BATCH_FAILED_PAGE_SIZE = 8;
 const SYSTEM_MESSAGE_COLLAPSE_MIN_LENGTH = 240;
 const ASSISTANT_MESSAGE_COLLAPSE_MIN_LENGTH = 1200;
 const SYSTEM_SUMMARY_PREVIEW_LENGTH = 80;
@@ -378,6 +381,14 @@ const promotionTaskStatusLabel: Record<string, string> = {
   PUBLISHED: '已发布',
 };
 
+const promotionBatchActionLabel: Record<string, string> = {
+  START_REVIEW: '推进审核中',
+  MARK_APPROVED: '标记通过',
+  MARK_REJECTED: '标记拒绝',
+  MARK_PUBLISHED: '标记已发布',
+  SYNC_DRAFT_STATUS: '同步草稿状态',
+};
+
 const formatGovernanceEventMessage = (item: {
   eventType: string;
   message: string;
@@ -460,6 +471,8 @@ const copilotErrorMessageByCode: Record<string, string> = {
   CONV_PROMOTION_TASK_NOT_FOUND: '能力晋升任务不存在，请刷新后重试。',
   CONV_PROMOTION_TASK_PUBLISH_BLOCKED: '草稿尚未发布，请先发布能力后再同步任务状态。',
   CONV_PROMOTION_TASK_ACTION_INVALID: '任务操作无效，请刷新页面后重试。',
+  CONV_PROMOTION_BATCH_NOT_FOUND: '能力晋升批次不存在，请刷新后重试。',
+  CONV_PROMOTION_BATCH_INVALID: '能力晋升批次数据异常，无法执行失败重放。',
 };
 
 export const AgentCopilotPage: React.FC = () => {
@@ -510,6 +523,13 @@ export const AgentCopilotPage: React.FC = () => {
   const [promotionTaskStatusFilter, setPromotionTaskStatusFilter] = useState<
     'ALL' | 'PENDING_REVIEW' | 'IN_REVIEW' | 'APPROVED' | 'REJECTED' | 'PUBLISHED'
   >('ALL');
+  const [promotionBatchDrawerOpen, setPromotionBatchDrawerOpen] = useState(false);
+  const [selectedPromotionBatchAssetId, setSelectedPromotionBatchAssetId] = useState<string | null>(null);
+  const [promotionBatchErrorFilter, setPromotionBatchErrorFilter] = useState<'ALL' | 'RETRYABLE' | 'NON_RETRYABLE'>(
+    'ALL',
+  );
+  const [promotionBatchFailedPage, setPromotionBatchFailedPage] = useState(1);
+  const [promotionBatchCodeFilter, setPromotionBatchCodeFilter] = useState<string>('ALL');
   const [promotionBatchFlow, setPromotionBatchFlow] = useState<
     'IDLE' | 'SUBMIT_REVIEW' | 'APPROVE' | 'PUBLISH'
   >('IDLE');
@@ -652,9 +672,14 @@ export const AgentCopilotPage: React.FC = () => {
   const ephemeralPromotionTaskSummaryQuery = useEphemeralPromotionTaskSummary(activeSessionId, {
     window: routingSummaryWindow,
   });
+  const ephemeralPromotionTaskBatchesQuery = useEphemeralPromotionTaskBatches(activeSessionId, {
+    window: routingSummaryWindow,
+    limit: 20,
+  });
   const applyEphemeralEvolutionMutation = useApplyEphemeralCapabilityEvolutionPlan();
   const updateEphemeralPromotionTaskMutation = useUpdateEphemeralPromotionTask();
   const batchUpdateEphemeralPromotionTasksMutation = useBatchUpdateEphemeralPromotionTasks();
+  const replayFailedPromotionBatchMutation = useReplayFailedEphemeralPromotionTaskBatch();
   const runEphemeralHousekeepingMutation = useRunEphemeralCapabilityHousekeeping();
   const runtimeGrantsQuery = useSkillDraftRuntimeGrants(latestSkillDraftId);
   const backtestQuery = useConversationBacktest(activeSessionId, latestBacktestJobId);
@@ -672,6 +697,65 @@ export const AgentCopilotPage: React.FC = () => {
     ? ephemeralPromotionTasksQuery.data
     : [];
   const ephemeralPromotionTaskSummary = ephemeralPromotionTaskSummaryQuery.data;
+  const ephemeralPromotionTaskBatches = Array.isArray(ephemeralPromotionTaskBatchesQuery.data)
+    ? ephemeralPromotionTaskBatchesQuery.data
+    : [];
+  const selectedPromotionBatch =
+    ephemeralPromotionTaskBatches.find((item) => item.batchAssetId === selectedPromotionBatchAssetId) ?? null;
+  const isRetryableBatchFailure = (item: { code?: string | null; message?: string | null }) => {
+    const code = String(item.code || '').toUpperCase();
+    if (
+      [
+        'CONV_PROMOTION_TASK_NOT_FOUND',
+        'CONV_PROMOTION_TASK_ACTION_INVALID',
+        'CONV_PROMOTION_TASK_PUBLISH_BLOCKED',
+        'SKILL_REVIEWER_CONFLICT',
+        'SKILL_HIGH_RISK_REVIEW_REQUIRED',
+      ].includes(code)
+    ) {
+      return false;
+    }
+    const text = `${item.code || ''} ${item.message || ''}`;
+    return /fetch failed|timeout|temporarily unavailable|network|econnreset|etimedout|429|5\d{2}/i.test(text);
+  };
+  const selectedPromotionBatchCodeStats = useMemo(() => {
+    if (!selectedPromotionBatch) {
+      return [] as Array<{ code: string; count: number }>;
+    }
+    const mapping = new Map<string, number>();
+    for (const row of selectedPromotionBatch.failed) {
+      const key = String(row.code || 'UNKNOWN');
+      mapping.set(key, (mapping.get(key) ?? 0) + 1);
+    }
+    return Array.from(mapping.entries())
+      .map(([code, count]) => ({ code, count }))
+      .sort((a, b) => b.count - a.count);
+  }, [selectedPromotionBatch]);
+  const selectedPromotionBatchFailedRows = useMemo(() => {
+    if (!selectedPromotionBatch) {
+      return [] as Array<{ taskAssetId?: string | null; code?: string | null; message: string }>;
+    }
+    return selectedPromotionBatch.failed.filter((row) => {
+      if (promotionBatchCodeFilter !== 'ALL' && String(row.code || 'UNKNOWN') !== promotionBatchCodeFilter) {
+        return false;
+      }
+      if (promotionBatchErrorFilter === 'RETRYABLE') {
+        return isRetryableBatchFailure(row);
+      }
+      if (promotionBatchErrorFilter === 'NON_RETRYABLE') {
+        return !isRetryableBatchFailure(row);
+      }
+      return true;
+    });
+  }, [selectedPromotionBatch, promotionBatchCodeFilter, promotionBatchErrorFilter]);
+  const selectedPromotionBatchFailedPageRows = useMemo(() => {
+    const start = (promotionBatchFailedPage - 1) * PROMOTION_BATCH_FAILED_PAGE_SIZE;
+    return selectedPromotionBatchFailedRows.slice(start, start + PROMOTION_BATCH_FAILED_PAGE_SIZE);
+  }, [selectedPromotionBatchFailedRows, promotionBatchFailedPage]);
+
+  useEffect(() => {
+    setPromotionBatchFailedPage(1);
+  }, [promotionBatchErrorFilter, promotionBatchCodeFilter, selectedPromotionBatchAssetId]);
   const runtimeGrants = Array.isArray(runtimeGrantsQuery.data) ? runtimeGrantsQuery.data : [];
   const conversationAssets = Array.isArray(assetsQuery.data) ? assetsQuery.data : [];
 
@@ -1872,9 +1956,11 @@ export const AgentCopilotPage: React.FC = () => {
         window: routingSummaryWindow,
         status: promotionTaskStatusFilter === 'ALL' ? undefined : promotionTaskStatusFilter,
         comment: '批量同步草稿状态',
+        maxConcurrency: 6,
+        maxRetries: 1,
       });
       message.success(
-        `批量同步完成：成功 ${result.data.succeededCount}，失败 ${result.data.failedCount}`,
+        `批量同步完成：成功 ${result.data.succeededCount}，失败 ${result.data.failedCount}${result.data.batchId ? `，批次 ${result.data.batchId.slice(0, 8)}` : ''}`,
       );
     } catch (error) {
       showCopilotError(error, '批量同步失败');
@@ -1893,9 +1979,11 @@ export const AgentCopilotPage: React.FC = () => {
         window: routingSummaryWindow,
         status: promotionTaskStatusFilter === 'ALL' ? 'PENDING_REVIEW' : promotionTaskStatusFilter,
         comment: '批量推进至审核中',
+        maxConcurrency: 6,
+        maxRetries: 1,
       });
       message.success(
-        `批量推进完成：成功 ${result.data.succeededCount}，失败 ${result.data.failedCount}`,
+        `批量推进完成：成功 ${result.data.succeededCount}，失败 ${result.data.failedCount}${result.data.batchId ? `，批次 ${result.data.batchId.slice(0, 8)}` : ''}`,
       );
     } catch (error) {
       showCopilotError(error, '批量推进失败');
@@ -1963,32 +2051,60 @@ export const AgentCopilotPage: React.FC = () => {
     const succeeded: Array<{ taskAssetId: string; suggestedSkillCode: string }> = [];
     const failed: Array<{ taskAssetId: string; suggestedSkillCode: string; reason: string }> = [];
 
+    const isRetryablePromotionError = (error: unknown) => {
+      const apiError = getApiError(error);
+      const text = `${apiError?.message || ''} ${apiError?.code || ''} ${error instanceof Error ? error.message : ''}`;
+      return /fetch failed|timeout|temporarily unavailable|network|ECONNRESET|ETIMEDOUT/i.test(text);
+    };
+
+    const runWithRetry = async <T,>(operation: () => Promise<T>, retry = 1): Promise<T> => {
+      let attempt = 0;
+      let lastError: unknown;
+      while (attempt <= retry) {
+        try {
+          return await operation();
+        } catch (error) {
+          lastError = error;
+          if (attempt >= retry || !isRetryablePromotionError(error)) {
+            throw error;
+          }
+          attempt += 1;
+        }
+      }
+      throw lastError;
+    };
+
     setPromotionBatchFlow(flow);
     try {
       for (const item of candidates) {
         try {
           if (flow === 'SUBMIT_REVIEW') {
-            await submitSkillDraftReviewMutation.mutateAsync(item.draftId);
-            await handleUpdatePromotionTask(
-              item.taskAssetId,
-              'START_REVIEW',
-              '批量提交审核后自动标记审核中',
-              { silent: true },
+            await runWithRetry(() => submitSkillDraftReviewMutation.mutateAsync(item.draftId));
+            await runWithRetry(() =>
+              handleUpdatePromotionTask(item.taskAssetId, 'START_REVIEW', '批量提交审核后自动标记审核中', {
+                silent: true,
+              }),
             );
           } else if (flow === 'APPROVE') {
-            await reviewSkillDraftMutation.mutateAsync({
-              draftId: item.draftId,
-              action: 'APPROVE',
-              comment: '由晋升任务批处理流程审批通过',
-            });
-            await handleUpdatePromotionTask(item.taskAssetId, 'MARK_APPROVED', '批量审批通过', {
-              silent: true,
-            });
+            await runWithRetry(() =>
+              reviewSkillDraftMutation.mutateAsync({
+                draftId: item.draftId,
+                action: 'APPROVE',
+                comment: '由晋升任务批处理流程审批通过',
+              }),
+            );
+            await runWithRetry(() =>
+              handleUpdatePromotionTask(item.taskAssetId, 'MARK_APPROVED', '批量审批通过', {
+                silent: true,
+              }),
+            );
           } else {
-            await publishSkillDraftMutation.mutateAsync(item.draftId);
-            await handleUpdatePromotionTask(item.taskAssetId, 'MARK_PUBLISHED', '批量发布能力', {
-              silent: true,
-            });
+            await runWithRetry(() => publishSkillDraftMutation.mutateAsync(item.draftId));
+            await runWithRetry(() =>
+              handleUpdatePromotionTask(item.taskAssetId, 'MARK_PUBLISHED', '批量发布能力', {
+                silent: true,
+              }),
+            );
           }
           succeeded.push({
             taskAssetId: item.taskAssetId,
@@ -2013,10 +2129,44 @@ export const AgentCopilotPage: React.FC = () => {
       await Promise.all([
         ephemeralPromotionTasksQuery.refetch(),
         ephemeralPromotionTaskSummaryQuery.refetch(),
+        ephemeralPromotionTaskBatchesQuery.refetch(),
         ephemeralEvolutionPlanQuery.refetch(),
       ]);
     } finally {
       setPromotionBatchFlow('IDLE');
+    }
+  };
+
+  const openPromotionBatchDrawer = (batchAssetId: string) => {
+    setSelectedPromotionBatchAssetId(batchAssetId);
+    setPromotionBatchErrorFilter('ALL');
+    setPromotionBatchCodeFilter('ALL');
+    setPromotionBatchFailedPage(1);
+    setPromotionBatchDrawerOpen(true);
+  };
+
+  const handleReplayFailedPromotionBatch = async (
+    batchAssetId: string,
+    replayMode: 'RETRYABLE_ONLY' | 'ALL_FAILED' = 'RETRYABLE_ONLY',
+  ) => {
+    if (!activeSessionId) {
+      message.warning('请先选择会话');
+      return;
+    }
+    try {
+      const result = await replayFailedPromotionBatchMutation.mutateAsync({
+        sessionId: activeSessionId,
+        batchAssetId,
+        maxConcurrency: 6,
+        maxRetries: 1,
+        replayMode,
+      });
+      const replay = result.data.replayResult;
+      message.success(
+        `失败项重放完成（${result.data.replayMode === 'RETRYABLE_ONLY' ? '仅可重试' : '全部失败项'}）：选择 ${result.data.selectedReplayCount}，成功 ${replay.succeededCount}，失败 ${replay.failedCount}${replay.batchId ? `，新批次 ${replay.batchId.slice(0, 8)}` : ''}`,
+      );
+    } catch (error) {
+      showCopilotError(error, '重放失败项失败');
     }
   };
 
@@ -3321,6 +3471,62 @@ export const AgentCopilotPage: React.FC = () => {
                             </List.Item>
                           )}
                         />
+                        <Text type="secondary" style={{ fontSize: 12 }}>
+                          批次记录（最近20条）
+                        </Text>
+                        <List
+                          size="small"
+                          dataSource={ephemeralPromotionTaskBatches.slice(0, 6)}
+                          locale={{ emptyText: '暂无批次记录' }}
+                          renderItem={(batch) => (
+                            <List.Item
+                              actions={[
+                                <Button
+                                  key="detail"
+                                  size="small"
+                                  onClick={() => openPromotionBatchDrawer(batch.batchAssetId)}
+                                >
+                                  查看详情
+                                </Button>,
+                                <Button
+                                  key="replay"
+                                  size="small"
+                                  disabled={batch.failedCount <= 0}
+                                  loading={replayFailedPromotionBatchMutation.isPending}
+                                  onClick={() => void handleReplayFailedPromotionBatch(batch.batchAssetId, 'RETRYABLE_ONLY')}
+                                >
+                                  重放可重试
+                                </Button>,
+                                <Button
+                                  key="replay-all"
+                                  size="small"
+                                  disabled={batch.failedCount <= 0}
+                                  loading={replayFailedPromotionBatchMutation.isPending}
+                                  onClick={() => void handleReplayFailedPromotionBatch(batch.batchAssetId, 'ALL_FAILED')}
+                                >
+                                  重放全部
+                                </Button>,
+                              ]}
+                            >
+                              <Space direction="vertical" size={2} style={{ width: '100%' }}>
+                                <Space wrap>
+                                  <Tag>
+                                    {promotionBatchActionLabel[batch.action] || batch.action}
+                                  </Tag>
+                                  <Text type="secondary">并发 {batch.maxConcurrency}</Text>
+                                  <Text type="secondary">重试 {batch.maxRetries}</Text>
+                                  <Text type="secondary">
+                                    成功 {batch.succeededCount} / 失败 {batch.failedCount}
+                                  </Text>
+                                </Space>
+                                <Text type="secondary" style={{ fontSize: 12 }}>
+                                  批次ID：{batch.batchId.slice(0, 8)}，创建于{' '}
+                                  {new Date(batch.createdAt).toLocaleString('zh-CN')}
+                                </Text>
+                              </Space>
+                            </List.Item>
+                          )}
+                        />
                       </>
                     ) : null}
                   </Space>
@@ -3469,6 +3675,86 @@ export const AgentCopilotPage: React.FC = () => {
             </Space>
           ) : null}
         </Space>
+      </Drawer>
+
+      <Drawer
+        title="批次失败详情"
+        open={promotionBatchDrawerOpen}
+        width={720}
+        onClose={() => setPromotionBatchDrawerOpen(false)}
+      >
+        {selectedPromotionBatch ? (
+          <Space direction="vertical" style={{ width: '100%' }} size={12}>
+            <Alert
+              type="info"
+              showIcon
+              message={`批次 ${selectedPromotionBatch.batchId.slice(0, 8)} · ${promotionBatchActionLabel[selectedPromotionBatch.action] || selectedPromotionBatch.action}`}
+              description={`总计 ${selectedPromotionBatch.requestedCount}，成功 ${selectedPromotionBatch.succeededCount}，失败 ${selectedPromotionBatch.failedCount}，并发 ${selectedPromotionBatch.maxConcurrency}，重试 ${selectedPromotionBatch.maxRetries}`}
+            />
+            <Space wrap>
+              <Text type="secondary">错误类型：</Text>
+              <Segmented
+                size="small"
+                value={promotionBatchErrorFilter}
+                options={[
+                  { label: '全部', value: 'ALL' },
+                  { label: '可重试', value: 'RETRYABLE' },
+                  { label: '不可重试', value: 'NON_RETRYABLE' },
+                ]}
+                onChange={(value) => setPromotionBatchErrorFilter(value as 'ALL' | 'RETRYABLE' | 'NON_RETRYABLE')}
+              />
+            </Space>
+            <Space wrap>
+              <Button
+                size="small"
+                type={promotionBatchCodeFilter === 'ALL' ? 'primary' : 'default'}
+                onClick={() => setPromotionBatchCodeFilter('ALL')}
+              >
+                全部错误码
+              </Button>
+              {selectedPromotionBatchCodeStats.slice(0, 8).map((item) => (
+                <Button
+                  key={item.code}
+                  size="small"
+                  type={promotionBatchCodeFilter === item.code ? 'primary' : 'default'}
+                  onClick={() => setPromotionBatchCodeFilter(item.code)}
+                >
+                  {item.code} ({item.count})
+                </Button>
+              ))}
+            </Space>
+            <List
+              size="small"
+              dataSource={selectedPromotionBatchFailedPageRows}
+              locale={{ emptyText: '当前筛选下无失败项' }}
+              pagination={{
+                current: promotionBatchFailedPage,
+                pageSize: PROMOTION_BATCH_FAILED_PAGE_SIZE,
+                total: selectedPromotionBatchFailedRows.length,
+                onChange: (page) => setPromotionBatchFailedPage(page),
+                showSizeChanger: false,
+              }}
+              renderItem={(item) => (
+                <List.Item>
+                  <Space direction="vertical" size={2} style={{ width: '100%' }}>
+                    <Space wrap>
+                      <Tag>{item.code || 'UNKNOWN'}</Tag>
+                      <Text type="secondary">任务 {item.taskAssetId || '-'}</Text>
+                      <Tag color={isRetryableBatchFailure(item) ? 'processing' : 'default'}>
+                        {isRetryableBatchFailure(item) ? '可重试' : '不可重试'}
+                      </Tag>
+                    </Space>
+                    <Text type="secondary" style={{ fontSize: 12 }}>
+                      {item.message}
+                    </Text>
+                  </Space>
+                </List.Item>
+              )}
+            />
+          </Space>
+        ) : (
+          <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无批次详情" />
+        )}
       </Drawer>
 
       <Modal

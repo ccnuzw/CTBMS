@@ -2040,6 +2040,8 @@ export class AgentConversationService {
       taskAssetIds?: string[];
       window?: '1h' | '24h' | '7d';
       status?: string;
+      maxConcurrency?: number;
+      maxRetries?: number;
     },
   ) {
     const session = await this.prisma.conversationSession.findFirst({
@@ -2068,39 +2070,228 @@ export class AgentConversationService {
     const uniqueTaskIds = Array.from(new Set(taskIds));
     const succeeded: Array<{ taskAssetId: string; status: string }> = [];
     const failed: Array<{ taskAssetId: string; code?: string; message: string }> = [];
+    const maxConcurrency = this.normalizeBatchConcurrency(dto.maxConcurrency);
+    const maxRetries = this.normalizeBatchRetry(dto.maxRetries);
 
-    for (const taskAssetId of uniqueTaskIds) {
-      try {
-        const updated = await this.updateEphemeralCapabilityPromotionTask(userId, sessionId, taskAssetId, {
-          action: dto.action,
-          comment: dto.comment,
-        });
-        const status = this.pickString(updated?.task?.status) ?? 'UNKNOWN';
-        succeeded.push({ taskAssetId, status });
-      } catch (error) {
-        if (error instanceof BadRequestException) {
-          const response = error.getResponse() as Record<string, unknown>;
-          failed.push({
-            taskAssetId,
-            code: this.pickString(response.code) ?? undefined,
-            message: this.pickString(response.message) ?? '批量更新失败',
-          });
-        } else {
-          failed.push({
-            taskAssetId,
-            message: error instanceof Error ? error.message : String(error),
-          });
+    const runUpdateOnce = async (taskAssetId: string) => {
+      const updated = await this.updateEphemeralCapabilityPromotionTask(userId, sessionId, taskAssetId, {
+        action: dto.action,
+        comment: dto.comment,
+      });
+      const status = this.pickString(updated?.task?.status) ?? 'UNKNOWN';
+      succeeded.push({ taskAssetId, status });
+    };
+
+    const runUpdateWithRetry = async (taskAssetId: string) => {
+      let attempt = 0;
+      while (attempt <= maxRetries) {
+        try {
+          await runUpdateOnce(taskAssetId);
+          return;
+        } catch (error) {
+          if (
+            attempt >= maxRetries ||
+            error instanceof BadRequestException ||
+            !this.isTransientPromotionBatchError(error)
+          ) {
+            throw error;
+          }
+          attempt += 1;
         }
       }
-    }
+    };
+
+    let cursor = 0;
+    const workerCount = Math.min(maxConcurrency, Math.max(uniqueTaskIds.length, 1));
+    const workers = Array.from({ length: workerCount }).map(async () => {
+      while (cursor < uniqueTaskIds.length) {
+        const taskAssetId = uniqueTaskIds[cursor];
+        cursor += 1;
+        try {
+          await runUpdateWithRetry(taskAssetId);
+        } catch (error) {
+          if (error instanceof BadRequestException) {
+            const response = error.getResponse() as Record<string, unknown>;
+            failed.push({
+              taskAssetId,
+              code: this.pickString(response.code) ?? undefined,
+              message: this.pickString(response.message) ?? '批量更新失败',
+            });
+          } else {
+            failed.push({
+              taskAssetId,
+              message: error instanceof Error ? error.message : String(error),
+            });
+          }
+        }
+      }
+    });
+    await Promise.all(workers);
+
+    const batchId = randomUUID();
+    const batchAsset = await this.createConversationAsset({
+      sessionId,
+      assetType: 'NOTE',
+      title: `能力晋升批次 ${dto.action} ${batchId.slice(0, 8)}`,
+      payload: {
+        batchId,
+        action: dto.action,
+        requestedCount: uniqueTaskIds.length,
+        succeededCount: succeeded.length,
+        failedCount: failed.length,
+        maxConcurrency,
+        maxRetries,
+        window: dto.window ?? null,
+        statusFilter: dto.status ?? null,
+        failed,
+        generatedAt: new Date().toISOString(),
+      },
+      tags: {
+        taskType: 'PROMOTION_TASK_BATCH',
+        batchId,
+      },
+    });
 
     return {
       action: dto.action,
+      batchId,
+      batchAssetId: batchAsset.id,
       requestedCount: uniqueTaskIds.length,
       succeededCount: succeeded.length,
       failedCount: failed.length,
       succeeded,
       failed,
+    };
+  }
+
+  async listEphemeralCapabilityPromotionTaskBatches(
+    userId: string,
+    sessionId: string,
+    query?: { window?: '1h' | '24h' | '7d'; action?: string; limit?: number },
+  ) {
+    const session = await this.prisma.conversationSession.findFirst({
+      where: { id: sessionId, ownerUserId: userId },
+      select: { id: true },
+    });
+    if (!session) {
+      return null;
+    }
+
+    const createdAfter = this.resolveRoutingWindowStart(query?.window);
+    const actionFilter = this.pickString(query?.action)?.toUpperCase();
+    const limitValue = this.normalizeNumber(query?.limit);
+    const limit = Number.isFinite(limitValue) ? Math.min(Math.max(Math.floor(limitValue), 1), 100) : 20;
+
+    const assets = await this.prisma.conversationAsset.findMany({
+      where: {
+        sessionId,
+        assetType: 'NOTE',
+        title: {
+          startsWith: '能力晋升批次',
+        },
+        ...(createdAfter
+          ? {
+              createdAt: {
+                gte: createdAfter,
+              },
+            }
+          : {}),
+      },
+      orderBy: [{ createdAt: 'desc' }],
+      take: limit,
+    });
+
+    const batches = assets
+      .map((asset) => this.toPromotionTaskBatch(asset))
+      .filter((item): item is NonNullable<typeof item> => Boolean(item));
+
+    return actionFilter ? batches.filter((item) => item.action === actionFilter) : batches;
+  }
+
+  async replayFailedEphemeralCapabilityPromotionTaskBatch(
+    userId: string,
+    sessionId: string,
+    batchAssetId: string,
+    dto?: {
+      maxConcurrency?: number;
+      maxRetries?: number;
+      replayMode?: 'RETRYABLE_ONLY' | 'ALL_FAILED';
+    },
+  ) {
+    const session = await this.prisma.conversationSession.findFirst({
+      where: { id: sessionId, ownerUserId: userId },
+      select: { id: true },
+    });
+    if (!session) {
+      return null;
+    }
+
+    const batchAsset = await this.prisma.conversationAsset.findFirst({
+      where: {
+        id: batchAssetId,
+        sessionId,
+        assetType: 'NOTE',
+      },
+      select: {
+        id: true,
+        title: true,
+        payload: true,
+      },
+    });
+    if (!batchAsset || !batchAsset.title.startsWith('能力晋升批次')) {
+      throw new BadRequestException({
+        code: 'CONV_PROMOTION_BATCH_NOT_FOUND',
+        message: '能力晋升批次不存在或不属于当前会话',
+      });
+    }
+
+    const payload = this.toRecord(batchAsset.payload);
+    const action = this.pickString(payload.action)?.toUpperCase();
+    if (!action) {
+      throw new BadRequestException({
+        code: 'CONV_PROMOTION_BATCH_INVALID',
+        message: '能力晋升批次缺少动作信息，无法重放',
+      });
+    }
+
+    const replayMode = dto?.replayMode === 'ALL_FAILED' ? 'ALL_FAILED' : 'RETRYABLE_ONLY';
+
+    const failedItems = this.toArray(payload.failed)
+      .map((item) => this.toRecord(item))
+      .map((item) => ({
+        taskAssetId: this.pickString(item.taskAssetId),
+        code: this.pickString(item.code),
+        message: this.pickString(item.message),
+      }))
+      .filter((item) => Boolean(item.taskAssetId));
+
+    const selectedFailedItems =
+      replayMode === 'ALL_FAILED'
+        ? failedItems
+        : failedItems.filter((item) => this.isRetryablePromotionFailure(item.code, item.message));
+    const taskAssetIds = Array.from(
+      new Set(
+        selectedFailedItems
+          .map((item) => item.taskAssetId)
+          .filter((value): value is string => Boolean(value)),
+      ),
+    );
+
+    const replayResult = await this.batchUpdateEphemeralCapabilityPromotionTasks(userId, sessionId, {
+      action,
+      comment: `重放失败任务（来源批次 ${batchAsset.id}，模式 ${replayMode}）`,
+      taskAssetIds,
+      maxConcurrency: dto?.maxConcurrency,
+      maxRetries: dto?.maxRetries,
+    });
+
+    return {
+      sourceBatchAssetId: batchAsset.id,
+      sourceAction: action,
+      sourceFailedCount: failedItems.length,
+      selectedReplayCount: taskAssetIds.length,
+      replayMode,
+      replayResult,
     };
   }
 
@@ -2301,6 +2492,47 @@ export class AgentConversationService {
     return null;
   }
 
+  private normalizeBatchConcurrency(input: unknown): number {
+    const value = this.normalizeNumber(input);
+    if (!Number.isFinite(value) || value <= 0) {
+      return 4;
+    }
+    return Math.min(Math.max(Math.floor(value), 1), 12);
+  }
+
+  private normalizeBatchRetry(input: unknown): number {
+    const value = this.normalizeNumber(input);
+    if (!Number.isFinite(value) || value < 0) {
+      return 1;
+    }
+    return Math.min(Math.max(Math.floor(value), 0), 3);
+  }
+
+  private isTransientPromotionBatchError(error: unknown): boolean {
+    if (!error || error instanceof BadRequestException) {
+      return false;
+    }
+    const errorText = error instanceof Error ? error.message : String(error);
+    return /fetch failed|timeout|temporarily unavailable|network|econnreset|etimedout/i.test(errorText);
+  }
+
+  private isRetryablePromotionFailure(code: string | null, message: string | null): boolean {
+    const normalizedCode = (code ?? '').toUpperCase();
+    if (
+      [
+        'CONV_PROMOTION_TASK_NOT_FOUND',
+        'CONV_PROMOTION_TASK_ACTION_INVALID',
+        'CONV_PROMOTION_TASK_PUBLISH_BLOCKED',
+        'SKILL_REVIEWER_CONFLICT',
+        'SKILL_HIGH_RISK_REVIEW_REQUIRED',
+      ].includes(normalizedCode)
+    ) {
+      return false;
+    }
+    const text = `${code ?? ''} ${message ?? ''}`;
+    return /fetch failed|timeout|temporarily unavailable|network|econnreset|etimedout|429|5\d{2}/i.test(text);
+  }
+
   private toPromotionTask(asset: {
     id: string;
     title: string;
@@ -2331,6 +2563,45 @@ export class AgentConversationService {
       lastActionBy: this.pickString(payload.lastActionBy),
       lastComment: this.pickString(payload.lastComment),
       publishedSkillId: this.pickString(payload.publishedSkillId),
+      createdAt: asset.createdAt,
+      updatedAt: asset.updatedAt,
+    };
+  }
+
+  private toPromotionTaskBatch(asset: {
+    id: string;
+    title: string;
+    payload: Prisma.JsonValue;
+    createdAt: Date;
+    updatedAt: Date;
+  }) {
+    const payload = this.toRecord(asset.payload);
+    const action = this.pickString(payload.action)?.toUpperCase();
+    if (!action) {
+      return null;
+    }
+    const failed = this.toArray(payload.failed)
+      .map((item) => this.toRecord(item))
+      .map((item) => ({
+        taskAssetId: this.pickString(item.taskAssetId),
+        code: this.pickString(item.code),
+        message: this.pickString(item.message) ?? '批次处理失败',
+      }))
+      .filter((item) => Boolean(item.taskAssetId));
+    return {
+      batchAssetId: asset.id,
+      batchId: this.pickString(payload.batchId) ?? asset.id,
+      title: asset.title,
+      action,
+      requestedCount: this.normalizeNumber(payload.requestedCount),
+      succeededCount: this.normalizeNumber(payload.succeededCount),
+      failedCount: this.normalizeNumber(payload.failedCount),
+      maxConcurrency: this.normalizeNumber(payload.maxConcurrency),
+      maxRetries: this.normalizeNumber(payload.maxRetries),
+      window: this.pickString(payload.window),
+      statusFilter: this.pickString(payload.statusFilter),
+      failed,
+      generatedAt: this.pickString(payload.generatedAt),
       createdAt: asset.createdAt,
       updatedAt: asset.updatedAt,
     };
@@ -4129,6 +4400,10 @@ export class AgentConversationService {
       return {};
     }
     return value as Record<string, unknown>;
+  }
+
+  private toArray(value: unknown): unknown[] {
+    return Array.isArray(value) ? value : [];
   }
 
   private pickString(value: unknown): string | null {

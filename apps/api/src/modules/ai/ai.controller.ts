@@ -25,6 +25,28 @@ export class AIController {
         return this.aiModelService.getAvailableModels(provider, apiKey, apiUrl, configKey);
     }
 
+    @Post('models')
+    async getModelsDirect(@Body() payload: {
+        provider?: string;
+        configKey?: string;
+        apiKey?: string;
+        apiUrl?: string;
+        authType?: 'bearer' | 'api-key' | 'custom' | 'none';
+        headers?: Record<string, string>;
+        queryParams?: Record<string, string>;
+        pathOverrides?: Record<string, string>;
+        modelFetchMode?: 'official' | 'manual' | 'custom';
+        allowUrlProbe?: boolean;
+        allowCompatPathFallback?: boolean;
+        timeoutSeconds?: number;
+        maxRetries?: number;
+    }) {
+        if (!payload.provider && !payload.configKey) {
+            throw new Error('Provider parameter is required');
+        }
+        return this.aiModelService.getAvailableModels(payload);
+    }
+
     @Post('test-model')
     async testModel(@Body() payload: {
         provider: AIProvider;

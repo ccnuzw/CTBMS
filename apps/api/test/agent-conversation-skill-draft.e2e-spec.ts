@@ -408,6 +408,8 @@ async function main() {
 
       const batchSync = await fetchJson<{
         action: string;
+        batchId?: string;
+        batchAssetId?: string;
         requestedCount: number;
         succeededCount: number;
       }>(
@@ -421,13 +423,71 @@ async function main() {
           body: JSON.stringify({
             action: 'SYNC_DRAFT_STATUS',
             taskAssetIds: [firstTask.taskAssetId],
+            maxConcurrency: 2,
+            maxRetries: 1,
           }),
         },
       );
       assert.equal(batchSync.status, 201);
       assert.equal(batchSync.body.action, 'SYNC_DRAFT_STATUS');
+      assert.ok(batchSync.body.batchId);
+      assert.ok(batchSync.body.batchAssetId);
       assert.equal(batchSync.body.requestedCount, 1);
       assert.equal(batchSync.body.succeededCount, 1);
+
+      const batchList = await fetchJson<
+        Array<{
+          batchAssetId: string;
+          batchId: string;
+          action: string;
+          failedCount: number;
+        }>
+      >(
+        `${baseUrl}/agent-conversations/sessions/${conversationSessionId}/ephemeral-capabilities/promotion-task-batches?window=24h&limit=20`,
+        {
+          headers: {
+            'x-virtual-user-id': ownerUserId,
+          },
+        },
+      );
+      assert.equal(batchList.status, 200);
+      assert.ok(Array.isArray(batchList.body));
+      assert.ok(batchList.body.length >= 1);
+      const latestBatch = batchList.body[0];
+      assert.ok(latestBatch.batchAssetId);
+      assert.equal(latestBatch.action, 'SYNC_DRAFT_STATUS');
+
+      const replayFailed = await fetchJson<{
+        sourceBatchAssetId: string;
+        sourceAction: string;
+        sourceFailedCount: number;
+        selectedReplayCount: number;
+        replayMode: string;
+        replayResult: {
+          action: string;
+          requestedCount: number;
+        };
+      }>(
+        `${baseUrl}/agent-conversations/sessions/${conversationSessionId}/ephemeral-capabilities/promotion-task-batches/${latestBatch.batchAssetId}/replay-failed`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-virtual-user-id': ownerUserId,
+          },
+          body: JSON.stringify({
+            maxConcurrency: 2,
+            maxRetries: 1,
+            replayMode: 'RETRYABLE_ONLY',
+          }),
+        },
+      );
+      assert.equal(replayFailed.status, 201);
+      assert.equal(replayFailed.body.sourceBatchAssetId, latestBatch.batchAssetId);
+      assert.equal(replayFailed.body.sourceAction, 'SYNC_DRAFT_STATUS');
+      assert.equal(replayFailed.body.replayMode, 'RETRYABLE_ONLY');
+      assert.ok(replayFailed.body.selectedReplayCount >= 0);
+      assert.equal(replayFailed.body.replayResult.action, 'SYNC_DRAFT_STATUS');
     }
 
     const ephemeralHousekeeping = await fetchJson<{
