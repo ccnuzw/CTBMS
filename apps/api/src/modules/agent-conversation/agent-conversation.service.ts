@@ -2044,6 +2044,7 @@ export class AgentConversationService {
       status?: string;
       maxConcurrency?: number;
       maxRetries?: number;
+      sourceBatchAssetId?: string;
     },
   ) {
     const session = await this.prisma.conversationSession.findFirst({
@@ -2138,6 +2139,7 @@ export class AgentConversationService {
       payload: {
         batchId,
         action: dto.action,
+        sourceBatchAssetId: dto.sourceBatchAssetId ?? null,
         requestedCount: uniqueTaskIds.length,
         succeededCount: succeeded.length,
         failedCount: failed.length,
@@ -2295,6 +2297,7 @@ export class AgentConversationService {
       taskAssetIds,
       maxConcurrency: dto?.maxConcurrency,
       maxRetries: dto?.maxRetries,
+      sourceBatchAssetId: batchAsset.id,
     });
 
     return {
@@ -2621,6 +2624,7 @@ export class AgentConversationService {
       maxRetries: this.normalizeNumber(payload.maxRetries),
       window: this.pickString(payload.window),
       statusFilter: this.pickString(payload.statusFilter),
+      sourceBatchAssetId: this.pickString(payload.sourceBatchAssetId),
       failed,
       generatedAt: this.pickString(payload.generatedAt),
       createdAt: asset.createdAt,

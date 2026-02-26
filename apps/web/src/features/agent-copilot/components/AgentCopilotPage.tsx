@@ -103,6 +103,7 @@ const TURN_CONTENT_PREVIEW_LIMIT = 3000;
 const RESULT_ANALYSIS_PREVIEW_LIMIT = 4000;
 const PROMOTION_BATCH_FAILED_PAGE_SIZE = 8;
 const SYSTEM_MESSAGE_COLLAPSE_MIN_LENGTH = 240;
+const PROMOTION_FILTERS_STORAGE_KEY = 'agent-copilot-promotion-filters-v1';
 const ASSISTANT_MESSAGE_COLLAPSE_MIN_LENGTH = 1200;
 const SYSTEM_SUMMARY_PREVIEW_LENGTH = 80;
 const ASSISTANT_SUMMARY_PREVIEW_LENGTH = 160;
@@ -249,9 +250,9 @@ const summarizeAssistantMessage = (raw: string): string => {
     .filter(Boolean);
   const headingLines = lines.filter((line) => /^#{1,3}\s+/.test(line)).slice(0, ASSISTANT_SUMMARY_MAX_HEADINGS);
   const bulletLines = lines
-    .filter((line) => /^[-*]\s+/.test(line) || /^\d+[\.)]\s+/.test(line))
+    .filter((line) => /^[-*]\s+/.test(line) || /^\d+[.)]\s+/.test(line))
     .slice(0, ASSISTANT_SUMMARY_MAX_BULLETS)
-    .map((line) => line.replace(/^[-*]\s+/, '').replace(/^\d+[\.)]\s+/, ''));
+    .map((line) => line.replace(/^[-*]\s+/, '').replace(/^\d+[.)]\s+/, ''));
   const intro = lines.find((line) => !/^#{1,3}\s+/.test(line)) || '';
 
   if (headingLines.length || bulletLines.length) {
@@ -590,6 +591,69 @@ export const AgentCopilotPage: React.FC = () => {
     return roleNames.some((role) => ['SUPER_ADMIN', 'ADMIN'].includes(String(role).toUpperCase()));
   }, [currentUser?.roleNames]);
   const compactActionSize = screens.xs ? 'middle' : 'small';
+
+  useEffect(() => {
+    if (!activeSessionId || typeof window === 'undefined') {
+      return;
+    }
+    try {
+      const raw = window.localStorage.getItem(PROMOTION_FILTERS_STORAGE_KEY);
+      if (!raw) {
+        return;
+      }
+      const parsed = JSON.parse(raw) as Record<string, unknown>;
+      const sessionRecord =
+        parsed && typeof parsed === 'object' ? (parsed[activeSessionId] as Record<string, unknown> | undefined) : null;
+      if (!sessionRecord || typeof sessionRecord !== 'object') {
+        return;
+      }
+      const taskStatus = String(sessionRecord.promotionTaskStatusFilter || 'ALL');
+      const batchAction = String(sessionRecord.promotionBatchActionFilter || 'ALL');
+      const batchOutcome = String(sessionRecord.promotionBatchOutcomeFilter || 'ALL');
+      if (['ALL', 'PENDING_REVIEW', 'IN_REVIEW', 'APPROVED', 'REJECTED', 'PUBLISHED'].includes(taskStatus)) {
+        setPromotionTaskStatusFilter(
+          taskStatus as 'ALL' | 'PENDING_REVIEW' | 'IN_REVIEW' | 'APPROVED' | 'REJECTED' | 'PUBLISHED',
+        );
+      }
+      if (['ALL', 'START_REVIEW', 'MARK_APPROVED', 'MARK_REJECTED', 'MARK_PUBLISHED', 'SYNC_DRAFT_STATUS'].includes(batchAction)) {
+        setPromotionBatchActionFilter(
+          batchAction as
+            | 'ALL'
+            | 'START_REVIEW'
+            | 'MARK_APPROVED'
+            | 'MARK_REJECTED'
+            | 'MARK_PUBLISHED'
+            | 'SYNC_DRAFT_STATUS',
+        );
+      }
+      if (['ALL', 'HAS_FAILURE', 'ALL_SUCCESS'].includes(batchOutcome)) {
+        setPromotionBatchOutcomeFilter(batchOutcome as 'ALL' | 'HAS_FAILURE' | 'ALL_SUCCESS');
+      }
+    } catch {
+      // ignore local state recovery failures
+    }
+  }, [activeSessionId]);
+
+  useEffect(() => {
+    if (!activeSessionId || typeof window === 'undefined') {
+      return;
+    }
+    try {
+      const raw = window.localStorage.getItem(PROMOTION_FILTERS_STORAGE_KEY);
+      const parsed = raw ? (JSON.parse(raw) as Record<string, unknown>) : {};
+      const next: Record<string, unknown> = {
+        ...(parsed && typeof parsed === 'object' ? parsed : {}),
+        [activeSessionId]: {
+          promotionTaskStatusFilter,
+          promotionBatchActionFilter,
+          promotionBatchOutcomeFilter,
+        },
+      };
+      window.localStorage.setItem(PROMOTION_FILTERS_STORAGE_KEY, JSON.stringify(next));
+    } catch {
+      // ignore local storage write failures
+    }
+  }, [activeSessionId, promotionTaskStatusFilter, promotionBatchActionFilter, promotionBatchOutcomeFilter]);
 
   const sessionsQuery = useConversationSessions({ page: 1, pageSize: 50 });
   const detailQuery = useConversationDetail(activeSessionId);
@@ -2323,6 +2387,7 @@ export const AgentCopilotPage: React.FC = () => {
       'maxRetries',
       'window',
       'statusFilter',
+      'sourceBatchAssetId',
       'createdAt',
     ];
     const escapeCsv = (value: unknown) => `"${String(value ?? '').replace(/"/g, '""')}"`;
@@ -2338,6 +2403,7 @@ export const AgentCopilotPage: React.FC = () => {
         item.maxRetries,
         item.window || '',
         item.statusFilter || '',
+        item.sourceBatchAssetId || '',
         item.createdAt,
       ]
         .map((value) => escapeCsv(value))
@@ -2723,7 +2789,7 @@ export const AgentCopilotPage: React.FC = () => {
                           tab?: 'progress' | 'result' | 'delivery' | 'schedule';
                         }>;
                       }
-                      if (Boolean((turn as LocalConversationTurn).failed)) {
+                      if ((turn as LocalConversationTurn).failed) {
                         const retryMessage =
                           typeof turnPayload.retryMessage === 'string' ? turnPayload.retryMessage.trim() : '';
                         if (retryMessage) {
@@ -3561,12 +3627,12 @@ export const AgentCopilotPage: React.FC = () => {
                             onChange={(value) =>
                               setPromotionTaskStatusFilter(
                                 value as
-                                  | 'ALL'
-                                  | 'PENDING_REVIEW'
-                                  | 'IN_REVIEW'
-                                  | 'APPROVED'
-                                  | 'REJECTED'
-                                  | 'PUBLISHED',
+                                | 'ALL'
+                                | 'PENDING_REVIEW'
+                                | 'IN_REVIEW'
+                                | 'APPROVED'
+                                | 'REJECTED'
+                                | 'PUBLISHED',
                               )
                             }
                           />
@@ -3695,12 +3761,12 @@ export const AgentCopilotPage: React.FC = () => {
                               onChange={(value) =>
                                 setPromotionBatchActionFilter(
                                   value as
-                                    | 'ALL'
-                                    | 'START_REVIEW'
-                                    | 'MARK_APPROVED'
-                                    | 'MARK_REJECTED'
-                                    | 'MARK_PUBLISHED'
-                                    | 'SYNC_DRAFT_STATUS',
+                                  | 'ALL'
+                                  | 'START_REVIEW'
+                                  | 'MARK_APPROVED'
+                                  | 'MARK_REJECTED'
+                                  | 'MARK_PUBLISHED'
+                                  | 'SYNC_DRAFT_STATUS',
                                 )
                               }
                             />
@@ -3775,6 +3841,11 @@ export const AgentCopilotPage: React.FC = () => {
                                   批次ID：{batch.batchId.slice(0, 8)}，创建于{' '}
                                   {new Date(batch.createdAt).toLocaleString('zh-CN')}
                                 </Text>
+                                {batch.sourceBatchAssetId ? (
+                                  <Text type="secondary" style={{ fontSize: 12 }}>
+                                    重放来源批次：{batch.sourceBatchAssetId.slice(0, 8)}
+                                  </Text>
+                                ) : null}
                               </Space>
                             </List.Item>
                           )}

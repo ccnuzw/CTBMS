@@ -114,6 +114,15 @@ export class MarketDataController {
     return this.success(req, data);
   }
 
+  @Post('reconciliation/jobs/:jobId/retry')
+  async retryReconciliationJob(
+    @Param('jobId', ParseUUIDPipe) jobId: string,
+    @Request() req: AuthRequest,
+  ) {
+    const data = await this.marketDataService.retryReconciliationJob(this.getUserId(req), jobId);
+    return this.success(req, data);
+  }
+
   private getUserId(req: AuthRequest) {
     const userId = req.user?.id;
     if (!userId) {

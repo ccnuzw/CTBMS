@@ -415,6 +415,7 @@ export interface EphemeralPromotionTaskBatchRecord {
   batchId: string;
   title: string;
   action: string;
+  sourceBatchAssetId?: string | null;
   requestedCount: number;
   succeededCount: number;
   failedCount: number;

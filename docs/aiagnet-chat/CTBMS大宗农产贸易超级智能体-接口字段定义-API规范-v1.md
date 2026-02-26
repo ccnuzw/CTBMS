@@ -314,7 +314,9 @@
 ```json
 {
   "jobId": "rc_job_xxx",
-  "status": "RUNNING"
+  "status": "RUNNING",
+  "retriedFromJobId": null,
+  "retryCount": 0
 }
 ```
 
@@ -327,6 +329,7 @@
 - `sortBy` 白名单：`createdAt | startedAt | finishedAt | status | dataset`
 - `sortOrder`：`asc | desc`
 - `pass`：可选，`true | false`，用于筛选对账结论（`summary.pass`）
+- `retryCount`：首次任务为 `0`，每次重试 +1；`retriedFromJobId` 标记来源任务
 
 响应：
 
@@ -337,9 +340,12 @@
       "jobId": "rc_job_xxx",
       "status": "DONE",
       "dataset": "SPOT_PRICE",
+      "retriedFromJobId": null,
+      "retryCount": 0,
       "createdAt": "2026-02-27T08:00:00.000Z",
       "startedAt": "2026-02-27T08:00:01.000Z",
       "finishedAt": "2026-02-27T08:00:20.000Z",
+      "summaryPass": true,
       "summary": {
         "diffRate": 0.004,
         "missingRate": 0.001,
@@ -367,6 +373,9 @@
   "jobId": "rc_job_xxx",
   "status": "DONE",
   "dataset": "SPOT_PRICE",
+  "retriedFromJobId": null,
+  "retryCount": 0,
+  "summaryPass": true,
   "summary": {
     "diffRate": 0.004,
     "missingRate": 0.001,
@@ -374,6 +383,23 @@
     "pass": true
   },
   "sampleDiffs": []
+}
+```
+
+### 3.5.4 重试对账任务
+
+- `POST /market-data/reconciliation/jobs/:jobId/retry`
+
+响应：
+
+```json
+{
+  "jobId": "rc_job_new_xxx",
+  "status": "DONE",
+  "dataset": "SPOT_PRICE",
+  "retryCount": 1,
+  "createdAt": "2026-02-27T08:10:00.000Z",
+  "retriedFromJobId": "rc_job_xxx"
 }
 ```
 

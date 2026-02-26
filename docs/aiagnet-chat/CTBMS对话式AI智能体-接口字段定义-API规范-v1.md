@@ -449,6 +449,7 @@ Query:
     "failedCount": 2,
     "maxConcurrency": 6,
     "maxRetries": 1,
+    "sourceBatchAssetId": "ca_batch_prev",
     "failed": [
       { "taskAssetId": "ca_task_2", "code": "CONV_PROMOTION_TASK_PUBLISH_BLOCKED", "message": "该草稿尚未发布" }
     ],

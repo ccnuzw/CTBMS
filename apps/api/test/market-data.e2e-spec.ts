@@ -100,7 +100,7 @@ async function main() {
 
     const reconcileCreated = await fetchJson<{
       success: boolean;
-      data: { jobId: string; status: string };
+      data: { jobId: string; status: string; retriedFromJobId: string | null; retryCount: number };
       traceId: string;
       ts: string;
     }>(`${baseUrl}/market-data/reconciliation/jobs`, {
@@ -124,6 +124,8 @@ async function main() {
     assert.equal(reconcileCreated.status, 201);
     assert.equal(reconcileCreated.body.success, true);
     assert.ok(reconcileCreated.body.data.jobId.length > 0);
+    assert.equal(reconcileCreated.body.data.retriedFromJobId, null);
+    assert.equal(reconcileCreated.body.data.retryCount, 0);
 
     const createdAtFrom = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
     const createdAtTo = new Date().toISOString();
@@ -131,7 +133,14 @@ async function main() {
     const reconcileList = await fetchJson<{
       success: boolean;
       data: {
-        items: Array<{ jobId: string; status: string; dataset: string }>;
+        items: Array<{
+          jobId: string;
+          status: string;
+          dataset: string;
+          retriedFromJobId: string | null;
+          retryCount: number;
+          summaryPass?: boolean;
+        }>;
         page: number;
         pageSize: number;
         total: number;
@@ -154,13 +163,24 @@ async function main() {
     assert.equal(reconcileList.body.data.page, 1);
     assert.equal(reconcileList.body.data.pageSize, 20);
     assert.ok(reconcileList.body.data.total >= 1);
-    assert.ok(
-      reconcileList.body.data.items.some((item) => item.jobId === reconcileCreated.body.data.jobId),
+    const createdListItem = reconcileList.body.data.items.find(
+      (item) => item.jobId === reconcileCreated.body.data.jobId,
     );
+    assert.ok(createdListItem);
+    if (createdListItem) {
+      assert.equal(createdListItem.retryCount, 0);
+    }
 
     const reconcileDetail = await fetchJson<{
       success: boolean;
-      data: { jobId: string; status: string; summary?: { pass?: boolean } };
+      data: {
+        jobId: string;
+        status: string;
+        retriedFromJobId: string | null;
+        retryCount: number;
+        summaryPass?: boolean;
+        summary?: { pass?: boolean };
+      };
       traceId: string;
       ts: string;
     }>(`${baseUrl}/market-data/reconciliation/jobs/${reconcileCreated.body.data.jobId}`, {
@@ -172,13 +192,62 @@ async function main() {
     assert.equal(reconcileDetail.status, 200);
     assert.equal(reconcileDetail.body.success, true);
     assert.equal(reconcileDetail.body.data.jobId, reconcileCreated.body.data.jobId);
+    assert.equal(reconcileDetail.body.data.retriedFromJobId, null);
+    assert.equal(reconcileDetail.body.data.retryCount, 0);
+    if (
+      typeof reconcileDetail.body.data.summaryPass === 'boolean' &&
+      typeof reconcileDetail.body.data.summary?.pass === 'boolean'
+    ) {
+      assert.equal(reconcileDetail.body.data.summaryPass, reconcileDetail.body.data.summary.pass);
+    }
+
+    const retry = await fetchJson<{
+      success: boolean;
+      data: {
+        jobId: string;
+        status: string;
+        dataset: string;
+        retryCount: number;
+        createdAt: string;
+        retriedFromJobId: string;
+      };
+      traceId: string;
+      ts: string;
+    }>(`${baseUrl}/market-data/reconciliation/jobs/${reconcileCreated.body.data.jobId}/retry`, {
+      method: 'POST',
+      headers: {
+        'x-virtual-user-id': 'admin-user',
+      },
+    });
+
+    assert.equal(retry.status, 201);
+    assert.equal(retry.body.success, true);
+    assert.equal(retry.body.data.retryCount, 1);
+    assert.equal(retry.body.data.retriedFromJobId, reconcileCreated.body.data.jobId);
+    assert.notEqual(retry.body.data.jobId, reconcileCreated.body.data.jobId);
+
+    const retryDetail = await fetchJson<{
+      success: boolean;
+      data: { jobId: string; retriedFromJobId: string | null; retryCount: number };
+      traceId: string;
+      ts: string;
+    }>(`${baseUrl}/market-data/reconciliation/jobs/${retry.body.data.jobId}`, {
+      method: 'GET',
+      headers: {
+        'x-virtual-user-id': 'admin-user',
+      },
+    });
+    assert.equal(retryDetail.status, 200);
+    assert.equal(retryDetail.body.success, true);
+    assert.equal(retryDetail.body.data.retriedFromJobId, reconcileCreated.body.data.jobId);
+    assert.equal(retryDetail.body.data.retryCount, 1);
 
     const pass = reconcileDetail.body.data.summary?.pass;
     if (typeof pass === 'boolean') {
       const reconcileListWithPass = await fetchJson<{
         success: boolean;
         data: {
-          items: Array<{ jobId: string }>;
+          items: Array<{ jobId: string; retryCount: number; summaryPass?: boolean }>;
           page: number;
           pageSize: number;
           total: number;
@@ -199,6 +268,11 @@ async function main() {
 
       assert.equal(reconcileListWithPass.status, 200);
       assert.equal(reconcileListWithPass.body.success, true);
+      for (const item of reconcileListWithPass.body.data.items) {
+        if (typeof item.summaryPass === 'boolean') {
+          assert.equal(item.summaryPass, pass);
+        }
+      }
       assert.ok(
         reconcileListWithPass.body.data.items.some(
           (item) => item.jobId === reconcileCreated.body.data.jobId,

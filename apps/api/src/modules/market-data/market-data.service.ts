@@ -54,6 +54,8 @@ interface ReconciliationJob {
   jobId: string;
   status: ReconciliationJobStatus;
   dataset: ReconciliationDataset;
+  retriedFromJobId?: string;
+  retryCount: number;
   createdByUserId: string;
   createdAt: string;
   startedAt?: string;
@@ -61,6 +63,7 @@ interface ReconciliationJob {
   summaryPass?: boolean;
   summary?: ReconciliationSummaryDto;
   sampleDiffs?: Array<Record<string, unknown>>;
+  request?: CreateReconciliationJobDto;
   error?: string;
 }
 
@@ -68,6 +71,8 @@ interface PersistedReconciliationJobRow {
   jobId: string;
   status: string;
   dataset: string;
+  retriedFromJobId: string | null;
+  retryCount: unknown;
   createdByUserId: string;
   createdAt: unknown;
   startedAt: unknown;
@@ -81,11 +86,24 @@ interface PersistedReconciliationDiffRow {
   payload: unknown;
 }
 
+interface PersistedReconciliationJobRetryRow {
+  createdByUserId: string;
+  status: string;
+  dataset: string;
+  retryCount: unknown;
+  timeRangeFrom: unknown;
+  timeRangeTo: unknown;
+  dimensions: unknown;
+  threshold: unknown;
+}
+
 interface ReconciliationJobListResult {
   items: Array<{
     jobId: string;
     status: ReconciliationJobStatus;
     dataset: ReconciliationDataset;
+    retriedFromJobId: string | null;
+    retryCount: number;
     createdAt: string;
     startedAt?: string;
     finishedAt?: string;
@@ -345,14 +363,24 @@ export class MarketDataService {
     };
   }
 
-  async createReconciliationJob(userId: string, dto: CreateReconciliationJobDto) {
+  async createReconciliationJob(
+    userId: string,
+    dto: CreateReconciliationJobDto,
+    options?: {
+      retriedFromJobId?: string;
+      retryCount?: number;
+    },
+  ) {
     const jobId = randomUUID();
     const job: ReconciliationJob = {
       jobId,
       status: 'PENDING',
       dataset: dto.dataset,
+      retriedFromJobId: options?.retriedFromJobId,
+      retryCount: this.parseRetryCount(options?.retryCount),
       createdByUserId: userId,
       createdAt: new Date().toISOString(),
+      request: this.cloneReconciliationRequest(dto),
     };
 
     this.reconciliationJobs.set(jobId, job);
@@ -384,7 +412,51 @@ export class MarketDataService {
       jobId: job.jobId,
       status: job.status,
       dataset: job.dataset,
+      retriedFromJobId: job.retriedFromJobId ?? null,
+      retryCount: this.parseRetryCount(job.retryCount),
       createdAt: job.createdAt,
+    };
+  }
+
+  async retryReconciliationJob(userId: string, jobId: string) {
+    let retryRequest: CreateReconciliationJobDto | undefined;
+    let sourceStatus: ReconciliationJobStatus | undefined;
+    let sourceRetryCount = 0;
+
+    const persistedSource = await this.findPersistedReconciliationJobForRetry(jobId);
+    if (persistedSource) {
+      if (persistedSource.createdByUserId !== userId) {
+        throw new ForbiddenException('no permission to retry this job');
+      }
+      retryRequest = persistedSource.request;
+      sourceStatus = persistedSource.status;
+      sourceRetryCount = persistedSource.retryCount;
+    } else {
+      const inMemoryJob = this.reconciliationJobs.get(jobId);
+      if (!inMemoryJob) {
+        throw new NotFoundException('reconciliation job not found');
+      }
+      if (inMemoryJob.createdByUserId !== userId) {
+        throw new ForbiddenException('no permission to retry this job');
+      }
+      retryRequest = inMemoryJob.request;
+      sourceStatus = inMemoryJob.status;
+      sourceRetryCount = this.parseRetryCount(inMemoryJob.retryCount);
+    }
+
+    if (!retryRequest) {
+      throw new BadRequestException('source reconciliation job payload unavailable');
+    }
+    if (sourceStatus === 'RUNNING') {
+      throw new BadRequestException('cannot retry a running reconciliation job');
+    }
+
+    const retried = await this.createReconciliationJob(userId, retryRequest, {
+      retriedFromJobId: jobId,
+      retryCount: sourceRetryCount + 1,
+    });
+    return {
+      ...retried,
     };
   }
 
@@ -445,6 +517,8 @@ export class MarketDataService {
       jobId: job.jobId,
       status: job.status,
       dataset: job.dataset,
+      retriedFromJobId: job.retriedFromJobId ?? null,
+      retryCount: this.parseRetryCount(job.retryCount),
       createdAt: job.createdAt,
       startedAt: job.startedAt,
       finishedAt: job.finishedAt,
@@ -474,6 +548,8 @@ export class MarketDataService {
         jobId: persisted.jobId,
         status: persisted.status,
         dataset: persisted.dataset,
+        retriedFromJobId: persisted.retriedFromJobId ?? null,
+        retryCount: this.parseRetryCount(persisted.retryCount),
         createdAt: persisted.createdAt,
         startedAt: persisted.startedAt,
         finishedAt: persisted.finishedAt,
@@ -497,6 +573,8 @@ export class MarketDataService {
       jobId: job.jobId,
       status: job.status,
       dataset: job.dataset,
+      retriedFromJobId: job.retriedFromJobId ?? null,
+      retryCount: this.parseRetryCount(job.retryCount),
       createdAt: job.createdAt,
       startedAt: job.startedAt,
       finishedAt: job.finishedAt,
@@ -647,16 +725,20 @@ export class MarketDataService {
     const threshold = dto?.threshold ? JSON.stringify(dto.threshold) : null;
     const summary = job.summary ? JSON.stringify(job.summary) : null;
     const summaryPass = this.resolveSummaryPass(job.summary) ?? null;
+    const retriedFromJobId = job.retriedFromJobId ?? null;
+    const retryCount = this.parseRetryCount(job.retryCount);
 
     try {
       await this.prisma.$executeRawUnsafe(
         `INSERT INTO "DataReconciliationJob"
-          ("id", "jobId", "status", "dataset", "timeRangeFrom", "timeRangeTo", "dimensions", "threshold", "summary", "summaryPass", "errorMessage", "createdByUserId", "createdAt", "startedAt", "finishedAt", "updatedAt")
+          ("id", "jobId", "status", "dataset", "retriedFromJobId", "retryCount", "timeRangeFrom", "timeRangeTo", "dimensions", "threshold", "summary", "summaryPass", "errorMessage", "createdByUserId", "createdAt", "startedAt", "finishedAt", "updatedAt")
          VALUES
-          ($1, $2, $3::"ReconcileJobStatus", $4, $5, $6, $7::jsonb, $8::jsonb, $9::jsonb, $10, $11, $12, $13, $14, $15, $16)
+          ($1, $2, $3::"ReconcileJobStatus", $4, $5, $6, $7, $8, $9::jsonb, $10::jsonb, $11::jsonb, $12, $13, $14, $15, $16, $17, $18)
          ON CONFLICT ("jobId") DO UPDATE SET
           "status" = EXCLUDED."status",
           "dataset" = EXCLUDED."dataset",
+          "retriedFromJobId" = EXCLUDED."retriedFromJobId",
+          "retryCount" = EXCLUDED."retryCount",
           "timeRangeFrom" = COALESCE(EXCLUDED."timeRangeFrom", "DataReconciliationJob"."timeRangeFrom"),
           "timeRangeTo" = COALESCE(EXCLUDED."timeRangeTo", "DataReconciliationJob"."timeRangeTo"),
           "dimensions" = COALESCE(EXCLUDED."dimensions", "DataReconciliationJob"."dimensions"),
@@ -671,6 +753,8 @@ export class MarketDataService {
         job.jobId,
         job.status,
         job.dataset,
+        retriedFromJobId,
+        retryCount,
         safeFrom,
         safeTo,
         dimensions,
@@ -800,6 +884,8 @@ export class MarketDataService {
            "jobId",
            "status",
            "dataset",
+           "retriedFromJobId",
+           "retryCount",
            "createdByUserId",
            "createdAt",
            "startedAt",
@@ -823,6 +909,8 @@ export class MarketDataService {
           jobId: row.jobId,
           status: this.normalizeReconciliationStatus(row.status),
           dataset: this.normalizeReconciliationDataset(row.dataset),
+          retriedFromJobId: row.retriedFromJobId ?? null,
+          retryCount: this.parseRetryCount(row.retryCount),
           createdAt: this.toIsoString(row.createdAt) ?? new Date().toISOString(),
           startedAt: this.toIsoString(row.startedAt),
           finishedAt: this.toIsoString(row.finishedAt),
@@ -861,6 +949,8 @@ export class MarketDataService {
            "jobId",
            "status",
            "dataset",
+           "retriedFromJobId",
+           "retryCount",
            "createdByUserId",
            "createdAt",
            "startedAt",
@@ -893,6 +983,8 @@ export class MarketDataService {
         jobId: row.jobId,
         status: this.normalizeReconciliationStatus(row.status),
         dataset: this.normalizeReconciliationDataset(row.dataset),
+        retriedFromJobId: row.retriedFromJobId ?? undefined,
+        retryCount: this.parseRetryCount(row.retryCount),
         createdByUserId: row.createdByUserId,
         createdAt: this.toIsoString(row.createdAt) ?? new Date().toISOString(),
         startedAt: this.toIsoString(row.startedAt),
@@ -912,6 +1004,90 @@ export class MarketDataService {
       this.logger.error(`Read persisted reconciliation job failed: ${this.stringifyError(error)}`);
       return null;
     }
+  }
+
+  private async findPersistedReconciliationJobForRetry(jobId: string): Promise<{
+    createdByUserId: string;
+    status: ReconciliationJobStatus;
+    retryCount: number;
+    request?: CreateReconciliationJobDto;
+  } | null> {
+    if (this.reconciliationPersistenceUnavailable) {
+      return null;
+    }
+
+    try {
+      const rows = await this.prisma.$queryRawUnsafe<PersistedReconciliationJobRetryRow[]>(
+        `SELECT
+           "createdByUserId",
+           "status",
+           "dataset",
+           "retryCount",
+           "timeRangeFrom",
+           "timeRangeTo",
+           "dimensions",
+           "threshold"
+         FROM "DataReconciliationJob"
+         WHERE "jobId" = $1
+         LIMIT 1`,
+        jobId,
+      );
+
+      if (rows.length === 0) {
+        return null;
+      }
+
+      const row = rows[0];
+      const from = this.toIsoString(row.timeRangeFrom);
+      const to = this.toIsoString(row.timeRangeTo);
+      const status = this.normalizeReconciliationStatus(row.status);
+
+      if (!from || !to) {
+        return {
+          createdByUserId: row.createdByUserId,
+          status,
+          retryCount: this.parseRetryCount(row.retryCount),
+          request: undefined,
+        };
+      }
+
+      const thresholdRaw =
+        this.parseJsonValue<{ maxDiffRate?: unknown; maxMissingRate?: unknown }>(row.threshold) ??
+        {};
+
+      const request: CreateReconciliationJobDto = {
+        dataset: this.normalizeReconciliationDataset(row.dataset),
+        timeRange: {
+          from,
+          to,
+        },
+        dimensions: this.parseJsonValue<Record<string, unknown>>(row.dimensions) ?? undefined,
+        threshold: {
+          maxDiffRate: this.parseFiniteNumber(thresholdRaw.maxDiffRate) ?? 0.01,
+          maxMissingRate: this.parseFiniteNumber(thresholdRaw.maxMissingRate) ?? 0.005,
+        },
+      };
+
+      return {
+        createdByUserId: row.createdByUserId,
+        status,
+        retryCount: this.parseRetryCount(row.retryCount),
+        request,
+      };
+    } catch (error) {
+      if (this.isReconciliationPersistenceMissingTableError(error)) {
+        this.disableReconciliationPersistence('read persisted retry payload', error);
+        return null;
+      }
+      this.logger.error(
+        `Read persisted reconciliation retry payload failed: ${this.stringifyError(error)}`,
+      );
+      return null;
+    }
+  }
+
+  private cloneReconciliationRequest(dto: CreateReconciliationJobDto): CreateReconciliationJobDto {
+    return JSON.parse(JSON.stringify(dto)) as CreateReconciliationJobDto;
   }
 
   private resolveSummaryPass(
@@ -962,6 +1138,30 @@ export class MarketDataService {
       throw new BadRequestException(`Invalid datetime value: ${value}`);
     }
     return parsed;
+  }
+
+  private parseFiniteNumber(value: unknown): number | undefined {
+    if (typeof value === 'number' && Number.isFinite(value)) {
+      return value;
+    }
+    if (typeof value === 'string') {
+      const parsed = Number(value);
+      if (Number.isFinite(parsed)) {
+        return parsed;
+      }
+    }
+    return undefined;
+  }
+
+  private parseRetryCount(value: unknown): number {
+    const parsed = this.parseFiniteNumber(value);
+    if (parsed === undefined) {
+      return 0;
+    }
+    if (parsed <= 0) {
+      return 0;
+    }
+    return Math.trunc(parsed);
   }
 
   private normalizeReconciliationSortBy(sortBy?: string): ReconciliationListSortBy {
@@ -1093,13 +1293,20 @@ export class MarketDataService {
     const containsTable =
       message.includes('datareconciliationjob') || message.includes('datareconciliationdiff');
     const containsEnum = message.includes('reconcilejobstatus');
+    const containsColumn = message.includes('summarypass');
+    const containsRetryColumn =
+      message.includes('retriedfromjobid') || message.includes('retrycount');
     const missingTableHint =
       message.includes('does not exist') ||
       message.includes('relation') ||
+      message.includes('column') ||
       message.includes('undefined') ||
+      message.includes('42703') ||
       message.includes('42704') ||
       message.includes('p2021');
-    return (containsTable || containsEnum) && missingTableHint;
+    return (
+      (containsTable || containsEnum || containsColumn || containsRetryColumn) && missingTableHint
+    );
   }
 
   private disableReconciliationPersistence(operation: string, error: unknown) {
