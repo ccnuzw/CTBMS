@@ -8,6 +8,8 @@ export const UserConfigBindingTypeEnum = z.enum([
   'WORKFLOW_DEFINITION',
   'AGENT_COPILOT_PROMPTS',
   'AGENT_COPILOT_DELIVERY_PROFILES',
+  'AGENT_CAPABILITY_ROUTING_POLICY',
+  'AGENT_EPHEMERAL_CAPABILITY_POLICY',
 ]);
 
 export const UserConfigBindingSchema = z.object({

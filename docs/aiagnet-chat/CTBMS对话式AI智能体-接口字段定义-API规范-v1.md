@@ -69,6 +69,33 @@
 }
 ```
 
+补充字段（2026-02-26 增量）：
+
+```json
+{
+  "replyOptions": [
+    {
+      "id": "view_result",
+      "label": "查看结果",
+      "mode": "OPEN_TAB",
+      "tab": "result"
+    },
+    {
+      "id": "refine_region",
+      "label": "改成华北范围",
+      "mode": "SEND",
+      "value": "改成华北范围再分析一次"
+    }
+  ]
+}
+```
+
+字段约束：
+
+1. `replyOptions` 每轮建议 1-4 个。
+2. `mode` 仅允许 `SEND`/`OPEN_TAB`。
+3. `OPEN_TAB.tab` 仅允许 `progress`/`result`/`delivery`/`schedule`。
+
 ## 1.3 确认计划并执行
 
 - `POST /agent-conversations/sessions/:sessionId/plan/confirm`
@@ -145,6 +172,35 @@
     }
   }
 }
+```
+
+## 1.5 能力路由日志
+
+- `GET /agent-conversations/sessions/:sessionId/capability-routing-logs`
+
+Query:
+
+1. `routeType`（可选）：`WORKFLOW_REUSE`/`SKILL_DRAFT_REUSE`/`SKILL_DRAFT_CREATE`
+2. `limit`（可选）：1-200，默认 50
+
+响应：
+
+```json
+[
+  {
+    "id": "ca_xxx",
+    "title": "能力路由日志 WORKFLOW_REUSE 9f8c7a6b5c1d",
+    "routeType": "WORKFLOW_REUSE",
+    "selectedSource": "USER_PRIVATE",
+    "selectedScore": 0.84,
+    "selectedWorkflowDefinitionId": "wf_xxx",
+    "selectedDraftId": null,
+    "selectedSkillCode": null,
+    "routePolicy": ["USER_PRIVATE", "TEAM_OR_PUBLIC"],
+    "reason": "命中用户私有工作流，优先复用",
+    "createdAt": "2026-02-26T10:20:00.000Z"
+  }
+]
 ```
 
 ## 2. 辩论接口

@@ -9,11 +9,13 @@ import {
   Drawer,
   Empty,
   Grid,
+  InputNumber,
   Input,
   Modal,
   List,
   Progress,
   Segmented,
+  Switch,
   Row,
   Space,
   Timeline,
@@ -37,7 +39,11 @@ import { getApiError } from '../../../api/client';
 import { useVirtualUser } from '../../auth/virtual-user';
 import {
   CopilotPromptScope,
+  CapabilityRoutingPolicy,
   DeliveryChannelProfile,
+  useCapabilityRoutingPolicy,
+  EphemeralCapabilityPolicy,
+  useEphemeralCapabilityPolicy,
   useConfirmConversationPlan,
   useConversationBacktest,
   useConversationConflicts,
@@ -70,6 +76,8 @@ import {
   useRevokeSkillRuntimeGrant,
   usePublishSkillDraft,
   useResolveScheduleCommand,
+  useUpsertCapabilityRoutingPolicy,
+  useUpsertEphemeralCapabilityPolicy,
   useUpsertCopilotPromptTemplates,
   useUpsertCopilotDeliveryProfiles,
 } from '../api/conversations';
@@ -89,6 +97,20 @@ const ASSISTANT_SUMMARY_PREVIEW_LENGTH = 160;
 const ASSISTANT_SUMMARY_MAX_HEADINGS = 3;
 const ASSISTANT_SUMMARY_MAX_BULLETS = 4;
 const SYSTEM_SUMMARY_MAX_KEYS = 5;
+const DEFAULT_CAPABILITY_ROUTING_POLICY: CapabilityRoutingPolicy = {
+  allowOwnerPool: true,
+  allowPublicPool: true,
+  preferOwnerFirst: true,
+  minOwnerScore: 0,
+  minPublicScore: 0.35,
+};
+
+const DEFAULT_EPHEMERAL_CAPABILITY_POLICY: EphemeralCapabilityPolicy = {
+  draftSemanticReuseThreshold: 0.72,
+  publishedSkillReuseThreshold: 0.76,
+  runtimeGrantTtlHours: 24,
+  runtimeGrantMaxUseCount: 30,
+};
 
 type QuickPromptTemplate = {
   key: string;
@@ -408,7 +430,15 @@ export const AgentCopilotPage: React.FC = () => {
   const [deliveryAdvancedOpen, setDeliveryAdvancedOpen] = useState(false);
   const [templateModalOpen, setTemplateModalOpen] = useState(false);
   const [deliveryProfileModalOpen, setDeliveryProfileModalOpen] = useState(false);
+  const [routingPolicyModalOpen, setRoutingPolicyModalOpen] = useState(false);
+  const [ephemeralPolicyModalOpen, setEphemeralPolicyModalOpen] = useState(false);
   const [deliveryProfileEditor, setDeliveryProfileEditor] = useState('[]');
+  const [routingPolicyDraft, setRoutingPolicyDraft] = useState<CapabilityRoutingPolicy>(
+    DEFAULT_CAPABILITY_ROUTING_POLICY,
+  );
+  const [ephemeralPolicyDraft, setEphemeralPolicyDraft] = useState<EphemeralCapabilityPolicy>(
+    DEFAULT_EPHEMERAL_CAPABILITY_POLICY,
+  );
   const [templateEditor, setTemplateEditor] = useState('');
   const [templateScope, setTemplateScope] = useState<CopilotPromptScope>('PERSONAL');
   const [templateMode, setTemplateMode] = useState<'FORM' | 'JSON'>('FORM');
@@ -471,6 +501,10 @@ export const AgentCopilotPage: React.FC = () => {
   const personalDeliveryProfileQuery = useCopilotDeliveryProfiles('PERSONAL');
   const teamDeliveryProfileQuery = useCopilotDeliveryProfiles('TEAM');
   const upsertDeliveryProfilesMutation = useUpsertCopilotDeliveryProfiles();
+  const capabilityRoutingPolicyQuery = useCapabilityRoutingPolicy();
+  const upsertCapabilityRoutingPolicyMutation = useUpsertCapabilityRoutingPolicy();
+  const ephemeralCapabilityPolicyQuery = useEphemeralCapabilityPolicy();
+  const upsertEphemeralCapabilityPolicyMutation = useUpsertEphemeralCapabilityPolicy();
 
   const activePromptTemplate =
     templateScope === 'PERSONAL' ? personalPromptTemplateQuery.data : teamPromptTemplateQuery.data;
@@ -595,6 +629,72 @@ export const AgentCopilotPage: React.FC = () => {
       activeDeliveryProfiles.find((item) => item.channel === deliveryChannel)
     );
   }, [activeDeliveryProfiles, deliveryChannel]);
+  const capabilityRoutingPolicyBinding = capabilityRoutingPolicyQuery.data;
+  const ephemeralCapabilityPolicyBinding = ephemeralCapabilityPolicyQuery.data;
+  const capabilityRoutingPolicy = useMemo(() => {
+    const metadata = capabilityRoutingPolicyBinding?.metadata as Record<string, unknown> | undefined;
+    if (!metadata) {
+      return DEFAULT_CAPABILITY_ROUTING_POLICY;
+    }
+    const parseBool = (value: unknown, fallback: boolean) => (typeof value === 'boolean' ? value : fallback);
+    const parseScore = (value: unknown, fallback: number) => {
+      const parsed = typeof value === 'number' ? value : typeof value === 'string' ? Number(value) : NaN;
+      if (!Number.isFinite(parsed)) {
+        return fallback;
+      }
+      return Math.max(0, Math.min(1, parsed));
+    };
+    return {
+      allowOwnerPool: parseBool(metadata.allowOwnerPool, DEFAULT_CAPABILITY_ROUTING_POLICY.allowOwnerPool),
+      allowPublicPool: parseBool(metadata.allowPublicPool, DEFAULT_CAPABILITY_ROUTING_POLICY.allowPublicPool),
+      preferOwnerFirst: parseBool(metadata.preferOwnerFirst, DEFAULT_CAPABILITY_ROUTING_POLICY.preferOwnerFirst),
+      minOwnerScore: parseScore(metadata.minOwnerScore, DEFAULT_CAPABILITY_ROUTING_POLICY.minOwnerScore),
+      minPublicScore: parseScore(metadata.minPublicScore, DEFAULT_CAPABILITY_ROUTING_POLICY.minPublicScore),
+    } as CapabilityRoutingPolicy;
+  }, [capabilityRoutingPolicyBinding?.metadata]);
+  const ephemeralCapabilityPolicy = useMemo(() => {
+    const metadata = ephemeralCapabilityPolicyBinding?.metadata as Record<string, unknown> | undefined;
+    if (!metadata) {
+      return DEFAULT_EPHEMERAL_CAPABILITY_POLICY;
+    }
+    const parseScore = (value: unknown, fallback: number) => {
+      const parsed = typeof value === 'number' ? value : typeof value === 'string' ? Number(value) : NaN;
+      if (!Number.isFinite(parsed)) {
+        return fallback;
+      }
+      return Math.max(0, Math.min(1, parsed));
+    };
+    const parseIntValue = (value: unknown, fallback: number, min: number, max: number) => {
+      const parsed = typeof value === 'number' ? value : typeof value === 'string' ? Number(value) : NaN;
+      if (!Number.isFinite(parsed)) {
+        return fallback;
+      }
+      return Math.max(min, Math.min(max, Math.round(parsed)));
+    };
+
+    return {
+      draftSemanticReuseThreshold: parseScore(
+        metadata.draftSemanticReuseThreshold,
+        DEFAULT_EPHEMERAL_CAPABILITY_POLICY.draftSemanticReuseThreshold,
+      ),
+      publishedSkillReuseThreshold: parseScore(
+        metadata.publishedSkillReuseThreshold,
+        DEFAULT_EPHEMERAL_CAPABILITY_POLICY.publishedSkillReuseThreshold,
+      ),
+      runtimeGrantTtlHours: parseIntValue(
+        metadata.runtimeGrantTtlHours,
+        DEFAULT_EPHEMERAL_CAPABILITY_POLICY.runtimeGrantTtlHours,
+        1,
+        168,
+      ),
+      runtimeGrantMaxUseCount: parseIntValue(
+        metadata.runtimeGrantMaxUseCount,
+        DEFAULT_EPHEMERAL_CAPABILITY_POLICY.runtimeGrantMaxUseCount,
+        1,
+        200,
+      ),
+    } as EphemeralCapabilityPolicy;
+  }, [ephemeralCapabilityPolicyBinding?.metadata]);
   const deliveryPreview = useMemo(() => {
     const resolvedTo =
       deliveryChannel === 'EMAIL'
@@ -1335,6 +1435,14 @@ export const AgentCopilotPage: React.FC = () => {
     }
   }, [emailModalOpen, activeDeliveryChannelProfile]);
 
+  useEffect(() => {
+    setRoutingPolicyDraft(capabilityRoutingPolicy);
+  }, [capabilityRoutingPolicy]);
+
+  useEffect(() => {
+    setEphemeralPolicyDraft(ephemeralCapabilityPolicy);
+  }, [ephemeralCapabilityPolicy]);
+
   const handleExportPdf = async () => {
     if (!activeSessionId) {
       message.warning('请先选择会话');
@@ -1436,6 +1544,16 @@ export const AgentCopilotPage: React.FC = () => {
     setDeliveryProfileModalOpen(true);
   };
 
+  const openRoutingPolicyModal = () => {
+    setRoutingPolicyDraft(capabilityRoutingPolicy);
+    setRoutingPolicyModalOpen(true);
+  };
+
+  const openEphemeralPolicyModal = () => {
+    setEphemeralPolicyDraft(ephemeralCapabilityPolicy);
+    setEphemeralPolicyModalOpen(true);
+  };
+
   const handleSaveDeliveryProfiles = async () => {
     try {
       const parsed = JSON.parse(deliveryProfileEditor) as Array<Record<string, unknown>>;
@@ -1466,6 +1584,47 @@ export const AgentCopilotPage: React.FC = () => {
       setDeliveryProfileModalOpen(false);
     } catch {
       message.error('投递配置 JSON 解析失败');
+    }
+  };
+
+  const handleSaveRoutingPolicy = async () => {
+    const policy: CapabilityRoutingPolicy = {
+      allowOwnerPool: routingPolicyDraft.allowOwnerPool,
+      allowPublicPool: routingPolicyDraft.allowPublicPool,
+      preferOwnerFirst: routingPolicyDraft.preferOwnerFirst,
+      minOwnerScore: Math.max(0, Math.min(1, routingPolicyDraft.minOwnerScore)),
+      minPublicScore: Math.max(0, Math.min(1, routingPolicyDraft.minPublicScore)),
+    };
+
+    try {
+      await upsertCapabilityRoutingPolicyMutation.mutateAsync({
+        bindingId: capabilityRoutingPolicyBinding?.id,
+        policy,
+      });
+      message.success('能力路由策略保存成功');
+      setRoutingPolicyModalOpen(false);
+    } catch {
+      message.error('能力路由策略保存失败');
+    }
+  };
+
+  const handleSaveEphemeralPolicy = async () => {
+    const policy: EphemeralCapabilityPolicy = {
+      draftSemanticReuseThreshold: Math.max(0, Math.min(1, ephemeralPolicyDraft.draftSemanticReuseThreshold)),
+      publishedSkillReuseThreshold: Math.max(0, Math.min(1, ephemeralPolicyDraft.publishedSkillReuseThreshold)),
+      runtimeGrantTtlHours: Math.max(1, Math.min(168, Math.round(ephemeralPolicyDraft.runtimeGrantTtlHours))),
+      runtimeGrantMaxUseCount: Math.max(1, Math.min(200, Math.round(ephemeralPolicyDraft.runtimeGrantMaxUseCount))),
+    };
+
+    try {
+      await upsertEphemeralCapabilityPolicyMutation.mutateAsync({
+        bindingId: ephemeralCapabilityPolicyBinding?.id,
+        policy,
+      });
+      message.success('临时能力策略保存成功');
+      setEphemeralPolicyModalOpen(false);
+    } catch {
+      message.error('临时能力策略保存失败');
     }
   };
 
@@ -2384,6 +2543,8 @@ export const AgentCopilotPage: React.FC = () => {
               <Space wrap>
                 <Button onClick={openTemplateModal}>管理快捷模板</Button>
                 <Button onClick={openDeliveryProfileModal}>投递配置中心</Button>
+                <Button onClick={openRoutingPolicyModal}>能力路由策略</Button>
+                <Button onClick={openEphemeralPolicyModal}>临时能力策略</Button>
                 <Button onClick={handleExportDiagnostics}>导出诊断</Button>
               </Space>
 
@@ -2941,6 +3102,178 @@ export const AgentCopilotPage: React.FC = () => {
             onChange={(e) => setDeliveryProfileEditor(e.target.value)}
             autoSize={{ minRows: 12, maxRows: 22 }}
           />
+        </Space>
+      </Modal>
+
+      <Modal
+        title="能力路由策略"
+        open={routingPolicyModalOpen}
+        onOk={handleSaveRoutingPolicy}
+        onCancel={() => setRoutingPolicyModalOpen(false)}
+        confirmLoading={upsertCapabilityRoutingPolicyMutation.isPending}
+        width={760}
+      >
+        <Space direction="vertical" style={{ width: '100%' }}>
+          <Alert
+            type="info"
+            showIcon
+            message="用于控制能力复用顺序与命中阈值（普通用户无感）"
+            description="建议默认：优先私有池，其次公共池。阈值越高，复用越保守。"
+          />
+          <Card size="small">
+            <Space direction="vertical" style={{ width: '100%' }} size={12}>
+              <Space style={{ justifyContent: 'space-between', width: '100%' }}>
+                <Text>启用私有能力池</Text>
+                <Switch
+                  checked={routingPolicyDraft.allowOwnerPool}
+                  onChange={(checked) =>
+                    setRoutingPolicyDraft((prev) => ({
+                      ...prev,
+                      allowOwnerPool: checked,
+                    }))
+                  }
+                />
+              </Space>
+              <Space style={{ justifyContent: 'space-between', width: '100%' }}>
+                <Text>启用公共能力池</Text>
+                <Switch
+                  checked={routingPolicyDraft.allowPublicPool}
+                  onChange={(checked) =>
+                    setRoutingPolicyDraft((prev) => ({
+                      ...prev,
+                      allowPublicPool: checked,
+                    }))
+                  }
+                />
+              </Space>
+              <Space style={{ justifyContent: 'space-between', width: '100%' }}>
+                <Text>优先使用私有能力</Text>
+                <Switch
+                  checked={routingPolicyDraft.preferOwnerFirst}
+                  onChange={(checked) =>
+                    setRoutingPolicyDraft((prev) => ({
+                      ...prev,
+                      preferOwnerFirst: checked,
+                    }))
+                  }
+                />
+              </Space>
+              <Space style={{ justifyContent: 'space-between', width: '100%' }}>
+                <Text>私有池最低命中分</Text>
+                <InputNumber
+                  min={0}
+                  max={1}
+                  step={0.01}
+                  value={routingPolicyDraft.minOwnerScore}
+                  onChange={(value) =>
+                    setRoutingPolicyDraft((prev) => ({
+                      ...prev,
+                      minOwnerScore: typeof value === 'number' ? value : prev.minOwnerScore,
+                    }))
+                  }
+                />
+              </Space>
+              <Space style={{ justifyContent: 'space-between', width: '100%' }}>
+                <Text>公共池最低命中分</Text>
+                <InputNumber
+                  min={0}
+                  max={1}
+                  step={0.01}
+                  value={routingPolicyDraft.minPublicScore}
+                  onChange={(value) =>
+                    setRoutingPolicyDraft((prev) => ({
+                      ...prev,
+                      minPublicScore: typeof value === 'number' ? value : prev.minPublicScore,
+                    }))
+                  }
+                />
+              </Space>
+            </Space>
+          </Card>
+        </Space>
+      </Modal>
+
+      <Modal
+        title="临时能力策略"
+        open={ephemeralPolicyModalOpen}
+        onOk={handleSaveEphemeralPolicy}
+        onCancel={() => setEphemeralPolicyModalOpen(false)}
+        confirmLoading={upsertEphemeralCapabilityPolicyMutation.isPending}
+        width={760}
+      >
+        <Space direction="vertical" style={{ width: '100%' }}>
+          <Alert
+            type="info"
+            showIcon
+            message="控制临时能力复用阈值与运行时授权策略"
+            description="建议先保持默认，再根据 UAT 指标逐步微调。"
+          />
+          <Card size="small">
+            <Space direction="vertical" style={{ width: '100%' }} size={12}>
+              <Space style={{ justifyContent: 'space-between', width: '100%' }}>
+                <Text>草稿语义复用阈值</Text>
+                <InputNumber
+                  min={0}
+                  max={1}
+                  step={0.01}
+                  value={ephemeralPolicyDraft.draftSemanticReuseThreshold}
+                  onChange={(value) =>
+                    setEphemeralPolicyDraft((prev) => ({
+                      ...prev,
+                      draftSemanticReuseThreshold:
+                        typeof value === 'number' ? value : prev.draftSemanticReuseThreshold,
+                    }))
+                  }
+                />
+              </Space>
+              <Space style={{ justifyContent: 'space-between', width: '100%' }}>
+                <Text>已发布能力复用阈值</Text>
+                <InputNumber
+                  min={0}
+                  max={1}
+                  step={0.01}
+                  value={ephemeralPolicyDraft.publishedSkillReuseThreshold}
+                  onChange={(value) =>
+                    setEphemeralPolicyDraft((prev) => ({
+                      ...prev,
+                      publishedSkillReuseThreshold:
+                        typeof value === 'number' ? value : prev.publishedSkillReuseThreshold,
+                    }))
+                  }
+                />
+              </Space>
+              <Space style={{ justifyContent: 'space-between', width: '100%' }}>
+                <Text>运行时授权时长（小时）</Text>
+                <InputNumber
+                  min={1}
+                  max={168}
+                  step={1}
+                  value={ephemeralPolicyDraft.runtimeGrantTtlHours}
+                  onChange={(value) =>
+                    setEphemeralPolicyDraft((prev) => ({
+                      ...prev,
+                      runtimeGrantTtlHours: typeof value === 'number' ? value : prev.runtimeGrantTtlHours,
+                    }))
+                  }
+                />
+              </Space>
+              <Space style={{ justifyContent: 'space-between', width: '100%' }}>
+                <Text>运行时授权最大使用次数</Text>
+                <InputNumber
+                  min={1}
+                  max={200}
+                  step={1}
+                  value={ephemeralPolicyDraft.runtimeGrantMaxUseCount}
+                  onChange={(value) =>
+                    setEphemeralPolicyDraft((prev) => ({
+                      ...prev,
+                      runtimeGrantMaxUseCount: typeof value === 'number' ? value : prev.runtimeGrantMaxUseCount,
+                    }))
+                  }
+                />
+              </Space>
+            </Space>
+          </Card>
         </Space>
       </Modal>
     </Space>

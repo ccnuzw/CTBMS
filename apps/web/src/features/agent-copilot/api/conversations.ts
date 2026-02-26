@@ -300,6 +300,8 @@ export interface ScheduleResolutionResult {
 
 const COPILOT_PROMPT_BINDING_TYPE = 'AGENT_COPILOT_PROMPTS';
 const COPILOT_DELIVERY_PROFILE_BINDING_TYPE = 'AGENT_COPILOT_DELIVERY_PROFILES';
+const CAPABILITY_ROUTING_POLICY_BINDING_TYPE = 'AGENT_CAPABILITY_ROUTING_POLICY';
+const EPHEMERAL_CAPABILITY_POLICY_BINDING_TYPE = 'AGENT_EPHEMERAL_CAPABILITY_POLICY';
 
 export type CopilotPromptScope = 'PERSONAL' | 'TEAM';
 
@@ -314,6 +316,26 @@ const deliveryProfileScopeToTargetId = (scope: CopilotPromptScope) =>
 
 const deliveryProfileScopeToTargetCode = (scope: CopilotPromptScope) =>
   scope === 'TEAM' ? 'agent-copilot-delivery-profiles-team' : 'agent-copilot-delivery-profiles-personal';
+
+export interface CapabilityRoutingPolicy {
+  allowOwnerPool: boolean;
+  allowPublicPool: boolean;
+  preferOwnerFirst: boolean;
+  minOwnerScore: number;
+  minPublicScore: number;
+}
+
+export interface EphemeralCapabilityPolicy {
+  draftSemanticReuseThreshold: number;
+  publishedSkillReuseThreshold: number;
+  runtimeGrantTtlHours: number;
+  runtimeGrantMaxUseCount: number;
+}
+
+const capabilityRoutingPolicyTargetId = 'agent-capability-routing-policy-default';
+const capabilityRoutingPolicyTargetCode = 'agent-capability-routing-policy-default';
+const ephemeralCapabilityPolicyTargetId = 'agent-ephemeral-capability-policy-default';
+const ephemeralCapabilityPolicyTargetCode = 'agent-ephemeral-capability-policy-default';
 
 export interface DeliveryChannelProfile {
   id: string;
@@ -576,6 +598,100 @@ export const useUpsertCopilotDeliveryProfiles = () => {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['agent-copilot', 'delivery-profiles'] });
+    },
+  });
+};
+
+export const useCapabilityRoutingPolicy = () =>
+  useQuery<UserConfigBindingDto | null>({
+    queryKey: ['agent-copilot', 'capability-routing-policy'],
+    queryFn: async () => {
+      const res = await apiClient.get<UserConfigBindingPageDto>('/user-config-bindings', {
+        params: {
+          bindingType: CAPABILITY_ROUTING_POLICY_BINDING_TYPE,
+          page: 1,
+          pageSize: 20,
+        },
+      });
+      return res.data.data.find((item) => item.targetId === capabilityRoutingPolicyTargetId) ?? null;
+    },
+  });
+
+export const useUpsertCapabilityRoutingPolicy = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (payload: { bindingId?: string; policy: CapabilityRoutingPolicy }) => {
+      if (payload.bindingId) {
+        const dto: UpdateUserConfigBindingDto = {
+          metadata: payload.policy as unknown as Record<string, unknown>,
+        };
+        const res = await apiClient.put<UserConfigBindingDto>(
+          `/user-config-bindings/${payload.bindingId}`,
+          dto,
+        );
+        return res.data;
+      }
+
+      const dto: CreateUserConfigBindingDto = {
+        bindingType: CAPABILITY_ROUTING_POLICY_BINDING_TYPE,
+        targetId: capabilityRoutingPolicyTargetId,
+        targetCode: capabilityRoutingPolicyTargetCode,
+        metadata: payload.policy as unknown as Record<string, unknown>,
+        isActive: true,
+        priority: 100,
+      };
+      const res = await apiClient.post<UserConfigBindingDto>('/user-config-bindings', dto);
+      return res.data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['agent-copilot', 'capability-routing-policy'] });
+    },
+  });
+};
+
+export const useEphemeralCapabilityPolicy = () =>
+  useQuery<UserConfigBindingDto | null>({
+    queryKey: ['agent-copilot', 'ephemeral-capability-policy'],
+    queryFn: async () => {
+      const res = await apiClient.get<UserConfigBindingPageDto>('/user-config-bindings', {
+        params: {
+          bindingType: EPHEMERAL_CAPABILITY_POLICY_BINDING_TYPE,
+          page: 1,
+          pageSize: 20,
+        },
+      });
+      return res.data.data.find((item) => item.targetId === ephemeralCapabilityPolicyTargetId) ?? null;
+    },
+  });
+
+export const useUpsertEphemeralCapabilityPolicy = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (payload: { bindingId?: string; policy: EphemeralCapabilityPolicy }) => {
+      if (payload.bindingId) {
+        const dto: UpdateUserConfigBindingDto = {
+          metadata: payload.policy as unknown as Record<string, unknown>,
+        };
+        const res = await apiClient.put<UserConfigBindingDto>(
+          `/user-config-bindings/${payload.bindingId}`,
+          dto,
+        );
+        return res.data;
+      }
+
+      const dto: CreateUserConfigBindingDto = {
+        bindingType: EPHEMERAL_CAPABILITY_POLICY_BINDING_TYPE,
+        targetId: ephemeralCapabilityPolicyTargetId,
+        targetCode: ephemeralCapabilityPolicyTargetCode,
+        metadata: payload.policy as unknown as Record<string, unknown>,
+        isActive: true,
+        priority: 100,
+      };
+      const res = await apiClient.post<UserConfigBindingDto>('/user-config-bindings', dto);
+      return res.data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['agent-copilot', 'ephemeral-capability-policy'] });
     },
   });
 };

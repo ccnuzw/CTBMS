@@ -86,6 +86,13 @@ type CapabilityRoutingPolicy = {
   minPublicScore: number;
 };
 
+type EphemeralCapabilityPolicy = {
+  draftSemanticReuseThreshold: number;
+  publishedSkillReuseThreshold: number;
+  runtimeGrantTtlHours: number;
+  runtimeGrantMaxUseCount: number;
+};
+
 const SESSION_DETAIL_TURN_LIMIT = 80;
 const SESSION_DETAIL_PLAN_LIMIT = 20;
 
@@ -1087,13 +1094,15 @@ export class AgentConversationService {
 
     const derivedRisk = this.resolveSkillRisk(dto);
     const routingPolicy = await this.resolveCapabilityRoutingPolicy(userId);
-    const reuseCandidate = await this.findReusableSkillDraft(userId, dto);
+    const ephemeralPolicy = await this.resolveEphemeralCapabilityPolicy(userId);
+    const reuseCandidate = await this.findReusableSkillDraft(userId, dto, ephemeralPolicy);
     if (reuseCandidate) {
       const runtimeGrantId = await this.ensureRuntimeGrantForDraft(
         reuseCandidate.id,
         sessionId,
         userId,
         reuseCandidate.provisionalEnabled,
+        ephemeralPolicy,
       );
       const reviewRequired = reuseCandidate.status !== 'PUBLISHED';
 
@@ -1154,7 +1163,12 @@ export class AgentConversationService {
       };
     }
 
-    const reusablePublishedSkill = await this.findReusablePublishedSkill(userId, dto, routingPolicy);
+    const reusablePublishedSkill = await this.findReusablePublishedSkill(
+      userId,
+      dto,
+      routingPolicy,
+      ephemeralPolicy,
+    );
     if (reusablePublishedSkill) {
       const bridgeDraft = await this.upsertPublishedSkillBridgeDraft({
         sessionId,
@@ -1269,8 +1283,8 @@ export class AgentConversationService {
           sessionId,
           ownerUserId: userId,
           status: 'ACTIVE',
-          maxUseCount: 30,
-          expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+          maxUseCount: ephemeralPolicy.runtimeGrantMaxUseCount,
+          expiresAt: new Date(Date.now() + ephemeralPolicy.runtimeGrantTtlHours * 60 * 60 * 1000),
         },
       });
       runtimeGrantId = runtimeGrant.id;
@@ -2403,6 +2417,59 @@ export class AgentConversationService {
     };
   }
 
+  private async resolveEphemeralCapabilityPolicy(userId: string): Promise<EphemeralCapabilityPolicy> {
+    const defaults: EphemeralCapabilityPolicy = {
+      draftSemanticReuseThreshold: 0.72,
+      publishedSkillReuseThreshold: 0.76,
+      runtimeGrantTtlHours: 24,
+      runtimeGrantMaxUseCount: 30,
+    };
+
+    const binding = await this.prisma.userConfigBinding.findFirst({
+      where: {
+        userId,
+        bindingType: 'AGENT_EPHEMERAL_CAPABILITY_POLICY',
+        isActive: true,
+      },
+      orderBy: [{ priority: 'desc' }, { updatedAt: 'desc' }],
+      select: { metadata: true },
+    });
+    if (!binding?.metadata) {
+      return defaults;
+    }
+
+    const metadata = this.toRecord(binding.metadata);
+    const toScore = (value: unknown, fallback: number) => {
+      const parsed = typeof value === 'number' ? value : typeof value === 'string' ? Number(value) : NaN;
+      if (!Number.isFinite(parsed)) {
+        return fallback;
+      }
+      return Math.max(0, Math.min(1, parsed));
+    };
+    const toInt = (value: unknown, fallback: number, min: number, max: number) => {
+      const parsed = typeof value === 'number' ? value : typeof value === 'string' ? Number(value) : NaN;
+      if (!Number.isFinite(parsed)) {
+        return fallback;
+      }
+      return Math.max(min, Math.min(max, Math.round(parsed)));
+    };
+
+    return {
+      draftSemanticReuseThreshold: toScore(metadata.draftSemanticReuseThreshold, defaults.draftSemanticReuseThreshold),
+      publishedSkillReuseThreshold: toScore(
+        metadata.publishedSkillReuseThreshold,
+        defaults.publishedSkillReuseThreshold,
+      ),
+      runtimeGrantTtlHours: toInt(metadata.runtimeGrantTtlHours, defaults.runtimeGrantTtlHours, 1, 168),
+      runtimeGrantMaxUseCount: toInt(
+        metadata.runtimeGrantMaxUseCount,
+        defaults.runtimeGrantMaxUseCount,
+        1,
+        200,
+      ),
+    };
+  }
+
   private async logCapabilityRoutingDecisionAsset(
     sessionId: string,
     payload: {
@@ -2456,6 +2523,7 @@ export class AgentConversationService {
   private async findReusableSkillDraft(
     ownerUserId: string,
     dto: CreateSkillDraftDto,
+    policy: EphemeralCapabilityPolicy,
   ): Promise<
     | {
         id: string;
@@ -2523,7 +2591,7 @@ export class AgentConversationService {
       }
     }
 
-    if (bestCandidate && bestCandidate.score >= 0.72) {
+    if (bestCandidate && bestCandidate.score >= policy.draftSemanticReuseThreshold) {
       return {
         id: bestCandidate.id,
         gapType: bestCandidate.gapType,
@@ -2543,6 +2611,7 @@ export class AgentConversationService {
     ownerUserId: string,
     dto: CreateSkillDraftDto,
     policy: CapabilityRoutingPolicy,
+    ephemeralPolicy: EphemeralCapabilityPolicy,
   ): Promise<
     | {
         id: string;
@@ -2629,7 +2698,7 @@ export class AgentConversationService {
       }
     }
 
-    if (best && best.score >= 0.76) {
+    if (best && best.score >= ephemeralPolicy.publishedSkillReuseThreshold) {
       return {
         ...best,
         score: Number(best.score.toFixed(3)),
@@ -2693,6 +2762,7 @@ export class AgentConversationService {
     sessionId: string,
     ownerUserId: string,
     provisionalEnabled: boolean,
+    policy: EphemeralCapabilityPolicy,
   ): Promise<string | null> {
     if (!provisionalEnabled) {
       return null;
@@ -2716,8 +2786,8 @@ export class AgentConversationService {
         sessionId,
         ownerUserId,
         status: 'ACTIVE',
-        maxUseCount: 30,
-        expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+        maxUseCount: policy.runtimeGrantMaxUseCount,
+        expiresAt: new Date(Date.now() + policy.runtimeGrantTtlHours * 60 * 60 * 1000),
       },
     });
 
