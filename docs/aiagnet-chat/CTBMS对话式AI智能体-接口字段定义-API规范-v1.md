@@ -499,6 +499,52 @@ Query:
 }
 ```
 
+## 1.14 临时能力策略审计列表
+
+- `GET /user-config-bindings/ephemeral-policy-audits/list`
+
+Query:
+
+1. `scope`（可选）：`PERSONAL`/`TEAM`，默认 `PERSONAL`
+2. `action`（可选）：`UPSERT_CREATE`/`UPSERT_UPDATE`/`UPDATE`
+3. `changedKey`（可选）：按变更字段筛选
+4. `page`（可选）：默认 `1`
+5. `pageSize`（可选）：默认 `20`，最大 `100`
+
+## 1.15 临时能力策略审计汇总
+
+- `GET /user-config-bindings/ephemeral-policy-audits/summary`
+
+响应（节选）：
+
+```json
+{
+  "scope": "TEAM",
+  "total": 12,
+  "stats": {
+    "action": [{ "key": "UPDATE", "count": 8 }],
+    "changedKey": [{ "key": "replayRetryableErrorCodeAllowlist", "count": 6 }]
+  }
+}
+```
+
+## 1.16 临时能力策略审计回滚
+
+- `POST /user-config-bindings/ephemeral-policy-audits/:id/rollback`
+
+响应：
+
+```json
+{
+  "rolledBackFromAuditId": "audit_xxx",
+  "targetBindingId": "binding_xxx",
+  "updated": {
+    "id": "binding_xxx",
+    "bindingType": "AGENT_EPHEMERAL_CAPABILITY_POLICY"
+  }
+}
+```
+
 ## 2. 辩论接口
 
 ## 2.1 启动辩论计划

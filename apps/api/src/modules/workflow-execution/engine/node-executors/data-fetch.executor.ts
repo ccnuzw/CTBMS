@@ -1,8 +1,11 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { WorkflowNode } from '@packages/types';
+import type { WorkflowNode } from '@packages/types';
 import { PrismaService } from '../../../../prisma';
 import { ConfigService } from '../../../config/config.service';
-import { MarketDataService } from '../../../market-data/market-data.service';
+import {
+  MarketDataService,
+  type ReconciliationGateEvaluationResult,
+} from '../../../market-data/market-data.service';
 import {
   NodeExecutionContext,
   NodeExecutionResult,
@@ -227,9 +230,13 @@ export class DataFetchNodeExecutor implements WorkflowNodeExecutor {
       throw new Error('INTERNAL_DB 连接器缺少 queryTemplates.tableName');
     }
 
+    const filters = config.filters as Record<string, unknown> | undefined;
+
     const useStandardizedRead =
       this.toBoolean(config.useStandardizedRead) ||
       this.toBoolean(queryTemplates?.useStandardizedRead);
+
+    let reconciliationGate: ReconciliationGateEvaluationResult | undefined;
 
     if (useStandardizedRead) {
       const standardizedReadEnabled = await this.isWorkflowStandardizedReadEnabled();
@@ -247,18 +254,30 @@ export class DataFetchNodeExecutor implements WorkflowNodeExecutor {
           STANDARD_DATASET_BY_TABLE[tableName ?? ''];
 
         if (standardDataset) {
-          return this.fetchFromStandardReadModel(standardDataset, config);
-        }
+          const nodeMaxAgeMinutes = this.parsePositiveInteger(config.reconciliationMaxAgeMinutes);
+          const gateResult = await this.marketDataService.evaluateReconciliationGate(
+            standardDataset,
+            {
+              filters,
+              maxAgeMinutes: nodeMaxAgeMinutes ?? undefined,
+            },
+          );
+          reconciliationGate = gateResult;
+          if (gateResult.passed) {
+            return this.fetchFromStandardReadModel(standardDataset, config, gateResult);
+          }
 
-        this.logger.warn(
-          `data-fetch 节点开启 useStandardizedRead 但未识别 standardDataset/tableName=${String(tableName)}`,
-        );
+          this.logger.warn(`标准化读门禁未通过，回退 legacy INTERNAL_DB: ${gateResult.reason}`);
+        } else {
+          this.logger.warn(
+            `data-fetch 节点开启 useStandardizedRead 但未识别 standardDataset/tableName=${String(tableName)}`,
+          );
+        }
       }
     }
 
     // 构建时间范围过滤
     const timeFilter = this.buildTimeFilter(config);
-    const filters = config.filters as Record<string, unknown> | undefined;
 
     // 根据表名执行对应 Prisma 查询
     // WHY: 使用 $queryRawUnsafe 因为表名是动态的，但会进行安全校验
@@ -328,6 +347,7 @@ export class DataFetchNodeExecutor implements WorkflowNodeExecutor {
         query: query.replace(/\$\d+/g, '?'), // 隐藏参数
         recordCount: Array.isArray(data) ? data.length : 0,
         fetchedAt: new Date().toISOString(),
+        ...(reconciliationGate ? { reconciliationGate } : {}),
       },
     };
   }
@@ -335,6 +355,7 @@ export class DataFetchNodeExecutor implements WorkflowNodeExecutor {
   private async fetchFromStandardReadModel(
     dataset: 'SPOT_PRICE' | 'FUTURES_QUOTE' | 'MARKET_EVENT',
     config: Record<string, unknown>,
+    reconciliationGate?: ReconciliationGateEvaluationResult,
   ): Promise<{ data: unknown; metadata: Record<string, unknown> }> {
     const timeFilter = this.buildTimeFilter(config);
     const filters = (config.filters as Record<string, unknown> | undefined) ?? {};
@@ -353,6 +374,7 @@ export class DataFetchNodeExecutor implements WorkflowNodeExecutor {
       metadata: {
         source: 'STANDARD_READ_MODEL',
         dataset,
+        ...(reconciliationGate ? { reconciliationGate } : {}),
         ...result.meta,
       },
     };
@@ -378,6 +400,24 @@ export class DataFetchNodeExecutor implements WorkflowNodeExecutor {
       }
       return false;
     }
+  }
+
+  private parsePositiveInteger(value: unknown): number | null {
+    if (typeof value === 'number' && Number.isFinite(value)) {
+      if (Number.isInteger(value) && value > 0) {
+        return value;
+      }
+      return null;
+    }
+
+    if (typeof value === 'string') {
+      const parsed = Number(value.trim());
+      if (Number.isFinite(parsed) && Number.isInteger(parsed) && parsed > 0) {
+        return parsed;
+      }
+    }
+
+    return null;
   }
 
   private parseBooleanFlag(value: unknown): boolean | null {

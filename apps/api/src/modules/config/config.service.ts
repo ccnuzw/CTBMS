@@ -17,6 +17,11 @@ export class ConfigService implements OnModuleInit {
   private static readonly WORKFLOW_RUNTIME_FLAG_DOMAIN_CODE = 'WORKFLOW_RUNTIME_FLAGS';
   private static readonly WORKFLOW_AGENT_STRICT_MODE_CODE = 'WORKFLOW_AGENT_STRICT_MODE';
   private static readonly WORKFLOW_STANDARDIZED_READ_MODE_CODE = 'WORKFLOW_STANDARDIZED_READ_MODE';
+  private static readonly WORKFLOW_RECONCILIATION_GATE_ENABLED_CODE =
+    'WORKFLOW_RECONCILIATION_GATE_ENABLED';
+  private static readonly WORKFLOW_RECONCILIATION_MAX_AGE_MINUTES_CODE =
+    'WORKFLOW_RECONCILIATION_MAX_AGE_MINUTES';
+  private static readonly WORKFLOW_RECONCILIATION_DEFAULT_MAX_AGE_MINUTES = 1440;
 
   // Cache
   private mappingRulesCache: Map<string, BusinessMappingRule[]> = new Map();
@@ -56,6 +61,58 @@ export class ConfigService implements OnModuleInit {
       }
     }
     return this.parseBooleanFlag(meta);
+  }
+
+  private parsePositiveInteger(value: unknown): number | null {
+    if (typeof value === 'number' && Number.isFinite(value)) {
+      return Number.isInteger(value) && value > 0 ? value : null;
+    }
+    if (typeof value === 'string') {
+      const parsed = Number(value.trim());
+      if (Number.isFinite(parsed) && Number.isInteger(parsed) && parsed > 0) {
+        return parsed;
+      }
+    }
+    return null;
+  }
+
+  private parseWorkflowRuntimeIntFromMeta(meta: Prisma.JsonValue | null): number | null {
+    if (meta === null) {
+      return null;
+    }
+    if (typeof meta === 'object' && !Array.isArray(meta)) {
+      const candidate = (meta as Record<string, unknown>).value;
+      const parsed = this.parsePositiveInteger(candidate);
+      if (parsed !== null) {
+        return parsed;
+      }
+    }
+    return this.parsePositiveInteger(meta);
+  }
+
+  private async upsertWorkflowRuntimeFlagDomain(tx: Prisma.TransactionClient) {
+    await tx.dictionaryDomain.upsert({
+      where: { code: ConfigService.WORKFLOW_RUNTIME_FLAG_DOMAIN_CODE },
+      update: {
+        name: '工作流运行时开关',
+        description: '工作流执行相关的系统运行开关',
+        category: 'WORKFLOW',
+        usageHint: '用于控制工作流执行期的全局行为',
+        usageLocations: ['system/config/ai-models'],
+        isSystemDomain: true,
+        isActive: true,
+      },
+      create: {
+        code: ConfigService.WORKFLOW_RUNTIME_FLAG_DOMAIN_CODE,
+        name: '工作流运行时开关',
+        description: '工作流执行相关的系统运行开关',
+        category: 'WORKFLOW',
+        usageHint: '用于控制工作流执行期的全局行为',
+        usageLocations: ['system/config/ai-models'],
+        isSystemDomain: true,
+        isActive: true,
+      },
+    });
   }
 
   private normalizeNullableString(value?: string | null): string | null | undefined {
@@ -232,28 +289,7 @@ export class ConfigService implements OnModuleInit {
     } as Prisma.InputJsonValue;
 
     await this.prisma.$transaction(async (tx) => {
-      await tx.dictionaryDomain.upsert({
-        where: { code: ConfigService.WORKFLOW_RUNTIME_FLAG_DOMAIN_CODE },
-        update: {
-          name: '工作流运行时开关',
-          description: '工作流执行相关的系统运行开关',
-          category: 'WORKFLOW',
-          usageHint: '用于控制工作流执行期的全局行为',
-          usageLocations: ['system/config/ai-models'],
-          isSystemDomain: true,
-          isActive: true,
-        },
-        create: {
-          code: ConfigService.WORKFLOW_RUNTIME_FLAG_DOMAIN_CODE,
-          name: '工作流运行时开关',
-          description: '工作流执行相关的系统运行开关',
-          category: 'WORKFLOW',
-          usageHint: '用于控制工作流执行期的全局行为',
-          usageLocations: ['system/config/ai-models'],
-          isSystemDomain: true,
-          isActive: true,
-        },
-      });
+      await this.upsertWorkflowRuntimeFlagDomain(tx);
 
       await tx.dictionaryItem.upsert({
         where: {
@@ -351,28 +387,7 @@ export class ConfigService implements OnModuleInit {
     } as Prisma.InputJsonValue;
 
     await this.prisma.$transaction(async (tx) => {
-      await tx.dictionaryDomain.upsert({
-        where: { code: ConfigService.WORKFLOW_RUNTIME_FLAG_DOMAIN_CODE },
-        update: {
-          name: '工作流运行时开关',
-          description: '工作流执行相关的系统运行开关',
-          category: 'WORKFLOW',
-          usageHint: '用于控制工作流执行期的全局行为',
-          usageLocations: ['system/config/ai-models'],
-          isSystemDomain: true,
-          isActive: true,
-        },
-        create: {
-          code: ConfigService.WORKFLOW_RUNTIME_FLAG_DOMAIN_CODE,
-          name: '工作流运行时开关',
-          description: '工作流执行相关的系统运行开关',
-          category: 'WORKFLOW',
-          usageHint: '用于控制工作流执行期的全局行为',
-          usageLocations: ['system/config/ai-models'],
-          isSystemDomain: true,
-          isActive: true,
-        },
-      });
+      await this.upsertWorkflowRuntimeFlagDomain(tx);
 
       await tx.dictionaryItem.upsert({
         where: {
@@ -400,6 +415,200 @@ export class ConfigService implements OnModuleInit {
 
     await this.refreshCache();
     return this.getWorkflowStandardizedReadMode();
+  }
+
+  async getWorkflowReconciliationGateEnabled(): Promise<{
+    enabled: boolean;
+    source: WorkflowRuntimeFlagSource;
+    updatedAt: string | null;
+  }> {
+    const gateItem = await this.prisma.dictionaryItem.findUnique({
+      where: {
+        domainCode_code: {
+          domainCode: ConfigService.WORKFLOW_RUNTIME_FLAG_DOMAIN_CODE,
+          code: ConfigService.WORKFLOW_RECONCILIATION_GATE_ENABLED_CODE,
+        },
+      },
+      select: {
+        meta: true,
+        updatedAt: true,
+      },
+    });
+
+    if (gateItem) {
+      const parsedFromMeta = this.parseWorkflowRuntimeFlagFromMeta(
+        gateItem.meta as Prisma.JsonValue | null,
+      );
+      if (parsedFromMeta !== null) {
+        return {
+          enabled: parsedFromMeta,
+          source: 'DB',
+          updatedAt: gateItem.updatedAt.toISOString(),
+        };
+      }
+    }
+
+    const parsedFromEnv = this.parseBooleanFlag(process.env.WORKFLOW_RECONCILIATION_GATE_ENABLED);
+    if (parsedFromEnv !== null) {
+      return {
+        enabled: parsedFromEnv,
+        source: 'ENV',
+        updatedAt: null,
+      };
+    }
+
+    return {
+      enabled: false,
+      source: 'DEFAULT',
+      updatedAt: null,
+    };
+  }
+
+  async setWorkflowReconciliationGateEnabled(
+    enabled: boolean,
+    updatedBy?: string,
+  ): Promise<{
+    enabled: boolean;
+    source: WorkflowRuntimeFlagSource;
+    updatedAt: string | null;
+  }> {
+    if (typeof enabled !== 'boolean') {
+      throw new BadRequestException('enabled 必须是布尔值');
+    }
+
+    const updateMeta = {
+      enabled,
+      updatedBy: updatedBy ?? null,
+      updatedAt: new Date().toISOString(),
+    } as Prisma.InputJsonValue;
+
+    await this.prisma.$transaction(async (tx) => {
+      await this.upsertWorkflowRuntimeFlagDomain(tx);
+
+      await tx.dictionaryItem.upsert({
+        where: {
+          domainCode_code: {
+            domainCode: ConfigService.WORKFLOW_RUNTIME_FLAG_DOMAIN_CODE,
+            code: ConfigService.WORKFLOW_RECONCILIATION_GATE_ENABLED_CODE,
+          },
+        },
+        update: {
+          label: '标准化读对账门禁开关',
+          sortOrder: 120,
+          isActive: true,
+          meta: updateMeta,
+        },
+        create: {
+          domainCode: ConfigService.WORKFLOW_RUNTIME_FLAG_DOMAIN_CODE,
+          code: ConfigService.WORKFLOW_RECONCILIATION_GATE_ENABLED_CODE,
+          label: '标准化读对账门禁开关',
+          sortOrder: 120,
+          isActive: true,
+          meta: updateMeta,
+        },
+      });
+    });
+
+    await this.refreshCache();
+    return this.getWorkflowReconciliationGateEnabled();
+  }
+
+  async getWorkflowReconciliationMaxAgeMinutes(): Promise<{
+    value: number;
+    source: WorkflowRuntimeFlagSource;
+    updatedAt: string | null;
+  }> {
+    const maxAgeItem = await this.prisma.dictionaryItem.findUnique({
+      where: {
+        domainCode_code: {
+          domainCode: ConfigService.WORKFLOW_RUNTIME_FLAG_DOMAIN_CODE,
+          code: ConfigService.WORKFLOW_RECONCILIATION_MAX_AGE_MINUTES_CODE,
+        },
+      },
+      select: {
+        meta: true,
+        updatedAt: true,
+      },
+    });
+
+    if (maxAgeItem) {
+      const parsedFromMeta = this.parseWorkflowRuntimeIntFromMeta(
+        maxAgeItem.meta as Prisma.JsonValue | null,
+      );
+      if (parsedFromMeta !== null) {
+        return {
+          value: parsedFromMeta,
+          source: 'DB',
+          updatedAt: maxAgeItem.updatedAt.toISOString(),
+        };
+      }
+    }
+
+    const parsedFromEnv = this.parsePositiveInteger(
+      process.env.WORKFLOW_RECONCILIATION_MAX_AGE_MINUTES,
+    );
+    if (parsedFromEnv !== null) {
+      return {
+        value: parsedFromEnv,
+        source: 'ENV',
+        updatedAt: null,
+      };
+    }
+
+    return {
+      value: ConfigService.WORKFLOW_RECONCILIATION_DEFAULT_MAX_AGE_MINUTES,
+      source: 'DEFAULT',
+      updatedAt: null,
+    };
+  }
+
+  async setWorkflowReconciliationMaxAgeMinutes(
+    value: number,
+    updatedBy?: string,
+  ): Promise<{
+    value: number;
+    source: WorkflowRuntimeFlagSource;
+    updatedAt: string | null;
+  }> {
+    if (!Number.isInteger(value) || value < 1 || value > 10080) {
+      throw new BadRequestException('value 必须是 1~10080 的整数（分钟）');
+    }
+
+    const updateMeta = {
+      value,
+      updatedBy: updatedBy ?? null,
+      updatedAt: new Date().toISOString(),
+    } as Prisma.InputJsonValue;
+
+    await this.prisma.$transaction(async (tx) => {
+      await this.upsertWorkflowRuntimeFlagDomain(tx);
+
+      await tx.dictionaryItem.upsert({
+        where: {
+          domainCode_code: {
+            domainCode: ConfigService.WORKFLOW_RUNTIME_FLAG_DOMAIN_CODE,
+            code: ConfigService.WORKFLOW_RECONCILIATION_MAX_AGE_MINUTES_CODE,
+          },
+        },
+        update: {
+          label: '标准化读对账门禁最大时效(分钟)',
+          sortOrder: 130,
+          isActive: true,
+          meta: updateMeta,
+        },
+        create: {
+          domainCode: ConfigService.WORKFLOW_RUNTIME_FLAG_DOMAIN_CODE,
+          code: ConfigService.WORKFLOW_RECONCILIATION_MAX_AGE_MINUTES_CODE,
+          label: '标准化读对账门禁最大时效(分钟)',
+          sortOrder: 130,
+          isActive: true,
+          meta: updateMeta,
+        },
+      });
+    });
+
+    await this.refreshCache();
+    return this.getWorkflowReconciliationMaxAgeMinutes();
   }
 
   /**

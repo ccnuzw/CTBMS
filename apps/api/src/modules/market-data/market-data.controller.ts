@@ -14,7 +14,12 @@ import { randomUUID } from 'node:crypto';
 import {
   CancelReconciliationJobRequest,
   CreateReconciliationJobRequest,
+  EvaluateReconciliationGateRequest,
   ListReconciliationJobsRequest,
+  ReconciliationDailyMetricsQueryRequest,
+  ReconciliationMetricsSnapshotRequest,
+  ReconciliationReadCoverageQueryRequest,
+  ReconciliationWindowMetricsQueryRequest,
   MarketDataAggregateRequest,
   MarketDataQueryRequest,
   MarketDataLineageQueryRequest,
@@ -135,6 +140,71 @@ export class MarketDataController {
       jobId,
       dto.reason,
     );
+    return this.success(req, data);
+  }
+
+  @Post('reconciliation/gate/evaluate')
+  async evaluateReconciliationGate(
+    @Body() dto: EvaluateReconciliationGateRequest,
+    @Request() req: AuthRequest,
+  ) {
+    this.getUserId(req);
+    const data = await this.marketDataService.evaluateReconciliationGate(dto.dataset, {
+      filters: dto.filters,
+      maxAgeMinutes: dto.maxAgeMinutes,
+    });
+    return this.success(req, data);
+  }
+
+  @Get('reconciliation/metrics/window')
+  async getReconciliationWindowMetrics(
+    @Query() query: ReconciliationWindowMetricsQueryRequest,
+    @Request() req: AuthRequest,
+  ) {
+    this.getUserId(req);
+    const data = await this.marketDataService.getReconciliationWindowMetrics(query.dataset, {
+      days: query.days,
+    });
+    return this.success(req, data);
+  }
+
+  @Post('reconciliation/metrics/snapshot')
+  async snapshotReconciliationMetrics(
+    @Body() dto: ReconciliationMetricsSnapshotRequest,
+    @Request() req: AuthRequest,
+  ) {
+    this.getUserId(req);
+    const data = await this.marketDataService.snapshotReconciliationWindowMetrics({
+      windowDays: dto.windowDays,
+      datasets: dto.datasets,
+    });
+    return this.success(req, data);
+  }
+
+  @Get('reconciliation/metrics/daily')
+  async getReconciliationDailyMetrics(
+    @Query() query: ReconciliationDailyMetricsQueryRequest,
+    @Request() req: AuthRequest,
+  ) {
+    this.getUserId(req);
+    const data = await this.marketDataService.getReconciliationDailyMetricsHistory(query.dataset, {
+      windowDays: query.windowDays,
+      days: query.days,
+    });
+    return this.success(req, data);
+  }
+
+  @Post('reconciliation/metrics/read-coverage')
+  async getReconciliationReadCoverage(
+    @Body() dto: ReconciliationReadCoverageQueryRequest,
+    @Request() req: AuthRequest,
+  ) {
+    this.getUserId(req);
+    const data = await this.marketDataService.getReconciliationReadCoverageMetrics({
+      days: dto.days,
+      workflowVersionIds: dto.workflowVersionIds,
+      targetCoverageRate: dto.targetCoverageRate,
+    });
     return this.success(req, data);
   }
 

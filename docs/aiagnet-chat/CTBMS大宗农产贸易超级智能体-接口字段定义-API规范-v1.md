@@ -438,6 +438,155 @@
 
 - 仅允许取消 `PENDING | RUNNING` 状态任务。
 
+### 3.5.6 对账门禁诊断
+
+- `POST /market-data/reconciliation/gate/evaluate`
+
+请求：
+
+```json
+{
+  "dataset": "SPOT_PRICE",
+  "filters": {
+    "commodityCode": "CORN",
+    "regionCode": "CN_NE"
+  },
+  "maxAgeMinutes": 1440
+}
+```
+
+响应：
+
+```json
+{
+  "enabled": true,
+  "passed": false,
+  "reason": "latest_outdated",
+  "checkedAt": "2026-02-27T09:10:00.000Z",
+  "maxAgeMinutes": 1440,
+  "ageMinutes": 2880.5,
+  "latest": {
+    "jobId": "rc_job_xxx",
+    "status": "DONE",
+    "retriedFromJobId": null,
+    "retryCount": 0,
+    "summaryPass": true,
+    "createdAt": "2026-02-25T09:00:00.000Z",
+    "finishedAt": "2026-02-25T09:00:10.000Z",
+    "source": "database"
+  }
+}
+```
+
+`reason` 枚举：
+
+- `gate_disabled`
+- `no_reconciliation_job`
+- `latest_status_not_done`
+- `latest_summary_not_passed`
+- `latest_time_invalid`
+- `latest_outdated`
+- `gate_passed`
+
+### 3.5.7 对账窗口达标统计
+
+- `GET /market-data/reconciliation/metrics/window?dataset=SPOT_PRICE&days=7`
+
+响应：
+
+```json
+{
+  "dataset": "SPOT_PRICE",
+  "windowDays": 7,
+  "fromDate": "2026-02-21T00:00:00.000Z",
+  "toDate": "2026-02-27T09:30:00.000Z",
+  "source": "database",
+  "totalJobs": 7,
+  "doneJobs": 7,
+  "passedJobs": 7,
+  "daily": [
+    {
+      "date": "2026-02-21",
+      "totalJobs": 1,
+      "doneJobs": 1,
+      "passedJobs": 1,
+      "passed": true,
+      "latestJobId": "rc_job_a"
+    }
+  ],
+  "consecutivePassedDays": 7,
+  "meetsWindowTarget": true
+}
+```
+
+说明：
+
+- `passed` 口径：当日有 `DONE` 任务且全部 `summaryPass=true`。
+- `meetsWindowTarget=true` 表示窗口内每日均达标（可用于 M1 连续 7 天门禁）。
+
+### 3.5.8 手动生成对账窗口快照
+
+- `POST /market-data/reconciliation/metrics/snapshot`
+
+请求：
+
+```json
+{
+  "windowDays": 7,
+  "datasets": ["SPOT_PRICE", "FUTURES_QUOTE", "MARKET_EVENT"]
+}
+```
+
+响应：
+
+```json
+{
+  "generatedAt": "2026-02-27T10:00:00.000Z",
+  "windowDays": 7,
+  "source": "database",
+  "results": [
+    {
+      "dataset": "SPOT_PRICE",
+      "totalJobs": 7,
+      "passedJobs": 7,
+      "consecutivePassedDays": 7,
+      "meetsWindowTarget": true
+    }
+  ]
+}
+```
+
+说明：
+
+- 系统默认每日 `00:10` 自动生成一次 7 天窗口快照；该接口用于补跑或即时诊断。
+
+### 3.5.9 查询历史日指标快照
+
+- `GET /market-data/reconciliation/metrics/daily?dataset=SPOT_PRICE&windowDays=7&days=30`
+
+响应：
+
+```json
+{
+  "dataset": "SPOT_PRICE",
+  "windowDays": 7,
+  "days": 30,
+  "source": "database",
+  "items": [
+    {
+      "metricDate": "2026-02-27T00:00:00.000Z",
+      "totalJobs": 1,
+      "doneJobs": 1,
+      "passedJobs": 1,
+      "dayPassed": true,
+      "consecutivePassedDays": 7,
+      "meetsWindowTarget": true,
+      "generatedAt": "2026-02-27T00:10:00.000Z"
+    }
+  ]
+}
+```
+
 ## 4. 指标中心 API
 
 ## 4.1 查询指标字典

@@ -51,6 +51,44 @@ export const CancelReconciliationJobSchema = z.object({
   reason: z.string().trim().min(1).max(200).optional(),
 });
 
+export const ReconciliationGateReasonEnum = z.enum([
+  'gate_disabled',
+  'no_reconciliation_job',
+  'latest_status_not_done',
+  'latest_summary_not_passed',
+  'latest_time_invalid',
+  'latest_outdated',
+  'gate_passed',
+]);
+
+export const EvaluateReconciliationGateSchema = z.object({
+  dataset: ReconciliationDatasetEnum,
+  filters: z.record(z.unknown()).optional(),
+  maxAgeMinutes: z.coerce.number().int().min(1).max(10080).optional(),
+});
+
+export const ReconciliationWindowMetricsQuerySchema = z.object({
+  dataset: ReconciliationDatasetEnum,
+  days: z.coerce.number().int().min(1).max(30).default(7),
+});
+
+export const ReconciliationMetricsSnapshotSchema = z.object({
+  windowDays: z.coerce.number().int().min(1).max(30).default(7),
+  datasets: z.array(ReconciliationDatasetEnum).min(1).max(3).optional(),
+});
+
+export const ReconciliationDailyMetricsQuerySchema = z.object({
+  dataset: ReconciliationDatasetEnum,
+  windowDays: z.coerce.number().int().min(1).max(30).default(7),
+  days: z.coerce.number().int().min(1).max(90).default(30),
+});
+
+export const ReconciliationReadCoverageQuerySchema = z.object({
+  days: z.coerce.number().int().min(1).max(30).default(7),
+  workflowVersionIds: z.array(z.string().uuid()).min(1).max(20).optional(),
+  targetCoverageRate: z.coerce.number().min(0).max(1).default(0.9),
+});
+
 export const ReconciliationJobStatusEnum = z.enum([
   'PENDING',
   'RUNNING',
@@ -186,6 +224,18 @@ export type StandardizationPreviewDto = z.infer<typeof StandardizationPreviewSch
 export type MarketDataLineageQueryDto = z.infer<typeof MarketDataLineageQuerySchema>;
 export type CreateReconciliationJobDto = z.infer<typeof CreateReconciliationJobSchema>;
 export type CancelReconciliationJobDto = z.infer<typeof CancelReconciliationJobSchema>;
+export type ReconciliationGateReason = z.infer<typeof ReconciliationGateReasonEnum>;
+export type EvaluateReconciliationGateDto = z.infer<typeof EvaluateReconciliationGateSchema>;
+export type ReconciliationWindowMetricsQueryDto = z.infer<
+  typeof ReconciliationWindowMetricsQuerySchema
+>;
+export type ReconciliationMetricsSnapshotDto = z.infer<typeof ReconciliationMetricsSnapshotSchema>;
+export type ReconciliationDailyMetricsQueryDto = z.infer<
+  typeof ReconciliationDailyMetricsQuerySchema
+>;
+export type ReconciliationReadCoverageQueryDto = z.infer<
+  typeof ReconciliationReadCoverageQuerySchema
+>;
 export type ReconciliationJobStatus = z.infer<typeof ReconciliationJobStatusEnum>;
 export type ReconciliationJobSortBy = z.infer<typeof ReconciliationJobSortByEnum>;
 export type SortOrder = z.infer<typeof SortOrderEnum>;

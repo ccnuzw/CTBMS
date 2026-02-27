@@ -127,6 +127,130 @@ async function main() {
     assert.equal(reconcileCreated.body.data.retriedFromJobId, null);
     assert.equal(reconcileCreated.body.data.retryCount, 0);
 
+    const gateEvaluation = await fetchJson<{
+      success: boolean;
+      data: {
+        enabled: boolean;
+        passed: boolean;
+        reason: string;
+        checkedAt: string;
+        maxAgeMinutes?: number;
+        ageMinutes?: number;
+        latest?: { jobId: string; status: string };
+      };
+      traceId: string;
+      ts: string;
+    }>(`${baseUrl}/market-data/reconciliation/gate/evaluate`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-virtual-user-id': 'admin-user',
+      },
+      body: JSON.stringify({
+        dataset: 'SPOT_PRICE',
+        filters: {
+          commodityCode: 'CORN',
+        },
+      }),
+    });
+    assert.equal(gateEvaluation.status, 201);
+    assert.equal(gateEvaluation.body.success, true);
+    assert.ok(gateEvaluation.body.data.reason.length > 0);
+    assert.ok(gateEvaluation.body.data.checkedAt.length > 0);
+
+    const windowMetrics = await fetchJson<{
+      success: boolean;
+      data: {
+        dataset: string;
+        windowDays: number;
+        source: string;
+        totalJobs: number;
+        doneJobs: number;
+        passedJobs: number;
+        daily: Array<{ date: string; passed: boolean; totalJobs: number }>;
+        consecutivePassedDays: number;
+        meetsWindowTarget: boolean;
+      };
+      traceId: string;
+      ts: string;
+    }>(`${baseUrl}/market-data/reconciliation/metrics/window?dataset=SPOT_PRICE&days=7`, {
+      method: 'GET',
+      headers: {
+        'x-virtual-user-id': 'admin-user',
+      },
+    });
+    assert.equal(windowMetrics.status, 200);
+    assert.equal(windowMetrics.body.success, true);
+    assert.equal(windowMetrics.body.data.dataset, 'SPOT_PRICE');
+    assert.equal(windowMetrics.body.data.windowDays, 7);
+    assert.equal(windowMetrics.body.data.daily.length, 7);
+
+    const snapshotMetrics = await fetchJson<{
+      success: boolean;
+      data: {
+        generatedAt: string;
+        windowDays: number;
+        source: string;
+        results: Array<{
+          dataset: string;
+          totalJobs: number;
+          passedJobs: number;
+          consecutivePassedDays: number;
+          meetsWindowTarget: boolean;
+        }>;
+      };
+      traceId: string;
+      ts: string;
+    }>(`${baseUrl}/market-data/reconciliation/metrics/snapshot`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-virtual-user-id': 'admin-user',
+      },
+      body: JSON.stringify({
+        windowDays: 7,
+        datasets: ['SPOT_PRICE'],
+      }),
+    });
+    assert.equal(snapshotMetrics.status, 201);
+    assert.equal(snapshotMetrics.body.success, true);
+    assert.equal(snapshotMetrics.body.data.windowDays, 7);
+    assert.ok(snapshotMetrics.body.data.results.some((item) => item.dataset === 'SPOT_PRICE'));
+
+    const dailyMetricsHistory = await fetchJson<{
+      success: boolean;
+      data: {
+        dataset: string;
+        windowDays: number;
+        days: number;
+        source: string;
+        items: Array<{
+          metricDate: string;
+          totalJobs: number;
+          doneJobs: number;
+          passedJobs: number;
+          dayPassed: boolean;
+          consecutivePassedDays: number;
+          meetsWindowTarget: boolean;
+          generatedAt: string;
+        }>;
+      };
+      traceId: string;
+      ts: string;
+    }>(
+      `${baseUrl}/market-data/reconciliation/metrics/daily?dataset=SPOT_PRICE&windowDays=7&days=30`,
+      {
+        method: 'GET',
+        headers: {
+          'x-virtual-user-id': 'admin-user',
+        },
+      },
+    );
+    assert.equal(dailyMetricsHistory.status, 200);
+    assert.equal(dailyMetricsHistory.body.success, true);
+    assert.equal(dailyMetricsHistory.body.data.dataset, 'SPOT_PRICE');
+    assert.equal(dailyMetricsHistory.body.data.windowDays, 7);
+
     const createdAtFrom = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
     const createdAtTo = new Date().toISOString();
 

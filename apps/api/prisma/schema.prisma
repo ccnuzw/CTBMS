@@ -2723,6 +2723,31 @@ model DataReconciliationDiff {
   @@index([diffType, createdAt])
 }
 
+model DataReconciliationDailyMetric {
+  id String @id @default(uuid())
+
+  dataset String
+  metricDate DateTime
+  windowDays Int @default(7)
+
+  totalJobs Int
+  doneJobs Int
+  passedJobs Int
+  dayPassed Boolean
+  consecutivePassedDays Int
+  meetsWindowTarget Boolean
+
+  source String
+  payload Json?
+
+  generatedAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([dataset, metricDate, windowDays])
+  @@index([dataset, generatedAt])
+  @@index([metricDate, meetsWindowTarget])
+}
+
 // =============================================
 // MVP: Simplified Agent Config Models
 // =============================================

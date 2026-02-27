@@ -18,6 +18,7 @@ import type {
 import type { Prisma } from '@prisma/client';
 import { randomUUID } from 'node:crypto';
 import { PrismaService } from '../../prisma';
+import { ConfigService } from '../config/config.service';
 
 type StandardDataset = 'SPOT_PRICE' | 'FUTURES_QUOTE' | 'MARKET_EVENT';
 type ReconciliationJobStatus = 'PENDING' | 'RUNNING' | 'DONE' | 'FAILED' | 'CANCELLED';
@@ -102,6 +103,31 @@ interface PersistedReconciliationGateRow {
   dimensions: unknown;
 }
 
+interface PersistedReconciliationDailyMetricRow {
+  dataset: string;
+  metricDate: unknown;
+  windowDays: unknown;
+  totalJobs: unknown;
+  doneJobs: unknown;
+  passedJobs: unknown;
+  dayPassed: unknown;
+  consecutivePassedDays: unknown;
+  meetsWindowTarget: unknown;
+  source: string;
+  payload: unknown;
+  generatedAt: unknown;
+}
+
+interface PersistedReadCoverageDailyRow {
+  metricDate: unknown;
+  totalCount: unknown;
+  standardCount: unknown;
+  legacyCount: unknown;
+  otherCount: unknown;
+  gateEvaluatedCount: unknown;
+  gatePassedCount: unknown;
+}
+
 interface PersistedReconciliationJobRetryRow {
   createdByUserId: string;
   status: string;
@@ -149,6 +175,90 @@ interface ReconciliationGateSnapshot {
   source: 'database' | 'in-memory';
 }
 
+export interface ReconciliationGateEvaluationResult {
+  enabled: boolean;
+  passed: boolean;
+  reason: ReconciliationGateReason;
+  checkedAt: string;
+  maxAgeMinutes?: number;
+  ageMinutes?: number;
+  latest?: ReconciliationGateSnapshot;
+}
+
+interface ReconciliationWindowJobRecord {
+  jobId: string;
+  status: ReconciliationJobStatus;
+  summaryPass: boolean | undefined;
+  createdAt: string;
+  source: 'database' | 'in-memory';
+}
+
+export interface ReconciliationWindowMetricsResult {
+  dataset: StandardDataset;
+  windowDays: number;
+  fromDate: string;
+  toDate: string;
+  source: 'database' | 'in-memory';
+  totalJobs: number;
+  doneJobs: number;
+  passedJobs: number;
+  daily: Array<{
+    date: string;
+    totalJobs: number;
+    doneJobs: number;
+    passedJobs: number;
+    passed: boolean;
+    latestJobId?: string;
+  }>;
+  consecutivePassedDays: number;
+  meetsWindowTarget: boolean;
+}
+
+export interface ReconciliationDailyMetricsHistoryResult {
+  dataset: StandardDataset;
+  windowDays: number;
+  days: number;
+  source: 'database' | 'in-memory';
+  items: Array<{
+    metricDate: string;
+    totalJobs: number;
+    doneJobs: number;
+    passedJobs: number;
+    dayPassed: boolean;
+    consecutivePassedDays: number;
+    meetsWindowTarget: boolean;
+    generatedAt: string;
+    payload?: Record<string, unknown>;
+  }>;
+}
+
+export interface ReconciliationReadCoverageMetricsResult {
+  windowDays: number;
+  fromDate: string;
+  toDate: string;
+  targetCoverageRate: number;
+  totalDataFetchNodes: number;
+  standardReadNodes: number;
+  legacyReadNodes: number;
+  otherSourceNodes: number;
+  gateEvaluatedNodes: number;
+  gatePassedNodes: number;
+  coverageRate: number;
+  meetsCoverageTarget: boolean;
+  consecutiveCoverageDays: number;
+  daily: Array<{
+    date: string;
+    totalDataFetchNodes: number;
+    standardReadNodes: number;
+    legacyReadNodes: number;
+    otherSourceNodes: number;
+    gateEvaluatedNodes: number;
+    gatePassedNodes: number;
+    coverageRate: number;
+    meetsTarget: boolean;
+  }>;
+}
+
 const RECONCILIATION_SORT_COLUMN_MAP: Record<ReconciliationListSortBy, string> = {
   createdAt: '"createdAt"',
   startedAt: '"startedAt"',
@@ -171,13 +281,36 @@ const MARKET_INTEL_EVENT_TYPE_MAP: Record<string, string> = {
   NEWS: 'NEWS',
 };
 
+export const RECONCILIATION_GATE_REASON = {
+  GATE_DISABLED: 'gate_disabled',
+  NO_RECONCILIATION_JOB: 'no_reconciliation_job',
+  LATEST_STATUS_NOT_DONE: 'latest_status_not_done',
+  LATEST_SUMMARY_NOT_PASSED: 'latest_summary_not_passed',
+  LATEST_TIME_INVALID: 'latest_time_invalid',
+  LATEST_OUTDATED: 'latest_outdated',
+  GATE_PASSED: 'gate_passed',
+} as const;
+
+export type ReconciliationGateReason =
+  (typeof RECONCILIATION_GATE_REASON)[keyof typeof RECONCILIATION_GATE_REASON];
+
+export const STANDARD_RECONCILIATION_DATASETS: StandardDataset[] = [
+  'SPOT_PRICE',
+  'FUTURES_QUOTE',
+  'MARKET_EVENT',
+];
+
 @Injectable()
 export class MarketDataService {
   private readonly logger = new Logger(MarketDataService.name);
   private readonly reconciliationJobs = new Map<string, ReconciliationJob>();
   private reconciliationPersistenceUnavailable = false;
+  private reconciliationDailyMetricsPersistenceUnavailable = false;
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly configService: ConfigService,
+  ) {}
 
   async previewStandardization(dto: StandardizationPreviewDto) {
     if (dto.dataset === 'PRICE_DATA') {
@@ -726,6 +859,512 @@ export class MarketDataService {
     };
   }
 
+  async evaluateReconciliationGate(
+    dataset: StandardDataset,
+    options?: {
+      filters?: Record<string, unknown>;
+      maxAgeMinutes?: number;
+      enabledOverride?: boolean;
+    },
+  ): Promise<ReconciliationGateEvaluationResult> {
+    const checkedAt = new Date().toISOString();
+    const enabled =
+      options?.enabledOverride ?? (await this.resolveWorkflowReconciliationGateEnabled());
+
+    if (!enabled) {
+      return {
+        enabled: false,
+        passed: true,
+        reason: RECONCILIATION_GATE_REASON.GATE_DISABLED,
+        checkedAt,
+      };
+    }
+
+    const maxAgeMinutes =
+      this.parsePositiveInteger(options?.maxAgeMinutes) ??
+      (await this.resolveWorkflowReconciliationMaxAgeMinutes());
+
+    const latest = await this.getLatestReconciliationSnapshot(dataset, options?.filters);
+    if (!latest) {
+      return {
+        enabled: true,
+        passed: false,
+        reason: RECONCILIATION_GATE_REASON.NO_RECONCILIATION_JOB,
+        checkedAt,
+        maxAgeMinutes,
+      };
+    }
+
+    if (latest.status !== 'DONE') {
+      return {
+        enabled: true,
+        passed: false,
+        reason: RECONCILIATION_GATE_REASON.LATEST_STATUS_NOT_DONE,
+        checkedAt,
+        maxAgeMinutes,
+        latest,
+      };
+    }
+
+    if (latest.summaryPass !== true) {
+      return {
+        enabled: true,
+        passed: false,
+        reason: RECONCILIATION_GATE_REASON.LATEST_SUMMARY_NOT_PASSED,
+        checkedAt,
+        maxAgeMinutes,
+        latest,
+      };
+    }
+
+    const latestTimeRaw = latest.finishedAt ?? latest.createdAt;
+    const latestTime = new Date(latestTimeRaw).getTime();
+    if (!Number.isFinite(latestTime)) {
+      return {
+        enabled: true,
+        passed: false,
+        reason: RECONCILIATION_GATE_REASON.LATEST_TIME_INVALID,
+        checkedAt,
+        maxAgeMinutes,
+        latest,
+      };
+    }
+
+    const ageMinutes = (Date.now() - latestTime) / (1000 * 60);
+    if (ageMinutes > maxAgeMinutes) {
+      return {
+        enabled: true,
+        passed: false,
+        reason: RECONCILIATION_GATE_REASON.LATEST_OUTDATED,
+        checkedAt,
+        maxAgeMinutes,
+        ageMinutes,
+        latest,
+      };
+    }
+
+    return {
+      enabled: true,
+      passed: true,
+      reason: RECONCILIATION_GATE_REASON.GATE_PASSED,
+      checkedAt,
+      maxAgeMinutes,
+      ageMinutes,
+      latest,
+    };
+  }
+
+  async getReconciliationWindowMetrics(
+    dataset: StandardDataset,
+    options?: {
+      days?: number;
+      now?: Date;
+    },
+  ): Promise<ReconciliationWindowMetricsResult> {
+    const requestedDays = this.parsePositiveInteger(options?.days) ?? 7;
+    const windowDays = Math.min(30, Math.max(1, requestedDays));
+
+    const now = options?.now ? new Date(options.now) : new Date();
+    if (!Number.isFinite(now.getTime())) {
+      throw new BadRequestException('invalid now datetime for reconciliation window metrics');
+    }
+    const startOfTodayUtc = new Date(
+      Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()),
+    );
+    const fromDate = new Date(startOfTodayUtc);
+    fromDate.setUTCDate(fromDate.getUTCDate() - (windowDays - 1));
+
+    const recordsResult = await this.queryReconciliationJobsInWindow(dataset, fromDate, now);
+
+    const dailyMap = new Map<
+      string,
+      {
+        date: string;
+        totalJobs: number;
+        doneJobs: number;
+        passedJobs: number;
+        passed: boolean;
+        latestJobId?: string;
+        latestTime?: number;
+      }
+    >();
+
+    for (let i = 0; i < windowDays; i += 1) {
+      const date = new Date(fromDate);
+      date.setUTCDate(fromDate.getUTCDate() + i);
+      const dateKey = this.toUtcDateKey(date);
+      dailyMap.set(dateKey, {
+        date: dateKey,
+        totalJobs: 0,
+        doneJobs: 0,
+        passedJobs: 0,
+        passed: false,
+      });
+    }
+
+    for (const record of recordsResult.records) {
+      const dateKey = this.toUtcDateKey(record.createdAt);
+      const entry = dailyMap.get(dateKey);
+      if (!entry) {
+        continue;
+      }
+
+      entry.totalJobs += 1;
+      if (record.status === 'DONE') {
+        entry.doneJobs += 1;
+        if (record.summaryPass === true) {
+          entry.passedJobs += 1;
+        }
+      }
+
+      const recordTime = new Date(record.createdAt).getTime();
+      if (Number.isFinite(recordTime) && (!entry.latestTime || recordTime > entry.latestTime)) {
+        entry.latestTime = recordTime;
+        entry.latestJobId = record.jobId;
+      }
+    }
+
+    const daily = Array.from(dailyMap.values()).map((entry) => ({
+      date: entry.date,
+      totalJobs: entry.totalJobs,
+      doneJobs: entry.doneJobs,
+      passedJobs: entry.passedJobs,
+      passed: entry.doneJobs > 0 && entry.doneJobs === entry.passedJobs,
+      latestJobId: entry.latestJobId,
+    }));
+
+    const totalJobs = recordsResult.records.length;
+    const doneJobs = recordsResult.records.filter((record) => record.status === 'DONE').length;
+    const passedJobs = recordsResult.records.filter(
+      (record) => record.status === 'DONE' && record.summaryPass === true,
+    ).length;
+
+    let consecutivePassedDays = 0;
+    for (let i = daily.length - 1; i >= 0; i -= 1) {
+      if (!daily[i].passed) {
+        break;
+      }
+      consecutivePassedDays += 1;
+    }
+
+    const meetsWindowTarget = daily.length > 0 && daily.every((item) => item.passed);
+
+    return {
+      dataset,
+      windowDays,
+      fromDate: fromDate.toISOString(),
+      toDate: now.toISOString(),
+      source: recordsResult.source,
+      totalJobs,
+      doneJobs,
+      passedJobs,
+      daily,
+      consecutivePassedDays,
+      meetsWindowTarget,
+    };
+  }
+
+  async snapshotReconciliationWindowMetrics(options?: {
+    windowDays?: number;
+    datasets?: StandardDataset[];
+    now?: Date;
+  }): Promise<{
+    generatedAt: string;
+    windowDays: number;
+    source: 'database' | 'in-memory';
+    results: Array<{
+      dataset: StandardDataset;
+      totalJobs: number;
+      passedJobs: number;
+      consecutivePassedDays: number;
+      meetsWindowTarget: boolean;
+    }>;
+  }> {
+    const windowDays = Math.min(
+      30,
+      Math.max(1, this.parsePositiveInteger(options?.windowDays) ?? 7),
+    );
+    const now = options?.now ? new Date(options.now) : new Date();
+    if (!Number.isFinite(now.getTime())) {
+      throw new BadRequestException('invalid now datetime for reconciliation snapshot');
+    }
+
+    const datasets =
+      options?.datasets && options.datasets.length > 0
+        ? options.datasets
+        : STANDARD_RECONCILIATION_DATASETS;
+    const dedupedDatasets = Array.from(new Set(datasets)) as StandardDataset[];
+
+    const results: Array<{
+      dataset: StandardDataset;
+      totalJobs: number;
+      passedJobs: number;
+      consecutivePassedDays: number;
+      meetsWindowTarget: boolean;
+    }> = [];
+
+    let source: 'database' | 'in-memory' = 'database';
+    for (const dataset of dedupedDatasets) {
+      const metrics = await this.getReconciliationWindowMetrics(dataset, {
+        days: windowDays,
+        now,
+      });
+
+      if (metrics.source === 'in-memory') {
+        source = 'in-memory';
+      }
+
+      await this.persistReconciliationDailyMetric(metrics, now);
+      results.push({
+        dataset,
+        totalJobs: metrics.totalJobs,
+        passedJobs: metrics.passedJobs,
+        consecutivePassedDays: metrics.consecutivePassedDays,
+        meetsWindowTarget: metrics.meetsWindowTarget,
+      });
+    }
+
+    return {
+      generatedAt: now.toISOString(),
+      windowDays,
+      source,
+      results,
+    };
+  }
+
+  async getReconciliationDailyMetricsHistory(
+    dataset: StandardDataset,
+    options?: {
+      windowDays?: number;
+      days?: number;
+    },
+  ): Promise<ReconciliationDailyMetricsHistoryResult> {
+    const windowDays = Math.min(
+      30,
+      Math.max(1, this.parsePositiveInteger(options?.windowDays) ?? 7),
+    );
+    const days = Math.min(90, Math.max(1, this.parsePositiveInteger(options?.days) ?? 30));
+
+    if (!this.reconciliationDailyMetricsPersistenceUnavailable) {
+      try {
+        const rows = await this.prisma.$queryRawUnsafe<PersistedReconciliationDailyMetricRow[]>(
+          `SELECT
+             "dataset",
+             "metricDate",
+             "windowDays",
+             "totalJobs",
+             "doneJobs",
+             "passedJobs",
+             "dayPassed",
+             "consecutivePassedDays",
+             "meetsWindowTarget",
+             "source",
+             "payload",
+             "generatedAt"
+           FROM "DataReconciliationDailyMetric"
+           WHERE "dataset" = $1
+             AND "windowDays" = $2
+           ORDER BY "metricDate" DESC
+           LIMIT $3`,
+          dataset,
+          windowDays,
+          days,
+        );
+
+        return {
+          dataset,
+          windowDays,
+          days,
+          source: 'database',
+          items: rows.map((row) => ({
+            metricDate: this.toIsoString(row.metricDate) ?? new Date().toISOString(),
+            totalJobs: this.parseInteger(row.totalJobs),
+            doneJobs: this.parseInteger(row.doneJobs),
+            passedJobs: this.parseInteger(row.passedJobs),
+            dayPassed: this.parseOptionalBoolean(row.dayPassed) ?? false,
+            consecutivePassedDays: this.parseInteger(row.consecutivePassedDays),
+            meetsWindowTarget: this.parseOptionalBoolean(row.meetsWindowTarget) ?? false,
+            generatedAt: this.toIsoString(row.generatedAt) ?? new Date().toISOString(),
+            payload: this.parseJsonValue<Record<string, unknown>>(row.payload),
+          })),
+        };
+      } catch (error) {
+        if (this.isReconciliationDailyMetricsPersistenceMissingTableError(error)) {
+          this.disableReconciliationDailyMetricsPersistence('query daily metrics history', error);
+        } else {
+          this.logger.error(`Query daily metrics history failed: ${this.stringifyError(error)}`);
+        }
+      }
+    }
+
+    const fallbackMetrics = await this.getReconciliationWindowMetrics(dataset, {
+      days: windowDays,
+    });
+
+    const fallbackDaily = fallbackMetrics.daily.slice(-days);
+    let streak = 0;
+    const items = fallbackDaily.map((item) => {
+      streak = item.passed ? streak + 1 : 0;
+      return {
+        metricDate: `${item.date}T00:00:00.000Z`,
+        totalJobs: item.totalJobs,
+        doneJobs: item.doneJobs,
+        passedJobs: item.passedJobs,
+        dayPassed: item.passed,
+        consecutivePassedDays: streak,
+        meetsWindowTarget: streak >= windowDays,
+        generatedAt: new Date().toISOString(),
+        payload: {
+          fromDate: fallbackMetrics.fromDate,
+          toDate: fallbackMetrics.toDate,
+        },
+      };
+    });
+
+    return {
+      dataset,
+      windowDays,
+      days,
+      source: 'in-memory',
+      items,
+    };
+  }
+
+  async getReconciliationReadCoverageMetrics(options?: {
+    days?: number;
+    workflowVersionIds?: string[];
+    targetCoverageRate?: number;
+  }): Promise<ReconciliationReadCoverageMetricsResult> {
+    const windowDays = Math.min(30, Math.max(1, this.parsePositiveInteger(options?.days) ?? 7));
+    const targetCoverageRate = this.normalizeCoverageRate(options?.targetCoverageRate, 0.9);
+
+    const now = new Date();
+    const startOfTodayUtc = new Date(
+      Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()),
+    );
+    const fromDate = new Date(startOfTodayUtc);
+    fromDate.setUTCDate(fromDate.getUTCDate() - (windowDays - 1));
+
+    const dailyMap = new Map<
+      string,
+      {
+        date: string;
+        totalDataFetchNodes: number;
+        standardReadNodes: number;
+        legacyReadNodes: number;
+        otherSourceNodes: number;
+        gateEvaluatedNodes: number;
+        gatePassedNodes: number;
+        coverageRate: number;
+        meetsTarget: boolean;
+      }
+    >();
+
+    for (let i = 0; i < windowDays; i += 1) {
+      const date = new Date(fromDate);
+      date.setUTCDate(fromDate.getUTCDate() + i);
+      const dateKey = this.toUtcDateKey(date);
+      dailyMap.set(dateKey, {
+        date: dateKey,
+        totalDataFetchNodes: 0,
+        standardReadNodes: 0,
+        legacyReadNodes: 0,
+        otherSourceNodes: 0,
+        gateEvaluatedNodes: 0,
+        gatePassedNodes: 0,
+        coverageRate: 0,
+        meetsTarget: false,
+      });
+    }
+
+    const whereParts = [
+      `n."nodeType" = 'data-fetch'`,
+      `n."status" = 'SUCCESS'::"NodeExecutionStatus"`,
+      `n."createdAt" >= $1`,
+      `n."createdAt" <= $2`,
+    ];
+    const params: unknown[] = [fromDate, now];
+
+    const workflowVersionIds = options?.workflowVersionIds?.filter((item) => !!item) ?? [];
+    const dedupedWorkflowVersionIds = Array.from(new Set(workflowVersionIds));
+    if (dedupedWorkflowVersionIds.length > 0) {
+      whereParts.push(`we."workflowVersionId" = ANY($${params.length + 1}::text[])`);
+      params.push(dedupedWorkflowVersionIds);
+    }
+
+    const rows = await this.prisma.$queryRawUnsafe<PersistedReadCoverageDailyRow[]>(
+      `SELECT
+         date_trunc('day', n."createdAt")::date AS "metricDate",
+         COUNT(*)::int AS "totalCount",
+         SUM(CASE WHEN COALESCE(n."outputSnapshot"->'metadata'->>'source', '') = 'STANDARD_READ_MODEL' THEN 1 ELSE 0 END)::int AS "standardCount",
+         SUM(CASE WHEN COALESCE(n."outputSnapshot"->'metadata'->>'source', '') = 'INTERNAL_DB' THEN 1 ELSE 0 END)::int AS "legacyCount",
+         SUM(CASE WHEN COALESCE(n."outputSnapshot"->'metadata'->>'source', '') NOT IN ('STANDARD_READ_MODEL', 'INTERNAL_DB', '') THEN 1 ELSE 0 END)::int AS "otherCount",
+         SUM(CASE WHEN COALESCE(n."outputSnapshot"->'metadata', '{}'::jsonb) ? 'reconciliationGate' THEN 1 ELSE 0 END)::int AS "gateEvaluatedCount",
+         SUM(CASE WHEN COALESCE(n."outputSnapshot"->'metadata'->'reconciliationGate'->>'passed', 'false') = 'true' THEN 1 ELSE 0 END)::int AS "gatePassedCount"
+       FROM "NodeExecution" n
+       JOIN "WorkflowExecution" we ON we."id" = n."workflowExecutionId"
+       WHERE ${whereParts.join(' AND ')}
+       GROUP BY 1
+       ORDER BY 1 ASC`,
+      ...params,
+    );
+
+    for (const row of rows) {
+      const dateKey = this.toUtcDateKey(row.metricDate);
+      const entry = dailyMap.get(dateKey);
+      if (!entry) {
+        continue;
+      }
+
+      entry.totalDataFetchNodes = this.parseInteger(row.totalCount);
+      entry.standardReadNodes = this.parseInteger(row.standardCount);
+      entry.legacyReadNodes = this.parseInteger(row.legacyCount);
+      entry.otherSourceNodes = this.parseInteger(row.otherCount);
+      entry.gateEvaluatedNodes = this.parseInteger(row.gateEvaluatedCount);
+      entry.gatePassedNodes = this.parseInteger(row.gatePassedCount);
+      entry.coverageRate =
+        entry.totalDataFetchNodes > 0 ? entry.standardReadNodes / entry.totalDataFetchNodes : 0;
+      entry.meetsTarget = entry.totalDataFetchNodes > 0 && entry.coverageRate >= targetCoverageRate;
+    }
+
+    const daily = Array.from(dailyMap.values());
+
+    const totalDataFetchNodes = daily.reduce((sum, item) => sum + item.totalDataFetchNodes, 0);
+    const standardReadNodes = daily.reduce((sum, item) => sum + item.standardReadNodes, 0);
+    const legacyReadNodes = daily.reduce((sum, item) => sum + item.legacyReadNodes, 0);
+    const otherSourceNodes = daily.reduce((sum, item) => sum + item.otherSourceNodes, 0);
+    const gateEvaluatedNodes = daily.reduce((sum, item) => sum + item.gateEvaluatedNodes, 0);
+    const gatePassedNodes = daily.reduce((sum, item) => sum + item.gatePassedNodes, 0);
+
+    const coverageRate = totalDataFetchNodes > 0 ? standardReadNodes / totalDataFetchNodes : 0;
+    const meetsCoverageTarget = totalDataFetchNodes > 0 && coverageRate >= targetCoverageRate;
+
+    let consecutiveCoverageDays = 0;
+    for (let i = daily.length - 1; i >= 0; i -= 1) {
+      if (!daily[i].meetsTarget) {
+        break;
+      }
+      consecutiveCoverageDays += 1;
+    }
+
+    return {
+      windowDays,
+      fromDate: fromDate.toISOString(),
+      toDate: now.toISOString(),
+      targetCoverageRate,
+      totalDataFetchNodes,
+      standardReadNodes,
+      legacyReadNodes,
+      otherSourceNodes,
+      gateEvaluatedNodes,
+      gatePassedNodes,
+      coverageRate,
+      meetsCoverageTarget,
+      consecutiveCoverageDays,
+      daily,
+    };
+  }
+
   async queryStandardizedData(dataset: StandardDataset, options: StandardizedQueryOptions) {
     const limit = options.limit ?? 100;
 
@@ -841,6 +1480,70 @@ export class MarketDataService {
     }
 
     return Math.max(...numericValues);
+  }
+
+  private async persistReconciliationDailyMetric(
+    metrics: ReconciliationWindowMetricsResult,
+    generatedAt: Date,
+  ) {
+    if (this.reconciliationDailyMetricsPersistenceUnavailable) {
+      return;
+    }
+
+    const metricDateKey = this.toUtcDateKey(generatedAt);
+    const metricDate = new Date(`${metricDateKey}T00:00:00.000Z`);
+    if (!Number.isFinite(metricDate.getTime())) {
+      return;
+    }
+
+    const payload = JSON.stringify({
+      fromDate: metrics.fromDate,
+      toDate: metrics.toDate,
+      daily: metrics.daily,
+      source: metrics.source,
+    });
+
+    try {
+      await this.prisma.$executeRawUnsafe(
+        `INSERT INTO "DataReconciliationDailyMetric"
+          ("id", "dataset", "metricDate", "windowDays", "totalJobs", "doneJobs", "passedJobs", "dayPassed", "consecutivePassedDays", "meetsWindowTarget", "source", "payload", "generatedAt", "updatedAt")
+         VALUES
+          ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12::jsonb, $13, $14)
+         ON CONFLICT ("dataset", "metricDate", "windowDays") DO UPDATE SET
+          "totalJobs" = EXCLUDED."totalJobs",
+          "doneJobs" = EXCLUDED."doneJobs",
+          "passedJobs" = EXCLUDED."passedJobs",
+          "dayPassed" = EXCLUDED."dayPassed",
+          "consecutivePassedDays" = EXCLUDED."consecutivePassedDays",
+          "meetsWindowTarget" = EXCLUDED."meetsWindowTarget",
+          "source" = EXCLUDED."source",
+          "payload" = EXCLUDED."payload",
+          "generatedAt" = EXCLUDED."generatedAt",
+          "updatedAt" = EXCLUDED."updatedAt"`,
+        randomUUID(),
+        metrics.dataset,
+        metricDate,
+        metrics.windowDays,
+        metrics.totalJobs,
+        metrics.doneJobs,
+        metrics.passedJobs,
+        metrics.daily.length > 0 ? metrics.daily[metrics.daily.length - 1].passed : false,
+        metrics.consecutivePassedDays,
+        metrics.meetsWindowTarget,
+        metrics.source,
+        payload,
+        generatedAt,
+        new Date(),
+      );
+    } catch (error) {
+      if (this.isReconciliationDailyMetricsPersistenceMissingTableError(error)) {
+        this.disableReconciliationDailyMetricsPersistence('persist daily metrics snapshot', error);
+        return;
+      }
+      this.logger.error(
+        `Persist daily reconciliation metrics failed: ${this.stringifyError(error)}`,
+      );
+    }
   }
 
   private async persistReconciliationJobSnapshot(
@@ -1158,6 +1861,99 @@ export class MarketDataService {
     }
   }
 
+  private async queryReconciliationJobsInWindow(
+    dataset: StandardDataset,
+    fromDate: Date,
+    toDate: Date,
+  ): Promise<{
+    records: ReconciliationWindowJobRecord[];
+    source: 'database' | 'in-memory';
+  }> {
+    if (!this.reconciliationPersistenceUnavailable) {
+      try {
+        const rows = await this.prisma.$queryRawUnsafe<
+          Array<{
+            jobId: string;
+            status: string;
+            summaryPass: unknown;
+            createdAt: unknown;
+          }>
+        >(
+          `SELECT "jobId", "status", "summaryPass", "createdAt"
+           FROM "DataReconciliationJob"
+           WHERE "dataset" = $1
+             AND "createdAt" >= $2
+             AND "createdAt" <= $3
+           ORDER BY "createdAt" DESC`,
+          dataset,
+          fromDate,
+          toDate,
+        );
+
+        const records: ReconciliationWindowJobRecord[] = [];
+        for (const row of rows) {
+          const createdAt = this.toIsoString(row.createdAt);
+          if (!createdAt) {
+            continue;
+          }
+
+          records.push({
+            jobId: row.jobId,
+            status: this.normalizeReconciliationStatus(row.status),
+            summaryPass: this.parseOptionalBoolean(row.summaryPass),
+            createdAt,
+            source: 'database',
+          });
+        }
+
+        return {
+          records,
+          source: 'database',
+        };
+      } catch (error) {
+        if (this.isReconciliationPersistenceMissingTableError(error)) {
+          this.disableReconciliationPersistence('query reconciliation jobs in window', error);
+        } else {
+          this.logger.error(
+            `Query reconciliation jobs in window failed: ${this.stringifyError(error)}`,
+          );
+        }
+      }
+    }
+
+    const records: ReconciliationWindowJobRecord[] = [];
+    for (const job of this.reconciliationJobs.values()) {
+      if (job.dataset !== dataset) {
+        continue;
+      }
+
+      const createdAt = this.toIsoString(job.createdAt);
+      if (!createdAt) {
+        continue;
+      }
+
+      const time = new Date(createdAt).getTime();
+      if (time < fromDate.getTime() || time > toDate.getTime()) {
+        continue;
+      }
+
+      records.push({
+        jobId: job.jobId,
+        status: job.status,
+        summaryPass: this.resolveSummaryPass(job.summary, job.summaryPass),
+        createdAt,
+        source: 'in-memory',
+      });
+    }
+
+    records.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+
+    return {
+      records,
+      source: 'in-memory',
+    };
+  }
+
   private async findPersistedReconciliationJob(jobId: string): Promise<ReconciliationJob | null> {
     if (this.reconciliationPersistenceUnavailable) {
       return null;
@@ -1364,6 +2160,79 @@ export class MarketDataService {
     return parsed;
   }
 
+  private toUtcDateKey(value: string | Date | unknown): string {
+    const parsed = value instanceof Date ? value : new Date(String(value));
+    if (!Number.isFinite(parsed.getTime())) {
+      return new Date().toISOString().slice(0, 10);
+    }
+    return parsed.toISOString().slice(0, 10);
+  }
+
+  private async resolveWorkflowReconciliationGateEnabled(): Promise<boolean> {
+    try {
+      const setting = await this.configService.getWorkflowReconciliationGateEnabled();
+      return setting.enabled;
+    } catch {
+      const fallback = this.parseOptionalBoolean(process.env.WORKFLOW_RECONCILIATION_GATE_ENABLED);
+      if (fallback !== undefined) {
+        this.logger.warn('读取 workflow reconciliation gate 开关失败，回退环境变量');
+        return fallback;
+      }
+      return false;
+    }
+  }
+
+  private async resolveWorkflowReconciliationMaxAgeMinutes(): Promise<number> {
+    try {
+      const setting = await this.configService.getWorkflowReconciliationMaxAgeMinutes();
+      if (setting.value > 0) {
+        return setting.value;
+      }
+    } catch {
+      const fallback = this.parsePositiveInteger(
+        process.env.WORKFLOW_RECONCILIATION_MAX_AGE_MINUTES,
+      );
+      if (fallback !== null) {
+        this.logger.warn('读取 workflow reconciliation max age 失败，回退环境变量');
+        return fallback;
+      }
+    }
+
+    return 1440;
+  }
+
+  private parsePositiveInteger(value: unknown): number | null {
+    if (typeof value === 'number' && Number.isFinite(value)) {
+      if (Number.isInteger(value) && value > 0) {
+        return value;
+      }
+      return null;
+    }
+
+    if (typeof value === 'string') {
+      const parsed = Number(value.trim());
+      if (Number.isFinite(parsed) && Number.isInteger(parsed) && parsed > 0) {
+        return parsed;
+      }
+    }
+
+    return null;
+  }
+
+  private normalizeCoverageRate(value: unknown, fallback: number): number {
+    const parsed = this.parseFiniteNumber(value);
+    if (parsed === undefined) {
+      return fallback;
+    }
+    if (parsed < 0) {
+      return 0;
+    }
+    if (parsed > 1) {
+      return 1;
+    }
+    return parsed;
+  }
+
   private normalizeReconciliationGateDimensions(
     dataset: StandardDataset,
     filters?: Record<string, unknown>,
@@ -1501,6 +2370,15 @@ export class MarketDataService {
       }
     }
     return undefined;
+  }
+
+  private parseInteger(value: unknown): number {
+    const parsed = this.parseFiniteNumber(value);
+    if (parsed === undefined) {
+      return 0;
+    }
+    const int = Math.trunc(parsed);
+    return int >= 0 ? int : 0;
   }
 
   private parseRetryCount(value: unknown): number {
@@ -1673,6 +2551,28 @@ export class MarketDataService {
     );
   }
 
+  private isReconciliationDailyMetricsPersistenceMissingTableError(error: unknown) {
+    const code =
+      typeof error === 'object' && error !== null && 'code' in error
+        ? String((error as { code?: unknown }).code)
+        : '';
+    if (code === 'P2021') {
+      return true;
+    }
+
+    const message = this.stringifyError(error).toLowerCase();
+    const containsTarget = message.includes('datareconciliationdailymetric');
+    const missingTableHint =
+      message.includes('does not exist') ||
+      message.includes('relation') ||
+      message.includes('column') ||
+      message.includes('undefined') ||
+      message.includes('42703') ||
+      message.includes('42704') ||
+      message.includes('p2021');
+    return containsTarget && missingTableHint;
+  }
+
   private disableReconciliationPersistence(operation: string, error: unknown) {
     if (this.reconciliationPersistenceUnavailable) {
       return;
@@ -1680,6 +2580,16 @@ export class MarketDataService {
     this.reconciliationPersistenceUnavailable = true;
     this.logger.warn(
       `Reconciliation persistence disabled (${operation}): ${this.stringifyError(error)}`,
+    );
+  }
+
+  private disableReconciliationDailyMetricsPersistence(operation: string, error: unknown) {
+    if (this.reconciliationDailyMetricsPersistenceUnavailable) {
+      return;
+    }
+    this.reconciliationDailyMetricsPersistenceUnavailable = true;
+    this.logger.warn(
+      `Reconciliation daily metrics persistence disabled (${operation}): ${this.stringifyError(error)}`,
     );
   }
 

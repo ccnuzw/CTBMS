@@ -501,8 +501,6 @@ const ephemeralCapabilityPolicyTargetId = (scope: EphemeralPolicyScope) =>
   scope === 'TEAM' ? 'agent-ephemeral-capability-policy-team-default' : 'agent-ephemeral-capability-policy-default';
 const ephemeralCapabilityPolicyTargetCode = (scope: EphemeralPolicyScope) =>
   scope === 'TEAM' ? 'agent-ephemeral-capability-policy-team-default' : 'agent-ephemeral-capability-policy-default';
-const ephemeralPolicyAuditBindingType = 'AGENT_EPHEMERAL_POLICY_AUDIT';
-
 export interface DeliveryChannelProfile {
   id: string;
   channel: DeliveryChannel;

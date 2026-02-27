@@ -43,8 +43,10 @@ import {
   DeliveryChannelProfile,
   useCapabilityRoutingPolicy,
   EphemeralCapabilityPolicy,
+  EphemeralPolicyScope,
   useEphemeralCapabilityPolicy,
   useEphemeralCapabilityPolicyAudits,
+  useEphemeralCapabilityPolicyAuditSummary,
   useConfirmConversationPlan,
   useConversationBacktest,
   useConversationConflicts,
@@ -90,6 +92,7 @@ import {
   useResolveScheduleCommand,
   useUpsertCapabilityRoutingPolicy,
   useUpsertEphemeralCapabilityPolicy,
+  useRollbackEphemeralCapabilityPolicyAudit,
   useUpsertCopilotPromptTemplates,
   useUpsertCopilotDeliveryProfiles,
 } from '../api/conversations';
@@ -539,6 +542,7 @@ export const AgentCopilotPage: React.FC = () => {
   const [routingPolicyDraft, setRoutingPolicyDraft] = useState<CapabilityRoutingPolicy>(
     DEFAULT_CAPABILITY_ROUTING_POLICY,
   );
+  const [ephemeralPolicyScope, setEphemeralPolicyScope] = useState<EphemeralPolicyScope>('PERSONAL');
   const [ephemeralPolicyDraft, setEphemeralPolicyDraft] = useState<EphemeralCapabilityPolicy>(
     DEFAULT_EPHEMERAL_CAPABILITY_POLICY,
   );
@@ -727,9 +731,11 @@ export const AgentCopilotPage: React.FC = () => {
   const upsertDeliveryProfilesMutation = useUpsertCopilotDeliveryProfiles();
   const capabilityRoutingPolicyQuery = useCapabilityRoutingPolicy();
   const upsertCapabilityRoutingPolicyMutation = useUpsertCapabilityRoutingPolicy();
-  const ephemeralCapabilityPolicyQuery = useEphemeralCapabilityPolicy();
-  const ephemeralCapabilityPolicyAuditsQuery = useEphemeralCapabilityPolicyAudits(20);
+  const ephemeralCapabilityPolicyQuery = useEphemeralCapabilityPolicy(ephemeralPolicyScope);
+  const ephemeralCapabilityPolicyAuditsQuery = useEphemeralCapabilityPolicyAudits(ephemeralPolicyScope, 20);
+  const ephemeralCapabilityPolicyAuditSummaryQuery = useEphemeralCapabilityPolicyAuditSummary(ephemeralPolicyScope, 100);
   const upsertEphemeralCapabilityPolicyMutation = useUpsertEphemeralCapabilityPolicy();
+  const rollbackEphemeralPolicyAuditMutation = useRollbackEphemeralCapabilityPolicyAudit();
 
   const activePromptTemplate =
     templateScope === 'PERSONAL' ? personalPromptTemplateQuery.data : teamPromptTemplateQuery.data;
@@ -2026,6 +2032,7 @@ export const AgentCopilotPage: React.FC = () => {
       await upsertEphemeralCapabilityPolicyMutation.mutateAsync({
         bindingId: ephemeralCapabilityPolicyBinding?.id,
         policy,
+        scope: ephemeralPolicyScope,
       });
       const nextAudit = [
         {
@@ -2057,6 +2064,18 @@ export const AgentCopilotPage: React.FC = () => {
       replayNonRetryableErrorCodeBlocklist: [...next.replayNonRetryableErrorCodeBlocklist],
     }));
     message.success(preset === 'NETWORK' ? '已应用网络波动型模板' : '已应用严格型模板');
+  };
+
+  const handleRollbackEphemeralPolicyAudit = async (auditId: string) => {
+    try {
+      await rollbackEphemeralPolicyAuditMutation.mutateAsync({
+        auditId,
+        scope: ephemeralPolicyScope,
+      });
+      message.success('已回滚到该审计版本');
+    } catch (error) {
+      showCopilotError(error, '策略版本回滚失败');
+    }
   };
 
   const handleExportRoutingSummary = () => {
@@ -4647,6 +4666,15 @@ export const AgentCopilotPage: React.FC = () => {
             description="建议先保持默认，再根据 UAT 指标逐步微调。"
           />
           <Space>
+            <Segmented
+              size="small"
+              value={ephemeralPolicyScope}
+              options={[
+                { label: '个人策略', value: 'PERSONAL' },
+                { label: '团队策略', value: 'TEAM' },
+              ]}
+              onChange={(value) => setEphemeralPolicyScope(value as EphemeralPolicyScope)}
+            />
             <Button
               size="small"
               onClick={() => setEphemeralPolicyDraft(DEFAULT_EPHEMERAL_CAPABILITY_POLICY)}
@@ -4669,13 +4697,33 @@ export const AgentCopilotPage: React.FC = () => {
                   ? new Date(ephemeralCapabilityPolicyBinding.updatedAt).toLocaleString('zh-CN')
                   : '-'}
               </Text>
+              <Text type="secondary" style={{ fontSize: 12 }}>
+                审计汇总：
+                {ephemeralCapabilityPolicyAuditSummaryQuery.data
+                  ? `共 ${ephemeralCapabilityPolicyAuditSummaryQuery.data.total} 条，动作 ${ephemeralCapabilityPolicyAuditSummaryQuery.data.stats.action
+                      .slice(0, 3)
+                      .map((item) => `${item.key}(${item.count})`)
+                      .join(' / ') || '-'}`
+                  : '-'}
+              </Text>
               <List
                 size="small"
                 dataSource={displayedEphemeralPolicyAuditHistory.slice(0, 6)}
                 loading={ephemeralCapabilityPolicyAuditsQuery.isLoading}
                 locale={{ emptyText: '暂无审计记录（首次保存策略后自动生成）' }}
                 renderItem={(item) => (
-                  <List.Item>
+                  <List.Item
+                    actions={[
+                      <Button
+                        key={`rollback-${item.id}`}
+                        size="small"
+                        loading={rollbackEphemeralPolicyAuditMutation.isPending}
+                        onClick={() => void handleRollbackEphemeralPolicyAudit(item.id)}
+                      >
+                        回滚到此版本
+                      </Button>,
+                    ]}
+                  >
                     <Space direction="vertical" size={2} style={{ width: '100%' }}>
                       <Text type="secondary" style={{ fontSize: 12 }}>
                         {new Date(item.savedAt).toLocaleString('zh-CN')} · TTL {item.runtimeGrantTtlHours}h · MaxUse{' '}

@@ -83,6 +83,30 @@ export class ConfigController {
     return this.configService.setWorkflowStandardizedReadMode(body.enabled, body.updatedBy);
   }
 
+  @Get('workflow-reconciliation-gate-enabled')
+  async getWorkflowReconciliationGateEnabled() {
+    return this.configService.getWorkflowReconciliationGateEnabled();
+  }
+
+  @Put('workflow-reconciliation-gate-enabled')
+  async setWorkflowReconciliationGateEnabled(
+    @Body() body: { enabled: boolean; updatedBy?: string },
+  ) {
+    return this.configService.setWorkflowReconciliationGateEnabled(body.enabled, body.updatedBy);
+  }
+
+  @Get('workflow-reconciliation-max-age-minutes')
+  async getWorkflowReconciliationMaxAgeMinutes() {
+    return this.configService.getWorkflowReconciliationMaxAgeMinutes();
+  }
+
+  @Put('workflow-reconciliation-max-age-minutes')
+  async setWorkflowReconciliationMaxAgeMinutes(
+    @Body() body: { value: number; updatedBy?: string },
+  ) {
+    return this.configService.setWorkflowReconciliationMaxAgeMinutes(body.value, body.updatedBy);
+  }
+
   // ===== Dictionaries =====
   @Get('dictionary-domains')
   async getDictionaryDomains(@Query('includeInactive') includeInactive?: string) {
