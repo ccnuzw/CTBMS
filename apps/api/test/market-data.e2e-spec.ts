@@ -251,6 +251,48 @@ async function main() {
     assert.equal(dailyMetricsHistory.body.data.dataset, 'SPOT_PRICE');
     assert.equal(dailyMetricsHistory.body.data.windowDays, 7);
 
+    const readCoverage = await fetchJson<{
+      success: boolean;
+      data: {
+        windowDays: number;
+        fromDate: string;
+        toDate: string;
+        targetCoverageRate: number;
+        totalDataFetchNodes: number;
+        standardReadNodes: number;
+        legacyReadNodes: number;
+        otherSourceNodes: number;
+        gateEvaluatedNodes: number;
+        gatePassedNodes: number;
+        coverageRate: number;
+        meetsCoverageTarget: boolean;
+        consecutiveCoverageDays: number;
+        daily: Array<{
+          date: string;
+          totalDataFetchNodes: number;
+          coverageRate: number;
+          meetsTarget: boolean;
+        }>;
+      };
+      traceId: string;
+      ts: string;
+    }>(`${baseUrl}/market-data/reconciliation/metrics/read-coverage`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-virtual-user-id': 'admin-user',
+      },
+      body: JSON.stringify({
+        days: 7,
+        targetCoverageRate: 0.9,
+      }),
+    });
+    assert.equal(readCoverage.status, 201);
+    assert.equal(readCoverage.body.success, true);
+    assert.equal(readCoverage.body.data.windowDays, 7);
+    assert.equal(readCoverage.body.data.targetCoverageRate, 0.9);
+    assert.equal(readCoverage.body.data.daily.length, 7);
+
     const createdAtFrom = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
     const createdAtTo = new Date().toISOString();
 
