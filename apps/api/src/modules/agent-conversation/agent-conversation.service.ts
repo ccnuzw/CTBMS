@@ -20,6 +20,7 @@ import { WorkflowExecutionService } from '../workflow-execution';
 import { ReportExportService } from '../report-export';
 import { AIModelService } from '../ai/ai-model.service';
 import { AIProviderFactory } from '../ai/providers/provider.factory';
+import { ConversationUtilsService, ConversationIntentService } from './services';
 
 type SessionState =
   | 'INTENT_CAPTURE'
@@ -120,6 +121,8 @@ export class AgentConversationService {
     private readonly reportExportService: ReportExportService,
     private readonly aiModelService: AIModelService,
     private readonly aiProviderFactory: AIProviderFactory,
+    private readonly intentService: ConversationIntentService,
+    private readonly utilsService: ConversationUtilsService,
   ) { }
 
   async createSession(userId: string, dto: CreateConversationSessionDto) {
@@ -204,9 +207,19 @@ export class AgentConversationService {
       return null;
     }
 
-    // -- Action Intent fast path: detect export/email/retry/schedule --
-    const actionIntent = this.detectActionIntent(dto.message, session.state as SessionState);
-    if (actionIntent.type) {
+    // -- Unified Intent: detect action intents via IntentService --
+    const unifiedIntent = await this.intentService.detectUnifiedIntent(
+      dto.message, session.state as SessionState, session.currentIntent,
+    );
+    const actionType = unifiedIntent.type;
+    const isActionFastPath = actionType === 'EXPORT' || actionType === 'DELIVER_EMAIL' || actionType === 'SCHEDULE';
+    if (isActionFastPath) {
+      const actionIntent = {
+        type: actionType,
+        format: unifiedIntent.format,
+        emailTo: unifiedIntent.emailTo,
+        cronNatural: unifiedIntent.cronNatural,
+      };
       await this.prisma.conversationTurn.create({
         data: {
           sessionId,
@@ -258,36 +271,30 @@ export class AgentConversationService {
         } else {
           actionResponse = '\u8bf7\u544a\u8bc9\u6211\u6536\u4ef6\u4eba\u7684\u90ae\u7bb1\u5730\u5740\uff0c\u6bd4\u5982\u201c\u53d1\u5230 test@example.com\u201d\u3002';
         }
-      } else if (actionIntent.type === 'RETRY') {
-        // RETRY: fall through to the normal analysis flow below
-        actionResponse = '';
       } else if (actionIntent.type === 'SCHEDULE') {
         actionResponse = '\u597d\u7684\uff0c\u5b9a\u65f6\u4efb\u52a1\u529f\u80fd\u6b63\u5728\u5f00\u53d1\u4e2d\u3002\u4f60\u53ef\u4ee5\u544a\u8bc9\u6211\u5177\u4f53\u7684\u6267\u884c\u9891\u7387\uff0c\u6bd4\u5982\u201c\u6bcf\u5468\u4e00\u65e9\u4e0a8\u70b9\u6267\u884c\u201d\u3002';
         actionPayload.cronNatural = actionIntent.cronNatural;
       }
 
-      // RETRY falls through; all others return early
-      if (actionIntent.type !== 'RETRY') {
-        await this.prisma.conversationTurn.create({
-          data: {
-            sessionId,
-            role: 'ASSISTANT',
-            content: actionResponse,
-            structuredPayload: actionPayload as Prisma.InputJsonValue,
-          },
-        });
+      await this.prisma.conversationTurn.create({
+        data: {
+          sessionId,
+          role: 'ASSISTANT',
+          content: actionResponse,
+          structuredPayload: actionPayload as Prisma.InputJsonValue,
+        },
+      });
 
-        return {
-          assistantMessage: actionResponse,
-          state: session.state as SessionState,
-          intent: (session.currentIntent ?? 'MARKET_SUMMARY_WITH_FORECAST') as IntentCode,
-          missingSlots: [] as string[],
-          proposedPlan: null,
-          confirmRequired: false,
-          autoExecuted: false,
-          replyOptions: [] as ReplyOption[],
-        };
-      }
+      return {
+        assistantMessage: actionResponse,
+        state: session.state as SessionState,
+        intent: (session.currentIntent ?? 'MARKET_SUMMARY_WITH_FORECAST') as IntentCode,
+        missingSlots: [] as string[],
+        proposedPlan: null,
+        confirmRequired: false,
+        autoExecuted: false,
+        replyOptions: [] as ReplyOption[],
+      };
     }
 
     const referencedAssetIds = this.extractAssetReferenceIds(dto.message);
@@ -358,18 +365,18 @@ export class AgentConversationService {
       });
     }
 
-    const intent = this.detectIntent(dto.message, session.currentIntent);
-    const mergedSlots = this.mergeSlots(
-      this.normalizeSlots(session.currentSlots),
-      this.extractSlots(dto.message),
+    const intent = this.intentService.detectAnalysisIntent(dto.message, session.currentIntent);
+    const mergedSlots = this.utilsService.mergeSlots(
+      this.utilsService.normalizeSlots(session.currentSlots),
+      this.intentService.extractSlots(dto.message),
       effectiveContextPatch,
     );
 
     // Apply slot defaults to minimize SLOT_FILLING interruptions
-    const slotsWithDefaults = this.applySlotDefaults(mergedSlots, intent);
+    const slotsWithDefaults = this.intentService.applySlotDefaults(mergedSlots, intent);
 
-    const requiredSlots = this.requiredSlotsByIntent(intent);
-    const missingSlots = requiredSlots.filter((key) => this.isSlotMissing(slotsWithDefaults[key]));
+    const requiredSlots = this.intentService.requiredSlotsByIntent(intent);
+    const missingSlots = requiredSlots.filter((key) => this.utilsService.isSlotMissing(slotsWithDefaults[key]));
     const hasMissingSlots = missingSlots.length > 0;
     const routingPolicy = await this.resolveCapabilityRoutingPolicy(session.ownerUserId);
 
@@ -469,7 +476,7 @@ export class AgentConversationService {
     );
 
     const assistantMessage = hasMissingSlots
-      ? this.buildSlotPrompt(missingSlots)
+      ? this.intentService.buildSlotPrompt(missingSlots)
       : autoExecution
         ? '我已生成计划并自动开始执行。你可以继续补充要求，结果会在当前会话持续更新。'
         : '我已完成计划编排。请确认执行，或告诉我需要调整的参数。';

@@ -5,15 +5,18 @@ import { WorkflowExecutionModule } from '../workflow-execution';
 import { ReportExportModule } from '../report-export';
 import { AgentConversationSubscriptionJob } from './agent-conversation-subscription.job';
 import { AgentConversationEphemeralGovernanceJob } from './agent-conversation-ephemeral-governance.job';
+import { ConversationUtilsService, ConversationIntentService } from './services';
 
 @Module({
   imports: [WorkflowExecutionModule, ReportExportModule],
   controllers: [AgentConversationController],
   providers: [
+    ConversationUtilsService,
+    ConversationIntentService,
     AgentConversationService,
     AgentConversationSubscriptionJob,
     AgentConversationEphemeralGovernanceJob,
   ],
-  exports: [AgentConversationService],
+  exports: [AgentConversationService, ConversationUtilsService, ConversationIntentService],
 })
-export class AgentConversationModule {}
+export class AgentConversationModule { }
