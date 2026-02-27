@@ -20,7 +20,7 @@ import { WorkflowExecutionService } from '../workflow-execution';
 import { ReportExportService } from '../report-export';
 import { AIModelService } from '../ai/ai-model.service';
 import { AIProviderFactory } from '../ai/providers/provider.factory';
-import { ConversationUtilsService, ConversationIntentService } from './services';
+import { ConversationUtilsService, ConversationIntentService, ConversationOrchestratorService, ConversationSynthesizerService } from './services';
 
 type SessionState =
   | 'INTENT_CAPTURE'
@@ -123,6 +123,8 @@ export class AgentConversationService {
     private readonly aiProviderFactory: AIProviderFactory,
     private readonly intentService: ConversationIntentService,
     private readonly utilsService: ConversationUtilsService,
+    private readonly orchestratorService: ConversationOrchestratorService,
+    private readonly synthesizerService: ConversationSynthesizerService,
   ) { }
 
   async createSession(userId: string, dto: CreateConversationSessionDto) {
@@ -212,7 +214,7 @@ export class AgentConversationService {
       dto.message, session.state as SessionState, session.currentIntent,
     );
     const actionType = unifiedIntent.type;
-    const isActionFastPath = actionType === 'EXPORT' || actionType === 'DELIVER_EMAIL' || actionType === 'SCHEDULE' || actionType === 'HELP';
+    const isActionFastPath = actionType === 'EXPORT' || actionType === 'DELIVER_EMAIL' || actionType === 'SCHEDULE' || actionType === 'HELP' || actionType === 'CREATE_AGENT';
     if (isActionFastPath) {
       // HELP intent: return dynamic capability discovery message
       if (actionType === 'HELP') {
@@ -309,6 +311,57 @@ export class AgentConversationService {
       } else if (actionIntent.type === 'SCHEDULE') {
         actionResponse = '\u597d\u7684\uff0c\u5b9a\u65f6\u4efb\u52a1\u529f\u80fd\u6b63\u5728\u5f00\u53d1\u4e2d\u3002\u4f60\u53ef\u4ee5\u544a\u8bc9\u6211\u5177\u4f53\u7684\u6267\u884c\u9891\u7387\uff0c\u6bd4\u5982\u201c\u6bcf\u5468\u4e00\u65e9\u4e0a8\u70b9\u6267\u884c\u201d\u3002';
         actionPayload.cronNatural = actionIntent.cronNatural;
+      } else if (actionIntent.type === 'CREATE_AGENT') {
+        try {
+          const agent = await this.orchestratorService.generateEphemeralAgent(
+            userId, sessionId, { userInstruction: dto.message },
+          );
+          if (agent) {
+            actionResponse = `\u5df2\u521b\u5efa\u4e34\u65f6\u667a\u80fd\u4f53\u300c${agent.name}\u300d(${agent.agentCode})\u3002\u8be5\u667a\u80fd\u4f53\u5c06\u5728 ${agent.ttlHours} \u5c0f\u65f6\u540e\u81ea\u52a8\u8fc7\u671f\u3002\u4f60\u53ef\u4ee5\u5728\u540e\u7eed\u5bf9\u8bdd\u4e2d\u4f7f\u7528\u5b83\u3002`;
+            actionPayload.ephemeralAgent = agent;
+          } else {
+            actionResponse = '\u667a\u80fd\u4f53\u521b\u5efa\u5931\u8d25\uff0c\u8bf7\u7a0d\u540e\u518d\u8bd5\u3002';
+          }
+        } catch (error) {
+          const msg = error instanceof Error ? error.message : '\u672a\u77e5\u9519\u8bef';
+          actionResponse = `\u521b\u5efa\u667a\u80fd\u4f53\u65f6\u9047\u5230\u95ee\u9898\uff1a${msg}`;
+        }
+      } else if (actionIntent.type === 'ASSEMBLE_WORKFLOW') {
+        try {
+          const workflow = await this.orchestratorService.assembleEphemeralWorkflow(
+            userId, sessionId, { userInstruction: dto.message },
+          );
+          if (workflow) {
+            actionResponse = `已组装临时工作流「${workflow.name}」(${workflow.mode} 模式，${workflow.nodes.length} 个节点)。该工作流将在 ${workflow.ttlHours} 小时后自动过期。`;
+            actionPayload.ephemeralWorkflow = workflow;
+          } else {
+            actionResponse = '工作流组装失败。请确保会话内有可用的智能体，或先创建临时智能体。';
+          }
+        } catch (error) {
+          const msg = error instanceof Error ? error.message : '未知错误';
+          actionResponse = `组装工作流时遇到问题：${msg}`;
+        }
+      } else if (actionIntent.type === 'PROMOTE_AGENT') {
+        try {
+          const agents = await this.orchestratorService.listEphemeralAgents(userId, sessionId);
+          const activeAgent = agents?.find((a) => a.status === 'ACTIVE');
+          if (activeAgent) {
+            const result = await this.orchestratorService.promoteEphemeralAgent(
+              userId, sessionId, activeAgent.id,
+            );
+            if (result) {
+              actionResponse = `临时智能体「${result.agentCode}」已提交晋升审批。审批通过后将成为可复用的持久化能力。`;
+              actionPayload.promotionResult = result;
+            } else {
+              actionResponse = '晋升操作失败，请稍后再试。';
+            }
+          } else {
+            actionResponse = '当前会话没有活跃的临时智能体可供晋升。请先创建一个临时智能体。';
+          }
+        } catch (error) {
+          const msg = error instanceof Error ? error.message : '未知错误';
+          actionResponse = `晋升智能体时遇到问题：${msg}`;
+        }
       }
 
       await this.prisma.conversationTurn.create({
@@ -4548,6 +4601,7 @@ export class AgentConversationService {
         modelName: model.modelId,
         apiKey: model.apiKey,
         apiUrl: model.apiUrl,
+        wireApi: model.wireApi,
         temperature: 0.2,
         maxTokens: 300,
         timeoutSeconds: 10,
@@ -5478,6 +5532,50 @@ export class AgentConversationService {
     return this.prisma.conversationSchedulePolicy.findUnique({
       where: { id: policyId },
     });
+  }
+
+  // ── Phase 7: 动态编排 Facade Delegates ──────────────────────────────────
+
+  async synthesizeResult(sessionId: string, executionResult: Record<string, unknown>) {
+    return this.synthesizerService.synthesizeResult(sessionId, executionResult);
+  }
+
+  buildReportCards(report: Parameters<typeof this.synthesizerService.buildReportCards>[0]) {
+    return this.synthesizerService.buildReportCards(report);
+  }
+
+  async generateEphemeralAgent(
+    userId: string, sessionId: string, request: { userInstruction: string; context?: string },
+  ) {
+    return this.orchestratorService.generateEphemeralAgent(userId, sessionId, request);
+  }
+
+  async listEphemeralAgents(userId: string, sessionId: string) {
+    return this.orchestratorService.listEphemeralAgents(userId, sessionId);
+  }
+
+  async getAvailableAgents(userId: string, sessionId: string) {
+    return this.orchestratorService.getAvailableAgents(userId, sessionId);
+  }
+
+  async assembleEphemeralWorkflow(
+    userId: string, sessionId: string, request: { userInstruction: string; context?: string },
+  ) {
+    return this.orchestratorService.assembleEphemeralWorkflow(userId, sessionId, request);
+  }
+
+  async applyEphemeralOverrides(userId: string, sessionId: string, userMessage: string) {
+    return this.orchestratorService.applyEphemeralOverrides(userId, sessionId, userMessage);
+  }
+
+  async promoteEphemeralAgent(
+    userId: string, sessionId: string, agentAssetId: string, dto?: { reviewComment?: string },
+  ) {
+    return this.orchestratorService.promoteEphemeralAgent(userId, sessionId, agentAssetId, dto);
+  }
+
+  async getSessionCostSummary(userId: string, sessionId: string) {
+    return this.orchestratorService.getSessionCostSummary(userId, sessionId);
   }
 }
 

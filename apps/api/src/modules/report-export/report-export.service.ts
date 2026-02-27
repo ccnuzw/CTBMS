@@ -14,20 +14,13 @@ import type {
 } from '@packages/types';
 import type { Prisma } from '@prisma/client';
 import PDFDocument from 'pdfkit';
-import {
-  Document,
-  Packer,
-  Paragraph,
-  TextRun,
-  HeadingLevel,
-  AlignmentType,
-} from 'docx';
+import { Document, Packer, Paragraph, TextRun, HeadingLevel, AlignmentType } from 'docx';
 
 @Injectable()
 export class ReportExportService {
   private readonly logger = new Logger(ReportExportService.name);
 
-  constructor(private readonly prisma: PrismaService) { }
+  constructor(private readonly prisma: PrismaService) {}
 
   /**
    * 创建导出任务并组装报告数据
@@ -361,9 +354,10 @@ export class ReportExportService {
       participantRole: trace.participantRole,
       stance: trace.stance,
       confidence: trace.confidence,
-      statementSummary: trace.statementText.length > 500
-        ? trace.statementText.slice(0, 500) + '...'
-        : trace.statementText,
+      statementSummary:
+        trace.statementText.length > 500
+          ? trace.statementText.slice(0, 500) + '...'
+          : trace.statementText,
       challengeText: trace.challengeText,
       challengeTarget: trace.challengeTargetCode,
       isJudgement: trace.isJudgement,
@@ -416,7 +410,9 @@ export class ReportExportService {
   /**
    * 组装参数快照
    */
-  private async assembleParamSnapshot(executionId: string): Promise<Record<string, unknown> | null> {
+  private async assembleParamSnapshot(
+    executionId: string,
+  ): Promise<Record<string, unknown> | null> {
     const execution = await this.prisma.workflowExecution.findUnique({
       where: { id: executionId },
       select: { paramSnapshot: true },
@@ -435,6 +431,8 @@ export class ReportExportService {
       await this.renderPdfReport(filePath, reportData);
     } else if (format === 'WORD') {
       await this.renderWordReport(filePath, reportData);
+    } else if (format === 'MARKDOWN') {
+      await writeFile(filePath, this.renderPlainTextReport(reportData), 'utf-8');
     } else {
       await writeFile(filePath, this.renderPlainTextReport(reportData), 'utf-8');
     }
@@ -468,9 +466,7 @@ export class ReportExportService {
     if (reportData.evidenceItems?.length) {
       lines.push('## 证据');
       reportData.evidenceItems.forEach((item, index) => {
-        lines.push(
-          `${index + 1}. [${item.category ?? 'UNKNOWN'}] ${item.source}: ${item.content}`,
-        );
+        lines.push(`${index + 1}. [${item.category ?? 'UNKNOWN'}] ${item.source}: ${item.content}`);
       });
       lines.push('');
     }
@@ -509,11 +505,13 @@ export class ReportExportService {
       JSON: 'json',
       PDF: 'pdf',
       WORD: 'docx',
+      MARKDOWN: 'md',
     };
     const contentTypeMap: Record<string, string> = {
       JSON: 'application/json; charset=utf-8',
       PDF: 'application/pdf',
       WORD: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      MARKDOWN: 'text/markdown; charset=utf-8',
     };
     const ext = extMap[format] ?? 'txt';
     const fileName = `report-export-${taskId}.${ext}`;
@@ -549,10 +547,16 @@ export class ReportExportService {
       // 标题
       doc.fontSize(20).text(data.title, { align: 'center' });
       doc.moveDown(0.5);
-      doc.fontSize(10).fillColor('#666')
-        .text(`生成时间: ${data.generatedAt}  |  执行实例: ${data.workflowExecutionId}`, { align: 'center' });
+      doc
+        .fontSize(10)
+        .fillColor('#666')
+        .text(`生成时间: ${data.generatedAt}  |  执行实例: ${data.workflowExecutionId}`, {
+          align: 'center',
+        });
       if (data.workflowName) {
-        doc.text(`流程: ${data.workflowName}  |  版本: ${data.versionCode ?? '-'}`, { align: 'center' });
+        doc.text(`流程: ${data.workflowName}  |  版本: ${data.versionCode ?? '-'}`, {
+          align: 'center',
+        });
       }
       doc.moveDown(1);
       doc.fillColor('#000');
@@ -588,7 +592,9 @@ export class ReportExportService {
         doc.fontSize(10);
         data.evidenceItems.forEach((item, idx) => {
           doc.text(`${idx + 1}. [${item.category ?? 'N/A'}] ${item.source}`, { continued: false });
-          doc.text(`   ${item.content.slice(0, 300)}${item.content.length > 300 ? '...' : ''}`, { width: 480 });
+          doc.text(`   ${item.content.slice(0, 300)}${item.content.length > 300 ? '...' : ''}`, {
+            width: 480,
+          });
           if (item.weight !== null && item.weight !== undefined) {
             doc.text(`   权重: ${item.weight}`, { width: 480 });
           }
@@ -611,10 +617,13 @@ export class ReportExportService {
             doc.fontSize(10);
           }
           const stanceTag = round.stance ? ` [${round.stance}]` : '';
-          const confidenceTag = round.confidence !== null && round.confidence !== undefined
-            ? ` (${(round.confidence * 100).toFixed(0)}%)`
-            : '';
-          doc.text(`  ${round.participantCode} (${round.participantRole})${stanceTag}${confidenceTag}:`);
+          const confidenceTag =
+            round.confidence !== null && round.confidence !== undefined
+              ? ` (${(round.confidence * 100).toFixed(0)}%)`
+              : '';
+          doc.text(
+            `  ${round.participantCode} (${round.participantRole})${stanceTag}${confidenceTag}:`,
+          );
           doc.text(`    ${round.statementSummary.slice(0, 400)}`, { width: 460 });
           if (round.isJudgement) {
             doc.fillColor('#722ed1').text('    [裁决]', { continued: false }).fillColor('#000');
@@ -630,8 +639,11 @@ export class ReportExportService {
         doc.moveDown(0.3);
         doc.fontSize(10);
         data.riskItems.forEach((risk) => {
-          const levelColor = risk.level === 'HIGH' || risk.level === 'CRITICAL' ? '#ff4d4f' : '#000';
-          doc.fillColor(levelColor).text(`[${risk.level}] ${risk.riskType}: ${risk.description}`, { width: 480 });
+          const levelColor =
+            risk.level === 'HIGH' || risk.level === 'CRITICAL' ? '#ff4d4f' : '#000';
+          doc
+            .fillColor(levelColor)
+            .text(`[${risk.level}] ${risk.riskType}: ${risk.description}`, { width: 480 });
           doc.fillColor('#000');
           if (risk.mitigationAction) {
             doc.text(`  缓解措施: ${risk.mitigationAction}`, { width: 460 });
@@ -671,7 +683,11 @@ export class ReportExportService {
     children.push(
       new Paragraph({
         children: [
-          new TextRun({ text: `生成时间: ${data.generatedAt}  |  执行实例: ${data.workflowExecutionId}`, size: 18, color: '666666' }),
+          new TextRun({
+            text: `生成时间: ${data.generatedAt}  |  执行实例: ${data.workflowExecutionId}`,
+            size: 18,
+            color: '666666',
+          }),
         ],
         alignment: AlignmentType.CENTER,
       }),
@@ -680,7 +696,11 @@ export class ReportExportService {
       children.push(
         new Paragraph({
           children: [
-            new TextRun({ text: `流程: ${data.workflowName}  |  版本: ${data.versionCode ?? '-'}`, size: 18, color: '666666' }),
+            new TextRun({
+              text: `流程: ${data.workflowName}  |  版本: ${data.versionCode ?? '-'}`,
+              size: 18,
+              color: '666666',
+            }),
           ],
           alignment: AlignmentType.CENTER,
         }),
@@ -691,38 +711,73 @@ export class ReportExportService {
     // 结论
     if (data.conclusion) {
       children.push(new Paragraph({ text: '一、结论', heading: HeadingLevel.HEADING_1 }));
-      children.push(new Paragraph({
-        children: [new TextRun({ text: `推荐操作: `, bold: true }), new TextRun(data.conclusion.action)],
-      }));
+      children.push(
+        new Paragraph({
+          children: [
+            new TextRun({ text: `推荐操作: `, bold: true }),
+            new TextRun(data.conclusion.action),
+          ],
+        }),
+      );
       if (data.conclusion.confidence !== null && data.conclusion.confidence !== undefined) {
-        children.push(new Paragraph({
-          children: [new TextRun({ text: `置信度: `, bold: true }), new TextRun(`${(data.conclusion.confidence * 100).toFixed(1)}%`)],
-        }));
+        children.push(
+          new Paragraph({
+            children: [
+              new TextRun({ text: `置信度: `, bold: true }),
+              new TextRun(`${(data.conclusion.confidence * 100).toFixed(1)}%`),
+            ],
+          }),
+        );
       }
       if (data.conclusion.riskLevel) {
-        children.push(new Paragraph({
-          children: [new TextRun({ text: `风险等级: `, bold: true }), new TextRun(data.conclusion.riskLevel)],
-        }));
+        children.push(
+          new Paragraph({
+            children: [
+              new TextRun({ text: `风险等级: `, bold: true }),
+              new TextRun(data.conclusion.riskLevel),
+            ],
+          }),
+        );
       }
       if (data.conclusion.targetWindow) {
-        children.push(new Paragraph({
-          children: [new TextRun({ text: `目标窗口: `, bold: true }), new TextRun(data.conclusion.targetWindow)],
-        }));
+        children.push(
+          new Paragraph({
+            children: [
+              new TextRun({ text: `目标窗口: `, bold: true }),
+              new TextRun(data.conclusion.targetWindow),
+            ],
+          }),
+        );
       }
       if (data.conclusion.reasoningSummary) {
-        children.push(new Paragraph({
-          children: [new TextRun({ text: `推理摘要: `, bold: true }), new TextRun(data.conclusion.reasoningSummary)],
-        }));
+        children.push(
+          new Paragraph({
+            children: [
+              new TextRun({ text: `推理摘要: `, bold: true }),
+              new TextRun(data.conclusion.reasoningSummary),
+            ],
+          }),
+        );
       }
       if (data.conclusion.judgementVerdict) {
-        children.push(new Paragraph({
-          children: [new TextRun({ text: `裁决: `, bold: true }), new TextRun(data.conclusion.judgementVerdict)],
-        }));
+        children.push(
+          new Paragraph({
+            children: [
+              new TextRun({ text: `裁决: `, bold: true }),
+              new TextRun(data.conclusion.judgementVerdict),
+            ],
+          }),
+        );
       }
       if (data.conclusion.judgementReasoning) {
-        children.push(new Paragraph({
-          children: [new TextRun({ text: `裁决依据: `, bold: true }), new TextRun(data.conclusion.judgementReasoning)],
-        }));
+        children.push(
+          new Paragraph({
+            children: [
+              new TextRun({ text: `裁决依据: `, bold: true }),
+              new TextRun(data.conclusion.judgementReasoning),
+            ],
+          }),
+        );
       }
       children.push(new Paragraph({ text: '' }));
     }
@@ -731,13 +786,15 @@ export class ReportExportService {
     if (data.evidenceItems?.length) {
       children.push(new Paragraph({ text: '二、证据链', heading: HeadingLevel.HEADING_1 }));
       data.evidenceItems.forEach((item, idx) => {
-        children.push(new Paragraph({
-          children: [
-            new TextRun({ text: `${idx + 1}. [${item.category ?? 'N/A'}] `, bold: true }),
-            new TextRun({ text: `${item.source}: `, italics: true }),
-            new TextRun(item.content.slice(0, 500)),
-          ],
-        }));
+        children.push(
+          new Paragraph({
+            children: [
+              new TextRun({ text: `${idx + 1}. [${item.category ?? 'N/A'}] `, bold: true }),
+              new TextRun({ text: `${item.source}: `, italics: true }),
+              new TextRun(item.content.slice(0, 500)),
+            ],
+          }),
+        );
       });
       children.push(new Paragraph({ text: '' }));
     }
@@ -749,19 +806,29 @@ export class ReportExportService {
       data.debateRounds.forEach((round) => {
         if (round.roundNumber !== currentRoundNum) {
           currentRoundNum = round.roundNumber;
-          children.push(new Paragraph({ text: `第 ${round.roundNumber} 轮`, heading: HeadingLevel.HEADING_2 }));
+          children.push(
+            new Paragraph({ text: `第 ${round.roundNumber} 轮`, heading: HeadingLevel.HEADING_2 }),
+          );
         }
         const stanceTag = round.stance ? ` [${round.stance}]` : '';
-        const confidenceTag = round.confidence !== null && round.confidence !== undefined
-          ? ` (${(round.confidence * 100).toFixed(0)}%)`
-          : '';
-        children.push(new Paragraph({
-          children: [
-            new TextRun({ text: `${round.participantCode} (${round.participantRole})${stanceTag}${confidenceTag}: `, bold: true }),
-            new TextRun(round.statementSummary),
-            ...(round.isJudgement ? [new TextRun({ text: ' [裁决]', color: '722ed1', bold: true })] : []),
-          ],
-        }));
+        const confidenceTag =
+          round.confidence !== null && round.confidence !== undefined
+            ? ` (${(round.confidence * 100).toFixed(0)}%)`
+            : '';
+        children.push(
+          new Paragraph({
+            children: [
+              new TextRun({
+                text: `${round.participantCode} (${round.participantRole})${stanceTag}${confidenceTag}: `,
+                bold: true,
+              }),
+              new TextRun(round.statementSummary),
+              ...(round.isJudgement
+                ? [new TextRun({ text: ' [裁决]', color: '722ed1', bold: true })]
+                : []),
+            ],
+          }),
+        );
       });
       children.push(new Paragraph({ text: '' }));
     }
@@ -771,16 +838,27 @@ export class ReportExportService {
       children.push(new Paragraph({ text: '四、风险评估', heading: HeadingLevel.HEADING_1 }));
       data.riskItems.forEach((risk) => {
         const isHighRisk = risk.level === 'HIGH' || risk.level === 'CRITICAL';
-        children.push(new Paragraph({
-          children: [
-            new TextRun({ text: `[${risk.level}] ${risk.riskType}: `, bold: true, color: isHighRisk ? 'FF4D4F' : '000000' }),
-            new TextRun(risk.description),
-          ],
-        }));
+        children.push(
+          new Paragraph({
+            children: [
+              new TextRun({
+                text: `[${risk.level}] ${risk.riskType}: `,
+                bold: true,
+                color: isHighRisk ? 'FF4D4F' : '000000',
+              }),
+              new TextRun(risk.description),
+            ],
+          }),
+        );
         if (risk.mitigationAction) {
-          children.push(new Paragraph({
-            children: [new TextRun({ text: `  缓解措施: `, italics: true }), new TextRun(risk.mitigationAction)],
-          }));
+          children.push(
+            new Paragraph({
+              children: [
+                new TextRun({ text: `  缓解措施: `, italics: true }),
+                new TextRun(risk.mitigationAction),
+              ],
+            }),
+          );
         }
       });
       children.push(new Paragraph({ text: '' }));
@@ -789,9 +867,17 @@ export class ReportExportService {
     // 参数快照
     if (data.paramSnapshot) {
       children.push(new Paragraph({ text: '五、参数快照', heading: HeadingLevel.HEADING_1 }));
-      children.push(new Paragraph({
-        children: [new TextRun({ text: JSON.stringify(data.paramSnapshot, null, 2), size: 16, font: 'Courier New' })],
-      }));
+      children.push(
+        new Paragraph({
+          children: [
+            new TextRun({
+              text: JSON.stringify(data.paramSnapshot, null, 2),
+              size: 16,
+              font: 'Courier New',
+            }),
+          ],
+        }),
+      );
     }
 
     const doc = new Document({

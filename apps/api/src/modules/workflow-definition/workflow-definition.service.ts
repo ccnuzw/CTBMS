@@ -379,21 +379,28 @@ export class WorkflowDefinitionService {
         },
       });
 
-      await tx.workflowPublishAudit.create({
-        data: {
-          workflowDefinitionId: id,
-          workflowVersionId: published.id,
-          operation: 'PUBLISH',
-          publishedByUserId: ownerUserId,
-          comment: '发布流程版本',
-          snapshot: this.toJsonValue({
-            publishedVersionCode: published.versionCode,
-            archivedPublishedVersions,
-            autoCreatedDraftVersionCode: nextDraftVersionCode,
-          }),
-          publishedAt: published.publishedAt ?? new Date(),
-        },
+      const publisherExists = await tx.user.findUnique({
+        where: { id: ownerUserId },
+        select: { id: true },
       });
+
+      if (publisherExists) {
+        await tx.workflowPublishAudit.create({
+          data: {
+            workflowDefinitionId: id,
+            workflowVersionId: published.id,
+            operation: 'PUBLISH',
+            publishedByUserId: ownerUserId,
+            comment: '发布流程版本',
+            snapshot: this.toJsonValue({
+              publishedVersionCode: published.versionCode,
+              archivedPublishedVersions,
+              autoCreatedDraftVersionCode: nextDraftVersionCode,
+            }),
+            publishedAt: published.publishedAt ?? new Date(),
+          },
+        });
+      }
 
       await tx.workflowDefinition.update({
         where: { id },
@@ -672,12 +679,15 @@ export class WorkflowDefinitionService {
         : 'FAIL_FAST';
     const completedNodeDefaults = {
       timeoutSeconds:
-        typeof previousNodeDefaults.timeoutSeconds === 'number' ? previousNodeDefaults.timeoutSeconds: 30,
+        typeof previousNodeDefaults.timeoutSeconds === 'number'
+          ? previousNodeDefaults.timeoutSeconds
+          : 30,
       retryCount:
         typeof previousNodeDefaults.retryCount === 'number' ? previousNodeDefaults.retryCount : 1,
       retryIntervalSeconds:
         typeof previousNodeDefaults.retryIntervalSeconds === 'number'
-          ? previousNodeDefaults.retryIntervalSeconds: 2,
+          ? previousNodeDefaults.retryIntervalSeconds
+          : 2,
       onError: completedOnError,
     };
     const rawOnError: 'FAIL_FAST' | 'CONTINUE' | 'ROUTE_TO_ERROR' | undefined =
@@ -693,9 +703,13 @@ export class WorkflowDefinitionService {
       onError?: 'FAIL_FAST' | 'CONTINUE' | 'ROUTE_TO_ERROR';
     } = {
       timeoutSeconds:
-        typeof previousNodeDefaults.timeoutSeconds === 'number' ? previousNodeDefaults.timeoutSeconds : undefined,
+        typeof previousNodeDefaults.timeoutSeconds === 'number'
+          ? previousNodeDefaults.timeoutSeconds
+          : undefined,
       retryCount:
-        typeof previousNodeDefaults.retryCount === 'number' ? previousNodeDefaults.retryCount : undefined,
+        typeof previousNodeDefaults.retryCount === 'number'
+          ? previousNodeDefaults.retryCount
+          : undefined,
       retryIntervalSeconds:
         typeof previousNodeDefaults.retryIntervalSeconds === 'number'
           ? previousNodeDefaults.retryIntervalSeconds
@@ -825,7 +839,9 @@ export class WorkflowDefinitionService {
         paramSetBindingSet.add(setCode);
       }
       this.readStringArray(config.paramSetCodes).forEach((code) => paramSetBindingSet.add(code));
-      this.readStringArray(config.parameterSetCodes).forEach((code) => paramSetBindingSet.add(code));
+      this.readStringArray(config.parameterSetCodes).forEach((code) =>
+        paramSetBindingSet.add(code),
+      );
       this.readStringArray(config.setCodes).forEach((code) => paramSetBindingSet.add(code));
 
       const dataSourceCode =
@@ -856,7 +872,12 @@ export class WorkflowDefinitionService {
     if (autoFixLevel === 'AGGRESSIVE') {
       const usedNodeIds = new Set(nodes.map((node) => node.id));
       const usedEdgeIds = new Set(edges.map((edge) => edge.id));
-      const triggerNodeTypes = new Set(['manual-trigger', 'cron-trigger', 'event-trigger', 'api-trigger']);
+      const triggerNodeTypes = new Set([
+        'manual-trigger',
+        'cron-trigger',
+        'event-trigger',
+        'api-trigger',
+      ]);
       const outputNodeTypes = new Set(['notify', 'report-generate', 'dashboard-publish']);
       const buildId = (prefix: string, idSet: Set<string>) => {
         let index = 1;

@@ -19,6 +19,7 @@ export * from './reconciliation-cutover-runtime-status-query.dto';
 export * from './reconciliation-cutover-execution-overview-query.dto';
 export * from './list-reconciliation-cutover-executions-query.dto';
 export * from './list-reconciliation-cutover-compensation-batches-query.dto';
+export * from './reconciliation-cutover-compensation-batch-report-query.dto';
 export * from './retry-reconciliation-cutover-compensation.dto';
 export * from './retry-reconciliation-cutover-compensation-batch.dto';
 export * from './create-reconciliation-rollback-drill.dto';

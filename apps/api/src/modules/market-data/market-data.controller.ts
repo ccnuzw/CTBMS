@@ -29,6 +29,7 @@ import {
   ReconciliationMetricsSnapshotRequest,
   ReconciliationReadCoverageQueryRequest,
   ReconciliationCutoverExecutionOverviewQueryRequest,
+  ReconciliationCutoverCompensationBatchReportQueryRequest,
   ReconciliationCutoverRuntimeStatusQueryRequest,
   ListReconciliationRollbackDrillsQueryRequest,
   ReconciliationM1ReadinessQueryRequest,
@@ -393,6 +394,20 @@ export class MarketDataController {
     const data = await this.marketDataService.getReconciliationCutoverCompensationBatch(
       this.getUserId(req),
       batchId,
+    );
+    return this.success(req, data);
+  }
+
+  @Get('reconciliation/cutover/executions/compensation-batches/:batchId/report')
+  async getReconciliationCutoverCompensationBatchReport(
+    @Param('batchId', ParseUUIDPipe) batchId: string,
+    @Query() query: ReconciliationCutoverCompensationBatchReportQueryRequest,
+    @Request() req: AuthRequest,
+  ) {
+    const data = await this.marketDataService.getReconciliationCutoverCompensationBatchReport(
+      this.getUserId(req),
+      batchId,
+      query,
     );
     return this.success(req, data);
   }

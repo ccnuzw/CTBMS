@@ -8,27 +8,29 @@ import { PromptService } from './prompt.service';
 import { PromptController } from './prompt.controller';
 import { AIController } from './ai.controller';
 import { AIProviderFactory } from './providers/provider.factory';
+import { ConfigModule } from '../config/config.module';
 
 @Global()
 @Module({
-    providers: [
-        AIService,
-        AIModelService,
-        AIPromptService,
-        AIEntityExtractorService,
-        RuleEngineService,
-        PromptService,
-        AIProviderFactory,
-    ],
-    exports: [
-        AIService,
-        AIModelService,
-        AIPromptService,
-        AIEntityExtractorService,
-        RuleEngineService,
-        PromptService,
-        AIProviderFactory,
-    ],
-    controllers: [PromptController, AIController],
+  imports: [ConfigModule],
+  providers: [
+    AIService,
+    AIModelService,
+    AIPromptService,
+    AIEntityExtractorService,
+    RuleEngineService,
+    PromptService,
+    AIProviderFactory,
+  ],
+  exports: [
+    AIService,
+    AIModelService,
+    AIPromptService,
+    AIEntityExtractorService,
+    RuleEngineService,
+    PromptService,
+    AIProviderFactory,
+  ],
+  controllers: [PromptController, AIController],
 })
-export class AIModule { }
+export class AIModule {}

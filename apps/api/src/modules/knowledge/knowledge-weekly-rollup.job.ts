@@ -1,6 +1,5 @@
 import { Injectable, Logger, Inject, forwardRef } from '@nestjs/common';
 import { PrismaService } from '../../prisma';
-import { SchedulerRegistry } from '@nestjs/schedule';
 import { Cron } from '@nestjs/schedule';
 import { KnowledgeService } from './knowledge.service';
 import { KnowledgeSearchService } from './knowledge-search.service';
@@ -11,10 +10,10 @@ export class KnowledgeWeeklyRollupJob {
 
   constructor(
     private readonly knowledgeService: KnowledgeService,
-    @Inject(forwardRef(() => KnowledgeSearchService)) private readonly searchService: KnowledgeSearchService,
+    @Inject(forwardRef(() => KnowledgeSearchService))
+    private readonly searchService: KnowledgeSearchService,
     private readonly prisma: PrismaService,
-    private readonly schedulerRegistry: SchedulerRegistry,
-  ) { }
+  ) {}
 
   @Cron('0 30 18 * * 1')
   async handleWeeklyRollup() {

@@ -17,6 +17,7 @@ import type {
   ListReconciliationCutoverDecisionsQueryDto,
   ListReconciliationCutoverExecutionsQueryDto,
   ListReconciliationM1ReadinessReportSnapshotsQueryDto,
+  ReconciliationCutoverCompensationBatchReportQueryDto,
   ReconciliationCutoverExecutionOverviewQueryDto,
   ReconciliationCutoverRuntimeStatusQueryDto,
   ReconciliationRollbackDrillStatus,
@@ -41,6 +42,7 @@ type ReconciliationCutoverDecisionStatus = 'APPROVED' | 'REJECTED';
 type ReconciliationCutoverExecutionAction = 'CUTOVER' | 'ROLLBACK' | 'AUTOPILOT';
 type ReconciliationCutoverExecutionStatus = 'SUCCESS' | 'FAILED' | 'PARTIAL' | 'COMPENSATED';
 type ReconciliationCutoverCompensationBatchStatus = 'DRY_RUN' | 'SUCCESS' | 'PARTIAL' | 'FAILED';
+type ReconciliationCutoverCompensationSweepScope = 'USER' | 'GLOBAL';
 type RollbackDrillStatus = ReconciliationRollbackDrillStatus;
 type ReconciliationListSortBy = 'createdAt' | 'startedAt' | 'finishedAt' | 'status' | 'dataset';
 type ReconciliationListSortOrder = 'asc' | 'desc';
@@ -307,6 +309,51 @@ interface ReconciliationCutoverCompensationBatchResultItem {
   error?: string;
 }
 
+interface ReconciliationCutoverCompensationBatchControl {
+  maxConcurrency: number;
+  perExecutionTimeoutMs: number;
+  stopOnFailureCount?: number;
+  stopOnFailureRate?: number;
+  minProcessedForFailureRate: number;
+}
+
+interface ReconciliationCutoverCompensationBatchSummary {
+  compensated: number;
+  failed: number;
+  skipped: number;
+  processed: number;
+  breakerTriggered: boolean;
+  breakerReason?: string;
+}
+
+interface ReconciliationCutoverCompensationBatchResponse {
+  batchId: string;
+  status: ReconciliationCutoverCompensationBatchStatus;
+  replayed: boolean;
+  generatedAt: string;
+  dryRun: boolean;
+  windowDays: number;
+  datasets: StandardDataset[];
+  idempotencyKey?: string;
+  requestedLimit: number;
+  storage: 'database' | 'in-memory';
+  control: ReconciliationCutoverCompensationBatchControl;
+  scanned: number;
+  matched: number;
+  attempted: number;
+  results: ReconciliationCutoverCompensationBatchResultItem[];
+  summary: ReconciliationCutoverCompensationBatchSummary;
+}
+
+interface ReconciliationCutoverCompensationSweepRun {
+  userId: string;
+  batchId: string;
+  status: ReconciliationCutoverCompensationBatchStatus;
+  replayed: boolean;
+  attempted: number;
+  summary: ReconciliationCutoverCompensationBatchSummary;
+}
+
 interface ReconciliationCutoverCompensationBatchRecord {
   batchId: string;
   status: ReconciliationCutoverCompensationBatchStatus;
@@ -322,15 +369,12 @@ interface ReconciliationCutoverCompensationBatchRecord {
   note?: string;
   reason?: string;
   storage: 'database' | 'in-memory';
+  control: ReconciliationCutoverCompensationBatchControl;
   scanned: number;
   matched: number;
   attempted: number;
   results: ReconciliationCutoverCompensationBatchResultItem[];
-  summary: {
-    compensated: number;
-    failed: number;
-    skipped: number;
-  };
+  summary: ReconciliationCutoverCompensationBatchSummary;
   createdAt: string;
 }
 
@@ -349,6 +393,7 @@ interface PersistedReconciliationCutoverCompensationBatchRow {
   note: string | null;
   reason: string | null;
   storage: string;
+  control: unknown;
   scanned: unknown;
   matched: unknown;
   attempted: unknown;
@@ -605,6 +650,10 @@ export class MarketDataService {
   private readonly cutoverCompensationBatchRecords = new Map<
     string,
     ReconciliationCutoverCompensationBatchRecord
+  >();
+  private readonly cutoverCompensationBatchInFlight = new Map<
+    string,
+    Promise<ReconciliationCutoverCompensationBatchResponse>
   >();
   private reconciliationPersistenceUnavailable = false;
   private reconciliationDailyMetricsPersistenceUnavailable = false;
@@ -3195,41 +3244,41 @@ export class MarketDataService {
   async retryReconciliationCutoverExecutionCompensationBatch(
     userId: string,
     dto: RetryReconciliationCutoverCompensationBatchDto,
-  ): Promise<{
-    batchId: string;
-    status: ReconciliationCutoverCompensationBatchStatus;
-    replayed: boolean;
-    generatedAt: string;
-    dryRun: boolean;
-    windowDays: number;
-    datasets: StandardDataset[];
-    idempotencyKey?: string;
-    requestedLimit: number;
-    storage: 'database' | 'in-memory';
-    scanned: number;
-    matched: number;
-    attempted: number;
-    results: Array<{
-      executionId: string;
-      action: ReconciliationCutoverExecutionAction;
-      statusBefore: 'FAILED' | 'PARTIAL';
-      compensated: boolean;
-      compensationExecutionId?: string;
-      reason?: string;
-      error?: string;
-    }>;
-    summary: {
-      compensated: number;
-      failed: number;
-      skipped: number;
-    };
-  }> {
+  ): Promise<ReconciliationCutoverCompensationBatchResponse> {
     const windowDays = Math.max(1, Math.min(30, dto.windowDays ?? 7));
     const limit = Math.max(1, Math.min(100, dto.limit ?? 20));
+    const maxConcurrency = Math.max(1, Math.min(10, dto.maxConcurrency ?? 3));
+    const perExecutionTimeoutMs = Math.max(
+      1000,
+      Math.min(120000, dto.perExecutionTimeoutMs ?? 30000),
+    );
+    const stopOnFailureCount = dto.stopOnFailureCount;
+    const stopOnFailureRate = dto.stopOnFailureRate;
+    const minProcessedForFailureRate = Math.max(
+      1,
+      Math.min(100, dto.minProcessedForFailureRate ?? 3),
+    );
     const datasets = this.resolveRequestedStandardDatasets(dto.datasets as StandardDataset[]);
     const idempotencyKey = dto.idempotencyKey?.trim() || undefined;
+    const control: ReconciliationCutoverCompensationBatchControl = {
+      maxConcurrency,
+      perExecutionTimeoutMs,
+      stopOnFailureCount,
+      stopOnFailureRate,
+      minProcessedForFailureRate,
+    };
 
     if (idempotencyKey) {
+      const inFlightKey = this.buildCompensationBatchInFlightKey(userId, idempotencyKey);
+      const inFlight = this.cutoverCompensationBatchInFlight.get(inFlightKey);
+      if (inFlight) {
+        const response = await inFlight;
+        return {
+          ...response,
+          replayed: true,
+        };
+      }
+
       const existing = await this.findReconciliationCutoverCompensationBatchByIdempotencyKey(
         userId,
         idempotencyKey,
@@ -3237,7 +3286,48 @@ export class MarketDataService {
       if (existing) {
         return this.toReconciliationCutoverCompensationBatchResponse(existing, true);
       }
+
+      const runPromise = this.executeReconciliationCutoverCompensationBatch({
+        userId,
+        dto,
+        windowDays,
+        datasets,
+        limit,
+        idempotencyKey,
+        control,
+      });
+      this.cutoverCompensationBatchInFlight.set(inFlightKey, runPromise);
+      try {
+        return await runPromise;
+      } finally {
+        this.cutoverCompensationBatchInFlight.delete(inFlightKey);
+      }
     }
+
+    return this.executeReconciliationCutoverCompensationBatch({
+      userId,
+      dto,
+      windowDays,
+      datasets,
+      limit,
+      idempotencyKey,
+      control,
+    });
+  }
+
+  private async executeReconciliationCutoverCompensationBatch(input: {
+    userId: string;
+    dto: RetryReconciliationCutoverCompensationBatchDto;
+    windowDays: number;
+    datasets: StandardDataset[];
+    limit: number;
+    idempotencyKey?: string;
+    control: ReconciliationCutoverCompensationBatchControl;
+  }): Promise<ReconciliationCutoverCompensationBatchResponse> {
+    const { userId, dto, windowDays, datasets, limit, idempotencyKey, control } = input;
+    const { maxConcurrency, perExecutionTimeoutMs, stopOnFailureCount, stopOnFailureRate } =
+      control;
+    const minProcessedForFailureRate = control.minProcessedForFailureRate;
 
     const batchId = randomUUID();
     const createdAt = new Date().toISOString();
@@ -3265,6 +3355,7 @@ export class MarketDataService {
         note: dto.note,
         reason: dto.reason,
         storage: overview.storage,
+        control,
         scanned: overview.summary.totalExecutions,
         matched: overview.summary.compensationPendingExecutions,
         attempted: 0,
@@ -3281,63 +3372,148 @@ export class MarketDataService {
           compensated: 0,
           failed: 0,
           skipped: candidates.length,
+          processed: 0,
+          breakerTriggered: false,
         },
         createdAt,
       };
 
       this.cutoverCompensationBatchRecords.set(record.batchId, record);
-      await this.persistReconciliationCutoverCompensationBatchRecord(record);
+      const persisted = await this.persistReconciliationCutoverCompensationBatchRecord(record);
+      const recovered = await this.tryRecoverCompensationBatchByIdempotencyKey(
+        persisted,
+        userId,
+        idempotencyKey,
+      );
+      if (recovered) {
+        return recovered;
+      }
       return this.toReconciliationCutoverCompensationBatchResponse(record);
     }
 
     const results: ReconciliationCutoverCompensationBatchResultItem[] = [];
+    const candidateOrder = new Map<string, number>(
+      candidates.map((item, index) => [item.executionId, index]),
+    );
+    const startedExecutionIds = new Set<string>();
+    let nextCandidateIndex = 0;
+    let processed = 0;
+    let failed = 0;
+    let breakerTriggered = false;
+    let breakerReason: string | undefined;
 
-    for (const candidate of candidates) {
-      try {
-        const compensation = await this.retryReconciliationCutoverExecutionCompensation(
-          userId,
-          candidate.executionId,
-          {
-            disableReconciliationGate: dto.disableReconciliationGate,
-            workflowVersionId: dto.workflowVersionId,
-            note: dto.note,
-            reason: dto.reason ?? 'batch_compensation',
-          },
-        );
+    const evaluateCircuitBreaker = () => {
+      if (breakerTriggered) {
+        return;
+      }
 
-        if (compensation.compensated) {
-          results.push({
-            executionId: candidate.executionId,
-            action: candidate.action,
-            statusBefore: candidate.status,
-            compensated: true,
-            compensationExecutionId: compensation.compensationExecutionId,
-          });
-          continue;
+      if (stopOnFailureCount !== undefined && failed >= stopOnFailureCount) {
+        breakerTriggered = true;
+        breakerReason = `failure_count_exceeded:${failed}`;
+        return;
+      }
+
+      if (
+        stopOnFailureRate !== undefined &&
+        processed >= minProcessedForFailureRate &&
+        processed > 0
+      ) {
+        const currentFailureRate = failed / processed;
+        if (currentFailureRate >= stopOnFailureRate) {
+          breakerTriggered = true;
+          breakerReason = `failure_rate_exceeded:${currentFailureRate.toFixed(4)}`;
         }
+      }
+    };
 
+    const workers = Array.from({ length: Math.min(maxConcurrency, candidates.length) }, () =>
+      (async () => {
+        while (true) {
+          if (breakerTriggered) {
+            return;
+          }
+          const currentIndex = nextCandidateIndex;
+          if (currentIndex >= candidates.length) {
+            return;
+          }
+          nextCandidateIndex += 1;
+          const candidate = candidates[currentIndex];
+          startedExecutionIds.add(candidate.executionId);
+
+          try {
+            const compensation = await this.withTimeout(
+              this.retryReconciliationCutoverExecutionCompensation(userId, candidate.executionId, {
+                disableReconciliationGate: dto.disableReconciliationGate,
+                workflowVersionId: dto.workflowVersionId,
+                note: dto.note,
+                reason: dto.reason ?? 'batch_compensation',
+              }),
+              perExecutionTimeoutMs,
+              `compensation timeout after ${perExecutionTimeoutMs}ms`,
+            );
+
+            if (compensation.compensated) {
+              results.push({
+                executionId: candidate.executionId,
+                action: candidate.action,
+                statusBefore: candidate.status,
+                compensated: true,
+                compensationExecutionId: compensation.compensationExecutionId,
+              });
+            } else {
+              results.push({
+                executionId: candidate.executionId,
+                action: candidate.action,
+                statusBefore: candidate.status,
+                compensated: false,
+                reason: compensation.reason ?? 'execution_status_not_compensatable',
+              });
+            }
+          } catch (error) {
+            failed += 1;
+            results.push({
+              executionId: candidate.executionId,
+              action: candidate.action,
+              statusBefore: candidate.status,
+              compensated: false,
+              error: this.stringifyError(error),
+            });
+          } finally {
+            processed += 1;
+            evaluateCircuitBreaker();
+          }
+        }
+      })(),
+    );
+
+    await Promise.all(workers);
+
+    if (breakerTriggered) {
+      const unprocessed = candidates.filter((item) => !startedExecutionIds.has(item.executionId));
+      for (const candidate of unprocessed) {
         results.push({
           executionId: candidate.executionId,
           action: candidate.action,
           statusBefore: candidate.status,
           compensated: false,
-          reason: compensation.reason ?? 'execution_status_not_compensatable',
-        });
-      } catch (error) {
-        results.push({
-          executionId: candidate.executionId,
-          action: candidate.action,
-          statusBefore: candidate.status,
-          compensated: false,
-          error: this.stringifyError(error),
+          reason: breakerReason ? `circuit_breaker_open:${breakerReason}` : 'circuit_breaker_open',
         });
       }
     }
+
+    results.sort(
+      (a, b) =>
+        (candidateOrder.get(a.executionId) ?? Number.MAX_SAFE_INTEGER) -
+        (candidateOrder.get(b.executionId) ?? Number.MAX_SAFE_INTEGER),
+    );
 
     const summary = {
       compensated: results.filter((item) => item.compensated).length,
       failed: results.filter((item) => !item.compensated && !!item.error).length,
       skipped: results.filter((item) => !item.compensated && !item.error).length,
+      processed,
+      breakerTriggered,
+      breakerReason,
     };
 
     const status: ReconciliationCutoverCompensationBatchStatus =
@@ -3362,16 +3538,25 @@ export class MarketDataService {
       note: dto.note,
       reason: dto.reason,
       storage: overview.storage,
+      control,
       scanned: overview.summary.totalExecutions,
       matched: overview.summary.compensationPendingExecutions,
-      attempted: candidates.length,
+      attempted: processed,
       results,
       summary,
       createdAt,
     };
 
     this.cutoverCompensationBatchRecords.set(record.batchId, record);
-    await this.persistReconciliationCutoverCompensationBatchRecord(record);
+    const persisted = await this.persistReconciliationCutoverCompensationBatchRecord(record);
+    const recovered = await this.tryRecoverCompensationBatchByIdempotencyKey(
+      persisted,
+      userId,
+      idempotencyKey,
+    );
+    if (recovered) {
+      return recovered;
+    }
     return this.toReconciliationCutoverCompensationBatchResponse(record);
   }
 
@@ -3400,6 +3585,9 @@ export class MarketDataService {
         compensated: number;
         failed: number;
         skipped: number;
+        processed: number;
+        breakerTriggered: boolean;
+        breakerReason?: string;
       };
       createdAt: string;
     }>;
@@ -3413,6 +3601,7 @@ export class MarketDataService {
       pageSize,
       {
         dryRun: query.dryRun,
+        replayed: query.replayed,
         status: query.status,
       },
     );
@@ -3423,6 +3612,7 @@ export class MarketDataService {
     const filtered = Array.from(this.cutoverCompensationBatchRecords.values())
       .filter((item) => item.requestedByUserId === userId)
       .filter((item) => (query.dryRun === undefined ? true : item.dryRun === query.dryRun))
+      .filter((item) => (query.replayed === undefined ? true : item.replayed === query.replayed))
       .filter((item) => (!query.status ? true : item.status === query.status))
       .sort((a, b) => this.toTimestampMs(b.createdAt) - this.toTimestampMs(a.createdAt));
 
@@ -3487,10 +3677,297 @@ export class MarketDataService {
     };
   }
 
+  async getReconciliationCutoverCompensationBatchReport(
+    userId: string,
+    batchId: string,
+    query: ReconciliationCutoverCompensationBatchReportQueryDto,
+  ): Promise<{
+    batchId: string;
+    format: 'json' | 'markdown';
+    fileName: string;
+    generatedAt: string;
+    storage: 'database' | 'in-memory';
+    payload: Record<string, unknown> | string;
+  }> {
+    const batch = await this.getReconciliationCutoverCompensationBatch(userId, batchId);
+    const format = query.format ?? 'markdown';
+    const generatedAt = new Date().toISOString();
+
+    const serializable = {
+      batchId: batch.batchId,
+      status: batch.status,
+      dryRun: batch.dryRun,
+      replayed: batch.replayed,
+      idempotencyKey: batch.idempotencyKey,
+      requestedByUserId: batch.requestedByUserId,
+      windowDays: batch.windowDays,
+      datasets: batch.datasets,
+      requestedLimit: batch.requestedLimit,
+      disableReconciliationGate: batch.disableReconciliationGate,
+      workflowVersionId: batch.workflowVersionId,
+      note: batch.note,
+      reason: batch.reason,
+      storage: batch.storage,
+      control: batch.control,
+      scanned: batch.scanned,
+      matched: batch.matched,
+      attempted: batch.attempted,
+      summary: batch.summary,
+      results: batch.results,
+      createdAt: batch.createdAt,
+      generatedAt,
+    } satisfies Record<string, unknown>;
+
+    if (format === 'json') {
+      return {
+        batchId: batch.batchId,
+        format,
+        fileName: `reconciliation-cutover-compensation-batch-${batch.batchId}.json`,
+        generatedAt,
+        storage: batch.storage,
+        payload: serializable,
+      };
+    }
+
+    return {
+      batchId: batch.batchId,
+      format,
+      fileName: `reconciliation-cutover-compensation-batch-${batch.batchId}.md`,
+      generatedAt,
+      storage: batch.storage,
+      payload: this.renderReconciliationCutoverCompensationBatchMarkdown(serializable),
+    };
+  }
+
+  async runReconciliationCutoverCompensationSweep(): Promise<{
+    enabled: boolean;
+    triggered: boolean;
+    reason: string;
+    scope?: ReconciliationCutoverCompensationSweepScope;
+    targetUserCount?: number;
+    batchId?: string;
+    status?: ReconciliationCutoverCompensationBatchStatus;
+    replayed?: boolean;
+    attempted?: number;
+    summary?: ReconciliationCutoverCompensationBatchSummary;
+    settings?: {
+      scope: ReconciliationCutoverCompensationSweepScope;
+      userId: string;
+      windowDays: number;
+      limit: number;
+      datasets: StandardDataset[];
+      idempotencyKey: string;
+      maxConcurrency: number;
+      perExecutionTimeoutMs: number;
+    };
+    runs?: ReconciliationCutoverCompensationSweepRun[];
+  }> {
+    const enabled =
+      this.parseOptionalBoolean(process.env.MARKET_DATA_CUTOVER_COMPENSATION_AUTORUN_ENABLED) ??
+      false;
+    if (!enabled) {
+      return {
+        enabled: false,
+        triggered: false,
+        reason: 'auto_compensation_disabled',
+      };
+    }
+
+    const scopeRaw =
+      process.env.MARKET_DATA_CUTOVER_COMPENSATION_AUTORUN_SCOPE?.trim().toUpperCase() || 'USER';
+    const scope: ReconciliationCutoverCompensationSweepScope =
+      scopeRaw === 'GLOBAL' ? 'GLOBAL' : 'USER';
+    const configuredUserId =
+      process.env.MARKET_DATA_CUTOVER_COMPENSATION_AUTORUN_USER_ID?.trim() ||
+      'system-auto-compensation';
+    const windowDays = Math.max(
+      1,
+      Math.min(
+        30,
+        this.parsePositiveInteger(
+          process.env.MARKET_DATA_CUTOVER_COMPENSATION_AUTORUN_WINDOW_DAYS,
+        ) ?? 7,
+      ),
+    );
+    const limit = Math.max(
+      1,
+      Math.min(
+        100,
+        this.parsePositiveInteger(process.env.MARKET_DATA_CUTOVER_COMPENSATION_AUTORUN_LIMIT) ?? 20,
+      ),
+    );
+    const maxConcurrency = Math.max(
+      1,
+      Math.min(
+        10,
+        this.parsePositiveInteger(
+          process.env.MARKET_DATA_CUTOVER_COMPENSATION_AUTORUN_MAX_CONCURRENCY,
+        ) ?? 3,
+      ),
+    );
+    const perExecutionTimeoutMs = Math.max(
+      1000,
+      Math.min(
+        120000,
+        this.parsePositiveInteger(
+          process.env.MARKET_DATA_CUTOVER_COMPENSATION_AUTORUN_TIMEOUT_MS,
+        ) ?? 30000,
+      ),
+    );
+    const stopOnFailureCountValue = this.parsePositiveInteger(
+      process.env.MARKET_DATA_CUTOVER_COMPENSATION_AUTORUN_STOP_ON_FAILURE_COUNT,
+    );
+    const stopOnFailureCount = stopOnFailureCountValue ?? undefined;
+    const stopOnFailureRateRaw = this.parseFiniteNumber(
+      process.env.MARKET_DATA_CUTOVER_COMPENSATION_AUTORUN_STOP_ON_FAILURE_RATE,
+    );
+    const stopOnFailureRate =
+      stopOnFailureRateRaw !== undefined &&
+      stopOnFailureRateRaw >= 0.05 &&
+      stopOnFailureRateRaw <= 1
+        ? stopOnFailureRateRaw
+        : undefined;
+    const minProcessedForFailureRate = Math.max(
+      1,
+      Math.min(
+        100,
+        this.parsePositiveInteger(
+          process.env.MARKET_DATA_CUTOVER_COMPENSATION_AUTORUN_MIN_PROCESSED,
+        ) ?? 3,
+      ),
+    );
+    const disableReconciliationGate =
+      this.parseOptionalBoolean(
+        process.env.MARKET_DATA_CUTOVER_COMPENSATION_AUTORUN_DISABLE_RECONCILIATION_GATE,
+      ) ?? true;
+    const datasets = this.resolveRequestedStandardDatasets(
+      this.parseStandardDatasetsFromEnv(
+        process.env.MARKET_DATA_CUTOVER_COMPENSATION_AUTORUN_DATASETS,
+      ),
+    );
+    const idempotencySlotMinutes = Math.max(
+      1,
+      Math.min(
+        60,
+        this.parsePositiveInteger(
+          process.env.MARKET_DATA_CUTOVER_COMPENSATION_AUTORUN_IDEMPOTENCY_SLOT_MINUTES,
+        ) ?? 10,
+      ),
+    );
+    const idempotencyKeyBase = this.buildCompensationSweepIdempotencyKey(idempotencySlotMinutes);
+
+    const pendingUsers = await this.listUsersWithCompensationPendingExecutions(
+      windowDays,
+      datasets,
+    );
+    const targetUserIds =
+      scope === 'GLOBAL'
+        ? pendingUsers
+        : pendingUsers.includes(configuredUserId)
+          ? [configuredUserId]
+          : [];
+
+    if (targetUserIds.length === 0) {
+      return {
+        enabled: true,
+        triggered: false,
+        reason:
+          scope === 'GLOBAL'
+            ? 'auto_compensation_no_pending_execution'
+            : 'auto_compensation_user_scope_no_pending_execution',
+        scope,
+        targetUserCount: 0,
+        settings: {
+          scope,
+          userId: configuredUserId,
+          windowDays,
+          limit,
+          datasets,
+          idempotencyKey: idempotencyKeyBase,
+          maxConcurrency,
+          perExecutionTimeoutMs,
+        },
+      };
+    }
+
+    const runs: ReconciliationCutoverCompensationSweepRun[] = [];
+    for (const targetUserId of targetUserIds) {
+      const idempotencyKey =
+        scope === 'GLOBAL' ? `${idempotencyKeyBase}-u-${targetUserId}` : idempotencyKeyBase;
+      const batch = await this.retryReconciliationCutoverExecutionCompensationBatch(targetUserId, {
+        windowDays,
+        datasets,
+        limit,
+        dryRun: false,
+        idempotencyKey,
+        maxConcurrency,
+        perExecutionTimeoutMs,
+        stopOnFailureCount,
+        stopOnFailureRate,
+        minProcessedForFailureRate,
+        disableReconciliationGate,
+        reason: 'auto_compensation_sweep',
+        note: `auto compensation sweep, slot=${idempotencySlotMinutes}m`,
+      });
+      runs.push({
+        userId: targetUserId,
+        batchId: batch.batchId,
+        status: batch.status,
+        replayed: batch.replayed,
+        attempted: batch.attempted,
+        summary: batch.summary,
+      });
+    }
+
+    const attempted = runs.reduce((sum, item) => sum + item.attempted, 0);
+    const replayed = runs.every((item) => item.replayed);
+    const compensated = runs.reduce((sum, item) => sum + item.summary.compensated, 0);
+    const failed = runs.reduce((sum, item) => sum + item.summary.failed, 0);
+    const skipped = runs.reduce((sum, item) => sum + item.summary.skipped, 0);
+    const processed = runs.reduce((sum, item) => sum + item.summary.processed, 0);
+    const breakerTriggered = runs.some((item) => item.summary.breakerTriggered);
+    const breakerReasons = runs
+      .map((item) => item.summary.breakerReason)
+      .filter((item): item is string => Boolean(item));
+    const status = this.resolveAggregateCompensationBatchStatus(runs.map((item) => item.status));
+    const batchId = runs[0]?.batchId;
+
+    return {
+      enabled: true,
+      triggered: true,
+      reason: replayed ? 'auto_compensation_replayed' : 'auto_compensation_executed',
+      scope,
+      targetUserCount: runs.length,
+      batchId,
+      status,
+      replayed,
+      attempted,
+      summary: {
+        compensated,
+        failed,
+        skipped,
+        processed,
+        breakerTriggered,
+        breakerReason: breakerReasons.length > 0 ? breakerReasons.join('; ') : undefined,
+      },
+      settings: {
+        scope,
+        userId: configuredUserId,
+        windowDays,
+        limit,
+        datasets,
+        idempotencyKey: idempotencyKeyBase,
+        maxConcurrency,
+        perExecutionTimeoutMs,
+      },
+      runs,
+    };
+  }
+
   private toReconciliationCutoverCompensationBatchResponse(
     record: ReconciliationCutoverCompensationBatchRecord,
     replayedOverride?: boolean,
-  ) {
+  ): ReconciliationCutoverCompensationBatchResponse {
     return {
       batchId: record.batchId,
       status: record.status,
@@ -3502,12 +3979,192 @@ export class MarketDataService {
       idempotencyKey: record.idempotencyKey,
       requestedLimit: record.requestedLimit,
       storage: record.storage,
+      control: record.control,
       scanned: record.scanned,
       matched: record.matched,
       attempted: record.attempted,
       results: record.results,
       summary: record.summary,
     };
+  }
+
+  private async tryRecoverCompensationBatchByIdempotencyKey(
+    persisted: boolean,
+    userId: string,
+    idempotencyKey?: string,
+  ): Promise<ReconciliationCutoverCompensationBatchResponse | null> {
+    if (persisted || !idempotencyKey) {
+      return null;
+    }
+
+    const recovered =
+      await this.findReconciliationCutoverCompensationBatchByIdempotencyKeyWithRetry(
+        userId,
+        idempotencyKey,
+      );
+    if (!recovered) {
+      return null;
+    }
+
+    return this.toReconciliationCutoverCompensationBatchResponse(recovered, true);
+  }
+
+  private async listUsersWithCompensationPendingExecutions(
+    windowDays: number,
+    datasets: StandardDataset[],
+  ): Promise<string[]> {
+    const windowStart = new Date(Date.now() - windowDays * 24 * 60 * 60 * 1000);
+
+    if (!this.cutoverExecutionPersistenceUnavailable) {
+      try {
+        const rows = await this.prisma.$queryRawUnsafe<
+          Array<{
+            requestedByUserId: string;
+            datasets: unknown;
+          }>
+        >(
+          `SELECT DISTINCT
+             "requestedByUserId",
+             "datasets"
+           FROM "DataReconciliationCutoverExecution"
+           WHERE "status" IN ('FAILED', 'PARTIAL')
+             AND "compensationApplied" = FALSE
+             AND "createdAt" >= $1
+           ORDER BY "requestedByUserId" ASC
+           LIMIT 500`,
+          windowStart,
+        );
+
+        const userIds = new Set<string>();
+        for (const row of rows) {
+          const rowDatasetsRaw = this.parseJsonValue<unknown[]>(row.datasets) ?? [];
+          const rowDatasets = rowDatasetsRaw
+            .map((item) => this.normalizeReconciliationDataset(String(item)) as StandardDataset)
+            .filter((item, index, all) => all.indexOf(item) === index);
+          if (this.hasDatasetOverlap(rowDatasets, datasets)) {
+            userIds.add(row.requestedByUserId);
+          }
+        }
+
+        return Array.from(userIds.values()).sort((a, b) => a.localeCompare(b));
+      } catch (error) {
+        if (this.isCutoverExecutionPersistenceMissingTableError(error)) {
+          this.disableCutoverExecutionPersistence('list pending compensation users', error);
+        } else {
+          this.logger.warn(`List pending compensation users failed: ${this.stringifyError(error)}`);
+        }
+      }
+    }
+
+    const windowStartMs = windowStart.getTime();
+    const userIds = new Set<string>();
+    for (const record of this.cutoverExecutionRecords.values()) {
+      if (record.status !== 'FAILED' && record.status !== 'PARTIAL') {
+        continue;
+      }
+      if (record.compensationApplied) {
+        continue;
+      }
+      if (this.toTimestampMs(record.createdAt) < windowStartMs) {
+        continue;
+      }
+      if (!this.recordHasCutoverDataset(record, datasets)) {
+        continue;
+      }
+      userIds.add(record.requestedByUserId);
+    }
+
+    return Array.from(userIds.values()).sort((a, b) => a.localeCompare(b));
+  }
+
+  private resolveAggregateCompensationBatchStatus(
+    statuses: ReconciliationCutoverCompensationBatchStatus[],
+  ): ReconciliationCutoverCompensationBatchStatus {
+    if (statuses.length === 0) {
+      return 'FAILED';
+    }
+    if (statuses.every((status) => status === 'SUCCESS')) {
+      return 'SUCCESS';
+    }
+    if (statuses.every((status) => status === 'DRY_RUN')) {
+      return 'DRY_RUN';
+    }
+    if (statuses.every((status) => status === 'FAILED')) {
+      return 'FAILED';
+    }
+    return 'PARTIAL';
+  }
+
+  private hasDatasetOverlap(source: StandardDataset[], target: StandardDataset[]): boolean {
+    if (target.length === 0) {
+      return true;
+    }
+    return source.some((dataset) => target.includes(dataset));
+  }
+
+  private renderReconciliationCutoverCompensationBatchMarkdown(
+    payload: Record<string, unknown>,
+  ): string {
+    const datasets = Array.isArray(payload.datasets)
+      ? payload.datasets.map((item) => String(item)).join(', ')
+      : '';
+    const summary =
+      (payload.summary as
+        | {
+            compensated?: number;
+            failed?: number;
+            skipped?: number;
+            processed?: number;
+            breakerTriggered?: boolean;
+            breakerReason?: string;
+          }
+        | undefined) ?? {};
+    const results = Array.isArray(payload.results)
+      ? (payload.results as Array<Record<string, unknown>>)
+      : [];
+
+    const lines = [
+      '# Reconciliation Cutover Compensation Batch Report',
+      '',
+      `- Batch ID: ${String(payload.batchId ?? '')}`,
+      `- Status: ${String(payload.status ?? '')}`,
+      `- Dry Run: ${String(payload.dryRun ?? false)}`,
+      `- Replayed: ${String(payload.replayed ?? false)}`,
+      `- Idempotency Key: ${String(payload.idempotencyKey ?? '')}`,
+      `- Requested By: ${String(payload.requestedByUserId ?? '')}`,
+      `- Window Days: ${String(payload.windowDays ?? 0)}`,
+      `- Datasets: ${datasets}`,
+      `- Requested Limit: ${String(payload.requestedLimit ?? 0)}`,
+      `- Created At: ${String(payload.createdAt ?? '')}`,
+      '',
+      '## Summary',
+      '',
+      `- Processed: ${String(summary.processed ?? 0)}`,
+      `- Compensated: ${String(summary.compensated ?? 0)}`,
+      `- Failed: ${String(summary.failed ?? 0)}`,
+      `- Skipped: ${String(summary.skipped ?? 0)}`,
+      `- Breaker Triggered: ${String(summary.breakerTriggered ?? false)}`,
+      `- Breaker Reason: ${String(summary.breakerReason ?? '')}`,
+      '',
+      '## Results',
+      '',
+      '| Execution ID | Action | Status Before | Compensated | Reason/Error |',
+      '| --- | --- | --- | --- | --- |',
+    ];
+
+    for (const item of results) {
+      const reasonOrError =
+        typeof item.error === 'string'
+          ? item.error
+          : typeof item.reason === 'string'
+            ? item.reason
+            : '';
+      lines.push(
+        `| ${String(item.executionId ?? '')} | ${String(item.action ?? '')} | ${String(item.statusBefore ?? '')} | ${String(item.compensated ?? false)} | ${reasonOrError.replace(/\|/g, '/')} |`,
+      );
+    }
+
+    return lines.join('\n');
   }
 
   async listReconciliationCutoverDecisions(
@@ -4677,6 +5334,32 @@ export class MarketDataService {
     return local[0] ?? null;
   }
 
+  private buildCompensationBatchInFlightKey(userId: string, idempotencyKey: string) {
+    return `${userId}::${idempotencyKey}`;
+  }
+
+  private async findReconciliationCutoverCompensationBatchByIdempotencyKeyWithRetry(
+    userId: string,
+    idempotencyKey: string,
+    maxAttempts = 5,
+    delayMs = 80,
+  ): Promise<ReconciliationCutoverCompensationBatchRecord | null> {
+    const attempts = Math.max(1, maxAttempts);
+    for (let index = 0; index < attempts; index += 1) {
+      const found = await this.findReconciliationCutoverCompensationBatchByIdempotencyKey(
+        userId,
+        idempotencyKey,
+      );
+      if (found) {
+        return found;
+      }
+      if (index < attempts - 1) {
+        await this.sleep(delayMs);
+      }
+    }
+    return null;
+  }
+
   private async persistReconciliationCutoverCompensationBatchRecord(
     record: ReconciliationCutoverCompensationBatchRecord,
   ): Promise<boolean> {
@@ -4687,9 +5370,9 @@ export class MarketDataService {
     try {
       await this.prisma.$executeRawUnsafe(
         `INSERT INTO "DataReconciliationCutoverCompensationBatch"
-          ("id", "batchId", "status", "dryRun", "replayed", "idempotencyKey", "requestedByUserId", "windowDays", "datasets", "requestedLimit", "disableReconciliationGate", "workflowVersionId", "note", "reason", "storage", "scanned", "matched", "attempted", "results", "summary", "createdAt", "updatedAt")
+          ("id", "batchId", "status", "dryRun", "replayed", "idempotencyKey", "requestedByUserId", "windowDays", "datasets", "requestedLimit", "disableReconciliationGate", "workflowVersionId", "note", "reason", "storage", "control", "scanned", "matched", "attempted", "results", "summary", "createdAt", "updatedAt")
          VALUES
-          ($1, $2, $3::"ReconciliationCutoverCompensationBatchStatus", $4, $5, $6, $7, $8, $9::jsonb, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19::jsonb, $20::jsonb, $21, $22)
+          ($1, $2, $3::"ReconciliationCutoverCompensationBatchStatus", $4, $5, $6, $7, $8, $9::jsonb, $10, $11, $12, $13, $14, $15, $16::jsonb, $17, $18, $19, $20::jsonb, $21::jsonb, $22, $23)
          ON CONFLICT ("batchId") DO UPDATE SET
           "status" = EXCLUDED."status",
           "dryRun" = EXCLUDED."dryRun",
@@ -4703,6 +5386,7 @@ export class MarketDataService {
           "note" = EXCLUDED."note",
           "reason" = EXCLUDED."reason",
           "storage" = EXCLUDED."storage",
+          "control" = EXCLUDED."control",
           "scanned" = EXCLUDED."scanned",
           "matched" = EXCLUDED."matched",
           "attempted" = EXCLUDED."attempted",
@@ -4724,6 +5408,7 @@ export class MarketDataService {
         record.note ?? null,
         record.reason ?? null,
         record.storage,
+        JSON.stringify(record.control),
         record.scanned,
         record.matched,
         record.attempted,
@@ -4741,6 +5426,9 @@ export class MarketDataService {
         );
         return false;
       }
+      if (this.isCutoverCompensationBatchIdempotencyConflict(error)) {
+        return false;
+      }
       this.logger.error(
         `Persist cutover compensation batch record failed: ${this.stringifyError(error)}`,
       );
@@ -4754,6 +5442,7 @@ export class MarketDataService {
     pageSize: number,
     options: {
       dryRun?: boolean;
+      replayed?: boolean;
       status?: ReconciliationCutoverCompensationBatchStatus;
     },
   ): Promise<{
@@ -4778,6 +5467,9 @@ export class MarketDataService {
         compensated: number;
         failed: number;
         skipped: number;
+        processed: number;
+        breakerTriggered: boolean;
+        breakerReason?: string;
       };
       createdAt: string;
     }>;
@@ -4793,6 +5485,11 @@ export class MarketDataService {
       if (options.dryRun !== undefined) {
         whereParts.push(`"dryRun" = $${whereParams.length + 1}`);
         whereParams.push(options.dryRun);
+      }
+
+      if (options.replayed !== undefined) {
+        whereParts.push(`"replayed" = $${whereParams.length + 1}`);
+        whereParams.push(options.replayed);
       }
 
       if (options.status) {
@@ -4832,6 +5529,7 @@ export class MarketDataService {
              "note",
              "reason",
              "storage",
+             "control",
              "scanned",
              "matched",
              "attempted",
@@ -4914,6 +5612,7 @@ export class MarketDataService {
              "note",
              "reason",
              "storage",
+             "control",
              "scanned",
              "matched",
              "attempted",
@@ -4973,6 +5672,7 @@ export class MarketDataService {
              "note",
              "reason",
              "storage",
+             "control",
              "scanned",
              "matched",
              "attempted",
@@ -5034,6 +5734,7 @@ export class MarketDataService {
     }));
 
     const summaryRaw = this.parseJsonValue<Record<string, unknown>>(row.summary) ?? {};
+    const controlRaw = this.parseJsonValue<Record<string, unknown>>(row.control) ?? {};
 
     return {
       batchId: row.batchId,
@@ -5050,6 +5751,13 @@ export class MarketDataService {
       note: row.note ?? undefined,
       reason: row.reason ?? undefined,
       storage: row.storage === 'in-memory' ? 'in-memory' : 'database',
+      control: {
+        maxConcurrency: this.parseInteger(controlRaw.maxConcurrency) || 3,
+        perExecutionTimeoutMs: this.parseInteger(controlRaw.perExecutionTimeoutMs) || 30000,
+        stopOnFailureCount: this.parseNonNegativeInteger(controlRaw.stopOnFailureCount),
+        stopOnFailureRate: this.parseFiniteNumber(controlRaw.stopOnFailureRate),
+        minProcessedForFailureRate: this.parseInteger(controlRaw.minProcessedForFailureRate) || 3,
+      },
       scanned: this.parseInteger(row.scanned),
       matched: this.parseInteger(row.matched),
       attempted: this.parseInteger(row.attempted),
@@ -5058,6 +5766,10 @@ export class MarketDataService {
         compensated: this.parseInteger(summaryRaw.compensated),
         failed: this.parseInteger(summaryRaw.failed),
         skipped: this.parseInteger(summaryRaw.skipped),
+        processed: this.parseInteger(summaryRaw.processed),
+        breakerTriggered: this.parseBoolean(summaryRaw.breakerTriggered),
+        breakerReason:
+          typeof summaryRaw.breakerReason === 'string' ? summaryRaw.breakerReason : undefined,
       },
       createdAt: this.toIsoString(row.createdAt) ?? new Date().toISOString(),
     };
@@ -6045,6 +6757,50 @@ export class MarketDataService {
     return int;
   }
 
+  private parseStandardDatasetsFromEnv(value: string | undefined): StandardDataset[] | undefined {
+    if (!value) {
+      return undefined;
+    }
+
+    const tokens = value
+      .split(',')
+      .map((item) => item.trim().toUpperCase())
+      .filter((item) => item.length > 0);
+    if (tokens.length === 0) {
+      return undefined;
+    }
+
+    const mapped = tokens
+      .map((item) => {
+        if (item === 'SPOT_PRICE' || item === 'PRICE_DATA' || item === 'SPOT') {
+          return 'SPOT_PRICE' as const;
+        }
+        if (item === 'FUTURES_QUOTE' || item === 'FUTURES_QUOTE_SNAPSHOT' || item === 'FUTURES') {
+          return 'FUTURES_QUOTE' as const;
+        }
+        if (item === 'MARKET_EVENT' || item === 'MARKET_INTEL' || item === 'EVENT') {
+          return 'MARKET_EVENT' as const;
+        }
+        return undefined;
+      })
+      .filter((item): item is StandardDataset => Boolean(item));
+
+    if (mapped.length === 0) {
+      return undefined;
+    }
+
+    return mapped.filter((item, index, all) => all.indexOf(item) === index);
+  }
+
+  private buildCompensationSweepIdempotencyKey(slotMinutes: number): string {
+    const safeSlotMinutes = Math.max(1, Math.min(60, slotMinutes));
+    const slotMs = safeSlotMinutes * 60 * 1000;
+    const slotStart = new Date(Math.floor(Date.now() / slotMs) * slotMs)
+      .toISOString()
+      .replace(/[:.]/g, '-');
+    return `auto-compensation-${safeSlotMinutes}m-${slotStart}`;
+  }
+
   private parseBoolean(value: unknown): boolean {
     if (typeof value === 'boolean') {
       return value;
@@ -6363,6 +7119,33 @@ export class MarketDataService {
     return parsed.getTime();
   }
 
+  private async withTimeout<T>(
+    promise: Promise<T>,
+    timeoutMs: number,
+    message: string,
+  ): Promise<T> {
+    let timeoutHandle: NodeJS.Timeout | undefined;
+    try {
+      return await Promise.race([
+        promise,
+        new Promise<T>((_, reject) => {
+          timeoutHandle = setTimeout(() => {
+            reject(new BadRequestException(message));
+          }, timeoutMs);
+        }),
+      ]);
+    } finally {
+      if (timeoutHandle) {
+        clearTimeout(timeoutHandle);
+      }
+    }
+  }
+
+  private async sleep(ms: number): Promise<void> {
+    const duration = Math.max(0, ms);
+    await new Promise<void>((resolve) => setTimeout(resolve, duration));
+  }
+
   private recordHasCutoverDataset(
     record: ReconciliationCutoverExecutionRecord,
     datasets: StandardDataset[],
@@ -6566,6 +7349,11 @@ export class MarketDataService {
     const containsTarget =
       message.includes('datareconciliationcutovercompensationbatch') ||
       message.includes('reconciliationcutovercompensationbatchstatus');
+    const containsColumns =
+      message.includes('idempotencykey') ||
+      message.includes('replayed') ||
+      message.includes('control') ||
+      message.includes('disablereconciliationgate');
     const missingTableHint =
       message.includes('does not exist') ||
       message.includes('relation') ||
@@ -6575,7 +7363,27 @@ export class MarketDataService {
       message.includes('42704') ||
       message.includes('p2021') ||
       message.includes('invalid input value for enum');
-    return containsTarget && missingTableHint;
+    return (containsTarget || containsColumns) && missingTableHint;
+  }
+
+  private isCutoverCompensationBatchIdempotencyConflict(error: unknown): boolean {
+    const code =
+      typeof error === 'object' && error !== null && 'code' in error
+        ? String((error as { code?: unknown }).code)
+        : '';
+    if (code === 'P2002') {
+      return true;
+    }
+
+    const message = this.stringifyError(error).toLowerCase();
+    return (
+      (message.includes('duplicate key') ||
+        message.includes('23505') ||
+        message.includes('unique')) &&
+      message.includes(
+        'datareconciliationcutovercompensationbatch_requestedbyuserid_idempotencykey_key',
+      )
+    );
   }
 
   private disableReconciliationPersistence(operation: string, error: unknown) {

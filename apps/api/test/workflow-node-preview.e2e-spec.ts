@@ -6,8 +6,12 @@ import { ZodValidationPipe } from 'nestjs-zod';
 import { WorkflowDefinitionController } from '../src/modules/workflow-definition/workflow-definition.controller';
 import { WorkflowDefinitionService } from '../src/modules/workflow-definition/workflow-definition.service';
 import { WorkflowDslValidator } from '../src/modules/workflow-definition/workflow-dsl-validator';
+import { WorkflowDefinitionValidatorService } from '../src/modules/workflow-definition/workflow-definition-validator.service';
 import { WorkflowNodePreviewService } from '../src/modules/workflow-definition/workflow-node-preview.service';
 import { VariableResolver } from '../src/modules/workflow-execution/engine/variable-resolver';
+import { AIModelService } from '../src/modules/ai/ai-model.service';
+import { AIProviderFactory } from '../src/modules/ai/providers/provider.factory';
+import { ConfigService } from '../src/modules/config/config.service';
 import { PrismaService } from '../src/prisma';
 
 @Module({
@@ -15,8 +19,21 @@ import { PrismaService } from '../src/prisma';
   providers: [
     WorkflowDefinitionService,
     WorkflowDslValidator,
+    WorkflowDefinitionValidatorService,
     WorkflowNodePreviewService,
     VariableResolver,
+    {
+      provide: AIProviderFactory,
+      useValue: {},
+    },
+    {
+      provide: AIModelService,
+      useValue: {},
+    },
+    {
+      provide: ConfigService,
+      useValue: {},
+    },
     {
       provide: PrismaService,
       useValue: {},

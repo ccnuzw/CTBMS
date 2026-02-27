@@ -44,12 +44,14 @@ export class AIModelService {
     modelId: string;
     apiKey: string;
     apiUrl?: string;
+    wireApi?: string;
   } | null> {
     const aiConfig = await this.configService.getDefaultAIConfig();
     const provider = (aiConfig?.provider as AIProvider) || 'google';
     const modelId = aiConfig?.modelName || this.modelId;
     const apiKey = this.resolveApiKey(aiConfig, this.apiKey);
     const apiUrl = this.resolveApiUrl(aiConfig, this.apiUrl) || undefined;
+    const wireApi = this.resolveRecord(aiConfig?.pathOverrides)?.['wireApi'];
 
     if (!apiKey) {
       return null;
@@ -60,6 +62,7 @@ export class AIModelService {
       modelId,
       apiKey,
       apiUrl,
+      wireApi,
     };
   }
 
@@ -305,11 +308,11 @@ export class AIModelService {
     const input: GetAvailableModelsInput =
       typeof providerTypeOrInput === 'string' || providerTypeOrInput === undefined
         ? {
-            provider: providerTypeOrInput,
-            apiKey,
-            apiUrl,
-            configKey,
-          }
+          provider: providerTypeOrInput,
+          apiKey,
+          apiUrl,
+          configKey,
+        }
         : providerTypeOrInput;
     const providerType = input.provider;
 

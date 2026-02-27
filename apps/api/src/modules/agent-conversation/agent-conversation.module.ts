@@ -5,7 +5,19 @@ import { WorkflowExecutionModule } from '../workflow-execution';
 import { ReportExportModule } from '../report-export';
 import { AgentConversationSubscriptionJob } from './agent-conversation-subscription.job';
 import { AgentConversationEphemeralGovernanceJob } from './agent-conversation-ephemeral-governance.job';
-import { ConversationUtilsService, ConversationIntentService } from './services';
+import {
+  ConversationUtilsService,
+  ConversationIntentService,
+  ConversationAssetService,
+  ConversationResultService,
+  ConversationDeliveryService,
+  ConversationScheduleService,
+  ConversationPlanService,
+  ConversationSkillService,
+  ConversationEphemeralService,
+  ConversationSynthesizerService,
+  ConversationOrchestratorService,
+} from './services';
 
 @Module({
   imports: [WorkflowExecutionModule, ReportExportModule],
@@ -13,10 +25,32 @@ import { ConversationUtilsService, ConversationIntentService } from './services'
   providers: [
     ConversationUtilsService,
     ConversationIntentService,
+    ConversationAssetService,
+    ConversationResultService,
+    ConversationDeliveryService,
+    ConversationScheduleService,
+    ConversationPlanService,
+    ConversationSkillService,
+    ConversationEphemeralService,
+    ConversationSynthesizerService,
+    ConversationOrchestratorService,
     AgentConversationService,
     AgentConversationSubscriptionJob,
     AgentConversationEphemeralGovernanceJob,
   ],
-  exports: [AgentConversationService, ConversationUtilsService, ConversationIntentService],
+  exports: [
+    AgentConversationService,
+    ConversationUtilsService,
+    ConversationIntentService,
+    ConversationAssetService,
+    ConversationResultService,
+    ConversationDeliveryService,
+    ConversationScheduleService,
+    ConversationPlanService,
+    ConversationSkillService,
+    ConversationEphemeralService,
+    ConversationSynthesizerService,
+    ConversationOrchestratorService,
+  ],
 })
 export class AgentConversationModule { }

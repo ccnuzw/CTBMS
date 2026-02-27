@@ -35,6 +35,7 @@ import { ApprovalNodeExecutor } from './engine/node-executors/approval.executor'
 import { DebateTraceModule } from '../debate-trace/debate-trace.module';
 import { WorkflowExperimentModule } from '../workflow-experiment/workflow-experiment.module';
 import { AIProviderFactory } from '../ai/providers/provider.factory';
+import { AgentSkillModule } from '../agent-skill/agent-skill.module';
 import { AgentProfileModule } from '../agent-profile';
 import { DecisionRecordModule } from '../decision-record/decision-record.module';
 import { KnowledgeModule } from '../knowledge/knowledge.module';
@@ -46,6 +47,7 @@ import { ConfigModule } from '../config/config.module';
     ConfigModule,
     DebateTraceModule,
     WorkflowExperimentModule,
+    AgentSkillModule,
     AgentProfileModule,
     DecisionRecordModule,
     KnowledgeModule,

@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { PrismaService } from '../../prisma';
 import { AgentConversationService } from './agent-conversation.service';
+import { ConversationOrchestratorService } from './services';
 
 @Injectable()
 export class AgentConversationEphemeralGovernanceJob {
@@ -10,7 +11,8 @@ export class AgentConversationEphemeralGovernanceJob {
   constructor(
     private readonly prisma: PrismaService,
     private readonly agentConversationService: AgentConversationService,
-  ) {}
+    private readonly orchestratorService: ConversationOrchestratorService,
+  ) { }
 
   @Cron('*/15 * * * *')
   async run() {
@@ -34,13 +36,21 @@ export class AgentConversationEphemeralGovernanceJob {
 
     let processed = 0;
     let failed = 0;
+    let expiredAgentsTotal = 0;
+
     for (const session of sessions) {
       try {
+        // Phase 1-5 capability evolution
         await this.agentConversationService.applyEphemeralCapabilityEvolutionPlan(
           session.ownerUserId,
           session.id,
           { window: '7d' },
         );
+
+        // Phase 6: TTL enforcement for ephemeral Agents and Workflows
+        const expiredCount = await this.orchestratorService.cleanupExpiredAgents(session.id);
+        expiredAgentsTotal += expiredCount;
+
         processed += 1;
       } catch (error) {
         failed += 1;
@@ -51,7 +61,7 @@ export class AgentConversationEphemeralGovernanceJob {
     }
 
     this.logger.log(
-      `ephemeral governance done: processed=${processed}, failed=${failed}, sessionCount=${sessions.length}`,
+      `ephemeral governance done: processed=${processed}, failed=${failed}, sessionCount=${sessions.length}, expiredAgents=${expiredAgentsTotal}`,
     );
   }
 }

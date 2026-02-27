@@ -595,4 +595,103 @@ export class AgentConversationController {
     }
     return result;
   }
+
+  // ── Phase 7: 动态编排端点 ─────────────────────────────────────────────────
+
+  @Post(':sessionId/agents/generate')
+  async generateEphemeralAgent(
+    @Request() req: AuthRequest,
+    @Param('sessionId') sessionId: string,
+    @Body() dto: { userInstruction: string; context?: string },
+  ) {
+    const result = await this.service.generateEphemeralAgent(this.getUserId(req), sessionId, dto);
+    if (!result) {
+      throw new NotFoundException({ code: 'CONV_SESSION_NOT_FOUND', message: '会话不存在' });
+    }
+    return result;
+  }
+
+  @Get(':sessionId/agents')
+  async listEphemeralAgents(
+    @Request() req: AuthRequest,
+    @Param('sessionId') sessionId: string,
+  ) {
+    const result = await this.service.listEphemeralAgents(this.getUserId(req), sessionId);
+    if (!result) {
+      throw new NotFoundException({ code: 'CONV_SESSION_NOT_FOUND', message: '会话不存在' });
+    }
+    return result;
+  }
+
+  @Get(':sessionId/agents/available')
+  async getAvailableAgents(
+    @Request() req: AuthRequest,
+    @Param('sessionId') sessionId: string,
+  ) {
+    return this.service.getAvailableAgents(this.getUserId(req), sessionId);
+  }
+
+  @Post(':sessionId/agents/:agentAssetId/promote')
+  async promoteEphemeralAgent(
+    @Request() req: AuthRequest,
+    @Param('sessionId') sessionId: string,
+    @Param('agentAssetId') agentAssetId: string,
+    @Body() dto: { reviewComment?: string },
+  ) {
+    const result = await this.service.promoteEphemeralAgent(
+      this.getUserId(req), sessionId, agentAssetId, dto,
+    );
+    if (!result) {
+      throw new NotFoundException({ code: 'CONV_AGENT_NOT_FOUND', message: '临时智能体不存在' });
+    }
+    return result;
+  }
+
+  @Post(':sessionId/workflows/assemble')
+  async assembleEphemeralWorkflow(
+    @Request() req: AuthRequest,
+    @Param('sessionId') sessionId: string,
+    @Body() dto: { userInstruction: string; context?: string },
+  ) {
+    const result = await this.service.assembleEphemeralWorkflow(this.getUserId(req), sessionId, dto);
+    if (!result) {
+      throw new NotFoundException({ code: 'CONV_ASSEMBLE_FAILED', message: '工作流组装失败' });
+    }
+    return result;
+  }
+
+  @Post(':sessionId/overrides')
+  async applyEphemeralOverrides(
+    @Request() req: AuthRequest,
+    @Param('sessionId') sessionId: string,
+    @Body() dto: { userMessage: string },
+  ) {
+    return this.service.applyEphemeralOverrides(this.getUserId(req), sessionId, dto.userMessage);
+  }
+
+  @Get(':sessionId/report-cards')
+  async getReportCards(
+    @Request() req: AuthRequest,
+    @Param('sessionId') sessionId: string,
+  ) {
+    const result = await this.service.getResult(this.getUserId(req), sessionId);
+    if (!result) {
+      throw new NotFoundException({ code: 'CONV_RESULT_NOT_FOUND', message: '结果不存在' });
+    }
+    const report = await this.service.synthesizeResult(sessionId, result as unknown as Record<string, unknown>);
+    if (!report) return { cards: [] };
+    return { cards: this.service.buildReportCards(report) };
+  }
+
+  @Get(':sessionId/cost-summary')
+  async getSessionCostSummary(
+    @Request() req: AuthRequest,
+    @Param('sessionId') sessionId: string,
+  ) {
+    const result = await this.service.getSessionCostSummary(this.getUserId(req), sessionId);
+    if (!result) {
+      throw new NotFoundException({ code: 'CONV_SESSION_NOT_FOUND', message: '会话不存在' });
+    }
+    return result;
+  }
 }

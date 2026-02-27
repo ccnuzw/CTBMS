@@ -2,7 +2,7 @@ import { z } from 'zod';
 
 // ── 导出格式 ──
 
-export const ExportFormatEnum = z.enum(['PDF', 'WORD', 'JSON']);
+export const ExportFormatEnum = z.enum(['PDF', 'WORD', 'JSON', 'MARKDOWN']);
 
 // ── 导出报告段落 ──
 

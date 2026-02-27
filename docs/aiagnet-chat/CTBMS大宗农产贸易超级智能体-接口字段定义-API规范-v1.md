@@ -1335,6 +1335,11 @@
   "limit": 10,
   "dryRun": false,
   "idempotencyKey": "market-data-batch-execute",
+  "maxConcurrency": 3,
+  "perExecutionTimeoutMs": 15000,
+  "stopOnFailureCount": 5,
+  "stopOnFailureRate": 0.8,
+  "minProcessedForFailureRate": 1,
   "disableReconciliationGate": true,
   "reason": "batch_compensation_retry"
 }
@@ -1354,6 +1359,13 @@
   "idempotencyKey": "market-data-batch-execute",
   "requestedLimit": 10,
   "storage": "database",
+  "control": {
+    "maxConcurrency": 3,
+    "perExecutionTimeoutMs": 15000,
+    "stopOnFailureCount": 5,
+    "stopOnFailureRate": 0.8,
+    "minProcessedForFailureRate": 1
+  },
   "scanned": 6,
   "matched": 2,
   "attempted": 2,
@@ -1376,7 +1388,10 @@
   "summary": {
     "compensated": 1,
     "failed": 1,
-    "skipped": 0
+    "skipped": 0,
+    "processed": 2,
+    "breakerTriggered": false,
+    "breakerReason": null
   }
 }
 ```
@@ -1385,11 +1400,12 @@
 
 - `dryRun=true` 时仅返回候选执行，不触发真实补偿；
 - 批量补偿对每条执行独立处理，单条失败不会阻断后续执行；
-- 传入相同 `idempotencyKey` 可复用历史批量结果，响应中 `replayed=true`。
+- 传入相同 `idempotencyKey` 可复用历史批量结果，响应中 `replayed=true`；
+- `maxConcurrency`、`perExecutionTimeoutMs`、`stopOnFailureCount|Rate` 用于并发执行和熔断控制。
 
 ### 3.5.24 查询批量补偿记录
 
-- 列表：`GET /market-data/reconciliation/cutover/executions/compensation-batches?page=1&pageSize=20&status=PARTIAL`
+- 列表：`GET /market-data/reconciliation/cutover/executions/compensation-batches?page=1&pageSize=20&status=PARTIAL&replayed=false`
 
 响应：
 
@@ -1455,6 +1471,68 @@
   "storage": "database"
 }
 ```
+
+### 3.5.25 导出批量补偿审计报告
+
+- `GET /market-data/reconciliation/cutover/executions/compensation-batches/{batchId}/report?format=markdown`
+
+响应（markdown）：
+
+```json
+{
+  "batchId": "8b169b86-17a9-4174-8f17-90d4e4ec50b0",
+  "format": "markdown",
+  "fileName": "reconciliation-cutover-compensation-batch-8b169b86-17a9-4174-8f17-90d4e4ec50b0.md",
+  "generatedAt": "2026-02-27T12:08:00.000Z",
+  "storage": "database",
+  "payload": "# Reconciliation Cutover Compensation Batch Report\n..."
+}
+```
+
+响应（json）：
+
+```json
+{
+  "batchId": "8b169b86-17a9-4174-8f17-90d4e4ec50b0",
+  "format": "json",
+  "fileName": "reconciliation-cutover-compensation-batch-8b169b86-17a9-4174-8f17-90d4e4ec50b0.json",
+  "generatedAt": "2026-02-27T12:08:00.000Z",
+  "storage": "database",
+  "payload": {
+    "batchId": "8b169b86-17a9-4174-8f17-90d4e4ec50b0",
+    "status": "PARTIAL",
+    "summary": {
+      "compensated": 1,
+      "failed": 1,
+      "skipped": 0,
+      "processed": 2,
+      "breakerTriggered": false
+    }
+  }
+}
+```
+
+### 3.5.26 自动补偿巡检（服务端定时任务）
+
+说明：
+
+- 服务端每 10 分钟执行一次待补偿巡检，调用批量补偿主流程；
+- 支持环境变量控制：
+  - `MARKET_DATA_CUTOVER_COMPENSATION_AUTORUN_ENABLED`
+  - `MARKET_DATA_CUTOVER_COMPENSATION_AUTORUN_SCOPE`（`USER | GLOBAL`）
+  - `MARKET_DATA_CUTOVER_COMPENSATION_AUTORUN_USER_ID`
+  - `MARKET_DATA_CUTOVER_COMPENSATION_AUTORUN_WINDOW_DAYS`
+  - `MARKET_DATA_CUTOVER_COMPENSATION_AUTORUN_LIMIT`
+  - `MARKET_DATA_CUTOVER_COMPENSATION_AUTORUN_DATASETS`
+  - `MARKET_DATA_CUTOVER_COMPENSATION_AUTORUN_MAX_CONCURRENCY`
+  - `MARKET_DATA_CUTOVER_COMPENSATION_AUTORUN_TIMEOUT_MS`
+  - `MARKET_DATA_CUTOVER_COMPENSATION_AUTORUN_STOP_ON_FAILURE_COUNT`
+  - `MARKET_DATA_CUTOVER_COMPENSATION_AUTORUN_STOP_ON_FAILURE_RATE`
+  - `MARKET_DATA_CUTOVER_COMPENSATION_AUTORUN_MIN_PROCESSED`
+  - `MARKET_DATA_CUTOVER_COMPENSATION_AUTORUN_IDEMPOTENCY_SLOT_MINUTES`
+- 自动巡检同样复用 `idempotencyKey` 防重复执行。
+- `USER` 模式只处理 `MARKET_DATA_CUTOVER_COMPENSATION_AUTORUN_USER_ID` 的待补偿执行；
+- `GLOBAL` 模式会扫描窗口内所有存在待补偿执行的用户并逐用户补偿。
 
 ## 4. 指标中心 API
 

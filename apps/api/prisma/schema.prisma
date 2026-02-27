@@ -2906,6 +2906,7 @@ model DataReconciliationCutoverCompensationBatch {
   reason String? @db.Text
 
   storage String
+  control Json
   scanned Int @default(0)
   matched Int @default(0)
   attempted Int @default(0)

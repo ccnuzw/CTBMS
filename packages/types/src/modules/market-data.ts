@@ -210,6 +210,11 @@ export const RetryReconciliationCutoverCompensationBatchSchema = z.object({
   limit: z.coerce.number().int().min(1).max(100).default(20),
   dryRun: z.boolean().default(false),
   idempotencyKey: z.string().trim().min(1).max(80).optional(),
+  maxConcurrency: z.coerce.number().int().min(1).max(10).default(3),
+  perExecutionTimeoutMs: z.coerce.number().int().min(1000).max(120000).default(30000),
+  stopOnFailureCount: z.coerce.number().int().min(1).max(100).optional(),
+  stopOnFailureRate: z.coerce.number().min(0.05).max(1).optional(),
+  minProcessedForFailureRate: z.coerce.number().int().min(1).max(100).default(3),
   disableReconciliationGate: z.boolean().default(true),
   workflowVersionId: z.string().uuid().optional(),
   note: z.string().trim().min(1).max(1000).optional(),
@@ -219,8 +224,15 @@ export const RetryReconciliationCutoverCompensationBatchSchema = z.object({
 export const ListReconciliationCutoverCompensationBatchesQuerySchema = z.object({
   page: z.coerce.number().int().min(1).default(1),
   pageSize: z.coerce.number().int().min(1).max(100).default(20),
-  dryRun: z.boolean().optional(),
+  dryRun: z.coerce.boolean().optional(),
+  replayed: z.coerce.boolean().optional(),
   status: ReconciliationCutoverCompensationBatchStatusEnum.optional(),
+});
+
+export const ReconciliationCutoverCompensationBatchReportFormatEnum = z.enum(['json', 'markdown']);
+
+export const ReconciliationCutoverCompensationBatchReportQuerySchema = z.object({
+  format: ReconciliationCutoverCompensationBatchReportFormatEnum.default('markdown'),
 });
 
 export const ExecuteReconciliationRollbackSchema = z.object({
@@ -463,6 +475,9 @@ export type ReconciliationCutoverExecutionStatus = z.infer<
 export type ReconciliationCutoverCompensationBatchStatus = z.infer<
   typeof ReconciliationCutoverCompensationBatchStatusEnum
 >;
+export type ReconciliationCutoverCompensationBatchReportFormat = z.infer<
+  typeof ReconciliationCutoverCompensationBatchReportFormatEnum
+>;
 export type ListReconciliationCutoverExecutionsQueryDto = z.infer<
   typeof ListReconciliationCutoverExecutionsQuerySchema
 >;
@@ -477,6 +492,9 @@ export type RetryReconciliationCutoverCompensationBatchDto = z.infer<
 >;
 export type ListReconciliationCutoverCompensationBatchesQueryDto = z.infer<
   typeof ListReconciliationCutoverCompensationBatchesQuerySchema
+>;
+export type ReconciliationCutoverCompensationBatchReportQueryDto = z.infer<
+  typeof ReconciliationCutoverCompensationBatchReportQuerySchema
 >;
 export type ExecuteReconciliationRollbackDto = z.infer<typeof ExecuteReconciliationRollbackSchema>;
 export type ReconciliationCutoverRuntimeStatusQueryDto = z.infer<

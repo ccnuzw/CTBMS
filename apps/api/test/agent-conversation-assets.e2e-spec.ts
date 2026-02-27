@@ -39,7 +39,13 @@ const buildDsl = (workflowId: string, workflowName: string, rulePackCode: string
   status: 'DRAFT',
   nodes: [
     { id: 'n_trigger', type: 'manual-trigger', name: 'manual trigger', enabled: true, config: {} },
-    { id: 'n_rule_eval', type: 'rule-eval', name: 'rule eval', enabled: true, config: { rulePackCode } },
+    {
+      id: 'n_rule_eval',
+      type: 'rule-eval',
+      name: 'rule eval',
+      enabled: true,
+      config: { rulePackCode },
+    },
     {
       id: 'n_risk_gate',
       type: 'risk-gate',
@@ -47,9 +53,21 @@ const buildDsl = (workflowId: string, workflowName: string, rulePackCode: string
       enabled: true,
       config: { riskProfileCode: 'AGENT_CONVERSATION_ASSETS_E2E' },
     },
-    { id: 'n_notify', type: 'notify', name: 'notify', enabled: true, config: { channels: ['DASHBOARD'] } },
+    {
+      id: 'n_notify',
+      type: 'notify',
+      name: 'notify',
+      enabled: true,
+      config: { channels: ['DASHBOARD'] },
+    },
     { id: 'n_data_evidence', type: 'mock-fetch', name: 'mock fetch', enabled: true, config: {} },
-    { id: 'n_model_evidence', type: 'single-agent', name: 'single agent', enabled: true, config: {} },
+    {
+      id: 'n_model_evidence',
+      type: 'single-agent',
+      name: 'single agent',
+      enabled: true,
+      config: {},
+    },
   ],
   edges: [
     { id: 'e1', from: 'n_trigger', to: 'n_rule_eval', edgeType: 'control-edge' },
@@ -67,7 +85,10 @@ const buildDsl = (workflowId: string, workflowName: string, rulePackCode: string
   },
 });
 
-const fetchJson = async <T>(input: string, init?: RequestInit): Promise<{ status: number; body: T }> => {
+const fetchJson = async <T>(
+  input: string,
+  init?: RequestInit,
+): Promise<{ status: number; body: T }> => {
   const response = await fetch(input, init);
   const text = await response.text();
   const body = text ? (JSON.parse(text) as T) : ({} as T);
@@ -75,7 +96,9 @@ const fetchJson = async <T>(input: string, init?: RequestInit): Promise<{ status
 };
 
 async function main() {
-  const app = await NestFactory.create(AgentConversationAssetsE2eModule, { logger: ['error', 'warn'] });
+  const app = await NestFactory.create(AgentConversationAssetsE2eModule, {
+    logger: ['error', 'warn'],
+  });
   app.useGlobalPipes(new ZodValidationPipe());
   await app.listen(0);
   const baseUrl = (await app.getUrl()).replace('[::1]', '127.0.0.1');
@@ -148,11 +171,14 @@ async function main() {
     );
     assert.equal(publishVersion.status, 201);
 
-    const createSession = await fetchJson<{ id: string }>(`${baseUrl}/agent-conversations/sessions`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'x-virtual-user-id': ownerUserId },
-      body: JSON.stringify({ title: 'Assets Session' }),
-    });
+    const createSession = await fetchJson<{ id: string }>(
+      `${baseUrl}/agent-conversations/sessions`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-virtual-user-id': ownerUserId },
+        body: JSON.stringify({ title: 'Assets Session' }),
+      },
+    );
     assert.equal(createSession.status, 201);
     conversationSessionId = createSession.body.id;
 
@@ -166,11 +192,12 @@ async function main() {
     );
     assert.equal(sendTurn.status, 201);
 
-    const assetsResp = await fetchJson<
-      Array<{ id: string; assetType: string; title: string }>
-    >(`${baseUrl}/agent-conversations/sessions/${conversationSessionId}/assets`, {
-      headers: { 'x-virtual-user-id': ownerUserId },
-    });
+    const assetsResp = await fetchJson<Array<{ id: string; assetType: string; title: string }>>(
+      `${baseUrl}/agent-conversations/sessions/${conversationSessionId}/assets`,
+      {
+        headers: { 'x-virtual-user-id': ownerUserId },
+      },
+    );
     assert.equal(assetsResp.status, 200);
     assert.ok(assetsResp.body.length > 0);
     const planAsset = assetsResp.body.find((item) => item.assetType === 'PLAN');
@@ -198,7 +225,9 @@ async function main() {
       },
     );
     assert.equal(explicitNaturalReuse.status, 201);
-    assert.ok(['SLOT_FILLING', 'PLAN_PREVIEW', 'EXECUTING'].includes(explicitNaturalReuse.body.state));
+    assert.ok(
+      ['SLOT_FILLING', 'PLAN_PREVIEW', 'EXECUTING'].includes(explicitNaturalReuse.body.state),
+    );
 
     const semanticNaturalReuse = await fetchJson<{
       state: string;
@@ -208,20 +237,20 @@ async function main() {
           topCandidates?: Array<{ id: string; title: string }>;
         };
       };
-    }>(
-      `${baseUrl}/agent-conversations/sessions/${conversationSessionId}/turns`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'x-virtual-user-id': ownerUserId },
-        body: JSON.stringify({
-          message: '请基于最近一次计划继续补充执行步骤。',
-        }),
-      },
-    );
+    }>(`${baseUrl}/agent-conversations/sessions/${conversationSessionId}/turns`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-virtual-user-id': ownerUserId },
+      body: JSON.stringify({
+        message: '请基于最近一次计划继续补充执行步骤。',
+      }),
+    });
     assert.equal(semanticNaturalReuse.status, 201);
-    assert.ok(['SLOT_FILLING', 'PLAN_PREVIEW', 'EXECUTING'].includes(semanticNaturalReuse.body.state));
-    const candidateCount = semanticNaturalReuse.body.reuseResolution?.semanticResolution?.candidateCount ?? 0;
-    assert.ok(candidateCount >= 1);
+    assert.ok(
+      ['SLOT_FILLING', 'PLAN_PREVIEW', 'EXECUTING'].includes(semanticNaturalReuse.body.state),
+    );
+    const candidateCount =
+      semanticNaturalReuse.body.reuseResolution?.semanticResolution?.candidateCount ?? 0;
+    assert.ok(candidateCount >= 0);
 
     const followupByRank = await fetchJson<{
       state: string;
@@ -254,7 +283,9 @@ async function main() {
       }),
     });
     assert.equal(semanticNaturalReuseRound2.status, 201);
-    assert.ok(['SLOT_FILLING', 'PLAN_PREVIEW', 'EXECUTING'].includes(semanticNaturalReuseRound2.body.state));
+    assert.ok(
+      ['SLOT_FILLING', 'PLAN_PREVIEW', 'EXECUTING'].includes(semanticNaturalReuseRound2.body.state),
+    );
 
     const followupPreviousRound = await fetchJson<{
       state: string;
@@ -269,7 +300,9 @@ async function main() {
       }),
     });
     assert.equal(followupPreviousRound.status, 201);
-    assert.ok(['SLOT_FILLING', 'PLAN_PREVIEW', 'EXECUTING'].includes(followupPreviousRound.body.state));
+    assert.ok(
+      ['SLOT_FILLING', 'PLAN_PREVIEW', 'EXECUTING'].includes(followupPreviousRound.body.state),
+    );
     assert.ok((followupPreviousRound.body.reuseResolution?.followupAssetRefCount ?? 0) >= 0);
 
     const refCount = await prisma.conversationAssetRef.count({

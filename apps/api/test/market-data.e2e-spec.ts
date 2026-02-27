@@ -1409,6 +1409,10 @@ async function main() {
       ),
     );
 
+    const compensationBatchIdempotencySuffix = Date.now().toString(36);
+    const cutoverCompensateBatchDryRunKey = `market-data-batch-dry-run-${compensationBatchIdempotencySuffix}`;
+    const cutoverCompensateBatchExecuteKey = `market-data-batch-execute-${compensationBatchIdempotencySuffix}`;
+
     const cutoverCompensateBatchDryRun = await fetchJson<{
       success: boolean;
       data: {
@@ -1418,6 +1422,13 @@ async function main() {
         dryRun: boolean;
         idempotencyKey?: string;
         requestedLimit: number;
+        control: {
+          maxConcurrency: number;
+          perExecutionTimeoutMs: number;
+          stopOnFailureCount?: number;
+          stopOnFailureRate?: number;
+          minProcessedForFailureRate: number;
+        };
         scanned: number;
         matched: number;
         attempted: number;
@@ -1425,6 +1436,9 @@ async function main() {
           compensated: number;
           failed: number;
           skipped: number;
+          processed: number;
+          breakerTriggered: boolean;
+          breakerReason?: string;
         };
         results: Array<{
           executionId: string;
@@ -1446,7 +1460,9 @@ async function main() {
         datasets: ['SPOT_PRICE'],
         limit: 10,
         dryRun: true,
-        idempotencyKey: 'market-data-batch-dry-run',
+        idempotencyKey: cutoverCompensateBatchDryRunKey,
+        maxConcurrency: 2,
+        perExecutionTimeoutMs: 10000,
         disableReconciliationGate: true,
       }),
     });
@@ -1458,65 +1474,153 @@ async function main() {
     assert.equal(cutoverCompensateBatchDryRun.body.data.dryRun, true);
     assert.equal(
       cutoverCompensateBatchDryRun.body.data.idempotencyKey,
-      'market-data-batch-dry-run',
+      cutoverCompensateBatchDryRunKey,
     );
     assert.equal(cutoverCompensateBatchDryRun.body.data.attempted, 0);
+    assert.equal(cutoverCompensateBatchDryRun.body.data.control.maxConcurrency, 2);
+    assert.equal(cutoverCompensateBatchDryRun.body.data.control.perExecutionTimeoutMs, 10000);
+    assert.equal(cutoverCompensateBatchDryRun.body.data.summary.processed, 0);
+    assert.equal(cutoverCompensateBatchDryRun.body.data.summary.breakerTriggered, false);
     assert.ok(cutoverCompensateBatchDryRun.body.data.matched >= 1);
 
-    const cutoverCompensateBatchExecute = await fetchJson<{
-      success: boolean;
-      data: {
-        batchId: string;
-        status: string;
-        replayed: boolean;
-        dryRun: boolean;
-        idempotencyKey?: string;
-        requestedLimit: number;
-        scanned: number;
-        matched: number;
-        attempted: number;
-        summary: {
-          compensated: number;
-          failed: number;
-          skipped: number;
+    const cutoverCompensateBatchExecuteBody = {
+      windowDays: 7,
+      datasets: ['SPOT_PRICE'],
+      limit: 10,
+      dryRun: false,
+      idempotencyKey: cutoverCompensateBatchExecuteKey,
+      maxConcurrency: 3,
+      perExecutionTimeoutMs: 15000,
+      stopOnFailureCount: 5,
+      stopOnFailureRate: 0.8,
+      minProcessedForFailureRate: 1,
+      disableReconciliationGate: true,
+      reason: 'batch_compensation_retry',
+    };
+
+    const [cutoverCompensateBatchExecuteA, cutoverCompensateBatchExecuteB] = await Promise.all([
+      fetchJson<{
+        success: boolean;
+        data: {
+          batchId: string;
+          status: string;
+          replayed: boolean;
+          dryRun: boolean;
+          idempotencyKey?: string;
+          requestedLimit: number;
+          control: {
+            maxConcurrency: number;
+            perExecutionTimeoutMs: number;
+            stopOnFailureCount?: number;
+            stopOnFailureRate?: number;
+            minProcessedForFailureRate: number;
+          };
+          scanned: number;
+          matched: number;
+          attempted: number;
+          summary: {
+            compensated: number;
+            failed: number;
+            skipped: number;
+            processed: number;
+            breakerTriggered: boolean;
+            breakerReason?: string;
+          };
+          results: Array<{
+            executionId: string;
+            compensated: boolean;
+            compensationExecutionId?: string;
+            error?: string;
+            reason?: string;
+          }>;
         };
-        results: Array<{
-          executionId: string;
-          compensated: boolean;
-          compensationExecutionId?: string;
-          error?: string;
-          reason?: string;
-        }>;
-      };
-      traceId: string;
-      ts: string;
-    }>(`${baseUrl}/market-data/reconciliation/cutover/executions/compensate-batch`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-virtual-user-id': 'admin-user',
-      },
-      body: JSON.stringify({
-        windowDays: 7,
-        datasets: ['SPOT_PRICE'],
-        limit: 10,
-        dryRun: false,
-        idempotencyKey: 'market-data-batch-execute',
-        disableReconciliationGate: true,
-        reason: 'batch_compensation_retry',
+        traceId: string;
+        ts: string;
+      }>(`${baseUrl}/market-data/reconciliation/cutover/executions/compensate-batch`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-virtual-user-id': 'admin-user',
+        },
+        body: JSON.stringify(cutoverCompensateBatchExecuteBody),
       }),
-    });
-    assert.equal(cutoverCompensateBatchExecute.status, 201);
-    assert.equal(cutoverCompensateBatchExecute.body.success, true);
+      fetchJson<{
+        success: boolean;
+        data: {
+          batchId: string;
+          status: string;
+          replayed: boolean;
+          dryRun: boolean;
+          idempotencyKey?: string;
+          requestedLimit: number;
+          control: {
+            maxConcurrency: number;
+            perExecutionTimeoutMs: number;
+            stopOnFailureCount?: number;
+            stopOnFailureRate?: number;
+            minProcessedForFailureRate: number;
+          };
+          scanned: number;
+          matched: number;
+          attempted: number;
+          summary: {
+            compensated: number;
+            failed: number;
+            skipped: number;
+            processed: number;
+            breakerTriggered: boolean;
+            breakerReason?: string;
+          };
+          results: Array<{
+            executionId: string;
+            compensated: boolean;
+            compensationExecutionId?: string;
+            error?: string;
+            reason?: string;
+          }>;
+        };
+        traceId: string;
+        ts: string;
+      }>(`${baseUrl}/market-data/reconciliation/cutover/executions/compensate-batch`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-virtual-user-id': 'admin-user',
+        },
+        body: JSON.stringify(cutoverCompensateBatchExecuteBody),
+      }),
+    ]);
+
+    assert.equal(cutoverCompensateBatchExecuteA.status, 201);
+    assert.equal(cutoverCompensateBatchExecuteB.status, 201);
+    assert.equal(cutoverCompensateBatchExecuteA.body.success, true);
+    assert.equal(cutoverCompensateBatchExecuteB.body.success, true);
+    assert.equal(
+      cutoverCompensateBatchExecuteA.body.data.batchId,
+      cutoverCompensateBatchExecuteB.body.data.batchId,
+    );
+
+    const cutoverCompensateBatchExecute = cutoverCompensateBatchExecuteA.body.data.replayed
+      ? cutoverCompensateBatchExecuteB
+      : cutoverCompensateBatchExecuteA;
+    const cutoverCompensateBatchExecuteReplayInFlight = cutoverCompensateBatchExecuteA.body.data
+      .replayed
+      ? cutoverCompensateBatchExecuteA
+      : cutoverCompensateBatchExecuteB;
+
+    assert.equal(cutoverCompensateBatchExecuteReplayInFlight.body.data.replayed, true);
     assert.ok(cutoverCompensateBatchExecute.body.data.batchId.length > 0);
     assert.equal(cutoverCompensateBatchExecute.body.data.replayed, false);
     assert.equal(cutoverCompensateBatchExecute.body.data.dryRun, false);
     assert.equal(
       cutoverCompensateBatchExecute.body.data.idempotencyKey,
-      'market-data-batch-execute',
+      cutoverCompensateBatchExecuteKey,
     );
     assert.ok(cutoverCompensateBatchExecute.body.data.attempted >= 1);
+    assert.equal(cutoverCompensateBatchExecute.body.data.control.maxConcurrency, 3);
+    assert.equal(cutoverCompensateBatchExecute.body.data.control.perExecutionTimeoutMs, 15000);
     assert.ok(cutoverCompensateBatchExecute.body.data.summary.compensated >= 1);
+    assert.ok(cutoverCompensateBatchExecute.body.data.summary.processed >= 1);
     assert.ok(
       cutoverCompensateBatchExecute.body.data.results.some((item) => item.compensated === true),
     );
@@ -1533,6 +1637,9 @@ async function main() {
           compensated: number;
           failed: number;
           skipped: number;
+          processed: number;
+          breakerTriggered: boolean;
+          breakerReason?: string;
         };
       };
       traceId: string;
@@ -1548,7 +1655,7 @@ async function main() {
         datasets: ['SPOT_PRICE'],
         limit: 10,
         dryRun: false,
-        idempotencyKey: 'market-data-batch-execute',
+        idempotencyKey: cutoverCompensateBatchExecuteKey,
         disableReconciliationGate: true,
         reason: 'batch_compensation_retry',
       }),
@@ -1559,6 +1666,32 @@ async function main() {
     assert.equal(
       cutoverCompensateBatchReplay.body.data.batchId,
       cutoverCompensateBatchExecute.body.data.batchId,
+    );
+
+    const compensationBatchListReplayedOnly = await fetchJson<{
+      success: boolean;
+      data: {
+        total: number;
+        items: Array<{
+          batchId: string;
+          replayed: boolean;
+        }>;
+      };
+      traceId: string;
+      ts: string;
+    }>(
+      `${baseUrl}/market-data/reconciliation/cutover/executions/compensation-batches?page=1&pageSize=20&replayed=true`,
+      {
+        method: 'GET',
+        headers: {
+          'x-virtual-user-id': 'admin-user',
+        },
+      },
+    );
+    assert.equal(compensationBatchListReplayedOnly.status, 200);
+    assert.equal(compensationBatchListReplayedOnly.body.success, true);
+    assert.ok(
+      compensationBatchListReplayedOnly.body.data.items.every((item) => item.replayed === true),
     );
 
     const compensationBatchList = await fetchJson<{
@@ -1605,6 +1738,14 @@ async function main() {
         replayed: boolean;
         idempotencyKey?: string;
         attempted: number;
+        summary: {
+          compensated: number;
+          failed: number;
+          skipped: number;
+          processed: number;
+          breakerTriggered: boolean;
+          breakerReason?: string;
+        };
         results: Array<{
           executionId: string;
           compensated: boolean;
@@ -1627,8 +1768,218 @@ async function main() {
       compensationBatchDetail.body.data.batchId,
       cutoverCompensateBatchExecute.body.data.batchId,
     );
-    assert.equal(compensationBatchDetail.body.data.idempotencyKey, 'market-data-batch-execute');
+    assert.equal(
+      compensationBatchDetail.body.data.idempotencyKey,
+      cutoverCompensateBatchExecuteKey,
+    );
     assert.ok(compensationBatchDetail.body.data.results.length >= 1);
+
+    const compensationBatchReportJson = await fetchJson<{
+      success: boolean;
+      data: {
+        batchId: string;
+        format: string;
+        fileName: string;
+        generatedAt: string;
+        storage: string;
+        payload: {
+          batchId: string;
+          summary: {
+            compensated: number;
+          };
+        };
+      };
+      traceId: string;
+      ts: string;
+    }>(
+      `${baseUrl}/market-data/reconciliation/cutover/executions/compensation-batches/${cutoverCompensateBatchExecute.body.data.batchId}/report?format=json`,
+      {
+        method: 'GET',
+        headers: {
+          'x-virtual-user-id': 'admin-user',
+        },
+      },
+    );
+    assert.equal(compensationBatchReportJson.status, 200);
+    assert.equal(compensationBatchReportJson.body.success, true);
+    assert.equal(compensationBatchReportJson.body.data.format, 'json');
+    assert.ok(compensationBatchReportJson.body.data.fileName.endsWith('.json'));
+    assert.equal(
+      compensationBatchReportJson.body.data.payload.batchId,
+      cutoverCompensateBatchExecute.body.data.batchId,
+    );
+
+    const compensationBatchReportMarkdown = await fetchJson<{
+      success: boolean;
+      data: {
+        batchId: string;
+        format: string;
+        fileName: string;
+        generatedAt: string;
+        storage: string;
+        payload: string;
+      };
+      traceId: string;
+      ts: string;
+    }>(
+      `${baseUrl}/market-data/reconciliation/cutover/executions/compensation-batches/${cutoverCompensateBatchExecute.body.data.batchId}/report?format=markdown`,
+      {
+        method: 'GET',
+        headers: {
+          'x-virtual-user-id': 'admin-user',
+        },
+      },
+    );
+    assert.equal(compensationBatchReportMarkdown.status, 200);
+    assert.equal(compensationBatchReportMarkdown.body.success, true);
+    assert.equal(compensationBatchReportMarkdown.body.data.format, 'markdown');
+    assert.ok(compensationBatchReportMarkdown.body.data.fileName.endsWith('.md'));
+    assert.ok(
+      compensationBatchReportMarkdown.body.data.payload.includes(
+        'Reconciliation Cutover Compensation Batch Report',
+      ),
+    );
+    assert.ok(
+      compensationBatchReportMarkdown.body.data.payload.includes(
+        cutoverCompensateBatchExecute.body.data.batchId,
+      ),
+    );
+
+    const envBackup = {
+      enabled: process.env.MARKET_DATA_CUTOVER_COMPENSATION_AUTORUN_ENABLED,
+      scope: process.env.MARKET_DATA_CUTOVER_COMPENSATION_AUTORUN_SCOPE,
+      userId: process.env.MARKET_DATA_CUTOVER_COMPENSATION_AUTORUN_USER_ID,
+      windowDays: process.env.MARKET_DATA_CUTOVER_COMPENSATION_AUTORUN_WINDOW_DAYS,
+      limit: process.env.MARKET_DATA_CUTOVER_COMPENSATION_AUTORUN_LIMIT,
+      datasets: process.env.MARKET_DATA_CUTOVER_COMPENSATION_AUTORUN_DATASETS,
+      maxConcurrency: process.env.MARKET_DATA_CUTOVER_COMPENSATION_AUTORUN_MAX_CONCURRENCY,
+      timeoutMs: process.env.MARKET_DATA_CUTOVER_COMPENSATION_AUTORUN_TIMEOUT_MS,
+      slot: process.env.MARKET_DATA_CUTOVER_COMPENSATION_AUTORUN_IDEMPOTENCY_SLOT_MINUTES,
+    };
+
+    try {
+      const originalCreateReconciliationCutoverDecisionForAutoSweep =
+        marketDataService.createReconciliationCutoverDecision.bind(marketDataService);
+      (
+        marketDataService as {
+          createReconciliationCutoverDecision: typeof originalCreateReconciliationCutoverDecisionForAutoSweep;
+        }
+      ).createReconciliationCutoverDecision = (async () => {
+        throw new Error('forced_autosweep_scope_pending');
+      }) as typeof originalCreateReconciliationCutoverDecisionForAutoSweep;
+
+      try {
+        await assert.rejects(
+          marketDataService.executeReconciliationCutoverAutopilot('ops-user', {
+            windowDays: 7,
+            targetCoverageRate: 0.9,
+            datasets: ['SPOT_PRICE'] as Array<'SPOT_PRICE' | 'FUTURES_QUOTE' | 'MARKET_EVENT'>,
+            reportFormat: 'markdown',
+            onRejectedAction: 'ROLLBACK',
+            disableReconciliationGate: true,
+            dryRun: false,
+            note: 'forced autosweep scope pending execution',
+          }),
+          /forced_autosweep_scope_pending/,
+        );
+      } finally {
+        (
+          marketDataService as {
+            createReconciliationCutoverDecision: typeof originalCreateReconciliationCutoverDecisionForAutoSweep;
+          }
+        ).createReconciliationCutoverDecision =
+          originalCreateReconciliationCutoverDecisionForAutoSweep;
+      }
+
+      process.env.MARKET_DATA_CUTOVER_COMPENSATION_AUTORUN_ENABLED = 'true';
+      process.env.MARKET_DATA_CUTOVER_COMPENSATION_AUTORUN_SCOPE = 'USER';
+      process.env.MARKET_DATA_CUTOVER_COMPENSATION_AUTORUN_USER_ID = 'nobody-user';
+      process.env.MARKET_DATA_CUTOVER_COMPENSATION_AUTORUN_WINDOW_DAYS = '7';
+      process.env.MARKET_DATA_CUTOVER_COMPENSATION_AUTORUN_LIMIT = '5';
+      process.env.MARKET_DATA_CUTOVER_COMPENSATION_AUTORUN_DATASETS = 'SPOT_PRICE';
+      process.env.MARKET_DATA_CUTOVER_COMPENSATION_AUTORUN_MAX_CONCURRENCY = '2';
+      process.env.MARKET_DATA_CUTOVER_COMPENSATION_AUTORUN_TIMEOUT_MS = '8000';
+      process.env.MARKET_DATA_CUTOVER_COMPENSATION_AUTORUN_IDEMPOTENCY_SLOT_MINUTES = '60';
+
+      const autoSweepUserScope =
+        await marketDataService.runReconciliationCutoverCompensationSweep();
+      assert.equal(autoSweepUserScope.enabled, true);
+      assert.equal(autoSweepUserScope.scope, 'USER');
+      assert.equal(autoSweepUserScope.triggered, false);
+      assert.equal(autoSweepUserScope.reason, 'auto_compensation_user_scope_no_pending_execution');
+
+      process.env.MARKET_DATA_CUTOVER_COMPENSATION_AUTORUN_SCOPE = 'GLOBAL';
+      process.env.MARKET_DATA_CUTOVER_COMPENSATION_AUTORUN_USER_ID = 'admin-user';
+
+      const autoSweepGlobalFirst =
+        await marketDataService.runReconciliationCutoverCompensationSweep();
+      assert.equal(autoSweepGlobalFirst.enabled, true);
+      assert.equal(autoSweepGlobalFirst.scope, 'GLOBAL');
+      assert.equal(autoSweepGlobalFirst.triggered, true);
+      assert.ok((autoSweepGlobalFirst.batchId ?? '').length > 0);
+      assert.ok((autoSweepGlobalFirst.targetUserCount ?? 0) >= 1);
+      assert.equal(autoSweepGlobalFirst.settings?.maxConcurrency, 2);
+      assert.equal(autoSweepGlobalFirst.settings?.perExecutionTimeoutMs, 8000);
+      assert.ok((autoSweepGlobalFirst.runs ?? []).some((item) => item.userId === 'ops-user'));
+
+      const autoSweepGlobalSecond =
+        await marketDataService.runReconciliationCutoverCompensationSweep();
+      assert.equal(autoSweepGlobalSecond.enabled, true);
+      assert.equal(autoSweepGlobalSecond.scope, 'GLOBAL');
+      assert.ok(
+        autoSweepGlobalSecond.reason === 'auto_compensation_no_pending_execution' ||
+          autoSweepGlobalSecond.reason === 'auto_compensation_executed' ||
+          autoSweepGlobalSecond.reason === 'auto_compensation_replayed',
+      );
+    } finally {
+      if (envBackup.enabled === undefined) {
+        delete process.env.MARKET_DATA_CUTOVER_COMPENSATION_AUTORUN_ENABLED;
+      } else {
+        process.env.MARKET_DATA_CUTOVER_COMPENSATION_AUTORUN_ENABLED = envBackup.enabled;
+      }
+      if (envBackup.scope === undefined) {
+        delete process.env.MARKET_DATA_CUTOVER_COMPENSATION_AUTORUN_SCOPE;
+      } else {
+        process.env.MARKET_DATA_CUTOVER_COMPENSATION_AUTORUN_SCOPE = envBackup.scope;
+      }
+      if (envBackup.userId === undefined) {
+        delete process.env.MARKET_DATA_CUTOVER_COMPENSATION_AUTORUN_USER_ID;
+      } else {
+        process.env.MARKET_DATA_CUTOVER_COMPENSATION_AUTORUN_USER_ID = envBackup.userId;
+      }
+      if (envBackup.windowDays === undefined) {
+        delete process.env.MARKET_DATA_CUTOVER_COMPENSATION_AUTORUN_WINDOW_DAYS;
+      } else {
+        process.env.MARKET_DATA_CUTOVER_COMPENSATION_AUTORUN_WINDOW_DAYS = envBackup.windowDays;
+      }
+      if (envBackup.limit === undefined) {
+        delete process.env.MARKET_DATA_CUTOVER_COMPENSATION_AUTORUN_LIMIT;
+      } else {
+        process.env.MARKET_DATA_CUTOVER_COMPENSATION_AUTORUN_LIMIT = envBackup.limit;
+      }
+      if (envBackup.datasets === undefined) {
+        delete process.env.MARKET_DATA_CUTOVER_COMPENSATION_AUTORUN_DATASETS;
+      } else {
+        process.env.MARKET_DATA_CUTOVER_COMPENSATION_AUTORUN_DATASETS = envBackup.datasets;
+      }
+      if (envBackup.maxConcurrency === undefined) {
+        delete process.env.MARKET_DATA_CUTOVER_COMPENSATION_AUTORUN_MAX_CONCURRENCY;
+      } else {
+        process.env.MARKET_DATA_CUTOVER_COMPENSATION_AUTORUN_MAX_CONCURRENCY =
+          envBackup.maxConcurrency;
+      }
+      if (envBackup.timeoutMs === undefined) {
+        delete process.env.MARKET_DATA_CUTOVER_COMPENSATION_AUTORUN_TIMEOUT_MS;
+      } else {
+        process.env.MARKET_DATA_CUTOVER_COMPENSATION_AUTORUN_TIMEOUT_MS = envBackup.timeoutMs;
+      }
+      if (envBackup.slot === undefined) {
+        delete process.env.MARKET_DATA_CUTOVER_COMPENSATION_AUTORUN_IDEMPOTENCY_SLOT_MINUTES;
+      } else {
+        process.env.MARKET_DATA_CUTOVER_COMPENSATION_AUTORUN_IDEMPOTENCY_SLOT_MINUTES =
+          envBackup.slot;
+      }
+    }
 
     const failedExecutionAfterBatchCompensation = await fetchJson<{
       success: boolean;

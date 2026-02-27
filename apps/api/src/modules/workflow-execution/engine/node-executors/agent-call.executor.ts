@@ -41,7 +41,7 @@ export class AgentCallNodeExecutor implements WorkflowNodeExecutor {
     private readonly outputSchemaRegistryService: OutputSchemaRegistryService,
     private readonly configService: ConfigService,
     private readonly toolRegistry: ToolHandlerRegistryService,
-  ) {}
+  ) { }
 
   supports(node: WorkflowNode): boolean {
     return node.type === 'agent-call' || node.type === 'single-agent';
@@ -152,6 +152,7 @@ export class AgentCallNodeExecutor implements WorkflowNodeExecutor {
       if ((tools?.length ?? 0) === 0) tools = undefined;
     }
 
+    const pathOverrides = this.toRecord(modelConfig.pathOverrides);
     const requestOptions: AIRequestOptions = {
       modelName: modelConfig.modelName,
       apiKey,
@@ -159,7 +160,8 @@ export class AgentCallNodeExecutor implements WorkflowNodeExecutor {
       authType: (modelConfig.authType as AIRequestOptions['authType']) ?? undefined,
       headers: this.toRecord(modelConfig.headers),
       queryParams: this.toRecord(modelConfig.queryParams),
-      pathOverrides: this.toRecord(modelConfig.pathOverrides),
+      pathOverrides,
+      wireApi: pathOverrides?.['wireApi'], // 提取 wireApi 协议标识（responses | chat）
       temperature: modelConfig.temperature,
       maxTokens: modelConfig.maxTokens,
       topP: modelConfig.topP ?? undefined,

@@ -135,10 +135,10 @@ async function main() {
         },
         {
           id: 'n_fetch',
-          type: 'market-data-fetch',
+          type: 'mock-fetch',
           name: 'market fetch',
           enabled: true,
-          config: { dataSourceCode: 'MOCK_SOURCE' },
+          config: {},
         },
         {
           id: 'n_rule',

@@ -28,7 +28,7 @@ class WorkflowDebateReplayE2eModule implements NestModule {
 
 const prisma = new PrismaClient();
 
-const buildLinearDsl = (workflowId: string, workflowName: string) => ({
+const buildLinearDsl = (workflowId: string, workflowName: string, agentCode: string) => ({
   workflowId,
   name: workflowName,
   mode: 'LINEAR',
@@ -67,7 +67,7 @@ const buildLinearDsl = (workflowId: string, workflowName: string) => ({
       name: 'agent call',
       enabled: true,
       config: {
-        agentCode: 'MOCK_AGENT',
+        agentCode,
       },
     },
     {
@@ -130,6 +130,7 @@ async function main() {
   const workflowId = `${token}_workflow`;
   const workflowName = `workflow debate replay ${token}`;
   const rulePackCode = `${token}_RULE_PACK`;
+  const agentCode = `${token}_AGENT`;
   let definitionId = '';
   let executionId = '';
 
@@ -141,6 +142,21 @@ async function main() {
         ownerUserId,
         templateSource: 'PRIVATE',
         version: 2,
+      },
+    });
+
+    await prisma.agentProfile.create({
+      data: {
+        agentCode,
+        agentName: `${agentCode}_name`,
+        roleType: 'ANALYST',
+        modelConfigKey: 'DEFAULT',
+        agentPromptCode: 'PROMPT_DEFAULT',
+        outputSchemaCode: 'agent_output_v1',
+        ownerUserId,
+        templateSource: 'PRIVATE',
+        version: 2,
+        isActive: true,
       },
     });
 
@@ -160,8 +176,8 @@ async function main() {
         usageMethod: 'COPILOT',
         templateSource: 'PRIVATE',
         dslSnapshot: {
-          ...buildLinearDsl(workflowId, workflowName),
-          nodes: buildLinearDsl(workflowId, workflowName).nodes.map((node) =>
+          ...buildLinearDsl(workflowId, workflowName, agentCode),
+          nodes: buildLinearDsl(workflowId, workflowName, agentCode).nodes.map((node) =>
             node.id === 'n_rule_eval'
               ? {
                   ...node,
@@ -326,6 +342,7 @@ async function main() {
     }
 
     await prisma.decisionRulePack.deleteMany({ where: { rulePackCode } }).catch(() => undefined);
+    await prisma.agentProfile.deleteMany({ where: { agentCode } }).catch(() => undefined);
 
     await app.close();
     await prisma.$disconnect();
