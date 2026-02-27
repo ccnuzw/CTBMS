@@ -13,13 +13,20 @@ import type { Request as ExpressRequest } from 'express';
 import { randomUUID } from 'node:crypto';
 import {
   CancelReconciliationJobRequest,
+  CreateReconciliationCutoverAutopilotRequest,
+  CreateReconciliationCutoverDecisionRequest,
+  CreateReconciliationM1ReadinessReportSnapshotRequest,
   CreateReconciliationRollbackDrillRequest,
   CreateReconciliationJobRequest,
+  ExecuteReconciliationRollbackRequest,
   EvaluateReconciliationGateRequest,
+  ListReconciliationCutoverDecisionsQueryRequest,
   ListReconciliationJobsRequest,
+  ListReconciliationM1ReadinessReportSnapshotsQueryRequest,
   ReconciliationDailyMetricsQueryRequest,
   ReconciliationMetricsSnapshotRequest,
   ReconciliationReadCoverageQueryRequest,
+  ReconciliationCutoverRuntimeStatusQueryRequest,
   ListReconciliationRollbackDrillsQueryRequest,
   ReconciliationM1ReadinessQueryRequest,
   ReconciliationM1ReadinessReportQueryRequest,
@@ -238,6 +245,126 @@ export class MarketDataController {
       targetCoverageRate: query.targetCoverageRate,
       datasets: query.datasets,
     });
+    return this.success(req, data);
+  }
+
+  @Post('reconciliation/metrics/m1-readiness/report/snapshots')
+  async createReconciliationM1ReadinessReportSnapshot(
+    @Body() dto: CreateReconciliationM1ReadinessReportSnapshotRequest,
+    @Request() req: AuthRequest,
+  ) {
+    const data = await this.marketDataService.createReconciliationM1ReadinessReportSnapshot(
+      this.getUserId(req),
+      dto,
+    );
+    return this.success(req, data);
+  }
+
+  @Get('reconciliation/metrics/m1-readiness/report/snapshots')
+  async listReconciliationM1ReadinessReportSnapshots(
+    @Query() query: ListReconciliationM1ReadinessReportSnapshotsQueryRequest,
+    @Request() req: AuthRequest,
+  ) {
+    const data = await this.marketDataService.listReconciliationM1ReadinessReportSnapshots(
+      this.getUserId(req),
+      query,
+    );
+    return this.success(req, data);
+  }
+
+  @Get('reconciliation/metrics/m1-readiness/report/snapshots/:snapshotId')
+  async getReconciliationM1ReadinessReportSnapshot(
+    @Param('snapshotId', ParseUUIDPipe) snapshotId: string,
+    @Request() req: AuthRequest,
+  ) {
+    const data = await this.marketDataService.getReconciliationM1ReadinessReportSnapshot(
+      this.getUserId(req),
+      snapshotId,
+    );
+    return this.success(req, data);
+  }
+
+  @Post('reconciliation/cutover/decisions')
+  async createReconciliationCutoverDecision(
+    @Body() dto: CreateReconciliationCutoverDecisionRequest,
+    @Request() req: AuthRequest,
+  ) {
+    const data = await this.marketDataService.createReconciliationCutoverDecision(
+      this.getUserId(req),
+      dto,
+    );
+    return this.success(req, data);
+  }
+
+  @Post('reconciliation/cutover/execute')
+  async executeReconciliationCutover(
+    @Body() dto: CreateReconciliationCutoverDecisionRequest,
+    @Request() req: AuthRequest,
+  ) {
+    const data = await this.marketDataService.executeReconciliationCutover(
+      this.getUserId(req),
+      dto,
+    );
+    return this.success(req, data);
+  }
+
+  @Post('reconciliation/cutover/autopilot')
+  async executeReconciliationCutoverAutopilot(
+    @Body() dto: CreateReconciliationCutoverAutopilotRequest,
+    @Request() req: AuthRequest,
+  ) {
+    const data = await this.marketDataService.executeReconciliationCutoverAutopilot(
+      this.getUserId(req),
+      dto,
+    );
+    return this.success(req, data);
+  }
+
+  @Post('reconciliation/cutover/rollback')
+  async executeReconciliationRollback(
+    @Body() dto: ExecuteReconciliationRollbackRequest,
+    @Request() req: AuthRequest,
+  ) {
+    const data = await this.marketDataService.executeReconciliationRollback(
+      this.getUserId(req),
+      dto,
+    );
+    return this.success(req, data);
+  }
+
+  @Get('reconciliation/cutover/runtime-status')
+  async getReconciliationCutoverRuntimeStatus(
+    @Query() query: ReconciliationCutoverRuntimeStatusQueryRequest,
+    @Request() req: AuthRequest,
+  ) {
+    const data = await this.marketDataService.getReconciliationCutoverRuntimeStatus(
+      this.getUserId(req),
+      query,
+    );
+    return this.success(req, data);
+  }
+
+  @Get('reconciliation/cutover/decisions')
+  async listReconciliationCutoverDecisions(
+    @Query() query: ListReconciliationCutoverDecisionsQueryRequest,
+    @Request() req: AuthRequest,
+  ) {
+    const data = await this.marketDataService.listReconciliationCutoverDecisions(
+      this.getUserId(req),
+      query,
+    );
+    return this.success(req, data);
+  }
+
+  @Get('reconciliation/cutover/decisions/:decisionId')
+  async getReconciliationCutoverDecision(
+    @Param('decisionId', ParseUUIDPipe) decisionId: string,
+    @Request() req: AuthRequest,
+  ) {
+    const data = await this.marketDataService.getReconciliationCutoverDecision(
+      this.getUserId(req),
+      decisionId,
+    );
     return this.success(req, data);
   }
 

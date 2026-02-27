@@ -795,6 +795,353 @@
 }
 ```
 
+### 3.5.15 M1 验收就绪报告快照
+
+- 创建快照：`POST /market-data/reconciliation/metrics/m1-readiness/report/snapshots`
+
+请求：
+
+```json
+{
+  "format": "markdown",
+  "windowDays": 7,
+  "targetCoverageRate": 0.9,
+  "datasets": ["SPOT_PRICE"]
+}
+```
+
+响应：
+
+```json
+{
+  "snapshotId": "2f564dd4-09e1-4d32-a6be-9f70094f75b2",
+  "format": "markdown",
+  "fileName": "reconciliation-m1-readiness-2026-02-27.md",
+  "windowDays": 7,
+  "targetCoverageRate": 0.9,
+  "datasets": ["SPOT_PRICE"],
+  "readiness": {
+    "summary": {
+      "ready": true
+    }
+  },
+  "storage": "database",
+  "createdAt": "2026-02-27T11:10:00.000Z"
+}
+```
+
+- 列表：`GET /market-data/reconciliation/metrics/m1-readiness/report/snapshots?page=1&pageSize=20&format=markdown`
+
+响应：
+
+```json
+{
+  "page": 1,
+  "pageSize": 20,
+  "total": 2,
+  "totalPages": 1,
+  "storage": "database",
+  "items": [
+    {
+      "snapshotId": "2f564dd4-09e1-4d32-a6be-9f70094f75b2",
+      "format": "markdown",
+      "fileName": "reconciliation-m1-readiness-2026-02-27.md",
+      "windowDays": 7,
+      "targetCoverageRate": 0.9,
+      "datasets": ["SPOT_PRICE"],
+      "summary": {
+        "ready": true
+      },
+      "createdAt": "2026-02-27T11:10:00.000Z"
+    }
+  ]
+}
+```
+
+- 详情：`GET /market-data/reconciliation/metrics/m1-readiness/report/snapshots/{snapshotId}`
+
+说明：
+
+- 快照是验收证据固化对象，用于追溯某次 gate 判定时刻的完整上下文。
+
+### 3.5.16 M1 切流决策记录
+
+- 创建决策：`POST /market-data/reconciliation/cutover/decisions`
+
+请求：
+
+```json
+{
+  "windowDays": 7,
+  "targetCoverageRate": 0.9,
+  "datasets": ["SPOT_PRICE"],
+  "reportFormat": "markdown",
+  "note": "M1 gate decision"
+}
+```
+
+响应：
+
+```json
+{
+  "decisionId": "8f901ce2-7094-4f4d-940d-6e3fcb7cd95c",
+  "status": "APPROVED",
+  "reasonCodes": [],
+  "windowDays": 7,
+  "targetCoverageRate": 0.9,
+  "datasets": ["SPOT_PRICE"],
+  "reportFormat": "markdown",
+  "reportSnapshotId": "2f564dd4-09e1-4d32-a6be-9f70094f75b2",
+  "readinessSummary": {
+    "meetsReconciliationTarget": true,
+    "meetsCoverageTarget": true,
+    "hasRecentRollbackDrillEvidence": true,
+    "ready": true
+  },
+  "storage": "database",
+  "createdAt": "2026-02-27T11:12:00.000Z"
+}
+```
+
+- 列表：`GET /market-data/reconciliation/cutover/decisions?page=1&pageSize=20&status=APPROVED`
+- 详情：`GET /market-data/reconciliation/cutover/decisions/{decisionId}`
+
+说明：
+
+- `status=APPROVED` 表示当前验收门已满足，可执行切流；
+- `status=REJECTED` 时 `reasonCodes` 提供阻断原因：
+  - `reconciliation_target_not_met`
+  - `coverage_target_not_met`
+  - `rollback_drill_evidence_missing`
+
+### 3.5.17 执行切流门控
+
+- `POST /market-data/reconciliation/cutover/execute`
+
+请求：
+
+```json
+{
+  "windowDays": 7,
+  "targetCoverageRate": 0.9,
+  "datasets": ["SPOT_PRICE"],
+  "reportFormat": "markdown",
+  "note": "execute cutover gate"
+}
+```
+
+响应：
+
+```json
+{
+  "executedAt": "2026-02-27T11:18:00.000Z",
+  "decision": {
+    "decisionId": "a8d7eae9-7f5d-4f4e-b64e-8a1b3fb6f1bd",
+    "status": "APPROVED"
+  },
+  "applied": true,
+  "config": {
+    "standardizedRead": {
+      "before": false,
+      "after": true
+    },
+    "reconciliationGate": {
+      "before": false,
+      "after": true
+    }
+  }
+}
+```
+
+说明：
+
+- `decision.status=APPROVED` 时自动执行切流：
+  - `workflow standardized read mode = true`
+  - `workflow reconciliation gate enabled = true`
+- `decision.status=REJECTED` 时不改动运行开关（`applied=false`）。
+
+### 3.5.18 执行回滚门控
+
+- `POST /market-data/reconciliation/cutover/rollback`
+
+请求：
+
+```json
+{
+  "datasets": ["SPOT_PRICE"],
+  "disableReconciliationGate": true,
+  "note": "execute rollback gate",
+  "reason": "stability drill"
+}
+```
+
+响应：
+
+```json
+{
+  "executedAt": "2026-02-27T11:26:00.000Z",
+  "applied": true,
+  "datasets": ["SPOT_PRICE"],
+  "config": {
+    "standardizedRead": {
+      "before": true,
+      "after": false
+    },
+    "reconciliationGate": {
+      "before": true,
+      "after": false
+    }
+  },
+  "rollbackDrills": [
+    {
+      "drillId": "24e5471a-c2ab-4f7d-b75a-8c3b4f9c26f8",
+      "dataset": "SPOT_PRICE",
+      "status": "PASSED",
+      "storage": "database",
+      "createdAt": "2026-02-27T11:26:00.000Z"
+    }
+  ]
+}
+```
+
+说明：
+
+- 执行回滚时会自动固化回滚演练证据（`DataReconciliationRollbackDrill`）；
+- `disableReconciliationGate=true` 时同时关闭 reconciliation gate；
+- 标准回滚路径默认是 `standard -> legacy`。
+
+### 3.5.19 切流运行态总览
+
+- `GET /market-data/reconciliation/cutover/runtime-status?datasets=SPOT_PRICE`
+
+响应：
+
+```json
+{
+  "generatedAt": "2026-02-27T11:27:00.000Z",
+  "datasets": ["SPOT_PRICE"],
+  "config": {
+    "standardizedRead": {
+      "enabled": false,
+      "source": "DB",
+      "updatedAt": "2026-02-27T11:26:00.000Z"
+    },
+    "reconciliationGate": {
+      "enabled": false,
+      "source": "DB",
+      "updatedAt": "2026-02-27T11:26:00.000Z"
+    }
+  },
+  "latestCutoverDecision": {
+    "decisionId": "a8d7eae9-7f5d-4f4e-b64e-8a1b3fb6f1bd",
+    "status": "APPROVED",
+    "reasonCodes": [],
+    "createdAt": "2026-02-27T11:18:00.000Z",
+    "reportSnapshotId": "2f564dd4-09e1-4d32-a6be-9f70094f75b2"
+  },
+  "rollbackDrillEvidence": [
+    {
+      "dataset": "SPOT_PRICE",
+      "exists": true,
+      "recent": true,
+      "passed": true,
+      "drillId": "24e5471a-c2ab-4f7d-b75a-8c3b4f9c26f8",
+      "createdAt": "2026-02-27T11:26:00.000Z"
+    }
+  ],
+  "summary": {
+    "standardizedReadEnabled": false,
+    "reconciliationGateEnabled": false,
+    "hasRecentRollbackEvidenceAllDatasets": true,
+    "latestDecisionApproved": true,
+    "recommendsRollback": false
+  }
+}
+```
+
+### 3.5.20 自动驾驶切流（Autopilot）
+
+- `POST /market-data/reconciliation/cutover/autopilot`
+
+请求：
+
+```json
+{
+  "windowDays": 7,
+  "targetCoverageRate": 0.9,
+  "datasets": ["SPOT_PRICE"],
+  "reportFormat": "markdown",
+  "onRejectedAction": "ROLLBACK",
+  "disableReconciliationGate": true,
+  "rollbackReason": "autopilot_rejected",
+  "dryRun": false,
+  "note": "autopilot gate execution"
+}
+```
+
+响应（示例：通过并切流）：
+
+```json
+{
+  "executedAt": "2026-02-27T11:34:00.000Z",
+  "action": "CUTOVER",
+  "dryRun": false,
+  "decision": {
+    "decisionId": "42fc0189-b24f-4f7f-bbff-2ff9fd2fba17",
+    "status": "APPROVED",
+    "reasonCodes": [],
+    "reportSnapshotId": "2f564dd4-09e1-4d32-a6be-9f70094f75b2",
+    "createdAt": "2026-02-27T11:34:00.000Z"
+  },
+  "cutover": {
+    "applied": true,
+    "config": {
+      "standardizedRead": {
+        "before": false,
+        "after": true
+      },
+      "reconciliationGate": {
+        "before": false,
+        "after": true
+      }
+    }
+  }
+}
+```
+
+响应（示例：不通过并回滚）：
+
+```json
+{
+  "executedAt": "2026-02-27T11:35:00.000Z",
+  "action": "ROLLBACK",
+  "dryRun": false,
+  "decision": {
+    "decisionId": "91c77e75-f8e6-47f9-bb42-8e56f446d0b8",
+    "status": "REJECTED",
+    "reasonCodes": ["coverage_target_not_met"],
+    "reportSnapshotId": "f2f4403f-b253-4ab6-bfd5-eb4dd117a6d6",
+    "createdAt": "2026-02-27T11:35:00.000Z"
+  },
+  "rollback": {
+    "applied": true,
+    "datasets": ["SPOT_PRICE"],
+    "rollbackDrills": [
+      {
+        "drillId": "24e5471a-c2ab-4f7d-b75a-8c3b4f9c26f8",
+        "dataset": "SPOT_PRICE",
+        "status": "PASSED"
+      }
+    ]
+  }
+}
+```
+
+说明：
+
+- `dryRun=true` 仅生成决策，不改动任何运行态开关；
+- `onRejectedAction=ROLLBACK` 会在验收不通过时自动执行回滚并写入回滚演练证据。
+
 ## 4. 指标中心 API
 
 ## 4.1 查询指标字典

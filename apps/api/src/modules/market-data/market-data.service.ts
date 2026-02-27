@@ -6,9 +6,16 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import type {
+  CreateReconciliationCutoverAutopilotDto,
+  CreateReconciliationCutoverDecisionDto,
+  CreateReconciliationM1ReadinessReportSnapshotDto,
   CreateReconciliationRollbackDrillDto,
   CreateReconciliationJobDto,
+  ExecuteReconciliationRollbackDto,
   LineageDataset,
+  ListReconciliationCutoverDecisionsQueryDto,
+  ListReconciliationM1ReadinessReportSnapshotsQueryDto,
+  ReconciliationCutoverRuntimeStatusQueryDto,
   ReconciliationRollbackDrillStatus,
   ReconciliationDataset,
   ReconciliationSummaryDto,
@@ -25,6 +32,7 @@ import { ConfigService } from '../config/config.service';
 type StandardDataset = 'SPOT_PRICE' | 'FUTURES_QUOTE' | 'MARKET_EVENT';
 type ReconciliationJobStatus = 'PENDING' | 'RUNNING' | 'DONE' | 'FAILED' | 'CANCELLED';
 type ReconciliationM1ReadinessReportFormat = 'json' | 'markdown';
+type ReconciliationCutoverDecisionStatus = 'APPROVED' | 'REJECTED';
 type RollbackDrillStatus = ReconciliationRollbackDrillStatus;
 type ReconciliationListSortBy = 'createdAt' | 'startedAt' | 'finishedAt' | 'status' | 'dataset';
 type ReconciliationListSortOrder = 'asc' | 'desc';
@@ -173,6 +181,67 @@ interface PersistedReconciliationJobRetryRow {
   timeRangeTo: unknown;
   dimensions: unknown;
   threshold: unknown;
+}
+
+interface M1ReadinessReportSnapshotRecord {
+  snapshotId: string;
+  format: ReconciliationM1ReadinessReportFormat;
+  fileName: string;
+  windowDays: number;
+  targetCoverageRate: number;
+  datasets: StandardDataset[];
+  readiness: ReconciliationM1ReadinessResult;
+  report: ReconciliationM1ReadinessResult | string;
+  requestedByUserId: string;
+  createdAt: string;
+}
+
+interface PersistedM1ReadinessReportSnapshotRow {
+  snapshotId: string;
+  format: string;
+  fileName: string;
+  windowDays: unknown;
+  targetCoverageRate: unknown;
+  datasets: unknown;
+  readinessSnapshot: unknown;
+  reportPayload: unknown;
+  requestedByUserId: string;
+  createdAt: unknown;
+}
+
+interface ReconciliationCutoverDecisionRecord {
+  decisionId: string;
+  status: ReconciliationCutoverDecisionStatus;
+  reasonCodes: string[];
+  windowDays: number;
+  targetCoverageRate: number;
+  datasets: StandardDataset[];
+  reportFormat: ReconciliationM1ReadinessReportFormat;
+  reportSnapshotId: string;
+  readinessSummary: {
+    meetsReconciliationTarget: boolean;
+    meetsCoverageTarget: boolean;
+    hasRecentRollbackDrillEvidence: boolean;
+    ready: boolean;
+  };
+  note?: string;
+  requestedByUserId: string;
+  createdAt: string;
+}
+
+interface PersistedReconciliationCutoverDecisionRow {
+  decisionId: string;
+  status: string;
+  reasonCodes: unknown;
+  windowDays: unknown;
+  targetCoverageRate: unknown;
+  datasets: unknown;
+  reportFormat: string;
+  reportSnapshotId: string;
+  readinessSummary: unknown;
+  note: string | null;
+  requestedByUserId: string;
+  createdAt: unknown;
 }
 
 interface ReconciliationJobListResult {
@@ -333,6 +402,41 @@ export interface ReconciliationM1ReadinessReportResult {
   report: ReconciliationM1ReadinessResult | string;
 }
 
+export interface ReconciliationM1ReadinessReportSnapshotResult {
+  snapshotId: string;
+  format: ReconciliationM1ReadinessReportFormat;
+  fileName: string;
+  windowDays: number;
+  targetCoverageRate: number;
+  datasets: StandardDataset[];
+  readiness: ReconciliationM1ReadinessResult;
+  report: ReconciliationM1ReadinessResult | string;
+  requestedByUserId: string;
+  createdAt: string;
+  storage: 'database' | 'in-memory';
+}
+
+export interface ReconciliationCutoverDecisionResult {
+  decisionId: string;
+  status: ReconciliationCutoverDecisionStatus;
+  reasonCodes: string[];
+  windowDays: number;
+  targetCoverageRate: number;
+  datasets: StandardDataset[];
+  reportFormat: ReconciliationM1ReadinessReportFormat;
+  reportSnapshotId: string;
+  readinessSummary: {
+    meetsReconciliationTarget: boolean;
+    meetsCoverageTarget: boolean;
+    hasRecentRollbackDrillEvidence: boolean;
+    ready: boolean;
+  };
+  note?: string;
+  requestedByUserId: string;
+  createdAt: string;
+  storage: 'database' | 'in-memory';
+}
+
 const RECONCILIATION_SORT_COLUMN_MAP: Record<ReconciliationListSortBy, string> = {
   createdAt: '"createdAt"',
   startedAt: '"startedAt"',
@@ -379,9 +483,13 @@ export class MarketDataService {
   private readonly logger = new Logger(MarketDataService.name);
   private readonly reconciliationJobs = new Map<string, ReconciliationJob>();
   private readonly rollbackDrillRecords = new Map<string, RollbackDrillRecord>();
+  private readonly m1ReadinessReportSnapshots = new Map<string, M1ReadinessReportSnapshotRecord>();
+  private readonly cutoverDecisionRecords = new Map<string, ReconciliationCutoverDecisionRecord>();
   private reconciliationPersistenceUnavailable = false;
   private reconciliationDailyMetricsPersistenceUnavailable = false;
   private rollbackDrillPersistenceUnavailable = false;
+  private m1ReadinessReportPersistenceUnavailable = false;
+  private cutoverDecisionPersistenceUnavailable = false;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -1630,6 +1738,680 @@ export class MarketDataService {
     return `${(value * 100).toFixed(2)}%`;
   }
 
+  async createReconciliationM1ReadinessReportSnapshot(
+    userId: string,
+    dto: CreateReconciliationM1ReadinessReportSnapshotDto,
+  ): Promise<ReconciliationM1ReadinessReportSnapshotResult> {
+    const report = await this.getReconciliationM1ReadinessReport({
+      format: dto.format,
+      windowDays: dto.windowDays,
+      targetCoverageRate: dto.targetCoverageRate,
+      datasets: dto.datasets,
+    });
+
+    const snapshot: M1ReadinessReportSnapshotRecord = {
+      snapshotId: randomUUID(),
+      format: report.format,
+      fileName: report.fileName,
+      windowDays: report.readiness.windowDays,
+      targetCoverageRate: report.readiness.coverage.targetCoverageRate,
+      datasets: report.readiness.datasets,
+      readiness: report.readiness,
+      report: report.report,
+      requestedByUserId: userId,
+      createdAt: report.generatedAt,
+    };
+
+    this.m1ReadinessReportSnapshots.set(snapshot.snapshotId, snapshot);
+    const persisted = await this.persistM1ReadinessReportSnapshot(snapshot);
+
+    return {
+      ...snapshot,
+      storage: persisted ? 'database' : 'in-memory',
+    };
+  }
+
+  async listReconciliationM1ReadinessReportSnapshots(
+    userId: string,
+    query: ListReconciliationM1ReadinessReportSnapshotsQueryDto,
+  ) {
+    const page = Math.max(1, query.page ?? 1);
+    const pageSize = Math.min(100, Math.max(1, query.pageSize ?? 20));
+
+    const persisted = await this.listPersistedM1ReadinessReportSnapshots(userId, page, pageSize, {
+      format: query.format,
+    });
+    if (persisted) {
+      return persisted;
+    }
+
+    const filtered = Array.from(this.m1ReadinessReportSnapshots.values())
+      .filter((item) => item.requestedByUserId === userId)
+      .filter((item) => (!query.format ? true : item.format === query.format))
+      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+
+    const total = filtered.length;
+    const totalPages = Math.ceil(total / pageSize) || 1;
+    const start = (page - 1) * pageSize;
+
+    return {
+      page,
+      pageSize,
+      total,
+      totalPages,
+      storage: 'in-memory' as const,
+      items: filtered.slice(start, start + pageSize).map((item) => ({
+        snapshotId: item.snapshotId,
+        format: item.format,
+        fileName: item.fileName,
+        windowDays: item.windowDays,
+        targetCoverageRate: item.targetCoverageRate,
+        datasets: item.datasets,
+        summary: item.readiness.summary,
+        createdAt: item.createdAt,
+      })),
+    };
+  }
+
+  async getReconciliationM1ReadinessReportSnapshot(
+    userId: string,
+    snapshotId: string,
+  ): Promise<ReconciliationM1ReadinessReportSnapshotResult> {
+    const persisted = await this.findPersistedM1ReadinessReportSnapshot(snapshotId);
+    if (persisted) {
+      if (persisted.requestedByUserId !== userId) {
+        throw new ForbiddenException('no permission to access this report snapshot');
+      }
+      return {
+        ...persisted,
+        storage: 'database',
+      };
+    }
+
+    const local = this.m1ReadinessReportSnapshots.get(snapshotId);
+    if (!local) {
+      throw new NotFoundException('m1 readiness report snapshot not found');
+    }
+    if (local.requestedByUserId !== userId) {
+      throw new ForbiddenException('no permission to access this report snapshot');
+    }
+
+    return {
+      ...local,
+      storage: 'in-memory',
+    };
+  }
+
+  async createReconciliationCutoverDecision(
+    userId: string,
+    dto: CreateReconciliationCutoverDecisionDto,
+  ): Promise<ReconciliationCutoverDecisionResult> {
+    const snapshot = await this.createReconciliationM1ReadinessReportSnapshot(userId, {
+      format: dto.reportFormat,
+      windowDays: dto.windowDays,
+      targetCoverageRate: dto.targetCoverageRate,
+      datasets: dto.datasets,
+    });
+
+    const reasonCodes = this.resolveCutoverDecisionReasonCodes(snapshot.readiness.summary);
+    const status: ReconciliationCutoverDecisionStatus =
+      reasonCodes.length === 0 ? 'APPROVED' : 'REJECTED';
+
+    const record: ReconciliationCutoverDecisionRecord = {
+      decisionId: randomUUID(),
+      status,
+      reasonCodes,
+      windowDays: snapshot.windowDays,
+      targetCoverageRate: snapshot.targetCoverageRate,
+      datasets: snapshot.datasets,
+      reportFormat: snapshot.format,
+      reportSnapshotId: snapshot.snapshotId,
+      readinessSummary: snapshot.readiness.summary,
+      note: dto.note,
+      requestedByUserId: userId,
+      createdAt: new Date().toISOString(),
+    };
+
+    this.cutoverDecisionRecords.set(record.decisionId, record);
+    const persisted = await this.persistReconciliationCutoverDecisionRecord(record);
+
+    return {
+      ...record,
+      storage: persisted ? 'database' : 'in-memory',
+    };
+  }
+
+  async executeReconciliationCutover(
+    userId: string,
+    dto: CreateReconciliationCutoverDecisionDto,
+  ): Promise<{
+    executedAt: string;
+    decision: ReconciliationCutoverDecisionResult;
+    applied: boolean;
+    config: {
+      standardizedRead: {
+        before: boolean;
+        after: boolean;
+      };
+      reconciliationGate: {
+        before: boolean;
+        after: boolean;
+      };
+    };
+  }> {
+    const decision = await this.createReconciliationCutoverDecision(userId, dto);
+
+    const standardizedReadBefore = await this.configService.getWorkflowStandardizedReadMode();
+    const reconciliationGateBefore =
+      await this.configService.getWorkflowReconciliationGateEnabled();
+
+    let standardizedReadAfter = standardizedReadBefore;
+    let reconciliationGateAfter = reconciliationGateBefore;
+    let applied = false;
+
+    if (decision.status === 'APPROVED') {
+      standardizedReadAfter = await this.configService.setWorkflowStandardizedReadMode(
+        true,
+        userId,
+      );
+      reconciliationGateAfter = await this.configService.setWorkflowReconciliationGateEnabled(
+        true,
+        userId,
+      );
+      applied = true;
+    }
+
+    return {
+      executedAt: new Date().toISOString(),
+      decision,
+      applied,
+      config: {
+        standardizedRead: {
+          before: standardizedReadBefore.enabled,
+          after: standardizedReadAfter.enabled,
+        },
+        reconciliationGate: {
+          before: reconciliationGateBefore.enabled,
+          after: reconciliationGateAfter.enabled,
+        },
+      },
+    };
+  }
+
+  async executeReconciliationCutoverAutopilot(
+    userId: string,
+    dto: CreateReconciliationCutoverAutopilotDto,
+  ): Promise<{
+    executedAt: string;
+    action: 'CUTOVER' | 'ROLLBACK' | 'NONE';
+    dryRun: boolean;
+    decision: {
+      decisionId: string;
+      status: ReconciliationCutoverDecisionStatus;
+      reasonCodes: string[];
+      reportSnapshotId: string;
+      createdAt: string;
+    };
+    cutover?: {
+      applied: boolean;
+      config: {
+        standardizedRead: {
+          before: boolean;
+          after: boolean;
+        };
+        reconciliationGate: {
+          before: boolean;
+          after: boolean;
+        };
+      };
+    };
+    rollback?: {
+      applied: boolean;
+      datasets: StandardDataset[];
+      config: {
+        standardizedRead: {
+          before: boolean;
+          after: boolean;
+        };
+        reconciliationGate: {
+          before: boolean;
+          after: boolean;
+        };
+      };
+      rollbackDrills: Array<{
+        drillId: string;
+        dataset: StandardDataset;
+        status: RollbackDrillStatus;
+      }>;
+    };
+  }> {
+    const decision = await this.createReconciliationCutoverDecision(userId, {
+      windowDays: dto.windowDays,
+      targetCoverageRate: dto.targetCoverageRate,
+      datasets: dto.datasets,
+      reportFormat: dto.reportFormat,
+      note: dto.note,
+    });
+
+    const decisionSummary = {
+      decisionId: decision.decisionId,
+      status: decision.status,
+      reasonCodes: decision.reasonCodes,
+      reportSnapshotId: decision.reportSnapshotId,
+      createdAt: decision.createdAt,
+    };
+
+    if (dto.dryRun) {
+      return {
+        executedAt: new Date().toISOString(),
+        action: 'NONE',
+        dryRun: true,
+        decision: decisionSummary,
+      };
+    }
+
+    if (decision.status === 'APPROVED') {
+      const standardizedReadBefore = await this.configService.getWorkflowStandardizedReadMode();
+      const reconciliationGateBefore =
+        await this.configService.getWorkflowReconciliationGateEnabled();
+      const standardizedReadAfter = await this.configService.setWorkflowStandardizedReadMode(
+        true,
+        userId,
+      );
+      const reconciliationGateAfter = await this.configService.setWorkflowReconciliationGateEnabled(
+        true,
+        userId,
+      );
+
+      return {
+        executedAt: new Date().toISOString(),
+        action: 'CUTOVER',
+        dryRun: false,
+        decision: decisionSummary,
+        cutover: {
+          applied:
+            standardizedReadBefore.enabled !== standardizedReadAfter.enabled ||
+            reconciliationGateBefore.enabled !== reconciliationGateAfter.enabled,
+          config: {
+            standardizedRead: {
+              before: standardizedReadBefore.enabled,
+              after: standardizedReadAfter.enabled,
+            },
+            reconciliationGate: {
+              before: reconciliationGateBefore.enabled,
+              after: reconciliationGateAfter.enabled,
+            },
+          },
+        },
+      };
+    }
+
+    const onRejectedAction = dto.onRejectedAction ?? 'ROLLBACK';
+    if (onRejectedAction === 'ROLLBACK') {
+      const rollback = await this.executeReconciliationRollback(userId, {
+        datasets: dto.datasets,
+        workflowVersionId: dto.workflowVersionId,
+        disableReconciliationGate: dto.disableReconciliationGate,
+        note: dto.note,
+        reason: dto.rollbackReason ?? 'autopilot_rejected',
+      });
+
+      return {
+        executedAt: rollback.executedAt,
+        action: 'ROLLBACK',
+        dryRun: false,
+        decision: decisionSummary,
+        rollback: {
+          applied: rollback.applied,
+          datasets: rollback.datasets,
+          config: rollback.config,
+          rollbackDrills: rollback.rollbackDrills.map((item) => ({
+            drillId: item.drillId,
+            dataset: item.dataset,
+            status: item.status,
+          })),
+        },
+      };
+    }
+
+    return {
+      executedAt: new Date().toISOString(),
+      action: 'NONE',
+      dryRun: false,
+      decision: decisionSummary,
+    };
+  }
+
+  async executeReconciliationRollback(
+    userId: string,
+    dto: ExecuteReconciliationRollbackDto,
+  ): Promise<{
+    executedAt: string;
+    applied: boolean;
+    datasets: StandardDataset[];
+    config: {
+      standardizedRead: {
+        before: boolean;
+        after: boolean;
+      };
+      reconciliationGate: {
+        before: boolean;
+        after: boolean;
+      };
+    };
+    rollbackDrills: Array<{
+      drillId: string;
+      dataset: StandardDataset;
+      status: RollbackDrillStatus;
+      storage: 'database' | 'in-memory';
+      createdAt: string;
+    }>;
+  }> {
+    const datasets = this.resolveRequestedStandardDatasets(dto.datasets as StandardDataset[]);
+    const standardizedReadBefore = await this.configService.getWorkflowStandardizedReadMode();
+    const reconciliationGateBefore =
+      await this.configService.getWorkflowReconciliationGateEnabled();
+
+    const standardizedReadAfter = await this.configService.setWorkflowStandardizedReadMode(
+      false,
+      userId,
+    );
+
+    const shouldDisableGate = dto.disableReconciliationGate ?? true;
+    const reconciliationGateAfter = shouldDisableGate
+      ? await this.configService.setWorkflowReconciliationGateEnabled(false, userId)
+      : reconciliationGateBefore;
+
+    const executedAt = new Date().toISOString();
+    const rollbackPath = shouldDisableGate
+      ? 'disable_standardized_read_and_gate'
+      : 'disable_standardized_read_only';
+    const notes = [dto.note, dto.reason]
+      .filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
+      .join(' | ')
+      .slice(0, 1000);
+
+    const rollbackDrills: Array<{
+      drillId: string;
+      dataset: StandardDataset;
+      status: RollbackDrillStatus;
+      storage: 'database' | 'in-memory';
+      createdAt: string;
+    }> = [];
+
+    for (const dataset of datasets) {
+      const drill = await this.createReconciliationRollbackDrill(userId, {
+        dataset,
+        workflowVersionId: dto.workflowVersionId,
+        scenario: 'standard_to_legacy',
+        status: 'PASSED',
+        startedAt: executedAt,
+        completedAt: executedAt,
+        rollbackPath,
+        resultSummary: {
+          executionType: 'ROLLBACK',
+          standardizedRead: {
+            before: standardizedReadBefore.enabled,
+            after: standardizedReadAfter.enabled,
+          },
+          reconciliationGate: {
+            before: reconciliationGateBefore.enabled,
+            after: reconciliationGateAfter.enabled,
+          },
+        },
+        notes: notes || undefined,
+      });
+
+      rollbackDrills.push({
+        drillId: drill.drillId,
+        dataset: drill.dataset,
+        status: drill.status,
+        storage: drill.storage === 'database' ? 'database' : 'in-memory',
+        createdAt: drill.createdAt,
+      });
+    }
+
+    const applied =
+      standardizedReadBefore.enabled !== standardizedReadAfter.enabled ||
+      reconciliationGateBefore.enabled !== reconciliationGateAfter.enabled;
+
+    return {
+      executedAt,
+      applied,
+      datasets,
+      config: {
+        standardizedRead: {
+          before: standardizedReadBefore.enabled,
+          after: standardizedReadAfter.enabled,
+        },
+        reconciliationGate: {
+          before: reconciliationGateBefore.enabled,
+          after: reconciliationGateAfter.enabled,
+        },
+      },
+      rollbackDrills,
+    };
+  }
+
+  async getReconciliationCutoverRuntimeStatus(
+    userId: string,
+    query: ReconciliationCutoverRuntimeStatusQueryDto,
+  ): Promise<{
+    generatedAt: string;
+    datasets: StandardDataset[];
+    config: {
+      standardizedRead: {
+        enabled: boolean;
+        source: string;
+        updatedAt: string | null;
+      };
+      reconciliationGate: {
+        enabled: boolean;
+        source: string;
+        updatedAt: string | null;
+      };
+    };
+    latestCutoverDecision: {
+      decisionId: string;
+      status: ReconciliationCutoverDecisionStatus;
+      reasonCodes: string[];
+      createdAt: string;
+      reportSnapshotId: string;
+    } | null;
+    rollbackDrillEvidence: Array<{
+      dataset: StandardDataset;
+      exists: boolean;
+      recent: boolean;
+      passed: boolean;
+      drillId?: string;
+      createdAt?: string;
+    }>;
+    summary: {
+      standardizedReadEnabled: boolean;
+      reconciliationGateEnabled: boolean;
+      hasRecentRollbackEvidenceAllDatasets: boolean;
+      latestDecisionApproved: boolean;
+      recommendsRollback: boolean;
+    };
+  }> {
+    const datasets = this.resolveRequestedStandardDatasets(query.datasets as StandardDataset[]);
+    const standardizedRead = await this.configService.getWorkflowStandardizedReadMode();
+    const reconciliationGate = await this.configService.getWorkflowReconciliationGateEnabled();
+    const latestDecision = await this.getLatestReconciliationCutoverDecision(userId);
+    const latestRollbackDrills = await this.getLatestRollbackDrillsByDataset(datasets);
+    const nowMs = Date.now();
+    const recentWindowMs = 7 * 24 * 60 * 60 * 1000;
+
+    const rollbackDrillEvidence = datasets.map((dataset) => {
+      const drill = latestRollbackDrills.get(dataset);
+      const createdAtMs = drill ? new Date(drill.createdAt).getTime() : Number.NaN;
+      const recent = Number.isFinite(createdAtMs) && nowMs - createdAtMs <= recentWindowMs;
+      const passed = drill?.status === 'PASSED';
+      return {
+        dataset,
+        exists: Boolean(drill),
+        recent,
+        passed,
+        drillId: drill?.drillId,
+        createdAt: drill?.createdAt,
+      };
+    });
+
+    const hasRecentRollbackEvidenceAllDatasets = rollbackDrillEvidence.every(
+      (item) => item.exists && item.recent && item.passed,
+    );
+    const latestDecisionApproved = latestDecision?.status === 'APPROVED';
+    const recommendsRollback =
+      standardizedRead.enabled &&
+      (!latestDecisionApproved || !hasRecentRollbackEvidenceAllDatasets);
+
+    return {
+      generatedAt: new Date().toISOString(),
+      datasets,
+      config: {
+        standardizedRead: {
+          enabled: standardizedRead.enabled,
+          source: standardizedRead.source,
+          updatedAt: standardizedRead.updatedAt,
+        },
+        reconciliationGate: {
+          enabled: reconciliationGate.enabled,
+          source: reconciliationGate.source,
+          updatedAt: reconciliationGate.updatedAt,
+        },
+      },
+      latestCutoverDecision: latestDecision
+        ? {
+            decisionId: latestDecision.decisionId,
+            status: latestDecision.status,
+            reasonCodes: latestDecision.reasonCodes,
+            createdAt: latestDecision.createdAt,
+            reportSnapshotId: latestDecision.reportSnapshotId,
+          }
+        : null,
+      rollbackDrillEvidence,
+      summary: {
+        standardizedReadEnabled: standardizedRead.enabled,
+        reconciliationGateEnabled: reconciliationGate.enabled,
+        hasRecentRollbackEvidenceAllDatasets,
+        latestDecisionApproved,
+        recommendsRollback,
+      },
+    };
+  }
+
+  async listReconciliationCutoverDecisions(
+    userId: string,
+    query: ListReconciliationCutoverDecisionsQueryDto,
+  ) {
+    const page = Math.max(1, query.page ?? 1);
+    const pageSize = Math.min(100, Math.max(1, query.pageSize ?? 20));
+
+    const persisted = await this.listPersistedReconciliationCutoverDecisions(
+      userId,
+      page,
+      pageSize,
+      {
+        status: query.status,
+      },
+    );
+    if (persisted) {
+      return persisted;
+    }
+
+    const filtered = Array.from(this.cutoverDecisionRecords.values())
+      .filter((item) => item.requestedByUserId === userId)
+      .filter((item) => (!query.status ? true : item.status === query.status))
+      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+
+    const total = filtered.length;
+    const totalPages = Math.ceil(total / pageSize) || 1;
+    const start = (page - 1) * pageSize;
+
+    return {
+      page,
+      pageSize,
+      total,
+      totalPages,
+      storage: 'in-memory' as const,
+      items: filtered.slice(start, start + pageSize),
+    };
+  }
+
+  async getReconciliationCutoverDecision(
+    userId: string,
+    decisionId: string,
+  ): Promise<ReconciliationCutoverDecisionResult> {
+    const persisted = await this.findPersistedReconciliationCutoverDecision(decisionId);
+    if (persisted) {
+      if (persisted.requestedByUserId !== userId) {
+        throw new ForbiddenException('no permission to access this cutover decision');
+      }
+      return {
+        ...persisted,
+        storage: 'database',
+      };
+    }
+
+    const local = this.cutoverDecisionRecords.get(decisionId);
+    if (!local) {
+      throw new NotFoundException('cutover decision not found');
+    }
+    if (local.requestedByUserId !== userId) {
+      throw new ForbiddenException('no permission to access this cutover decision');
+    }
+
+    return {
+      ...local,
+      storage: 'in-memory',
+    };
+  }
+
+  private resolveRequestedStandardDatasets(datasets?: StandardDataset[]): StandardDataset[] {
+    const normalized = (datasets ?? [])
+      .map((dataset) => this.normalizeReconciliationDataset(dataset) as StandardDataset)
+      .filter((dataset, index, all) => all.indexOf(dataset) === index);
+
+    if (normalized.length > 0) {
+      return normalized;
+    }
+
+    return ['SPOT_PRICE', 'FUTURES_QUOTE', 'MARKET_EVENT'];
+  }
+
+  private async getLatestReconciliationCutoverDecision(
+    userId: string,
+  ): Promise<ReconciliationCutoverDecisionRecord | null> {
+    const persisted = await this.listPersistedReconciliationCutoverDecisions(userId, 1, 1, {});
+    if (persisted && persisted.items.length > 0) {
+      return persisted.items[0];
+    }
+
+    const local = Array.from(this.cutoverDecisionRecords.values())
+      .filter((item) => item.requestedByUserId === userId)
+      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+
+    return local[0] ?? null;
+  }
+
+  private resolveCutoverDecisionReasonCodes(summary: {
+    meetsReconciliationTarget: boolean;
+    meetsCoverageTarget: boolean;
+    hasRecentRollbackDrillEvidence: boolean;
+  }): string[] {
+    const reasonCodes: string[] = [];
+    if (!summary.meetsReconciliationTarget) {
+      reasonCodes.push('reconciliation_target_not_met');
+    }
+    if (!summary.meetsCoverageTarget) {
+      reasonCodes.push('coverage_target_not_met');
+    }
+    if (!summary.hasRecentRollbackDrillEvidence) {
+      reasonCodes.push('rollback_drill_evidence_missing');
+    }
+    return reasonCodes;
+  }
+
   async createReconciliationRollbackDrill(
     userId: string,
     dto: CreateReconciliationRollbackDrillDto,
@@ -1916,6 +2698,500 @@ export class MarketDataService {
     }
 
     return Math.max(...numericValues);
+  }
+
+  private async persistM1ReadinessReportSnapshot(
+    record: M1ReadinessReportSnapshotRecord,
+  ): Promise<boolean> {
+    if (this.m1ReadinessReportPersistenceUnavailable) {
+      return false;
+    }
+
+    const reportPayload =
+      typeof record.report === 'string' ? { markdown: record.report } : { json: record.report };
+
+    try {
+      await this.prisma.$executeRawUnsafe(
+        `INSERT INTO "DataReconciliationM1ReadinessReport"
+          ("id", "snapshotId", "format", "fileName", "windowDays", "targetCoverageRate", "datasets", "readinessSnapshot", "reportPayload", "requestedByUserId", "createdAt", "updatedAt")
+         VALUES
+          ($1, $2, $3, $4, $5, $6, $7::jsonb, $8::jsonb, $9::jsonb, $10, $11, $12)
+         ON CONFLICT ("snapshotId") DO UPDATE SET
+          "format" = EXCLUDED."format",
+          "fileName" = EXCLUDED."fileName",
+          "windowDays" = EXCLUDED."windowDays",
+          "targetCoverageRate" = EXCLUDED."targetCoverageRate",
+          "datasets" = EXCLUDED."datasets",
+          "readinessSnapshot" = EXCLUDED."readinessSnapshot",
+          "reportPayload" = EXCLUDED."reportPayload",
+          "updatedAt" = EXCLUDED."updatedAt"`,
+        randomUUID(),
+        record.snapshotId,
+        record.format,
+        record.fileName,
+        record.windowDays,
+        record.targetCoverageRate,
+        JSON.stringify(record.datasets),
+        JSON.stringify(record.readiness),
+        JSON.stringify(reportPayload),
+        record.requestedByUserId,
+        new Date(record.createdAt),
+        new Date(),
+      );
+      return true;
+    } catch (error) {
+      if (this.isM1ReadinessReportPersistenceMissingTableError(error)) {
+        this.disableM1ReadinessReportPersistence('persist m1 readiness report snapshot', error);
+        return false;
+      }
+      this.logger.error(
+        `Persist m1 readiness report snapshot failed: ${this.stringifyError(error)}`,
+      );
+      return false;
+    }
+  }
+
+  private async listPersistedM1ReadinessReportSnapshots(
+    userId: string,
+    page: number,
+    pageSize: number,
+    options: {
+      format?: ReconciliationM1ReadinessReportFormat;
+    },
+  ): Promise<{
+    page: number;
+    pageSize: number;
+    total: number;
+    totalPages: number;
+    storage: 'database';
+    items: Array<{
+      snapshotId: string;
+      format: ReconciliationM1ReadinessReportFormat;
+      fileName: string;
+      windowDays: number;
+      targetCoverageRate: number;
+      datasets: StandardDataset[];
+      summary: ReconciliationM1ReadinessResult['summary'];
+      createdAt: string;
+    }>;
+  } | null> {
+    if (this.m1ReadinessReportPersistenceUnavailable) {
+      return null;
+    }
+
+    try {
+      const whereParts: string[] = ['"requestedByUserId" = $1'];
+      const whereParams: unknown[] = [userId];
+
+      if (options.format) {
+        whereParts.push(`"format" = $${whereParams.length + 1}`);
+        whereParams.push(options.format);
+      }
+
+      const whereClause = `WHERE ${whereParts.join(' AND ')}`;
+      const totalRows = await this.prisma.$queryRawUnsafe<Array<{ total: number | string }>>(
+        `SELECT COUNT(*)::int AS "total"
+         FROM "DataReconciliationM1ReadinessReport"
+         ${whereClause}`,
+        ...whereParams,
+      );
+
+      const total = Number(totalRows[0]?.total ?? 0);
+      const totalPages = Math.ceil(total / pageSize) || 1;
+      const offset = (page - 1) * pageSize;
+
+      const rows = await this.prisma.$queryRawUnsafe<PersistedM1ReadinessReportSnapshotRow[]>(
+        `SELECT
+           "snapshotId",
+           "format",
+           "fileName",
+           "windowDays",
+           "targetCoverageRate",
+           "datasets",
+           "readinessSnapshot",
+           "reportPayload",
+           "requestedByUserId",
+           "createdAt"
+         FROM "DataReconciliationM1ReadinessReport"
+         ${whereClause}
+         ORDER BY "createdAt" DESC
+         LIMIT $${whereParams.length + 1}
+         OFFSET $${whereParams.length + 2}`,
+        ...whereParams,
+        pageSize,
+        offset,
+      );
+
+      const items = rows.map((row) => {
+        const mapped = this.mapPersistedM1ReadinessReportSnapshotRow(row);
+        return {
+          snapshotId: mapped.snapshotId,
+          format: mapped.format,
+          fileName: mapped.fileName,
+          windowDays: mapped.windowDays,
+          targetCoverageRate: mapped.targetCoverageRate,
+          datasets: mapped.datasets,
+          summary: mapped.readiness.summary,
+          createdAt: mapped.createdAt,
+        };
+      });
+
+      return {
+        page,
+        pageSize,
+        total,
+        totalPages,
+        storage: 'database',
+        items,
+      };
+    } catch (error) {
+      if (this.isM1ReadinessReportPersistenceMissingTableError(error)) {
+        this.disableM1ReadinessReportPersistence('list m1 readiness report snapshots', error);
+        return null;
+      }
+      this.logger.error(`List m1 readiness report snapshots failed: ${this.stringifyError(error)}`);
+      return null;
+    }
+  }
+
+  private async findPersistedM1ReadinessReportSnapshot(
+    snapshotId: string,
+  ): Promise<ReconciliationM1ReadinessReportSnapshotResult | null> {
+    if (this.m1ReadinessReportPersistenceUnavailable) {
+      return null;
+    }
+
+    try {
+      const rows = await this.prisma.$queryRawUnsafe<PersistedM1ReadinessReportSnapshotRow[]>(
+        `SELECT
+           "snapshotId",
+           "format",
+           "fileName",
+           "windowDays",
+           "targetCoverageRate",
+           "datasets",
+           "readinessSnapshot",
+           "reportPayload",
+           "requestedByUserId",
+           "createdAt"
+         FROM "DataReconciliationM1ReadinessReport"
+         WHERE "snapshotId" = $1
+         LIMIT 1`,
+        snapshotId,
+      );
+
+      if (rows.length === 0) {
+        return null;
+      }
+
+      return {
+        ...this.mapPersistedM1ReadinessReportSnapshotRow(rows[0]),
+        storage: 'database',
+      };
+    } catch (error) {
+      if (this.isM1ReadinessReportPersistenceMissingTableError(error)) {
+        this.disableM1ReadinessReportPersistence('find m1 readiness report snapshot', error);
+        return null;
+      }
+      this.logger.error(`Find m1 readiness report snapshot failed: ${this.stringifyError(error)}`);
+      return null;
+    }
+  }
+
+  private mapPersistedM1ReadinessReportSnapshotRow(
+    row: PersistedM1ReadinessReportSnapshotRow,
+  ): M1ReadinessReportSnapshotRecord {
+    const format = this.normalizeM1ReadinessReportFormat(row.format);
+    const readiness =
+      this.parseJsonValue<ReconciliationM1ReadinessResult>(row.readinessSnapshot) ??
+      (this.createEmptyM1ReadinessSnapshot() as ReconciliationM1ReadinessResult);
+    const reportPayload = this.parseJsonValue<Record<string, unknown>>(row.reportPayload);
+    const report =
+      format === 'markdown'
+        ? typeof reportPayload?.markdown === 'string'
+          ? reportPayload.markdown
+          : ''
+        : ((reportPayload?.json as ReconciliationM1ReadinessResult | undefined) ?? readiness);
+
+    const datasetsRaw = this.parseJsonValue<unknown[]>(row.datasets);
+    const datasets = (datasetsRaw ?? [])
+      .map((item) => this.normalizeReconciliationDataset(String(item)) as StandardDataset)
+      .filter((item, index, all) => all.indexOf(item) === index);
+
+    return {
+      snapshotId: row.snapshotId,
+      format,
+      fileName: row.fileName,
+      windowDays: this.parseInteger(row.windowDays),
+      targetCoverageRate: this.normalizeCoverageRate(row.targetCoverageRate, 0.9),
+      datasets,
+      readiness,
+      report,
+      requestedByUserId: row.requestedByUserId,
+      createdAt: this.toIsoString(row.createdAt) ?? new Date().toISOString(),
+    };
+  }
+
+  private async persistReconciliationCutoverDecisionRecord(
+    record: ReconciliationCutoverDecisionRecord,
+  ): Promise<boolean> {
+    if (this.cutoverDecisionPersistenceUnavailable) {
+      return false;
+    }
+
+    try {
+      await this.prisma.$executeRawUnsafe(
+        `INSERT INTO "DataReconciliationCutoverDecision"
+          ("id", "decisionId", "status", "reasonCodes", "windowDays", "targetCoverageRate", "datasets", "reportFormat", "reportSnapshotId", "readinessSummary", "note", "requestedByUserId", "createdAt", "updatedAt")
+         VALUES
+          ($1, $2, $3::"ReconciliationCutoverDecisionStatus", $4::jsonb, $5, $6, $7::jsonb, $8, $9, $10::jsonb, $11, $12, $13, $14)
+         ON CONFLICT ("decisionId") DO UPDATE SET
+          "status" = EXCLUDED."status",
+          "reasonCodes" = EXCLUDED."reasonCodes",
+          "windowDays" = EXCLUDED."windowDays",
+          "targetCoverageRate" = EXCLUDED."targetCoverageRate",
+          "datasets" = EXCLUDED."datasets",
+          "reportFormat" = EXCLUDED."reportFormat",
+          "reportSnapshotId" = EXCLUDED."reportSnapshotId",
+          "readinessSummary" = EXCLUDED."readinessSummary",
+          "note" = EXCLUDED."note",
+          "updatedAt" = EXCLUDED."updatedAt"`,
+        randomUUID(),
+        record.decisionId,
+        record.status,
+        JSON.stringify(record.reasonCodes),
+        record.windowDays,
+        record.targetCoverageRate,
+        JSON.stringify(record.datasets),
+        record.reportFormat,
+        record.reportSnapshotId,
+        JSON.stringify(record.readinessSummary),
+        record.note ?? null,
+        record.requestedByUserId,
+        new Date(record.createdAt),
+        new Date(),
+      );
+      return true;
+    } catch (error) {
+      if (this.isCutoverDecisionPersistenceMissingTableError(error)) {
+        this.disableCutoverDecisionPersistence('persist cutover decision record', error);
+        return false;
+      }
+      this.logger.error(`Persist cutover decision record failed: ${this.stringifyError(error)}`);
+      return false;
+    }
+  }
+
+  private async listPersistedReconciliationCutoverDecisions(
+    userId: string,
+    page: number,
+    pageSize: number,
+    options: {
+      status?: ReconciliationCutoverDecisionStatus;
+    },
+  ): Promise<{
+    page: number;
+    pageSize: number;
+    total: number;
+    totalPages: number;
+    storage: 'database';
+    items: ReconciliationCutoverDecisionRecord[];
+  } | null> {
+    if (this.cutoverDecisionPersistenceUnavailable) {
+      return null;
+    }
+
+    try {
+      const whereParts: string[] = ['"requestedByUserId" = $1'];
+      const whereParams: unknown[] = [userId];
+
+      if (options.status) {
+        whereParts.push(
+          `"status" = $${whereParams.length + 1}::"ReconciliationCutoverDecisionStatus"`,
+        );
+        whereParams.push(options.status);
+      }
+
+      const whereClause = `WHERE ${whereParts.join(' AND ')}`;
+      const totalRows = await this.prisma.$queryRawUnsafe<Array<{ total: number | string }>>(
+        `SELECT COUNT(*)::int AS "total"
+         FROM "DataReconciliationCutoverDecision"
+         ${whereClause}`,
+        ...whereParams,
+      );
+
+      const total = Number(totalRows[0]?.total ?? 0);
+      const totalPages = Math.ceil(total / pageSize) || 1;
+      const offset = (page - 1) * pageSize;
+
+      const rows = await this.prisma.$queryRawUnsafe<PersistedReconciliationCutoverDecisionRow[]>(
+        `SELECT
+           "decisionId",
+           "status",
+           "reasonCodes",
+           "windowDays",
+           "targetCoverageRate",
+           "datasets",
+           "reportFormat",
+           "reportSnapshotId",
+           "readinessSummary",
+           "note",
+           "requestedByUserId",
+           "createdAt"
+         FROM "DataReconciliationCutoverDecision"
+         ${whereClause}
+         ORDER BY "createdAt" DESC
+         LIMIT $${whereParams.length + 1}
+         OFFSET $${whereParams.length + 2}`,
+        ...whereParams,
+        pageSize,
+        offset,
+      );
+
+      return {
+        page,
+        pageSize,
+        total,
+        totalPages,
+        storage: 'database',
+        items: rows.map((row) => this.mapPersistedReconciliationCutoverDecisionRow(row)),
+      };
+    } catch (error) {
+      if (this.isCutoverDecisionPersistenceMissingTableError(error)) {
+        this.disableCutoverDecisionPersistence('list cutover decision records', error);
+        return null;
+      }
+      this.logger.error(`List cutover decision records failed: ${this.stringifyError(error)}`);
+      return null;
+    }
+  }
+
+  private async findPersistedReconciliationCutoverDecision(
+    decisionId: string,
+  ): Promise<ReconciliationCutoverDecisionResult | null> {
+    if (this.cutoverDecisionPersistenceUnavailable) {
+      return null;
+    }
+
+    try {
+      const rows = await this.prisma.$queryRawUnsafe<PersistedReconciliationCutoverDecisionRow[]>(
+        `SELECT
+           "decisionId",
+           "status",
+           "reasonCodes",
+           "windowDays",
+           "targetCoverageRate",
+           "datasets",
+           "reportFormat",
+           "reportSnapshotId",
+           "readinessSummary",
+           "note",
+           "requestedByUserId",
+           "createdAt"
+         FROM "DataReconciliationCutoverDecision"
+         WHERE "decisionId" = $1
+         LIMIT 1`,
+        decisionId,
+      );
+
+      if (rows.length === 0) {
+        return null;
+      }
+
+      return {
+        ...this.mapPersistedReconciliationCutoverDecisionRow(rows[0]),
+        storage: 'database',
+      };
+    } catch (error) {
+      if (this.isCutoverDecisionPersistenceMissingTableError(error)) {
+        this.disableCutoverDecisionPersistence('find cutover decision record', error);
+        return null;
+      }
+      this.logger.error(`Find cutover decision record failed: ${this.stringifyError(error)}`);
+      return null;
+    }
+  }
+
+  private mapPersistedReconciliationCutoverDecisionRow(
+    row: PersistedReconciliationCutoverDecisionRow,
+  ): ReconciliationCutoverDecisionRecord {
+    const reasonCodesRaw = this.parseJsonValue<unknown[]>(row.reasonCodes) ?? [];
+    const reasonCodes = reasonCodesRaw
+      .map((item) => String(item))
+      .filter((item) => item.trim().length > 0);
+    const datasetsRaw = this.parseJsonValue<unknown[]>(row.datasets) ?? [];
+    const datasets = datasetsRaw
+      .map((item) => this.normalizeReconciliationDataset(String(item)) as StandardDataset)
+      .filter((item, index, all) => all.indexOf(item) === index);
+    const readinessSummary = this.parseJsonValue<
+      ReconciliationCutoverDecisionRecord['readinessSummary']
+    >(row.readinessSummary) ?? {
+      meetsReconciliationTarget: false,
+      meetsCoverageTarget: false,
+      hasRecentRollbackDrillEvidence: false,
+      ready: false,
+    };
+
+    return {
+      decisionId: row.decisionId,
+      status: this.normalizeCutoverDecisionStatus(row.status),
+      reasonCodes,
+      windowDays: this.parseInteger(row.windowDays),
+      targetCoverageRate: this.normalizeCoverageRate(row.targetCoverageRate, 0.9),
+      datasets,
+      reportFormat: this.normalizeM1ReadinessReportFormat(row.reportFormat),
+      reportSnapshotId: row.reportSnapshotId,
+      readinessSummary,
+      note: row.note ?? undefined,
+      requestedByUserId: row.requestedByUserId,
+      createdAt: this.toIsoString(row.createdAt) ?? new Date().toISOString(),
+    };
+  }
+
+  private normalizeM1ReadinessReportFormat(value: unknown): ReconciliationM1ReadinessReportFormat {
+    if (value === 'json' || value === 'markdown') {
+      return value;
+    }
+    return 'markdown';
+  }
+
+  private normalizeCutoverDecisionStatus(value: unknown): ReconciliationCutoverDecisionStatus {
+    if (value === 'APPROVED' || value === 'REJECTED') {
+      return value;
+    }
+    return 'REJECTED';
+  }
+
+  private createEmptyM1ReadinessSnapshot(): ReconciliationM1ReadinessResult {
+    return {
+      generatedAt: new Date().toISOString(),
+      windowDays: 7,
+      datasets: [],
+      summary: {
+        meetsReconciliationTarget: false,
+        meetsCoverageTarget: false,
+        hasRecentRollbackDrillEvidence: false,
+        ready: false,
+      },
+      coverage: {
+        windowDays: 7,
+        fromDate: new Date().toISOString(),
+        toDate: new Date().toISOString(),
+        targetCoverageRate: 0.9,
+        totalDataFetchNodes: 0,
+        standardReadNodes: 0,
+        legacyReadNodes: 0,
+        otherSourceNodes: 0,
+        gateEvaluatedNodes: 0,
+        gatePassedNodes: 0,
+        coverageRate: 0,
+        meetsCoverageTarget: false,
+        consecutiveCoverageDays: 0,
+        daily: [],
+      },
+      reconciliation: [],
+      rollbackDrills: [],
+    };
   }
 
   private async persistReconciliationDailyMetric(
@@ -3217,6 +4493,53 @@ export class MarketDataService {
     return containsTarget && missingTableHint;
   }
 
+  private isM1ReadinessReportPersistenceMissingTableError(error: unknown) {
+    const code =
+      typeof error === 'object' && error !== null && 'code' in error
+        ? String((error as { code?: unknown }).code)
+        : '';
+    if (code === 'P2021') {
+      return true;
+    }
+
+    const message = this.stringifyError(error).toLowerCase();
+    const containsTarget = message.includes('datareconciliationm1readinessreport');
+    const missingTableHint =
+      message.includes('does not exist') ||
+      message.includes('relation') ||
+      message.includes('column') ||
+      message.includes('undefined') ||
+      message.includes('42703') ||
+      message.includes('42704') ||
+      message.includes('p2021');
+    return containsTarget && missingTableHint;
+  }
+
+  private isCutoverDecisionPersistenceMissingTableError(error: unknown) {
+    const code =
+      typeof error === 'object' && error !== null && 'code' in error
+        ? String((error as { code?: unknown }).code)
+        : '';
+    if (code === 'P2021') {
+      return true;
+    }
+
+    const message = this.stringifyError(error).toLowerCase();
+    const containsTarget =
+      message.includes('datareconciliationcutoverdecision') ||
+      message.includes('reconciliationcutoverdecisionstatus');
+    const missingTableHint =
+      message.includes('does not exist') ||
+      message.includes('relation') ||
+      message.includes('column') ||
+      message.includes('undefined') ||
+      message.includes('42703') ||
+      message.includes('42704') ||
+      message.includes('p2021') ||
+      message.includes('invalid input value for enum');
+    return containsTarget && missingTableHint;
+  }
+
   private disableReconciliationPersistence(operation: string, error: unknown) {
     if (this.reconciliationPersistenceUnavailable) {
       return;
@@ -3244,6 +4567,26 @@ export class MarketDataService {
     this.rollbackDrillPersistenceUnavailable = true;
     this.logger.warn(
       `Rollback drill persistence disabled (${operation}): ${this.stringifyError(error)}`,
+    );
+  }
+
+  private disableM1ReadinessReportPersistence(operation: string, error: unknown) {
+    if (this.m1ReadinessReportPersistenceUnavailable) {
+      return;
+    }
+    this.m1ReadinessReportPersistenceUnavailable = true;
+    this.logger.warn(
+      `M1 readiness report persistence disabled (${operation}): ${this.stringifyError(error)}`,
+    );
+  }
+
+  private disableCutoverDecisionPersistence(operation: string, error: unknown) {
+    if (this.cutoverDecisionPersistenceUnavailable) {
+      return;
+    }
+    this.cutoverDecisionPersistenceUnavailable = true;
+    this.logger.warn(
+      `Cutover decision persistence disabled (${operation}): ${this.stringifyError(error)}`,
     );
   }
 

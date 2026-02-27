@@ -153,6 +153,29 @@ export const ListReconciliationCutoverDecisionsQuerySchema = z.object({
   status: ReconciliationCutoverDecisionStatusEnum.optional(),
 });
 
+export const ReconciliationCutoverAutopilotRejectedActionEnum = z.enum(['NONE', 'ROLLBACK']);
+
+export const CreateReconciliationCutoverAutopilotSchema =
+  CreateReconciliationCutoverDecisionSchema.extend({
+    onRejectedAction: ReconciliationCutoverAutopilotRejectedActionEnum.default('ROLLBACK'),
+    disableReconciliationGate: z.boolean().default(true),
+    workflowVersionId: z.string().uuid().optional(),
+    rollbackReason: z.string().trim().min(1).max(200).optional(),
+    dryRun: z.boolean().default(false),
+  });
+
+export const ExecuteReconciliationRollbackSchema = z.object({
+  datasets: ReconciliationDatasetListQuerySchema.optional(),
+  workflowVersionId: z.string().uuid().optional(),
+  disableReconciliationGate: z.boolean().default(true),
+  note: z.string().trim().min(1).max(1000).optional(),
+  reason: z.string().trim().min(1).max(200).optional(),
+});
+
+export const ReconciliationCutoverRuntimeStatusQuerySchema = z.object({
+  datasets: ReconciliationDatasetListQuerySchema.optional(),
+});
+
 export const ReconciliationRollbackDrillStatusEnum = z.enum([
   'PLANNED',
   'RUNNING',
@@ -365,6 +388,16 @@ export type CreateReconciliationCutoverDecisionDto = z.infer<
 >;
 export type ListReconciliationCutoverDecisionsQueryDto = z.infer<
   typeof ListReconciliationCutoverDecisionsQuerySchema
+>;
+export type ReconciliationCutoverAutopilotRejectedAction = z.infer<
+  typeof ReconciliationCutoverAutopilotRejectedActionEnum
+>;
+export type CreateReconciliationCutoverAutopilotDto = z.infer<
+  typeof CreateReconciliationCutoverAutopilotSchema
+>;
+export type ExecuteReconciliationRollbackDto = z.infer<typeof ExecuteReconciliationRollbackSchema>;
+export type ReconciliationCutoverRuntimeStatusQueryDto = z.infer<
+  typeof ReconciliationCutoverRuntimeStatusQuerySchema
 >;
 export type ReconciliationRollbackDrillStatus = z.infer<
   typeof ReconciliationRollbackDrillStatusEnum

@@ -463,6 +463,528 @@ async function main() {
     assert.equal(m1ReadinessReportJson.body.data.report.windowDays, 7);
     assert.ok(m1ReadinessReportJson.body.data.fileName.endsWith('.json'));
 
+    const reportSnapshotCreated = await fetchJson<{
+      success: boolean;
+      data: {
+        snapshotId: string;
+        format: string;
+        fileName: string;
+        windowDays: number;
+        targetCoverageRate: number;
+        datasets: string[];
+        readiness: {
+          summary: {
+            ready: boolean;
+          };
+        };
+        storage: string;
+      };
+      traceId: string;
+      ts: string;
+    }>(`${baseUrl}/market-data/reconciliation/metrics/m1-readiness/report/snapshots`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-virtual-user-id': 'admin-user',
+      },
+      body: JSON.stringify({
+        format: 'markdown',
+        windowDays: 7,
+        targetCoverageRate: 0.9,
+        datasets: ['SPOT_PRICE'],
+      }),
+    });
+    assert.equal(reportSnapshotCreated.status, 201);
+    assert.equal(reportSnapshotCreated.body.success, true);
+    assert.equal(reportSnapshotCreated.body.data.format, 'markdown');
+    assert.equal(reportSnapshotCreated.body.data.windowDays, 7);
+    assert.ok(reportSnapshotCreated.body.data.snapshotId.length > 0);
+
+    const reportSnapshotList = await fetchJson<{
+      success: boolean;
+      data: {
+        page: number;
+        pageSize: number;
+        total: number;
+        totalPages: number;
+        storage: string;
+        items: Array<{
+          snapshotId: string;
+          format: string;
+          fileName: string;
+          windowDays: number;
+          summary: {
+            ready: boolean;
+          };
+        }>;
+      };
+      traceId: string;
+      ts: string;
+    }>(
+      `${baseUrl}/market-data/reconciliation/metrics/m1-readiness/report/snapshots?page=1&pageSize=20&format=markdown`,
+      {
+        method: 'GET',
+        headers: {
+          'x-virtual-user-id': 'admin-user',
+        },
+      },
+    );
+    assert.equal(reportSnapshotList.status, 200);
+    assert.equal(reportSnapshotList.body.success, true);
+    assert.ok(reportSnapshotList.body.data.total >= 1);
+    assert.ok(
+      reportSnapshotList.body.data.items.some(
+        (item) => item.snapshotId === reportSnapshotCreated.body.data.snapshotId,
+      ),
+    );
+
+    const reportSnapshotDetail = await fetchJson<{
+      success: boolean;
+      data: {
+        snapshotId: string;
+        format: string;
+        report: string;
+      };
+      traceId: string;
+      ts: string;
+    }>(
+      `${baseUrl}/market-data/reconciliation/metrics/m1-readiness/report/snapshots/${reportSnapshotCreated.body.data.snapshotId}`,
+      {
+        method: 'GET',
+        headers: {
+          'x-virtual-user-id': 'admin-user',
+        },
+      },
+    );
+    assert.equal(reportSnapshotDetail.status, 200);
+    assert.equal(reportSnapshotDetail.body.success, true);
+    assert.equal(
+      reportSnapshotDetail.body.data.snapshotId,
+      reportSnapshotCreated.body.data.snapshotId,
+    );
+    assert.ok(reportSnapshotDetail.body.data.report.includes('Reconciliation M1 Readiness Report'));
+
+    const cutoverDecisionCreated = await fetchJson<{
+      success: boolean;
+      data: {
+        decisionId: string;
+        status: string;
+        reasonCodes: string[];
+        reportSnapshotId: string;
+        readinessSummary: {
+          ready: boolean;
+        };
+      };
+      traceId: string;
+      ts: string;
+    }>(`${baseUrl}/market-data/reconciliation/cutover/decisions`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-virtual-user-id': 'admin-user',
+      },
+      body: JSON.stringify({
+        windowDays: 7,
+        targetCoverageRate: 0.9,
+        datasets: ['SPOT_PRICE'],
+        reportFormat: 'markdown',
+        note: 'm1 cutover gate decision',
+      }),
+    });
+    assert.equal(cutoverDecisionCreated.status, 201);
+    assert.equal(cutoverDecisionCreated.body.success, true);
+    assert.ok(cutoverDecisionCreated.body.data.decisionId.length > 0);
+    assert.ok(cutoverDecisionCreated.body.data.reportSnapshotId.length > 0);
+    assert.ok(
+      cutoverDecisionCreated.body.data.status === 'APPROVED' ||
+        cutoverDecisionCreated.body.data.status === 'REJECTED',
+    );
+
+    const cutoverExecute = await fetchJson<{
+      success: boolean;
+      data: {
+        executedAt: string;
+        decision: {
+          decisionId: string;
+          status: string;
+        };
+        applied: boolean;
+        config: {
+          standardizedRead: {
+            before: boolean;
+            after: boolean;
+          };
+          reconciliationGate: {
+            before: boolean;
+            after: boolean;
+          };
+        };
+      };
+      traceId: string;
+      ts: string;
+    }>(`${baseUrl}/market-data/reconciliation/cutover/execute`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-virtual-user-id': 'admin-user',
+      },
+      body: JSON.stringify({
+        windowDays: 7,
+        targetCoverageRate: 0.9,
+        datasets: ['SPOT_PRICE'],
+        reportFormat: 'markdown',
+        note: 'execute cutover gate',
+      }),
+    });
+    assert.equal(cutoverExecute.status, 201);
+    assert.equal(cutoverExecute.body.success, true);
+    assert.ok(cutoverExecute.body.data.executedAt.length > 0);
+    assert.ok(cutoverExecute.body.data.decision.decisionId.length > 0);
+    assert.ok(
+      cutoverExecute.body.data.decision.status === 'APPROVED' ||
+        cutoverExecute.body.data.decision.status === 'REJECTED',
+    );
+    if (cutoverExecute.body.data.decision.status === 'APPROVED') {
+      assert.equal(cutoverExecute.body.data.applied, true);
+      assert.equal(cutoverExecute.body.data.config.standardizedRead.after, true);
+      assert.equal(cutoverExecute.body.data.config.reconciliationGate.after, true);
+    }
+
+    const cutoverRuntimeStatusBeforeRollback = await fetchJson<{
+      success: boolean;
+      data: {
+        generatedAt: string;
+        datasets: string[];
+        config: {
+          standardizedRead: {
+            enabled: boolean;
+            source: string;
+            updatedAt: string | null;
+          };
+          reconciliationGate: {
+            enabled: boolean;
+            source: string;
+            updatedAt: string | null;
+          };
+        };
+        latestCutoverDecision: {
+          decisionId: string;
+          status: string;
+          reportSnapshotId: string;
+        } | null;
+        rollbackDrillEvidence: Array<{
+          dataset: string;
+          exists: boolean;
+          recent: boolean;
+          passed: boolean;
+        }>;
+        summary: {
+          standardizedReadEnabled: boolean;
+          reconciliationGateEnabled: boolean;
+          hasRecentRollbackEvidenceAllDatasets: boolean;
+          latestDecisionApproved: boolean;
+          recommendsRollback: boolean;
+        };
+      };
+      traceId: string;
+      ts: string;
+    }>(`${baseUrl}/market-data/reconciliation/cutover/runtime-status?datasets=SPOT_PRICE`, {
+      method: 'GET',
+      headers: {
+        'x-virtual-user-id': 'admin-user',
+      },
+    });
+    assert.equal(cutoverRuntimeStatusBeforeRollback.status, 200);
+    assert.equal(cutoverRuntimeStatusBeforeRollback.body.success, true);
+    assert.equal(cutoverRuntimeStatusBeforeRollback.body.data.datasets.length, 1);
+    assert.equal(cutoverRuntimeStatusBeforeRollback.body.data.datasets[0], 'SPOT_PRICE');
+
+    const rollbackExecute = await fetchJson<{
+      success: boolean;
+      data: {
+        executedAt: string;
+        applied: boolean;
+        datasets: string[];
+        config: {
+          standardizedRead: {
+            before: boolean;
+            after: boolean;
+          };
+          reconciliationGate: {
+            before: boolean;
+            after: boolean;
+          };
+        };
+        rollbackDrills: Array<{
+          drillId: string;
+          dataset: string;
+          status: string;
+          storage: string;
+          createdAt: string;
+        }>;
+      };
+      traceId: string;
+      ts: string;
+    }>(`${baseUrl}/market-data/reconciliation/cutover/rollback`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-virtual-user-id': 'admin-user',
+      },
+      body: JSON.stringify({
+        datasets: ['SPOT_PRICE'],
+        disableReconciliationGate: true,
+        note: 'execute rollback gate',
+        reason: 'stability drill',
+      }),
+    });
+    assert.equal(rollbackExecute.status, 201);
+    assert.equal(rollbackExecute.body.success, true);
+    assert.ok(rollbackExecute.body.data.executedAt.length > 0);
+    assert.equal(rollbackExecute.body.data.datasets.length, 1);
+    assert.equal(rollbackExecute.body.data.datasets[0], 'SPOT_PRICE');
+    assert.equal(rollbackExecute.body.data.config.standardizedRead.after, false);
+    assert.equal(rollbackExecute.body.data.config.reconciliationGate.after, false);
+    assert.equal(rollbackExecute.body.data.rollbackDrills.length, 1);
+    assert.equal(rollbackExecute.body.data.rollbackDrills[0].dataset, 'SPOT_PRICE');
+    assert.equal(rollbackExecute.body.data.rollbackDrills[0].status, 'PASSED');
+
+    const cutoverRuntimeStatusAfterRollback = await fetchJson<{
+      success: boolean;
+      data: {
+        generatedAt: string;
+        datasets: string[];
+        config: {
+          standardizedRead: {
+            enabled: boolean;
+          };
+          reconciliationGate: {
+            enabled: boolean;
+          };
+        };
+        rollbackDrillEvidence: Array<{
+          dataset: string;
+          exists: boolean;
+          recent: boolean;
+          passed: boolean;
+          drillId?: string;
+        }>;
+      };
+      traceId: string;
+      ts: string;
+    }>(`${baseUrl}/market-data/reconciliation/cutover/runtime-status?datasets=SPOT_PRICE`, {
+      method: 'GET',
+      headers: {
+        'x-virtual-user-id': 'admin-user',
+      },
+    });
+    assert.equal(cutoverRuntimeStatusAfterRollback.status, 200);
+    assert.equal(cutoverRuntimeStatusAfterRollback.body.success, true);
+    assert.equal(
+      cutoverRuntimeStatusAfterRollback.body.data.config.standardizedRead.enabled,
+      false,
+    );
+    assert.equal(
+      cutoverRuntimeStatusAfterRollback.body.data.config.reconciliationGate.enabled,
+      false,
+    );
+    assert.ok(cutoverRuntimeStatusAfterRollback.body.data.rollbackDrillEvidence.length >= 1);
+    const latestSpotRollbackEvidence =
+      cutoverRuntimeStatusAfterRollback.body.data.rollbackDrillEvidence.find(
+        (item) => item.dataset === 'SPOT_PRICE',
+      );
+    assert.ok(latestSpotRollbackEvidence);
+    if (latestSpotRollbackEvidence) {
+      assert.equal(latestSpotRollbackEvidence.exists, true);
+      assert.equal(latestSpotRollbackEvidence.passed, true);
+    }
+
+    const cutoverAutopilot = await fetchJson<{
+      success: boolean;
+      data: {
+        executedAt: string;
+        action: string;
+        dryRun: boolean;
+        decision: {
+          decisionId: string;
+          status: string;
+          reasonCodes: string[];
+          reportSnapshotId: string;
+        };
+        cutover?: {
+          applied: boolean;
+          config: {
+            standardizedRead: {
+              before: boolean;
+              after: boolean;
+            };
+            reconciliationGate: {
+              before: boolean;
+              after: boolean;
+            };
+          };
+        };
+        rollback?: {
+          applied: boolean;
+          datasets: string[];
+          config: {
+            standardizedRead: {
+              before: boolean;
+              after: boolean;
+            };
+            reconciliationGate: {
+              before: boolean;
+              after: boolean;
+            };
+          };
+          rollbackDrills: Array<{
+            drillId: string;
+            dataset: string;
+            status: string;
+          }>;
+        };
+      };
+      traceId: string;
+      ts: string;
+    }>(`${baseUrl}/market-data/reconciliation/cutover/autopilot`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-virtual-user-id': 'admin-user',
+      },
+      body: JSON.stringify({
+        windowDays: 7,
+        targetCoverageRate: 0.9,
+        datasets: ['SPOT_PRICE'],
+        reportFormat: 'markdown',
+        onRejectedAction: 'ROLLBACK',
+        disableReconciliationGate: true,
+        rollbackReason: 'autopilot_rejected',
+        note: 'autopilot gate execution',
+      }),
+    });
+    assert.equal(cutoverAutopilot.status, 201);
+    assert.equal(cutoverAutopilot.body.success, true);
+    assert.ok(cutoverAutopilot.body.data.executedAt.length > 0);
+    assert.equal(cutoverAutopilot.body.data.dryRun, false);
+    assert.ok(cutoverAutopilot.body.data.decision.decisionId.length > 0);
+    assert.ok(
+      cutoverAutopilot.body.data.decision.status === 'APPROVED' ||
+        cutoverAutopilot.body.data.decision.status === 'REJECTED',
+    );
+    assert.ok(
+      cutoverAutopilot.body.data.action === 'CUTOVER' ||
+        cutoverAutopilot.body.data.action === 'ROLLBACK' ||
+        cutoverAutopilot.body.data.action === 'NONE',
+    );
+    if (cutoverAutopilot.body.data.action === 'CUTOVER') {
+      assert.ok(cutoverAutopilot.body.data.cutover);
+      if (cutoverAutopilot.body.data.cutover) {
+        assert.equal(cutoverAutopilot.body.data.cutover.config.standardizedRead.after, true);
+      }
+    }
+    if (cutoverAutopilot.body.data.action === 'ROLLBACK') {
+      assert.ok(cutoverAutopilot.body.data.rollback);
+      if (cutoverAutopilot.body.data.rollback) {
+        assert.equal(cutoverAutopilot.body.data.rollback.config.standardizedRead.after, false);
+        assert.ok(cutoverAutopilot.body.data.rollback.rollbackDrills.length >= 1);
+      }
+    }
+
+    const cutoverAutopilotDryRun = await fetchJson<{
+      success: boolean;
+      data: {
+        action: string;
+        dryRun: boolean;
+        decision: {
+          decisionId: string;
+          status: string;
+        };
+        cutover?: unknown;
+        rollback?: unknown;
+      };
+      traceId: string;
+      ts: string;
+    }>(`${baseUrl}/market-data/reconciliation/cutover/autopilot`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-virtual-user-id': 'admin-user',
+      },
+      body: JSON.stringify({
+        windowDays: 7,
+        targetCoverageRate: 0.9,
+        datasets: ['SPOT_PRICE'],
+        reportFormat: 'markdown',
+        onRejectedAction: 'ROLLBACK',
+        dryRun: true,
+        note: 'autopilot dry run',
+      }),
+    });
+    assert.equal(cutoverAutopilotDryRun.status, 201);
+    assert.equal(cutoverAutopilotDryRun.body.success, true);
+    assert.equal(cutoverAutopilotDryRun.body.data.action, 'NONE');
+    assert.equal(cutoverAutopilotDryRun.body.data.dryRun, true);
+    assert.ok(cutoverAutopilotDryRun.body.data.decision.decisionId.length > 0);
+    assert.equal(cutoverAutopilotDryRun.body.data.cutover, undefined);
+    assert.equal(cutoverAutopilotDryRun.body.data.rollback, undefined);
+
+    const cutoverDecisionList = await fetchJson<{
+      success: boolean;
+      data: {
+        page: number;
+        pageSize: number;
+        total: number;
+        totalPages: number;
+        storage: string;
+        items: Array<{
+          decisionId: string;
+          status: string;
+          reportSnapshotId: string;
+        }>;
+      };
+      traceId: string;
+      ts: string;
+    }>(`${baseUrl}/market-data/reconciliation/cutover/decisions?page=1&pageSize=20`, {
+      method: 'GET',
+      headers: {
+        'x-virtual-user-id': 'admin-user',
+      },
+    });
+    assert.equal(cutoverDecisionList.status, 200);
+    assert.equal(cutoverDecisionList.body.success, true);
+    assert.ok(cutoverDecisionList.body.data.total >= 1);
+    assert.ok(
+      cutoverDecisionList.body.data.items.some(
+        (item) => item.decisionId === cutoverDecisionCreated.body.data.decisionId,
+      ),
+    );
+
+    const cutoverDecisionDetail = await fetchJson<{
+      success: boolean;
+      data: {
+        decisionId: string;
+        status: string;
+        reportSnapshotId: string;
+      };
+      traceId: string;
+      ts: string;
+    }>(
+      `${baseUrl}/market-data/reconciliation/cutover/decisions/${cutoverDecisionCreated.body.data.decisionId}`,
+      {
+        method: 'GET',
+        headers: {
+          'x-virtual-user-id': 'admin-user',
+        },
+      },
+    );
+    assert.equal(cutoverDecisionDetail.status, 200);
+    assert.equal(cutoverDecisionDetail.body.success, true);
+    assert.equal(
+      cutoverDecisionDetail.body.data.decisionId,
+      cutoverDecisionCreated.body.data.decisionId,
+    );
+
     const createdAtFrom = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
     const createdAtTo = new Date().toISOString();
 

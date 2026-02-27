@@ -2677,6 +2677,11 @@ enum ReconciliationRollbackDrillStatus {
   FAILED
 }
 
+enum ReconciliationCutoverDecisionStatus {
+  APPROVED
+  REJECTED
+}
+
 model DataReconciliationJob {
   id String @id @default(uuid())
 
@@ -2780,6 +2785,53 @@ model DataReconciliationRollbackDrill {
   @@index([dataset, status, createdAt])
   @@index([triggeredByUserId, createdAt])
   @@index([workflowVersionId, createdAt])
+}
+
+model DataReconciliationM1ReadinessReport {
+  id String @id @default(uuid())
+
+  snapshotId String @unique
+  format String
+  fileName String
+  windowDays Int @default(7)
+  targetCoverageRate Float @default(0.9)
+
+  datasets Json
+  readinessSnapshot Json
+  reportPayload Json
+
+  requestedByUserId String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([requestedByUserId, createdAt])
+  @@index([format, createdAt])
+  @@index([windowDays, targetCoverageRate, createdAt])
+}
+
+model DataReconciliationCutoverDecision {
+  id String @id @default(uuid())
+
+  decisionId String @unique
+  status ReconciliationCutoverDecisionStatus
+  reasonCodes Json
+
+  windowDays Int @default(7)
+  targetCoverageRate Float @default(0.9)
+  datasets Json
+
+  reportFormat String
+  reportSnapshotId String
+  readinessSummary Json
+  note String? @db.Text
+
+  requestedByUserId String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([status, createdAt])
+  @@index([requestedByUserId, createdAt])
+  @@index([reportSnapshotId, createdAt])
 }
 
 // =============================================

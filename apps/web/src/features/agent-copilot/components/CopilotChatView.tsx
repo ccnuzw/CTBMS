@@ -1,15 +1,19 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
     App,
     Button,
     Card,
     Col,
     Divider,
+    Drawer,
     Empty,
     Grid,
     Input,
     List,
+    Popconfirm,
+    Progress,
     Row,
+    Select,
     Space,
     Spin,
     Steps,
@@ -20,15 +24,21 @@ import {
     BarChartOutlined,
     BulbOutlined,
     CheckCircleOutlined,
+    ClockCircleOutlined,
+    DeleteOutlined,
     ExclamationCircleOutlined,
     LineChartOutlined,
-    MessageOutlined,
+    MailOutlined,
+    MenuOutlined,
     PlusOutlined,
     SafetyOutlined,
+    SearchOutlined,
     SendOutlined,
     SettingOutlined,
     SyncOutlined,
 } from '@ant-design/icons';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import { getApiError } from '../../../api/client';
 import {
     useConversationSessions,
@@ -107,11 +117,41 @@ const slotLabelMap: Record<string, string> = {
     topic: '关注主题',
 };
 
+// ─── 智能追问建议 ────────────────────────────────────────────────────────
+
+const getSmartSuggestions = (
+    status: string,
+    hasResult: boolean,
+): Array<{ id: string; label: string; value: string }> => {
+    if (status === 'DONE' && hasResult) {
+        return [
+            { id: 'send_email', label: '帮我发到邮箱', value: '请把这份报告发到我的邮箱' },
+            { id: 'compare', label: '对比上周数据', value: '请对比上周同期数据，看看有什么变化' },
+            { id: 'deeper', label: '深入分析某个品种', value: '请针对变化最大的品种做更深入的分析' },
+        ];
+    }
+    if (status === 'FAILED') {
+        return [
+            { id: 'retry_narrow', label: '缩小范围重新分析', value: '请缩小分析范围重新尝试' },
+            { id: 'retry_diff', label: '换个角度试试', value: '请换一个分析角度重新尝试' },
+        ];
+    }
+    return [];
+};
+
+// ─── 置信度渲染 ──────────────────────────────────────────────────────────
+
+const confidenceConfig = (pct: number) => {
+    if (pct >= 80) return { color: '#52c41a', label: '结论可靠性：高' } as const;
+    if (pct >= 50) return { color: '#fa8c16', label: '结论可靠性：中' } as const;
+    return { color: '#cf1322', label: '仅供参考' } as const;
+};
+
 // ─── 常量 ─────────────────────────────────────────────────────────────────
 
 const DEFAULT_VISIBLE_TURN_COUNT = 30;
 const LOAD_MORE_TURN_STEP = 20;
-const ASSISTANT_COLLAPSE_THRESHOLD = 300;
+const ASSISTANT_COLLAPSE_THRESHOLD = 500;
 
 // ─── 工具函数 ─────────────────────────────────────────────────────────────
 
@@ -135,13 +175,6 @@ const extractFirstParagraph = (text: string): string => {
     return firstContentLine || lines[0] || '助手已生成回复。';
 };
 
-const buildMissingSlotQuestion = (slots: string[]): string => {
-    if (slots.length === 0) return '';
-    const labels = slots.map((s) => slotLabelMap[s] || s);
-    if (labels.length === 1) return `请问你想看哪个${labels[0]}的数据？`;
-    return `请补充以下信息：${labels.join('、')}`;
-};
-
 // ─── 组件 ─────────────────────────────────────────────────────────────────
 
 export const CopilotChatView: React.FC<CopilotChatViewProps> = ({ isAdminUser, onSwitchToAdmin }) => {
@@ -154,7 +187,12 @@ export const CopilotChatView: React.FC<CopilotChatViewProps> = ({ isAdminUser, o
     const [localTurns, setLocalTurns] = useState<LocalConversationTurn[]>([]);
     const [visibleTurnCount, setVisibleTurnCount] = useState(DEFAULT_VISIBLE_TURN_COUNT);
     const [expandedTurnMap, setExpandedTurnMap] = useState<Record<string, boolean>>({});
+    const [sessionSearch, setSessionSearch] = useState('');
+    const [isMobileDrawerOpen, setIsMobileDrawerOpen] = useState(false);
+    const [showEmailForm, setShowEmailForm] = useState(false);
+    const [emailTo, setEmailTo] = useState('');
     const timelineRef = useRef<HTMLDivElement | null>(null);
+    const isMobile = !screens.md;
 
     // ── Query / Mutation ──
     const sessionsQuery = useConversationSessions({ page: 1, pageSize: 50 });
@@ -169,6 +207,11 @@ export const CopilotChatView: React.FC<CopilotChatViewProps> = ({ isAdminUser, o
 
     // ── 衍生数据 ──
     const sessionList = Array.isArray(sessionsQuery.data?.data) ? sessionsQuery.data.data : [];
+    const filteredSessions = useMemo(() => {
+        if (!sessionSearch.trim()) return sessionList;
+        const keyword = sessionSearch.trim().toLowerCase();
+        return sessionList.filter((s) => (s.title || '').toLowerCase().includes(keyword));
+    }, [sessionList, sessionSearch]);
     const detailTurns = detailQuery.data?.turns ?? [];
     const allTurns = useMemo(() => {
         if (!localTurns.length) return detailTurns;
@@ -183,8 +226,29 @@ export const CopilotChatView: React.FC<CopilotChatViewProps> = ({ isAdminUser, o
     );
     const currentStatus = String(resultQuery.data?.status ?? detailQuery.data?.state ?? 'INTENT_CAPTURE');
     const statusText = userFriendlyStatusText[currentStatus] || currentStatus;
-
     const latestPlan = useMemo(() => detailQuery.data?.plans?.[0], [detailQuery.data?.plans]);
+    const hasResult = Boolean(resultQuery.data?.result);
+
+    // ── 结果数据提取 ──
+    const resultData = useMemo(() => {
+        const raw = resultQuery.data?.result as Record<string, unknown> | null | undefined;
+        if (!raw) return null;
+        const confidenceRaw = typeof raw.confidence === 'number' ? raw.confidence : null;
+        const confidence = confidenceRaw !== null ? Math.round(confidenceRaw * 100) : null;
+        const conclusion = typeof raw.conclusion === 'string' ? raw.conclusion : null;
+        const actions = Array.isArray(raw.actions)
+            ? (raw.actions as Array<Record<string, unknown>>)
+                .map((a) => (typeof a.text === 'string' ? a.text : typeof a.label === 'string' ? a.label : String(a)))
+                .slice(0, 5)
+            : [];
+        return { confidence, conclusion, actions };
+    }, [resultQuery.data?.result]);
+
+    // ── 智能追问 ──
+    const smartSuggestions = useMemo(
+        () => getSmartSuggestions(currentStatus, hasResult),
+        [currentStatus, hasResult],
+    );
 
     // ── 进度步骤 ──
     const progressStep = useMemo(() => {
@@ -378,8 +442,52 @@ export const CopilotChatView: React.FC<CopilotChatViewProps> = ({ isAdminUser, o
     // ── JSX ──
     const isLoading = ['EXECUTING', 'SLOT_FILLING', 'PLAN_PREVIEW', 'USER_CONFIRM'].includes(currentStatus);
     const showConfirmCard = latestPlan && !latestPlan.isConfirmed && currentStatus === 'PLAN_PREVIEW';
-    const hasResult = Boolean(resultQuery.data?.result);
     const hasNoSession = !activeSessionId;
+
+    // ── 会话列表渲染（桌面端侧栏 / 移动端 Drawer 共享） ──
+    const sessionListContent = (
+        <Space direction="vertical" style={{ width: '100%' }} size={8}>
+            <Input
+                prefix={<SearchOutlined />}
+                placeholder="搜索历史对话"
+                allowClear
+                size="small"
+                value={sessionSearch}
+                onChange={(e) => setSessionSearch(e.target.value)}
+            />
+            {filteredSessions.length ? (
+                <List
+                    size="small"
+                    dataSource={filteredSessions}
+                    renderItem={(item) => (
+                        <List.Item
+                            style={{
+                                cursor: 'pointer',
+                                borderRadius: 8,
+                                padding: 10,
+                                background: item.id === activeSessionId ? '#e6f4ff' : undefined,
+                            }}
+                            onClick={() => {
+                                setActiveSessionId(item.id);
+                                if (isMobile) setIsMobileDrawerOpen(false);
+                            }}
+                        >
+                            <Space direction="vertical" size={2} style={{ width: '100%' }}>
+                                <Text strong ellipsis>
+                                    {item.title || '新对话'}
+                                </Text>
+                                <Text type="secondary" style={{ fontSize: 12 }}>
+                                    {new Date(item.updatedAt).toLocaleString('zh-CN')}
+                                </Text>
+                            </Space>
+                        </List.Item>
+                    )}
+                />
+            ) : (
+                <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="还没有对话，开始你的第一次提问吧" />
+            )}
+        </Space>
+    );
 
     return (
         <Space direction="vertical" style={{ width: '100%' }} size={16}>
@@ -387,64 +495,60 @@ export const CopilotChatView: React.FC<CopilotChatViewProps> = ({ isAdminUser, o
             <Card>
                 <Space align="center" style={{ justifyContent: 'space-between', width: '100%' }}>
                     <Space>
+                        {isMobile ? (
+                            <Button
+                                icon={<MenuOutlined />}
+                                onClick={() => setIsMobileDrawerOpen(true)}
+                            />
+                        ) : null}
                         <BulbOutlined style={{ color: '#1677ff' }} />
                         <Title level={4} style={{ margin: 0 }}>
                             智能助手
                         </Title>
-                        <Text type="secondary">有什么想问的，直接说就好</Text>
+                        {!isMobile ? (
+                            <Text type="secondary">有什么想问的，直接说就好</Text>
+                        ) : null}
                     </Space>
                     <Space>
                         <Button type="primary" icon={<PlusOutlined />} onClick={handleCreateSession}>
-                            新对话
+                            {isMobile ? '' : '新对话'}
                         </Button>
                         {isAdminUser && onSwitchToAdmin ? (
                             <Button icon={<SettingOutlined />} onClick={onSwitchToAdmin}>
-                                管理视图
+                                {isMobile ? '' : '管理视图'}
                             </Button>
                         ) : null}
                     </Space>
                 </Space>
             </Card>
 
+            {/* ── 移动端 Drawer ── */}
+            {isMobile ? (
+                <Drawer
+                    title="历史对话"
+                    placement="left"
+                    width={280}
+                    open={isMobileDrawerOpen}
+                    onClose={() => setIsMobileDrawerOpen(false)}
+                >
+                    {sessionListContent}
+                </Drawer>
+            ) : null}
+
             {/* ── 主体 ── */}
             <Row gutter={16}>
-                {/* ── 会话列表 ── */}
-                <Col xs={24} md={6} lg={5}>
-                    <Card title="历史对话" bodyStyle={{ padding: 8 }}>
-                        {sessionList.length ? (
-                            <List
-                                size="small"
-                                dataSource={sessionList}
-                                renderItem={(item) => (
-                                    <List.Item
-                                        style={{
-                                            cursor: 'pointer',
-                                            borderRadius: 8,
-                                            padding: 10,
-                                            background: item.id === activeSessionId ? '#e6f4ff' : undefined,
-                                        }}
-                                        onClick={() => setActiveSessionId(item.id)}
-                                    >
-                                        <Space direction="vertical" size={2} style={{ width: '100%' }}>
-                                            <Text strong ellipsis>
-                                                {item.title || '新对话'}
-                                            </Text>
-                                            <Text type="secondary" style={{ fontSize: 12 }}>
-                                                {new Date(item.updatedAt).toLocaleString('zh-CN')}
-                                            </Text>
-                                        </Space>
-                                    </List.Item>
-                                )}
-                            />
-                        ) : (
-                            <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="还没有对话，开始你的第一次提问吧" />
-                        )}
-                    </Card>
-                </Col>
+                {/* ── 桌面端会话列表 ── */}
+                {!isMobile ? (
+                    <Col md={6} lg={5}>
+                        <Card title="历史对话" bodyStyle={{ padding: 8 }}>
+                            {sessionListContent}
+                        </Card>
+                    </Col>
+                ) : null}
 
                 {/* ── 对话区 ── */}
                 <Col xs={24} md={18} lg={19}>
-                    <Card bodyStyle={{ height: 700, display: 'flex', flexDirection: 'column' }}>
+                    <Card bodyStyle={{ height: isMobile ? 'calc(100vh - 180px)' : 700, display: 'flex', flexDirection: 'column' }}>
                         {/* 消息流 */}
                         <div ref={timelineRef} style={{ flex: 1, overflow: 'auto', marginBottom: 12 }}>
                             {allTurns.length ? (
@@ -481,7 +585,7 @@ export const CopilotChatView: React.FC<CopilotChatViewProps> = ({ isAdminUser, o
                                         const turnReplyOptions = Array.isArray(turnPayload.replyOptions)
                                             ? (turnPayload.replyOptions as Array<Record<string, unknown>>)
                                                 .filter((item) => typeof item.label === 'string' && item.label)
-                                                .filter((item) => item.mode === 'SEND') // 极简视图只保留 SEND 类型
+                                                .filter((item) => item.mode === 'SEND')
                                                 .map((item) => ({
                                                     id: typeof item.id === 'string' ? item.id : `r_${Math.random().toString(36).slice(2, 6)}`,
                                                     label: String(item.label),
@@ -491,9 +595,10 @@ export const CopilotChatView: React.FC<CopilotChatViewProps> = ({ isAdminUser, o
                                             : [];
 
                                         // 助手消息：折叠长文本
-                                        const isLongAssistantReply = roleText === 'ASSISTANT' && contentText.length > ASSISTANT_COLLAPSE_THRESHOLD;
+                                        const isAssistant = roleText === 'ASSISTANT';
+                                        const isLongAssistantReply = isAssistant && contentText.length > ASSISTANT_COLLAPSE_THRESHOLD;
                                         const displayContent =
-                                            roleText === 'ASSISTANT' && isLongAssistantReply && !isExpanded
+                                            isAssistant && isLongAssistantReply && !isExpanded
                                                 ? extractFirstParagraph(contentText)
                                                 : contentText;
 
@@ -515,10 +620,18 @@ export const CopilotChatView: React.FC<CopilotChatViewProps> = ({ isAdminUser, o
                                                     {roleText === 'USER' ? '我' : '助手'}
                                                 </Text>
 
-                                                {/* 消息内容 */}
-                                                <div style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word', lineHeight: 1.7 }}>
-                                                    {displayContent}
-                                                </div>
+                                                {/* 消息内容：助手用 Markdown 渲染，用户保持纯文本 */}
+                                                {isAssistant ? (
+                                                    <div className="copilot-markdown" style={{ lineHeight: 1.7 }}>
+                                                        <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                                                            {displayContent}
+                                                        </ReactMarkdown>
+                                                    </div>
+                                                ) : (
+                                                    <div style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word', lineHeight: 1.7 }}>
+                                                        {displayContent}
+                                                    </div>
+                                                )}
 
                                                 {/* pending / failed 状态 */}
                                                 {isPendingTurn ? (
@@ -553,7 +666,7 @@ export const CopilotChatView: React.FC<CopilotChatViewProps> = ({ isAdminUser, o
                                                 ) : null}
 
                                                 {/* 下一步建议（对话式提示语） */}
-                                                {roleText === 'ASSISTANT' && turnReplyOptions.length > 0 && !isPendingTurn ? (
+                                                {isAssistant && turnReplyOptions.length > 0 && !isPendingTurn ? (
                                                     <div style={{ marginTop: 10, paddingTop: 8, borderTop: '1px dashed #e8e8e8' }}>
                                                         <Text type="secondary" style={{ fontSize: 12, display: 'block', marginBottom: 4 }}>
                                                             你可以接着问我：
@@ -572,7 +685,7 @@ export const CopilotChatView: React.FC<CopilotChatViewProps> = ({ isAdminUser, o
                                                                     }}
                                                                     onClick={() => void handleReplyOptionSelect(option)}
                                                                 >
-                                                                    "{option.label}"
+                                                                    &quot;{option.label}&quot;
                                                                 </Button>
                                                             ))}
                                                         </Space>
@@ -581,10 +694,168 @@ export const CopilotChatView: React.FC<CopilotChatViewProps> = ({ isAdminUser, o
                                             </div>
                                         );
                                     })}
+
+                                    {/* ── 结果摘要卡片（结论生成后内嵌于消息流末尾） ── */}
+                                    {resultData && currentStatus === 'DONE' ? (
+                                        <Card
+                                            size="small"
+                                            style={{
+                                                background: 'linear-gradient(135deg, #f0f5ff 0%, #e6fffb 100%)',
+                                                borderColor: '#91caff',
+                                                borderRadius: 12,
+                                            }}
+                                        >
+                                            <Space direction="vertical" style={{ width: '100%' }} size={8}>
+                                                <Space align="center">
+                                                    <CheckCircleOutlined style={{ color: '#389e0d', fontSize: 16 }} />
+                                                    <Text strong>分析完成</Text>
+                                                </Space>
+
+                                                {/* 置信度 */}
+                                                {resultData.confidence !== null ? (
+                                                    <div>
+                                                        <Text type="secondary" style={{ fontSize: 12 }}>
+                                                            {confidenceConfig(resultData.confidence).label}
+                                                        </Text>
+                                                        <Progress
+                                                            percent={resultData.confidence}
+                                                            strokeColor={confidenceConfig(resultData.confidence).color}
+                                                            size="small"
+                                                            showInfo={false}
+                                                            style={{ marginTop: 2 }}
+                                                        />
+                                                    </div>
+                                                ) : null}
+
+                                                {/* 核心结论 */}
+                                                {resultData.conclusion ? (
+                                                    <div className="copilot-markdown" style={{ fontSize: 13, lineHeight: 1.6 }}>
+                                                        <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                                                            {resultData.conclusion.slice(0, 300)}
+                                                        </ReactMarkdown>
+                                                    </div>
+                                                ) : null}
+
+                                                {/* 行动建议 */}
+                                                {resultData.actions.length > 0 ? (
+                                                    <div>
+                                                        <Text type="secondary" style={{ fontSize: 12, display: 'block', marginBottom: 4 }}>
+                                                            行动建议：
+                                                        </Text>
+                                                        {resultData.actions.map((action, idx) => (
+                                                            <Tag key={idx} color="blue" style={{ marginBottom: 4, fontSize: 12 }}>
+                                                                {action}
+                                                            </Tag>
+                                                        ))}
+                                                    </div>
+                                                ) : null}
+
+                                                {/* 操作按钮 */}
+                                                <Space size={8} wrap>
+                                                    <Button
+                                                        size="small"
+                                                        icon={<BarChartOutlined />}
+                                                        loading={exportMutation.isPending}
+                                                        onClick={handleExportPdf}
+                                                    >
+                                                        导出 PDF
+                                                    </Button>
+                                                    <Button
+                                                        size="small"
+                                                        icon={<MailOutlined />}
+                                                        onClick={() => setShowEmailForm(!showEmailForm)}
+                                                    >
+                                                        发送到邮箱
+                                                    </Button>
+                                                </Space>
+
+                                                {/* 内嵌邮件发送表单 */}
+                                                {showEmailForm ? (
+                                                    <Card size="small" style={{ background: '#fff', marginTop: 4 }}>
+                                                        <Space direction="vertical" style={{ width: '100%' }} size={8}>
+                                                            <Input
+                                                                placeholder="收件人邮箱（多个用逗号分隔）"
+                                                                value={emailTo}
+                                                                onChange={(e) => setEmailTo(e.target.value)}
+                                                                prefix={<MailOutlined />}
+                                                            />
+                                                            <Space>
+                                                                <Button
+                                                                    type="primary"
+                                                                    size="small"
+                                                                    loading={deliverMutation.isPending}
+                                                                    disabled={!emailTo.trim()}
+                                                                    onClick={async () => {
+                                                                        if (!activeSessionId) return;
+                                                                        try {
+                                                                            // 先导出获取 exportTaskId
+                                                                            const exportResult = await exportMutation.mutateAsync({
+                                                                                sessionId: activeSessionId,
+                                                                                format: 'PDF',
+                                                                                sections: ['CONCLUSION', 'EVIDENCE', 'RISK_ASSESSMENT'],
+                                                                            });
+                                                                            const exportTaskId = (exportResult.data as unknown as Record<string, unknown>)?.taskId;
+                                                                            if (!exportTaskId || typeof exportTaskId !== 'string') {
+                                                                                message.warning('导出任务创建失败，无法发送邮件');
+                                                                                return;
+                                                                            }
+                                                                            await deliverMutation.mutateAsync({
+                                                                                sessionId: activeSessionId,
+                                                                                exportTaskId,
+                                                                                channel: 'EMAIL',
+                                                                                to: emailTo.split(',').map((s) => s.trim()).filter(Boolean),
+                                                                            });
+                                                                            message.success('邮件已发送');
+                                                                            setShowEmailForm(false);
+                                                                            setEmailTo('');
+                                                                        } catch (error) {
+                                                                            showError(error, '发送邮件失败');
+                                                                        }
+                                                                    }}
+                                                                >
+                                                                    发送
+                                                                </Button>
+                                                                <Button
+                                                                    size="small"
+                                                                    onClick={() => {
+                                                                        setShowEmailForm(false);
+                                                                        setEmailTo('');
+                                                                    }}
+                                                                >
+                                                                    取消
+                                                                </Button>
+                                                            </Space>
+                                                        </Space>
+                                                    </Card>
+                                                ) : null}
+                                            </Space>
+                                        </Card>
+                                    ) : null}
+
+                                    {/* ── 智能追问建议（无后端 replyOptions 时触发） ── */}
+                                    {smartSuggestions.length > 0 && !isLoading ? (
+                                        <div style={{ paddingTop: 4 }}>
+                                            <Text type="secondary" style={{ fontSize: 12, display: 'block', marginBottom: 6 }}>
+                                                💡 你可以继续问我：
+                                            </Text>
+                                            <Space size={8} wrap>
+                                                {smartSuggestions.map((s) => (
+                                                    <Button
+                                                        key={s.id}
+                                                        size="small"
+                                                        style={{ borderRadius: 16 }}
+                                                        onClick={() => void handleQuickPromptSend(s.value)}
+                                                    >
+                                                        {s.label}
+                                                    </Button>
+                                                ))}
+                                            </Space>
+                                        </div>
+                                    ) : null}
                                 </Space>
                             ) : hasNoSession ? (
                                 // ── 新会话开场：场景卡片 ──
-                                <div style={{ padding: '40px 20px', textAlign: 'center' }}>
+                                <div style={{ padding: isMobile ? '20px 10px' : '40px 20px', textAlign: 'center' }}>
                                     <Title level={4} style={{ marginBottom: 24, fontWeight: 400 }}>
                                         👋 你好，有什么我可以帮你的？
                                     </Title>
@@ -670,48 +941,41 @@ export const CopilotChatView: React.FC<CopilotChatViewProps> = ({ isAdminUser, o
                                         {statusText}
                                     </Text>
                                 </Space>
-                                {hasResult ? (
-                                    <Button
-                                        size="small"
-                                        icon={<BarChartOutlined />}
-                                        loading={exportMutation.isPending}
-                                        onClick={handleExportPdf}
-                                    >
-                                        导出 PDF
-                                    </Button>
-                                ) : null}
                             </div>
                         ) : null}
 
                         <Divider style={{ margin: '4px 0' }} />
 
                         {/* ── 输入框 ── */}
-                        <Space.Compact style={{ width: '100%' }}>
-                            <Input.TextArea
-                                value={input}
-                                onChange={(e) => setInput(e.target.value)}
-                                autoSize={{ minRows: 2, maxRows: 4 }}
-                                placeholder="有什么想问的，直接说就好..."
-                                onPressEnter={(e) => {
-                                    if (!e.shiftKey) {
-                                        e.preventDefault();
-                                        void handleSend();
-                                    }
-                                }}
-                            />
-                            <Button
-                                type="primary"
-                                icon={<SendOutlined />}
-                                loading={sendTurnMutation.isPending}
-                                onClick={handleSend}
-                                style={{ height: 'auto', width: 80 }}
-                            >
-                                发送
-                            </Button>
-                        </Space.Compact>
+                        <div style={isMobile ? { position: 'sticky', bottom: 0, background: '#fff', paddingBottom: 'env(safe-area-inset-bottom)' } : undefined}>
+                            <Space.Compact style={{ width: '100%' }}>
+                                <Input.TextArea
+                                    value={input}
+                                    onChange={(e) => setInput(e.target.value)}
+                                    autoSize={{ minRows: 2, maxRows: 4 }}
+                                    placeholder="有什么想问的，直接说就好..."
+                                    onPressEnter={(e) => {
+                                        if (!e.shiftKey) {
+                                            e.preventDefault();
+                                            void handleSend();
+                                        }
+                                    }}
+                                />
+                                <Button
+                                    type="primary"
+                                    icon={<SendOutlined />}
+                                    loading={sendTurnMutation.isPending}
+                                    onClick={handleSend}
+                                    style={{ height: 'auto', width: 80 }}
+                                >
+                                    发送
+                                </Button>
+                            </Space.Compact>
+                        </div>
                     </Card>
                 </Col>
             </Row>
         </Space>
     );
 };
+
