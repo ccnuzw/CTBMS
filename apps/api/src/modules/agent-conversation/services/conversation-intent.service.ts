@@ -33,6 +33,7 @@ export type ActionIntentType =
   | 'CREATE_AGENT'
   | 'ASSEMBLE_WORKFLOW'
   | 'PROMOTE_AGENT'
+  | 'MULTI_STEP'
   | 'HELP';
 
 export interface ActionIntentResult {
@@ -43,6 +44,7 @@ export interface ActionIntentResult {
   cronNatural?: string;
   slotUpdates?: Partial<SlotMap>;
   analysisIntent?: IntentCode;
+  steps?: string[];
 }
 
 @Injectable()
@@ -291,8 +293,19 @@ export class ConversationIntentService {
       return { type: 'CREATE_AGENT', confidence: 0.9 };
     }
 
+    // Multi-step task chain (Plan-and-Execute)
+    // 区分：multi-step = "先分析X再分析Y最后发邮件" (具体任务链)
+    //       assemble_workflow = "组装/搭建工作流" (创建可复用定义)
+    if (/先.*然后.*最后|先.*再.*然后|第一步.*第二步|分[别步].*(?:分析|执行|查询)/.test(lower)) {
+      const steps = message
+        .split(/[，,。；;]|然后|最后|再|接着/)
+        .map((s) => s.trim())
+        .filter((s) => s.length > 2);
+      return { type: 'MULTI_STEP', confidence: 0.85, steps };
+    }
+
     // Assemble Workflow (Phase 13: 动态工作流组装)
-    if (/组装.*工作流|编排.*流程|先.*再.*最后|创建.*工作流|搭建.*流水线|组合.*分析/i.test(lower)) {
+    if (/组装.*工作流|编排.*流程|创建.*工作流|搭建.*流水线|组合.*分析/i.test(lower)) {
       return { type: 'ASSEMBLE_WORKFLOW', confidence: 0.85 };
     }
 

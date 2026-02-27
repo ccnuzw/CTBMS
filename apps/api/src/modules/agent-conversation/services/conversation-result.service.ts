@@ -11,7 +11,7 @@
  */
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
-import type { ExportConversationResultDto, CreateConversationBacktestDto } from '@packages/types';
+import type { ExportConversationResultDto } from '@packages/types';
 import { PrismaService } from '../../../prisma';
 import { ReportExportService } from '../../report-export';
 import { ConversationUtilsService } from './conversation-utils.service';

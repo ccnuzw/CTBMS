@@ -16,6 +16,7 @@ import { DataConnectorService } from './data-connector.service';
 import {
   CreateDataConnectorRequest,
   DataConnectorHealthCheckRequest,
+  DataConnectorQuickStartTemplateQueryRequest,
   DataConnectorQueryRequest,
   UpdateDataConnectorRequest,
 } from './dto';
@@ -42,6 +43,18 @@ export class DataConnectorController {
       throw new UnauthorizedException('User not authenticated');
     }
     return this.dataConnectorService.findAll(query);
+  }
+
+  @Get('quickstart/templates')
+  listQuickStartTemplates(
+    @Query() query: DataConnectorQuickStartTemplateQueryRequest,
+    @Request() req: AuthRequest,
+  ) {
+    const userId = req.user?.id;
+    if (!userId) {
+      throw new UnauthorizedException('User not authenticated');
+    }
+    return this.dataConnectorService.getQuickStartTemplates(query);
   }
 
   @Get(':id')

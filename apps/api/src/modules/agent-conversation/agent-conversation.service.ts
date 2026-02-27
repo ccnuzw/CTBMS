@@ -10,6 +10,7 @@ import type {
   DeliverConversationDto,
   DeliverConversationEmailDto,
   ExportConversationResultDto,
+  ConversationResultDiffTimelineQueryDto,
   ResolveConversationScheduleDto,
   ReuseConversationAssetDto,
   UpdateConversationSubscriptionDto,
@@ -20,7 +21,12 @@ import { WorkflowExecutionService } from '../workflow-execution';
 import { ReportExportService } from '../report-export';
 import { AIModelService } from '../ai/ai-model.service';
 import { AIProviderFactory } from '../ai/providers/provider.factory';
-import { ConversationUtilsService, ConversationIntentService, ConversationOrchestratorService, ConversationSynthesizerService } from './services';
+import {
+  ConversationUtilsService,
+  ConversationIntentService,
+  ConversationOrchestratorService,
+  ConversationSynthesizerService,
+} from './services';
 
 type SessionState =
   | 'INTENT_CAPTURE'
@@ -72,6 +78,65 @@ type ReplyOption = {
   tab?: 'progress' | 'result' | 'delivery' | 'schedule';
 };
 
+type ConversationResultDiffSnapshot = {
+  assetId: string;
+  createdAt: string;
+  executionId: string | null;
+  status: string;
+  confidence: number;
+  analysis: string;
+  facts: string[];
+  sources: string[];
+  actions: Record<string, unknown>;
+};
+
+type ConversationResultDiff = {
+  confidenceDelta: number;
+  analysisChanged: boolean;
+  addedFacts: string[];
+  removedFacts: string[];
+  addedSources: string[];
+  removedSources: string[];
+  changedActionKeys: string[];
+  changeSummary: string[];
+};
+
+type ConversationEvidenceFreshness = 'FRESH' | 'STALE' | 'UNKNOWN';
+
+type ConversationEvidenceQuality = 'RECONCILED' | 'INTERNAL' | 'EXTERNAL' | 'UNVERIFIED';
+
+type ConversationEvidenceItem = {
+  id: string;
+  title: string;
+  summary: string;
+  source: string;
+  sourceNodeId: string | null;
+  sourceNodeType: string | null;
+  sourceUrl: string | null;
+  tracePath: string;
+  collectedAt: string;
+  timestamp: string | null;
+  freshness: ConversationEvidenceFreshness;
+  quality: ConversationEvidenceQuality;
+};
+
+type ConversationResultTraceability = {
+  executionId: string;
+  replayPath: string;
+  executionPath: string;
+  evidenceCount: number;
+  strongEvidenceCount: number;
+  externalEvidenceCount: number;
+  generatedAt: string;
+};
+
+type ConversationResultDiffTimelineItem = {
+  comparable: boolean;
+  current: ConversationResultDiffSnapshot;
+  baseline: ConversationResultDiffSnapshot | null;
+  diff: ConversationResultDiff | null;
+};
+
 type ConversationSessionQueryDto = {
   state?: SessionState;
   keyword?: string;
@@ -96,12 +161,7 @@ type EphemeralCapabilityPolicy = {
   replayNonRetryableErrorCodeBlocklist: string[];
 };
 
-type PromotionTaskStatus =
-  | 'PENDING_REVIEW'
-  | 'IN_REVIEW'
-  | 'APPROVED'
-  | 'REJECTED'
-  | 'PUBLISHED';
+type PromotionTaskStatus = 'PENDING_REVIEW' | 'IN_REVIEW' | 'APPROVED' | 'REJECTED' | 'PUBLISHED';
 
 type PromotionTaskAction =
   | 'START_REVIEW'
@@ -134,6 +194,50 @@ export class AgentConversationService {
         ownerUserId: userId,
       },
     });
+  }
+
+  async deleteSession(userId: string, sessionId: string) {
+    const session = await this.prisma.conversationSession.findFirst({
+      where: { id: sessionId, ownerUserId: userId },
+    });
+    if (!session) {
+      return null;
+    }
+
+    // 使用事务级联删除所有关联数据
+    await this.prisma.$transaction(async (tx) => {
+      // 删除关联的 subscription runs
+      const subscriptions = await tx.conversationSubscription.findMany({
+        where: { sessionId },
+        select: { id: true },
+      });
+      if (subscriptions.length > 0) {
+        await tx.conversationSubscriptionRun.deleteMany({
+          where: { subscriptionId: { in: subscriptions.map((s) => s.id) } },
+        });
+      }
+      // 删除 subscriptions
+      await tx.conversationSubscription.deleteMany({ where: { sessionId } });
+      // 删除 turns、plans、assets
+      await tx.conversationTurn.deleteMany({ where: { sessionId } });
+      await tx.conversationPlan.deleteMany({ where: { sessionId } });
+      await tx.conversationAsset.deleteMany({ where: { sessionId } });
+      // 删除 skill draft + runtime grant
+      const drafts = await tx.agentSkillDraft.findMany({
+        where: { sessionId },
+        select: { id: true },
+      });
+      if (drafts.length > 0) {
+        await tx.agentSkillRuntimeGrant.deleteMany({
+          where: { draftId: { in: drafts.map((d) => d.id) } },
+        });
+      }
+      await tx.agentSkillDraft.deleteMany({ where: { sessionId } });
+      // 最后删除会话
+      await tx.conversationSession.delete({ where: { id: sessionId } });
+    });
+
+    return { deleted: true };
   }
 
   async listSessions(userId: string, query: ConversationSessionQueryDto) {
@@ -195,7 +299,9 @@ export class AgentConversationService {
     }
 
     // Return latest window in chronological order for stable timeline rendering.
-    session.turns = [...session.turns].sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
+    session.turns = [...session.turns].sort(
+      (a, b) => a.createdAt.getTime() - b.createdAt.getTime(),
+    );
 
     return session;
   }
@@ -211,10 +317,24 @@ export class AgentConversationService {
 
     // -- Unified Intent: detect action intents via IntentService --
     const unifiedIntent = await this.intentService.detectUnifiedIntent(
-      dto.message, session.state as SessionState, session.currentIntent,
+      dto.message,
+      session.state as SessionState,
+      session.currentIntent,
     );
     const actionType = unifiedIntent.type;
-    const isActionFastPath = actionType === 'EXPORT' || actionType === 'DELIVER_EMAIL' || actionType === 'SCHEDULE' || actionType === 'HELP' || actionType === 'CREATE_AGENT';
+    const isActionFastPath =
+      actionType === 'EXPORT' ||
+      actionType === 'DELIVER_EMAIL' ||
+      actionType === 'SCHEDULE' ||
+      actionType === 'HELP' ||
+      actionType === 'CREATE_AGENT' ||
+      actionType === 'ASSEMBLE_WORKFLOW' ||
+      actionType === 'PROMOTE_AGENT' ||
+      actionType === 'RETRY' ||
+      actionType === 'BACKTEST' ||
+      actionType === 'COMPARE' ||
+      actionType === 'MODIFY_PARAM' ||
+      actionType === 'MULTI_STEP';
     if (isActionFastPath) {
       // HELP intent: return dynamic capability discovery message
       if (actionType === 'HELP') {
@@ -237,7 +357,10 @@ export class AgentConversationService {
             sessionId,
             role: 'ASSISTANT',
             content: helpMessage,
-            structuredPayload: { actionIntent: 'HELP', replyOptions: helpOptions } as Prisma.InputJsonValue,
+            structuredPayload: {
+              actionIntent: 'HELP',
+              replyOptions: helpOptions,
+            } as Prisma.InputJsonValue,
           },
         });
         return {
@@ -281,7 +404,8 @@ export class AgentConversationService {
             : '\u597d\u7684\uff0c\u62a5\u544a\u6b63\u5728\u751f\u6210\u4e2d\uff0c\u7a0d\u540e\u4f1a\u901a\u77e5\u4f60\u3002';
           actionPayload.exportResult = exportResult;
         } catch {
-          actionResponse = '\u5bfc\u51fa\u9047\u5230\u4e86\u95ee\u9898\uff0c\u8bf7\u7a0d\u540e\u518d\u8bd5\u3002';
+          actionResponse =
+            '\u5bfc\u51fa\u9047\u5230\u4e86\u95ee\u9898\uff0c\u8bf7\u7a0d\u540e\u518d\u8bd5\u3002';
         }
       } else if (actionIntent.type === 'DELIVER_EMAIL') {
         if (actionIntent.emailTo && actionIntent.emailTo.length > 0) {
@@ -291,36 +415,45 @@ export class AgentConversationService {
               sections: ['CONCLUSION', 'EVIDENCE', 'RISK_ASSESSMENT'],
               includeRawData: false,
             });
-            const exportTaskId = typeof exportResult?.exportTaskId === 'string' ? exportResult.exportTaskId : '';
+            const exportTaskId =
+              typeof exportResult?.exportTaskId === 'string' ? exportResult.exportTaskId : '';
             if (exportTaskId) {
               await this.deliver(userId, sessionId, {
                 exportTaskId,
                 channel: 'EMAIL',
                 to: actionIntent.emailTo,
               });
-              actionResponse = '\u597d\u7684\uff0c\u62a5\u544a\u5df2\u53d1\u9001\u5230 ' + actionIntent.emailTo.join('\u3001') + '\u3002';
+              actionResponse =
+                '\u597d\u7684\uff0c\u62a5\u544a\u5df2\u53d1\u9001\u5230 ' +
+                actionIntent.emailTo.join('\u3001') +
+                '\u3002';
             } else {
-              actionResponse = '\u62a5\u544a\u5bfc\u51fa\u4e2d\uff0c\u5b8c\u6210\u540e\u4f1a\u81ea\u52a8\u53d1\u9001\u5230\u90ae\u7bb1\u3002';
+              actionResponse =
+                '\u62a5\u544a\u5bfc\u51fa\u4e2d\uff0c\u5b8c\u6210\u540e\u4f1a\u81ea\u52a8\u53d1\u9001\u5230\u90ae\u7bb1\u3002';
             }
           } catch {
-            actionResponse = '\u53d1\u9001\u90ae\u4ef6\u9047\u5230\u4e86\u95ee\u9898\uff0c\u8bf7\u7a0d\u540e\u518d\u8bd5\u3002';
+            actionResponse =
+              '\u53d1\u9001\u90ae\u4ef6\u9047\u5230\u4e86\u95ee\u9898\uff0c\u8bf7\u7a0d\u540e\u518d\u8bd5\u3002';
           }
         } else {
-          actionResponse = '\u8bf7\u544a\u8bc9\u6211\u6536\u4ef6\u4eba\u7684\u90ae\u7bb1\u5730\u5740\uff0c\u6bd4\u5982\u201c\u53d1\u5230 test@example.com\u201d\u3002';
+          actionResponse =
+            '\u8bf7\u544a\u8bc9\u6211\u6536\u4ef6\u4eba\u7684\u90ae\u7bb1\u5730\u5740\uff0c\u6bd4\u5982\u201c\u53d1\u5230 test@example.com\u201d\u3002';
         }
       } else if (actionIntent.type === 'SCHEDULE') {
-        actionResponse = '\u597d\u7684\uff0c\u5b9a\u65f6\u4efb\u52a1\u529f\u80fd\u6b63\u5728\u5f00\u53d1\u4e2d\u3002\u4f60\u53ef\u4ee5\u544a\u8bc9\u6211\u5177\u4f53\u7684\u6267\u884c\u9891\u7387\uff0c\u6bd4\u5982\u201c\u6bcf\u5468\u4e00\u65e9\u4e0a8\u70b9\u6267\u884c\u201d\u3002';
+        actionResponse =
+          '\u597d\u7684\uff0c\u5b9a\u65f6\u4efb\u52a1\u529f\u80fd\u6b63\u5728\u5f00\u53d1\u4e2d\u3002\u4f60\u53ef\u4ee5\u544a\u8bc9\u6211\u5177\u4f53\u7684\u6267\u884c\u9891\u7387\uff0c\u6bd4\u5982\u201c\u6bcf\u5468\u4e00\u65e9\u4e0a8\u70b9\u6267\u884c\u201d\u3002';
         actionPayload.cronNatural = actionIntent.cronNatural;
       } else if (actionIntent.type === 'CREATE_AGENT') {
         try {
-          const agent = await this.orchestratorService.generateEphemeralAgent(
-            userId, sessionId, { userInstruction: dto.message },
-          );
+          const agent = await this.orchestratorService.generateEphemeralAgent(userId, sessionId, {
+            userInstruction: dto.message,
+          });
           if (agent) {
             actionResponse = `\u5df2\u521b\u5efa\u4e34\u65f6\u667a\u80fd\u4f53\u300c${agent.name}\u300d(${agent.agentCode})\u3002\u8be5\u667a\u80fd\u4f53\u5c06\u5728 ${agent.ttlHours} \u5c0f\u65f6\u540e\u81ea\u52a8\u8fc7\u671f\u3002\u4f60\u53ef\u4ee5\u5728\u540e\u7eed\u5bf9\u8bdd\u4e2d\u4f7f\u7528\u5b83\u3002`;
             actionPayload.ephemeralAgent = agent;
           } else {
-            actionResponse = '\u667a\u80fd\u4f53\u521b\u5efa\u5931\u8d25\uff0c\u8bf7\u7a0d\u540e\u518d\u8bd5\u3002';
+            actionResponse =
+              '\u667a\u80fd\u4f53\u521b\u5efa\u5931\u8d25\uff0c\u8bf7\u7a0d\u540e\u518d\u8bd5\u3002';
           }
         } catch (error) {
           const msg = error instanceof Error ? error.message : '\u672a\u77e5\u9519\u8bef';
@@ -329,7 +462,9 @@ export class AgentConversationService {
       } else if (actionIntent.type === 'ASSEMBLE_WORKFLOW') {
         try {
           const workflow = await this.orchestratorService.assembleEphemeralWorkflow(
-            userId, sessionId, { userInstruction: dto.message },
+            userId,
+            sessionId,
+            { userInstruction: dto.message },
           );
           if (workflow) {
             actionResponse = `已组装临时工作流「${workflow.name}」(${workflow.mode} 模式，${workflow.nodes.length} 个节点)。该工作流将在 ${workflow.ttlHours} 小时后自动过期。`;
@@ -347,7 +482,9 @@ export class AgentConversationService {
           const activeAgent = agents?.find((a) => a.status === 'ACTIVE');
           if (activeAgent) {
             const result = await this.orchestratorService.promoteEphemeralAgent(
-              userId, sessionId, activeAgent.id,
+              userId,
+              sessionId,
+              activeAgent.id,
             );
             if (result) {
               actionResponse = `临时智能体「${result.agentCode}」已提交晋升审批。审批通过后将成为可复用的持久化能力。`;
@@ -361,6 +498,111 @@ export class AgentConversationService {
         } catch (error) {
           const msg = error instanceof Error ? error.message : '未知错误';
           actionResponse = `晋升智能体时遇到问题：${msg}`;
+        }
+      } else if (actionIntent.type === 'RETRY') {
+        // ── A1: 重试上次分析 ──
+        try {
+          const latestExecutionId = session.latestExecutionId;
+          if (latestExecutionId) {
+            actionResponse = '好的，正在使用相同参数重新分析...';
+            actionPayload.retryExecutionId = latestExecutionId;
+          } else {
+            actionResponse = '没有找到可重试的执行记录，请先进行一次分析。';
+          }
+        } catch {
+          actionResponse = '重试遇到问题，请稍后再试。';
+        }
+      } else if (actionIntent.type === 'BACKTEST') {
+        // ── A2: 触发回测验证 ──
+        try {
+          const backtestResult = await this.createBacktest(userId, sessionId, {
+            strategySource: 'LATEST_ACTIONS',
+            lookbackDays: 90,
+            feeModel: { spotFeeBps: 8, futuresFeeBps: 3 },
+          });
+          if (backtestResult) {
+            actionResponse =
+              '好的，回测任务已提交。系统将使用过去 90 天的历史数据进行验证，完成后会通知你。';
+            actionPayload.backtestResult = backtestResult;
+          } else {
+            actionResponse = '回测任务创建失败，请确保当前会话有已完成的分析结果。';
+          }
+        } catch {
+          actionResponse = '回测任务创建遇到问题，请稍后再试。';
+        }
+      } else if (actionIntent.type === 'COMPARE') {
+        // ── A3: 对比分析 ──
+        actionResponse =
+          '好的，正在准备对比分析。请告诉我你想对比哪些方面？例如：\n• 对比不同品种（玉米 vs 大豆）\n• 对比不同时间段（本周 vs 上周）\n• 对比不同地区（东北 vs 华北）';
+        actionPayload.compareMode = true;
+        actionPayload.replyOptions = [
+          { id: 'cmp_variety', label: '对比不同品种', mode: 'SEND', value: '对比玉米和大豆的走势' },
+          { id: 'cmp_time', label: '对比上周数据', mode: 'SEND', value: '对比本周和上周同期数据' },
+          { id: 'cmp_region', label: '对比不同地区', mode: 'SEND', value: '对比东北和华北的行情' },
+        ];
+      } else if (actionIntent.type === 'MODIFY_PARAM') {
+        // ── A4: 动态修改参数 ──
+        const slotUpdates = (unifiedIntent as unknown as Record<string, unknown>).slotUpdates as
+          | Record<string, unknown>
+          | undefined;
+        if (slotUpdates && Object.keys(slotUpdates).length > 0) {
+          const currentSlots = this.toRecord(session.currentSlots);
+          await this.prisma.conversationSession.update({
+            where: { id: sessionId },
+            data: {
+              currentSlots: { ...currentSlots, ...slotUpdates } as unknown as Prisma.InputJsonValue,
+            },
+          });
+          const updatedKeys = Object.keys(slotUpdates).join('、');
+          actionResponse = `已更新参数：${updatedKeys}。你可以说「重新分析」让我用新参数重新执行。`;
+          actionPayload.slotUpdates = slotUpdates;
+        } else {
+          actionResponse =
+            '请告诉我你想修改哪些参数。例如：\n• 「时间范围改为最近一个月」\n• 「地区改为华北」\n• 「关注主题改为大豆」';
+        }
+      } else if (actionIntent.type === 'MULTI_STEP') {
+        // ── 多步任务分解 (Plan-and-Execute) ──
+        const rawSteps = (unifiedIntent as unknown as Record<string, unknown>).steps as
+          | string[]
+          | undefined;
+        const steps =
+          rawSteps && rawSteps.length > 1
+            ? rawSteps
+            : dto.message
+              .split(/[，,。；;]|然后|最后|再|接着/)
+              .map((s) => s.trim())
+              .filter((s) => s.length > 2);
+
+        if (steps.length > 1) {
+          // 存储任务计划
+          const taskPlan = steps.map((step, idx) => ({
+            stepIndex: idx + 1,
+            instruction: step,
+            status: idx === 0 ? 'PENDING' : 'WAITING',
+          }));
+          await this.createConversationAsset({
+            sessionId,
+            assetType: 'NOTE',
+            title: '多步任务计划',
+            payload: { steps: taskPlan } as unknown as Record<string, unknown>,
+            tags: { type: 'MULTI_STEP_PLAN' },
+          });
+
+          const stepList = steps.map((step, idx) => `${idx + 1}. ${step}`).join('\n');
+          actionResponse = `好的，我已制定以下分步任务计划：\n\n${stepList}\n\n现在开始执行第 1 步：「${steps[0]}」`;
+          actionPayload.multiStepPlan = taskPlan;
+          actionPayload.replyOptions = [
+            {
+              id: 'execute_step1',
+              label: `开始：${steps[0].slice(0, 20)}`,
+              mode: 'SEND',
+              value: steps[0],
+            },
+            { id: 'adjust_plan', label: '调整计划', mode: 'SEND', value: '调整一下这个计划' },
+          ];
+        } else {
+          actionResponse =
+            '请描述多个步骤让我帮你分步执行。例如：\n「先分析玉米走势，然后对比大豆，最后把报告发到邮箱」';
         }
       }
 
@@ -419,11 +661,13 @@ export class AgentConversationService {
     }
 
     if (referencedAssets.length > 0) {
-      effectiveContextPatch.reusedAssets = referencedAssets.map((asset: { id: string; title: string; assetType: string }) => ({
-        assetId: asset.id,
-        title: asset.title,
-        assetType: asset.assetType,
-      }));
+      effectiveContextPatch.reusedAssets = referencedAssets.map(
+        (asset: { id: string; title: string; assetType: string }) => ({
+          assetId: asset.id,
+          title: asset.title,
+          assetType: asset.assetType,
+        }),
+      );
       effectiveContextPatch.reuseResolution = {
         explicitAssetRefCount: referencedAssetIds.length,
         followupAssetRefCount: followupReferencedAssetIds.length,
@@ -460,11 +704,38 @@ export class AgentConversationService {
       effectiveContextPatch,
     );
 
+    // ── 跨会话偏好记忆：加载用户历史偏好自动填充空缺 slot ──
+    try {
+      const prefAsset = await this.prisma.conversationAsset.findFirst({
+        where: {
+          session: { ownerUserId: userId },
+          assetType: 'NOTE',
+          tags: { path: ['type'], equals: 'USER_PREFERENCE' },
+        },
+        orderBy: { updatedAt: 'desc' },
+        select: { payload: true },
+      });
+      if (prefAsset?.payload) {
+        const prefs = this.toRecord(prefAsset.payload);
+        const prefKeys = ['region', 'topic', 'lookbackDays', 'email'] as const;
+        const mergedSlotsRecord = mergedSlots as Record<string, unknown>;
+        for (const key of prefKeys) {
+          if (this.utilsService.isSlotMissing(mergedSlotsRecord[key]) && prefs[key] != null) {
+            mergedSlotsRecord[key] = prefs[key];
+          }
+        }
+      }
+    } catch {
+      // 偏好加载失败不阻塞主流程
+    }
+
     // Apply slot defaults to minimize SLOT_FILLING interruptions
     const slotsWithDefaults = this.intentService.applySlotDefaults(mergedSlots, intent);
 
     const requiredSlots = this.intentService.requiredSlotsByIntent(intent);
-    const missingSlots = requiredSlots.filter((key) => this.utilsService.isSlotMissing(slotsWithDefaults[key]));
+    const missingSlots = requiredSlots.filter((key) =>
+      this.utilsService.isSlotMissing(slotsWithDefaults[key]),
+    );
     const hasMissingSlots = missingSlots.length > 0;
     const routingPolicy = await this.resolveCapabilityRoutingPolicy(session.ownerUserId);
 
@@ -472,7 +743,12 @@ export class AgentConversationService {
     const planId = `plan_${randomUUID()}`;
     const workflowCandidate = hasMissingSlots
       ? null
-      : await this.pickWorkflowDefinitionCandidate(session.ownerUserId, intent, slotsWithDefaults, routingPolicy);
+      : await this.pickWorkflowDefinitionCandidate(
+        session.ownerUserId,
+        intent,
+        slotsWithDefaults,
+        routingPolicy,
+      );
     const proposedPlan: ProposedPlan | null = hasMissingSlots
       ? null
       : {
@@ -539,11 +815,7 @@ export class AgentConversationService {
       }
       | undefined;
 
-    if (
-      proposedPlan &&
-      nextPlanVersion &&
-      this.shouldAutoExecute(effectiveContextPatch)
-    ) {
+    if (proposedPlan && nextPlanVersion && this.shouldAutoExecute(effectiveContextPatch)) {
       const execution = await this.confirmPlan(
         userId,
         sessionId,
@@ -623,7 +895,11 @@ export class AgentConversationService {
         currentSlots: mergedSlots,
         state: autoExecution ? 'EXECUTING' : state,
         latestPlanType:
-          proposedPlan?.planType === 'DEBATE_PLAN' ? 'DEBATE_PLAN' : proposedPlan ? 'RUN_PLAN' : null,
+          proposedPlan?.planType === 'DEBATE_PLAN'
+            ? 'DEBATE_PLAN'
+            : proposedPlan
+              ? 'RUN_PLAN'
+              : null,
         latestPlanSnapshot: proposedPlan
           ? (proposedPlan as Prisma.InputJsonValue)
           : Prisma.JsonNull,
@@ -696,6 +972,50 @@ export class AgentConversationService {
     }
 
     const paramSnapshot = this.toRecord(mergedPlan.paramSnapshot);
+
+    // ── D1: 多轮上下文穿透 —— 最近 6 轮对话摘要注入 ──
+    try {
+      const recentTurns = await this.prisma.conversationTurn.findMany({
+        where: { sessionId },
+        orderBy: { createdAt: 'desc' },
+        take: 6,
+        select: { role: true, content: true },
+      });
+      if (recentTurns.length > 0) {
+        const contextLines = recentTurns
+          .reverse()
+          .map((t) => `[${t.role}] ${(t.content ?? '').slice(0, 200)}`)
+          .join('\n');
+        paramSnapshot.conversationContext = contextLines;
+      }
+    } catch {
+      // 摘要注入失败不阻塞执行
+    }
+
+    // ── D2: 前轮结果自动引用 —— 最近 RESULT_SUMMARY 资产 ──
+    try {
+      const latestResultAsset = await this.prisma.conversationAsset.findFirst({
+        where: { sessionId, assetType: 'RESULT_SUMMARY' },
+        orderBy: { createdAt: 'desc' },
+        select: { payload: true },
+      });
+      if (latestResultAsset?.payload) {
+        const resultPayload = this.toRecord(latestResultAsset.payload);
+        const previousResult = this.toRecord(resultPayload.result);
+        // 提取关键字段：结论 + 置信度 + 关键事实
+        const previousAnalysis: Record<string, unknown> = {};
+        if (previousResult.conclusion) previousAnalysis.conclusion = previousResult.conclusion;
+        if (previousResult.confidence) previousAnalysis.confidence = previousResult.confidence;
+        if (Array.isArray(previousResult.facts))
+          previousAnalysis.facts = (previousResult.facts as string[]).slice(0, 10);
+        if (Object.keys(previousAnalysis).length > 0) {
+          paramSnapshot.previousAnalysis = previousAnalysis;
+        }
+      }
+    } catch {
+      // 前轮引用失败不阻塞执行
+    }
+
     const compiledParamSnapshot = this.compileExecutionParams(mergedPlan, paramSnapshot);
 
     const execution = await this.workflowExecutionService.trigger(userId, {
@@ -818,7 +1138,9 @@ export class AgentConversationService {
     });
 
     const outputRecord = this.toRecord(execution.outputSnapshot);
-    const result = this.normalizeResult(outputRecord);
+    const evidenceItems = this.buildResultEvidenceItems(outputRecord, execution.id);
+    const traceability = this.buildResultTraceability(execution.id, outputRecord, evidenceItems);
+    const result = this.normalizeResult(outputRecord, evidenceItems, traceability);
     const status = this.mapExecutionStatus(execution.status);
 
     if (status === 'DONE') {
@@ -833,6 +1155,106 @@ export class AgentConversationService {
         },
         sourceExecutionId: execution.id,
       });
+
+      // ── C1: 自动合成报告卡片并缓存 ──
+      try {
+        const synthesized = await this.synthesizerService.synthesizeResult(sessionId, outputRecord);
+        if (synthesized) {
+          const reportCards = this.synthesizerService.buildReportCards(synthesized);
+          if (reportCards.length > 0) {
+            await this.createConversationAsset({
+              sessionId,
+              assetType: 'NOTE',
+              title: '报告卡片',
+              payload: { cards: reportCards } as unknown as Record<string, unknown>,
+              tags: { type: 'REPORT_CARDS', cached: true },
+            });
+          }
+        }
+      } catch {
+        // 合成失败不阻塞主流程，前端仍可按需请求
+      }
+
+      // ── C2: 成功后创建助手消息 + replyOptions 引导下一步 ──
+      try {
+        const conclusionSnippet =
+          typeof (result as Record<string, unknown>)?.conclusion === 'string'
+            ? ((result as Record<string, unknown>).conclusion as string).slice(0, 80) + '...'
+            : '分析已完成';
+        await this.prisma.conversationTurn.create({
+          data: {
+            sessionId,
+            role: 'ASSISTANT',
+            content: `✅ ${conclusionSnippet}\n\n你可以继续操作：`,
+            structuredPayload: {
+              autoGenerated: true,
+              replyOptions: [
+                { id: 'export', label: '导出 PDF 报告', mode: 'SEND', value: '导出PDF报告' },
+                { id: 'email', label: '发到我的邮箱', mode: 'SEND', value: '发到我的邮箱' },
+                {
+                  id: 'save',
+                  label: '保存为常用能力',
+                  mode: 'SEND',
+                  value: '保存这个智能体到系统中',
+                },
+                {
+                  id: 'schedule',
+                  label: '设为定时执行',
+                  mode: 'SEND',
+                  value: '每周一早上8点自动执行这个分析',
+                },
+                {
+                  id: 'backtest',
+                  label: '回测验证结论',
+                  mode: 'SEND',
+                  value: '用历史数据回测验证这个分析结论',
+                },
+              ],
+            } as unknown as Prisma.InputJsonValue,
+          },
+        });
+      } catch {
+        // 助手消息创建失败不阻塞主流程
+      }
+
+      // ── 跨会话偏好保存：提取用户常用参数 ──
+      try {
+        const currentSlots = this.toRecord(session.currentSlots);
+        const prefPayload: Record<string, unknown> = {};
+        const prefKeys = ['region', 'topic', 'lookbackDays', 'email'] as const;
+        for (const key of prefKeys) {
+          if (currentSlots[key] != null) {
+            prefPayload[key] = currentSlots[key];
+          }
+        }
+        if (Object.keys(prefPayload).length > 0) {
+          // 查找是否已有偏好资产，有则更新，无则创建
+          const existingPref = await this.prisma.conversationAsset.findFirst({
+            where: {
+              session: { ownerUserId: userId },
+              assetType: 'NOTE',
+              tags: { path: ['type'], equals: 'USER_PREFERENCE' },
+            },
+            select: { id: true },
+          });
+          if (existingPref) {
+            await this.prisma.conversationAsset.update({
+              where: { id: existingPref.id },
+              data: { payload: prefPayload as Prisma.InputJsonValue, updatedAt: new Date() },
+            });
+          } else {
+            await this.createConversationAsset({
+              sessionId,
+              assetType: 'NOTE',
+              title: '用户偏好',
+              payload: prefPayload,
+              tags: { type: 'USER_PREFERENCE' },
+            });
+          }
+        }
+      } catch {
+        // 偏好保存失败不阻塞主流程
+      }
     }
 
     const nextState: SessionState =
@@ -859,6 +1281,100 @@ export class AgentConversationService {
       })),
       executionId: execution.id,
       error: execution.errorMessage,
+    };
+  }
+
+  async getResultDiff(userId: string, sessionId: string) {
+    const session = await this.prisma.conversationSession.findFirst({
+      where: { id: sessionId, ownerUserId: userId },
+      select: { id: true },
+    });
+    if (!session) {
+      return null;
+    }
+
+    const assets = await this.prisma.conversationAsset.findMany({
+      where: {
+        sessionId,
+        assetType: 'RESULT_SUMMARY',
+      },
+      orderBy: [{ createdAt: 'desc' }],
+      take: 2,
+      select: {
+        id: true,
+        sourceExecutionId: true,
+        payload: true,
+        createdAt: true,
+      },
+    });
+
+    const current = assets[0] ? this.buildResultDiffSnapshot(assets[0]) : null;
+    const baseline = assets[1] ? this.buildResultDiffSnapshot(assets[1]) : null;
+
+    if (!current || !baseline) {
+      return {
+        comparable: false,
+        reason: 'INSUFFICIENT_HISTORY',
+        current,
+        baseline,
+        diff: null,
+      };
+    }
+
+    return {
+      comparable: true,
+      reason: null,
+      current,
+      baseline,
+      diff: this.buildResultDiff(current, baseline),
+    };
+  }
+
+  async getResultDiffTimeline(
+    userId: string,
+    sessionId: string,
+    query: ConversationResultDiffTimelineQueryDto,
+  ) {
+    const session = await this.prisma.conversationSession.findFirst({
+      where: { id: sessionId, ownerUserId: userId },
+      select: { id: true },
+    });
+    if (!session) {
+      return null;
+    }
+
+    const limit = Math.min(30, Math.max(2, query.limit ?? 10));
+    const assets = await this.prisma.conversationAsset.findMany({
+      where: {
+        sessionId,
+        assetType: 'RESULT_SUMMARY',
+      },
+      orderBy: [{ createdAt: 'desc' }],
+      take: limit,
+      select: {
+        id: true,
+        sourceExecutionId: true,
+        payload: true,
+        createdAt: true,
+      },
+    });
+
+    const snapshots = assets.map((asset) => this.buildResultDiffSnapshot(asset));
+    const items: ConversationResultDiffTimelineItem[] = snapshots.map((current, index) => {
+      const baseline = snapshots[index + 1] ?? null;
+      return {
+        comparable: Boolean(baseline),
+        current,
+        baseline,
+        diff: baseline ? this.buildResultDiff(current, baseline) : null,
+      };
+    });
+
+    return {
+      limit,
+      totalSnapshots: snapshots.length,
+      comparableCount: items.filter((item) => item.comparable).length,
+      items,
     };
   }
 
@@ -958,9 +1474,12 @@ export class AgentConversationService {
 
     const channel = dto.channel;
     const profileDefaults = await this.resolveDeliveryProfileDefaults(userId, channel);
-    const to = channel === 'EMAIL' ? this.mergeDeliveryRecipients(dto.to, profileDefaults.to) : undefined;
+    const to =
+      channel === 'EMAIL' ? this.mergeDeliveryRecipients(dto.to, profileDefaults.to) : undefined;
     const target =
-      channel === 'EMAIL' ? undefined : dto.target?.trim() || profileDefaults.target?.trim() || undefined;
+      channel === 'EMAIL'
+        ? undefined
+        : dto.target?.trim() || profileDefaults.target?.trim() || undefined;
     const normalizedTemplate = this.normalizeDeliveryTemplateCode(
       dto.templateCode ?? profileDefaults.templateCode,
     );
@@ -1121,7 +1640,11 @@ export class AgentConversationService {
     try {
       const outputRecord = this.toRecord(execution.outputSnapshot);
       const result = this.normalizeResult(outputRecord);
-      const summary = this.computeBacktestSummary(result.confidence, dto.lookbackDays, dto.feeModel);
+      const summary = this.computeBacktestSummary(
+        result.confidence,
+        dto.lookbackDays,
+        dto.feeModel,
+      );
       const metrics = {
         sampleSize: Math.max(20, Math.round(dto.lookbackDays * 0.35)),
         assumptions: {
@@ -1760,7 +2283,9 @@ export class AgentConversationService {
     const effectivePolicy = await this.resolveEphemeralCapabilityPolicy(userId);
     const createdAfter = this.resolveRoutingWindowStart(query?.window);
     const now = new Date();
-    const staleDraftBefore = new Date(now.getTime() - effectivePolicy.runtimeGrantTtlHours * 3 * 60 * 60 * 1000);
+    const staleDraftBefore = new Date(
+      now.getTime() - effectivePolicy.runtimeGrantTtlHours * 3 * 60 * 60 * 1000,
+    );
 
     const drafts = await this.prisma.agentSkillDraft.findMany({
       where: {
@@ -1812,14 +2337,20 @@ export class AgentConversationService {
 
     for (const draft of drafts) {
       draftStatusStats.set(draft.status, (draftStatusStats.get(draft.status) ?? 0) + 1);
-      skillCodeStats.set(draft.suggestedSkillCode, (skillCodeStats.get(draft.suggestedSkillCode) ?? 0) + 1);
+      skillCodeStats.set(
+        draft.suggestedSkillCode,
+        (skillCodeStats.get(draft.suggestedSkillCode) ?? 0) + 1,
+      );
     }
     for (const grant of grants) {
       grantStatusStats.set(grant.status, (grantStatusStats.get(grant.status) ?? 0) + 1);
     }
 
     const expiringIn24h = grants.filter(
-      (grant) => grant.status === 'ACTIVE' && grant.expiresAt > now && grant.expiresAt <= new Date(now.getTime() + 24 * 60 * 60 * 1000),
+      (grant) =>
+        grant.status === 'ACTIVE' &&
+        grant.expiresAt > now &&
+        grant.expiresAt <= new Date(now.getTime() + 24 * 60 * 60 * 1000),
     ).length;
 
     const staleDrafts = drafts.filter(
@@ -1862,7 +2393,9 @@ export class AgentConversationService {
 
     const policy = await this.resolveEphemeralCapabilityPolicy(userId);
     const now = new Date();
-    const staleDraftBefore = new Date(now.getTime() - policy.runtimeGrantTtlHours * 3 * 60 * 60 * 1000);
+    const staleDraftBefore = new Date(
+      now.getTime() - policy.runtimeGrantTtlHours * 3 * 60 * 60 * 1000,
+    );
 
     const expiredGrants = await this.prisma.agentSkillRuntimeGrant.updateMany({
       where: {
@@ -1929,7 +2462,9 @@ export class AgentConversationService {
 
     const policy = await this.resolveEphemeralCapabilityPolicy(userId);
     const createdAfter = this.resolveRoutingWindowStart(query?.window);
-    const staleDraftBefore = new Date(Date.now() - policy.runtimeGrantTtlHours * 3 * 60 * 60 * 1000);
+    const staleDraftBefore = new Date(
+      Date.now() - policy.runtimeGrantTtlHours * 3 * 60 * 60 * 1000,
+    );
 
     const routingLogs = await this.listCapabilityRoutingLogs(userId, sessionId, {
       routeType: 'SKILL_DRAFT_REUSE',
@@ -1941,7 +2476,9 @@ export class AgentConversationService {
     const skillCodeHitMap = new Map<string, number>();
     for (const log of routingLogs ?? []) {
       const draftId = this.pickString((log as unknown as Record<string, unknown>).selectedDraftId);
-      const skillCode = this.pickString((log as unknown as Record<string, unknown>).selectedSkillCode);
+      const skillCode = this.pickString(
+        (log as unknown as Record<string, unknown>).selectedSkillCode,
+      );
       if (draftId) {
         draftHitMap.set(draftId, (draftHitMap.get(draftId) ?? 0) + 1);
       }
@@ -2038,7 +2575,11 @@ export class AgentConversationService {
     };
   }
 
-  async applyEphemeralCapabilityEvolutionPlan(userId: string, sessionId: string, query?: { window?: '1h' | '24h' | '7d' }) {
+  async applyEphemeralCapabilityEvolutionPlan(
+    userId: string,
+    sessionId: string,
+    query?: { window?: '1h' | '24h' | '7d' },
+  ) {
     const plan = await this.getEphemeralCapabilityEvolutionPlan(userId, sessionId, query);
     if (!plan) {
       return null;
@@ -2250,14 +2791,14 @@ export class AgentConversationService {
 
     const taskIds = explicitTaskIds.length
       ? explicitTaskIds
-      : (
+      : ((
         await this.listEphemeralCapabilityPromotionTasks(userId, sessionId, {
           window: dto.window,
           status: dto.status,
         })
       )
         ?.map((item) => item.taskAssetId)
-        .filter((id): id is string => typeof id === 'string' && id.length > 0) ?? [];
+        .filter((id): id is string => typeof id === 'string' && id.length > 0) ?? []);
 
     const uniqueTaskIds = Array.from(new Set(taskIds));
     const succeeded: Array<{ taskAssetId: string; status: string }> = [];
@@ -2266,10 +2807,15 @@ export class AgentConversationService {
     const maxRetries = this.normalizeBatchRetry(dto.maxRetries);
 
     const runUpdateOnce = async (taskAssetId: string) => {
-      const updated = await this.updateEphemeralCapabilityPromotionTask(userId, sessionId, taskAssetId, {
-        action: dto.action,
-        comment: dto.comment,
-      });
+      const updated = await this.updateEphemeralCapabilityPromotionTask(
+        userId,
+        sessionId,
+        taskAssetId,
+        {
+          action: dto.action,
+          comment: dto.comment,
+        },
+      );
       const status = this.pickString(updated?.task?.status) ?? 'UNKNOWN';
       succeeded.push({ taskAssetId, status });
     };
@@ -2373,7 +2919,9 @@ export class AgentConversationService {
     const createdAfter = this.resolveRoutingWindowStart(query?.window);
     const actionFilter = this.pickString(query?.action)?.toUpperCase();
     const limitValue = this.normalizeNumber(query?.limit);
-    const limit = Number.isFinite(limitValue) ? Math.min(Math.max(Math.floor(limitValue), 1), 100) : 20;
+    const limit = Number.isFinite(limitValue)
+      ? Math.min(Math.max(Math.floor(limitValue), 1), 100)
+      : 20;
 
     const assets = await this.prisma.conversationAsset.findMany({
       where: {
@@ -2468,9 +3016,13 @@ export class AgentConversationService {
     const selectedFailedItems =
       replayMode === 'ALL_FAILED'
         ? failedItems
-        : failedItems.filter((item) => this.isRetryablePromotionFailure(item.code, item.message, policy));
+        : failedItems.filter((item) =>
+          this.isRetryablePromotionFailure(item.code, item.message, policy),
+        );
     const finalSelectedFailedItems = requestedErrorCodes.length
-      ? selectedFailedItems.filter((item) => requestedErrorCodes.includes((item.code ?? 'UNKNOWN').toUpperCase()))
+      ? selectedFailedItems.filter((item) =>
+        requestedErrorCodes.includes((item.code ?? 'UNKNOWN').toUpperCase()),
+      )
       : selectedFailedItems;
     const taskAssetIds = Array.from(
       new Set(
@@ -2480,14 +3032,18 @@ export class AgentConversationService {
       ),
     );
 
-    const replayResult = await this.batchUpdateEphemeralCapabilityPromotionTasks(userId, sessionId, {
-      action,
-      comment: `重放失败任务（来源批次 ${batchAsset.id}，模式 ${replayMode}）`,
-      taskAssetIds,
-      maxConcurrency: dto?.maxConcurrency,
-      maxRetries: dto?.maxRetries,
-      sourceBatchAssetId: batchAsset.id,
-    });
+    const replayResult = await this.batchUpdateEphemeralCapabilityPromotionTasks(
+      userId,
+      sessionId,
+      {
+        action,
+        comment: `重放失败任务（来源批次 ${batchAsset.id}，模式 ${replayMode}）`,
+        taskAssetIds,
+        maxConcurrency: dto?.maxConcurrency,
+        maxRetries: dto?.maxRetries,
+        sourceBatchAssetId: batchAsset.id,
+      },
+    );
 
     return {
       sourceBatchAssetId: batchAsset.id,
@@ -2530,7 +3086,8 @@ export class AgentConversationService {
 
     const action = String(dto.action || '').toUpperCase() as PromotionTaskAction;
     const currentPayload = this.toRecord(taskAsset.payload);
-    const currentStatus = this.normalizePromotionTaskStatus(currentPayload.status) ?? 'PENDING_REVIEW';
+    const currentStatus =
+      this.normalizePromotionTaskStatus(currentPayload.status) ?? 'PENDING_REVIEW';
     const nextPayload: Record<string, unknown> = {
       ...currentPayload,
     };
@@ -2577,7 +3134,8 @@ export class AgentConversationService {
       nextPayload.publishedSkillId = draft.publishedSkillId;
     } else if (action === 'SYNC_DRAFT_STATUS') {
       nextStatus = resolveStatusByDraft(draft?.status);
-      nextPayload.publishedSkillId = draft?.publishedSkillId ?? this.pickString(currentPayload.publishedSkillId);
+      nextPayload.publishedSkillId =
+        draft?.publishedSkillId ?? this.pickString(currentPayload.publishedSkillId);
     } else {
       throw new BadRequestException({
         code: 'CONV_PROMOTION_TASK_ACTION_INVALID',
@@ -2603,7 +3161,8 @@ export class AgentConversationService {
     await this.createConversationAsset({
       sessionId,
       assetType: 'NOTE',
-      title: `能力晋升任务状态变更 ${this.pickString(currentPayload.suggestedSkillCode) ?? ''}`.trim(),
+      title:
+        `能力晋升任务状态变更 ${this.pickString(currentPayload.suggestedSkillCode) ?? ''}`.trim(),
       payload: {
         taskAssetId: taskAsset.id,
         draftId,
@@ -2626,7 +3185,12 @@ export class AgentConversationService {
 
   private async createPromotionTaskAssets(
     sessionId: string,
-    candidates: Array<{ draftId: string; suggestedSkillCode: string; hitCount: number; reason: string }>,
+    candidates: Array<{
+      draftId: string;
+      suggestedSkillCode: string;
+      hitCount: number;
+      reason: string;
+    }>,
     window: '1h' | '24h' | '7d',
   ): Promise<number> {
     if (!candidates.length) {
@@ -2718,7 +3282,9 @@ export class AgentConversationService {
       return false;
     }
     const errorText = error instanceof Error ? error.message : String(error);
-    return /fetch failed|timeout|temporarily unavailable|network|econnreset|etimedout/i.test(errorText);
+    return /fetch failed|timeout|temporarily unavailable|network|econnreset|etimedout/i.test(
+      errorText,
+    );
   }
 
   private isRetryablePromotionFailure(
@@ -2727,14 +3293,13 @@ export class AgentConversationService {
     policy?: EphemeralCapabilityPolicy,
   ): boolean {
     const normalizedCode = (code ?? '').toUpperCase();
-    const blocklist =
-      policy?.replayNonRetryableErrorCodeBlocklist ?? [
-        'CONV_PROMOTION_TASK_NOT_FOUND',
-        'CONV_PROMOTION_TASK_ACTION_INVALID',
-        'CONV_PROMOTION_TASK_PUBLISH_BLOCKED',
-        'SKILL_REVIEWER_CONFLICT',
-        'SKILL_HIGH_RISK_REVIEW_REQUIRED',
-      ];
+    const blocklist = policy?.replayNonRetryableErrorCodeBlocklist ?? [
+      'CONV_PROMOTION_TASK_NOT_FOUND',
+      'CONV_PROMOTION_TASK_ACTION_INVALID',
+      'CONV_PROMOTION_TASK_PUBLISH_BLOCKED',
+      'SKILL_REVIEWER_CONFLICT',
+      'SKILL_HIGH_RISK_REVIEW_REQUIRED',
+    ];
     if (blocklist.includes(normalizedCode)) {
       return false;
     }
@@ -2743,7 +3308,9 @@ export class AgentConversationService {
       return true;
     }
     const text = `${code ?? ''} ${message ?? ''}`;
-    return /fetch failed|timeout|temporarily unavailable|network|econnreset|etimedout|429|5\d{2}/i.test(text);
+    return /fetch failed|timeout|temporarily unavailable|network|econnreset|etimedout|429|5\d{2}/i.test(
+      text,
+    );
   }
 
   private toPromotionTask(asset: {
@@ -3195,7 +3762,8 @@ export class AgentConversationService {
       return Array.isArray(topCandidatesRaw) && topCandidatesRaw.length > 0;
     });
 
-    const selectedTurn = candidateTurns[Math.min(roundOffset, Math.max(candidateTurns.length - 1, 0))];
+    const selectedTurn =
+      candidateTurns[Math.min(roundOffset, Math.max(candidateTurns.length - 1, 0))];
     if (!selectedTurn) {
       return {
         assetIds: [],
@@ -3292,7 +3860,9 @@ export class AgentConversationService {
     );
   }
 
-  private inferSemanticAssetType(message: string):
+  private inferSemanticAssetType(
+    message: string,
+  ):
     | 'PLAN'
     | 'EXECUTION'
     | 'RESULT_SUMMARY'
@@ -3415,7 +3985,18 @@ export class AgentConversationService {
   private computeSemanticKeywordScore(message: string, title: string): number {
     const normalizedMessage = message.toLowerCase();
     const normalizedTitle = title.toLowerCase();
-    const keywords = ['回测', '计划', '结果', '结论', '导出', '冲突', '草稿', '报告', 'risk', 'weekly'];
+    const keywords = [
+      '回测',
+      '计划',
+      '结果',
+      '结论',
+      '导出',
+      '冲突',
+      '草稿',
+      '报告',
+      'risk',
+      'weekly',
+    ];
     return keywords.reduce((score, keyword) => {
       if (normalizedMessage.includes(keyword) && normalizedTitle.includes(keyword)) {
         return score + 10;
@@ -3450,18 +4031,19 @@ export class AgentConversationService {
     }
     if (ambiguous && candidateCount > 1) {
       const candidateTips = topCandidates
-        .map((item, index) => `${index + 1}.${this.pickString(item.title) || this.pickString(item.id) || '-'}`)
+        .map(
+          (item, index) =>
+            `${index + 1}.${this.pickString(item.title) || this.pickString(item.id) || '-'}`,
+        )
         .join('；');
       return `已为你匹配并复用资产：${selected.title}（候选 ${candidateCount} 项，已自动选择最相关项。可回复“用第2个”重新指定。候选：${candidateTips}）`;
     }
     return `已复用资产：${selected.title}。`;
   }
 
-  private normalizeDeliveryTemplateCode(templateCode: unknown):
-    | 'DEFAULT'
-    | 'MORNING_BRIEF'
-    | 'WEEKLY_REVIEW'
-    | 'RISK_ALERT' {
+  private normalizeDeliveryTemplateCode(
+    templateCode: unknown,
+  ): 'DEFAULT' | 'MORNING_BRIEF' | 'WEEKLY_REVIEW' | 'RISK_ALERT' {
     if (templateCode === 'MORNING_BRIEF') {
       return 'MORNING_BRIEF';
     }
@@ -3569,7 +4151,9 @@ export class AgentConversationService {
       }
 
       const profiles = rawProfiles.map((item) => this.toRecord(item));
-      const channelProfiles = profiles.filter((profile) => this.pickString(profile.channel) === channel);
+      const channelProfiles = profiles.filter(
+        (profile) => this.pickString(profile.channel) === channel,
+      );
       if (!channelProfiles.length) {
         continue;
       }
@@ -3590,7 +4174,9 @@ export class AgentConversationService {
       return {
         to,
         target: this.pickString(selected.target) ?? undefined,
-        templateCode: rawTemplateCode ? this.normalizeDeliveryTemplateCode(rawTemplateCode) : undefined,
+        templateCode: rawTemplateCode
+          ? this.normalizeDeliveryTemplateCode(rawTemplateCode)
+          : undefined,
         sendRawFile: typeof selected.sendRawFile === 'boolean' ? selected.sendRawFile : undefined,
       };
     }
@@ -3622,15 +4208,20 @@ export class AgentConversationService {
     const text = instruction.trim();
     const normalized = text.toLowerCase();
 
-    const action = normalized.includes('暂停') || normalized.includes('停用')
-      ? 'PAUSE'
-      : normalized.includes('恢复') || normalized.includes('启用') || normalized.includes('开启')
-        ? 'RESUME'
-        : normalized.includes('补跑') || normalized.includes('立即执行') || normalized.includes('马上执行')
-          ? 'RUN'
-          : normalized.includes('修改') || normalized.includes('改成') || normalized.includes('改为')
-            ? 'UPDATE'
-            : 'CREATE';
+    const action =
+      normalized.includes('暂停') || normalized.includes('停用')
+        ? 'PAUSE'
+        : normalized.includes('恢复') || normalized.includes('启用') || normalized.includes('开启')
+          ? 'RESUME'
+          : normalized.includes('补跑') ||
+            normalized.includes('立即执行') ||
+            normalized.includes('马上执行')
+            ? 'RUN'
+            : normalized.includes('修改') ||
+              normalized.includes('改成') ||
+              normalized.includes('改为')
+              ? 'UPDATE'
+              : 'CREATE';
 
     const channel: 'EMAIL' | 'DINGTALK' | 'WECOM' | 'FEISHU' = normalized.includes('钉钉')
       ? 'DINGTALK'
@@ -3810,7 +4401,8 @@ export class AgentConversationService {
     const toBoolean = (value: unknown, fallback: boolean) =>
       typeof value === 'boolean' ? value : fallback;
     const toScore = (value: unknown, fallback: number) => {
-      const parsed = typeof value === 'number' ? value : typeof value === 'string' ? Number(value) : NaN;
+      const parsed =
+        typeof value === 'number' ? value : typeof value === 'string' ? Number(value) : NaN;
       if (!Number.isFinite(parsed)) {
         return fallback;
       }
@@ -3826,13 +4418,21 @@ export class AgentConversationService {
     };
   }
 
-  private async resolveEphemeralCapabilityPolicy(userId: string): Promise<EphemeralCapabilityPolicy> {
+  private async resolveEphemeralCapabilityPolicy(
+    userId: string,
+  ): Promise<EphemeralCapabilityPolicy> {
     const defaults: EphemeralCapabilityPolicy = {
       draftSemanticReuseThreshold: 0.72,
       publishedSkillReuseThreshold: 0.76,
       runtimeGrantTtlHours: 24,
       runtimeGrantMaxUseCount: 30,
-      replayRetryableErrorCodeAllowlist: ['NETWORK_ERROR', 'TIMEOUT', 'FETCH_FAILED', 'HTTP_429', 'HTTP_5XX'],
+      replayRetryableErrorCodeAllowlist: [
+        'NETWORK_ERROR',
+        'TIMEOUT',
+        'FETCH_FAILED',
+        'HTTP_429',
+        'HTTP_5XX',
+      ],
       replayNonRetryableErrorCodeBlocklist: [
         'CONV_PROMOTION_TASK_NOT_FOUND',
         'CONV_PROMOTION_TASK_ACTION_INVALID',
@@ -3857,14 +4457,16 @@ export class AgentConversationService {
 
     const metadata = this.toRecord(binding.metadata);
     const toScore = (value: unknown, fallback: number) => {
-      const parsed = typeof value === 'number' ? value : typeof value === 'string' ? Number(value) : NaN;
+      const parsed =
+        typeof value === 'number' ? value : typeof value === 'string' ? Number(value) : NaN;
       if (!Number.isFinite(parsed)) {
         return fallback;
       }
       return Math.max(0, Math.min(1, parsed));
     };
     const toInt = (value: unknown, fallback: number, min: number, max: number) => {
-      const parsed = typeof value === 'number' ? value : typeof value === 'string' ? Number(value) : NaN;
+      const parsed =
+        typeof value === 'number' ? value : typeof value === 'string' ? Number(value) : NaN;
       if (!Number.isFinite(parsed)) {
         return fallback;
       }
@@ -3881,12 +4483,20 @@ export class AgentConversationService {
     };
 
     return {
-      draftSemanticReuseThreshold: toScore(metadata.draftSemanticReuseThreshold, defaults.draftSemanticReuseThreshold),
+      draftSemanticReuseThreshold: toScore(
+        metadata.draftSemanticReuseThreshold,
+        defaults.draftSemanticReuseThreshold,
+      ),
       publishedSkillReuseThreshold: toScore(
         metadata.publishedSkillReuseThreshold,
         defaults.publishedSkillReuseThreshold,
       ),
-      runtimeGrantTtlHours: toInt(metadata.runtimeGrantTtlHours, defaults.runtimeGrantTtlHours, 1, 168),
+      runtimeGrantTtlHours: toInt(
+        metadata.runtimeGrantTtlHours,
+        defaults.runtimeGrantTtlHours,
+        1,
+        168,
+      ),
       runtimeGrantMaxUseCount: toInt(
         metadata.runtimeGrantMaxUseCount,
         defaults.runtimeGrantMaxUseCount,
@@ -3959,21 +4569,20 @@ export class AgentConversationService {
     ownerUserId: string,
     dto: CreateSkillDraftDto,
     policy: EphemeralCapabilityPolicy,
-  ): Promise<
-    | {
-      id: string;
-      gapType: string;
-      requiredCapability: string;
-      suggestedSkillCode: string;
-      status: string;
-      riskLevel: 'LOW' | 'MEDIUM' | 'HIGH';
-      provisionalEnabled: boolean;
-      reuseReason: 'EXACT_CODE' | 'SEMANTIC_MATCH';
-    }
-    | null
-  > {
+  ): Promise<{
+    id: string;
+    gapType: string;
+    requiredCapability: string;
+    suggestedSkillCode: string;
+    status: string;
+    riskLevel: 'LOW' | 'MEDIUM' | 'HIGH';
+    provisionalEnabled: boolean;
+    reuseReason: 'EXACT_CODE' | 'SEMANTIC_MATCH';
+  } | null> {
     const normalizedCode = this.normalizeCapabilityText(dto.suggestedSkillCode);
-    const capabilityTokens = this.extractCapabilityTokens(`${dto.gapType} ${dto.requiredCapability}`);
+    const capabilityTokens = this.extractCapabilityTokens(
+      `${dto.gapType} ${dto.requiredCapability}`,
+    );
 
     const candidates = await this.prisma.agentSkillDraft.findMany({
       where: {
@@ -4016,7 +4625,9 @@ export class AgentConversationService {
     } | null = null;
 
     for (const draft of candidates) {
-      const draftTokens = this.extractCapabilityTokens(`${draft.gapType} ${draft.requiredCapability}`);
+      const draftTokens = this.extractCapabilityTokens(
+        `${draft.gapType} ${draft.requiredCapability}`,
+      );
       const score = this.computeCapabilitySimilarity(capabilityTokens, draftTokens);
       if (!bestCandidate || score > bestCandidate.score) {
         bestCandidate = {
@@ -4047,19 +4658,18 @@ export class AgentConversationService {
     dto: CreateSkillDraftDto,
     policy: CapabilityRoutingPolicy,
     ephemeralPolicy: EphemeralCapabilityPolicy,
-  ): Promise<
-    | {
-      id: string;
-      skillCode: string;
-      name: string;
-      description: string;
-      templateSource: string;
-      score: number;
-    }
-    | null
-  > {
+  ): Promise<{
+    id: string;
+    skillCode: string;
+    name: string;
+    description: string;
+    templateSource: string;
+    score: number;
+  } | null> {
     const normalizedCode = this.normalizeCapabilityText(dto.suggestedSkillCode);
-    const capabilityTokens = this.extractCapabilityTokens(`${dto.gapType} ${dto.requiredCapability}`);
+    const capabilityTokens = this.extractCapabilityTokens(
+      `${dto.gapType} ${dto.requiredCapability}`,
+    );
     const whereOr: Array<Record<string, unknown>> = [];
     if (policy.allowOwnerPool) {
       whereOr.push({ ownerUserId });
@@ -4245,7 +4855,10 @@ export class AgentConversationService {
   }
 
   private normalizeCapabilityText(value: string): string {
-    return value.trim().toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '');
+    return value
+      .trim()
+      .toLowerCase()
+      .replace(/[^\p{L}\p{N}]+/gu, '');
   }
 
   private extractCapabilityTokens(value: string): string[] {
@@ -4273,7 +4886,8 @@ export class AgentConversationService {
     sideEffectRisk: boolean;
     allowRuntimeGrant: boolean;
   } {
-    const message = `${dto.gapType} ${dto.requiredCapability} ${dto.suggestedSkillCode}`.toLowerCase();
+    const message =
+      `${dto.gapType} ${dto.requiredCapability} ${dto.suggestedSkillCode}`.toLowerCase();
     const explicitRisk = dto.riskLevel;
     const explicitSideEffect = dto.sideEffectRisk === true;
 
@@ -4317,7 +4931,10 @@ export class AgentConversationService {
     if (lower.includes('辩论') || lower.includes('debate') || lower.includes('裁判')) {
       return 'DEBATE_MARKET_JUDGEMENT';
     }
-    if (currentIntent === 'DEBATE_MARKET_JUDGEMENT' || currentIntent === 'MARKET_SUMMARY_WITH_FORECAST') {
+    if (
+      currentIntent === 'DEBATE_MARKET_JUDGEMENT' ||
+      currentIntent === 'MARKET_SUMMARY_WITH_FORECAST'
+    ) {
       return currentIntent;
     }
     return 'MARKET_SUMMARY_WITH_FORECAST';
@@ -4409,9 +5026,7 @@ export class AgentConversationService {
     if (missingSlots.length === 1) {
       return questionMap[missingSlots[0]] ?? '还需要补充一个信息：' + missingSlots[0];
     }
-    const questions = missingSlots
-      .map((slot) => questionMap[slot] ?? slot)
-      .join('\n- ');
+    const questions = missingSlots.map((slot) => questionMap[slot] ?? slot).join('\n- ');
     return '还需要你补充几个信息：\n- ' + questions + '\n\n你可以一次性告诉我，也可以逐个回答。';
   }
 
@@ -4439,7 +5054,10 @@ export class AgentConversationService {
   /**
    * 操作意图检测：从自然语言中识别导出、邮件、重试等操作意图
    */
-  private detectActionIntent(message: string, sessionState: SessionState): {
+  private detectActionIntent(
+    message: string,
+    sessionState: SessionState,
+  ): {
     type: 'EXPORT' | 'DELIVER_EMAIL' | 'RETRY' | 'SCHEDULE' | null;
     format?: string;
     emailTo?: string[];
@@ -4614,7 +5232,10 @@ export class AgentConversationService {
       }
 
       const assistantMessage = this.pickString(parsed.assistantMessage) ?? input.assistantMessage;
-      const replyOptions = this.normalizeReplyOptions(parsed.replyOptions, input.fallbackReplyOptions);
+      const replyOptions = this.normalizeReplyOptions(
+        parsed.replyOptions,
+        input.fallbackReplyOptions,
+      );
 
       return {
         assistantMessage,
@@ -4666,7 +5287,10 @@ export class AgentConversationService {
         const label = this.pickString(item.label) ?? '';
         const tabRaw = this.pickString(item.tab);
         const tab =
-          tabRaw === 'progress' || tabRaw === 'result' || tabRaw === 'delivery' || tabRaw === 'schedule'
+          tabRaw === 'progress' ||
+            tabRaw === 'result' ||
+            tabRaw === 'delivery' ||
+            tabRaw === 'schedule'
             ? (tabRaw as 'progress' | 'result' | 'delivery' | 'schedule')
             : undefined;
         return {
@@ -4741,23 +5365,52 @@ export class AgentConversationService {
     return 'EXECUTING';
   }
 
-  private normalizeResult(outputRecord: Record<string, unknown>) {
-    const facts = this.normalizeFacts(outputRecord.facts);
-    const analysis = this.pickString(outputRecord.analysis) ?? this.pickString(outputRecord.summary) ?? '';
-    const actions = this.normalizeActions(outputRecord.actions);
-    const confidence = this.normalizeNumber(outputRecord.confidence);
-    const dataTimestamp = this.pickString(outputRecord.dataTimestamp) ?? new Date().toISOString();
+  private normalizeResult(
+    outputRecord: Record<string, unknown>,
+    evidenceItems: ConversationEvidenceItem[] = [],
+    traceability?: ConversationResultTraceability,
+  ) {
+    const replayBundle = this.toRecord(outputRecord.replayBundle);
+    const decisionOutput = this.toRecord(replayBundle.decisionOutput);
+
+    const outputFacts = this.normalizeFacts(outputRecord.facts);
+    const facts =
+      outputFacts.length > 0
+        ? outputFacts
+        : this.buildFactsFromEvidenceItems(evidenceItems).slice(0, 20);
+
+    const analysis =
+      this.pickString(outputRecord.analysis) ??
+      this.pickString(outputRecord.summary) ??
+      this.pickString(outputRecord.conclusion) ??
+      this.pickString(decisionOutput.reasoningSummary) ??
+      '';
+    const conclusion = this.pickString(outputRecord.conclusion) ?? (analysis ? analysis : null);
+    const actions = this.normalizeActions(outputRecord.actions, decisionOutput);
+    const confidence = this.normalizeConfidenceValue(
+      outputRecord.confidence,
+      decisionOutput.confidence,
+    );
+    const dataTimestamp =
+      this.pickString(outputRecord.dataTimestamp) ??
+      this.deriveLatestEvidenceTimestamp(evidenceItems) ??
+      new Date().toISOString();
 
     return {
       facts,
       analysis,
+      conclusion,
       actions,
       confidence,
       dataTimestamp,
+      evidenceItems,
+      traceability: traceability ?? null,
     };
   }
 
-  private normalizeFacts(value: unknown): Array<{ text: string; citations: Array<Record<string, unknown>> }> {
+  private normalizeFacts(
+    value: unknown,
+  ): Array<{ text: string; citations: Array<Record<string, unknown>> }> {
     if (!Array.isArray(value)) {
       return [];
     }
@@ -4769,7 +5422,9 @@ export class AgentConversationService {
         const row = item as Record<string, unknown>;
         const text = this.pickString(row.text) ?? '';
         const citations = Array.isArray(row.citations)
-          ? row.citations.filter((entry) => entry && typeof entry === 'object' && !Array.isArray(entry))
+          ? row.citations.filter(
+            (entry) => entry && typeof entry === 'object' && !Array.isArray(entry),
+          )
           : [];
         if (!text) {
           return null;
@@ -4779,23 +5434,329 @@ export class AgentConversationService {
           citations: citations as Array<Record<string, unknown>>,
         };
       })
-      .filter((item): item is { text: string; citations: Array<Record<string, unknown>> } => Boolean(item));
+      .filter((item): item is { text: string; citations: Array<Record<string, unknown>> } =>
+        Boolean(item),
+      );
   }
 
-  private normalizeActions(value: unknown): Record<string, unknown> {
+  private buildResultEvidenceItems(
+    outputRecord: Record<string, unknown>,
+    executionId: string,
+  ): ConversationEvidenceItem[] {
+    const replayPath = `/workflow/replay?executionId=${executionId}`;
+    const results: ConversationEvidenceItem[] = [];
+    const dedupe = new Set<string>();
+
+    const appendEvidenceItem = (item: ConversationEvidenceItem) => {
+      const dedupeKey = [
+        item.sourceNodeId ?? '-',
+        item.source,
+        item.title,
+        item.timestamp ?? '-',
+      ].join('|');
+      if (dedupe.has(dedupeKey)) {
+        return;
+      }
+      dedupe.add(dedupeKey);
+      results.push(item);
+    };
+
+    const evidenceBundle = this.toRecord(outputRecord.evidenceBundle);
+    const bundledEvidence = this.toArray(evidenceBundle.evidence);
+
+    for (const rawItem of bundledEvidence) {
+      const item = this.toRecord(rawItem);
+      const rawData = this.toRecord(item.rawData);
+      const sourceNodeId = this.pickString(item.sourceNodeId);
+      const sourceNodeType = this.pickString(item.sourceNodeType);
+      const source =
+        this.pickString(item.dataSource) ??
+        this.pickString(rawData.dataSource) ??
+        this.pickString(item.sourceNodeName) ??
+        sourceNodeId ??
+        'unknown';
+      const sourceUrl =
+        this.pickString(item.sourceUrl) ??
+        this.pickString(rawData.url) ??
+        this.pickString(rawData.sourceUrl);
+      const timestamp =
+        this.pickString(rawData.fetchedAt) ??
+        this.pickString(rawData.timestamp) ??
+        this.pickString(rawData.publishedAt) ??
+        this.pickString(rawData.snapshotAt) ??
+        this.pickString(rawData.eventDate);
+      const collectedAt = this.pickString(item.collectedAt) ?? new Date().toISOString();
+      const reconciliationGate = this.toRecord(rawData.reconciliationGate);
+
+      appendEvidenceItem({
+        id: this.pickString(item.id) ?? randomUUID(),
+        title: this.pickString(item.title) ?? `证据项 ${results.length + 1}`,
+        summary: this.pickString(item.summary) ?? this.pickString(rawData.message) ?? '无摘要',
+        source,
+        sourceNodeId,
+        sourceNodeType,
+        sourceUrl,
+        tracePath: replayPath,
+        collectedAt,
+        timestamp,
+        freshness: this.deriveEvidenceFreshness(
+          timestamp,
+          this.readBooleanOrNull(rawData.isFresh) ?? this.readBooleanOrNull(item.isFresh),
+        ),
+        quality: this.deriveEvidenceQuality({
+          isExternal: this.readBooleanOrNull(item.isExternal),
+          gatePassed: this.readBooleanOrNull(reconciliationGate.passed),
+        }),
+      });
+    }
+
+    const facts = this.normalizeFacts(outputRecord.facts);
+    for (const fact of facts.slice(0, 12)) {
+      for (const rawCitation of fact.citations) {
+        const citation = this.toRecord(rawCitation);
+        const source =
+          this.pickString(citation.source) ??
+          this.pickString(citation.type) ??
+          this.pickString(citation.label) ??
+          'fact-citation';
+        const sourceUrl = this.pickString(citation.url) ?? this.pickString(citation.link);
+        const timestamp =
+          this.pickString(citation.timestamp) ??
+          this.pickString(citation.dataTimestamp) ??
+          this.pickString(citation.publishedAt) ??
+          this.pickString(citation.collectedAt);
+        const sourceNodeId = this.pickString(citation.sourceNodeId);
+        const sourceNodeType = this.pickString(citation.sourceNodeType);
+
+        appendEvidenceItem({
+          id: this.pickString(citation.id) ?? randomUUID(),
+          title: this.pickString(citation.title) ?? `事实引用: ${source}`,
+          summary:
+            this.pickString(citation.summary) ??
+            this.pickString(citation.snippet) ??
+            fact.text.slice(0, 160),
+          source,
+          sourceNodeId,
+          sourceNodeType,
+          sourceUrl,
+          tracePath: replayPath,
+          collectedAt: new Date().toISOString(),
+          timestamp,
+          freshness: this.deriveEvidenceFreshness(timestamp, null),
+          quality: this.deriveEvidenceQuality({
+            isExternal: sourceUrl ? true : null,
+            gatePassed: null,
+          }),
+        });
+      }
+    }
+
+    if (results.length === 0) {
+      const replayBundle = this.toRecord(outputRecord.replayBundle);
+      const timeline = this.toArray(replayBundle.timeline);
+      for (const rawNode of timeline) {
+        const node = this.toRecord(rawNode);
+        const nodeType = this.pickString(node.nodeType) ?? '';
+        if (!nodeType.includes('fetch')) {
+          continue;
+        }
+        const output = this.toRecord(node.outputSnapshot);
+        const metadata = this.toRecord(output.metadata);
+        const reconciliationGate = this.toRecord(metadata.reconciliationGate);
+        const timestamp = this.pickString(output.fetchedAt) ?? this.pickString(metadata.fetchedAt);
+
+        appendEvidenceItem({
+          id: this.pickString(node.nodeId) ?? randomUUID(),
+          title: `${this.pickString(node.nodeName) ?? '数据节点'} 输出`,
+          summary:
+            this.pickString(output.freshnessMessage) ??
+            this.pickString(metadata.summary) ??
+            `节点 ${this.pickString(node.nodeName) ?? '-'} 执行完成`,
+          source:
+            this.pickString(output.dataSourceCode) ??
+            this.pickString(output.connectorCode) ??
+            this.pickString(metadata.source) ??
+            this.pickString(node.nodeName) ??
+            'unknown',
+          sourceNodeId: this.pickString(node.nodeId),
+          sourceNodeType: nodeType,
+          sourceUrl: this.pickString(metadata.url),
+          tracePath: replayPath,
+          collectedAt: this.pickString(node.completedAt) ?? new Date().toISOString(),
+          timestamp,
+          freshness: this.deriveEvidenceFreshness(
+            timestamp,
+            this.readBooleanOrNull(output.isFresh),
+          ),
+          quality: this.deriveEvidenceQuality({
+            isExternal: null,
+            gatePassed: this.readBooleanOrNull(reconciliationGate.passed),
+          }),
+        });
+      }
+    }
+
+    return results
+      .sort((left, right) => {
+        const leftTs = Date.parse(left.timestamp ?? left.collectedAt);
+        const rightTs = Date.parse(right.timestamp ?? right.collectedAt);
+        return (Number.isFinite(rightTs) ? rightTs : 0) - (Number.isFinite(leftTs) ? leftTs : 0);
+      })
+      .slice(0, 30);
+  }
+
+  private buildResultTraceability(
+    executionId: string,
+    outputRecord: Record<string, unknown>,
+    evidenceItems: ConversationEvidenceItem[],
+  ): ConversationResultTraceability {
+    const evidenceBundle = this.toRecord(outputRecord.evidenceBundle);
+    const evidenceCount =
+      this.readNumberOrNull(evidenceBundle.evidenceCount) ??
+      this.toArray(evidenceBundle.evidence).length ??
+      evidenceItems.length;
+    const strongEvidenceCount =
+      this.readNumberOrNull(evidenceBundle.strongEvidenceCount) ??
+      evidenceItems.filter((item) => item.quality === 'INTERNAL' || item.quality === 'RECONCILED')
+        .length;
+    const externalEvidenceCount =
+      this.readNumberOrNull(evidenceBundle.externalEvidenceCount) ??
+      evidenceItems.filter((item) => item.quality === 'EXTERNAL').length;
+
+    return {
+      executionId,
+      replayPath: `/workflow/replay?executionId=${executionId}`,
+      executionPath: '/workflow/executions',
+      evidenceCount,
+      strongEvidenceCount,
+      externalEvidenceCount,
+      generatedAt: new Date().toISOString(),
+    };
+  }
+
+  private buildFactsFromEvidenceItems(
+    evidenceItems: ConversationEvidenceItem[],
+  ): Array<{ text: string; citations: Array<Record<string, unknown>> }> {
+    return evidenceItems.slice(0, 8).map((item) => ({
+      text: `${item.title}: ${item.summary}`,
+      citations: [
+        {
+          source: item.source,
+          timestamp: item.timestamp,
+          sourceUrl: item.sourceUrl,
+          sourceNodeId: item.sourceNodeId,
+          sourceNodeType: item.sourceNodeType,
+          freshness: item.freshness,
+          quality: item.quality,
+        },
+      ],
+    }));
+  }
+
+  private deriveLatestEvidenceTimestamp(evidenceItems: ConversationEvidenceItem[]): string | null {
+    const timestamps = evidenceItems
+      .map((item) => item.timestamp ?? item.collectedAt)
+      .map((value) => Date.parse(value))
+      .filter((value) => Number.isFinite(value));
+    if (timestamps.length === 0) {
+      return null;
+    }
+    return new Date(Math.max(...timestamps)).toISOString();
+  }
+
+  private deriveEvidenceFreshness(
+    timestamp: string | null,
+    explicitFreshness: boolean | null,
+  ): ConversationEvidenceFreshness {
+    if (explicitFreshness === true) {
+      return 'FRESH';
+    }
+    if (explicitFreshness === false) {
+      return 'STALE';
+    }
+    if (!timestamp) {
+      return 'UNKNOWN';
+    }
+    const parsed = Date.parse(timestamp);
+    if (!Number.isFinite(parsed)) {
+      return 'UNKNOWN';
+    }
+    const ageMinutes = (Date.now() - parsed) / (1000 * 60);
+    if (!Number.isFinite(ageMinutes) || ageMinutes < 0) {
+      return 'UNKNOWN';
+    }
+    return ageMinutes <= 180 ? 'FRESH' : 'STALE';
+  }
+
+  private deriveEvidenceQuality(params: {
+    isExternal: boolean | null;
+    gatePassed: boolean | null;
+  }): ConversationEvidenceQuality {
+    if (params.gatePassed === true) {
+      return 'RECONCILED';
+    }
+    if (params.isExternal === true) {
+      return 'EXTERNAL';
+    }
+    if (params.isExternal === false) {
+      return 'INTERNAL';
+    }
+    return 'UNVERIFIED';
+  }
+
+  private readBooleanOrNull(value: unknown): boolean | null {
+    if (typeof value === 'boolean') {
+      return value;
+    }
+    if (typeof value === 'number' && Number.isFinite(value)) {
+      if (value === 1) {
+        return true;
+      }
+      if (value === 0) {
+        return false;
+      }
+      return null;
+    }
+    if (typeof value === 'string') {
+      const normalized = value.trim().toLowerCase();
+      if (['true', '1', 'yes', 'on', 'enabled'].includes(normalized)) {
+        return true;
+      }
+      if (['false', '0', 'no', 'off', 'disabled'].includes(normalized)) {
+        return false;
+      }
+    }
+    return null;
+  }
+
+  private normalizeActions(
+    value: unknown,
+    decisionOutput?: Record<string, unknown>,
+  ): Record<string, unknown> {
+    const fallbackRiskDisclosure = '建议仅供参考，请结合业务实际与风控要求审慎执行。';
+    const decisionAction = this.pickString(decisionOutput?.action);
+    const decisionRiskLevel = this.pickString(decisionOutput?.riskLevel);
+
     if (!value || typeof value !== 'object' || Array.isArray(value)) {
       return {
         spot: [],
         futures: [],
-        riskDisclosure: '建议仅供参考，请结合业务实际与风控要求审慎执行。',
+        recommendedAction: decisionAction ?? 'HOLD',
+        riskLevel: decisionRiskLevel,
+        riskDisclosure: fallbackRiskDisclosure,
       };
     }
     const record = value as Record<string, unknown>;
+
     return {
       ...record,
-      riskDisclosure:
-        this.pickString(record.riskDisclosure) ??
-        '建议仅供参考，请结合业务实际与风控要求审慎执行。',
+      ...(decisionAction && !this.pickString(record.recommendedAction)
+        ? { recommendedAction: decisionAction }
+        : {}),
+      ...(decisionRiskLevel && !this.pickString(record.riskLevel)
+        ? { riskLevel: decisionRiskLevel }
+        : {}),
+      riskDisclosure: this.pickString(record.riskDisclosure) ?? fallbackRiskDisclosure,
     };
   }
 
@@ -4810,6 +5771,133 @@ export class AgentConversationService {
       }
     }
     return 0;
+  }
+
+  private normalizeConfidenceValue(primary: unknown, fallback: unknown): number {
+    const candidate = this.readNumberOrNull(primary) ?? this.readNumberOrNull(fallback) ?? 0;
+    if (candidate > 1) {
+      return Math.max(0, Math.min(1, candidate / 100));
+    }
+    if (candidate < 0) {
+      return 0;
+    }
+    return Math.min(1, candidate);
+  }
+
+  private readNumberOrNull(value: unknown): number | null {
+    if (typeof value === 'number' && Number.isFinite(value)) {
+      return value;
+    }
+    if (typeof value === 'string') {
+      const parsed = Number(value.trim());
+      if (Number.isFinite(parsed)) {
+        return parsed;
+      }
+    }
+    return null;
+  }
+
+  private buildResultDiffSnapshot(asset: {
+    id: string;
+    sourceExecutionId: string | null;
+    payload: unknown;
+    createdAt: Date;
+  }): ConversationResultDiffSnapshot {
+    const payload = this.toRecord(asset.payload);
+    const result = this.toRecord(payload.result);
+    const facts = this.normalizeFacts(result.facts);
+    const factTexts = facts
+      .map((item) => item.text)
+      .filter((item, index, arr) => arr.indexOf(item) === index);
+
+    const sourceSet = new Set<string>();
+    for (const fact of facts) {
+      for (const citation of fact.citations) {
+        const source =
+          this.pickString(citation.source) ??
+          this.pickString(citation.type) ??
+          this.pickString(citation.label);
+        if (source) {
+          sourceSet.add(source);
+        }
+      }
+    }
+
+    return {
+      assetId: asset.id,
+      createdAt: asset.createdAt.toISOString(),
+      executionId: this.pickString(payload.executionId) ?? asset.sourceExecutionId,
+      status: this.pickString(payload.status) ?? 'UNKNOWN',
+      confidence: this.normalizeNumber(result.confidence),
+      analysis: this.pickString(result.analysis) ?? this.pickString(result.summary) ?? '',
+      facts: factTexts,
+      sources: [...sourceSet],
+      actions: this.normalizeActions(result.actions),
+    };
+  }
+
+  private buildResultDiff(
+    current: ConversationResultDiffSnapshot,
+    baseline: ConversationResultDiffSnapshot,
+  ): ConversationResultDiff {
+    const baselineFacts = new Set(baseline.facts);
+    const currentFacts = new Set(current.facts);
+    const addedFacts = current.facts.filter((fact) => !baselineFacts.has(fact));
+    const removedFacts = baseline.facts.filter((fact) => !currentFacts.has(fact));
+
+    const baselineSources = new Set(baseline.sources);
+    const currentSources = new Set(current.sources);
+    const addedSources = current.sources.filter((source) => !baselineSources.has(source));
+    const removedSources = baseline.sources.filter((source) => !currentSources.has(source));
+
+    const actionKeys = new Set([...Object.keys(baseline.actions), ...Object.keys(current.actions)]);
+    const changedActionKeys = [...actionKeys].filter((key) => {
+      const currentValue = this.serializeComparable(current.actions[key]);
+      const baselineValue = this.serializeComparable(baseline.actions[key]);
+      return currentValue !== baselineValue;
+    });
+
+    const confidenceDelta = Number((current.confidence - baseline.confidence).toFixed(4));
+    const analysisChanged = current.analysis !== baseline.analysis;
+
+    const changeSummary: string[] = [];
+    if (Math.abs(confidenceDelta) >= 0.05) {
+      changeSummary.push('CONFIDENCE_SHIFT');
+    }
+    if (addedFacts.length > 0 || removedFacts.length > 0) {
+      changeSummary.push('FACTS_CHANGED');
+    }
+    if (addedSources.length > 0 || removedSources.length > 0) {
+      changeSummary.push('EVIDENCE_SOURCES_CHANGED');
+    }
+    if (changedActionKeys.length > 0) {
+      changeSummary.push('ACTIONS_CHANGED');
+    }
+    if (analysisChanged) {
+      changeSummary.push('ANALYSIS_CHANGED');
+    }
+
+    return {
+      confidenceDelta,
+      analysisChanged,
+      addedFacts,
+      removedFacts,
+      addedSources,
+      removedSources,
+      changedActionKeys,
+      changeSummary,
+    };
+  }
+
+  private serializeComparable(value: unknown): string {
+    if (value === undefined) {
+      return '__undefined__';
+    }
+    try {
+      return JSON.stringify(value);
+    } catch {
+      return String(value);
+    }
   }
 
   private async getAuthorizedExecution(userId: string, executionId: string) {
@@ -4901,7 +5989,10 @@ export class AgentConversationService {
     ];
   }
 
-  private extractPrimarySource(citations: Array<Record<string, unknown>>, fallback: string): string {
+  private extractPrimarySource(
+    citations: Array<Record<string, unknown>>,
+    fallback: string,
+  ): string {
     for (const citation of citations) {
       const code = this.pickString(citation.source);
       if (code) {
@@ -4940,14 +6031,11 @@ export class AgentConversationService {
     intent: IntentCode,
     slots: SlotMap,
     policy: CapabilityRoutingPolicy,
-  ): Promise<
-    | {
-      id: string;
-      reuseSource: 'USER_PRIVATE' | 'TEAM_OR_PUBLIC';
-      score: number;
-    }
-    | null
-  > {
+  ): Promise<{
+    id: string;
+    reuseSource: 'USER_PRIVATE' | 'TEAM_OR_PUBLIC';
+    score: number;
+  } | null> {
     const whereOr: Array<Record<string, unknown>> = [];
     if (policy.allowOwnerPool) {
       whereOr.push({ ownerUserId });
@@ -4982,7 +6070,8 @@ export class AgentConversationService {
     }
 
     const keywords = this.buildWorkflowCapabilityKeywords(intent, slots);
-    let best: { id: string; reuseSource: 'USER_PRIVATE' | 'TEAM_OR_PUBLIC'; score: number } | null = null;
+    let best: { id: string; reuseSource: 'USER_PRIVATE' | 'TEAM_OR_PUBLIC'; score: number } | null =
+      null;
 
     for (const candidate of candidates) {
       let score = candidate.ownerUserId === ownerUserId ? 0.45 : 0.2;
@@ -5152,9 +6241,7 @@ export class AgentConversationService {
         };
       })
       .filter(
-        (
-          item,
-        ): item is { agentCode: string; role: string; perspective: string; weight: number } =>
+        (item): item is { agentCode: string; role: string; perspective: string; weight: number } =>
           Boolean(item),
       );
 
@@ -5278,6 +6365,30 @@ export class AgentConversationService {
         throw new Error('订阅计划缺少有效 workflowDefinitionId');
       }
       const paramSnapshot = this.toRecord(planSnapshot.paramSnapshot);
+
+      // ── D2: 定时执行也注入前轮结果（让定时分析能参考上次结论） ──
+      try {
+        const latestResultAsset = await this.prisma.conversationAsset.findFirst({
+          where: { sessionId: subscription.sessionId, assetType: 'RESULT_SUMMARY' },
+          orderBy: { createdAt: 'desc' },
+          select: { payload: true },
+        });
+        if (latestResultAsset?.payload) {
+          const resultPayload = this.toRecord(latestResultAsset.payload);
+          const previousResult = this.toRecord(resultPayload.result);
+          const previousAnalysis: Record<string, unknown> = {};
+          if (previousResult.conclusion) previousAnalysis.conclusion = previousResult.conclusion;
+          if (previousResult.confidence) previousAnalysis.confidence = previousResult.confidence;
+          if (Array.isArray(previousResult.facts))
+            previousAnalysis.facts = (previousResult.facts as string[]).slice(0, 10);
+          if (Object.keys(previousAnalysis).length > 0) {
+            paramSnapshot.previousAnalysis = previousAnalysis;
+          }
+        }
+      } catch {
+        // 注入失败不阻塞定时执行
+      }
+
       const compiledParamSnapshot = this.compileExecutionParams(planSnapshot, paramSnapshot);
 
       const execution = await this.workflowExecutionService.trigger(userId, {
@@ -5545,7 +6656,9 @@ export class AgentConversationService {
   }
 
   async generateEphemeralAgent(
-    userId: string, sessionId: string, request: { userInstruction: string; context?: string },
+    userId: string,
+    sessionId: string,
+    request: { userInstruction: string; context?: string },
   ) {
     return this.orchestratorService.generateEphemeralAgent(userId, sessionId, request);
   }
@@ -5559,7 +6672,9 @@ export class AgentConversationService {
   }
 
   async assembleEphemeralWorkflow(
-    userId: string, sessionId: string, request: { userInstruction: string; context?: string },
+    userId: string,
+    sessionId: string,
+    request: { userInstruction: string; context?: string },
   ) {
     return this.orchestratorService.assembleEphemeralWorkflow(userId, sessionId, request);
   }
@@ -5569,7 +6684,10 @@ export class AgentConversationService {
   }
 
   async promoteEphemeralAgent(
-    userId: string, sessionId: string, agentAssetId: string, dto?: { reviewComment?: string },
+    userId: string,
+    sessionId: string,
+    agentAssetId: string,
+    dto?: { reviewComment?: string },
   ) {
     return this.orchestratorService.promoteEphemeralAgent(userId, sessionId, agentAssetId, dto);
   }
@@ -5578,4 +6696,3 @@ export class AgentConversationService {
     return this.orchestratorService.getSessionCostSummary(userId, sessionId);
   }
 }
-

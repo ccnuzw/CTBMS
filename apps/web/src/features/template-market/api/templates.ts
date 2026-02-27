@@ -5,6 +5,8 @@ import type {
   CreateTemplateCatalogDto,
   UpdateTemplateCatalogDto,
   CopyTemplateDto,
+  TemplateCatalogQuickstartBusinessTemplatesQueryDto,
+  TemplateCatalogQuickstartBusinessTemplatesResponseDto,
 } from '@packages/types';
 import { apiClient } from '../../../api/client';
 
@@ -132,6 +134,23 @@ export const useCopyTemplate = () => {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['template-catalog'] });
       queryClient.invalidateQueries({ queryKey: ['workflow-definitions'] });
+    },
+  });
+};
+
+export const useQuickstartBusinessTemplates = (
+  query?: TemplateCatalogQuickstartBusinessTemplatesQueryDto,
+) => {
+  return useQuery<TemplateCatalogQuickstartBusinessTemplatesResponseDto>({
+    queryKey: ['template-catalog-quickstart-business-templates', query],
+    queryFn: async () => {
+      const res = await apiClient.get<TemplateCatalogQuickstartBusinessTemplatesResponseDto>(
+        '/template-catalog/quickstart/business-templates',
+        {
+          params: query,
+        },
+      );
+      return res.data;
     },
   });
 };

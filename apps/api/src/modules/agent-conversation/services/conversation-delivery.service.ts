@@ -1,32 +1,35 @@
 /**
- * ConversationDeliveryService — 投递管理
+ * ConversationDeliveryService — 推送投递领域
  *
- * 职责：
- *   - 邮件/钉钉/企微/飞书投递（deliver / deliverEmail）
- *   - 投递配置文件解析
- *   - 投递主题/内容/Webhook 解析
+ * 负责：
+ *   - deliver: 多渠道投递（EMAIL, DINGTALK, WECOM, FEISHU）
+ *   - deliverEmail: 邮件投递快捷方法
+ *   - 模板解析、Webhook 路由、收件人合并、投递日志记录
+ *   - 投递配置绑定管理（CRUD）
  */
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { Injectable, BadRequestException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
+import { randomUUID } from 'crypto';
+import { PrismaService } from '../../../prisma';
+import { ConversationUtilsService } from './conversation-utils.service';
+import { ConversationAssetService } from './conversation-asset.service';
 import type {
     DeliverConversationDto,
     DeliverConversationEmailDto,
 } from '@packages/types';
-import { randomUUID } from 'node:crypto';
-import { PrismaService } from '../../../prisma';
-import { ConversationUtilsService } from './conversation-utils.service';
-import { ConversationAssetService } from './conversation-asset.service';
 
 type DeliveryChannel = 'EMAIL' | 'DINGTALK' | 'WECOM' | 'FEISHU';
-type TemplateCode = 'DEFAULT' | 'MORNING_BRIEF' | 'WEEKLY_REVIEW' | 'RISK_ALERT';
+type DeliveryTemplateCode = 'DEFAULT' | 'MORNING_BRIEF' | 'WEEKLY_REVIEW' | 'RISK_ALERT';
 
 @Injectable()
 export class ConversationDeliveryService {
     constructor(
         private readonly prisma: PrismaService,
-        private readonly utils: ConversationUtilsService,
+        private readonly utilsService: ConversationUtilsService,
         private readonly assetService: ConversationAssetService,
     ) { }
+
+    // ── Public API ───────────────────────────────────────────────────────────
 
     async deliverEmail(userId: string, sessionId: string, dto: DeliverConversationEmailDto) {
         return this.deliver(userId, sessionId, {
@@ -44,7 +47,9 @@ export class ConversationDeliveryService {
         const session = await this.prisma.conversationSession.findFirst({
             where: { id: sessionId, ownerUserId: userId },
         });
-        if (!session) return null;
+        if (!session) {
+            return null;
+        }
 
         const exportTask = await this.prisma.exportTask.findFirst({
             where: { id: dto.exportTaskId, createdByUserId: userId },
@@ -62,12 +67,14 @@ export class ConversationDeliveryService {
             });
         }
 
-        const channel = dto.channel as DeliveryChannel;
+        const channel = dto.channel;
         const profileDefaults = await this.resolveDeliveryProfileDefaults(userId, channel);
-        const to = channel === 'EMAIL' ? this.mergeDeliveryRecipients(dto.to, profileDefaults.to) : undefined;
-        const target = channel === 'EMAIL'
-            ? undefined
-            : dto.target?.trim() || profileDefaults.target?.trim() || undefined;
+        const to =
+            channel === 'EMAIL' ? this.mergeDeliveryRecipients(dto.to, profileDefaults.to) : undefined;
+        const target =
+            channel === 'EMAIL'
+                ? undefined
+                : dto.target?.trim() || profileDefaults.target?.trim() || undefined;
         const normalizedTemplate = this.normalizeDeliveryTemplateCode(
             dto.templateCode ?? profileDefaults.templateCode,
         );
@@ -105,12 +112,23 @@ export class ConversationDeliveryService {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
-                        deliveryTaskId, channel, exportTaskId: exportTask.id,
-                        to, target, subject, content, templateCode: normalizedTemplate,
+                        deliveryTaskId,
+                        channel,
+                        exportTaskId: exportTask.id,
+                        to,
+                        target,
+                        subject,
+                        content,
+                        templateCode: normalizedTemplate,
                         metadata: dto.metadata,
-                        attachment: { fileName, downloadUrl, mode: sendRawFile ? 'RAW_FILE' : 'EXPORT_FILE' },
+                        attachment: {
+                            fileName,
+                            downloadUrl,
+                            mode: sendRawFile ? 'RAW_FILE' : 'EXPORT_FILE',
+                        },
                     }),
                 });
+
                 if (response.ok) {
                     status = 'SENT';
                 } else {
@@ -127,12 +145,20 @@ export class ConversationDeliveryService {
             data: {
                 sessionId,
                 role: 'ASSISTANT',
-                content: status === 'SENT'
-                    ? `${this.channelDisplayName(channel)} 投递已发送。`
-                    : `${this.channelDisplayName(channel)} 投递失败：${errorMessage ?? '未知错误'}。`,
+                content:
+                    status === 'SENT'
+                        ? `${this.channelDisplayName(channel)} 投递已发送。`
+                        : `${this.channelDisplayName(channel)} 投递失败：${errorMessage ?? '未知错误'}。`,
                 structuredPayload: {
-                    deliveryTaskId, channel, exportTaskId: exportTask.id, status,
-                    to, target, subject, templateCode: normalizedTemplate, errorMessage,
+                    deliveryTaskId,
+                    channel,
+                    exportTaskId: exportTask.id,
+                    status,
+                    to,
+                    target,
+                    subject,
+                    templateCode: normalizedTemplate,
+                    errorMessage,
                 } as Prisma.InputJsonValue,
             },
         });
@@ -142,8 +168,15 @@ export class ConversationDeliveryService {
             assetType: 'NOTE',
             title: `${this.channelDisplayName(channel)}投递${status === 'SENT' ? '成功' : '失败'}`,
             payload: {
-                deliveryTaskId, channel, exportTaskId: exportTask.id, status,
-                to, target, subject, templateCode: normalizedTemplate, errorMessage,
+                deliveryTaskId,
+                channel,
+                exportTaskId: exportTask.id,
+                status,
+                to,
+                target,
+                subject,
+                templateCode: normalizedTemplate,
+                errorMessage,
             },
             sourceExecutionId: exportTask.workflowExecutionId,
         });
@@ -151,16 +184,53 @@ export class ConversationDeliveryService {
         return { deliveryTaskId, channel, status, errorMessage };
     }
 
-    // ── Helpers ────────────────────────────────────────────────────────────────
+    // ── Channel Binding Management ──────────────────────────────────────────
 
-    channelDisplayName(channel: DeliveryChannel) {
-        const map: Record<DeliveryChannel, string> = {
-            EMAIL: '邮件', DINGTALK: '钉钉', WECOM: '企业微信', FEISHU: '飞书',
-        };
-        return map[channel] ?? channel;
+    async resolveDeliveryChannelBinding(userId: string, _channel: DeliveryChannel) {
+        return this.prisma.userConfigBinding.findFirst({
+            where: {
+                userId,
+                bindingType: 'AGENT_COPILOT_DELIVERY_PROFILES',
+                isActive: true,
+            },
+            orderBy: { priority: 'desc' },
+        });
     }
 
-    normalizeDeliveryTemplateCode(templateCode: unknown): TemplateCode {
+    async listDeliveryChannelBindings(userId: string) {
+        return this.prisma.userConfigBinding.findMany({
+            where: { userId, bindingType: 'AGENT_COPILOT_DELIVERY_PROFILES' },
+            orderBy: [{ priority: 'desc' }, { updatedAt: 'desc' }],
+        });
+    }
+
+    async upsertDeliveryChannelBinding(userId: string, data: Record<string, unknown>) {
+        const existing = await this.prisma.userConfigBinding.findFirst({
+            where: { userId, bindingType: 'AGENT_COPILOT_DELIVERY_PROFILES' },
+        });
+        if (existing) {
+            return this.prisma.userConfigBinding.update({
+                where: { id: existing.id },
+                data: { metadata: data as Prisma.InputJsonValue, updatedAt: new Date() },
+            });
+        }
+        return this.prisma.userConfigBinding.create({
+            data: {
+                userId,
+                bindingType: 'AGENT_COPILOT_DELIVERY_PROFILES',
+                targetId: 'DEFAULT',
+                metadata: data as Prisma.InputJsonValue,
+                isActive: true,
+                priority: 1,
+            },
+        });
+    }
+
+    // ── Private Helpers ─────────────────────────────────────────────────────
+
+    normalizeDeliveryTemplateCode(
+        templateCode: unknown,
+    ): DeliveryTemplateCode {
         if (templateCode === 'MORNING_BRIEF') return 'MORNING_BRIEF';
         if (templateCode === 'WEEKLY_REVIEW') return 'WEEKLY_REVIEW';
         if (templateCode === 'RISK_ALERT') return 'RISK_ALERT';
@@ -169,38 +239,38 @@ export class ConversationDeliveryService {
 
     private resolveDeliverySubject(
         channel: DeliveryChannel,
-        templateCode: TemplateCode,
+        templateCode: DeliveryTemplateCode,
         customSubject?: string,
     ) {
         if (customSubject?.trim()) return customSubject.trim();
-        const channelName = this.channelDisplayName(channel);
-        if (templateCode === 'MORNING_BRIEF') return `${channelName}晨报 - CTBMS 对话助手`;
-        if (templateCode === 'WEEKLY_REVIEW') return `${channelName}周复盘 - CTBMS 对话助手`;
-        if (templateCode === 'RISK_ALERT') return `${channelName}风险提示 - CTBMS 对话助手`;
+        const cn = this.channelDisplayName(channel);
+        if (templateCode === 'MORNING_BRIEF') return `${cn}晨报 - CTBMS 对话助手`;
+        if (templateCode === 'WEEKLY_REVIEW') return `${cn}周复盘 - CTBMS 对话助手`;
+        if (templateCode === 'RISK_ALERT') return `${cn}风险提示 - CTBMS 对话助手`;
         return 'CTBMS 对话助手分析报告';
     }
 
     private resolveDeliveryContent(
         channel: DeliveryChannel,
-        templateCode: TemplateCode,
+        templateCode: DeliveryTemplateCode,
         customContent?: string,
     ) {
         if (customContent?.trim()) return customContent.trim();
-        const channelName = this.channelDisplayName(channel);
-        if (templateCode === 'MORNING_BRIEF') return `${channelName}晨报已生成，请查收附件原文件与摘要。`;
-        if (templateCode === 'WEEKLY_REVIEW') return `${channelName}周度复盘已生成，请查收本周关键结论和风险提示。`;
-        if (templateCode === 'RISK_ALERT') return `${channelName}风险告警已触发，请优先查看风险暴露与应对建议。`;
+        const cn = this.channelDisplayName(channel);
+        if (templateCode === 'MORNING_BRIEF') return `${cn}晨报已生成，请查收附件原文件与摘要。`;
+        if (templateCode === 'WEEKLY_REVIEW')
+            return `${cn}周度复盘已生成，请查收本周关键结论和风险提示。`;
+        if (templateCode === 'RISK_ALERT')
+            return `${cn}风险告警已触发，请优先查看风险暴露与应对建议。`;
         return '请查收本次对话分析结果。';
     }
 
     private resolveDeliveryWebhook(channel: DeliveryChannel) {
-        const map: Record<DeliveryChannel, string | undefined> = {
-            EMAIL: process.env.MAIL_DELIVERY_WEBHOOK_URL?.trim(),
-            DINGTALK: process.env.DINGTALK_DELIVERY_WEBHOOK_URL?.trim(),
-            WECOM: process.env.WECOM_DELIVERY_WEBHOOK_URL?.trim(),
-            FEISHU: process.env.FEISHU_DELIVERY_WEBHOOK_URL?.trim(),
-        };
-        return map[channel] ?? null;
+        if (channel === 'EMAIL') return process.env.MAIL_DELIVERY_WEBHOOK_URL?.trim();
+        if (channel === 'DINGTALK') return process.env.DINGTALK_DELIVERY_WEBHOOK_URL?.trim();
+        if (channel === 'WECOM') return process.env.WECOM_DELIVERY_WEBHOOK_URL?.trim();
+        if (channel === 'FEISHU') return process.env.FEISHU_DELIVERY_WEBHOOK_URL?.trim();
+        return null;
     }
 
     private mergeDeliveryRecipients(primary?: string[], fallback?: string[]): string[] {
@@ -216,7 +286,7 @@ export class ConversationDeliveryService {
     ): Promise<{
         to?: string[];
         target?: string;
-        templateCode?: TemplateCode;
+        templateCode?: DeliveryTemplateCode;
         sendRawFile?: boolean;
     }> {
         const bindings = await this.prisma.userConfigBinding.findMany({
@@ -227,13 +297,13 @@ export class ConversationDeliveryService {
         });
 
         for (const binding of bindings) {
-            const metadata = this.utils.toRecord(binding.metadata);
+            const metadata = this.utilsService.toRecord(binding.metadata);
             const rawProfiles = metadata.profiles;
             if (!Array.isArray(rawProfiles)) continue;
 
-            const profiles = rawProfiles.map((item) => this.utils.toRecord(item));
+            const profiles = rawProfiles.map((item) => this.utilsService.toRecord(item));
             const channelProfiles = profiles.filter(
-                (profile) => this.utils.pickString(profile.channel) === channel,
+                (profile) => this.utilsService.pickString(profile.channel) === channel,
             );
             if (!channelProfiles.length) continue;
 
@@ -242,17 +312,27 @@ export class ConversationDeliveryService {
             if (!selected) continue;
 
             const to = Array.isArray(selected.to)
-                ? selected.to.map((item) => this.utils.pickString(item)).filter((item): item is string => Boolean(item))
+                ? selected.to
+                    .map((item) => this.utilsService.pickString(item))
+                    .filter((item): item is string => Boolean(item))
                 : undefined;
-            const rawTemplateCode = this.utils.pickString(selected.templateCode);
 
             return {
                 to,
-                target: this.utils.pickString(selected.target) ?? undefined,
-                templateCode: rawTemplateCode ? this.normalizeDeliveryTemplateCode(rawTemplateCode) : undefined,
+                target: this.utilsService.pickString(selected.target) ?? undefined,
+                templateCode: this.utilsService.pickString(selected.templateCode)
+                    ? this.normalizeDeliveryTemplateCode(selected.templateCode)
+                    : undefined,
                 sendRawFile: typeof selected.sendRawFile === 'boolean' ? selected.sendRawFile : undefined,
             };
         }
         return {};
+    }
+
+    channelDisplayName(channel: DeliveryChannel) {
+        if (channel === 'EMAIL') return '邮件';
+        if (channel === 'DINGTALK') return '钉钉';
+        if (channel === 'WECOM') return '企业微信';
+        return '飞书';
     }
 }

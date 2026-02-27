@@ -29,7 +29,7 @@ import {
 } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
 import { useSearchParams } from 'react-router-dom';
-import type { ExportTaskDto, ExportReportSection } from '@packages/types';
+import type { ExportTaskDto, ExportReportSection, ExportFormat } from '@packages/types';
 import {
   useExportTasks,
   useExportTaskDetail,
@@ -50,6 +50,7 @@ const formatConfig: Record<string, { color: string; label: string }> = {
   PDF: { color: 'red', label: 'PDF' },
   WORD: { color: 'blue', label: 'Word' },
   JSON: { color: 'green', label: 'JSON' },
+  MARKDOWN: { color: 'geekblue', label: 'Markdown' },
 };
 
 const sectionLabels: Record<string, string> = {
@@ -75,9 +76,14 @@ export const ReportExportPage: React.FC = () => {
   // 创建表单状态
   const [createForm, setCreateForm] = useState({
     workflowExecutionId: '',
-    format: 'PDF' as string,
+    format: 'PDF' as ExportFormat,
     title: '',
-    sections: ['CONCLUSION', 'EVIDENCE', 'DEBATE_PROCESS', 'RISK_ASSESSMENT'] as ExportReportSection[],
+    sections: [
+      'CONCLUSION',
+      'EVIDENCE',
+      'DEBATE_PROCESS',
+      'RISK_ASSESSMENT',
+    ] as ExportReportSection[],
     includeRawData: false,
   });
 
@@ -99,7 +105,7 @@ export const ReportExportPage: React.FC = () => {
     try {
       await createMutation.mutateAsync({
         workflowExecutionId: createForm.workflowExecutionId,
-        format: createForm.format as 'PDF' | 'WORD' | 'JSON',
+        format: createForm.format,
         sections: createForm.sections,
         title: createForm.title || undefined,
         includeRawData: createForm.includeRawData,
@@ -151,7 +157,11 @@ export const ReportExportPage: React.FC = () => {
       dataIndex: 'workflowExecutionId',
       width: 280,
       ellipsis: true,
-      render: (id: string) => <Text copyable style={{ fontSize: 12 }}>{id}</Text>,
+      render: (id: string) => (
+        <Text copyable style={{ fontSize: 12 }}>
+          {id}
+        </Text>
+      ),
     },
     {
       title: '报告段落',
@@ -160,7 +170,9 @@ export const ReportExportPage: React.FC = () => {
       render: (sections: string[]) => (
         <Space size={4} wrap>
           {(sections ?? []).map((s: string) => (
-            <Tag key={s} style={{ fontSize: 11 }}>{sectionLabels[s] ?? s}</Tag>
+            <Tag key={s} style={{ fontSize: 11 }}>
+              {sectionLabels[s] ?? s}
+            </Tag>
           ))}
         </Space>
       ),
@@ -169,13 +181,13 @@ export const ReportExportPage: React.FC = () => {
       title: '创建时间',
       dataIndex: 'createdAt',
       width: 170,
-      render: (v: string) => v ? new Date(v).toLocaleString('zh-CN') : '-',
+      render: (v: string) => (v ? new Date(v).toLocaleString('zh-CN') : '-'),
     },
     {
       title: '完成时间',
       dataIndex: 'completedAt',
       width: 170,
-      render: (v: string | null) => v ? new Date(v).toLocaleString('zh-CN') : '-',
+      render: (v: string | null) => (v ? new Date(v).toLocaleString('zh-CN') : '-'),
     },
     {
       title: '操作',
@@ -227,7 +239,8 @@ export const ReportExportPage: React.FC = () => {
               value={formatFilter}
               onChange={(v) => {
                 const next = new URLSearchParams(searchParams);
-                if (v) next.set('format', v); else next.delete('format');
+                if (v) next.set('format', v);
+                else next.delete('format');
                 next.set('page', '1');
                 setSearchParams(next);
               }}
@@ -235,6 +248,7 @@ export const ReportExportPage: React.FC = () => {
                 { label: 'PDF', value: 'PDF' },
                 { label: 'Word', value: 'WORD' },
                 { label: 'JSON', value: 'JSON' },
+                { label: 'Markdown', value: 'MARKDOWN' },
               ]}
             />
             <Select
@@ -244,7 +258,8 @@ export const ReportExportPage: React.FC = () => {
               value={statusFilter}
               onChange={(v) => {
                 const next = new URLSearchParams(searchParams);
-                if (v) next.set('status', v); else next.delete('status');
+                if (v) next.set('status', v);
+                else next.delete('status');
                 next.set('page', '1');
                 setSearchParams(next);
               }}
@@ -305,7 +320,9 @@ export const ReportExportPage: React.FC = () => {
             <Input
               placeholder="输入 UUID"
               value={createForm.workflowExecutionId}
-              onChange={(e) => setCreateForm((prev) => ({ ...prev, workflowExecutionId: e.target.value }))}
+              onChange={(e) =>
+                setCreateForm((prev) => ({ ...prev, workflowExecutionId: e.target.value }))
+              }
               style={{ marginTop: 4 }}
             />
           </div>
@@ -314,11 +331,12 @@ export const ReportExportPage: React.FC = () => {
             <Select
               style={{ width: '100%', marginTop: 4 }}
               value={createForm.format}
-              onChange={(v) => setCreateForm((prev) => ({ ...prev, format: v }))}
+              onChange={(v) => setCreateForm((prev) => ({ ...prev, format: v as ExportFormat }))}
               options={[
                 { label: 'PDF', value: 'PDF' },
                 { label: 'Word', value: 'WORD' },
                 { label: 'JSON', value: 'JSON' },
+                { label: 'Markdown', value: 'MARKDOWN' },
               ]}
             />
           </div>
@@ -336,7 +354,9 @@ export const ReportExportPage: React.FC = () => {
             <Checkbox.Group
               style={{ marginTop: 4, display: 'flex', flexDirection: 'column', gap: 4 }}
               value={createForm.sections}
-              onChange={(v) => setCreateForm((prev) => ({ ...prev, sections: v as ExportReportSection[] }))}
+              onChange={(v) =>
+                setCreateForm((prev) => ({ ...prev, sections: v as ExportReportSection[] }))
+              }
               options={[
                 { label: '结论页', value: 'CONCLUSION' },
                 { label: '证据页', value: 'EVIDENCE' },
@@ -347,7 +367,9 @@ export const ReportExportPage: React.FC = () => {
           </div>
           <Checkbox
             checked={createForm.includeRawData}
-            onChange={(e) => setCreateForm((prev) => ({ ...prev, includeRawData: e.target.checked }))}
+            onChange={(e) =>
+              setCreateForm((prev) => ({ ...prev, includeRawData: e.target.checked }))
+            }
           >
             包含原始参数快照
           </Checkbox>
@@ -365,7 +387,9 @@ export const ReportExportPage: React.FC = () => {
           <Space direction="vertical" style={{ width: '100%' }} size={16}>
             <Descriptions column={2} bordered size="small">
               <Descriptions.Item label="任务 ID">
-                <Text copyable style={{ fontSize: 12 }}>{taskDetail.id}</Text>
+                <Text copyable style={{ fontSize: 12 }}>
+                  {taskDetail.id}
+                </Text>
               </Descriptions.Item>
               <Descriptions.Item label="状态">
                 <Tag color={formatStatusConfig[taskDetail.status]?.color ?? 'default'}>
@@ -378,13 +402,19 @@ export const ReportExportPage: React.FC = () => {
                 </Tag>
               </Descriptions.Item>
               <Descriptions.Item label="执行实例 ID">
-                <Text copyable style={{ fontSize: 12 }}>{taskDetail.workflowExecutionId}</Text>
+                <Text copyable style={{ fontSize: 12 }}>
+                  {taskDetail.workflowExecutionId}
+                </Text>
               </Descriptions.Item>
               <Descriptions.Item label="创建时间">
-                {taskDetail.createdAt ? new Date(taskDetail.createdAt).toLocaleString('zh-CN') : '-'}
+                {taskDetail.createdAt
+                  ? new Date(taskDetail.createdAt).toLocaleString('zh-CN')
+                  : '-'}
               </Descriptions.Item>
               <Descriptions.Item label="完成时间">
-                {taskDetail.completedAt ? new Date(taskDetail.completedAt).toLocaleString('zh-CN') : '-'}
+                {taskDetail.completedAt
+                  ? new Date(taskDetail.completedAt).toLocaleString('zh-CN')
+                  : '-'}
               </Descriptions.Item>
               <Descriptions.Item label="包含段落" span={2}>
                 <Space size={4} wrap>
@@ -397,13 +427,23 @@ export const ReportExportPage: React.FC = () => {
 
             {taskDetail.errorMessage && (
               <Card title="错误信息" size="small" style={{ borderColor: token.colorError }}>
-                <Text type="danger" style={{ fontSize: 12 }}>{taskDetail.errorMessage}</Text>
+                <Text type="danger" style={{ fontSize: 12 }}>
+                  {taskDetail.errorMessage}
+                </Text>
               </Card>
             )}
 
             {taskDetail.reportData && (
               <Card title="报告数据预览" size="small">
-                <pre style={{ fontSize: 11, maxHeight: 500, overflow: 'auto', whiteSpace: 'pre-wrap', margin: 0 }}>
+                <pre
+                  style={{
+                    fontSize: 11,
+                    maxHeight: 500,
+                    overflow: 'auto',
+                    whiteSpace: 'pre-wrap',
+                    margin: 0,
+                  }}
+                >
                   {JSON.stringify(taskDetail.reportData, null, 2)}
                 </pre>
               </Card>

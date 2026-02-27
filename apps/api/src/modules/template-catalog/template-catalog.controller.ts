@@ -20,6 +20,7 @@ import {
   UpdateTemplateCatalogRequest,
   TemplateCatalogQueryRequest,
   CopyTemplateRequest,
+  TemplateCatalogQuickstartBusinessTemplatesQueryRequest,
 } from './dto';
 
 type AuthRequest = ExpressRequest & { user?: { id?: string } };
@@ -51,6 +52,13 @@ export class TemplateCatalogController {
     return this.service.findMyTemplates(this.getUserId(req), query);
   }
 
+  @Get('quickstart/business-templates')
+  getQuickstartBusinessTemplates(
+    @Query() query: TemplateCatalogQuickstartBusinessTemplatesQueryRequest,
+  ) {
+    return this.service.getQuickstartBusinessTemplates(query);
+  }
+
   @Get(':id')
   findOne(@Request() req: AuthRequest, @Param('id') id: string) {
     const userId = req.user?.id;
@@ -58,7 +66,11 @@ export class TemplateCatalogController {
   }
 
   @Put(':id')
-  update(@Request() req: AuthRequest, @Param('id') id: string, @Body() dto: UpdateTemplateCatalogRequest) {
+  update(
+    @Request() req: AuthRequest,
+    @Param('id') id: string,
+    @Body() dto: UpdateTemplateCatalogRequest,
+  ) {
     return this.service.update(this.getUserId(req), id, dto);
   }
 

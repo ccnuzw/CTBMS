@@ -6,6 +6,7 @@ import {
   MarketDataService,
   type ReconciliationGateEvaluationResult,
 } from '../../../market-data/market-data.service';
+import { validateConnectorContract } from '../../../connector/connector-contract.util';
 import {
   NodeExecutionContext,
   NodeExecutionResult,
@@ -34,7 +35,7 @@ const STANDARD_DATASET_BY_TABLE: Record<string, 'SPOT_PRICE' | 'FUTURES_QUOTE' |
  *
  * 执行流程:
  * 1. 根据节点 config.dataSourceCode 查找 DataConnector
- * 2. 根据 connectorType 分发请求 (REST_API / INTERNAL_DB / FILE_IMPORT)
+ * 2. 根据 connectorType 分发请求 (REST_API / EXCHANGE_API / GRAPHQL / WEBHOOK / INTERNAL_DB / FILE_IMPORT)
  * 3. 应用 timeRangeType + lookbackDays + filters 过滤
  * 4. 数据新鲜度检查 (freshnessMaxMinutes)
  * 5. 兜底 fallbackConnectorCode 容错
@@ -135,10 +136,20 @@ export class DataFetchNodeExecutor implements WorkflowNodeExecutor {
     config: Record<string, unknown>,
     context: NodeExecutionContext,
   ): Promise<{ data: unknown; metadata: Record<string, unknown> }> {
+    const contractValidation = validateConnectorContract(connector, {
+      additionalRequiredFields: this.resolveRequiredContractFields(config),
+    });
+    if (!contractValidation.valid) {
+      throw new Error(`连接器契约缺失字段: ${contractValidation.missingFields.join(', ')}`);
+    }
+
     const connectorType = connector.connectorType as string;
 
     switch (connectorType) {
       case 'REST_API':
+      case 'EXCHANGE_API':
+      case 'GRAPHQL':
+      case 'WEBHOOK':
         return this.fetchFromRestApi(connector, config, context);
       case 'INTERNAL_DB':
         return this.fetchFromInternalDb(connector, config, context);
@@ -638,6 +649,25 @@ export class DataFetchNodeExecutor implements WorkflowNodeExecutor {
     return /^[A-Za-z_][A-Za-z0-9_]*$/.test(value);
   }
 
+  private resolveRequiredContractFields(config: Record<string, unknown>): string[] {
+    const raw = config.requiredContractFields;
+    if (!Array.isArray(raw)) {
+      return [];
+    }
+    const uniqueFields = new Set<string>();
+    for (const item of raw) {
+      if (typeof item !== 'string') {
+        continue;
+      }
+      const normalized = item.trim();
+      if (!normalized) {
+        continue;
+      }
+      uniqueFields.add(normalized);
+    }
+    return [...uniqueFields];
+  }
+
   /**
    * 兜底连接器重试
    */
@@ -662,7 +692,7 @@ export class DataFetchNodeExecutor implements WorkflowNodeExecutor {
 
     try {
       const result = await this.fetchData(
-        fallbackConnector as unknown as Record<string, unknown>,
+        fallbackConnector as Record<string, unknown>,
         config,
         context,
       );

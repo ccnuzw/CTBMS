@@ -159,18 +159,39 @@ export const DataConnectorTypeEnum = z.enum([
 
 export const DataConnectorOwnerTypeEnum = z.enum(['SYSTEM', 'ADMIN']);
 
+export const DataConnectorSourceDomainEnum = z.enum([
+  'INTERNAL_BUSINESS',
+  'PUBLIC_MARKET_INFO',
+  'FUTURES_MARKET',
+  'WEATHER',
+  'LOGISTICS',
+]);
+
+const ConnectorContractJsonSchema = z.record(z.unknown());
+
 export const DataConnectorSchema = z.object({
   id: z.string().uuid(),
   connectorCode: z.string(),
   connectorName: z.string(),
   connectorType: DataConnectorTypeEnum,
   category: z.string(),
+  sourceDomain: DataConnectorSourceDomainEnum.optional(),
   endpointConfig: z.record(z.unknown()).nullable().optional(),
   queryTemplates: z.record(z.unknown()).nullable().optional(),
   responseMapping: z.record(z.unknown()).nullable().optional(),
   freshnessPolicy: z.record(z.unknown()).nullable().optional(),
   rateLimitConfig: z.record(z.unknown()).nullable().optional(),
   healthCheckConfig: z.record(z.unknown()).nullable().optional(),
+  authConfig: ConnectorContractJsonSchema.optional(),
+  requestSchema: ConnectorContractJsonSchema.optional(),
+  responseSchema: ConnectorContractJsonSchema.optional(),
+  retryPolicy: ConnectorContractJsonSchema.optional(),
+  rateLimitPolicy: ConnectorContractJsonSchema.optional(),
+  timeoutPolicy: ConnectorContractJsonSchema.optional(),
+  cachePolicy: ConnectorContractJsonSchema.optional(),
+  freshnessSla: ConnectorContractJsonSchema.optional(),
+  qualityRules: ConnectorContractJsonSchema.optional(),
+  permissionScope: ConnectorContractJsonSchema.optional(),
   fallbackConnectorCode: z.string().nullable().optional(),
   ownerType: DataConnectorOwnerTypeEnum,
   isActive: z.boolean(),
@@ -179,34 +200,67 @@ export const DataConnectorSchema = z.object({
   updatedAt: z.date().optional(),
 });
 
-export const CreateDataConnectorSchema = z.object({
-  connectorCode: z.string().regex(/^[A-Z0-9_]{3,120}$/),
-  connectorName: z.string().min(1).max(120),
-  connectorType: DataConnectorTypeEnum,
-  category: z.string().min(1).max(60),
-  endpointConfig: z.record(z.unknown()).optional(),
-  queryTemplates: z.record(z.unknown()).optional(),
-  responseMapping: z.record(z.unknown()).optional(),
-  freshnessPolicy: z.record(z.unknown()).optional(),
-  rateLimitConfig: z.record(z.unknown()).optional(),
-  healthCheckConfig: z.record(z.unknown()).optional(),
-  fallbackConnectorCode: z
-    .string()
-    .regex(/^[A-Z0-9_]{3,120}$/)
-    .optional(),
-  ownerType: DataConnectorOwnerTypeEnum.default('SYSTEM'),
-});
+export const CreateDataConnectorSchema = z
+  .object({
+    connectorCode: z.string().regex(/^[A-Z0-9_]{3,120}$/),
+    connectorName: z.string().min(1).max(120),
+    connectorType: DataConnectorTypeEnum,
+    category: z.string().min(1).max(60).optional(),
+    sourceDomain: DataConnectorSourceDomainEnum.optional(),
+    endpointConfig: z.record(z.unknown()).optional(),
+    queryTemplates: z.record(z.unknown()).optional(),
+    responseMapping: z.record(z.unknown()).optional(),
+    freshnessPolicy: z.record(z.unknown()).optional(),
+    rateLimitConfig: z.record(z.unknown()).optional(),
+    healthCheckConfig: z.record(z.unknown()).optional(),
+    authConfig: ConnectorContractJsonSchema.optional(),
+    requestSchema: ConnectorContractJsonSchema.optional(),
+    responseSchema: ConnectorContractJsonSchema.optional(),
+    retryPolicy: ConnectorContractJsonSchema.optional(),
+    rateLimitPolicy: ConnectorContractJsonSchema.optional(),
+    timeoutPolicy: ConnectorContractJsonSchema.optional(),
+    cachePolicy: ConnectorContractJsonSchema.optional(),
+    freshnessSla: ConnectorContractJsonSchema.optional(),
+    qualityRules: ConnectorContractJsonSchema.optional(),
+    permissionScope: ConnectorContractJsonSchema.optional(),
+    fallbackConnectorCode: z
+      .string()
+      .regex(/^[A-Z0-9_]{3,120}$/)
+      .optional(),
+    ownerType: DataConnectorOwnerTypeEnum.default('SYSTEM'),
+  })
+  .superRefine((value, ctx) => {
+    if (value.category || value.sourceDomain) {
+      return;
+    }
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'category 与 sourceDomain 至少提供一个',
+      path: ['category'],
+    });
+  });
 
 export const UpdateDataConnectorSchema = z.object({
   connectorName: z.string().min(1).max(120).optional(),
   connectorType: DataConnectorTypeEnum.optional(),
   category: z.string().min(1).max(60).optional(),
+  sourceDomain: DataConnectorSourceDomainEnum.optional(),
   endpointConfig: z.record(z.unknown()).optional(),
   queryTemplates: z.record(z.unknown()).optional(),
   responseMapping: z.record(z.unknown()).optional(),
   freshnessPolicy: z.record(z.unknown()).optional(),
   rateLimitConfig: z.record(z.unknown()).optional(),
   healthCheckConfig: z.record(z.unknown()).optional(),
+  authConfig: ConnectorContractJsonSchema.optional(),
+  requestSchema: ConnectorContractJsonSchema.optional(),
+  responseSchema: ConnectorContractJsonSchema.optional(),
+  retryPolicy: ConnectorContractJsonSchema.optional(),
+  rateLimitPolicy: ConnectorContractJsonSchema.optional(),
+  timeoutPolicy: ConnectorContractJsonSchema.optional(),
+  cachePolicy: ConnectorContractJsonSchema.optional(),
+  freshnessSla: ConnectorContractJsonSchema.optional(),
+  qualityRules: ConnectorContractJsonSchema.optional(),
+  permissionScope: ConnectorContractJsonSchema.optional(),
   fallbackConnectorCode: z
     .string()
     .regex(/^[A-Z0-9_]{3,120}$/)
@@ -219,6 +273,7 @@ export const UpdateDataConnectorSchema = z.object({
 export const DataConnectorQuerySchema = z.object({
   keyword: z.string().max(120).optional(),
   category: z.string().max(60).optional(),
+  sourceDomain: DataConnectorSourceDomainEnum.optional(),
   connectorType: DataConnectorTypeEnum.optional(),
   isActive: z.coerce.boolean().optional(),
   page: z.coerce.number().int().min(1).default(1),
@@ -244,6 +299,30 @@ export const DataConnectorHealthCheckResultSchema = z.object({
   latencyMs: z.number().int(),
   checkedAt: z.string(),
   message: z.string().optional(),
+});
+
+export const DataConnectorQuickStartTemplateQuerySchema = z.object({
+  sourceDomain: DataConnectorSourceDomainEnum.optional(),
+});
+
+export const DataConnectorQuickStartTemplateSchema = z.object({
+  sourceDomain: DataConnectorSourceDomainEnum,
+  category: z.string(),
+  connectorType: DataConnectorTypeEnum,
+  authConfig: ConnectorContractJsonSchema,
+  requestSchema: ConnectorContractJsonSchema,
+  responseSchema: ConnectorContractJsonSchema,
+  retryPolicy: ConnectorContractJsonSchema,
+  timeoutPolicy: ConnectorContractJsonSchema,
+  rateLimitPolicy: ConnectorContractJsonSchema,
+  cachePolicy: ConnectorContractJsonSchema,
+  freshnessSla: ConnectorContractJsonSchema,
+  qualityRules: ConnectorContractJsonSchema,
+  permissionScope: ConnectorContractJsonSchema,
+});
+
+export const DataConnectorQuickStartTemplateListSchema = z.object({
+  data: z.array(DataConnectorQuickStartTemplateSchema),
 });
 
 // ── 参数变更审计 ──
@@ -310,22 +389,24 @@ export const ParameterOverrideDiffSchema = z.object({
 
 // ── 批量重置请求 ──
 
-export const BatchResetParameterItemsSchema = z.object({
-  itemIds: z.array(z.string().uuid()).min(1).max(200).optional(),
-  scopeLevel: ParameterScopeLevelEnum.optional(),
-  scopeValue: z.string().max(120).optional(),
-  reason: z.string().max(500).optional(),
-}).superRefine((value, ctx) => {
-  const hasItemIds = Boolean(value.itemIds && value.itemIds.length > 0);
-  const hasScope = Boolean(value.scopeLevel);
-  if (!hasItemIds && !hasScope) {
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
-      message: 'itemIds 与 scopeLevel 至少提供一个',
-      path: ['itemIds'],
-    });
-  }
-});
+export const BatchResetParameterItemsSchema = z
+  .object({
+    itemIds: z.array(z.string().uuid()).min(1).max(200).optional(),
+    scopeLevel: ParameterScopeLevelEnum.optional(),
+    scopeValue: z.string().max(120).optional(),
+    reason: z.string().max(500).optional(),
+  })
+  .superRefine((value, ctx) => {
+    const hasItemIds = Boolean(value.itemIds && value.itemIds.length > 0);
+    const hasScope = Boolean(value.scopeLevel);
+    if (!hasItemIds && !hasScope) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'itemIds 与 scopeLevel 至少提供一个',
+        path: ['itemIds'],
+      });
+    }
+  });
 
 export const ParameterImpactWorkflowSchema = z.object({
   workflowDefinitionId: z.string().uuid(),
@@ -379,6 +460,7 @@ export type ResolveParameterSetDto = z.infer<typeof ResolveParameterSetSchema>;
 export type ResolveParameterSetResultDto = z.infer<typeof ResolveParameterSetResultSchema>;
 export type DataConnectorType = z.infer<typeof DataConnectorTypeEnum>;
 export type DataConnectorOwnerType = z.infer<typeof DataConnectorOwnerTypeEnum>;
+export type DataConnectorSourceDomain = z.infer<typeof DataConnectorSourceDomainEnum>;
 export type DataConnectorDto = z.infer<typeof DataConnectorSchema>;
 export type CreateDataConnectorDto = z.infer<typeof CreateDataConnectorSchema>;
 export type UpdateDataConnectorDto = z.infer<typeof UpdateDataConnectorSchema>;
@@ -387,4 +469,13 @@ export type DataConnectorPageDto = z.infer<typeof DataConnectorPageSchema>;
 export type DataConnectorHealthCheckDto = z.infer<typeof DataConnectorHealthCheckSchema>;
 export type DataConnectorHealthCheckResultDto = z.infer<
   typeof DataConnectorHealthCheckResultSchema
+>;
+export type DataConnectorQuickStartTemplateQueryDto = z.infer<
+  typeof DataConnectorQuickStartTemplateQuerySchema
+>;
+export type DataConnectorQuickStartTemplateDto = z.infer<
+  typeof DataConnectorQuickStartTemplateSchema
+>;
+export type DataConnectorQuickStartTemplateListDto = z.infer<
+  typeof DataConnectorQuickStartTemplateListSchema
 >;

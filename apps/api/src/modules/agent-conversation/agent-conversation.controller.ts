@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   NotFoundException,
   Param,
@@ -14,6 +15,7 @@ import { Request as ExpressRequest } from 'express';
 import { AgentConversationService } from './agent-conversation.service';
 import {
   ConfirmConversationPlanRequest,
+  ConversationResultDiffTimelineQueryRequest,
   ConversationSessionQueryRequest,
   CreateConversationBacktestRequest,
   CreateSkillDraftRequest,
@@ -69,6 +71,18 @@ export class AgentConversationController {
     return result;
   }
 
+  @Delete(':sessionId')
+  async deleteSession(@Request() req: AuthRequest, @Param('sessionId') sessionId: string) {
+    const result = await this.service.deleteSession(this.getUserId(req), sessionId);
+    if (!result) {
+      throw new NotFoundException({
+        code: 'CONV_SESSION_NOT_FOUND',
+        message: '会话不存在或无权限访问',
+      });
+    }
+    return { success: true };
+  }
+
   @Post(':sessionId/turns')
   async createTurn(
     @Request() req: AuthRequest,
@@ -108,6 +122,34 @@ export class AgentConversationController {
       throw new NotFoundException({
         code: 'CONV_RESULT_NOT_FOUND',
         message: '会话不存在、无权限访问或执行实例不可见',
+      });
+    }
+    return result;
+  }
+
+  @Get(':sessionId/result-diff')
+  async getResultDiff(@Request() req: AuthRequest, @Param('sessionId') sessionId: string) {
+    const result = await this.service.getResultDiff(this.getUserId(req), sessionId);
+    if (!result) {
+      throw new NotFoundException({
+        code: 'CONV_SESSION_NOT_FOUND',
+        message: '会话不存在或无权限访问',
+      });
+    }
+    return result;
+  }
+
+  @Get(':sessionId/result-diff/timeline')
+  async getResultDiffTimeline(
+    @Request() req: AuthRequest,
+    @Param('sessionId') sessionId: string,
+    @Query() query: ConversationResultDiffTimelineQueryRequest,
+  ) {
+    const result = await this.service.getResultDiffTimeline(this.getUserId(req), sessionId, query);
+    if (!result) {
+      throw new NotFoundException({
+        code: 'CONV_SESSION_NOT_FOUND',
+        message: '会话不存在或无权限访问',
       });
     }
     return result;
@@ -195,7 +237,11 @@ export class AgentConversationController {
     @Param('sessionId') sessionId: string,
     @Param('subscriptionId') subscriptionId: string,
   ) {
-    const result = await this.service.runSubscriptionNow(this.getUserId(req), sessionId, subscriptionId);
+    const result = await this.service.runSubscriptionNow(
+      this.getUserId(req),
+      sessionId,
+      subscriptionId,
+    );
     if (!result) {
       throw new NotFoundException({
         code: 'CONV_SUB_NOT_FOUND',
@@ -365,9 +411,13 @@ export class AgentConversationController {
     @Param('sessionId') sessionId: string,
     @Query('window') window?: '1h' | '24h' | '7d',
   ) {
-    const result = await this.service.getEphemeralCapabilitySummary(this.getUserId(req), sessionId, {
-      window,
-    });
+    const result = await this.service.getEphemeralCapabilitySummary(
+      this.getUserId(req),
+      sessionId,
+      {
+        window,
+      },
+    );
     if (!result) {
       throw new NotFoundException({
         code: 'CONV_SESSION_NOT_FOUND',
@@ -382,7 +432,10 @@ export class AgentConversationController {
     @Request() req: AuthRequest,
     @Param('sessionId') sessionId: string,
   ) {
-    const result = await this.service.runEphemeralCapabilityHousekeeping(this.getUserId(req), sessionId);
+    const result = await this.service.runEphemeralCapabilityHousekeeping(
+      this.getUserId(req),
+      sessionId,
+    );
     if (!result) {
       throw new NotFoundException({
         code: 'CONV_SESSION_NOT_FOUND',
@@ -398,9 +451,13 @@ export class AgentConversationController {
     @Param('sessionId') sessionId: string,
     @Query('window') window?: '1h' | '24h' | '7d',
   ) {
-    const result = await this.service.getEphemeralCapabilityEvolutionPlan(this.getUserId(req), sessionId, {
-      window,
-    });
+    const result = await this.service.getEphemeralCapabilityEvolutionPlan(
+      this.getUserId(req),
+      sessionId,
+      {
+        window,
+      },
+    );
     if (!result) {
       throw new NotFoundException({
         code: 'CONV_SESSION_NOT_FOUND',
@@ -416,9 +473,13 @@ export class AgentConversationController {
     @Param('sessionId') sessionId: string,
     @Query('window') window?: '1h' | '24h' | '7d',
   ) {
-    const result = await this.service.applyEphemeralCapabilityEvolutionPlan(this.getUserId(req), sessionId, {
-      window,
-    });
+    const result = await this.service.applyEphemeralCapabilityEvolutionPlan(
+      this.getUserId(req),
+      sessionId,
+      {
+        window,
+      },
+    );
     if (!result) {
       throw new NotFoundException({
         code: 'CONV_SESSION_NOT_FOUND',
@@ -612,10 +673,7 @@ export class AgentConversationController {
   }
 
   @Get(':sessionId/agents')
-  async listEphemeralAgents(
-    @Request() req: AuthRequest,
-    @Param('sessionId') sessionId: string,
-  ) {
+  async listEphemeralAgents(@Request() req: AuthRequest, @Param('sessionId') sessionId: string) {
     const result = await this.service.listEphemeralAgents(this.getUserId(req), sessionId);
     if (!result) {
       throw new NotFoundException({ code: 'CONV_SESSION_NOT_FOUND', message: '会话不存在' });
@@ -624,10 +682,7 @@ export class AgentConversationController {
   }
 
   @Get(':sessionId/agents/available')
-  async getAvailableAgents(
-    @Request() req: AuthRequest,
-    @Param('sessionId') sessionId: string,
-  ) {
+  async getAvailableAgents(@Request() req: AuthRequest, @Param('sessionId') sessionId: string) {
     return this.service.getAvailableAgents(this.getUserId(req), sessionId);
   }
 
@@ -639,7 +694,10 @@ export class AgentConversationController {
     @Body() dto: { reviewComment?: string },
   ) {
     const result = await this.service.promoteEphemeralAgent(
-      this.getUserId(req), sessionId, agentAssetId, dto,
+      this.getUserId(req),
+      sessionId,
+      agentAssetId,
+      dto,
     );
     if (!result) {
       throw new NotFoundException({ code: 'CONV_AGENT_NOT_FOUND', message: '临时智能体不存在' });
@@ -653,7 +711,11 @@ export class AgentConversationController {
     @Param('sessionId') sessionId: string,
     @Body() dto: { userInstruction: string; context?: string },
   ) {
-    const result = await this.service.assembleEphemeralWorkflow(this.getUserId(req), sessionId, dto);
+    const result = await this.service.assembleEphemeralWorkflow(
+      this.getUserId(req),
+      sessionId,
+      dto,
+    );
     if (!result) {
       throw new NotFoundException({ code: 'CONV_ASSEMBLE_FAILED', message: '工作流组装失败' });
     }
@@ -670,24 +732,21 @@ export class AgentConversationController {
   }
 
   @Get(':sessionId/report-cards')
-  async getReportCards(
-    @Request() req: AuthRequest,
-    @Param('sessionId') sessionId: string,
-  ) {
+  async getReportCards(@Request() req: AuthRequest, @Param('sessionId') sessionId: string) {
     const result = await this.service.getResult(this.getUserId(req), sessionId);
     if (!result) {
       throw new NotFoundException({ code: 'CONV_RESULT_NOT_FOUND', message: '结果不存在' });
     }
-    const report = await this.service.synthesizeResult(sessionId, result as unknown as Record<string, unknown>);
+    const report = await this.service.synthesizeResult(
+      sessionId,
+      result as unknown as Record<string, unknown>,
+    );
     if (!report) return { cards: [] };
     return { cards: this.service.buildReportCards(report) };
   }
 
   @Get(':sessionId/cost-summary')
-  async getSessionCostSummary(
-    @Request() req: AuthRequest,
-    @Param('sessionId') sessionId: string,
-  ) {
+  async getSessionCostSummary(@Request() req: AuthRequest, @Param('sessionId') sessionId: string) {
     const result = await this.service.getSessionCostSummary(this.getUserId(req), sessionId);
     if (!result) {
       throw new NotFoundException({ code: 'CONV_SESSION_NOT_FOUND', message: '会话不存在' });

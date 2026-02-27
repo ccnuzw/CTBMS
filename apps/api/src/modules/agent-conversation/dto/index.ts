@@ -8,6 +8,7 @@ import {
   CreateConversationTurnSchema,
   DeliverConversationEmailSchema,
   DeliverConversationSchema,
+  ConversationResultDiffTimelineQuerySchema,
   ResolveConversationScheduleSchema,
   ReuseConversationAssetSchema,
   UpdateConversationSubscriptionSchema,
@@ -15,18 +16,24 @@ import {
 } from '@packages/types';
 import { z } from 'zod';
 
-export class CreateConversationSessionRequest extends createZodDto(CreateConversationSessionSchema) {}
+export class CreateConversationSessionRequest extends createZodDto(
+  CreateConversationSessionSchema,
+) {}
 export class CreateConversationTurnRequest extends createZodDto(CreateConversationTurnSchema) {}
 export class ConfirmConversationPlanRequest extends createZodDto(ConfirmConversationPlanSchema) {}
 export class ExportConversationResultRequest extends createZodDto(ExportConversationResultSchema) {}
 export class CreateConversationSubscriptionRequest extends createZodDto(
   CreateConversationSubscriptionSchema,
 ) {}
-export class CreateConversationBacktestRequest extends createZodDto(CreateConversationBacktestSchema) {}
+export class CreateConversationBacktestRequest extends createZodDto(
+  CreateConversationBacktestSchema,
+) {}
 export class CreateSkillDraftRequest extends createZodDto(CreateSkillDraftSchema) {}
 export class ReuseConversationAssetRequest extends createZodDto(ReuseConversationAssetSchema) {}
 export class DeliverConversationRequest extends createZodDto(DeliverConversationSchema) {}
-export class ResolveConversationScheduleRequest extends createZodDto(ResolveConversationScheduleSchema) {}
+export class ResolveConversationScheduleRequest extends createZodDto(
+  ResolveConversationScheduleSchema,
+) {}
 export class UpdateConversationSubscriptionRequest extends createZodDto(
   UpdateConversationSubscriptionSchema,
 ) {}
@@ -49,5 +56,8 @@ const ConversationSessionQuerySchema = z.object({
   pageSize: z.coerce.number().int().min(1).max(100).default(20),
 });
 export class ConversationSessionQueryRequest extends createZodDto(ConversationSessionQuerySchema) {}
+export class ConversationResultDiffTimelineQueryRequest extends createZodDto(
+  ConversationResultDiffTimelineQuerySchema,
+) {}
 
 export class DeliverConversationEmailRequest extends createZodDto(DeliverConversationEmailSchema) {}

@@ -17,6 +17,7 @@ import {
   ConversationEphemeralService,
   ConversationSynthesizerService,
   ConversationOrchestratorService,
+  ConversationTurnService,
 } from './services';
 
 @Module({
@@ -34,6 +35,7 @@ import {
     ConversationEphemeralService,
     ConversationSynthesizerService,
     ConversationOrchestratorService,
+    ConversationTurnService,
     AgentConversationService,
     AgentConversationSubscriptionJob,
     AgentConversationEphemeralGovernanceJob,
@@ -51,6 +53,7 @@ import {
     ConversationEphemeralService,
     ConversationSynthesizerService,
     ConversationOrchestratorService,
+    ConversationTurnService,
   ],
 })
 export class AgentConversationModule { }

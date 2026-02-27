@@ -375,6 +375,42 @@ export const MarketDataAggregateSchema = z.object({
   limit: z.coerce.number().int().min(1).max(5000).default(1000),
 });
 
+export const MarketDataQualityGradeEnum = z.enum(['A', 'B', 'C', 'D']);
+
+export const MarketDataFreshnessStatusEnum = z.enum(['FRESH', 'STALE', 'OUTDATED', 'UNKNOWN']);
+
+export const MarketDataDegradeSeverityEnum = z.enum(['NONE', 'WARNING', 'CRITICAL']);
+
+export const MarketDataDegradeActionEnum = z.enum(['ALLOW', 'WARN', 'BLOCK']);
+
+export const MarketDataQualityScoreSchema = z.object({
+  overall: z.number().min(0).max(100),
+  grade: MarketDataQualityGradeEnum,
+  dimensions: z.object({
+    completeness: z.number().min(0).max(100),
+    timeliness: z.number().min(0).max(100),
+    consistency: z.number().min(0).max(100),
+  }),
+});
+
+export const MarketDataFreshnessSchema = z.object({
+  status: MarketDataFreshnessStatusEnum,
+  degradeSeverity: MarketDataDegradeSeverityEnum,
+  ttlMinutes: z.number().int().positive(),
+  dataLagMinutes: z.number().min(0).optional(),
+  newestDataTime: z.string().datetime().optional(),
+  oldestDataTime: z.string().datetime().optional(),
+});
+
+export const MarketDataMetaSchema = z.object({
+  recordCount: z.number().int().min(0),
+  mappingVersion: z.string().min(1),
+  fetchedAt: z.string().datetime(),
+  degradeAction: MarketDataDegradeActionEnum,
+  qualityScore: MarketDataQualityScoreSchema,
+  freshness: MarketDataFreshnessSchema,
+});
+
 export const StandardSpotRecordSchema = z.object({
   recordId: z.string(),
   commodityCode: z.string(),
@@ -517,6 +553,13 @@ export type MarketDataQueryDto = z.infer<typeof MarketDataQuerySchema>;
 export type AggregateOp = z.infer<typeof AggregateOpEnum>;
 export type MarketDataAggregateMetricDto = z.infer<typeof MarketDataAggregateMetricSchema>;
 export type MarketDataAggregateDto = z.infer<typeof MarketDataAggregateSchema>;
+export type MarketDataQualityGrade = z.infer<typeof MarketDataQualityGradeEnum>;
+export type MarketDataFreshnessStatus = z.infer<typeof MarketDataFreshnessStatusEnum>;
+export type MarketDataDegradeSeverity = z.infer<typeof MarketDataDegradeSeverityEnum>;
+export type MarketDataDegradeAction = z.infer<typeof MarketDataDegradeActionEnum>;
+export type MarketDataQualityScoreDto = z.infer<typeof MarketDataQualityScoreSchema>;
+export type MarketDataFreshnessDto = z.infer<typeof MarketDataFreshnessSchema>;
+export type MarketDataMetaDto = z.infer<typeof MarketDataMetaSchema>;
 export type ReconciliationSummaryDto = z.infer<typeof ReconciliationSummarySchema>;
 export type StandardSpotRecord = z.infer<typeof StandardSpotRecordSchema>;
 export type StandardFuturesRecord = z.infer<typeof StandardFuturesRecordSchema>;

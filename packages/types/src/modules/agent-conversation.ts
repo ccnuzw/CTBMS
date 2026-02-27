@@ -76,7 +76,12 @@ export const ConversationSessionQuerySchema = z.object({
   pageSize: z.coerce.number().int().min(1).max(100).default(20),
 });
 
-export const ConversationSubscriptionStatusEnum = z.enum(['ACTIVE', 'PAUSED', 'FAILED', 'ARCHIVED']);
+export const ConversationSubscriptionStatusEnum = z.enum([
+  'ACTIVE',
+  'PAUSED',
+  'FAILED',
+  'ARCHIVED',
+]);
 export const BacktestStatusEnum = z.enum(['QUEUED', 'RUNNING', 'COMPLETED', 'FAILED']);
 export const SkillDraftStatusEnum = z.enum([
   'DRAFT',
@@ -145,6 +150,55 @@ export const ConversationConflictRecordSchema = z.object({
 export const ConversationConflictsResponseSchema = z.object({
   consistencyScore: z.number(),
   conflicts: z.array(ConversationConflictRecordSchema),
+});
+
+export const ConversationResultDiffSnapshotSchema = z.object({
+  assetId: z.string().uuid(),
+  createdAt: z.string(),
+  executionId: z.string().uuid().nullable().optional(),
+  status: z.string(),
+  confidence: z.number(),
+  analysis: z.string(),
+  facts: z.array(z.string()),
+  sources: z.array(z.string()),
+  actions: z.record(z.unknown()),
+});
+
+export const ConversationResultDiffSchema = z.object({
+  confidenceDelta: z.number(),
+  analysisChanged: z.boolean(),
+  addedFacts: z.array(z.string()),
+  removedFacts: z.array(z.string()),
+  addedSources: z.array(z.string()),
+  removedSources: z.array(z.string()),
+  changedActionKeys: z.array(z.string()),
+  changeSummary: z.array(z.string()),
+});
+
+export const ConversationResultDiffResponseSchema = z.object({
+  comparable: z.boolean(),
+  reason: z.string().nullable().optional(),
+  current: ConversationResultDiffSnapshotSchema.nullable(),
+  baseline: ConversationResultDiffSnapshotSchema.nullable(),
+  diff: ConversationResultDiffSchema.nullable(),
+});
+
+export const ConversationResultDiffTimelineQuerySchema = z.object({
+  limit: z.coerce.number().int().min(2).max(30).default(10),
+});
+
+export const ConversationResultDiffTimelineItemSchema = z.object({
+  comparable: z.boolean(),
+  current: ConversationResultDiffSnapshotSchema,
+  baseline: ConversationResultDiffSnapshotSchema.nullable(),
+  diff: ConversationResultDiffSchema.nullable(),
+});
+
+export const ConversationResultDiffTimelineResponseSchema = z.object({
+  limit: z.number().int(),
+  totalSnapshots: z.number().int(),
+  comparableCount: z.number().int(),
+  items: z.array(ConversationResultDiffTimelineItemSchema),
 });
 
 export const CreateConversationBacktestSchema = z.object({
@@ -290,8 +344,28 @@ export type RevokeSkillRuntimeGrantDto = z.infer<typeof RevokeSkillRuntimeGrantS
 export type ReuseConversationAssetDto = z.infer<typeof ReuseConversationAssetSchema>;
 export type ConversationConflictRecordDto = z.infer<typeof ConversationConflictRecordSchema>;
 export type ConversationConflictsResponseDto = z.infer<typeof ConversationConflictsResponseSchema>;
-export type CreateConversationSubscriptionDto = z.infer<typeof CreateConversationSubscriptionSchema>;
-export type UpdateConversationSubscriptionDto = z.infer<typeof UpdateConversationSubscriptionSchema>;
+export type ConversationResultDiffSnapshotDto = z.infer<
+  typeof ConversationResultDiffSnapshotSchema
+>;
+export type ConversationResultDiffDto = z.infer<typeof ConversationResultDiffSchema>;
+export type ConversationResultDiffResponseDto = z.infer<
+  typeof ConversationResultDiffResponseSchema
+>;
+export type ConversationResultDiffTimelineQueryDto = z.infer<
+  typeof ConversationResultDiffTimelineQuerySchema
+>;
+export type ConversationResultDiffTimelineItemDto = z.infer<
+  typeof ConversationResultDiffTimelineItemSchema
+>;
+export type ConversationResultDiffTimelineResponseDto = z.infer<
+  typeof ConversationResultDiffTimelineResponseSchema
+>;
+export type CreateConversationSubscriptionDto = z.infer<
+  typeof CreateConversationSubscriptionSchema
+>;
+export type UpdateConversationSubscriptionDto = z.infer<
+  typeof UpdateConversationSubscriptionSchema
+>;
 export type ResolveConversationScheduleDto = z.infer<typeof ResolveConversationScheduleSchema>;
 export type ConversationSubscriptionDto = z.infer<typeof ConversationSubscriptionSchema>;
 export type ConversationSessionDto = z.infer<typeof ConversationSessionSchema>;

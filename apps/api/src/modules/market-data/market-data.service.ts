@@ -73,6 +73,34 @@ interface StandardizedQueryOptions {
   limit?: number;
 }
 
+interface StandardizedDataQualityScore {
+  overall: number;
+  grade: 'A' | 'B' | 'C' | 'D';
+  dimensions: {
+    completeness: number;
+    timeliness: number;
+    consistency: number;
+  };
+}
+
+interface StandardizedDataFreshness {
+  status: 'FRESH' | 'STALE' | 'OUTDATED' | 'UNKNOWN';
+  degradeSeverity: 'NONE' | 'WARNING' | 'CRITICAL';
+  ttlMinutes: number;
+  dataLagMinutes?: number;
+  newestDataTime?: string;
+  oldestDataTime?: string;
+}
+
+interface StandardizedDataMeta {
+  recordCount: number;
+  mappingVersion: string;
+  fetchedAt: string;
+  degradeAction: 'ALLOW' | 'WARN' | 'BLOCK';
+  qualityScore: StandardizedDataQualityScore;
+  freshness: StandardizedDataFreshness;
+}
+
 interface ReconciliationJob {
   jobId: string;
   status: ReconciliationJobStatus;
@@ -3428,10 +3456,7 @@ export class MarketDataService {
 
     const workers = Array.from({ length: Math.min(maxConcurrency, candidates.length) }, () =>
       (async () => {
-        while (true) {
-          if (breakerTriggered) {
-            return;
-          }
+        while (!breakerTriggered) {
           const currentIndex = nextCandidateIndex;
           if (currentIndex >= candidates.length) {
             return;
@@ -4458,7 +4483,7 @@ export class MarketDataService {
       return {
         dataset,
         rows,
-        meta: this.buildMeta(rows.length),
+        meta: this.buildMeta(dataset, rows),
       };
     }
 
@@ -4467,7 +4492,7 @@ export class MarketDataService {
       return {
         dataset,
         rows,
-        meta: this.buildMeta(rows.length),
+        meta: this.buildMeta(dataset, rows),
       };
     }
 
@@ -4475,7 +4500,7 @@ export class MarketDataService {
     return {
       dataset,
       rows,
-      meta: this.buildMeta(rows.length),
+      meta: this.buildMeta(dataset, rows),
     };
   }
 
@@ -7873,11 +7898,243 @@ export class MarketDataService {
     return parsed;
   }
 
-  private buildMeta(recordCount: number) {
+  private buildMeta(
+    dataset: StandardDataset,
+    rows: Array<StandardSpotRecord | StandardFuturesRecord | StandardEventRecord>,
+  ): StandardizedDataMeta {
+    const freshness = this.buildFreshnessMeta(dataset, rows);
+    const qualityScore = this.buildQualityScoreMeta(dataset, rows, freshness.dataLagMinutes);
     return {
-      recordCount,
+      recordCount: rows.length,
       mappingVersion: 'v1',
       fetchedAt: new Date().toISOString(),
+      degradeAction: this.resolveDegradeAction(freshness.degradeSeverity),
+      qualityScore,
+      freshness,
     };
+  }
+
+  private resolveDegradeAction(
+    severity: StandardizedDataFreshness['degradeSeverity'],
+  ): StandardizedDataMeta['degradeAction'] {
+    if (severity === 'NONE') {
+      return 'ALLOW';
+    }
+    if (severity === 'WARNING') {
+      return 'WARN';
+    }
+    return 'BLOCK';
+  }
+
+  private buildFreshnessMeta(
+    dataset: StandardDataset,
+    rows: Array<StandardSpotRecord | StandardFuturesRecord | StandardEventRecord>,
+  ): StandardizedDataFreshness {
+    const ttlMinutes = this.getDatasetFreshnessTtlMinutes(dataset);
+    const timestamps = rows
+      .map((row) => this.extractRecordTime(row, dataset))
+      .filter((value): value is Date => !!value)
+      .sort((a, b) => a.getTime() - b.getTime());
+
+    if (timestamps.length === 0) {
+      return {
+        status: 'UNKNOWN',
+        degradeSeverity: 'CRITICAL',
+        ttlMinutes,
+      };
+    }
+
+    const oldest = timestamps[0];
+    const newest = timestamps[timestamps.length - 1];
+    const lagMinutes = Math.max(0, (Date.now() - newest.getTime()) / (1000 * 60));
+
+    if (lagMinutes <= ttlMinutes) {
+      return {
+        status: 'FRESH',
+        degradeSeverity: 'NONE',
+        ttlMinutes,
+        dataLagMinutes: lagMinutes,
+        newestDataTime: newest.toISOString(),
+        oldestDataTime: oldest.toISOString(),
+      };
+    }
+
+    if (lagMinutes <= ttlMinutes * 2) {
+      return {
+        status: 'STALE',
+        degradeSeverity: 'WARNING',
+        ttlMinutes,
+        dataLagMinutes: lagMinutes,
+        newestDataTime: newest.toISOString(),
+        oldestDataTime: oldest.toISOString(),
+      };
+    }
+
+    return {
+      status: 'OUTDATED',
+      degradeSeverity: 'CRITICAL',
+      ttlMinutes,
+      dataLagMinutes: lagMinutes,
+      newestDataTime: newest.toISOString(),
+      oldestDataTime: oldest.toISOString(),
+    };
+  }
+
+  private buildQualityScoreMeta(
+    dataset: StandardDataset,
+    rows: Array<StandardSpotRecord | StandardFuturesRecord | StandardEventRecord>,
+    dataLagMinutes?: number,
+  ): StandardizedDataQualityScore {
+    const ttlMinutes = this.getDatasetFreshnessTtlMinutes(dataset);
+    const completeness = this.computeCompletenessScore(dataset, rows);
+    const consistency = this.computeConsistencyScore(dataset, rows);
+    const timeliness = this.computeTimelinessScore(dataLagMinutes, ttlMinutes, rows.length);
+
+    const overall = Math.round(completeness * 0.4 + timeliness * 0.35 + consistency * 0.25);
+
+    return {
+      overall,
+      grade: this.resolveQualityGrade(overall),
+      dimensions: {
+        completeness,
+        timeliness,
+        consistency,
+      },
+    };
+  }
+
+  private computeCompletenessScore(
+    dataset: StandardDataset,
+    rows: Array<StandardSpotRecord | StandardFuturesRecord | StandardEventRecord>,
+  ): number {
+    if (rows.length === 0) {
+      return 0;
+    }
+
+    const requiredFieldsByDataset: Record<StandardDataset, string[]> = {
+      SPOT_PRICE: ['recordId', 'commodityCode', 'regionCode', 'dataTime', 'sourceRecordId'],
+      FUTURES_QUOTE: ['recordId', 'contractCode', 'exchangeCode', 'dataTime', 'sourceRecordId'],
+      MARKET_EVENT: ['recordId', 'eventType', 'title', 'publishedAt', 'sourceRecordId'],
+    };
+    const requiredFields = requiredFieldsByDataset[dataset];
+    const totalRequired = rows.length * requiredFields.length;
+    if (totalRequired === 0) {
+      return 0;
+    }
+
+    let presentCount = 0;
+    for (const row of rows as Array<Record<string, unknown>>) {
+      for (const field of requiredFields) {
+        const value = row[field];
+        if (typeof value === 'string') {
+          if (value.trim().length > 0) {
+            presentCount += 1;
+          }
+          continue;
+        }
+        if (value !== null && value !== undefined) {
+          presentCount += 1;
+        }
+      }
+    }
+
+    return Math.round((presentCount / totalRequired) * 100);
+  }
+
+  private computeConsistencyScore(
+    dataset: StandardDataset,
+    rows: Array<StandardSpotRecord | StandardFuturesRecord | StandardEventRecord>,
+  ): number {
+    if (rows.length === 0) {
+      return 0;
+    }
+
+    let validCount = 0;
+    for (const row of rows) {
+      if (dataset === 'SPOT_PRICE') {
+        const spot = row as StandardSpotRecord;
+        if (Number.isFinite(spot.spotPrice) && !!this.extractRecordTime(spot, dataset)) {
+          validCount += 1;
+        }
+        continue;
+      }
+
+      if (dataset === 'FUTURES_QUOTE') {
+        const futures = row as StandardFuturesRecord;
+        if (Number.isFinite(futures.closePrice) && !!this.extractRecordTime(futures, dataset)) {
+          validCount += 1;
+        }
+        continue;
+      }
+
+      const event = row as StandardEventRecord;
+      if (event.title.trim().length > 0 && !!this.extractRecordTime(event, dataset)) {
+        validCount += 1;
+      }
+    }
+
+    return Math.round((validCount / rows.length) * 100);
+  }
+
+  private computeTimelinessScore(
+    dataLagMinutes: number | undefined,
+    ttlMinutes: number,
+    count: number,
+  ) {
+    if (count === 0 || dataLagMinutes === undefined) {
+      return 0;
+    }
+
+    if (dataLagMinutes <= ttlMinutes) {
+      return 100;
+    }
+    if (dataLagMinutes <= ttlMinutes * 2) {
+      return 70;
+    }
+    if (dataLagMinutes <= ttlMinutes * 4) {
+      return 40;
+    }
+    return 10;
+  }
+
+  private resolveQualityGrade(score: number): StandardizedDataQualityScore['grade'] {
+    if (score >= 90) {
+      return 'A';
+    }
+    if (score >= 75) {
+      return 'B';
+    }
+    if (score >= 60) {
+      return 'C';
+    }
+    return 'D';
+  }
+
+  private extractRecordTime(
+    row: StandardSpotRecord | StandardFuturesRecord | StandardEventRecord,
+    dataset: StandardDataset,
+  ): Date | undefined {
+    const raw =
+      dataset === 'MARKET_EVENT'
+        ? (row as StandardEventRecord).publishedAt
+        : (row as StandardSpotRecord | StandardFuturesRecord).dataTime;
+    if (!raw) {
+      return undefined;
+    }
+    const parsed = new Date(raw);
+    if (!Number.isFinite(parsed.getTime())) {
+      return undefined;
+    }
+    return parsed;
+  }
+
+  private getDatasetFreshnessTtlMinutes(dataset: StandardDataset): number {
+    if (dataset === 'FUTURES_QUOTE') {
+      return 30;
+    }
+    if (dataset === 'SPOT_PRICE') {
+      return 24 * 60;
+    }
+    return 6 * 60;
   }
 }

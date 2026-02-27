@@ -13,4 +13,5 @@ export { ConversationSynthesizerService } from './conversation-synthesizer.servi
 export type { SynthesizedReport, ReportCard, LlmWorkflowSelection } from './conversation-synthesizer.service';
 export { ConversationOrchestratorService } from './conversation-orchestrator.service';
 export type { EphemeralAgent, EphemeralAgentSpec } from './conversation-orchestrator.service';
+export { ConversationTurnService } from './conversation-turn.service';
 export * from './conversation.types';

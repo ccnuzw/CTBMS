@@ -2,6 +2,8 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '../../../api/client';
 import type {
   CreateUserConfigBindingDto,
+  ExportFormat,
+  ExportReportSection,
   UpdateUserConfigBindingDto,
   UserConfigBindingDto,
   UserConfigBindingPageDto,
@@ -121,14 +123,46 @@ export interface ConfirmResponse {
   traceId: string;
 }
 
+export type ConversationEvidenceFreshness = 'FRESH' | 'STALE' | 'UNKNOWN';
+
+export type ConversationEvidenceQuality = 'RECONCILED' | 'INTERNAL' | 'EXTERNAL' | 'UNVERIFIED';
+
+export interface ConversationEvidenceItem {
+  id: string;
+  title: string;
+  summary: string;
+  source: string;
+  sourceNodeId?: string | null;
+  sourceNodeType?: string | null;
+  sourceUrl?: string | null;
+  tracePath?: string | null;
+  collectedAt?: string;
+  timestamp?: string | null;
+  freshness: ConversationEvidenceFreshness;
+  quality: ConversationEvidenceQuality;
+}
+
+export interface ConversationResultTraceability {
+  executionId: string;
+  replayPath: string;
+  executionPath: string;
+  evidenceCount: number;
+  strongEvidenceCount: number;
+  externalEvidenceCount: number;
+  generatedAt: string;
+}
+
 export interface ResultResponse {
   status: 'EXECUTING' | 'DONE' | 'FAILED' | ConversationState;
   result: {
     facts: Array<{ text: string; citations: Array<Record<string, unknown>> }>;
+    conclusion?: string | null;
     analysis: string;
     actions: Record<string, unknown>;
     confidence: number;
     dataTimestamp: string;
+    evidenceItems?: ConversationEvidenceItem[];
+    traceability?: ConversationResultTraceability | null;
   } | null;
   artifacts: Array<{
     type: string;
@@ -138,6 +172,51 @@ export interface ResultResponse {
   }>;
   executionId?: string;
   error?: string | null;
+}
+
+export interface ConversationResultDiffSnapshot {
+  assetId: string;
+  createdAt: string;
+  executionId?: string | null;
+  status: string;
+  confidence: number;
+  analysis: string;
+  facts: string[];
+  sources: string[];
+  actions: Record<string, unknown>;
+}
+
+export interface ConversationResultDiff {
+  confidenceDelta: number;
+  analysisChanged: boolean;
+  addedFacts: string[];
+  removedFacts: string[];
+  addedSources: string[];
+  removedSources: string[];
+  changedActionKeys: string[];
+  changeSummary: string[];
+}
+
+export interface ConversationResultDiffResponse {
+  comparable: boolean;
+  reason?: string | null;
+  current: ConversationResultDiffSnapshot | null;
+  baseline: ConversationResultDiffSnapshot | null;
+  diff: ConversationResultDiff | null;
+}
+
+export interface ConversationResultDiffTimelineItem {
+  comparable: boolean;
+  current: ConversationResultDiffSnapshot;
+  baseline: ConversationResultDiffSnapshot | null;
+  diff: ConversationResultDiff | null;
+}
+
+export interface ConversationResultDiffTimelineResponse {
+  limit: number;
+  totalSnapshots: number;
+  comparableCount: number;
+  items: ConversationResultDiffTimelineItem[];
 }
 
 export interface ExportResponse {
@@ -241,7 +320,13 @@ export interface SkillGovernanceOverview {
   highRiskPendingReview: number;
   draftStats: Array<{
     riskLevel: 'LOW' | 'MEDIUM' | 'HIGH';
-    status: 'DRAFT' | 'SANDBOX_TESTING' | 'READY_FOR_REVIEW' | 'APPROVED' | 'REJECTED' | 'PUBLISHED';
+    status:
+    | 'DRAFT'
+    | 'SANDBOX_TESTING'
+    | 'READY_FOR_REVIEW'
+    | 'APPROVED'
+    | 'REJECTED'
+    | 'PUBLISHED';
     _count: { _all: number };
   }>;
 }
@@ -474,7 +559,9 @@ const deliveryProfileScopeToTargetId = (scope: CopilotPromptScope) =>
   scope === 'TEAM' ? 'team-delivery-default' : 'personal-delivery-default';
 
 const deliveryProfileScopeToTargetCode = (scope: CopilotPromptScope) =>
-  scope === 'TEAM' ? 'agent-copilot-delivery-profiles-team' : 'agent-copilot-delivery-profiles-personal';
+  scope === 'TEAM'
+    ? 'agent-copilot-delivery-profiles-team'
+    : 'agent-copilot-delivery-profiles-personal';
 
 export interface CapabilityRoutingPolicy {
   allowOwnerPool: boolean;
@@ -498,9 +585,13 @@ export type EphemeralPolicyScope = 'PERSONAL' | 'TEAM';
 const capabilityRoutingPolicyTargetId = 'agent-capability-routing-policy-default';
 const capabilityRoutingPolicyTargetCode = 'agent-capability-routing-policy-default';
 const ephemeralCapabilityPolicyTargetId = (scope: EphemeralPolicyScope) =>
-  scope === 'TEAM' ? 'agent-ephemeral-capability-policy-team-default' : 'agent-ephemeral-capability-policy-default';
+  scope === 'TEAM'
+    ? 'agent-ephemeral-capability-policy-team-default'
+    : 'agent-ephemeral-capability-policy-default';
 const ephemeralCapabilityPolicyTargetCode = (scope: EphemeralPolicyScope) =>
-  scope === 'TEAM' ? 'agent-ephemeral-capability-policy-team-default' : 'agent-ephemeral-capability-policy-default';
+  scope === 'TEAM'
+    ? 'agent-ephemeral-capability-policy-team-default'
+    : 'agent-ephemeral-capability-policy-default';
 export interface DeliveryChannelProfile {
   id: string;
   channel: DeliveryChannel;
@@ -529,7 +620,9 @@ export const useConversationSessions = (params?: {
   useQuery<ConversationPage>({
     queryKey: ['agent-copilot', 'sessions', params],
     queryFn: async () => {
-      const res = await apiClient.get<ConversationPage>('/agent-conversations/sessions', { params });
+      const res = await apiClient.get<ConversationPage>('/agent-conversations/sessions', {
+        params,
+      });
       return res.data;
     },
   });
@@ -538,7 +631,9 @@ export const useConversationDetail = (sessionId?: string) =>
   useQuery<ConversationDetail>({
     queryKey: ['agent-copilot', 'session', sessionId],
     queryFn: async () => {
-      const res = await apiClient.get<ConversationDetail>(`/agent-conversations/sessions/${sessionId}`);
+      const res = await apiClient.get<ConversationDetail>(
+        `/agent-conversations/sessions/${sessionId}`,
+      );
       return res.data;
     },
     enabled: Boolean(sessionId),
@@ -548,7 +643,9 @@ export const useConversationResult = (sessionId?: string) =>
   useQuery<ResultResponse>({
     queryKey: ['agent-copilot', 'result', sessionId],
     queryFn: async () => {
-      const res = await apiClient.get<ResultResponse>(`/agent-conversations/sessions/${sessionId}/result`);
+      const res = await apiClient.get<ResultResponse>(
+        `/agent-conversations/sessions/${sessionId}/result`,
+      );
       return res.data;
     },
     enabled: Boolean(sessionId),
@@ -558,11 +655,58 @@ export const useConversationResult = (sessionId?: string) =>
     },
   });
 
+export const useConversationResultDiff = (sessionId?: string) =>
+  useQuery<ConversationResultDiffResponse>({
+    queryKey: ['agent-copilot', 'result-diff', sessionId],
+    queryFn: async () => {
+      const res = await apiClient.get<ConversationResultDiffResponse>(
+        `/agent-conversations/sessions/${sessionId}/result-diff`,
+      );
+      return res.data;
+    },
+    enabled: Boolean(sessionId),
+  });
+
+export const useConversationResultDiffTimeline = (sessionId?: string, query?: { limit?: number }) =>
+  useQuery<ConversationResultDiffTimelineResponse>({
+    queryKey: ['agent-copilot', 'result-diff-timeline', sessionId, query?.limit],
+    queryFn: async () => {
+      const res = await apiClient.get<ConversationResultDiffTimelineResponse>(
+        `/agent-conversations/sessions/${sessionId}/result-diff/timeline`,
+        {
+          params: {
+            limit: query?.limit,
+          },
+        },
+      );
+      return res.data;
+    },
+    enabled: Boolean(sessionId),
+  });
+
 export const useCreateConversationSession = () => {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async (payload: { title?: string }) => {
-      const res = await apiClient.post<ConversationSession>('/agent-conversations/sessions', payload);
+      const res = await apiClient.post<ConversationSession>(
+        '/agent-conversations/sessions',
+        payload,
+      );
+      return res.data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['agent-copilot', 'sessions'] });
+    },
+  });
+};
+
+export const useDeleteConversationSession = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (sessionId: string) => {
+      const res = await apiClient.delete<{ success: boolean }>(
+        `/agent-conversations/sessions/${sessionId}`,
+      );
       return res.data;
     },
     onSuccess: () => {
@@ -623,8 +767,8 @@ export const useExportConversationResult = () => {
     mutationFn: async (payload: {
       sessionId: string;
       workflowExecutionId?: string;
-      format: 'PDF' | 'WORD' | 'JSON';
-      sections?: Array<'CONCLUSION' | 'EVIDENCE' | 'DEBATE_PROCESS' | 'RISK_ASSESSMENT'>;
+      format: ExportFormat;
+      sections?: ExportReportSection[];
       title?: string;
       includeRawData?: boolean;
     }) => {
@@ -785,7 +929,9 @@ export const useCapabilityRoutingPolicy = () =>
           pageSize: 20,
         },
       });
-      return res.data.data.find((item) => item.targetId === capabilityRoutingPolicyTargetId) ?? null;
+      return (
+        res.data.data.find((item) => item.targetId === capabilityRoutingPolicyTargetId) ?? null
+      );
     },
   });
 
@@ -832,14 +978,21 @@ export const useEphemeralCapabilityPolicy = (scope: EphemeralPolicyScope = 'PERS
           pageSize: 20,
         },
       });
-      return res.data.data.find((item) => item.targetId === ephemeralCapabilityPolicyTargetId(scope)) ?? null;
+      return (
+        res.data.data.find((item) => item.targetId === ephemeralCapabilityPolicyTargetId(scope)) ??
+        null
+      );
     },
   });
 
 export const useUpsertEphemeralCapabilityPolicy = () => {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async (payload: { bindingId?: string; policy: EphemeralCapabilityPolicy; scope?: EphemeralPolicyScope }) => {
+    mutationFn: async (payload: {
+      bindingId?: string;
+      policy: EphemeralCapabilityPolicy;
+      scope?: EphemeralPolicyScope;
+    }) => {
       const scope = payload.scope ?? 'PERSONAL';
       if (payload.bindingId) {
         const dto: UpdateUserConfigBindingDto = {
@@ -865,9 +1018,15 @@ export const useUpsertEphemeralCapabilityPolicy = () => {
     },
     onSuccess: (_data, variables) => {
       const scope = variables.scope ?? 'PERSONAL';
-      queryClient.invalidateQueries({ queryKey: ['agent-copilot', 'ephemeral-capability-policy', scope] });
-      queryClient.invalidateQueries({ queryKey: ['agent-copilot', 'ephemeral-capability-policy-audits', scope] });
-      queryClient.invalidateQueries({ queryKey: ['agent-copilot', 'ephemeral-capability-policy-audit-summary', scope] });
+      queryClient.invalidateQueries({
+        queryKey: ['agent-copilot', 'ephemeral-capability-policy', scope],
+      });
+      queryClient.invalidateQueries({
+        queryKey: ['agent-copilot', 'ephemeral-capability-policy-audits', scope],
+      });
+      queryClient.invalidateQueries({
+        queryKey: ['agent-copilot', 'ephemeral-capability-policy-audit-summary', scope],
+      });
     },
   });
 };
@@ -878,17 +1037,27 @@ export const useEphemeralCapabilityPolicyAudits = (
   filters?: { action?: string; changedKey?: string },
 ) =>
   useQuery<EphemeralCapabilityPolicyAuditItem[]>({
-    queryKey: ['agent-copilot', 'ephemeral-capability-policy-audits', scope, limit, filters?.action, filters?.changedKey],
+    queryKey: [
+      'agent-copilot',
+      'ephemeral-capability-policy-audits',
+      scope,
+      limit,
+      filters?.action,
+      filters?.changedKey,
+    ],
     queryFn: async () => {
-      const res = await apiClient.get<UserConfigBindingPageDto>('/user-config-bindings/ephemeral-policy-audits/list', {
-        params: {
-          scope,
-          action: filters?.action,
-          changedKey: filters?.changedKey,
-          page: 1,
-          pageSize: Math.min(Math.max(limit, 1), 100),
+      const res = await apiClient.get<UserConfigBindingPageDto>(
+        '/user-config-bindings/ephemeral-policy-audits/list',
+        {
+          params: {
+            scope,
+            action: filters?.action,
+            changedKey: filters?.changedKey,
+            page: 1,
+            pageSize: Math.min(Math.max(limit, 1), 100),
+          },
         },
-      });
+      );
       return res.data.data.map((item) => ({
         id: item.id,
         targetCode: item.targetCode,
@@ -903,7 +1072,14 @@ export const useEphemeralCapabilityPolicyAuditSummary = (
   scope: EphemeralPolicyScope = 'PERSONAL',
   pageSize = 100,
 ) =>
-  useQuery<{ scope: string; total: number; stats: { action: Array<{ key: string; count: number }>; changedKey: Array<{ key: string; count: number }> } }>({
+  useQuery<{
+    scope: string;
+    total: number;
+    stats: {
+      action: Array<{ key: string; count: number }>;
+      changedKey: Array<{ key: string; count: number }>;
+    };
+  }>({
     queryKey: ['agent-copilot', 'ephemeral-capability-policy-audit-summary', scope, pageSize],
     queryFn: async () => {
       const res = await apiClient.get('/user-config-bindings/ephemeral-policy-audits/summary', {
@@ -920,13 +1096,21 @@ export const useRollbackEphemeralCapabilityPolicyAudit = () => {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async (payload: { auditId: string; scope?: EphemeralPolicyScope }) => {
-      const res = await apiClient.post(`/user-config-bindings/ephemeral-policy-audits/${payload.auditId}/rollback`);
+      const res = await apiClient.post(
+        `/user-config-bindings/ephemeral-policy-audits/${payload.auditId}/rollback`,
+      );
       return { scope: payload.scope ?? 'PERSONAL', data: res.data };
     },
     onSuccess: ({ scope }) => {
-      queryClient.invalidateQueries({ queryKey: ['agent-copilot', 'ephemeral-capability-policy', scope] });
-      queryClient.invalidateQueries({ queryKey: ['agent-copilot', 'ephemeral-capability-policy-audits', scope] });
-      queryClient.invalidateQueries({ queryKey: ['agent-copilot', 'ephemeral-capability-policy-audit-summary', scope] });
+      queryClient.invalidateQueries({
+        queryKey: ['agent-copilot', 'ephemeral-capability-policy', scope],
+      });
+      queryClient.invalidateQueries({
+        queryKey: ['agent-copilot', 'ephemeral-capability-policy-audits', scope],
+      });
+      queryClient.invalidateQueries({
+        queryKey: ['agent-copilot', 'ephemeral-capability-policy-audit-summary', scope],
+      });
     },
   });
 };
@@ -1033,7 +1217,9 @@ export const useCreateConversationBacktest = () => {
     },
     onSuccess: ({ sessionId, data }) => {
       queryClient.invalidateQueries({ queryKey: ['agent-copilot', 'session', sessionId] });
-      queryClient.invalidateQueries({ queryKey: ['agent-copilot', 'backtest', sessionId, data.backtestJobId] });
+      queryClient.invalidateQueries({
+        queryKey: ['agent-copilot', 'backtest', sessionId, data.backtestJobId],
+      });
     },
   });
 };
@@ -1070,7 +1256,9 @@ export const useConversationAssets = (sessionId?: string) =>
   useQuery<ConversationAsset[]>({
     queryKey: ['agent-copilot', 'assets', sessionId],
     queryFn: async () => {
-      const res = await apiClient.get<ConversationAsset[]>(`/agent-conversations/sessions/${sessionId}/assets`);
+      const res = await apiClient.get<ConversationAsset[]>(
+        `/agent-conversations/sessions/${sessionId}/assets`,
+      );
       return res.data;
     },
     enabled: Boolean(sessionId),
@@ -1142,18 +1330,27 @@ export const useSandboxSkillDraft = () =>
 export const useSubmitSkillDraftReview = () =>
   useMutation({
     mutationFn: async (draftId: string) => {
-      const res = await apiClient.post<SkillDraftSummary>(`/agent-skills/drafts/${draftId}/submit-review`);
+      const res = await apiClient.post<SkillDraftSummary>(
+        `/agent-skills/drafts/${draftId}/submit-review`,
+      );
       return res.data;
     },
   });
 
 export const useReviewSkillDraft = () =>
   useMutation({
-    mutationFn: async (payload: { draftId: string; action: 'APPROVE' | 'REJECT'; comment?: string }) => {
-      const res = await apiClient.post<SkillDraftSummary>(`/agent-skills/drafts/${payload.draftId}/review`, {
-        action: payload.action,
-        comment: payload.comment,
-      });
+    mutationFn: async (payload: {
+      draftId: string;
+      action: 'APPROVE' | 'REJECT';
+      comment?: string;
+    }) => {
+      const res = await apiClient.post<SkillDraftSummary>(
+        `/agent-skills/drafts/${payload.draftId}/review`,
+        {
+          action: payload.action,
+          comment: payload.comment,
+        },
+      );
       return res.data;
     },
   });
@@ -1161,7 +1358,9 @@ export const useReviewSkillDraft = () =>
 export const usePublishSkillDraft = () =>
   useMutation({
     mutationFn: async (draftId: string) => {
-      const res = await apiClient.post<SkillDraftSummary>(`/agent-skills/drafts/${draftId}/publish`);
+      const res = await apiClient.post<SkillDraftSummary>(
+        `/agent-skills/drafts/${draftId}/publish`,
+      );
       return res.data;
     },
   });
@@ -1170,7 +1369,9 @@ export const useSkillDraftRuntimeGrants = (draftId?: string) =>
   useQuery<SkillRuntimeGrant[]>({
     queryKey: ['agent-copilot', 'skill-runtime-grants', draftId],
     queryFn: async () => {
-      const res = await apiClient.get<SkillRuntimeGrant[]>(`/agent-skills/drafts/${draftId}/runtime-grants`);
+      const res = await apiClient.get<SkillRuntimeGrant[]>(
+        `/agent-skills/drafts/${draftId}/runtime-grants`,
+      );
       return res.data;
     },
     enabled: Boolean(draftId),
@@ -1180,13 +1381,18 @@ export const useRevokeSkillRuntimeGrant = () => {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async (payload: { draftId: string; grantId: string; reason?: string }) => {
-      const res = await apiClient.post<SkillRuntimeGrant>(`/agent-skills/runtime-grants/${payload.grantId}/revoke`, {
-        reason: payload.reason,
-      });
+      const res = await apiClient.post<SkillRuntimeGrant>(
+        `/agent-skills/runtime-grants/${payload.grantId}/revoke`,
+        {
+          reason: payload.reason,
+        },
+      );
       return { draftId: payload.draftId, data: res.data };
     },
     onSuccess: ({ draftId }) => {
-      queryClient.invalidateQueries({ queryKey: ['agent-copilot', 'skill-runtime-grants', draftId] });
+      queryClient.invalidateQueries({
+        queryKey: ['agent-copilot', 'skill-runtime-grants', draftId],
+      });
     },
   });
 };
@@ -1195,11 +1401,15 @@ export const useConsumeSkillRuntimeGrant = () => {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async (payload: { draftId: string; grantId: string }) => {
-      const res = await apiClient.post<SkillRuntimeGrant>(`/agent-skills/runtime-grants/${payload.grantId}/use`);
+      const res = await apiClient.post<SkillRuntimeGrant>(
+        `/agent-skills/runtime-grants/${payload.grantId}/use`,
+      );
       return { draftId: payload.draftId, data: res.data };
     },
     onSuccess: ({ draftId }) => {
-      queryClient.invalidateQueries({ queryKey: ['agent-copilot', 'skill-runtime-grants', draftId] });
+      queryClient.invalidateQueries({
+        queryKey: ['agent-copilot', 'skill-runtime-grants', draftId],
+      });
       queryClient.invalidateQueries({ queryKey: ['agent-copilot', 'skill-governance-overview'] });
     },
   });
@@ -1280,7 +1490,13 @@ export const useCapabilityRoutingSummary = (
   query?: { limit?: number; window?: '1h' | '24h' | '7d' },
 ) =>
   useQuery<CapabilityRoutingSummary>({
-    queryKey: ['agent-copilot', 'capability-routing-summary', sessionId, query?.limit, query?.window],
+    queryKey: [
+      'agent-copilot',
+      'capability-routing-summary',
+      sessionId,
+      query?.limit,
+      query?.window,
+    ],
     queryFn: async () => {
       const res = await apiClient.get<CapabilityRoutingSummary>(
         `/agent-conversations/sessions/${sessionId}/capability-routing-summary`,
@@ -1326,8 +1542,12 @@ export const useRunEphemeralCapabilityHousekeeping = () => {
       return { sessionId: payload.sessionId, data: res.data };
     },
     onSuccess: ({ sessionId }) => {
-      queryClient.invalidateQueries({ queryKey: ['agent-copilot', 'ephemeral-capability-summary', sessionId] });
-      queryClient.invalidateQueries({ queryKey: ['agent-copilot', 'capability-routing-logs', sessionId] });
+      queryClient.invalidateQueries({
+        queryKey: ['agent-copilot', 'ephemeral-capability-summary', sessionId],
+      });
+      queryClient.invalidateQueries({
+        queryKey: ['agent-copilot', 'capability-routing-logs', sessionId],
+      });
       queryClient.invalidateQueries({ queryKey: ['agent-copilot', 'session', sessionId] });
     },
   });
@@ -1369,9 +1589,15 @@ export const useApplyEphemeralCapabilityEvolutionPlan = () => {
       return { sessionId: payload.sessionId, data: res.data };
     },
     onSuccess: ({ sessionId }) => {
-      queryClient.invalidateQueries({ queryKey: ['agent-copilot', 'ephemeral-capability-summary', sessionId] });
-      queryClient.invalidateQueries({ queryKey: ['agent-copilot', 'ephemeral-capability-evolution-plan', sessionId] });
-      queryClient.invalidateQueries({ queryKey: ['agent-copilot', 'capability-routing-logs', sessionId] });
+      queryClient.invalidateQueries({
+        queryKey: ['agent-copilot', 'ephemeral-capability-summary', sessionId],
+      });
+      queryClient.invalidateQueries({
+        queryKey: ['agent-copilot', 'ephemeral-capability-evolution-plan', sessionId],
+      });
+      queryClient.invalidateQueries({
+        queryKey: ['agent-copilot', 'capability-routing-logs', sessionId],
+      });
       queryClient.invalidateQueries({ queryKey: ['agent-copilot', 'session', sessionId] });
     },
   });
@@ -1382,7 +1608,13 @@ export const useEphemeralPromotionTasks = (
   query?: { window?: '1h' | '24h' | '7d'; status?: string },
 ) =>
   useQuery<EphemeralPromotionTaskItem[]>({
-    queryKey: ['agent-copilot', 'ephemeral-promotion-tasks', sessionId, query?.window, query?.status],
+    queryKey: [
+      'agent-copilot',
+      'ephemeral-promotion-tasks',
+      sessionId,
+      query?.window,
+      query?.status,
+    ],
     queryFn: async () => {
       const res = await apiClient.get<EphemeralPromotionTaskItem[]>(
         `/agent-conversations/sessions/${sessionId}/ephemeral-capabilities/promotion-tasks`,
@@ -1424,7 +1656,12 @@ export const useUpdateEphemeralPromotionTask = () => {
     mutationFn: async (payload: {
       sessionId: string;
       taskAssetId: string;
-      action: 'START_REVIEW' | 'MARK_APPROVED' | 'MARK_REJECTED' | 'MARK_PUBLISHED' | 'SYNC_DRAFT_STATUS';
+      action:
+      | 'START_REVIEW'
+      | 'MARK_APPROVED'
+      | 'MARK_REJECTED'
+      | 'MARK_PUBLISHED'
+      | 'SYNC_DRAFT_STATUS';
       comment?: string;
     }) => {
       const { sessionId, taskAssetId, action, comment } = payload;
@@ -1438,8 +1675,12 @@ export const useUpdateEphemeralPromotionTask = () => {
       return { sessionId, data: res.data };
     },
     onSuccess: ({ sessionId }) => {
-      queryClient.invalidateQueries({ queryKey: ['agent-copilot', 'ephemeral-promotion-tasks', sessionId] });
-      queryClient.invalidateQueries({ queryKey: ['agent-copilot', 'ephemeral-capability-evolution-plan', sessionId] });
+      queryClient.invalidateQueries({
+        queryKey: ['agent-copilot', 'ephemeral-promotion-tasks', sessionId],
+      });
+      queryClient.invalidateQueries({
+        queryKey: ['agent-copilot', 'ephemeral-capability-evolution-plan', sessionId],
+      });
       queryClient.invalidateQueries({ queryKey: ['agent-copilot', 'assets', sessionId] });
       queryClient.invalidateQueries({ queryKey: ['agent-copilot', 'session', sessionId] });
     },
@@ -1451,7 +1692,12 @@ export const useBatchUpdateEphemeralPromotionTasks = () => {
   return useMutation({
     mutationFn: async (payload: {
       sessionId: string;
-      action: 'START_REVIEW' | 'MARK_APPROVED' | 'MARK_REJECTED' | 'MARK_PUBLISHED' | 'SYNC_DRAFT_STATUS';
+      action:
+      | 'START_REVIEW'
+      | 'MARK_APPROVED'
+      | 'MARK_REJECTED'
+      | 'MARK_PUBLISHED'
+      | 'SYNC_DRAFT_STATUS';
       comment?: string;
       taskAssetIds?: string[];
       window?: '1h' | '24h' | '7d';
@@ -1467,10 +1713,18 @@ export const useBatchUpdateEphemeralPromotionTasks = () => {
       return { sessionId, data: res.data };
     },
     onSuccess: ({ sessionId }) => {
-      queryClient.invalidateQueries({ queryKey: ['agent-copilot', 'ephemeral-promotion-tasks', sessionId] });
-      queryClient.invalidateQueries({ queryKey: ['agent-copilot', 'ephemeral-promotion-task-summary', sessionId] });
-      queryClient.invalidateQueries({ queryKey: ['agent-copilot', 'ephemeral-promotion-task-batches', sessionId] });
-      queryClient.invalidateQueries({ queryKey: ['agent-copilot', 'ephemeral-capability-evolution-plan', sessionId] });
+      queryClient.invalidateQueries({
+        queryKey: ['agent-copilot', 'ephemeral-promotion-tasks', sessionId],
+      });
+      queryClient.invalidateQueries({
+        queryKey: ['agent-copilot', 'ephemeral-promotion-task-summary', sessionId],
+      });
+      queryClient.invalidateQueries({
+        queryKey: ['agent-copilot', 'ephemeral-promotion-task-batches', sessionId],
+      });
+      queryClient.invalidateQueries({
+        queryKey: ['agent-copilot', 'ephemeral-capability-evolution-plan', sessionId],
+      });
       queryClient.invalidateQueries({ queryKey: ['agent-copilot', 'assets', sessionId] });
       queryClient.invalidateQueries({ queryKey: ['agent-copilot', 'session', sessionId] });
     },
@@ -1525,9 +1779,15 @@ export const useReplayFailedEphemeralPromotionTaskBatch = () => {
       return { sessionId, data: res.data };
     },
     onSuccess: ({ sessionId }) => {
-      queryClient.invalidateQueries({ queryKey: ['agent-copilot', 'ephemeral-promotion-task-batches', sessionId] });
-      queryClient.invalidateQueries({ queryKey: ['agent-copilot', 'ephemeral-promotion-tasks', sessionId] });
-      queryClient.invalidateQueries({ queryKey: ['agent-copilot', 'ephemeral-promotion-task-summary', sessionId] });
+      queryClient.invalidateQueries({
+        queryKey: ['agent-copilot', 'ephemeral-promotion-task-batches', sessionId],
+      });
+      queryClient.invalidateQueries({
+        queryKey: ['agent-copilot', 'ephemeral-promotion-tasks', sessionId],
+      });
+      queryClient.invalidateQueries({
+        queryKey: ['agent-copilot', 'ephemeral-promotion-task-summary', sessionId],
+      });
       queryClient.invalidateQueries({ queryKey: ['agent-copilot', 'session', sessionId] });
     },
   });

@@ -1,4 +1,9 @@
 import { z } from 'zod';
+import {
+  DataConnectorOwnerTypeEnum,
+  DataConnectorQuickStartTemplateSchema,
+  DataConnectorSourceDomainEnum,
+} from './parameter-rule';
 
 // ── 模板分类 ──
 
@@ -80,6 +85,42 @@ export const CopyTemplateSchema = z.object({
   newWorkflowId: z.string().min(1).max(60).optional(),
 });
 
+export const TemplateCatalogQuickstartBusinessTemplateCodeEnum = z.enum([
+  'WEEKLY_MARKET_REVIEW',
+  'PRICE_ALERT_MONITORING',
+  'WEATHER_LOGISTICS_IMPACT',
+  'STRATEGY_BACKTEST',
+]);
+
+export const TemplateCatalogQuickstartBusinessTemplatesQuerySchema = z.object({
+  keyword: z.string().trim().min(1).max(120).optional(),
+});
+
+export const TemplateCatalogQuickstartConnectorDraftSchema =
+  DataConnectorQuickStartTemplateSchema.extend({
+    connectorCode: z.string().regex(/^[A-Z0-9_]{3,120}$/),
+    connectorName: z.string().min(1).max(120),
+    ownerType: DataConnectorOwnerTypeEnum.default('SYSTEM'),
+  });
+
+export const TemplateCatalogQuickstartBusinessTemplateSchema = z.object({
+  code: TemplateCatalogQuickstartBusinessTemplateCodeEnum,
+  name: z.string().min(1).max(120),
+  description: z.string().min(1).max(500),
+  category: TemplateCategoryEnum,
+  tags: z.array(z.string()).max(12),
+  kpiFocus: z.array(z.string()).max(8),
+  recommendedConnectors: z.array(DataConnectorSourceDomainEnum).max(12),
+  connectorTemplates: z.array(DataConnectorQuickStartTemplateSchema).max(12),
+  connectorCreateDrafts: z.array(TemplateCatalogQuickstartConnectorDraftSchema).max(12),
+  outputArtifacts: z.array(z.string()).max(8),
+});
+
+export const TemplateCatalogQuickstartBusinessTemplatesResponseSchema = z.object({
+  templates: z.array(TemplateCatalogQuickstartBusinessTemplateSchema),
+  total: z.number().int().min(0),
+});
+
 // ── Types ──
 
 export type TemplateCategory = z.infer<typeof TemplateCategoryEnum>;
@@ -90,3 +131,18 @@ export type UpdateTemplateCatalogDto = z.infer<typeof UpdateTemplateCatalogSchem
 export type TemplateCatalogQueryDto = z.infer<typeof TemplateCatalogQuerySchema>;
 export type TemplateCatalogPageDto = z.infer<typeof TemplateCatalogPageSchema>;
 export type CopyTemplateDto = z.infer<typeof CopyTemplateSchema>;
+export type TemplateCatalogQuickstartBusinessTemplateCode = z.infer<
+  typeof TemplateCatalogQuickstartBusinessTemplateCodeEnum
+>;
+export type TemplateCatalogQuickstartBusinessTemplatesQueryDto = z.infer<
+  typeof TemplateCatalogQuickstartBusinessTemplatesQuerySchema
+>;
+export type TemplateCatalogQuickstartConnectorDraftDto = z.infer<
+  typeof TemplateCatalogQuickstartConnectorDraftSchema
+>;
+export type TemplateCatalogQuickstartBusinessTemplateDto = z.infer<
+  typeof TemplateCatalogQuickstartBusinessTemplateSchema
+>;
+export type TemplateCatalogQuickstartBusinessTemplatesResponseDto = z.infer<
+  typeof TemplateCatalogQuickstartBusinessTemplatesResponseSchema
+>;
