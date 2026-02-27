@@ -89,6 +89,48 @@ export const ReconciliationReadCoverageQuerySchema = z.object({
   targetCoverageRate: z.coerce.number().min(0).max(1).default(0.9),
 });
 
+export const ReconciliationRollbackDrillStatusEnum = z.enum([
+  'PLANNED',
+  'RUNNING',
+  'PASSED',
+  'FAILED',
+]);
+
+export const CreateReconciliationRollbackDrillSchema = z
+  .object({
+    dataset: ReconciliationDatasetEnum,
+    workflowVersionId: z.string().uuid().optional(),
+    scenario: z.string().trim().min(1).max(80).default('standard_to_legacy'),
+    status: ReconciliationRollbackDrillStatusEnum.default('PASSED'),
+    startedAt: z.string().datetime().optional(),
+    completedAt: z.string().datetime().optional(),
+    durationSeconds: z.coerce.number().int().min(0).max(86400).optional(),
+    rollbackPath: z.string().trim().min(1).max(80).optional(),
+    resultSummary: z.record(z.unknown()).optional(),
+    notes: z.string().trim().min(1).max(1000).optional(),
+  })
+  .superRefine((value, ctx) => {
+    if (!value.startedAt || !value.completedAt) {
+      return;
+    }
+    const startedAt = new Date(value.startedAt).getTime();
+    const completedAt = new Date(value.completedAt).getTime();
+    if (startedAt > completedAt) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['startedAt'],
+        message: 'startedAt 必须小于或等于 completedAt',
+      });
+    }
+  });
+
+export const ListReconciliationRollbackDrillsQuerySchema = z.object({
+  page: z.coerce.number().int().min(1).default(1),
+  pageSize: z.coerce.number().int().min(1).max(100).default(20),
+  dataset: ReconciliationDatasetEnum.optional(),
+  status: ReconciliationRollbackDrillStatusEnum.optional(),
+});
+
 export const ReconciliationJobStatusEnum = z.enum([
   'PENDING',
   'RUNNING',
@@ -235,6 +277,15 @@ export type ReconciliationDailyMetricsQueryDto = z.infer<
 >;
 export type ReconciliationReadCoverageQueryDto = z.infer<
   typeof ReconciliationReadCoverageQuerySchema
+>;
+export type ReconciliationRollbackDrillStatus = z.infer<
+  typeof ReconciliationRollbackDrillStatusEnum
+>;
+export type CreateReconciliationRollbackDrillDto = z.infer<
+  typeof CreateReconciliationRollbackDrillSchema
+>;
+export type ListReconciliationRollbackDrillsQueryDto = z.infer<
+  typeof ListReconciliationRollbackDrillsQuerySchema
 >;
 export type ReconciliationJobStatus = z.infer<typeof ReconciliationJobStatusEnum>;
 export type ReconciliationJobSortBy = z.infer<typeof ReconciliationJobSortByEnum>;

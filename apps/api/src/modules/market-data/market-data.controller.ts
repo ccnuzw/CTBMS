@@ -13,12 +13,14 @@ import type { Request as ExpressRequest } from 'express';
 import { randomUUID } from 'node:crypto';
 import {
   CancelReconciliationJobRequest,
+  CreateReconciliationRollbackDrillRequest,
   CreateReconciliationJobRequest,
   EvaluateReconciliationGateRequest,
   ListReconciliationJobsRequest,
   ReconciliationDailyMetricsQueryRequest,
   ReconciliationMetricsSnapshotRequest,
   ReconciliationReadCoverageQueryRequest,
+  ListReconciliationRollbackDrillsQueryRequest,
   ReconciliationWindowMetricsQueryRequest,
   MarketDataAggregateRequest,
   MarketDataQueryRequest,
@@ -205,6 +207,30 @@ export class MarketDataController {
       workflowVersionIds: dto.workflowVersionIds,
       targetCoverageRate: dto.targetCoverageRate,
     });
+    return this.success(req, data);
+  }
+
+  @Post('reconciliation/drills')
+  async createReconciliationRollbackDrill(
+    @Body() dto: CreateReconciliationRollbackDrillRequest,
+    @Request() req: AuthRequest,
+  ) {
+    const data = await this.marketDataService.createReconciliationRollbackDrill(
+      this.getUserId(req),
+      dto,
+    );
+    return this.success(req, data);
+  }
+
+  @Get('reconciliation/drills')
+  async listReconciliationRollbackDrills(
+    @Query() query: ListReconciliationRollbackDrillsQueryRequest,
+    @Request() req: AuthRequest,
+  ) {
+    const data = await this.marketDataService.listReconciliationRollbackDrills(
+      this.getUserId(req),
+      query,
+    );
     return this.success(req, data);
   }
 

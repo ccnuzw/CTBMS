@@ -6,8 +6,10 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import type {
+  CreateReconciliationRollbackDrillDto,
   CreateReconciliationJobDto,
   LineageDataset,
+  ReconciliationRollbackDrillStatus,
   ReconciliationDataset,
   ReconciliationSummaryDto,
   StandardEventRecord,
@@ -22,6 +24,7 @@ import { ConfigService } from '../config/config.service';
 
 type StandardDataset = 'SPOT_PRICE' | 'FUTURES_QUOTE' | 'MARKET_EVENT';
 type ReconciliationJobStatus = 'PENDING' | 'RUNNING' | 'DONE' | 'FAILED' | 'CANCELLED';
+type RollbackDrillStatus = ReconciliationRollbackDrillStatus;
 type ReconciliationListSortBy = 'createdAt' | 'startedAt' | 'finishedAt' | 'status' | 'dataset';
 type ReconciliationListSortOrder = 'asc' | 'desc';
 type AggregateOp = 'sum' | 'avg' | 'min' | 'max' | 'count';
@@ -116,6 +119,38 @@ interface PersistedReconciliationDailyMetricRow {
   source: string;
   payload: unknown;
   generatedAt: unknown;
+}
+
+interface RollbackDrillRecord {
+  drillId: string;
+  dataset: StandardDataset;
+  workflowVersionId?: string;
+  scenario: string;
+  status: RollbackDrillStatus;
+  startedAt: string;
+  completedAt?: string;
+  durationSeconds?: number;
+  rollbackPath?: string;
+  resultSummary?: Record<string, unknown>;
+  notes?: string;
+  triggeredByUserId: string;
+  createdAt: string;
+}
+
+interface PersistedRollbackDrillRow {
+  drillId: string;
+  dataset: string;
+  workflowVersionId: string | null;
+  scenario: string;
+  status: string;
+  startedAt: unknown;
+  completedAt: unknown;
+  durationSeconds: unknown;
+  rollbackPath: string | null;
+  resultSummary: unknown;
+  notes: string | null;
+  triggeredByUserId: string;
+  createdAt: unknown;
 }
 
 interface PersistedReadCoverageDailyRow {
@@ -304,8 +339,10 @@ export const STANDARD_RECONCILIATION_DATASETS: StandardDataset[] = [
 export class MarketDataService {
   private readonly logger = new Logger(MarketDataService.name);
   private readonly reconciliationJobs = new Map<string, ReconciliationJob>();
+  private readonly rollbackDrillRecords = new Map<string, RollbackDrillRecord>();
   private reconciliationPersistenceUnavailable = false;
   private reconciliationDailyMetricsPersistenceUnavailable = false;
+  private rollbackDrillPersistenceUnavailable = false;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -1365,6 +1402,96 @@ export class MarketDataService {
     };
   }
 
+  async createReconciliationRollbackDrill(
+    userId: string,
+    dto: CreateReconciliationRollbackDrillDto,
+  ) {
+    const now = new Date();
+    const startedAt = dto.startedAt ? new Date(dto.startedAt) : now;
+    if (!Number.isFinite(startedAt.getTime())) {
+      throw new BadRequestException('invalid startedAt datetime');
+    }
+
+    const completedAt = dto.completedAt ? new Date(dto.completedAt) : null;
+    if (completedAt && !Number.isFinite(completedAt.getTime())) {
+      throw new BadRequestException('invalid completedAt datetime');
+    }
+    if (completedAt && completedAt.getTime() < startedAt.getTime()) {
+      throw new BadRequestException('completedAt must be >= startedAt');
+    }
+
+    const status = this.normalizeRollbackDrillStatus(dto.status);
+    const durationSeconds =
+      this.parseNonNegativeInteger(dto.durationSeconds) ??
+      (completedAt
+        ? Math.max(0, Math.floor((completedAt.getTime() - startedAt.getTime()) / 1000))
+        : undefined);
+
+    const record: RollbackDrillRecord = {
+      drillId: randomUUID(),
+      dataset: dto.dataset,
+      workflowVersionId: dto.workflowVersionId,
+      scenario: dto.scenario ?? 'standard_to_legacy',
+      status,
+      startedAt: startedAt.toISOString(),
+      completedAt: completedAt?.toISOString(),
+      durationSeconds,
+      rollbackPath: dto.rollbackPath,
+      resultSummary: dto.resultSummary,
+      notes: dto.notes,
+      triggeredByUserId: userId,
+      createdAt: now.toISOString(),
+    };
+
+    this.rollbackDrillRecords.set(record.drillId, record);
+
+    const persisted = await this.persistRollbackDrillRecord(record);
+    return {
+      ...record,
+      storage: persisted ? 'database' : 'in-memory',
+    };
+  }
+
+  async listReconciliationRollbackDrills(
+    userId: string,
+    query: {
+      page?: number;
+      pageSize?: number;
+      dataset?: StandardDataset;
+      status?: RollbackDrillStatus;
+    },
+  ) {
+    const page = Math.max(1, query.page ?? 1);
+    const pageSize = Math.min(100, Math.max(1, query.pageSize ?? 20));
+
+    const persisted = await this.listPersistedRollbackDrillRecords(userId, page, pageSize, {
+      dataset: query.dataset,
+      status: query.status,
+    });
+    if (persisted) {
+      return persisted;
+    }
+
+    const filtered = Array.from(this.rollbackDrillRecords.values())
+      .filter((item) => item.triggeredByUserId === userId)
+      .filter((item) => (!query.dataset ? true : item.dataset === query.dataset))
+      .filter((item) => (!query.status ? true : item.status === query.status))
+      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+
+    const total = filtered.length;
+    const totalPages = Math.ceil(total / pageSize) || 1;
+    const start = (page - 1) * pageSize;
+
+    return {
+      page,
+      pageSize,
+      total,
+      totalPages,
+      storage: 'in-memory' as const,
+      items: filtered.slice(start, start + pageSize),
+    };
+  }
+
   async queryStandardizedData(dataset: StandardDataset, options: StandardizedQueryOptions) {
     const limit = options.limit ?? 100;
 
@@ -1543,6 +1670,162 @@ export class MarketDataService {
       this.logger.error(
         `Persist daily reconciliation metrics failed: ${this.stringifyError(error)}`,
       );
+    }
+  }
+
+  private async persistRollbackDrillRecord(record: RollbackDrillRecord): Promise<boolean> {
+    if (this.rollbackDrillPersistenceUnavailable) {
+      return false;
+    }
+
+    try {
+      await this.prisma.$executeRawUnsafe(
+        `INSERT INTO "DataReconciliationRollbackDrill"
+          ("id", "drillId", "dataset", "workflowVersionId", "scenario", "status", "startedAt", "completedAt", "durationSeconds", "rollbackPath", "resultSummary", "notes", "triggeredByUserId", "createdAt", "updatedAt")
+         VALUES
+          ($1, $2, $3, $4, $5, $6::"ReconciliationRollbackDrillStatus", $7, $8, $9, $10, $11::jsonb, $12, $13, $14, $15)
+         ON CONFLICT ("drillId") DO UPDATE SET
+          "dataset" = EXCLUDED."dataset",
+          "workflowVersionId" = EXCLUDED."workflowVersionId",
+          "scenario" = EXCLUDED."scenario",
+          "status" = EXCLUDED."status",
+          "startedAt" = EXCLUDED."startedAt",
+          "completedAt" = EXCLUDED."completedAt",
+          "durationSeconds" = EXCLUDED."durationSeconds",
+          "rollbackPath" = EXCLUDED."rollbackPath",
+          "resultSummary" = EXCLUDED."resultSummary",
+          "notes" = EXCLUDED."notes",
+          "updatedAt" = EXCLUDED."updatedAt"`,
+        randomUUID(),
+        record.drillId,
+        record.dataset,
+        record.workflowVersionId ?? null,
+        record.scenario,
+        record.status,
+        new Date(record.startedAt),
+        record.completedAt ? new Date(record.completedAt) : null,
+        record.durationSeconds ?? null,
+        record.rollbackPath ?? null,
+        record.resultSummary ? JSON.stringify(record.resultSummary) : null,
+        record.notes ?? null,
+        record.triggeredByUserId,
+        new Date(record.createdAt),
+        new Date(),
+      );
+      return true;
+    } catch (error) {
+      if (this.isRollbackDrillPersistenceMissingTableError(error)) {
+        this.disableRollbackDrillPersistence('persist rollback drill', error);
+        return false;
+      }
+      this.logger.error(`Persist rollback drill failed: ${this.stringifyError(error)}`);
+      return false;
+    }
+  }
+
+  private async listPersistedRollbackDrillRecords(
+    userId: string,
+    page: number,
+    pageSize: number,
+    options: {
+      dataset?: StandardDataset;
+      status?: RollbackDrillStatus;
+    },
+  ): Promise<{
+    page: number;
+    pageSize: number;
+    total: number;
+    totalPages: number;
+    storage: 'database';
+    items: RollbackDrillRecord[];
+  } | null> {
+    if (this.rollbackDrillPersistenceUnavailable) {
+      return null;
+    }
+
+    try {
+      const whereParts: string[] = ['"triggeredByUserId" = $1'];
+      const whereParams: unknown[] = [userId];
+
+      if (options.dataset) {
+        whereParts.push(`"dataset" = $${whereParams.length + 1}`);
+        whereParams.push(options.dataset);
+      }
+      if (options.status) {
+        whereParts.push(
+          `"status" = $${whereParams.length + 1}::"ReconciliationRollbackDrillStatus"`,
+        );
+        whereParams.push(options.status);
+      }
+
+      const whereClause = `WHERE ${whereParts.join(' AND ')}`;
+      const totalRows = await this.prisma.$queryRawUnsafe<Array<{ total: number | string }>>(
+        `SELECT COUNT(*)::int AS "total"
+         FROM "DataReconciliationRollbackDrill"
+         ${whereClause}`,
+        ...whereParams,
+      );
+
+      const total = Number(totalRows[0]?.total ?? 0);
+      const totalPages = Math.ceil(total / pageSize) || 1;
+      const offset = (page - 1) * pageSize;
+
+      const rows = await this.prisma.$queryRawUnsafe<PersistedRollbackDrillRow[]>(
+        `SELECT
+           "drillId",
+           "dataset",
+           "workflowVersionId",
+           "scenario",
+           "status",
+           "startedAt",
+           "completedAt",
+           "durationSeconds",
+           "rollbackPath",
+           "resultSummary",
+           "notes",
+           "triggeredByUserId",
+           "createdAt"
+         FROM "DataReconciliationRollbackDrill"
+         ${whereClause}
+         ORDER BY "createdAt" DESC
+         LIMIT $${whereParams.length + 1}
+         OFFSET $${whereParams.length + 2}`,
+        ...whereParams,
+        pageSize,
+        offset,
+      );
+
+      const items: RollbackDrillRecord[] = rows.map((row) => ({
+        drillId: row.drillId,
+        dataset: this.normalizeReconciliationDataset(row.dataset) as StandardDataset,
+        workflowVersionId: row.workflowVersionId ?? undefined,
+        scenario: row.scenario,
+        status: this.normalizeRollbackDrillStatus(row.status),
+        startedAt: this.toIsoString(row.startedAt) ?? new Date().toISOString(),
+        completedAt: this.toIsoString(row.completedAt),
+        durationSeconds: this.parseNonNegativeInteger(row.durationSeconds),
+        rollbackPath: row.rollbackPath ?? undefined,
+        resultSummary: this.parseJsonValue<Record<string, unknown>>(row.resultSummary),
+        notes: row.notes ?? undefined,
+        triggeredByUserId: row.triggeredByUserId,
+        createdAt: this.toIsoString(row.createdAt) ?? new Date().toISOString(),
+      }));
+
+      return {
+        page,
+        pageSize,
+        total,
+        totalPages,
+        storage: 'database',
+        items,
+      };
+    } catch (error) {
+      if (this.isRollbackDrillPersistenceMissingTableError(error)) {
+        this.disableRollbackDrillPersistence('list rollback drills', error);
+        return null;
+      }
+      this.logger.error(`List rollback drills failed: ${this.stringifyError(error)}`);
+      return null;
     }
   }
 
@@ -2219,6 +2502,21 @@ export class MarketDataService {
     return null;
   }
 
+  private parseNonNegativeInteger(value: unknown): number | undefined {
+    if (value === null || value === undefined) {
+      return undefined;
+    }
+    const parsed = this.parseFiniteNumber(value);
+    if (parsed === undefined) {
+      return undefined;
+    }
+    const int = Math.trunc(parsed);
+    if (int < 0) {
+      return undefined;
+    }
+    return int;
+  }
+
   private normalizeCoverageRate(value: unknown, fallback: number): number {
     const parsed = this.parseFiniteNumber(value);
     if (parsed === undefined) {
@@ -2482,6 +2780,18 @@ export class MarketDataService {
     return 'FAILED';
   }
 
+  private normalizeRollbackDrillStatus(status: string | undefined): RollbackDrillStatus {
+    if (
+      status === 'PLANNED' ||
+      status === 'RUNNING' ||
+      status === 'PASSED' ||
+      status === 'FAILED'
+    ) {
+      return status;
+    }
+    return 'PASSED';
+  }
+
   private normalizeReconciliationDataset(dataset: string): ReconciliationDataset {
     if (dataset === 'SPOT_PRICE' || dataset === 'FUTURES_QUOTE' || dataset === 'MARKET_EVENT') {
       return dataset;
@@ -2573,6 +2883,31 @@ export class MarketDataService {
     return containsTarget && missingTableHint;
   }
 
+  private isRollbackDrillPersistenceMissingTableError(error: unknown) {
+    const code =
+      typeof error === 'object' && error !== null && 'code' in error
+        ? String((error as { code?: unknown }).code)
+        : '';
+    if (code === 'P2021') {
+      return true;
+    }
+
+    const message = this.stringifyError(error).toLowerCase();
+    const containsTarget =
+      message.includes('datareconciliationrollbackdrill') ||
+      message.includes('reconciliationrollbackdrillstatus');
+    const missingTableHint =
+      message.includes('does not exist') ||
+      message.includes('relation') ||
+      message.includes('column') ||
+      message.includes('undefined') ||
+      message.includes('42703') ||
+      message.includes('42704') ||
+      message.includes('p2021') ||
+      message.includes('invalid input value for enum');
+    return containsTarget && missingTableHint;
+  }
+
   private disableReconciliationPersistence(operation: string, error: unknown) {
     if (this.reconciliationPersistenceUnavailable) {
       return;
@@ -2590,6 +2925,16 @@ export class MarketDataService {
     this.reconciliationDailyMetricsPersistenceUnavailable = true;
     this.logger.warn(
       `Reconciliation daily metrics persistence disabled (${operation}): ${this.stringifyError(error)}`,
+    );
+  }
+
+  private disableRollbackDrillPersistence(operation: string, error: unknown) {
+    if (this.rollbackDrillPersistenceUnavailable) {
+      return;
+    }
+    this.rollbackDrillPersistenceUnavailable = true;
+    this.logger.warn(
+      `Rollback drill persistence disabled (${operation}): ${this.stringifyError(error)}`,
     );
   }
 

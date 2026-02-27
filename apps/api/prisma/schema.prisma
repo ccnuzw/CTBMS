@@ -2670,6 +2670,13 @@ enum ReconcileJobStatus {
   CANCELLED
 }
 
+enum ReconciliationRollbackDrillStatus {
+  PLANNED
+  RUNNING
+  PASSED
+  FAILED
+}
+
 model DataReconciliationJob {
   id String @id @default(uuid())
 
@@ -2746,6 +2753,33 @@ model DataReconciliationDailyMetric {
   @@unique([dataset, metricDate, windowDays])
   @@index([dataset, generatedAt])
   @@index([metricDate, meetsWindowTarget])
+}
+
+model DataReconciliationRollbackDrill {
+  id String @id @default(uuid())
+
+  drillId String @unique
+  dataset String
+  workflowVersionId String?
+
+  scenario String
+  status ReconciliationRollbackDrillStatus
+
+  startedAt DateTime
+  completedAt DateTime?
+  durationSeconds Int?
+
+  rollbackPath String?
+  resultSummary Json?
+  notes String? @db.Text
+
+  triggeredByUserId String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([dataset, status, createdAt])
+  @@index([triggeredByUserId, createdAt])
+  @@index([workflowVersionId, createdAt])
 }
 
 // =============================================

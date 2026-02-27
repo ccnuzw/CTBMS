@@ -587,6 +587,113 @@
 }
 ```
 
+### 3.5.10 标准层读取覆盖率统计
+
+- `POST /market-data/reconciliation/metrics/read-coverage`
+
+请求：
+
+```json
+{
+  "days": 7,
+  "targetCoverageRate": 0.9,
+  "workflowVersionIds": ["1ccf29d6-7d24-4a66-a2d1-8c3998c0a93d"]
+}
+```
+
+响应：
+
+```json
+{
+  "windowDays": 7,
+  "fromDate": "2026-02-21T00:00:00.000Z",
+  "toDate": "2026-02-27T10:05:00.000Z",
+  "targetCoverageRate": 0.9,
+  "totalDataFetchNodes": 128,
+  "standardReadNodes": 118,
+  "legacyReadNodes": 10,
+  "otherSourceNodes": 0,
+  "gateEvaluatedNodes": 120,
+  "gatePassedNodes": 116,
+  "coverageRate": 0.921875,
+  "meetsCoverageTarget": true,
+  "consecutiveCoverageDays": 5,
+  "daily": [
+    {
+      "date": "2026-02-27",
+      "totalDataFetchNodes": 18,
+      "standardReadNodes": 17,
+      "legacyReadNodes": 1,
+      "otherSourceNodes": 0,
+      "gateEvaluatedNodes": 18,
+      "gatePassedNodes": 17,
+      "coverageRate": 0.944444,
+      "meetsTarget": true
+    }
+  ]
+}
+```
+
+说明：
+
+- `coverageRate = standardReadNodes / totalDataFetchNodes`。
+- 可用于 M1 验收阈值（核心模板标准层读取覆盖率目标）。
+
+### 3.5.11 新增切流回滚演练记录
+
+- `POST /market-data/reconciliation/drills`
+
+请求：
+
+```json
+{
+  "dataset": "SPOT_PRICE",
+  "workflowVersionId": "1ccf29d6-7d24-4a66-a2d1-8c3998c0a93d",
+  "scenario": "standard_to_legacy_weekly_report",
+  "status": "PASSED",
+  "startedAt": "2026-02-27T10:30:00.000Z",
+  "completedAt": "2026-02-27T10:33:00.000Z",
+  "durationSeconds": 180,
+  "rollbackPath": "STANDARD_READ->LEGACY_READ",
+  "resultSummary": {
+    "rollbackSuccess": true,
+    "templateResultStable": true
+  },
+  "notes": "M1 gate rehearsal"
+}
+```
+
+### 3.5.12 查询切流回滚演练记录
+
+- `GET /market-data/reconciliation/drills?page=1&pageSize=20&dataset=SPOT_PRICE&status=PASSED`
+
+响应：
+
+```json
+{
+  "page": 1,
+  "pageSize": 20,
+  "total": 3,
+  "totalPages": 1,
+  "storage": "database",
+  "items": [
+    {
+      "drillId": "drill_20260227_01",
+      "dataset": "SPOT_PRICE",
+      "workflowVersionId": "1ccf29d6-7d24-4a66-a2d1-8c3998c0a93d",
+      "scenario": "standard_to_legacy_weekly_report",
+      "status": "PASSED",
+      "startedAt": "2026-02-27T10:30:00.000Z",
+      "completedAt": "2026-02-27T10:33:00.000Z",
+      "durationSeconds": 180,
+      "rollbackPath": "STANDARD_READ->LEGACY_READ",
+      "triggeredByUserId": "admin-user",
+      "createdAt": "2026-02-27T10:33:10.000Z"
+    }
+  ]
+}
+```
+
 ## 4. 指标中心 API
 
 ## 4.1 查询指标字典

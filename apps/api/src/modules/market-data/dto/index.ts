@@ -7,6 +7,8 @@ export * from './reconciliation-window-metrics-query.dto';
 export * from './reconciliation-metrics-snapshot.dto';
 export * from './reconciliation-daily-metrics-query.dto';
 export * from './reconciliation-read-coverage-query.dto';
+export * from './create-reconciliation-rollback-drill.dto';
+export * from './list-reconciliation-rollback-drills-query.dto';
 export * from './list-reconciliation-jobs.dto';
 export * from './market-data-query.dto';
 export * from './market-data-aggregate.dto';

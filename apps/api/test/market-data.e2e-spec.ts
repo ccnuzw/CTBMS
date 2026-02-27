@@ -293,6 +293,71 @@ async function main() {
     assert.equal(readCoverage.body.data.targetCoverageRate, 0.9);
     assert.equal(readCoverage.body.data.daily.length, 7);
 
+    const rollbackDrillCreated = await fetchJson<{
+      success: boolean;
+      data: {
+        drillId: string;
+        dataset: string;
+        status: string;
+        workflowVersionId?: string;
+        scenario: string;
+        storage: string;
+      };
+      traceId: string;
+      ts: string;
+    }>(`${baseUrl}/market-data/reconciliation/drills`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-virtual-user-id': 'admin-user',
+      },
+      body: JSON.stringify({
+        dataset: 'SPOT_PRICE',
+        scenario: 'standard_to_legacy_weekly_report',
+        status: 'PASSED',
+        rollbackPath: 'STANDARD_READ->LEGACY_READ',
+        notes: 'm1 rehearsal',
+      }),
+    });
+    assert.equal(rollbackDrillCreated.status, 201);
+    assert.equal(rollbackDrillCreated.body.success, true);
+    assert.equal(rollbackDrillCreated.body.data.dataset, 'SPOT_PRICE');
+    assert.equal(rollbackDrillCreated.body.data.status, 'PASSED');
+
+    const rollbackDrills = await fetchJson<{
+      success: boolean;
+      data: {
+        page: number;
+        pageSize: number;
+        total: number;
+        totalPages: number;
+        storage: string;
+        items: Array<{
+          drillId: string;
+          dataset: string;
+          status: string;
+        }>;
+      };
+      traceId: string;
+      ts: string;
+    }>(
+      `${baseUrl}/market-data/reconciliation/drills?page=1&pageSize=20&dataset=SPOT_PRICE&status=PASSED`,
+      {
+        method: 'GET',
+        headers: {
+          'x-virtual-user-id': 'admin-user',
+        },
+      },
+    );
+    assert.equal(rollbackDrills.status, 200);
+    assert.equal(rollbackDrills.body.success, true);
+    assert.ok(rollbackDrills.body.data.total >= 1);
+    assert.ok(
+      rollbackDrills.body.data.items.some(
+        (item) => item.drillId === rollbackDrillCreated.body.data.drillId,
+      ),
+    );
+
     const createdAtFrom = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
     const createdAtTo = new Date().toISOString();
 
