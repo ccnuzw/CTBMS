@@ -3,7 +3,7 @@ import { MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { ZodValidationPipe } from 'nestjs-zod';
 import { MockAuthMiddleware } from '../src/common/middleware/mock-auth.middleware';
-import { MarketDataModule } from '../src/modules/market-data';
+import { MarketDataModule, MarketDataService } from '../src/modules/market-data';
 import { PrismaModule } from '../src/prisma';
 
 @Module({
@@ -30,6 +30,7 @@ async function main() {
   app.useGlobalPipes(new ZodValidationPipe());
   await app.listen(0);
   const baseUrl = (await app.getUrl()).replace('[::1]', '127.0.0.1');
+  const marketDataService = app.get(MarketDataService);
 
   try {
     const query = await fetchJson<{
@@ -603,6 +604,7 @@ async function main() {
     const cutoverExecute = await fetchJson<{
       success: boolean;
       data: {
+        executionId: string;
         executedAt: string;
         decision: {
           decisionId: string;
@@ -638,6 +640,7 @@ async function main() {
     });
     assert.equal(cutoverExecute.status, 201);
     assert.equal(cutoverExecute.body.success, true);
+    assert.ok(cutoverExecute.body.data.executionId.length > 0);
     assert.ok(cutoverExecute.body.data.executedAt.length > 0);
     assert.ok(cutoverExecute.body.data.decision.decisionId.length > 0);
     assert.ok(
@@ -702,6 +705,7 @@ async function main() {
     const rollbackExecute = await fetchJson<{
       success: boolean;
       data: {
+        executionId: string;
         executedAt: string;
         applied: boolean;
         datasets: string[];
@@ -740,6 +744,7 @@ async function main() {
     });
     assert.equal(rollbackExecute.status, 201);
     assert.equal(rollbackExecute.body.success, true);
+    assert.ok(rollbackExecute.body.data.executionId.length > 0);
     assert.ok(rollbackExecute.body.data.executedAt.length > 0);
     assert.equal(rollbackExecute.body.data.datasets.length, 1);
     assert.equal(rollbackExecute.body.data.datasets[0], 'SPOT_PRICE');
@@ -802,6 +807,7 @@ async function main() {
     const cutoverAutopilot = await fetchJson<{
       success: boolean;
       data: {
+        executionId: string;
         executedAt: string;
         action: string;
         dryRun: boolean;
@@ -865,6 +871,7 @@ async function main() {
     });
     assert.equal(cutoverAutopilot.status, 201);
     assert.equal(cutoverAutopilot.body.success, true);
+    assert.ok(cutoverAutopilot.body.data.executionId.length > 0);
     assert.ok(cutoverAutopilot.body.data.executedAt.length > 0);
     assert.equal(cutoverAutopilot.body.data.dryRun, false);
     assert.ok(cutoverAutopilot.body.data.decision.decisionId.length > 0);
@@ -894,6 +901,7 @@ async function main() {
     const cutoverAutopilotDryRun = await fetchJson<{
       success: boolean;
       data: {
+        executionId: string;
         action: string;
         dryRun: boolean;
         decision: {
@@ -923,11 +931,409 @@ async function main() {
     });
     assert.equal(cutoverAutopilotDryRun.status, 201);
     assert.equal(cutoverAutopilotDryRun.body.success, true);
+    assert.ok(cutoverAutopilotDryRun.body.data.executionId.length > 0);
     assert.equal(cutoverAutopilotDryRun.body.data.action, 'NONE');
     assert.equal(cutoverAutopilotDryRun.body.data.dryRun, true);
     assert.ok(cutoverAutopilotDryRun.body.data.decision.decisionId.length > 0);
     assert.equal(cutoverAutopilotDryRun.body.data.cutover, undefined);
     assert.equal(cutoverAutopilotDryRun.body.data.rollback, undefined);
+
+    const cutoverExecutionList = await fetchJson<{
+      success: boolean;
+      data: {
+        page: number;
+        pageSize: number;
+        total: number;
+        totalPages: number;
+        storage: string;
+        items: Array<{
+          executionId: string;
+          action: string;
+          status: string;
+          requestedByUserId: string;
+          datasets: string[];
+          applied: boolean;
+          createdAt: string;
+        }>;
+      };
+      traceId: string;
+      ts: string;
+    }>(`${baseUrl}/market-data/reconciliation/cutover/executions?page=1&pageSize=50`, {
+      method: 'GET',
+      headers: {
+        'x-virtual-user-id': 'admin-user',
+      },
+    });
+    assert.equal(cutoverExecutionList.status, 200);
+    assert.equal(cutoverExecutionList.body.success, true);
+    assert.ok(cutoverExecutionList.body.data.total >= 3);
+    assert.ok(
+      cutoverExecutionList.body.data.items.some(
+        (item) => item.executionId === cutoverExecute.body.data.executionId,
+      ),
+    );
+    assert.ok(
+      cutoverExecutionList.body.data.items.some(
+        (item) => item.executionId === rollbackExecute.body.data.executionId,
+      ),
+    );
+
+    const cutoverExecutionDetail = await fetchJson<{
+      success: boolean;
+      data: {
+        executionId: string;
+        action: string;
+        status: string;
+        datasets: string[];
+        applied: boolean;
+        configBefore?: {
+          standardizedRead: boolean;
+          reconciliationGate: boolean;
+        };
+        configAfter?: {
+          standardizedRead: boolean;
+          reconciliationGate: boolean;
+        };
+      };
+      traceId: string;
+      ts: string;
+    }>(
+      `${baseUrl}/market-data/reconciliation/cutover/executions/${rollbackExecute.body.data.executionId}`,
+      {
+        method: 'GET',
+        headers: {
+          'x-virtual-user-id': 'admin-user',
+        },
+      },
+    );
+    assert.equal(cutoverExecutionDetail.status, 200);
+    assert.equal(cutoverExecutionDetail.body.success, true);
+    assert.equal(
+      cutoverExecutionDetail.body.data.executionId,
+      rollbackExecute.body.data.executionId,
+    );
+    assert.equal(cutoverExecutionDetail.body.data.action, 'ROLLBACK');
+
+    const cutoverCompensateNoop = await fetchJson<{
+      success: boolean;
+      data: {
+        executionId: string;
+        compensated: boolean;
+        reason?: string;
+      };
+      traceId: string;
+      ts: string;
+    }>(
+      `${baseUrl}/market-data/reconciliation/cutover/executions/${rollbackExecute.body.data.executionId}/compensate`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-virtual-user-id': 'admin-user',
+        },
+        body: JSON.stringify({
+          disableReconciliationGate: true,
+          reason: 'manual_compensation_noop',
+        }),
+      },
+    );
+    assert.equal(cutoverCompensateNoop.status, 201);
+    assert.equal(cutoverCompensateNoop.body.success, true);
+    assert.equal(
+      cutoverCompensateNoop.body.data.executionId,
+      rollbackExecute.body.data.executionId,
+    );
+    assert.equal(cutoverCompensateNoop.body.data.compensated, false);
+
+    const failedAutopilotExecutionsBefore = await fetchJson<{
+      success: boolean;
+      data: {
+        total: number;
+        items: Array<{
+          executionId: string;
+          action: string;
+          status: string;
+        }>;
+      };
+      traceId: string;
+      ts: string;
+    }>(
+      `${baseUrl}/market-data/reconciliation/cutover/executions?page=1&pageSize=100&action=AUTOPILOT&status=FAILED`,
+      {
+        method: 'GET',
+        headers: {
+          'x-virtual-user-id': 'admin-user',
+        },
+      },
+    );
+    assert.equal(failedAutopilotExecutionsBefore.status, 200);
+    assert.equal(failedAutopilotExecutionsBefore.body.success, true);
+    const failedAutopilotExecutionIdsBefore = new Set(
+      failedAutopilotExecutionsBefore.body.data.items.map((item) => item.executionId),
+    );
+
+    const originalCreateReconciliationCutoverDecision =
+      marketDataService.createReconciliationCutoverDecision.bind(marketDataService);
+
+    (
+      marketDataService as {
+        createReconciliationCutoverDecision: typeof originalCreateReconciliationCutoverDecision;
+      }
+    ).createReconciliationCutoverDecision = (async () => {
+      throw new Error('forced_autopilot_failure_for_compensation');
+    }) as typeof originalCreateReconciliationCutoverDecision;
+
+    try {
+      await assert.rejects(
+        marketDataService.executeReconciliationCutoverAutopilot('admin-user', {
+          windowDays: 7,
+          targetCoverageRate: 0.9,
+          datasets: ['SPOT_PRICE'] as Array<'SPOT_PRICE' | 'FUTURES_QUOTE' | 'MARKET_EVENT'>,
+          reportFormat: 'markdown',
+          onRejectedAction: 'ROLLBACK',
+          disableReconciliationGate: true,
+          dryRun: false,
+          note: 'forced autopilot failure for compensation',
+        }),
+        /forced_autopilot_failure_for_compensation/,
+      );
+    } finally {
+      (
+        marketDataService as {
+          createReconciliationCutoverDecision: typeof originalCreateReconciliationCutoverDecision;
+        }
+      ).createReconciliationCutoverDecision = originalCreateReconciliationCutoverDecision;
+    }
+
+    const failedAutopilotExecutionsAfter = await fetchJson<{
+      success: boolean;
+      data: {
+        total: number;
+        items: Array<{
+          executionId: string;
+          action: string;
+          status: string;
+        }>;
+      };
+      traceId: string;
+      ts: string;
+    }>(
+      `${baseUrl}/market-data/reconciliation/cutover/executions?page=1&pageSize=100&action=AUTOPILOT&status=FAILED`,
+      {
+        method: 'GET',
+        headers: {
+          'x-virtual-user-id': 'admin-user',
+        },
+      },
+    );
+    assert.equal(failedAutopilotExecutionsAfter.status, 200);
+    assert.equal(failedAutopilotExecutionsAfter.body.success, true);
+    const forcedFailedAutopilotExecution = failedAutopilotExecutionsAfter.body.data.items.find(
+      (item) => !failedAutopilotExecutionIdsBefore.has(item.executionId),
+    );
+    assert.ok(forcedFailedAutopilotExecution);
+    if (!forcedFailedAutopilotExecution) {
+      throw new Error('forced failed autopilot execution not found');
+    }
+
+    const cutoverCompensateSuccess = await fetchJson<{
+      success: boolean;
+      data: {
+        executionId: string;
+        compensated: boolean;
+        compensationExecutionId?: string;
+        execution: {
+          executionId: string;
+          status: string;
+          compensationApplied: boolean;
+        };
+      };
+      traceId: string;
+      ts: string;
+    }>(
+      `${baseUrl}/market-data/reconciliation/cutover/executions/${forcedFailedAutopilotExecution.executionId}/compensate`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-virtual-user-id': 'admin-user',
+        },
+        body: JSON.stringify({
+          disableReconciliationGate: true,
+          reason: 'manual_compensation_retry',
+        }),
+      },
+    );
+    assert.equal(cutoverCompensateSuccess.status, 201);
+    assert.equal(cutoverCompensateSuccess.body.success, true);
+    assert.equal(cutoverCompensateSuccess.body.data.compensated, true);
+    assert.ok((cutoverCompensateSuccess.body.data.compensationExecutionId ?? '').length > 0);
+    assert.equal(
+      cutoverCompensateSuccess.body.data.executionId,
+      forcedFailedAutopilotExecution.executionId,
+    );
+    assert.equal(cutoverCompensateSuccess.body.data.execution.status, 'COMPENSATED');
+    assert.equal(cutoverCompensateSuccess.body.data.execution.compensationApplied, true);
+
+    const failedAutopilotExecutionsBeforeCompensationFailure = await fetchJson<{
+      success: boolean;
+      data: {
+        total: number;
+        items: Array<{
+          executionId: string;
+          action: string;
+          status: string;
+        }>;
+      };
+      traceId: string;
+      ts: string;
+    }>(
+      `${baseUrl}/market-data/reconciliation/cutover/executions?page=1&pageSize=100&action=AUTOPILOT&status=FAILED`,
+      {
+        method: 'GET',
+        headers: {
+          'x-virtual-user-id': 'admin-user',
+        },
+      },
+    );
+    assert.equal(failedAutopilotExecutionsBeforeCompensationFailure.status, 200);
+    assert.equal(failedAutopilotExecutionsBeforeCompensationFailure.body.success, true);
+    const failedAutopilotExecutionIdsBeforeCompensationFailure = new Set(
+      failedAutopilotExecutionsBeforeCompensationFailure.body.data.items.map(
+        (item) => item.executionId,
+      ),
+    );
+
+    const originalCreateReconciliationCutoverDecisionForCompensationFailure =
+      marketDataService.createReconciliationCutoverDecision.bind(marketDataService);
+    (
+      marketDataService as {
+        createReconciliationCutoverDecision: typeof originalCreateReconciliationCutoverDecisionForCompensationFailure;
+      }
+    ).createReconciliationCutoverDecision = (async () => {
+      throw new Error('forced_autopilot_failure_for_compensation_error_path');
+    }) as typeof originalCreateReconciliationCutoverDecisionForCompensationFailure;
+
+    try {
+      await assert.rejects(
+        marketDataService.executeReconciliationCutoverAutopilot('admin-user', {
+          windowDays: 7,
+          targetCoverageRate: 0.9,
+          datasets: ['SPOT_PRICE'] as Array<'SPOT_PRICE' | 'FUTURES_QUOTE' | 'MARKET_EVENT'>,
+          reportFormat: 'markdown',
+          onRejectedAction: 'ROLLBACK',
+          disableReconciliationGate: true,
+          dryRun: false,
+          note: 'forced autopilot failure for compensation failure path',
+        }),
+        /forced_autopilot_failure_for_compensation_error_path/,
+      );
+    } finally {
+      (
+        marketDataService as {
+          createReconciliationCutoverDecision: typeof originalCreateReconciliationCutoverDecisionForCompensationFailure;
+        }
+      ).createReconciliationCutoverDecision =
+        originalCreateReconciliationCutoverDecisionForCompensationFailure;
+    }
+
+    const failedAutopilotExecutionsForCompensationFailure = await fetchJson<{
+      success: boolean;
+      data: {
+        total: number;
+        items: Array<{
+          executionId: string;
+          action: string;
+          status: string;
+        }>;
+      };
+      traceId: string;
+      ts: string;
+    }>(
+      `${baseUrl}/market-data/reconciliation/cutover/executions?page=1&pageSize=100&action=AUTOPILOT&status=FAILED`,
+      {
+        method: 'GET',
+        headers: {
+          'x-virtual-user-id': 'admin-user',
+        },
+      },
+    );
+    assert.equal(failedAutopilotExecutionsForCompensationFailure.status, 200);
+    assert.equal(failedAutopilotExecutionsForCompensationFailure.body.success, true);
+    const failedExecutionForCompensationFailure =
+      failedAutopilotExecutionsForCompensationFailure.body.data.items.find(
+        (item) => !failedAutopilotExecutionIdsBeforeCompensationFailure.has(item.executionId),
+      );
+    assert.ok(failedExecutionForCompensationFailure);
+    if (!failedExecutionForCompensationFailure) {
+      throw new Error('failed execution for compensation failure test not found');
+    }
+
+    const originalExecuteReconciliationRollback =
+      marketDataService.executeReconciliationRollback.bind(marketDataService);
+    (
+      marketDataService as {
+        executeReconciliationRollback: typeof originalExecuteReconciliationRollback;
+      }
+    ).executeReconciliationRollback = (async () => {
+      throw new Error('forced_compensation_rollback_failure');
+    }) as typeof originalExecuteReconciliationRollback;
+
+    try {
+      await assert.rejects(
+        marketDataService.retryReconciliationCutoverExecutionCompensation(
+          'admin-user',
+          failedExecutionForCompensationFailure.executionId,
+          {
+            disableReconciliationGate: true,
+            reason: 'manual_compensation_forced_failure',
+          },
+        ),
+        /forced_compensation_rollback_failure/,
+      );
+    } finally {
+      (
+        marketDataService as {
+          executeReconciliationRollback: typeof originalExecuteReconciliationRollback;
+        }
+      ).executeReconciliationRollback = originalExecuteReconciliationRollback;
+    }
+
+    const failedCompensationExecutionDetail = await fetchJson<{
+      success: boolean;
+      data: {
+        executionId: string;
+        status: string;
+        compensationApplied: boolean;
+        compensationError?: string;
+      };
+      traceId: string;
+      ts: string;
+    }>(
+      `${baseUrl}/market-data/reconciliation/cutover/executions/${failedExecutionForCompensationFailure.executionId}`,
+      {
+        method: 'GET',
+        headers: {
+          'x-virtual-user-id': 'admin-user',
+        },
+      },
+    );
+    assert.equal(failedCompensationExecutionDetail.status, 200);
+    assert.equal(failedCompensationExecutionDetail.body.success, true);
+    assert.equal(
+      failedCompensationExecutionDetail.body.data.executionId,
+      failedExecutionForCompensationFailure.executionId,
+    );
+    assert.ok(
+      failedCompensationExecutionDetail.body.data.status === 'FAILED' ||
+        failedCompensationExecutionDetail.body.data.status === 'PARTIAL',
+    );
+    assert.equal(failedCompensationExecutionDetail.body.data.compensationApplied, false);
+    assert.ok(
+      (failedCompensationExecutionDetail.body.data.compensationError ?? '').includes(
+        'forced_compensation_rollback_failure',
+      ),
+    );
 
     const cutoverDecisionList = await fetchJson<{
       success: boolean;

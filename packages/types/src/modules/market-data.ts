@@ -164,6 +164,33 @@ export const CreateReconciliationCutoverAutopilotSchema =
     dryRun: z.boolean().default(false),
   });
 
+export const ReconciliationCutoverExecutionActionEnum = z.enum([
+  'CUTOVER',
+  'ROLLBACK',
+  'AUTOPILOT',
+]);
+
+export const ReconciliationCutoverExecutionStatusEnum = z.enum([
+  'SUCCESS',
+  'FAILED',
+  'PARTIAL',
+  'COMPENSATED',
+]);
+
+export const ListReconciliationCutoverExecutionsQuerySchema = z.object({
+  page: z.coerce.number().int().min(1).default(1),
+  pageSize: z.coerce.number().int().min(1).max(100).default(20),
+  action: ReconciliationCutoverExecutionActionEnum.optional(),
+  status: ReconciliationCutoverExecutionStatusEnum.optional(),
+});
+
+export const RetryReconciliationCutoverCompensationSchema = z.object({
+  disableReconciliationGate: z.boolean().default(true),
+  workflowVersionId: z.string().uuid().optional(),
+  note: z.string().trim().min(1).max(1000).optional(),
+  reason: z.string().trim().min(1).max(200).optional(),
+});
+
 export const ExecuteReconciliationRollbackSchema = z.object({
   datasets: ReconciliationDatasetListQuerySchema.optional(),
   workflowVersionId: z.string().uuid().optional(),
@@ -394,6 +421,18 @@ export type ReconciliationCutoverAutopilotRejectedAction = z.infer<
 >;
 export type CreateReconciliationCutoverAutopilotDto = z.infer<
   typeof CreateReconciliationCutoverAutopilotSchema
+>;
+export type ReconciliationCutoverExecutionAction = z.infer<
+  typeof ReconciliationCutoverExecutionActionEnum
+>;
+export type ReconciliationCutoverExecutionStatus = z.infer<
+  typeof ReconciliationCutoverExecutionStatusEnum
+>;
+export type ListReconciliationCutoverExecutionsQueryDto = z.infer<
+  typeof ListReconciliationCutoverExecutionsQuerySchema
+>;
+export type RetryReconciliationCutoverCompensationDto = z.infer<
+  typeof RetryReconciliationCutoverCompensationSchema
 >;
 export type ExecuteReconciliationRollbackDto = z.infer<typeof ExecuteReconciliationRollbackSchema>;
 export type ReconciliationCutoverRuntimeStatusQueryDto = z.infer<

@@ -934,6 +934,7 @@
 
 ```json
 {
+  "executionId": "0be9c0dc-3557-4fcc-b03f-90bc8d281b31",
   "executedAt": "2026-02-27T11:18:00.000Z",
   "decision": {
     "decisionId": "a8d7eae9-7f5d-4f4e-b64e-8a1b3fb6f1bd",
@@ -979,6 +980,7 @@
 
 ```json
 {
+  "executionId": "24a7d516-c217-4058-b15c-ac90ea2ba8df",
   "executedAt": "2026-02-27T11:26:00.000Z",
   "applied": true,
   "datasets": ["SPOT_PRICE"],
@@ -1083,6 +1085,7 @@
 
 ```json
 {
+  "executionId": "3ddf6dd9-6e4d-4b7d-9e32-a2d5ed3c83f2",
   "executedAt": "2026-02-27T11:34:00.000Z",
   "action": "CUTOVER",
   "dryRun": false,
@@ -1113,6 +1116,7 @@
 
 ```json
 {
+  "executionId": "4cc3eb73-0b8f-4270-907d-f08fbb866ecc",
   "executedAt": "2026-02-27T11:35:00.000Z",
   "action": "ROLLBACK",
   "dryRun": false,
@@ -1141,6 +1145,107 @@
 
 - `dryRun=true` 仅生成决策，不改动任何运行态开关；
 - `onRejectedAction=ROLLBACK` 会在验收不通过时自动执行回滚并写入回滚演练证据。
+
+### 3.5.21 切流执行日志与补偿
+
+- 列表：`GET /market-data/reconciliation/cutover/executions?page=1&pageSize=20&action=AUTOPILOT&status=SUCCESS`
+
+响应：
+
+```json
+{
+  "page": 1,
+  "pageSize": 20,
+  "total": 3,
+  "totalPages": 1,
+  "storage": "database",
+  "items": [
+    {
+      "executionId": "3ddf6dd9-6e4d-4b7d-9e32-a2d5ed3c83f2",
+      "action": "AUTOPILOT",
+      "status": "SUCCESS",
+      "requestedByUserId": "admin-user",
+      "datasets": ["SPOT_PRICE"],
+      "applied": true,
+      "createdAt": "2026-02-27T11:35:00.000Z"
+    }
+  ]
+}
+```
+
+- 详情：`GET /market-data/reconciliation/cutover/executions/{executionId}`
+
+响应：
+
+```json
+{
+  "executionId": "3ddf6dd9-6e4d-4b7d-9e32-a2d5ed3c83f2",
+  "action": "ROLLBACK",
+  "status": "SUCCESS",
+  "datasets": ["SPOT_PRICE"],
+  "applied": true,
+  "configBefore": {
+    "standardizedRead": true,
+    "reconciliationGate": true
+  },
+  "configAfter": {
+    "standardizedRead": false,
+    "reconciliationGate": false
+  },
+  "stepTrace": [
+    {
+      "step": "set_standardized_read_false",
+      "status": "SUCCESS"
+    }
+  ],
+  "compensationApplied": false,
+  "createdAt": "2026-02-27T11:26:00.000Z",
+  "storage": "database"
+}
+```
+
+- 补偿重试：`POST /market-data/reconciliation/cutover/executions/{executionId}/compensate`
+
+请求：
+
+```json
+{
+  "disableReconciliationGate": true,
+  "reason": "manual_compensation"
+}
+```
+
+响应（不可补偿状态）：
+
+```json
+{
+  "executionId": "3ddf6dd9-6e4d-4b7d-9e32-a2d5ed3c83f2",
+  "compensated": false,
+  "reason": "execution_status_not_compensatable"
+}
+```
+
+响应（补偿成功）：
+
+```json
+{
+  "executionId": "3ddf6dd9-6e4d-4b7d-9e32-a2d5ed3c83f2",
+  "compensated": true,
+  "compensationExecutionId": "f6f0ad5a-cb22-4092-bf4a-17caacde4e17",
+  "execution": {
+    "executionId": "3ddf6dd9-6e4d-4b7d-9e32-a2d5ed3c83f2",
+    "status": "COMPENSATED",
+    "compensationApplied": true,
+    "compensationAt": "2026-02-27T11:39:12.000Z"
+  }
+}
+```
+
+说明：
+
+- 执行日志状态：`SUCCESS | FAILED | PARTIAL | COMPENSATED`；
+- 补偿会触发标准回滚流程，并在成功后将原执行标记为 `COMPENSATED`；
+- 若补偿失败，会保留原执行状态（`FAILED|PARTIAL`）、写入 `compensationError` 并追加失败 `stepTrace`。
 
 ## 4. 指标中心 API
 

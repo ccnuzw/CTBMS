@@ -14,10 +14,12 @@ import type {
   ExecuteReconciliationRollbackDto,
   LineageDataset,
   ListReconciliationCutoverDecisionsQueryDto,
+  ListReconciliationCutoverExecutionsQueryDto,
   ListReconciliationM1ReadinessReportSnapshotsQueryDto,
   ReconciliationCutoverRuntimeStatusQueryDto,
   ReconciliationRollbackDrillStatus,
   ReconciliationDataset,
+  RetryReconciliationCutoverCompensationDto,
   ReconciliationSummaryDto,
   StandardEventRecord,
   StandardFuturesRecord,
@@ -33,6 +35,8 @@ type StandardDataset = 'SPOT_PRICE' | 'FUTURES_QUOTE' | 'MARKET_EVENT';
 type ReconciliationJobStatus = 'PENDING' | 'RUNNING' | 'DONE' | 'FAILED' | 'CANCELLED';
 type ReconciliationM1ReadinessReportFormat = 'json' | 'markdown';
 type ReconciliationCutoverDecisionStatus = 'APPROVED' | 'REJECTED';
+type ReconciliationCutoverExecutionAction = 'CUTOVER' | 'ROLLBACK' | 'AUTOPILOT';
+type ReconciliationCutoverExecutionStatus = 'SUCCESS' | 'FAILED' | 'PARTIAL' | 'COMPENSATED';
 type RollbackDrillStatus = ReconciliationRollbackDrillStatus;
 type ReconciliationListSortBy = 'createdAt' | 'startedAt' | 'finishedAt' | 'status' | 'dataset';
 type ReconciliationListSortOrder = 'asc' | 'desc';
@@ -241,6 +245,51 @@ interface PersistedReconciliationCutoverDecisionRow {
   readinessSummary: unknown;
   note: string | null;
   requestedByUserId: string;
+  createdAt: unknown;
+}
+
+interface CutoverRuntimeConfigSnapshot {
+  standardizedRead: boolean;
+  reconciliationGate: boolean;
+}
+
+interface ReconciliationCutoverExecutionRecord {
+  executionId: string;
+  action: ReconciliationCutoverExecutionAction;
+  status: ReconciliationCutoverExecutionStatus;
+  requestedByUserId: string;
+  datasets: StandardDataset[];
+  decisionId?: string;
+  decisionStatus?: ReconciliationCutoverDecisionStatus;
+  applied: boolean;
+  configBefore?: CutoverRuntimeConfigSnapshot;
+  configAfter?: CutoverRuntimeConfigSnapshot;
+  stepTrace: Array<Record<string, unknown>>;
+  errorMessage?: string;
+  compensationApplied: boolean;
+  compensationAt?: string;
+  compensationPayload?: Record<string, unknown>;
+  compensationError?: string;
+  createdAt: string;
+}
+
+interface PersistedReconciliationCutoverExecutionRow {
+  executionId: string;
+  action: string;
+  status: string;
+  requestedByUserId: string;
+  datasets: unknown;
+  decisionId: string | null;
+  decisionStatus: string | null;
+  applied: unknown;
+  configBefore: unknown;
+  configAfter: unknown;
+  stepTrace: unknown;
+  errorMessage: string | null;
+  compensationApplied: unknown;
+  compensationAt: unknown;
+  compensationPayload: unknown;
+  compensationError: string | null;
   createdAt: unknown;
 }
 
@@ -485,11 +534,16 @@ export class MarketDataService {
   private readonly rollbackDrillRecords = new Map<string, RollbackDrillRecord>();
   private readonly m1ReadinessReportSnapshots = new Map<string, M1ReadinessReportSnapshotRecord>();
   private readonly cutoverDecisionRecords = new Map<string, ReconciliationCutoverDecisionRecord>();
+  private readonly cutoverExecutionRecords = new Map<
+    string,
+    ReconciliationCutoverExecutionRecord
+  >();
   private reconciliationPersistenceUnavailable = false;
   private reconciliationDailyMetricsPersistenceUnavailable = false;
   private rollbackDrillPersistenceUnavailable = false;
   private m1ReadinessReportPersistenceUnavailable = false;
   private cutoverDecisionPersistenceUnavailable = false;
+  private cutoverExecutionPersistenceUnavailable = false;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -1885,6 +1939,7 @@ export class MarketDataService {
     userId: string,
     dto: CreateReconciliationCutoverDecisionDto,
   ): Promise<{
+    executionId: string;
     executedAt: string;
     decision: ReconciliationCutoverDecisionResult;
     applied: boolean;
@@ -1899,49 +1954,152 @@ export class MarketDataService {
       };
     };
   }> {
-    const decision = await this.createReconciliationCutoverDecision(userId, dto);
-
+    const executionId = randomUUID();
+    const createdAt = new Date().toISOString();
+    const stepTrace: Array<Record<string, unknown>> = [];
     const standardizedReadBefore = await this.configService.getWorkflowStandardizedReadMode();
     const reconciliationGateBefore =
       await this.configService.getWorkflowReconciliationGateEnabled();
 
     let standardizedReadAfter = standardizedReadBefore;
     let reconciliationGateAfter = reconciliationGateBefore;
-    let applied = false;
 
-    if (decision.status === 'APPROVED') {
-      standardizedReadAfter = await this.configService.setWorkflowStandardizedReadMode(
-        true,
-        userId,
-      );
-      reconciliationGateAfter = await this.configService.setWorkflowReconciliationGateEnabled(
-        true,
-        userId,
-      );
-      applied = true;
+    let decision: ReconciliationCutoverDecisionResult | null = null;
+
+    try {
+      decision = await this.createReconciliationCutoverDecision(userId, dto);
+      stepTrace.push({
+        step: 'create_cutover_decision',
+        status: 'SUCCESS',
+        at: new Date().toISOString(),
+        detail: {
+          decisionId: decision.decisionId,
+          decisionStatus: decision.status,
+        },
+      });
+
+      let applied = false;
+
+      if (decision.status === 'APPROVED') {
+        standardizedReadAfter = await this.configService.setWorkflowStandardizedReadMode(
+          true,
+          userId,
+        );
+        stepTrace.push({
+          step: 'set_standardized_read_true',
+          status: 'SUCCESS',
+          at: new Date().toISOString(),
+        });
+        reconciliationGateAfter = await this.configService.setWorkflowReconciliationGateEnabled(
+          true,
+          userId,
+        );
+        stepTrace.push({
+          step: 'set_reconciliation_gate_true',
+          status: 'SUCCESS',
+          at: new Date().toISOString(),
+        });
+        applied = true;
+      }
+
+      const record: ReconciliationCutoverExecutionRecord = {
+        executionId,
+        action: 'CUTOVER',
+        status: 'SUCCESS',
+        requestedByUserId: userId,
+        datasets: decision.datasets,
+        decisionId: decision.decisionId,
+        decisionStatus: decision.status,
+        applied,
+        configBefore: {
+          standardizedRead: standardizedReadBefore.enabled,
+          reconciliationGate: reconciliationGateBefore.enabled,
+        },
+        configAfter: {
+          standardizedRead: standardizedReadAfter.enabled,
+          reconciliationGate: reconciliationGateAfter.enabled,
+        },
+        stepTrace,
+        compensationApplied: false,
+        createdAt,
+      };
+      this.cutoverExecutionRecords.set(executionId, record);
+      await this.persistReconciliationCutoverExecutionRecord(record);
+
+      return {
+        executionId,
+        executedAt: new Date().toISOString(),
+        decision,
+        applied,
+        config: {
+          standardizedRead: {
+            before: standardizedReadBefore.enabled,
+            after: standardizedReadAfter.enabled,
+          },
+          reconciliationGate: {
+            before: reconciliationGateBefore.enabled,
+            after: reconciliationGateAfter.enabled,
+          },
+        },
+      };
+    } catch (error) {
+      const latestStandardizedRead = await this.configService
+        .getWorkflowStandardizedReadMode()
+        .catch(() => standardizedReadAfter);
+      const latestReconciliationGate = await this.configService
+        .getWorkflowReconciliationGateEnabled()
+        .catch(() => reconciliationGateAfter);
+      const status: ReconciliationCutoverExecutionStatus =
+        latestStandardizedRead.enabled !== standardizedReadBefore.enabled ||
+        latestReconciliationGate.enabled !== reconciliationGateBefore.enabled
+          ? 'PARTIAL'
+          : 'FAILED';
+
+      const record: ReconciliationCutoverExecutionRecord = {
+        executionId,
+        action: 'CUTOVER',
+        status,
+        requestedByUserId: userId,
+        datasets: decision?.datasets ?? this.resolveRequestedStandardDatasets(dto.datasets),
+        decisionId: decision?.decisionId,
+        decisionStatus: decision?.status,
+        applied:
+          latestStandardizedRead.enabled !== standardizedReadBefore.enabled ||
+          latestReconciliationGate.enabled !== reconciliationGateBefore.enabled,
+        configBefore: {
+          standardizedRead: standardizedReadBefore.enabled,
+          reconciliationGate: reconciliationGateBefore.enabled,
+        },
+        configAfter: {
+          standardizedRead: latestStandardizedRead.enabled,
+          reconciliationGate: latestReconciliationGate.enabled,
+        },
+        stepTrace: [
+          ...stepTrace,
+          {
+            step: 'execute_cutover',
+            status: 'FAILED',
+            at: new Date().toISOString(),
+            detail: {
+              message: this.stringifyError(error),
+            },
+          },
+        ],
+        errorMessage: this.stringifyError(error),
+        compensationApplied: false,
+        createdAt,
+      };
+      this.cutoverExecutionRecords.set(executionId, record);
+      await this.persistReconciliationCutoverExecutionRecord(record);
+      throw error;
     }
-
-    return {
-      executedAt: new Date().toISOString(),
-      decision,
-      applied,
-      config: {
-        standardizedRead: {
-          before: standardizedReadBefore.enabled,
-          after: standardizedReadAfter.enabled,
-        },
-        reconciliationGate: {
-          before: reconciliationGateBefore.enabled,
-          after: reconciliationGateAfter.enabled,
-        },
-      },
-    };
   }
 
   async executeReconciliationCutoverAutopilot(
     userId: string,
     dto: CreateReconciliationCutoverAutopilotDto,
   ): Promise<{
+    executionId: string;
     executedAt: string;
     action: 'CUTOVER' | 'ROLLBACK' | 'NONE';
     dryRun: boolean;
@@ -1985,107 +2143,326 @@ export class MarketDataService {
       }>;
     };
   }> {
-    const decision = await this.createReconciliationCutoverDecision(userId, {
-      windowDays: dto.windowDays,
-      targetCoverageRate: dto.targetCoverageRate,
-      datasets: dto.datasets,
-      reportFormat: dto.reportFormat,
-      note: dto.note,
-    });
+    const executionId = randomUUID();
+    const createdAt = new Date().toISOString();
+    const stepTrace: Array<Record<string, unknown>> = [];
+    const standardizedReadBefore = await this.configService.getWorkflowStandardizedReadMode();
+    const reconciliationGateBefore =
+      await this.configService.getWorkflowReconciliationGateEnabled();
+    let standardizedReadAfter = standardizedReadBefore;
+    let reconciliationGateAfter = reconciliationGateBefore;
+    let decision: ReconciliationCutoverDecisionResult | null = null;
 
-    const decisionSummary = {
-      decisionId: decision.decisionId,
-      status: decision.status,
-      reasonCodes: decision.reasonCodes,
-      reportSnapshotId: decision.reportSnapshotId,
-      createdAt: decision.createdAt,
-    };
-
-    if (dto.dryRun) {
-      return {
-        executedAt: new Date().toISOString(),
-        action: 'NONE',
-        dryRun: true,
-        decision: decisionSummary,
-      };
-    }
-
-    if (decision.status === 'APPROVED') {
-      const standardizedReadBefore = await this.configService.getWorkflowStandardizedReadMode();
-      const reconciliationGateBefore =
-        await this.configService.getWorkflowReconciliationGateEnabled();
-      const standardizedReadAfter = await this.configService.setWorkflowStandardizedReadMode(
-        true,
-        userId,
-      );
-      const reconciliationGateAfter = await this.configService.setWorkflowReconciliationGateEnabled(
-        true,
-        userId,
-      );
-
-      return {
-        executedAt: new Date().toISOString(),
-        action: 'CUTOVER',
-        dryRun: false,
-        decision: decisionSummary,
-        cutover: {
-          applied:
-            standardizedReadBefore.enabled !== standardizedReadAfter.enabled ||
-            reconciliationGateBefore.enabled !== reconciliationGateAfter.enabled,
-          config: {
-            standardizedRead: {
-              before: standardizedReadBefore.enabled,
-              after: standardizedReadAfter.enabled,
-            },
-            reconciliationGate: {
-              before: reconciliationGateBefore.enabled,
-              after: reconciliationGateAfter.enabled,
-            },
-          },
-        },
-      };
-    }
-
-    const onRejectedAction = dto.onRejectedAction ?? 'ROLLBACK';
-    if (onRejectedAction === 'ROLLBACK') {
-      const rollback = await this.executeReconciliationRollback(userId, {
+    try {
+      decision = await this.createReconciliationCutoverDecision(userId, {
+        windowDays: dto.windowDays,
+        targetCoverageRate: dto.targetCoverageRate,
         datasets: dto.datasets,
-        workflowVersionId: dto.workflowVersionId,
-        disableReconciliationGate: dto.disableReconciliationGate,
+        reportFormat: dto.reportFormat,
         note: dto.note,
-        reason: dto.rollbackReason ?? 'autopilot_rejected',
+      });
+      stepTrace.push({
+        step: 'create_cutover_decision',
+        status: 'SUCCESS',
+        at: new Date().toISOString(),
+        detail: {
+          decisionId: decision.decisionId,
+          decisionStatus: decision.status,
+        },
       });
 
+      const decisionSummary = {
+        decisionId: decision.decisionId,
+        status: decision.status,
+        reasonCodes: decision.reasonCodes,
+        reportSnapshotId: decision.reportSnapshotId,
+        createdAt: decision.createdAt,
+      };
+
+      if (dto.dryRun) {
+        stepTrace.push({
+          step: 'dry_run',
+          status: 'SUCCESS',
+          at: new Date().toISOString(),
+        });
+
+        const record: ReconciliationCutoverExecutionRecord = {
+          executionId,
+          action: 'AUTOPILOT',
+          status: 'SUCCESS',
+          requestedByUserId: userId,
+          datasets: decision.datasets,
+          decisionId: decision.decisionId,
+          decisionStatus: decision.status,
+          applied: false,
+          configBefore: {
+            standardizedRead: standardizedReadBefore.enabled,
+            reconciliationGate: reconciliationGateBefore.enabled,
+          },
+          configAfter: {
+            standardizedRead: standardizedReadBefore.enabled,
+            reconciliationGate: reconciliationGateBefore.enabled,
+          },
+          stepTrace: [...stepTrace],
+          compensationApplied: false,
+          createdAt,
+        };
+        this.cutoverExecutionRecords.set(executionId, record);
+        await this.persistReconciliationCutoverExecutionRecord(record);
+
+        return {
+          executionId,
+          executedAt: new Date().toISOString(),
+          action: 'NONE',
+          dryRun: true,
+          decision: decisionSummary,
+        };
+      }
+
+      if (decision.status === 'APPROVED') {
+        standardizedReadAfter = await this.configService.setWorkflowStandardizedReadMode(
+          true,
+          userId,
+        );
+        stepTrace.push({
+          step: 'set_standardized_read_true',
+          status: 'SUCCESS',
+          at: new Date().toISOString(),
+        });
+
+        reconciliationGateAfter = await this.configService.setWorkflowReconciliationGateEnabled(
+          true,
+          userId,
+        );
+        stepTrace.push({
+          step: 'set_reconciliation_gate_true',
+          status: 'SUCCESS',
+          at: new Date().toISOString(),
+        });
+
+        const applied =
+          standardizedReadBefore.enabled !== standardizedReadAfter.enabled ||
+          reconciliationGateBefore.enabled !== reconciliationGateAfter.enabled;
+
+        stepTrace.push({
+          step: 'autopilot_cutover',
+          status: 'SUCCESS',
+          at: new Date().toISOString(),
+          detail: {
+            applied,
+          },
+        });
+
+        const record: ReconciliationCutoverExecutionRecord = {
+          executionId,
+          action: 'AUTOPILOT',
+          status: 'SUCCESS',
+          requestedByUserId: userId,
+          datasets: decision.datasets,
+          decisionId: decision.decisionId,
+          decisionStatus: decision.status,
+          applied,
+          configBefore: {
+            standardizedRead: standardizedReadBefore.enabled,
+            reconciliationGate: reconciliationGateBefore.enabled,
+          },
+          configAfter: {
+            standardizedRead: standardizedReadAfter.enabled,
+            reconciliationGate: reconciliationGateAfter.enabled,
+          },
+          stepTrace: [...stepTrace],
+          compensationApplied: false,
+          createdAt,
+        };
+        this.cutoverExecutionRecords.set(executionId, record);
+        await this.persistReconciliationCutoverExecutionRecord(record);
+
+        return {
+          executionId,
+          executedAt: new Date().toISOString(),
+          action: 'CUTOVER',
+          dryRun: false,
+          decision: decisionSummary,
+          cutover: {
+            applied,
+            config: {
+              standardizedRead: {
+                before: standardizedReadBefore.enabled,
+                after: standardizedReadAfter.enabled,
+              },
+              reconciliationGate: {
+                before: reconciliationGateBefore.enabled,
+                after: reconciliationGateAfter.enabled,
+              },
+            },
+          },
+        };
+      }
+
+      const onRejectedAction = dto.onRejectedAction ?? 'ROLLBACK';
+      if (onRejectedAction === 'ROLLBACK') {
+        const rollback = await this.executeReconciliationRollback(userId, {
+          datasets: dto.datasets,
+          workflowVersionId: dto.workflowVersionId,
+          disableReconciliationGate: dto.disableReconciliationGate,
+          note: dto.note,
+          reason: dto.rollbackReason ?? 'autopilot_rejected',
+        });
+
+        standardizedReadAfter = {
+          ...standardizedReadAfter,
+          enabled: rollback.config.standardizedRead.after,
+        };
+        reconciliationGateAfter = {
+          ...reconciliationGateAfter,
+          enabled: rollback.config.reconciliationGate.after,
+        };
+
+        stepTrace.push({
+          step: 'autopilot_rejected_rollback',
+          status: 'SUCCESS',
+          at: new Date().toISOString(),
+          detail: {
+            rollbackExecutionId: rollback.executionId,
+          },
+        });
+
+        const record: ReconciliationCutoverExecutionRecord = {
+          executionId,
+          action: 'AUTOPILOT',
+          status: 'SUCCESS',
+          requestedByUserId: userId,
+          datasets: decision.datasets,
+          decisionId: decision.decisionId,
+          decisionStatus: decision.status,
+          applied: rollback.applied,
+          configBefore: {
+            standardizedRead: standardizedReadBefore.enabled,
+            reconciliationGate: reconciliationGateBefore.enabled,
+          },
+          configAfter: {
+            standardizedRead: rollback.config.standardizedRead.after,
+            reconciliationGate: rollback.config.reconciliationGate.after,
+          },
+          stepTrace: [...stepTrace],
+          compensationApplied: false,
+          createdAt,
+        };
+        this.cutoverExecutionRecords.set(executionId, record);
+        await this.persistReconciliationCutoverExecutionRecord(record);
+
+        return {
+          executionId,
+          executedAt: rollback.executedAt,
+          action: 'ROLLBACK',
+          dryRun: false,
+          decision: decisionSummary,
+          rollback: {
+            applied: rollback.applied,
+            datasets: rollback.datasets,
+            config: rollback.config,
+            rollbackDrills: rollback.rollbackDrills.map((item) => ({
+              drillId: item.drillId,
+              dataset: item.dataset,
+              status: item.status,
+            })),
+          },
+        };
+      }
+
+      stepTrace.push({
+        step: 'autopilot_no_action',
+        status: 'SUCCESS',
+        at: new Date().toISOString(),
+      });
+
+      const record: ReconciliationCutoverExecutionRecord = {
+        executionId,
+        action: 'AUTOPILOT',
+        status: 'SUCCESS',
+        requestedByUserId: userId,
+        datasets: decision.datasets,
+        decisionId: decision.decisionId,
+        decisionStatus: decision.status,
+        applied: false,
+        configBefore: {
+          standardizedRead: standardizedReadBefore.enabled,
+          reconciliationGate: reconciliationGateBefore.enabled,
+        },
+        configAfter: {
+          standardizedRead: standardizedReadBefore.enabled,
+          reconciliationGate: reconciliationGateBefore.enabled,
+        },
+        stepTrace: [...stepTrace],
+        compensationApplied: false,
+        createdAt,
+      };
+      this.cutoverExecutionRecords.set(executionId, record);
+      await this.persistReconciliationCutoverExecutionRecord(record);
+
       return {
-        executedAt: rollback.executedAt,
-        action: 'ROLLBACK',
+        executionId,
+        executedAt: new Date().toISOString(),
+        action: 'NONE',
         dryRun: false,
         decision: decisionSummary,
-        rollback: {
-          applied: rollback.applied,
-          datasets: rollback.datasets,
-          config: rollback.config,
-          rollbackDrills: rollback.rollbackDrills.map((item) => ({
-            drillId: item.drillId,
-            dataset: item.dataset,
-            status: item.status,
-          })),
-        },
       };
-    }
+    } catch (error) {
+      const latestStandardizedRead = await this.configService
+        .getWorkflowStandardizedReadMode()
+        .catch(() => standardizedReadAfter);
+      const latestReconciliationGate = await this.configService
+        .getWorkflowReconciliationGateEnabled()
+        .catch(() => reconciliationGateAfter);
+      const applied =
+        latestStandardizedRead.enabled !== standardizedReadBefore.enabled ||
+        latestReconciliationGate.enabled !== reconciliationGateBefore.enabled;
+      const status: ReconciliationCutoverExecutionStatus = applied ? 'PARTIAL' : 'FAILED';
 
-    return {
-      executedAt: new Date().toISOString(),
-      action: 'NONE',
-      dryRun: false,
-      decision: decisionSummary,
-    };
+      const record: ReconciliationCutoverExecutionRecord = {
+        executionId,
+        action: 'AUTOPILOT',
+        status,
+        requestedByUserId: userId,
+        datasets: decision?.datasets ?? this.resolveRequestedStandardDatasets(dto.datasets),
+        decisionId: decision?.decisionId,
+        decisionStatus: decision?.status,
+        applied,
+        configBefore: {
+          standardizedRead: standardizedReadBefore.enabled,
+          reconciliationGate: reconciliationGateBefore.enabled,
+        },
+        configAfter: {
+          standardizedRead: latestStandardizedRead.enabled,
+          reconciliationGate: latestReconciliationGate.enabled,
+        },
+        stepTrace: [
+          ...stepTrace,
+          {
+            step: 'execute_autopilot',
+            status: 'FAILED',
+            at: new Date().toISOString(),
+            detail: {
+              message: this.stringifyError(error),
+            },
+          },
+        ],
+        errorMessage: this.stringifyError(error),
+        compensationApplied: false,
+        createdAt,
+      };
+
+      this.cutoverExecutionRecords.set(executionId, record);
+      await this.persistReconciliationCutoverExecutionRecord(record);
+      throw error;
+    }
   }
 
   async executeReconciliationRollback(
     userId: string,
     dto: ExecuteReconciliationRollbackDto,
   ): Promise<{
+    executionId: string;
     executedAt: string;
     applied: boolean;
     datasets: StandardDataset[];
@@ -2107,21 +2484,17 @@ export class MarketDataService {
       createdAt: string;
     }>;
   }> {
+    const executionId = randomUUID();
+    const createdAt = new Date().toISOString();
+    const stepTrace: Array<Record<string, unknown>> = [];
     const datasets = this.resolveRequestedStandardDatasets(dto.datasets as StandardDataset[]);
     const standardizedReadBefore = await this.configService.getWorkflowStandardizedReadMode();
     const reconciliationGateBefore =
       await this.configService.getWorkflowReconciliationGateEnabled();
 
-    const standardizedReadAfter = await this.configService.setWorkflowStandardizedReadMode(
-      false,
-      userId,
-    );
-
+    let standardizedReadAfter = standardizedReadBefore;
+    let reconciliationGateAfter = reconciliationGateBefore;
     const shouldDisableGate = dto.disableReconciliationGate ?? true;
-    const reconciliationGateAfter = shouldDisableGate
-      ? await this.configService.setWorkflowReconciliationGateEnabled(false, userId)
-      : reconciliationGateBefore;
-
     const executedAt = new Date().toISOString();
     const rollbackPath = shouldDisableGate
       ? 'disable_standardized_read_and_gate'
@@ -2139,17 +2512,91 @@ export class MarketDataService {
       createdAt: string;
     }> = [];
 
-    for (const dataset of datasets) {
-      const drill = await this.createReconciliationRollbackDrill(userId, {
-        dataset,
-        workflowVersionId: dto.workflowVersionId,
-        scenario: 'standard_to_legacy',
-        status: 'PASSED',
-        startedAt: executedAt,
-        completedAt: executedAt,
-        rollbackPath,
-        resultSummary: {
-          executionType: 'ROLLBACK',
+    try {
+      standardizedReadAfter = await this.configService.setWorkflowStandardizedReadMode(
+        false,
+        userId,
+      );
+      stepTrace.push({
+        step: 'set_standardized_read_false',
+        status: 'SUCCESS',
+        at: new Date().toISOString(),
+      });
+
+      reconciliationGateAfter = shouldDisableGate
+        ? await this.configService.setWorkflowReconciliationGateEnabled(false, userId)
+        : reconciliationGateBefore;
+      stepTrace.push({
+        step: shouldDisableGate ? 'set_reconciliation_gate_false' : 'keep_reconciliation_gate',
+        status: 'SUCCESS',
+        at: new Date().toISOString(),
+      });
+
+      for (const dataset of datasets) {
+        const drill = await this.createReconciliationRollbackDrill(userId, {
+          dataset,
+          workflowVersionId: dto.workflowVersionId,
+          scenario: 'standard_to_legacy',
+          status: 'PASSED',
+          startedAt: executedAt,
+          completedAt: executedAt,
+          rollbackPath,
+          resultSummary: {
+            executionType: 'ROLLBACK',
+            standardizedRead: {
+              before: standardizedReadBefore.enabled,
+              after: standardizedReadAfter.enabled,
+            },
+            reconciliationGate: {
+              before: reconciliationGateBefore.enabled,
+              after: reconciliationGateAfter.enabled,
+            },
+          },
+          notes: notes || undefined,
+        });
+
+        rollbackDrills.push({
+          drillId: drill.drillId,
+          dataset: drill.dataset,
+          status: drill.status,
+          storage: drill.storage === 'database' ? 'database' : 'in-memory',
+          createdAt: drill.createdAt,
+        });
+      }
+
+      const applied =
+        standardizedReadBefore.enabled !== standardizedReadAfter.enabled ||
+        reconciliationGateBefore.enabled !== reconciliationGateAfter.enabled;
+
+      const record: ReconciliationCutoverExecutionRecord = {
+        executionId,
+        action: 'ROLLBACK',
+        status: 'SUCCESS',
+        requestedByUserId: userId,
+        datasets,
+        applied,
+        configBefore: {
+          standardizedRead: standardizedReadBefore.enabled,
+          reconciliationGate: reconciliationGateBefore.enabled,
+        },
+        configAfter: {
+          standardizedRead: standardizedReadAfter.enabled,
+          reconciliationGate: reconciliationGateAfter.enabled,
+        },
+        stepTrace,
+        compensationApplied: false,
+        createdAt,
+      };
+
+      this.cutoverExecutionRecords.set(executionId, record);
+      await this.persistReconciliationCutoverExecutionRecord(record);
+
+      return {
+        executionId,
+        executedAt,
+        applied,
+        datasets,
+        config: {
           standardizedRead: {
             before: standardizedReadBefore.enabled,
             after: standardizedReadAfter.enabled,
@@ -2159,38 +2606,59 @@ export class MarketDataService {
             after: reconciliationGateAfter.enabled,
           },
         },
-        notes: notes || undefined,
-      });
+        rollbackDrills,
+      };
+    } catch (error) {
+      const latestStandardizedRead = await this.configService
+        .getWorkflowStandardizedReadMode()
+        .catch(() => standardizedReadAfter);
+      const latestReconciliationGate = await this.configService
+        .getWorkflowReconciliationGateEnabled()
+        .catch(() => reconciliationGateAfter);
 
-      rollbackDrills.push({
-        drillId: drill.drillId,
-        dataset: drill.dataset,
-        status: drill.status,
-        storage: drill.storage === 'database' ? 'database' : 'in-memory',
-        createdAt: drill.createdAt,
-      });
+      const status: ReconciliationCutoverExecutionStatus =
+        latestStandardizedRead.enabled !== standardizedReadBefore.enabled ||
+        latestReconciliationGate.enabled !== reconciliationGateBefore.enabled
+          ? 'PARTIAL'
+          : 'FAILED';
+
+      const record: ReconciliationCutoverExecutionRecord = {
+        executionId,
+        action: 'ROLLBACK',
+        status,
+        requestedByUserId: userId,
+        datasets,
+        applied:
+          latestStandardizedRead.enabled !== standardizedReadBefore.enabled ||
+          latestReconciliationGate.enabled !== reconciliationGateBefore.enabled,
+        configBefore: {
+          standardizedRead: standardizedReadBefore.enabled,
+          reconciliationGate: reconciliationGateBefore.enabled,
+        },
+        configAfter: {
+          standardizedRead: latestStandardizedRead.enabled,
+          reconciliationGate: latestReconciliationGate.enabled,
+        },
+        stepTrace: [
+          ...stepTrace,
+          {
+            step: 'execute_rollback',
+            status: 'FAILED',
+            at: new Date().toISOString(),
+            detail: {
+              message: this.stringifyError(error),
+            },
+          },
+        ],
+        errorMessage: this.stringifyError(error),
+        compensationApplied: false,
+        createdAt,
+      };
+
+      this.cutoverExecutionRecords.set(executionId, record);
+      await this.persistReconciliationCutoverExecutionRecord(record);
+      throw error;
     }
-
-    const applied =
-      standardizedReadBefore.enabled !== standardizedReadAfter.enabled ||
-      reconciliationGateBefore.enabled !== reconciliationGateAfter.enabled;
-
-    return {
-      executedAt,
-      applied,
-      datasets,
-      config: {
-        standardizedRead: {
-          before: standardizedReadBefore.enabled,
-          after: standardizedReadAfter.enabled,
-        },
-        reconciliationGate: {
-          before: reconciliationGateBefore.enabled,
-          after: reconciliationGateAfter.enabled,
-        },
-      },
-      rollbackDrills,
-    };
   }
 
   async getReconciliationCutoverRuntimeStatus(
@@ -2296,6 +2764,210 @@ export class MarketDataService {
         hasRecentRollbackEvidenceAllDatasets,
         latestDecisionApproved,
         recommendsRollback,
+      },
+    };
+  }
+
+  async listReconciliationCutoverExecutions(
+    userId: string,
+    query: ListReconciliationCutoverExecutionsQueryDto,
+  ) {
+    const page = Math.max(1, query.page ?? 1);
+    const pageSize = Math.min(100, Math.max(1, query.pageSize ?? 20));
+
+    const persisted = await this.listPersistedReconciliationCutoverExecutions(
+      userId,
+      page,
+      pageSize,
+      {
+        action: query.action,
+        status: query.status,
+      },
+    );
+    if (persisted) {
+      return persisted;
+    }
+
+    const filtered = Array.from(this.cutoverExecutionRecords.values())
+      .filter((item) => item.requestedByUserId === userId)
+      .filter((item) => (!query.action ? true : item.action === query.action))
+      .filter((item) => (!query.status ? true : item.status === query.status))
+      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+
+    const total = filtered.length;
+    const totalPages = Math.ceil(total / pageSize) || 1;
+    const start = (page - 1) * pageSize;
+
+    return {
+      page,
+      pageSize,
+      total,
+      totalPages,
+      storage: 'in-memory' as const,
+      items: filtered.slice(start, start + pageSize),
+    };
+  }
+
+  async getReconciliationCutoverExecution(userId: string, executionId: string) {
+    const persisted = await this.findPersistedReconciliationCutoverExecution(executionId);
+    if (persisted) {
+      if (persisted.requestedByUserId !== userId) {
+        throw new ForbiddenException('no permission to access this cutover execution');
+      }
+      return {
+        ...persisted,
+        storage: 'database' as const,
+      };
+    }
+
+    const local = this.cutoverExecutionRecords.get(executionId);
+    if (!local) {
+      throw new NotFoundException('cutover execution not found');
+    }
+    if (local.requestedByUserId !== userId) {
+      throw new ForbiddenException('no permission to access this cutover execution');
+    }
+
+    return {
+      ...local,
+      storage: 'in-memory' as const,
+    };
+  }
+
+  async retryReconciliationCutoverExecutionCompensation(
+    userId: string,
+    executionId: string,
+    dto: RetryReconciliationCutoverCompensationDto,
+  ) {
+    const execution = await this.getReconciliationCutoverExecution(userId, executionId);
+
+    const shouldCompensate = execution.status === 'FAILED' || execution.status === 'PARTIAL';
+    if (!shouldCompensate) {
+      return {
+        executionId: execution.executionId,
+        compensated: false,
+        reason: 'execution_status_not_compensatable',
+        execution,
+      };
+    }
+
+    let rollback: {
+      executionId: string;
+      executedAt: string;
+      applied: boolean;
+      datasets: StandardDataset[];
+      config: {
+        standardizedRead: {
+          before: boolean;
+          after: boolean;
+        };
+        reconciliationGate: {
+          before: boolean;
+          after: boolean;
+        };
+      };
+      rollbackDrills: Array<{
+        drillId: string;
+        dataset: StandardDataset;
+        status: RollbackDrillStatus;
+        storage: 'database' | 'in-memory';
+        createdAt: string;
+      }>;
+    };
+    try {
+      rollback = await this.executeReconciliationRollback(userId, {
+        datasets: execution.datasets,
+        workflowVersionId: dto.workflowVersionId,
+        disableReconciliationGate: dto.disableReconciliationGate,
+        note: dto.note,
+        reason: dto.reason ?? 'manual_compensation',
+      });
+    } catch (error) {
+      const failedCompensationRecord: ReconciliationCutoverExecutionRecord = {
+        executionId: execution.executionId,
+        action: execution.action,
+        status: execution.status === 'PARTIAL' ? 'PARTIAL' : 'FAILED',
+        requestedByUserId: execution.requestedByUserId,
+        datasets: execution.datasets,
+        decisionId: execution.decisionId,
+        decisionStatus: execution.decisionStatus,
+        applied: execution.applied,
+        configBefore: execution.configBefore,
+        configAfter: execution.configAfter,
+        stepTrace: [
+          ...(Array.isArray(execution.stepTrace) ? execution.stepTrace : []),
+          {
+            step: 'manual_compensation',
+            status: 'FAILED',
+            at: new Date().toISOString(),
+            detail: {
+              message: this.stringifyError(error),
+            },
+          },
+        ],
+        errorMessage: execution.errorMessage,
+        compensationApplied: false,
+        compensationAt: execution.compensationAt,
+        compensationPayload: execution.compensationPayload,
+        compensationError: this.stringifyError(error),
+        createdAt: execution.createdAt,
+      };
+
+      this.cutoverExecutionRecords.set(
+        failedCompensationRecord.executionId,
+        failedCompensationRecord,
+      );
+      await this.persistReconciliationCutoverExecutionRecord(failedCompensationRecord);
+      throw error;
+    }
+
+    const updatedRecord: ReconciliationCutoverExecutionRecord = {
+      executionId: execution.executionId,
+      action: execution.action,
+      status: 'COMPENSATED',
+      requestedByUserId: execution.requestedByUserId,
+      datasets: execution.datasets,
+      decisionId: execution.decisionId,
+      decisionStatus: execution.decisionStatus,
+      applied: execution.applied,
+      configBefore: execution.configBefore,
+      configAfter: {
+        standardizedRead: rollback.config.standardizedRead.after,
+        reconciliationGate: rollback.config.reconciliationGate.after,
+      },
+      stepTrace: [
+        ...(Array.isArray(execution.stepTrace) ? execution.stepTrace : []),
+        {
+          step: 'manual_compensation',
+          status: 'SUCCESS',
+          at: new Date().toISOString(),
+          detail: {
+            compensationExecutionId: rollback.executionId,
+            rollbackDrillCount: rollback.rollbackDrills.length,
+          },
+        },
+      ],
+      errorMessage: execution.errorMessage,
+      compensationApplied: true,
+      compensationAt: rollback.executedAt,
+      compensationPayload: {
+        compensationExecutionId: rollback.executionId,
+        rollbackDrills: rollback.rollbackDrills,
+      },
+      compensationError: undefined,
+      createdAt: execution.createdAt,
+    };
+
+    this.cutoverExecutionRecords.set(updatedRecord.executionId, updatedRecord);
+    await this.persistReconciliationCutoverExecutionRecord(updatedRecord);
+
+    return {
+      executionId: updatedRecord.executionId,
+      compensated: true,
+      compensationExecutionId: rollback.executionId,
+      execution: {
+        ...updatedRecord,
+        storage: execution.storage,
       },
     };
   }
@@ -3148,11 +3820,280 @@ export class MarketDataService {
     };
   }
 
+  private async persistReconciliationCutoverExecutionRecord(
+    record: ReconciliationCutoverExecutionRecord,
+  ): Promise<boolean> {
+    if (this.cutoverExecutionPersistenceUnavailable) {
+      return false;
+    }
+
+    try {
+      await this.prisma.$executeRawUnsafe(
+        `INSERT INTO "DataReconciliationCutoverExecution"
+          ("id", "executionId", "action", "status", "requestedByUserId", "datasets", "decisionId", "decisionStatus", "applied", "configBefore", "configAfter", "stepTrace", "errorMessage", "compensationApplied", "compensationAt", "compensationPayload", "compensationError", "createdAt", "updatedAt")
+         VALUES
+          ($1, $2, $3::"ReconciliationCutoverExecutionAction", $4::"ReconciliationCutoverExecutionStatus", $5, $6::jsonb, $7, $8, $9, $10::jsonb, $11::jsonb, $12::jsonb, $13, $14, $15, $16::jsonb, $17, $18, $19)
+         ON CONFLICT ("executionId") DO UPDATE SET
+          "status" = EXCLUDED."status",
+          "datasets" = EXCLUDED."datasets",
+          "decisionId" = EXCLUDED."decisionId",
+          "decisionStatus" = EXCLUDED."decisionStatus",
+          "applied" = EXCLUDED."applied",
+          "configBefore" = EXCLUDED."configBefore",
+          "configAfter" = EXCLUDED."configAfter",
+          "stepTrace" = EXCLUDED."stepTrace",
+          "errorMessage" = EXCLUDED."errorMessage",
+          "compensationApplied" = EXCLUDED."compensationApplied",
+          "compensationAt" = EXCLUDED."compensationAt",
+          "compensationPayload" = EXCLUDED."compensationPayload",
+          "compensationError" = EXCLUDED."compensationError",
+          "updatedAt" = EXCLUDED."updatedAt"`,
+        randomUUID(),
+        record.executionId,
+        record.action,
+        record.status,
+        record.requestedByUserId,
+        JSON.stringify(record.datasets),
+        record.decisionId ?? null,
+        record.decisionStatus ?? null,
+        record.applied,
+        JSON.stringify(record.configBefore ?? null),
+        JSON.stringify(record.configAfter ?? null),
+        JSON.stringify(record.stepTrace),
+        record.errorMessage ?? null,
+        record.compensationApplied,
+        record.compensationAt ? new Date(record.compensationAt) : null,
+        JSON.stringify(record.compensationPayload ?? null),
+        record.compensationError ?? null,
+        new Date(record.createdAt),
+        new Date(),
+      );
+      return true;
+    } catch (error) {
+      if (this.isCutoverExecutionPersistenceMissingTableError(error)) {
+        this.disableCutoverExecutionPersistence('persist cutover execution record', error);
+        return false;
+      }
+      this.logger.error(`Persist cutover execution record failed: ${this.stringifyError(error)}`);
+      return false;
+    }
+  }
+
+  private async listPersistedReconciliationCutoverExecutions(
+    userId: string,
+    page: number,
+    pageSize: number,
+    options: {
+      action?: ReconciliationCutoverExecutionAction;
+      status?: ReconciliationCutoverExecutionStatus;
+    },
+  ): Promise<{
+    page: number;
+    pageSize: number;
+    total: number;
+    totalPages: number;
+    storage: 'database';
+    items: ReconciliationCutoverExecutionRecord[];
+  } | null> {
+    if (this.cutoverExecutionPersistenceUnavailable) {
+      return null;
+    }
+
+    try {
+      const whereParts: string[] = ['"requestedByUserId" = $1'];
+      const whereParams: unknown[] = [userId];
+
+      if (options.action) {
+        whereParts.push(
+          `"action" = $${whereParams.length + 1}::"ReconciliationCutoverExecutionAction"`,
+        );
+        whereParams.push(options.action);
+      }
+
+      if (options.status) {
+        whereParts.push(
+          `"status" = $${whereParams.length + 1}::"ReconciliationCutoverExecutionStatus"`,
+        );
+        whereParams.push(options.status);
+      }
+
+      const whereClause = `WHERE ${whereParts.join(' AND ')}`;
+      const totalRows = await this.prisma.$queryRawUnsafe<Array<{ total: number | string }>>(
+        `SELECT COUNT(*)::int AS "total"
+         FROM "DataReconciliationCutoverExecution"
+         ${whereClause}`,
+        ...whereParams,
+      );
+
+      const total = Number(totalRows[0]?.total ?? 0);
+      const totalPages = Math.ceil(total / pageSize) || 1;
+      const offset = (page - 1) * pageSize;
+
+      const rows = await this.prisma.$queryRawUnsafe<PersistedReconciliationCutoverExecutionRow[]>(
+        `SELECT
+           "executionId",
+           "action",
+           "status",
+           "requestedByUserId",
+           "datasets",
+           "decisionId",
+           "decisionStatus",
+           "applied",
+           "configBefore",
+           "configAfter",
+           "stepTrace",
+           "errorMessage",
+           "compensationApplied",
+           "compensationAt",
+           "compensationPayload",
+           "compensationError",
+           "createdAt"
+         FROM "DataReconciliationCutoverExecution"
+         ${whereClause}
+         ORDER BY "createdAt" DESC
+         LIMIT $${whereParams.length + 1}
+         OFFSET $${whereParams.length + 2}`,
+        ...whereParams,
+        pageSize,
+        offset,
+      );
+
+      return {
+        page,
+        pageSize,
+        total,
+        totalPages,
+        storage: 'database',
+        items: rows.map((row) => this.mapPersistedReconciliationCutoverExecutionRow(row)),
+      };
+    } catch (error) {
+      if (this.isCutoverExecutionPersistenceMissingTableError(error)) {
+        this.disableCutoverExecutionPersistence('list cutover execution records', error);
+        return null;
+      }
+      this.logger.error(`List cutover execution records failed: ${this.stringifyError(error)}`);
+      return null;
+    }
+  }
+
+  private async findPersistedReconciliationCutoverExecution(
+    executionId: string,
+  ): Promise<ReconciliationCutoverExecutionRecord | null> {
+    if (this.cutoverExecutionPersistenceUnavailable) {
+      return null;
+    }
+
+    try {
+      const rows = await this.prisma.$queryRawUnsafe<PersistedReconciliationCutoverExecutionRow[]>(
+        `SELECT
+           "executionId",
+           "action",
+           "status",
+           "requestedByUserId",
+           "datasets",
+           "decisionId",
+           "decisionStatus",
+           "applied",
+           "configBefore",
+           "configAfter",
+           "stepTrace",
+           "errorMessage",
+           "compensationApplied",
+           "compensationAt",
+           "compensationPayload",
+           "compensationError",
+           "createdAt"
+         FROM "DataReconciliationCutoverExecution"
+         WHERE "executionId" = $1
+         LIMIT 1`,
+        executionId,
+      );
+
+      if (rows.length === 0) {
+        return null;
+      }
+
+      return this.mapPersistedReconciliationCutoverExecutionRow(rows[0]);
+    } catch (error) {
+      if (this.isCutoverExecutionPersistenceMissingTableError(error)) {
+        this.disableCutoverExecutionPersistence('find cutover execution record', error);
+        return null;
+      }
+      this.logger.error(`Find cutover execution record failed: ${this.stringifyError(error)}`);
+      return null;
+    }
+  }
+
+  private mapPersistedReconciliationCutoverExecutionRow(
+    row: PersistedReconciliationCutoverExecutionRow,
+  ): ReconciliationCutoverExecutionRecord {
+    const datasetsRaw = this.parseJsonValue<unknown[]>(row.datasets) ?? [];
+    const datasets = datasetsRaw
+      .map((item) => this.normalizeReconciliationDataset(String(item)) as StandardDataset)
+      .filter((item, index, all) => all.indexOf(item) === index);
+
+    const configBeforeRaw = this.parseJsonValue<Record<string, unknown>>(row.configBefore);
+    const configAfterRaw = this.parseJsonValue<Record<string, unknown>>(row.configAfter);
+    const stepTrace = this.parseJsonValue<Array<Record<string, unknown>>>(row.stepTrace) ?? [];
+
+    return {
+      executionId: row.executionId,
+      action: this.normalizeCutoverExecutionAction(row.action),
+      status: this.normalizeCutoverExecutionStatus(row.status),
+      requestedByUserId: row.requestedByUserId,
+      datasets,
+      decisionId: row.decisionId ?? undefined,
+      decisionStatus: row.decisionStatus
+        ? this.normalizeCutoverDecisionStatus(row.decisionStatus)
+        : undefined,
+      applied: this.parseBoolean(row.applied),
+      configBefore: configBeforeRaw
+        ? {
+            standardizedRead: this.parseBoolean(configBeforeRaw.standardizedRead),
+            reconciliationGate: this.parseBoolean(configBeforeRaw.reconciliationGate),
+          }
+        : undefined,
+      configAfter: configAfterRaw
+        ? {
+            standardizedRead: this.parseBoolean(configAfterRaw.standardizedRead),
+            reconciliationGate: this.parseBoolean(configAfterRaw.reconciliationGate),
+          }
+        : undefined,
+      stepTrace,
+      errorMessage: row.errorMessage ?? undefined,
+      compensationApplied: this.parseBoolean(row.compensationApplied),
+      compensationAt: this.toIsoString(row.compensationAt),
+      compensationPayload:
+        this.parseJsonValue<Record<string, unknown>>(row.compensationPayload) ?? undefined,
+      compensationError: row.compensationError ?? undefined,
+      createdAt: this.toIsoString(row.createdAt) ?? new Date().toISOString(),
+    };
+  }
+
   private normalizeM1ReadinessReportFormat(value: unknown): ReconciliationM1ReadinessReportFormat {
     if (value === 'json' || value === 'markdown') {
       return value;
     }
     return 'markdown';
+  }
+
+  private normalizeCutoverExecutionAction(value: unknown): ReconciliationCutoverExecutionAction {
+    if (value === 'CUTOVER' || value === 'ROLLBACK' || value === 'AUTOPILOT') {
+      return value;
+    }
+    return 'AUTOPILOT';
+  }
+
+  private normalizeCutoverExecutionStatus(value: unknown): ReconciliationCutoverExecutionStatus {
+    if (
+      value === 'SUCCESS' ||
+      value === 'FAILED' ||
+      value === 'PARTIAL' ||
+      value === 'COMPENSATED'
+    ) {
+      return value;
+    }
+    return 'FAILED';
   }
 
   private normalizeCutoverDecisionStatus(value: unknown): ReconciliationCutoverDecisionStatus {
@@ -4102,6 +5043,20 @@ export class MarketDataService {
     return int;
   }
 
+  private parseBoolean(value: unknown): boolean {
+    if (typeof value === 'boolean') {
+      return value;
+    }
+    if (typeof value === 'number') {
+      return Number.isFinite(value) && value !== 0;
+    }
+    if (typeof value === 'string') {
+      const normalized = value.trim().toLowerCase();
+      return normalized === 'true' || normalized === '1' || normalized === 'yes';
+    }
+    return false;
+  }
+
   private normalizeCoverageRate(value: unknown, fallback: number): number {
     const parsed = this.parseFiniteNumber(value);
     if (parsed === undefined) {
@@ -4540,6 +5495,32 @@ export class MarketDataService {
     return containsTarget && missingTableHint;
   }
 
+  private isCutoverExecutionPersistenceMissingTableError(error: unknown) {
+    const code =
+      typeof error === 'object' && error !== null && 'code' in error
+        ? String((error as { code?: unknown }).code)
+        : '';
+    if (code === 'P2021') {
+      return true;
+    }
+
+    const message = this.stringifyError(error).toLowerCase();
+    const containsTarget =
+      message.includes('datareconciliationcutoverexecution') ||
+      message.includes('reconciliationcutoverexecutionaction') ||
+      message.includes('reconciliationcutoverexecutionstatus');
+    const missingTableHint =
+      message.includes('does not exist') ||
+      message.includes('relation') ||
+      message.includes('column') ||
+      message.includes('undefined') ||
+      message.includes('42703') ||
+      message.includes('42704') ||
+      message.includes('p2021') ||
+      message.includes('invalid input value for enum');
+    return containsTarget && missingTableHint;
+  }
+
   private disableReconciliationPersistence(operation: string, error: unknown) {
     if (this.reconciliationPersistenceUnavailable) {
       return;
@@ -4587,6 +5568,16 @@ export class MarketDataService {
     this.cutoverDecisionPersistenceUnavailable = true;
     this.logger.warn(
       `Cutover decision persistence disabled (${operation}): ${this.stringifyError(error)}`,
+    );
+  }
+
+  private disableCutoverExecutionPersistence(operation: string, error: unknown) {
+    if (this.cutoverExecutionPersistenceUnavailable) {
+      return;
+    }
+    this.cutoverExecutionPersistenceUnavailable = true;
+    this.logger.warn(
+      `Cutover execution persistence disabled (${operation}): ${this.stringifyError(error)}`,
     );
   }
 

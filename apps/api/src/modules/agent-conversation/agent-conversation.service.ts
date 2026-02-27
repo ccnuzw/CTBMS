@@ -204,6 +204,92 @@ export class AgentConversationService {
       return null;
     }
 
+    // -- Action Intent fast path: detect export/email/retry/schedule --
+    const actionIntent = this.detectActionIntent(dto.message, session.state as SessionState);
+    if (actionIntent.type) {
+      await this.prisma.conversationTurn.create({
+        data: {
+          sessionId,
+          role: 'USER',
+          content: dto.message,
+          structuredPayload: { actionIntent: actionIntent.type } as Prisma.InputJsonValue,
+        },
+      });
+
+      let actionResponse = '';
+      const actionPayload: Record<string, unknown> = { actionIntent: actionIntent.type };
+
+      if (actionIntent.type === 'EXPORT') {
+        try {
+          const exportResult = await this.exportResult(userId, sessionId, {
+            format: 'PDF',
+            sections: ['CONCLUSION', 'EVIDENCE', 'RISK_ASSESSMENT'],
+            includeRawData: false,
+          });
+          actionResponse = exportResult?.downloadUrl
+            ? '\u597d\u7684\uff0c\u62a5\u544a\u5df2\u751f\u6210\uff0c\u4f60\u53ef\u4ee5\u4e0b\u8f7d\u4e86\u3002'
+            : '\u597d\u7684\uff0c\u62a5\u544a\u6b63\u5728\u751f\u6210\u4e2d\uff0c\u7a0d\u540e\u4f1a\u901a\u77e5\u4f60\u3002';
+          actionPayload.exportResult = exportResult;
+        } catch {
+          actionResponse = '\u5bfc\u51fa\u9047\u5230\u4e86\u95ee\u9898\uff0c\u8bf7\u7a0d\u540e\u518d\u8bd5\u3002';
+        }
+      } else if (actionIntent.type === 'DELIVER_EMAIL') {
+        if (actionIntent.emailTo && actionIntent.emailTo.length > 0) {
+          try {
+            const exportResult = await this.exportResult(userId, sessionId, {
+              format: 'PDF',
+              sections: ['CONCLUSION', 'EVIDENCE', 'RISK_ASSESSMENT'],
+              includeRawData: false,
+            });
+            const exportTaskId = typeof exportResult?.exportTaskId === 'string' ? exportResult.exportTaskId : '';
+            if (exportTaskId) {
+              await this.deliver(userId, sessionId, {
+                exportTaskId,
+                channel: 'EMAIL',
+                to: actionIntent.emailTo,
+              });
+              actionResponse = '\u597d\u7684\uff0c\u62a5\u544a\u5df2\u53d1\u9001\u5230 ' + actionIntent.emailTo.join('\u3001') + '\u3002';
+            } else {
+              actionResponse = '\u62a5\u544a\u5bfc\u51fa\u4e2d\uff0c\u5b8c\u6210\u540e\u4f1a\u81ea\u52a8\u53d1\u9001\u5230\u90ae\u7bb1\u3002';
+            }
+          } catch {
+            actionResponse = '\u53d1\u9001\u90ae\u4ef6\u9047\u5230\u4e86\u95ee\u9898\uff0c\u8bf7\u7a0d\u540e\u518d\u8bd5\u3002';
+          }
+        } else {
+          actionResponse = '\u8bf7\u544a\u8bc9\u6211\u6536\u4ef6\u4eba\u7684\u90ae\u7bb1\u5730\u5740\uff0c\u6bd4\u5982\u201c\u53d1\u5230 test@example.com\u201d\u3002';
+        }
+      } else if (actionIntent.type === 'RETRY') {
+        // RETRY: fall through to the normal analysis flow below
+        actionResponse = '';
+      } else if (actionIntent.type === 'SCHEDULE') {
+        actionResponse = '\u597d\u7684\uff0c\u5b9a\u65f6\u4efb\u52a1\u529f\u80fd\u6b63\u5728\u5f00\u53d1\u4e2d\u3002\u4f60\u53ef\u4ee5\u544a\u8bc9\u6211\u5177\u4f53\u7684\u6267\u884c\u9891\u7387\uff0c\u6bd4\u5982\u201c\u6bcf\u5468\u4e00\u65e9\u4e0a8\u70b9\u6267\u884c\u201d\u3002';
+        actionPayload.cronNatural = actionIntent.cronNatural;
+      }
+
+      // RETRY falls through; all others return early
+      if (actionIntent.type !== 'RETRY') {
+        await this.prisma.conversationTurn.create({
+          data: {
+            sessionId,
+            role: 'ASSISTANT',
+            content: actionResponse,
+            structuredPayload: actionPayload as Prisma.InputJsonValue,
+          },
+        });
+
+        return {
+          assistantMessage: actionResponse,
+          state: session.state as SessionState,
+          intent: (session.currentIntent ?? 'MARKET_SUMMARY_WITH_FORECAST') as IntentCode,
+          missingSlots: [] as string[],
+          proposedPlan: null,
+          confirmRequired: false,
+          autoExecuted: false,
+          replyOptions: [] as ReplyOption[],
+        };
+      }
+    }
+
     const referencedAssetIds = this.extractAssetReferenceIds(dto.message);
     const followupResolved = await this.resolveFollowupAssetReference(sessionId, dto.message);
     const followupReferencedAssetIds = followupResolved.assetIds;
@@ -279,8 +365,11 @@ export class AgentConversationService {
       effectiveContextPatch,
     );
 
+    // Apply slot defaults to minimize SLOT_FILLING interruptions
+    const slotsWithDefaults = this.applySlotDefaults(mergedSlots, intent);
+
     const requiredSlots = this.requiredSlotsByIntent(intent);
-    const missingSlots = requiredSlots.filter((key) => this.isSlotMissing(mergedSlots[key]));
+    const missingSlots = requiredSlots.filter((key) => this.isSlotMissing(slotsWithDefaults[key]));
     const hasMissingSlots = missingSlots.length > 0;
     const routingPolicy = await this.resolveCapabilityRoutingPolicy(session.ownerUserId);
 
@@ -288,7 +377,7 @@ export class AgentConversationService {
     const planId = `plan_${randomUUID()}`;
     const workflowCandidate = hasMissingSlots
       ? null
-      : await this.pickWorkflowDefinitionCandidate(session.ownerUserId, intent, mergedSlots, routingPolicy);
+      : await this.pickWorkflowDefinitionCandidate(session.ownerUserId, intent, slotsWithDefaults, routingPolicy);
     const proposedPlan: ProposedPlan | null = hasMissingSlots
       ? null
       : {
@@ -302,7 +391,7 @@ export class AgentConversationService {
           intent === 'DEBATE_MARKET_JUDGEMENT'
             ? ['price_series_query', 'knowledge_search', 'futures_quote_fetch', 'debate_round']
             : ['price_series_query', 'knowledge_search', 'futures_quote_fetch'],
-        paramSnapshot: mergedSlots,
+        paramSnapshot: slotsWithDefaults,
         estimatedCost: {
           token: intent === 'DEBATE_MARKET_JUDGEMENT' ? 28000 : 18000,
           latencyMs: intent === 'DEBATE_MARKET_JUDGEMENT' ? 20000 : 12000,
@@ -4208,16 +4297,89 @@ export class AgentConversationService {
     return false;
   }
 
-  private buildSlotPrompt(missingSlots: string[]): string {
-    const labelMap: Record<string, string> = {
-      topic: '辩论主题',
-      timeRange: '时间范围',
-      region: '区域范围',
-      outputFormat: '输出格式',
-      judgePolicy: '裁判策略',
+  private buildSlotPrompt(missingSlots: string[], _intent?: IntentCode): string {
+    const questionMap: Record<string, string> = {
+      timeRange: '你想分析哪个时间段的数据呢？比如"最近一周"或"最近一个月"',
+      region: '分析哪个地区的数据？比如"东北地区"或"全国"',
+      outputFormat: '你希望以什么形式查看结果？比如"分析报告"或"数据表格"',
+      topic: '你想讨论什么主题？',
+      judgePolicy: '你希望用什么方式来裁判辩论结果？',
     };
-    const labels = missingSlots.map((slot) => labelMap[slot] ?? slot);
-    return `为了继续执行，请补充以下信息：${labels.join('、')}。`;
+
+    if (missingSlots.length === 1) {
+      return questionMap[missingSlots[0]] ?? '还需要补充一个信息：' + missingSlots[0];
+    }
+    const questions = missingSlots
+      .map((slot) => questionMap[slot] ?? slot)
+      .join('\n- ');
+    return '还需要你补充几个信息：\n- ' + questions + '\n\n你可以一次性告诉我，也可以逐个回答。';
+  }
+
+  /**
+   * 补槽默认值：减少 SLOT_FILLING 触发频率，让更多对话直接进入执行
+   */
+  private applySlotDefaults(slots: SlotMap, intent: IntentCode): SlotMap {
+    const defaults: Partial<SlotMap> = {
+      timeRange: '最近一周',
+      region: '全国',
+      outputFormat: ['分析报告'],
+    };
+    if (intent === 'DEBATE_MARKET_JUDGEMENT') {
+      (defaults as Record<string, unknown>).judgePolicy = 'balanced';
+    }
+    const result = { ...slots };
+    for (const [key, value] of Object.entries(defaults)) {
+      if (this.isSlotMissing(result[key as keyof SlotMap])) {
+        (result as Record<string, unknown>)[key] = value;
+      }
+    }
+    return result;
+  }
+
+  /**
+   * 操作意图检测：从自然语言中识别导出、邮件、重试等操作意图
+   */
+  private detectActionIntent(message: string, sessionState: SessionState): {
+    type: 'EXPORT' | 'DELIVER_EMAIL' | 'RETRY' | 'SCHEDULE' | null;
+    format?: string;
+    emailTo?: string[];
+    cronNatural?: string;
+  } {
+    const lower = message.trim().toLowerCase();
+
+    // 导出意图
+    if (
+      /导出|下载|生成pdf|生成报告|export/.test(lower) &&
+      (sessionState === 'DONE' || sessionState === 'RESULT_DELIVERY')
+    ) {
+      const format = /excel|xlsx|csv/.test(lower) ? 'EXCEL' : 'PDF';
+      return { type: 'EXPORT', format };
+    }
+
+    // 邮件发送意图
+    if (
+      /发[到给]邮箱|邮件|发送邮件|email|send.*mail/.test(lower) &&
+      (sessionState === 'DONE' || sessionState === 'RESULT_DELIVERY')
+    ) {
+      const emailRegex = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g;
+      const emails = message.match(emailRegex) ?? [];
+      return { type: 'DELIVER_EMAIL', emailTo: emails.length > 0 ? emails : undefined };
+    }
+
+    // 重试意图
+    if (
+      /重[新试来]|再来|再[分做执]|retry/.test(lower) &&
+      (sessionState === 'FAILED' || sessionState === 'DONE')
+    ) {
+      return { type: 'RETRY' };
+    }
+
+    // 定时任务意图
+    if (/每[天周月日]|定[时期]|自动执行|schedule|cron/.test(lower)) {
+      return { type: 'SCHEDULE', cronNatural: message };
+    }
+
+    return { type: null };
   }
 
   private buildReplyOptions(input: {

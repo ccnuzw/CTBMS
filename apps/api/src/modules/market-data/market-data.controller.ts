@@ -21,6 +21,7 @@ import {
   ExecuteReconciliationRollbackRequest,
   EvaluateReconciliationGateRequest,
   ListReconciliationCutoverDecisionsQueryRequest,
+  ListReconciliationCutoverExecutionsQueryRequest,
   ListReconciliationJobsRequest,
   ListReconciliationM1ReadinessReportSnapshotsQueryRequest,
   ReconciliationDailyMetricsQueryRequest,
@@ -30,6 +31,7 @@ import {
   ListReconciliationRollbackDrillsQueryRequest,
   ReconciliationM1ReadinessQueryRequest,
   ReconciliationM1ReadinessReportQueryRequest,
+  RetryReconciliationCutoverCompensationRequest,
   ReconciliationWindowMetricsQueryRequest,
   MarketDataAggregateRequest,
   MarketDataQueryRequest,
@@ -340,6 +342,44 @@ export class MarketDataController {
     const data = await this.marketDataService.getReconciliationCutoverRuntimeStatus(
       this.getUserId(req),
       query,
+    );
+    return this.success(req, data);
+  }
+
+  @Get('reconciliation/cutover/executions')
+  async listReconciliationCutoverExecutions(
+    @Query() query: ListReconciliationCutoverExecutionsQueryRequest,
+    @Request() req: AuthRequest,
+  ) {
+    const data = await this.marketDataService.listReconciliationCutoverExecutions(
+      this.getUserId(req),
+      query,
+    );
+    return this.success(req, data);
+  }
+
+  @Get('reconciliation/cutover/executions/:executionId')
+  async getReconciliationCutoverExecution(
+    @Param('executionId', ParseUUIDPipe) executionId: string,
+    @Request() req: AuthRequest,
+  ) {
+    const data = await this.marketDataService.getReconciliationCutoverExecution(
+      this.getUserId(req),
+      executionId,
+    );
+    return this.success(req, data);
+  }
+
+  @Post('reconciliation/cutover/executions/:executionId/compensate')
+  async retryReconciliationCutoverExecutionCompensation(
+    @Param('executionId', ParseUUIDPipe) executionId: string,
+    @Body() dto: RetryReconciliationCutoverCompensationRequest,
+    @Request() req: AuthRequest,
+  ) {
+    const data = await this.marketDataService.retryReconciliationCutoverExecutionCompensation(
+      this.getUserId(req),
+      executionId,
+      dto,
     );
     return this.success(req, data);
   }
