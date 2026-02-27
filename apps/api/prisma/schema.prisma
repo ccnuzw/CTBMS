@@ -3144,17 +3144,23 @@ model ConversationSubscription {
   status         String   @default("ACTIVE") // ACTIVE | PAUSED | FAILED | ARCHIVED
   deliveryConfig Json?
   quietHours     Json?
+  deliveryChannelBindingId String?
+  schedulePolicyId         String?
   nextRunAt      DateTime?
   lastRunAt      DateTime?
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
-  session ConversationSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
-  runs    ConversationSubscriptionRun[]
+  session                ConversationSession         @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  deliveryChannelBinding DeliveryChannelBinding?      @relation(fields: [deliveryChannelBindingId], references: [id])
+  schedulePolicy         ConversationSchedulePolicy?  @relation(fields: [schedulePolicyId], references: [id])
+  runs                   ConversationSubscriptionRun[]
 
   @@index([ownerUserId, createdAt])
   @@index([status, nextRunAt])
   @@index([sessionId, createdAt])
+  @@index([deliveryChannelBindingId])
+  @@index([schedulePolicyId])
 }
 
 model ConversationSubscriptionRun {
@@ -3172,6 +3178,51 @@ model ConversationSubscriptionRun {
 
   @@index([subscriptionId, startedAt])
   @@index([status, startedAt])
+}
+
+// ─────────────── DeliveryChannelBinding (投递渠道绑定) ───────────────
+
+model DeliveryChannelBinding {
+  id            String   @id @default(uuid())
+  ownerUserId   String
+  channel       String   @db.VarChar(20) // EMAIL | DINGTALK | WECOM | FEISHU
+  target        String?  // 群ID / webhook URL
+  to            Json?    // 邮箱列表 (EMAIL channel 专用)
+  templateCode  String?  @db.VarChar(30) // DEFAULT | MORNING_BRIEF | WEEKLY_REVIEW | RISK_ALERT
+  sendRawFile   Boolean  @default(true)
+  authConfigRef String?  // 认证配置引用（预留）
+  description   String?
+  isDefault     Boolean  @default(false)
+  isActive      Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  subscriptions ConversationSubscription[]
+
+  @@index([ownerUserId, channel, isActive])
+  @@index([ownerUserId, isDefault])
+}
+
+// ─────────────── ConversationSchedulePolicy (对话调度策略) ───────────────
+
+model ConversationSchedulePolicy {
+  id              String   @id @default(uuid())
+  ownerUserId     String
+  name            String
+  cronExpr        String
+  timezone        String   @default("Asia/Shanghai")
+  quietHoursStart String?  @db.VarChar(5) // "22:00"
+  quietHoursEnd   String?  @db.VarChar(5) // "08:00"
+  maxRetries      Int      @default(3)
+  retryIntervalMs Int      @default(60000) // 1 分钟
+  maxConcurrent   Int      @default(1)
+  isActive        Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  subscriptions ConversationSubscription[]
+
+  @@index([ownerUserId, isActive])
 }
 
 model ConversationBacktestJob {

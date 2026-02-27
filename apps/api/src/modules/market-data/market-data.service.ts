@@ -24,6 +24,7 @@ import { ConfigService } from '../config/config.service';
 
 type StandardDataset = 'SPOT_PRICE' | 'FUTURES_QUOTE' | 'MARKET_EVENT';
 type ReconciliationJobStatus = 'PENDING' | 'RUNNING' | 'DONE' | 'FAILED' | 'CANCELLED';
+type ReconciliationM1ReadinessReportFormat = 'json' | 'markdown';
 type RollbackDrillStatus = ReconciliationRollbackDrillStatus;
 type ReconciliationListSortBy = 'createdAt' | 'startedAt' | 'finishedAt' | 'status' | 'dataset';
 type ReconciliationListSortOrder = 'asc' | 'desc';
@@ -292,6 +293,44 @@ export interface ReconciliationReadCoverageMetricsResult {
     coverageRate: number;
     meetsTarget: boolean;
   }>;
+}
+
+export interface ReconciliationM1ReadinessResult {
+  generatedAt: string;
+  windowDays: number;
+  datasets: StandardDataset[];
+  summary: {
+    meetsReconciliationTarget: boolean;
+    meetsCoverageTarget: boolean;
+    hasRecentRollbackDrillEvidence: boolean;
+    ready: boolean;
+  };
+  coverage: ReconciliationReadCoverageMetricsResult;
+  reconciliation: Array<{
+    dataset: StandardDataset;
+    meetsWindowTarget: boolean;
+    consecutivePassedDays: number;
+    totalJobs: number;
+    passedJobs: number;
+    source: 'database' | 'in-memory';
+  }>;
+  rollbackDrills: Array<{
+    dataset: StandardDataset;
+    exists: boolean;
+    recent: boolean;
+    passed: boolean;
+    drillId?: string;
+    status?: RollbackDrillStatus;
+    createdAt?: string;
+  }>;
+}
+
+export interface ReconciliationM1ReadinessReportResult {
+  format: ReconciliationM1ReadinessReportFormat;
+  generatedAt: string;
+  fileName: string;
+  readiness: ReconciliationM1ReadinessResult;
+  report: ReconciliationM1ReadinessResult | string;
 }
 
 const RECONCILIATION_SORT_COLUMN_MAP: Record<ReconciliationListSortBy, string> = {
@@ -1402,6 +1441,195 @@ export class MarketDataService {
     };
   }
 
+  async getReconciliationM1Readiness(options?: {
+    windowDays?: number;
+    targetCoverageRate?: number;
+    datasets?: StandardDataset[];
+  }): Promise<ReconciliationM1ReadinessResult> {
+    const windowDays = Math.min(
+      30,
+      Math.max(1, this.parsePositiveInteger(options?.windowDays) ?? 7),
+    );
+    const targetCoverageRate = this.normalizeCoverageRate(options?.targetCoverageRate, 0.9);
+    const datasets =
+      options?.datasets && options.datasets.length > 0
+        ? (Array.from(new Set(options.datasets)) as StandardDataset[])
+        : STANDARD_RECONCILIATION_DATASETS;
+
+    const coverage = await this.getReconciliationReadCoverageMetrics({
+      days: windowDays,
+      targetCoverageRate,
+    });
+
+    const reconciliation: ReconciliationM1ReadinessResult['reconciliation'] = [];
+    for (const dataset of datasets) {
+      const metrics = await this.getReconciliationWindowMetrics(dataset, { days: windowDays });
+      reconciliation.push({
+        dataset,
+        meetsWindowTarget: metrics.meetsWindowTarget,
+        consecutivePassedDays: metrics.consecutivePassedDays,
+        totalJobs: metrics.totalJobs,
+        passedJobs: metrics.passedJobs,
+        source: metrics.source,
+      });
+    }
+
+    const latestDrillsByDataset = await this.getLatestRollbackDrillsByDataset(datasets);
+    const readinessFromMs = Date.parse(coverage.fromDate);
+    const fallbackFromMs = Date.now() - (windowDays - 1) * 24 * 60 * 60 * 1000;
+    const fromMs = Number.isFinite(readinessFromMs) ? readinessFromMs : fallbackFromMs;
+
+    const rollbackDrills: ReconciliationM1ReadinessResult['rollbackDrills'] = datasets.map(
+      (dataset) => {
+        const drill = latestDrillsByDataset.get(dataset);
+        if (!drill) {
+          return {
+            dataset,
+            exists: false,
+            recent: false,
+            passed: false,
+          };
+        }
+
+        const createdAtMs = Date.parse(drill.createdAt);
+        const recent = Number.isFinite(createdAtMs) ? createdAtMs >= fromMs : false;
+
+        return {
+          dataset,
+          exists: true,
+          recent,
+          passed: drill.status === 'PASSED',
+          drillId: drill.drillId,
+          status: drill.status,
+          createdAt: drill.createdAt,
+        };
+      },
+    );
+
+    const meetsReconciliationTarget = reconciliation.every((item) => item.meetsWindowTarget);
+    const meetsCoverageTarget = coverage.meetsCoverageTarget;
+    const hasRecentRollbackDrillEvidence = rollbackDrills.every(
+      (item) => item.exists && item.recent && item.passed,
+    );
+
+    return {
+      generatedAt: new Date().toISOString(),
+      windowDays,
+      datasets,
+      summary: {
+        meetsReconciliationTarget,
+        meetsCoverageTarget,
+        hasRecentRollbackDrillEvidence,
+        ready: meetsReconciliationTarget && meetsCoverageTarget && hasRecentRollbackDrillEvidence,
+      },
+      coverage,
+      reconciliation,
+      rollbackDrills,
+    };
+  }
+
+  async getReconciliationM1ReadinessReport(options?: {
+    format?: ReconciliationM1ReadinessReportFormat;
+    windowDays?: number;
+    targetCoverageRate?: number;
+    datasets?: StandardDataset[];
+  }): Promise<ReconciliationM1ReadinessReportResult> {
+    const format = options?.format ?? 'markdown';
+    const readiness = await this.getReconciliationM1Readiness({
+      windowDays: options?.windowDays,
+      targetCoverageRate: options?.targetCoverageRate,
+      datasets: options?.datasets,
+    });
+
+    const generatedAt = new Date().toISOString();
+    const fileName = `reconciliation-m1-readiness-${generatedAt.slice(0, 10)}.${format === 'json' ? 'json' : 'md'}`;
+
+    if (format === 'json') {
+      return {
+        format,
+        generatedAt,
+        fileName,
+        readiness,
+        report: readiness,
+      };
+    }
+
+    return {
+      format,
+      generatedAt,
+      fileName,
+      readiness,
+      report: this.buildReconciliationM1ReadinessMarkdown(readiness),
+    };
+  }
+
+  private buildReconciliationM1ReadinessMarkdown(
+    readiness: ReconciliationM1ReadinessResult,
+  ): string {
+    const lines: string[] = [];
+    lines.push('# Reconciliation M1 Readiness Report');
+    lines.push('');
+    lines.push(`Generated At: ${readiness.generatedAt}`);
+    lines.push(`Window Days: ${readiness.windowDays}`);
+    lines.push(`Datasets: ${readiness.datasets.join(', ')}`);
+    lines.push('');
+    lines.push('## Overall Readiness');
+    lines.push('');
+    lines.push(`- Ready: ${this.toPassFail(readiness.summary.ready)}`);
+    lines.push(
+      `- Reconciliation Target: ${this.toPassFail(readiness.summary.meetsReconciliationTarget)}`,
+    );
+    lines.push(`- Coverage Target: ${this.toPassFail(readiness.summary.meetsCoverageTarget)}`);
+    lines.push(
+      `- Rollback Drill Evidence: ${this.toPassFail(readiness.summary.hasRecentRollbackDrillEvidence)}`,
+    );
+    lines.push('');
+    lines.push('## Coverage');
+    lines.push('');
+    lines.push(`- Target Coverage Rate: ${this.toPercent(readiness.coverage.targetCoverageRate)}`);
+    lines.push(`- Current Coverage Rate: ${this.toPercent(readiness.coverage.coverageRate)}`);
+    lines.push(`- Standard Read Nodes: ${readiness.coverage.standardReadNodes}`);
+    lines.push(`- Total Data Fetch Nodes: ${readiness.coverage.totalDataFetchNodes}`);
+    lines.push(
+      `- Consecutive Coverage Days Meeting Target: ${readiness.coverage.consecutiveCoverageDays}`,
+    );
+    lines.push('');
+    lines.push('## Reconciliation By Dataset');
+    lines.push('');
+    lines.push(
+      '| Dataset | Meets Target | Consecutive Passed Days | Passed Jobs / Total Jobs | Source |',
+    );
+    lines.push('| --- | --- | ---: | ---: | --- |');
+    for (const item of readiness.reconciliation) {
+      lines.push(
+        `| ${item.dataset} | ${this.toPassFail(item.meetsWindowTarget)} | ${item.consecutivePassedDays} | ${item.passedJobs} / ${item.totalJobs} | ${item.source} |`,
+      );
+    }
+    lines.push('');
+    lines.push('## Rollback Drill Evidence');
+    lines.push('');
+    lines.push('| Dataset | Exists | Recent | Passed | Drill ID | Created At |');
+    lines.push('| --- | --- | --- | --- | --- | --- |');
+    for (const item of readiness.rollbackDrills) {
+      lines.push(
+        `| ${item.dataset} | ${this.toPassFail(item.exists)} | ${this.toPassFail(item.recent)} | ${this.toPassFail(item.passed)} | ${item.drillId ?? '-'} | ${item.createdAt ?? '-'} |`,
+      );
+    }
+
+    return lines.join('\n');
+  }
+
+  private toPassFail(value: boolean): 'PASS' | 'FAIL' {
+    return value ? 'PASS' : 'FAIL';
+  }
+
+  private toPercent(value: number): string {
+    if (!Number.isFinite(value)) {
+      return '0.00%';
+    }
+    return `${(value * 100).toFixed(2)}%`;
+  }
+
   async createReconciliationRollbackDrill(
     userId: string,
     dto: CreateReconciliationRollbackDrillDto,
@@ -1489,6 +1717,87 @@ export class MarketDataService {
       totalPages,
       storage: 'in-memory' as const,
       items: filtered.slice(start, start + pageSize),
+    };
+  }
+
+  private async getLatestRollbackDrillsByDataset(
+    datasets: StandardDataset[],
+  ): Promise<Map<StandardDataset, RollbackDrillRecord | undefined>> {
+    const resultMap = new Map<StandardDataset, RollbackDrillRecord | undefined>();
+    for (const dataset of datasets) {
+      resultMap.set(dataset, undefined);
+    }
+
+    const dedupedDatasets = Array.from(new Set(datasets));
+
+    if (!this.rollbackDrillPersistenceUnavailable) {
+      try {
+        const rows = await this.prisma.$queryRawUnsafe<PersistedRollbackDrillRow[]>(
+          `SELECT DISTINCT ON ("dataset")
+             "drillId",
+             "dataset",
+             "workflowVersionId",
+             "scenario",
+             "status",
+             "startedAt",
+             "completedAt",
+             "durationSeconds",
+             "rollbackPath",
+             "resultSummary",
+             "notes",
+             "triggeredByUserId",
+             "createdAt"
+           FROM "DataReconciliationRollbackDrill"
+           WHERE "dataset" = ANY($1::text[])
+           ORDER BY "dataset", "createdAt" DESC`,
+          dedupedDatasets,
+        );
+
+        for (const row of rows) {
+          const dataset = this.normalizeReconciliationDataset(row.dataset) as StandardDataset;
+          if (!resultMap.has(dataset)) {
+            continue;
+          }
+          resultMap.set(dataset, this.mapPersistedRollbackDrillRow(row));
+        }
+
+        return resultMap;
+      } catch (error) {
+        if (this.isRollbackDrillPersistenceMissingTableError(error)) {
+          this.disableRollbackDrillPersistence('read latest rollback drills', error);
+        } else {
+          this.logger.error(`Read latest rollback drills failed: ${this.stringifyError(error)}`);
+        }
+      }
+    }
+
+    const sorted = Array.from(this.rollbackDrillRecords.values()).sort(
+      (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+    );
+
+    for (const dataset of dedupedDatasets) {
+      const latest = sorted.find((item) => item.dataset === dataset);
+      resultMap.set(dataset, latest);
+    }
+
+    return resultMap;
+  }
+
+  private mapPersistedRollbackDrillRow(row: PersistedRollbackDrillRow): RollbackDrillRecord {
+    return {
+      drillId: row.drillId,
+      dataset: this.normalizeReconciliationDataset(row.dataset) as StandardDataset,
+      workflowVersionId: row.workflowVersionId ?? undefined,
+      scenario: row.scenario,
+      status: this.normalizeRollbackDrillStatus(row.status),
+      startedAt: this.toIsoString(row.startedAt) ?? new Date().toISOString(),
+      completedAt: this.toIsoString(row.completedAt),
+      durationSeconds: this.parseNonNegativeInteger(row.durationSeconds),
+      rollbackPath: row.rollbackPath ?? undefined,
+      resultSummary: this.parseJsonValue<Record<string, unknown>>(row.resultSummary),
+      notes: row.notes ?? undefined,
+      triggeredByUserId: row.triggeredByUserId,
+      createdAt: this.toIsoString(row.createdAt) ?? new Date().toISOString(),
     };
   }
 

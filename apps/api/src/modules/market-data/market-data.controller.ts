@@ -21,6 +21,8 @@ import {
   ReconciliationMetricsSnapshotRequest,
   ReconciliationReadCoverageQueryRequest,
   ListReconciliationRollbackDrillsQueryRequest,
+  ReconciliationM1ReadinessQueryRequest,
+  ReconciliationM1ReadinessReportQueryRequest,
   ReconciliationWindowMetricsQueryRequest,
   MarketDataAggregateRequest,
   MarketDataQueryRequest,
@@ -206,6 +208,35 @@ export class MarketDataController {
       days: dto.days,
       workflowVersionIds: dto.workflowVersionIds,
       targetCoverageRate: dto.targetCoverageRate,
+    });
+    return this.success(req, data);
+  }
+
+  @Get('reconciliation/metrics/m1-readiness')
+  async getReconciliationM1Readiness(
+    @Query() query: ReconciliationM1ReadinessQueryRequest,
+    @Request() req: AuthRequest,
+  ) {
+    this.getUserId(req);
+    const data = await this.marketDataService.getReconciliationM1Readiness({
+      windowDays: query.windowDays,
+      targetCoverageRate: query.targetCoverageRate,
+      datasets: query.datasets,
+    });
+    return this.success(req, data);
+  }
+
+  @Get('reconciliation/metrics/m1-readiness/report')
+  async getReconciliationM1ReadinessReport(
+    @Query() query: ReconciliationM1ReadinessReportQueryRequest,
+    @Request() req: AuthRequest,
+  ) {
+    this.getUserId(req);
+    const data = await this.marketDataService.getReconciliationM1ReadinessReport({
+      format: query.format,
+      windowDays: query.windowDays,
+      targetCoverageRate: query.targetCoverageRate,
+      datasets: query.datasets,
     });
     return this.success(req, data);
   }

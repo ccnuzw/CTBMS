@@ -358,6 +358,111 @@ async function main() {
       ),
     );
 
+    const m1Readiness = await fetchJson<{
+      success: boolean;
+      data: {
+        generatedAt: string;
+        windowDays: number;
+        datasets: string[];
+        summary: {
+          meetsReconciliationTarget: boolean;
+          meetsCoverageTarget: boolean;
+          hasRecentRollbackDrillEvidence: boolean;
+          ready: boolean;
+        };
+        coverage: {
+          windowDays: number;
+          targetCoverageRate: number;
+          coverageRate: number;
+        };
+        reconciliation: Array<{
+          dataset: string;
+          meetsWindowTarget: boolean;
+          consecutivePassedDays: number;
+        }>;
+        rollbackDrills: Array<{
+          dataset: string;
+          exists: boolean;
+          recent: boolean;
+          passed: boolean;
+          drillId?: string;
+        }>;
+      };
+      traceId: string;
+      ts: string;
+    }>(
+      `${baseUrl}/market-data/reconciliation/metrics/m1-readiness?windowDays=7&targetCoverageRate=0.9&datasets=SPOT_PRICE`,
+      {
+        method: 'GET',
+        headers: {
+          'x-virtual-user-id': 'admin-user',
+        },
+      },
+    );
+    assert.equal(m1Readiness.status, 200);
+    assert.equal(m1Readiness.body.success, true);
+    assert.equal(m1Readiness.body.data.windowDays, 7);
+    assert.ok(m1Readiness.body.data.datasets.includes('SPOT_PRICE'));
+    assert.equal(m1Readiness.body.data.coverage.windowDays, 7);
+    assert.ok(m1Readiness.body.data.reconciliation.length >= 1);
+    assert.ok(m1Readiness.body.data.rollbackDrills.length >= 1);
+
+    const m1ReadinessReportMarkdown = await fetchJson<{
+      success: boolean;
+      data: {
+        format: string;
+        generatedAt: string;
+        fileName: string;
+        readiness: { windowDays: number; datasets: string[] };
+        report: string;
+      };
+      traceId: string;
+      ts: string;
+    }>(
+      `${baseUrl}/market-data/reconciliation/metrics/m1-readiness/report?windowDays=7&targetCoverageRate=0.9&datasets=SPOT_PRICE&format=markdown`,
+      {
+        method: 'GET',
+        headers: {
+          'x-virtual-user-id': 'admin-user',
+        },
+      },
+    );
+    assert.equal(m1ReadinessReportMarkdown.status, 200);
+    assert.equal(m1ReadinessReportMarkdown.body.success, true);
+    assert.equal(m1ReadinessReportMarkdown.body.data.format, 'markdown');
+    assert.equal(m1ReadinessReportMarkdown.body.data.readiness.windowDays, 7);
+    assert.ok(m1ReadinessReportMarkdown.body.data.fileName.endsWith('.md'));
+    assert.ok(
+      m1ReadinessReportMarkdown.body.data.report.includes('Reconciliation M1 Readiness Report'),
+    );
+
+    const m1ReadinessReportJson = await fetchJson<{
+      success: boolean;
+      data: {
+        format: string;
+        generatedAt: string;
+        fileName: string;
+        readiness: { windowDays: number; datasets: string[] };
+        report: { windowDays: number; datasets: string[] };
+      };
+      traceId: string;
+      ts: string;
+    }>(
+      `${baseUrl}/market-data/reconciliation/metrics/m1-readiness/report?windowDays=7&targetCoverageRate=0.9&datasets=SPOT_PRICE&format=json`,
+      {
+        method: 'GET',
+        headers: {
+          'x-virtual-user-id': 'admin-user',
+        },
+      },
+    );
+    assert.equal(m1ReadinessReportJson.status, 200);
+    assert.equal(m1ReadinessReportJson.body.success, true);
+    assert.equal(m1ReadinessReportJson.body.data.format, 'json');
+    assert.equal(m1ReadinessReportJson.body.data.readiness.windowDays, 7);
+    assert.equal(m1ReadinessReportJson.body.data.report.windowDays, 7);
+    assert.ok(m1ReadinessReportJson.body.data.fileName.endsWith('.json'));
+
     const createdAtFrom = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
     const createdAtTo = new Date().toISOString();
 

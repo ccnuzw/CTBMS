@@ -120,7 +120,7 @@ export class AgentConversationService {
     private readonly reportExportService: ReportExportService,
     private readonly aiModelService: AIModelService,
     private readonly aiProviderFactory: AIProviderFactory,
-  ) {}
+  ) { }
 
   async createSession(userId: string, dto: CreateConversationSessionDto) {
     return this.prisma.conversationSession.create({
@@ -221,12 +221,12 @@ export class AgentConversationService {
 
     const referencedAssets = requestedAssetIds.length
       ? await this.prisma.conversationAsset.findMany({
-          where: {
-            sessionId,
-            id: { in: requestedAssetIds },
-          },
-          select: { id: true, title: true, assetType: true },
-        })
+        where: {
+          sessionId,
+          id: { in: requestedAssetIds },
+        },
+        select: { id: true, title: true, assetType: true },
+      })
       : [];
 
     const effectiveContextPatch: Record<string, unknown> = {
@@ -292,22 +292,22 @@ export class AgentConversationService {
     const proposedPlan: ProposedPlan | null = hasMissingSlots
       ? null
       : {
-          planId,
-          planType: intent === 'DEBATE_MARKET_JUDGEMENT' ? 'DEBATE_PLAN' : 'RUN_PLAN',
-          intent,
-          workflowDefinitionId: workflowCandidate?.id ?? null,
-          workflowReuseSource: workflowCandidate?.reuseSource ?? 'NONE',
-          workflowMatchScore: workflowCandidate?.score ?? 0,
-          skills:
-            intent === 'DEBATE_MARKET_JUDGEMENT'
-              ? ['price_series_query', 'knowledge_search', 'futures_quote_fetch', 'debate_round']
-              : ['price_series_query', 'knowledge_search', 'futures_quote_fetch'],
-          paramSnapshot: mergedSlots,
-          estimatedCost: {
-            token: intent === 'DEBATE_MARKET_JUDGEMENT' ? 28000 : 18000,
-            latencyMs: intent === 'DEBATE_MARKET_JUDGEMENT' ? 20000 : 12000,
-          },
-        };
+        planId,
+        planType: intent === 'DEBATE_MARKET_JUDGEMENT' ? 'DEBATE_PLAN' : 'RUN_PLAN',
+        intent,
+        workflowDefinitionId: workflowCandidate?.id ?? null,
+        workflowReuseSource: workflowCandidate?.reuseSource ?? 'NONE',
+        workflowMatchScore: workflowCandidate?.score ?? 0,
+        skills:
+          intent === 'DEBATE_MARKET_JUDGEMENT'
+            ? ['price_series_query', 'knowledge_search', 'futures_quote_fetch', 'debate_round']
+            : ['price_series_query', 'knowledge_search', 'futures_quote_fetch'],
+        paramSnapshot: mergedSlots,
+        estimatedCost: {
+          token: intent === 'DEBATE_MARKET_JUDGEMENT' ? 28000 : 18000,
+          latencyMs: intent === 'DEBATE_MARKET_JUDGEMENT' ? 20000 : 12000,
+        },
+      };
 
     let nextPlanVersion: number | null = null;
     if (proposedPlan) {
@@ -348,11 +348,11 @@ export class AgentConversationService {
 
     let autoExecution:
       | {
-          accepted: boolean;
-          executionId: string;
-          status: string;
-          traceId: string;
-        }
+        accepted: boolean;
+        executionId: string;
+        status: string;
+        traceId: string;
+      }
       | undefined;
 
     if (
@@ -411,21 +411,21 @@ export class AgentConversationService {
       : fallbackReplyOptions;
 
     await this.prisma.conversationTurn.create({
-        data: {
-          sessionId,
-          role: 'ASSISTANT',
-          content: finalAssistantMessage,
-          structuredPayload: {
-            intent,
-            missingSlots,
-            proposedPlan,
-            autoExecuted: Boolean(autoExecution),
-            executionId: autoExecution?.executionId,
-            reuseResolution: effectiveContextPatch.reuseResolution,
-            replyOptions,
-          } as Prisma.InputJsonValue,
-        },
-      });
+      data: {
+        sessionId,
+        role: 'ASSISTANT',
+        content: finalAssistantMessage,
+        structuredPayload: {
+          intent,
+          missingSlots,
+          proposedPlan,
+          autoExecuted: Boolean(autoExecution),
+          executionId: autoExecution?.executionId,
+          reuseResolution: effectiveContextPatch.reuseResolution,
+          replyOptions,
+        } as Prisma.InputJsonValue,
+      },
+    });
 
     await this.prisma.conversationSession.update({
       where: { id: sessionId },
@@ -800,7 +800,7 @@ export class AgentConversationService {
 
     if (!webhookUrl) {
       status = 'FAILED';
-      errorMessage = `未配置 ${channel} 投递 webhook，无法实际投递`; 
+      errorMessage = `未配置 ${channel} 投递 webhook，无法实际投递`;
     } else {
       try {
         const fileName = `report-export-${exportTask.id}.${String(exportTask.format).toLowerCase()}`;
@@ -1428,10 +1428,10 @@ export class AgentConversationService {
         },
         ...(createdAfter
           ? {
-              createdAt: {
-                gte: createdAfter,
-              },
-            }
+            createdAt: {
+              gte: createdAfter,
+            },
+          }
           : {}),
       },
       orderBy: [{ createdAt: 'desc' }],
@@ -1495,10 +1495,10 @@ export class AgentConversationService {
         },
         ...(createdAfter
           ? {
-              createdAt: {
-                gte: createdAfter,
-              },
-            }
+            createdAt: {
+              gte: createdAfter,
+            },
+          }
           : {}),
       },
       orderBy: [{ createdAt: 'desc' }],
@@ -1578,10 +1578,10 @@ export class AgentConversationService {
         sessionId,
         ...(createdAfter
           ? {
-              createdAt: {
-                gte: createdAfter,
-              },
-            }
+            createdAt: {
+              gte: createdAfter,
+            },
+          }
           : {}),
       },
       select: {
@@ -1600,10 +1600,10 @@ export class AgentConversationService {
         sessionId,
         ...(createdAfter
           ? {
-              createdAt: {
-                gte: createdAfter,
-              },
-            }
+            createdAt: {
+              gte: createdAfter,
+            },
+          }
           : {}),
       },
       select: {
@@ -1766,10 +1766,10 @@ export class AgentConversationService {
         sessionId,
         ...(createdAfter
           ? {
-              createdAt: {
-                gte: createdAfter,
-              },
-            }
+            createdAt: {
+              gte: createdAfter,
+            },
+          }
           : {}),
       },
       select: {
@@ -1861,26 +1861,26 @@ export class AgentConversationService {
 
     const expiredGrantResult = expiredGrantIds.length
       ? await this.prisma.agentSkillRuntimeGrant.updateMany({
-          where: {
-            id: { in: expiredGrantIds },
-            status: 'ACTIVE',
-          },
-          data: {
-            status: 'EXPIRED',
-          },
-        })
+        where: {
+          id: { in: expiredGrantIds },
+          status: 'ACTIVE',
+        },
+        data: {
+          status: 'EXPIRED',
+        },
+      })
       : { count: 0 };
 
     const staleDraftResult = staleDraftIds.length
       ? await this.prisma.agentSkillDraft.updateMany({
-          where: {
-            id: { in: staleDraftIds },
-            provisionalEnabled: true,
-          },
-          data: {
-            provisionalEnabled: false,
-          },
-        })
+        where: {
+          id: { in: staleDraftIds },
+          provisionalEnabled: true,
+        },
+        data: {
+          provisionalEnabled: false,
+        },
+      })
       : { count: 0 };
 
     const promotionTaskCount = await this.createPromotionTaskAssets(
@@ -1941,10 +1941,10 @@ export class AgentConversationService {
         },
         ...(createdAfter
           ? {
-              createdAt: {
-                gte: createdAfter,
-              },
-            }
+            createdAt: {
+              gte: createdAfter,
+            },
+          }
           : {}),
       },
       orderBy: [{ createdAt: 'desc' }],
@@ -1961,18 +1961,18 @@ export class AgentConversationService {
     const uniqueDraftIds = Array.from(new Set(draftIds));
     const drafts = uniqueDraftIds.length
       ? await this.prisma.agentSkillDraft.findMany({
-          where: {
-            id: {
-              in: uniqueDraftIds,
-            },
+        where: {
+          id: {
+            in: uniqueDraftIds,
           },
-          select: {
-            id: true,
-            status: true,
-            publishedSkillId: true,
-            updatedAt: true,
-          },
-        })
+        },
+        select: {
+          id: true,
+          status: true,
+          publishedSkillId: true,
+          updatedAt: true,
+        },
+      })
       : [];
     const draftMap = new Map(drafts.map((item) => [item.id, item]));
 
@@ -2062,13 +2062,13 @@ export class AgentConversationService {
     const taskIds = explicitTaskIds.length
       ? explicitTaskIds
       : (
-          await this.listEphemeralCapabilityPromotionTasks(userId, sessionId, {
-            window: dto.window,
-            status: dto.status,
-          })
-        )
-          ?.map((item) => item.taskAssetId)
-          .filter((id): id is string => typeof id === 'string' && id.length > 0) ?? [];
+        await this.listEphemeralCapabilityPromotionTasks(userId, sessionId, {
+          window: dto.window,
+          status: dto.status,
+        })
+      )
+        ?.map((item) => item.taskAssetId)
+        .filter((id): id is string => typeof id === 'string' && id.length > 0) ?? [];
 
     const uniqueTaskIds = Array.from(new Set(taskIds));
     const succeeded: Array<{ taskAssetId: string; status: string }> = [];
@@ -2195,10 +2195,10 @@ export class AgentConversationService {
         },
         ...(createdAfter
           ? {
-              createdAt: {
-                gte: createdAfter,
-              },
-            }
+            createdAt: {
+              gte: createdAfter,
+            },
+          }
           : {}),
       },
       orderBy: [{ createdAt: 'desc' }],
@@ -2263,8 +2263,8 @@ export class AgentConversationService {
     const policy = await this.resolveEphemeralCapabilityPolicy(userId);
     const requestedErrorCodes = Array.isArray(dto?.errorCodes)
       ? dto.errorCodes
-          .map((item) => this.pickString(item)?.toUpperCase())
-          .filter((item): item is string => Boolean(item))
+        .map((item) => this.pickString(item)?.toUpperCase())
+        .filter((item): item is string => Boolean(item))
       : [];
 
     const failedItems = this.toArray(payload.failed)
@@ -2348,13 +2348,13 @@ export class AgentConversationService {
     const draftId = this.pickString(currentPayload.draftId);
     const draft = draftId
       ? await this.prisma.agentSkillDraft.findUnique({
-          where: { id: draftId },
-          select: {
-            id: true,
-            status: true,
-            publishedSkillId: true,
-          },
-        })
+        where: { id: draftId },
+        select: {
+          id: true,
+          status: true,
+          publishedSkillId: true,
+        },
+      })
       : null;
 
     const resolveStatusByDraft = (status: string | null | undefined): PromotionTaskStatus => {
@@ -2712,12 +2712,12 @@ export class AgentConversationService {
 
     const plan = dto.planVersion
       ? await this.prisma.conversationPlan.findUnique({
-          where: { sessionId_version: { sessionId, version: dto.planVersion } },
-        })
+        where: { sessionId_version: { sessionId, version: dto.planVersion } },
+      })
       : await this.prisma.conversationPlan.findFirst({
-          where: { sessionId, isConfirmed: true },
-          orderBy: { version: 'desc' },
-        });
+        where: { sessionId, isConfirmed: true },
+        orderBy: { version: 'desc' },
+      });
 
     if (!plan) {
       throw new BadRequestException({
@@ -3393,8 +3393,8 @@ export class AgentConversationService {
 
       const to = Array.isArray(selected.to)
         ? selected.to
-            .map((item) => this.pickString(item))
-            .filter((item): item is string => Boolean(item))
+          .map((item) => this.pickString(item))
+          .filter((item): item is string => Boolean(item))
         : undefined;
       const rawTemplateCode = this.pickString(selected.templateCode);
 
@@ -3552,14 +3552,14 @@ export class AgentConversationService {
   private async createConversationAsset(input: {
     sessionId: string;
     assetType:
-      | 'PLAN'
-      | 'EXECUTION'
-      | 'RESULT_SUMMARY'
-      | 'EXPORT_FILE'
-      | 'BACKTEST_SUMMARY'
-      | 'CONFLICT_SUMMARY'
-      | 'SKILL_DRAFT'
-      | 'NOTE';
+    | 'PLAN'
+    | 'EXECUTION'
+    | 'RESULT_SUMMARY'
+    | 'EXPORT_FILE'
+    | 'BACKTEST_SUMMARY'
+    | 'CONFLICT_SUMMARY'
+    | 'SKILL_DRAFT'
+    | 'NOTE';
     title: string;
     payload: Record<string, unknown>;
     sourceTurnId?: string | null;
@@ -3772,15 +3772,15 @@ export class AgentConversationService {
     policy: EphemeralCapabilityPolicy,
   ): Promise<
     | {
-        id: string;
-        gapType: string;
-        requiredCapability: string;
-        suggestedSkillCode: string;
-        status: string;
-        riskLevel: 'LOW' | 'MEDIUM' | 'HIGH';
-        provisionalEnabled: boolean;
-        reuseReason: 'EXACT_CODE' | 'SEMANTIC_MATCH';
-      }
+      id: string;
+      gapType: string;
+      requiredCapability: string;
+      suggestedSkillCode: string;
+      status: string;
+      riskLevel: 'LOW' | 'MEDIUM' | 'HIGH';
+      provisionalEnabled: boolean;
+      reuseReason: 'EXACT_CODE' | 'SEMANTIC_MATCH';
+    }
     | null
   > {
     const normalizedCode = this.normalizeCapabilityText(dto.suggestedSkillCode);
@@ -3860,13 +3860,13 @@ export class AgentConversationService {
     ephemeralPolicy: EphemeralCapabilityPolicy,
   ): Promise<
     | {
-        id: string;
-        skillCode: string;
-        name: string;
-        description: string;
-        templateSource: string;
-        score: number;
-      }
+      id: string;
+      skillCode: string;
+      name: string;
+      description: string;
+      templateSource: string;
+      score: number;
+    }
     | null
   > {
     const normalizedCode = this.normalizeCapabilityText(dto.suggestedSkillCode);
@@ -4679,10 +4679,10 @@ export class AgentConversationService {
     policy: CapabilityRoutingPolicy,
   ): Promise<
     | {
-        id: string;
-        reuseSource: 'USER_PRIVATE' | 'TEAM_OR_PUBLIC';
-        score: number;
-      }
+      id: string;
+      reuseSource: 'USER_PRIVATE' | 'TEAM_OR_PUBLIC';
+      score: number;
+    }
     | null
   > {
     const whereOr: Array<Record<string, unknown>> = [];
@@ -5106,4 +5106,169 @@ export class AgentConversationService {
       };
     }
   }
+
+  // ─── copilot-v2 灰度开关 ───────────────────────────────────────────────
+
+  async resolveCopilotVersion(userId: string): Promise<{ version: 'v1' | 'v2' }> {
+    const binding = await this.prisma.userConfigBinding.findFirst({
+      where: {
+        userId,
+        bindingType: 'AGENT_COPILOT_VERSION',
+        isActive: true,
+      },
+      orderBy: { priority: 'desc' },
+      select: { metadata: true },
+    });
+    const metadata = this.toRecord(binding?.metadata);
+    const version = metadata.version === 'v2' ? 'v2' : 'v1';
+    return { version };
+  }
+
+  // ─── DeliveryChannelBinding 独立查询 ────────────────────────────────────
+
+  async resolveDeliveryChannelBinding(
+    userId: string,
+    channel: 'EMAIL' | 'DINGTALK' | 'WECOM' | 'FEISHU',
+  ): Promise<{
+    id: string;
+    to?: string[];
+    target?: string;
+    templateCode?: 'DEFAULT' | 'MORNING_BRIEF' | 'WEEKLY_REVIEW' | 'RISK_ALERT';
+    sendRawFile?: boolean;
+  } | null> {
+    const binding = await this.prisma.deliveryChannelBinding.findFirst({
+      where: {
+        ownerUserId: userId,
+        channel,
+        isActive: true,
+      },
+      orderBy: [{ isDefault: 'desc' }, { updatedAt: 'desc' }],
+    });
+    if (!binding) {
+      return null;
+    }
+    const to = Array.isArray(binding.to)
+      ? (binding.to as unknown[])
+        .map((item) => (typeof item === 'string' ? item.trim() : ''))
+        .filter(Boolean)
+      : undefined;
+    const rawTemplateCode = binding.templateCode;
+    return {
+      id: binding.id,
+      to,
+      target: binding.target ?? undefined,
+      templateCode: rawTemplateCode
+        ? this.normalizeDeliveryTemplateCode(rawTemplateCode)
+        : undefined,
+      sendRawFile: binding.sendRawFile,
+    };
+  }
+
+  async listDeliveryChannelBindings(userId: string) {
+    return this.prisma.deliveryChannelBinding.findMany({
+      where: { ownerUserId: userId, isActive: true },
+      orderBy: [{ channel: 'asc' }, { isDefault: 'desc' }, { updatedAt: 'desc' }],
+    });
+  }
+
+  async upsertDeliveryChannelBinding(
+    userId: string,
+    data: {
+      id?: string;
+      channel: string;
+      target?: string;
+      to?: string[];
+      templateCode?: string;
+      sendRawFile?: boolean;
+      description?: string;
+      isDefault?: boolean;
+    },
+  ) {
+    if (data.id) {
+      return this.prisma.deliveryChannelBinding.update({
+        where: { id: data.id },
+        data: {
+          channel: data.channel,
+          target: data.target,
+          to: data.to ?? undefined,
+          templateCode: data.templateCode,
+          sendRawFile: data.sendRawFile,
+          description: data.description,
+          isDefault: data.isDefault,
+        },
+      });
+    }
+    return this.prisma.deliveryChannelBinding.create({
+      data: {
+        ownerUserId: userId,
+        channel: data.channel,
+        target: data.target,
+        to: data.to ?? undefined,
+        templateCode: data.templateCode,
+        sendRawFile: data.sendRawFile ?? true,
+        description: data.description,
+        isDefault: data.isDefault ?? false,
+      },
+    });
+  }
+
+  // ─── ConversationSchedulePolicy 独立查询 ─────────────────────────────────
+
+  async listSchedulePolicies(userId: string) {
+    return this.prisma.conversationSchedulePolicy.findMany({
+      where: { ownerUserId: userId, isActive: true },
+      orderBy: { updatedAt: 'desc' },
+    });
+  }
+
+  async upsertSchedulePolicy(
+    userId: string,
+    data: {
+      id?: string;
+      name: string;
+      cronExpr: string;
+      timezone?: string;
+      quietHoursStart?: string;
+      quietHoursEnd?: string;
+      maxRetries?: number;
+      retryIntervalMs?: number;
+      maxConcurrent?: number;
+    },
+  ) {
+    if (data.id) {
+      return this.prisma.conversationSchedulePolicy.update({
+        where: { id: data.id },
+        data: {
+          name: data.name,
+          cronExpr: data.cronExpr,
+          timezone: data.timezone,
+          quietHoursStart: data.quietHoursStart,
+          quietHoursEnd: data.quietHoursEnd,
+          maxRetries: data.maxRetries,
+          retryIntervalMs: data.retryIntervalMs,
+          maxConcurrent: data.maxConcurrent,
+        },
+      });
+    }
+    return this.prisma.conversationSchedulePolicy.create({
+      data: {
+        ownerUserId: userId,
+        name: data.name,
+        cronExpr: data.cronExpr,
+        timezone: data.timezone ?? 'Asia/Shanghai',
+        quietHoursStart: data.quietHoursStart,
+        quietHoursEnd: data.quietHoursEnd,
+        maxRetries: data.maxRetries ?? 3,
+        retryIntervalMs: data.retryIntervalMs ?? 60000,
+        maxConcurrent: data.maxConcurrent ?? 1,
+      },
+    });
+  }
+
+  async resolveSchedulePolicy(policyId: string) {
+    return this.prisma.conversationSchedulePolicy.findUnique({
+      where: { id: policyId },
+    });
+  }
 }
+

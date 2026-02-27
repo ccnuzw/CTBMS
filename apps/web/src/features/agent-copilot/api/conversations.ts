@@ -97,14 +97,14 @@ export interface ConversationAsset {
   id: string;
   sessionId: string;
   assetType:
-    | 'PLAN'
-    | 'EXECUTION'
-    | 'RESULT_SUMMARY'
-    | 'EXPORT_FILE'
-    | 'BACKTEST_SUMMARY'
-    | 'CONFLICT_SUMMARY'
-    | 'SKILL_DRAFT'
-    | 'NOTE';
+  | 'PLAN'
+  | 'EXECUTION'
+  | 'RESULT_SUMMARY'
+  | 'EXPORT_FILE'
+  | 'BACKTEST_SUMMARY'
+  | 'CONFLICT_SUMMARY'
+  | 'SKILL_DRAFT'
+  | 'NOTE';
   title: string;
   payload: Record<string, unknown>;
   sourceTurnId?: string | null;
@@ -252,15 +252,15 @@ export interface SkillGovernanceEvent {
   draftId?: string | null;
   runtimeGrantId?: string | null;
   eventType:
-    | 'DRAFT_CREATED'
-    | 'REVIEW_SUBMITTED'
-    | 'REVIEW_APPROVED'
-    | 'REVIEW_REJECTED'
-    | 'PUBLISHED'
-    | 'RUNTIME_GRANT_CREATED'
-    | 'RUNTIME_GRANT_USED'
-    | 'RUNTIME_GRANT_REVOKED'
-    | 'RUNTIME_GRANT_EXPIRED';
+  | 'DRAFT_CREATED'
+  | 'REVIEW_SUBMITTED'
+  | 'REVIEW_APPROVED'
+  | 'REVIEW_REJECTED'
+  | 'PUBLISHED'
+  | 'RUNTIME_GRANT_CREATED'
+  | 'RUNTIME_GRANT_USED'
+  | 'RUNTIME_GRANT_REVOKED'
+  | 'RUNTIME_GRANT_EXPIRED';
   message: string;
   payload?: Record<string, unknown> | null;
   createdAt: string;
@@ -1551,3 +1551,15 @@ export const useResolveScheduleCommand = () => {
     },
   });
 };
+
+export const useCopilotVersion = () =>
+  useQuery<{ version: 'v1' | 'v2' }>({
+    queryKey: ['agent-copilot', 'copilot-version'],
+    queryFn: async () => {
+      const res = await apiClient.get<{ version: 'v1' | 'v2' }>(
+        '/agent-conversations/sessions/copilot-version',
+      );
+      return res.data;
+    },
+    staleTime: 5 * 60 * 1000, // 5 分钟内不重新获取
+  });

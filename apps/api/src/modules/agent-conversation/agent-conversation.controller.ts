@@ -32,7 +32,7 @@ type AuthRequest = ExpressRequest & { user?: { id?: string } };
 
 @Controller('agent-conversations/sessions')
 export class AgentConversationController {
-  constructor(private readonly service: AgentConversationService) {}
+  constructor(private readonly service: AgentConversationService) { }
 
   private getUserId(req: AuthRequest): string {
     const userId = req.user?.id;
@@ -40,6 +40,11 @@ export class AgentConversationController {
       throw new UnauthorizedException('User not authenticated');
     }
     return userId;
+  }
+
+  @Get('copilot-version')
+  resolveCopilotVersion(@Request() req: AuthRequest) {
+    return this.service.resolveCopilotVersion(this.getUserId(req));
   }
 
   @Post()

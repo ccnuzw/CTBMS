@@ -1,1 +1,1 @@
-export { AgentCopilotPage } from './components/AgentCopilotPage';
+export { CopilotPageShell as AgentCopilotPage } from './components/CopilotPageShell';

@@ -89,6 +89,70 @@ export const ReconciliationReadCoverageQuerySchema = z.object({
   targetCoverageRate: z.coerce.number().min(0).max(1).default(0.9),
 });
 
+const ReconciliationDatasetListQuerySchema = z.preprocess((value) => {
+  if (value === undefined || value === null) {
+    return undefined;
+  }
+
+  if (Array.isArray(value)) {
+    return value;
+  }
+
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (!trimmed) {
+      return [];
+    }
+    if (trimmed.includes(',')) {
+      return trimmed
+        .split(',')
+        .map((item) => item.trim())
+        .filter((item) => item.length > 0);
+    }
+    return [trimmed];
+  }
+
+  return [value];
+}, z.array(ReconciliationDatasetEnum).min(1).max(3));
+
+export const ReconciliationM1ReadinessQuerySchema = z.object({
+  windowDays: z.coerce.number().int().min(1).max(30).default(7),
+  targetCoverageRate: z.coerce.number().min(0).max(1).default(0.9),
+  datasets: ReconciliationDatasetListQuerySchema.optional(),
+});
+
+export const ReconciliationM1ReadinessReportFormatEnum = z.enum(['json', 'markdown']);
+
+export const ReconciliationM1ReadinessReportQuerySchema =
+  ReconciliationM1ReadinessQuerySchema.extend({
+    format: ReconciliationM1ReadinessReportFormatEnum.default('markdown'),
+  });
+
+export const CreateReconciliationM1ReadinessReportSnapshotSchema =
+  ReconciliationM1ReadinessReportQuerySchema;
+
+export const ListReconciliationM1ReadinessReportSnapshotsQuerySchema = z.object({
+  page: z.coerce.number().int().min(1).default(1),
+  pageSize: z.coerce.number().int().min(1).max(100).default(20),
+  format: ReconciliationM1ReadinessReportFormatEnum.optional(),
+});
+
+export const ReconciliationCutoverDecisionStatusEnum = z.enum(['APPROVED', 'REJECTED']);
+
+export const CreateReconciliationCutoverDecisionSchema = z.object({
+  windowDays: z.coerce.number().int().min(1).max(30).default(7),
+  targetCoverageRate: z.coerce.number().min(0).max(1).default(0.9),
+  datasets: ReconciliationDatasetListQuerySchema.optional(),
+  reportFormat: ReconciliationM1ReadinessReportFormatEnum.default('markdown'),
+  note: z.string().trim().min(1).max(1000).optional(),
+});
+
+export const ListReconciliationCutoverDecisionsQuerySchema = z.object({
+  page: z.coerce.number().int().min(1).default(1),
+  pageSize: z.coerce.number().int().min(1).max(100).default(20),
+  status: ReconciliationCutoverDecisionStatusEnum.optional(),
+});
+
 export const ReconciliationRollbackDrillStatusEnum = z.enum([
   'PLANNED',
   'RUNNING',
@@ -277,6 +341,30 @@ export type ReconciliationDailyMetricsQueryDto = z.infer<
 >;
 export type ReconciliationReadCoverageQueryDto = z.infer<
   typeof ReconciliationReadCoverageQuerySchema
+>;
+export type ReconciliationM1ReadinessQueryDto = z.infer<
+  typeof ReconciliationM1ReadinessQuerySchema
+>;
+export type ReconciliationM1ReadinessReportFormat = z.infer<
+  typeof ReconciliationM1ReadinessReportFormatEnum
+>;
+export type ReconciliationM1ReadinessReportQueryDto = z.infer<
+  typeof ReconciliationM1ReadinessReportQuerySchema
+>;
+export type CreateReconciliationM1ReadinessReportSnapshotDto = z.infer<
+  typeof CreateReconciliationM1ReadinessReportSnapshotSchema
+>;
+export type ListReconciliationM1ReadinessReportSnapshotsQueryDto = z.infer<
+  typeof ListReconciliationM1ReadinessReportSnapshotsQuerySchema
+>;
+export type ReconciliationCutoverDecisionStatus = z.infer<
+  typeof ReconciliationCutoverDecisionStatusEnum
+>;
+export type CreateReconciliationCutoverDecisionDto = z.infer<
+  typeof CreateReconciliationCutoverDecisionSchema
+>;
+export type ListReconciliationCutoverDecisionsQueryDto = z.infer<
+  typeof ListReconciliationCutoverDecisionsQuerySchema
 >;
 export type ReconciliationRollbackDrillStatus = z.infer<
   typeof ReconciliationRollbackDrillStatusEnum

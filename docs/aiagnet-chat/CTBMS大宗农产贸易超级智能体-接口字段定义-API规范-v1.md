@@ -694,6 +694,107 @@
 }
 ```
 
+### 3.5.13 M1 验收就绪视图
+
+- `GET /market-data/reconciliation/metrics/m1-readiness?windowDays=7&targetCoverageRate=0.9&datasets=SPOT_PRICE&datasets=FUTURES_QUOTE`
+
+响应：
+
+```json
+{
+  "generatedAt": "2026-02-27T10:40:00.000Z",
+  "windowDays": 7,
+  "datasets": ["SPOT_PRICE", "FUTURES_QUOTE"],
+  "summary": {
+    "meetsReconciliationTarget": true,
+    "meetsCoverageTarget": true,
+    "hasRecentRollbackDrillEvidence": true,
+    "ready": true
+  },
+  "coverage": {
+    "windowDays": 7,
+    "targetCoverageRate": 0.9,
+    "coverageRate": 0.92
+  },
+  "reconciliation": [
+    {
+      "dataset": "SPOT_PRICE",
+      "meetsWindowTarget": true,
+      "consecutivePassedDays": 7,
+      "totalJobs": 7,
+      "passedJobs": 7,
+      "source": "database"
+    }
+  ],
+  "rollbackDrills": [
+    {
+      "dataset": "SPOT_PRICE",
+      "exists": true,
+      "recent": true,
+      "passed": true,
+      "drillId": "drill_20260227_01",
+      "status": "PASSED",
+      "createdAt": "2026-02-27T10:33:10.000Z"
+    }
+  ]
+}
+```
+
+说明：
+
+- `ready=true` 需同时满足：
+  - 各数据域 `meetsWindowTarget=true`；
+  - `coverage.meetsCoverageTarget=true`；
+  - 各数据域都有最近窗口内且 `PASSED` 的回滚演练记录。
+
+### 3.5.14 M1 验收就绪报告导出
+
+- `GET /market-data/reconciliation/metrics/m1-readiness/report?windowDays=7&targetCoverageRate=0.9&datasets=SPOT_PRICE&format=markdown`
+
+参数：
+
+- `format`：`markdown`（默认）或 `json`
+
+响应（`format=markdown`）：
+
+```json
+{
+  "format": "markdown",
+  "generatedAt": "2026-02-27T10:45:00.000Z",
+  "fileName": "reconciliation-m1-readiness-2026-02-27.md",
+  "readiness": {
+    "generatedAt": "2026-02-27T10:44:58.000Z",
+    "windowDays": 7,
+    "datasets": ["SPOT_PRICE"],
+    "summary": {
+      "meetsReconciliationTarget": true,
+      "meetsCoverageTarget": true,
+      "hasRecentRollbackDrillEvidence": true,
+      "ready": true
+    }
+  },
+  "report": "# Reconciliation M1 Readiness Report\n..."
+}
+```
+
+响应（`format=json`）：
+
+```json
+{
+  "format": "json",
+  "generatedAt": "2026-02-27T10:45:00.000Z",
+  "fileName": "reconciliation-m1-readiness-2026-02-27.json",
+  "readiness": {
+    "windowDays": 7,
+    "datasets": ["SPOT_PRICE"]
+  },
+  "report": {
+    "windowDays": 7,
+    "datasets": ["SPOT_PRICE"]
+  }
+}
+```
+
 ## 4. 指标中心 API
 
 ## 4.1 查询指标字典
