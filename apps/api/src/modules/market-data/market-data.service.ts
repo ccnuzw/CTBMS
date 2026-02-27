@@ -16,6 +16,7 @@ import type {
   ListReconciliationCutoverDecisionsQueryDto,
   ListReconciliationCutoverExecutionsQueryDto,
   ListReconciliationM1ReadinessReportSnapshotsQueryDto,
+  ReconciliationCutoverExecutionOverviewQueryDto,
   ReconciliationCutoverRuntimeStatusQueryDto,
   ReconciliationRollbackDrillStatus,
   ReconciliationDataset,
@@ -2694,11 +2695,23 @@ export class MarketDataService {
       drillId?: string;
       createdAt?: string;
     }>;
+    executionHealth: {
+      windowDays: number;
+      compensationPendingExecutions: number;
+      hasCompensationBacklog: boolean;
+      latestCompensationPendingExecution: {
+        executionId: string;
+        action: ReconciliationCutoverExecutionAction;
+        status: 'FAILED' | 'PARTIAL';
+        createdAt: string;
+      } | null;
+    };
     summary: {
       standardizedReadEnabled: boolean;
       reconciliationGateEnabled: boolean;
       hasRecentRollbackEvidenceAllDatasets: boolean;
       latestDecisionApproved: boolean;
+      hasUncompensatedExecutionFailure: boolean;
       recommendsRollback: boolean;
     };
   }> {
@@ -2729,9 +2742,18 @@ export class MarketDataService {
       (item) => item.exists && item.recent && item.passed,
     );
     const latestDecisionApproved = latestDecision?.status === 'APPROVED';
+    const executionOverview = await this.getReconciliationCutoverExecutionOverview(userId, {
+      windowDays: 7,
+      datasets,
+      pendingLimit: 1,
+    });
+    const hasUncompensatedExecutionFailure =
+      executionOverview.summary.compensationPendingExecutions > 0;
     const recommendsRollback =
       standardizedRead.enabled &&
-      (!latestDecisionApproved || !hasRecentRollbackEvidenceAllDatasets);
+      (!latestDecisionApproved ||
+        !hasRecentRollbackEvidenceAllDatasets ||
+        hasUncompensatedExecutionFailure);
 
     return {
       generatedAt: new Date().toISOString(),
@@ -2758,13 +2780,143 @@ export class MarketDataService {
           }
         : null,
       rollbackDrillEvidence,
+      executionHealth: {
+        windowDays: executionOverview.windowDays,
+        compensationPendingExecutions: executionOverview.summary.compensationPendingExecutions,
+        hasCompensationBacklog: hasUncompensatedExecutionFailure,
+        latestCompensationPendingExecution: executionOverview.latestCompensationPending[0] ?? null,
+      },
       summary: {
         standardizedReadEnabled: standardizedRead.enabled,
         reconciliationGateEnabled: reconciliationGate.enabled,
         hasRecentRollbackEvidenceAllDatasets,
         latestDecisionApproved,
+        hasUncompensatedExecutionFailure,
         recommendsRollback,
       },
+    };
+  }
+
+  async getReconciliationCutoverExecutionOverview(
+    userId: string,
+    query: ReconciliationCutoverExecutionOverviewQueryDto,
+  ): Promise<{
+    generatedAt: string;
+    windowDays: number;
+    datasets: StandardDataset[];
+    storage: 'database' | 'in-memory';
+    summary: {
+      totalExecutions: number;
+      successExecutions: number;
+      failedExecutions: number;
+      partialExecutions: number;
+      compensatedExecutions: number;
+      compensationPendingExecutions: number;
+      compensationCoverageRate: number;
+    };
+    byAction: Array<{
+      action: ReconciliationCutoverExecutionAction;
+      total: number;
+      success: number;
+      failed: number;
+      partial: number;
+      compensated: number;
+      compensationPending: number;
+    }>;
+    latestCompensationPending: Array<{
+      executionId: string;
+      action: ReconciliationCutoverExecutionAction;
+      status: 'FAILED' | 'PARTIAL';
+      createdAt: string;
+      datasets: StandardDataset[];
+      errorMessage?: string;
+      compensationError?: string;
+    }>;
+  }> {
+    const windowDays = Math.max(1, Math.min(30, query.windowDays ?? 7));
+    const pendingLimit = Math.max(1, Math.min(100, query.pendingLimit ?? 20));
+    const datasets = this.resolveRequestedStandardDatasets(query.datasets as StandardDataset[]);
+    const windowStartMs = Date.now() - windowDays * 24 * 60 * 60 * 1000;
+    const windowStart = new Date(windowStartMs);
+
+    const persistedRecords = await this.listRecentPersistedReconciliationCutoverExecutions(
+      userId,
+      windowStart,
+    );
+
+    const storage = persistedRecords ? ('database' as const) : ('in-memory' as const);
+    const sourceRecords = persistedRecords
+      ? persistedRecords
+      : Array.from(this.cutoverExecutionRecords.values()).filter(
+          (item) =>
+            item.requestedByUserId === userId &&
+            this.toTimestampMs(item.createdAt) >= windowStartMs,
+        );
+
+    const filteredRecords = sourceRecords
+      .filter((item) => this.recordHasCutoverDataset(item, datasets))
+      .sort((a, b) => this.toTimestampMs(b.createdAt) - this.toTimestampMs(a.createdAt));
+
+    const summary = {
+      totalExecutions: filteredRecords.length,
+      successExecutions: filteredRecords.filter((item) => item.status === 'SUCCESS').length,
+      failedExecutions: filteredRecords.filter((item) => item.status === 'FAILED').length,
+      partialExecutions: filteredRecords.filter((item) => item.status === 'PARTIAL').length,
+      compensatedExecutions: filteredRecords.filter((item) => item.status === 'COMPENSATED').length,
+      compensationPendingExecutions: filteredRecords.filter((item) =>
+        this.isCutoverExecutionCompensationPending(item),
+      ).length,
+      compensationCoverageRate: 1,
+    };
+
+    const requiringCompensationTotal =
+      summary.failedExecutions + summary.partialExecutions + summary.compensatedExecutions;
+    summary.compensationCoverageRate =
+      requiringCompensationTotal <= 0
+        ? 1
+        : Number((summary.compensatedExecutions / requiringCompensationTotal).toFixed(4));
+
+    const actionOrder: ReconciliationCutoverExecutionAction[] = [
+      'CUTOVER',
+      'ROLLBACK',
+      'AUTOPILOT',
+    ];
+    const byAction = actionOrder.map((action) => {
+      const actionRecords = filteredRecords.filter((item) => item.action === action);
+      return {
+        action,
+        total: actionRecords.length,
+        success: actionRecords.filter((item) => item.status === 'SUCCESS').length,
+        failed: actionRecords.filter((item) => item.status === 'FAILED').length,
+        partial: actionRecords.filter((item) => item.status === 'PARTIAL').length,
+        compensated: actionRecords.filter((item) => item.status === 'COMPENSATED').length,
+        compensationPending: actionRecords.filter((item) =>
+          this.isCutoverExecutionCompensationPending(item),
+        ).length,
+      };
+    });
+
+    const latestCompensationPending = filteredRecords
+      .filter((item) => this.isCutoverExecutionCompensationPending(item))
+      .slice(0, pendingLimit)
+      .map((item) => ({
+        executionId: item.executionId,
+        action: item.action,
+        status: item.status as 'FAILED' | 'PARTIAL',
+        createdAt: item.createdAt,
+        datasets: item.datasets,
+        errorMessage: item.errorMessage,
+        compensationError: item.compensationError,
+      }));
+
+    return {
+      generatedAt: new Date().toISOString(),
+      windowDays,
+      datasets,
+      storage,
+      summary,
+      byAction,
+      latestCompensationPending,
     };
   }
 
@@ -3972,6 +4124,56 @@ export class MarketDataService {
         return null;
       }
       this.logger.error(`List cutover execution records failed: ${this.stringifyError(error)}`);
+      return null;
+    }
+  }
+
+  private async listRecentPersistedReconciliationCutoverExecutions(
+    userId: string,
+    createdAtFrom: Date,
+  ): Promise<ReconciliationCutoverExecutionRecord[] | null> {
+    if (this.cutoverExecutionPersistenceUnavailable) {
+      return null;
+    }
+
+    try {
+      const rows = await this.prisma.$queryRawUnsafe<PersistedReconciliationCutoverExecutionRow[]>(
+        `SELECT
+           "executionId",
+           "action",
+           "status",
+           "requestedByUserId",
+           "datasets",
+           "decisionId",
+           "decisionStatus",
+           "applied",
+           "configBefore",
+           "configAfter",
+           "stepTrace",
+           "errorMessage",
+           "compensationApplied",
+           "compensationAt",
+           "compensationPayload",
+           "compensationError",
+           "createdAt"
+         FROM "DataReconciliationCutoverExecution"
+         WHERE "requestedByUserId" = $1
+           AND "createdAt" >= $2
+         ORDER BY "createdAt" DESC
+         LIMIT 5000`,
+        userId,
+        createdAtFrom,
+      );
+
+      return rows.map((row) => this.mapPersistedReconciliationCutoverExecutionRow(row));
+    } catch (error) {
+      if (this.isCutoverExecutionPersistenceMissingTableError(error)) {
+        this.disableCutoverExecutionPersistence('list recent cutover execution records', error);
+        return null;
+      }
+      this.logger.error(
+        `List recent cutover execution records failed: ${this.stringifyError(error)}`,
+      );
       return null;
     }
   }
@@ -5348,6 +5550,36 @@ export class MarketDataService {
       return undefined;
     }
     return parsed.toISOString();
+  }
+
+  private toTimestampMs(value: unknown): number {
+    if (value === null || value === undefined) {
+      return Number.NEGATIVE_INFINITY;
+    }
+    const parsed = value instanceof Date ? value : new Date(String(value));
+    if (!Number.isFinite(parsed.getTime())) {
+      return Number.NEGATIVE_INFINITY;
+    }
+    return parsed.getTime();
+  }
+
+  private recordHasCutoverDataset(
+    record: ReconciliationCutoverExecutionRecord,
+    datasets: StandardDataset[],
+  ): boolean {
+    if (datasets.length === 0) {
+      return true;
+    }
+    return record.datasets.some((dataset) => datasets.includes(dataset));
+  }
+
+  private isCutoverExecutionCompensationPending(
+    record: ReconciliationCutoverExecutionRecord,
+  ): boolean {
+    return (
+      (record.status === 'FAILED' || record.status === 'PARTIAL') &&
+      record.compensationApplied !== true
+    );
   }
 
   private parseJsonValue<T>(value: unknown): T | undefined {

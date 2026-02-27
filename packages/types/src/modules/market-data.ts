@@ -184,6 +184,12 @@ export const ListReconciliationCutoverExecutionsQuerySchema = z.object({
   status: ReconciliationCutoverExecutionStatusEnum.optional(),
 });
 
+export const ReconciliationCutoverExecutionOverviewQuerySchema = z.object({
+  windowDays: z.coerce.number().int().min(1).max(30).default(7),
+  datasets: ReconciliationDatasetListQuerySchema.optional(),
+  pendingLimit: z.coerce.number().int().min(1).max(100).default(20),
+});
+
 export const RetryReconciliationCutoverCompensationSchema = z.object({
   disableReconciliationGate: z.boolean().default(true),
   workflowVersionId: z.string().uuid().optional(),
@@ -430,6 +436,9 @@ export type ReconciliationCutoverExecutionStatus = z.infer<
 >;
 export type ListReconciliationCutoverExecutionsQueryDto = z.infer<
   typeof ListReconciliationCutoverExecutionsQuerySchema
+>;
+export type ReconciliationCutoverExecutionOverviewQueryDto = z.infer<
+  typeof ReconciliationCutoverExecutionOverviewQuerySchema
 >;
 export type RetryReconciliationCutoverCompensationDto = z.infer<
   typeof RetryReconciliationCutoverCompensationSchema

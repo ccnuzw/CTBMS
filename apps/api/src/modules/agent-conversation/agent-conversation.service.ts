@@ -212,8 +212,43 @@ export class AgentConversationService {
       dto.message, session.state as SessionState, session.currentIntent,
     );
     const actionType = unifiedIntent.type;
-    const isActionFastPath = actionType === 'EXPORT' || actionType === 'DELIVER_EMAIL' || actionType === 'SCHEDULE';
+    const isActionFastPath = actionType === 'EXPORT' || actionType === 'DELIVER_EMAIL' || actionType === 'SCHEDULE' || actionType === 'HELP';
     if (isActionFastPath) {
+      // HELP intent: return dynamic capability discovery message
+      if (actionType === 'HELP') {
+        const helpMessage = await this.intentService.buildCapabilityDiscoveryMessage(userId);
+        const helpOptions = this.intentService.buildSmartNextStepOptions({
+          sessionState: session.state as SessionState,
+          hasResult: false,
+          hasExport: false,
+        });
+        await this.prisma.conversationTurn.create({
+          data: {
+            sessionId,
+            role: 'USER',
+            content: dto.message,
+            structuredPayload: { actionIntent: 'HELP' } as Prisma.InputJsonValue,
+          },
+        });
+        await this.prisma.conversationTurn.create({
+          data: {
+            sessionId,
+            role: 'ASSISTANT',
+            content: helpMessage,
+            structuredPayload: { actionIntent: 'HELP', replyOptions: helpOptions } as Prisma.InputJsonValue,
+          },
+        });
+        return {
+          assistantMessage: helpMessage,
+          state: session.state as SessionState,
+          intent: (session.currentIntent ?? 'MARKET_SUMMARY_WITH_FORECAST') as IntentCode,
+          missingSlots: [] as string[],
+          proposedPlan: null,
+          confirmRequired: false,
+          autoExecuted: false,
+          replyOptions: helpOptions,
+        };
+      }
       const actionIntent = {
         type: actionType,
         format: unifiedIntent.format,
@@ -504,7 +539,12 @@ export class AgentConversationService {
     const finalAssistantMessage = llmEnhancedReply?.assistantMessage ?? assistantMessageWithReuse;
     const replyOptions = llmEnhancedReply?.replyOptions?.length
       ? llmEnhancedReply.replyOptions
-      : fallbackReplyOptions;
+      : this.intentService.buildSmartNextStepOptions({
+        sessionState: autoExecution ? 'EXECUTING' : state,
+        intent,
+        hasResult: Boolean(autoExecution),
+        hasExport: false,
+      });
 
     await this.prisma.conversationTurn.create({
       data: {

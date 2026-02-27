@@ -27,6 +27,7 @@ import {
   ReconciliationDailyMetricsQueryRequest,
   ReconciliationMetricsSnapshotRequest,
   ReconciliationReadCoverageQueryRequest,
+  ReconciliationCutoverExecutionOverviewQueryRequest,
   ReconciliationCutoverRuntimeStatusQueryRequest,
   ListReconciliationRollbackDrillsQueryRequest,
   ReconciliationM1ReadinessQueryRequest,
@@ -352,6 +353,18 @@ export class MarketDataController {
     @Request() req: AuthRequest,
   ) {
     const data = await this.marketDataService.listReconciliationCutoverExecutions(
+      this.getUserId(req),
+      query,
+    );
+    return this.success(req, data);
+  }
+
+  @Get('reconciliation/cutover/executions/overview')
+  async getReconciliationCutoverExecutionOverview(
+    @Query() query: ReconciliationCutoverExecutionOverviewQueryRequest,
+    @Request() req: AuthRequest,
+  ) {
+    const data = await this.marketDataService.getReconciliationCutoverExecutionOverview(
       this.getUserId(req),
       query,
     );

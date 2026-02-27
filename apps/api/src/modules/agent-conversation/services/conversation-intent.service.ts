@@ -8,10 +8,12 @@
  * 所有意图识别、slot 提取、slot 默认值逻辑集中在此。
  */
 import { Injectable } from '@nestjs/common';
+import { WorkflowTemplateSource } from '@prisma/client';
+import { PrismaService } from '../../../prisma';
 import { AIModelService } from '../../ai/ai-model.service';
 import { AIProviderFactory } from '../../ai/providers/provider.factory';
 import { ConversationUtilsService } from './conversation-utils.service';
-import type { IntentCode, SessionState, SlotMap } from './conversation.types';
+import type { IntentCode, SessionState, SlotMap, ReplyOption } from './conversation.types';
 
 // ── Intent Types ─────────────────────────────────────────────────────────────
 
@@ -43,6 +45,7 @@ export interface ActionIntentResult {
 @Injectable()
 export class ConversationIntentService {
     constructor(
+        private readonly prisma: PrismaService,
         private readonly utils: ConversationUtilsService,
         private readonly aiModelService: AIModelService,
         private readonly aiProviderFactory: AIProviderFactory,
@@ -335,5 +338,135 @@ export class ConversationIntentService {
         } catch {
             return null;
         }
+    }
+
+    // ── A2: Capability Discovery (能力自发现) ──────────────────────────────────
+
+    /**
+     * Build a user-friendly message listing all available capabilities.
+     * Queries AgentProfile, AgentSkill, and WorkflowDefinition tables.
+     */
+    async buildCapabilityDiscoveryMessage(userId: string): Promise<string> {
+        const [agents, skills, workflows] = await Promise.all([
+            this.prisma.agentProfile.findMany({
+                where: { OR: [{ ownerUserId: userId }, { templateSource: WorkflowTemplateSource.PUBLIC }], isActive: true },
+                select: { agentName: true, objective: true, agentCode: true },
+                take: 10,
+            }),
+            this.prisma.agentSkill.findMany({
+                where: { isActive: true },
+                select: { name: true, description: true, skillCode: true },
+                take: 10,
+            }),
+            this.prisma.workflowDefinition.findMany({
+                where: { OR: [{ ownerUserId: userId }, { templateSource: WorkflowTemplateSource.PUBLIC }], isActive: true },
+                select: { name: true, description: true },
+                take: 8,
+            }),
+        ]);
+
+        const lines: string[] = ['我可以帮你做以下事情：', ''];
+
+        // Core capabilities (always available)
+        lines.push('📊 **市场分析** — 分析品种价格走势、供需预测、风险评估');
+        lines.push('⚖️ **多方辩论** — 多角度分析市场观点，AI 裁判给出结论');
+        lines.push('📋 **报告导出** — 将分析结果导出为 PDF / Word 格式');
+        lines.push('📬 **多渠道推送** — 通过邮件、钉钉、企微、飞书发送报告');
+        lines.push('⏰ **定时任务** — 设置自动定时分析推送');
+        lines.push('🔍 **对比分析** — 对比不同品种/时段的数据差异');
+        lines.push('🔄 **历史回测** — 验证分析策略的历史表现');
+
+        // Dynamic agents
+        if (agents.length > 0) {
+            lines.push('');
+            lines.push('🤖 **可用智能体：**');
+            for (const agent of agents) {
+                const desc = agent.objective ? ` — ${agent.objective}` : '';
+                lines.push(`  • ${agent.agentName}${desc}`);
+            }
+        }
+
+        // Dynamic skills
+        if (skills.length > 0) {
+            lines.push('');
+            lines.push('🧩 **可用技能：**');
+            for (const skill of skills) {
+                const desc = skill.description ? ` — ${skill.description}` : '';
+                lines.push(`  • ${skill.name}${desc}`);
+            }
+        }
+
+        // Dynamic workflows
+        if (workflows.length > 0) {
+            lines.push('');
+            lines.push('⚙️ **可用工作流：**');
+            for (const wf of workflows) {
+                const desc = wf.description ? ` — ${wf.description}` : '';
+                lines.push(`  • ${wf.name}${desc}`);
+            }
+        }
+
+        lines.push('');
+        lines.push('直接用自然语言告诉我你想做什么就行，比如「分析玉米最近一周走势」或「帮我对比大豆和豆粕」。');
+
+        return lines.join('\n');
+    }
+
+    // ── C3: Smart Next-Step Recommendations (意图链推荐) ────────────────────────
+
+    /**
+     * Build intelligent next-step reply options based on the completed action.
+     * Returns context-aware suggestions instead of generic options.
+     */
+    buildSmartNextStepOptions(completedAction: {
+        sessionState: SessionState;
+        intent?: IntentCode;
+        hasResult: boolean;
+        hasExport: boolean;
+    }): ReplyOption[] {
+        const { sessionState, hasResult, hasExport } = completedAction;
+
+        // After analysis is done
+        if (sessionState === 'DONE' && hasResult && !hasExport) {
+            return [
+                { id: 'next_export', label: '导出为 PDF 报告', mode: 'SEND', value: '帮我导出报告' },
+                { id: 'next_email', label: '发送到邮箱', mode: 'SEND', value: '发到我邮箱' },
+                { id: 'next_schedule', label: '设为定时推送', mode: 'SEND', value: '每周一早上自动执行' },
+                { id: 'next_compare', label: '跟其他品种对比', mode: 'SEND', value: '跟其他品种对比一下' },
+            ];
+        }
+
+        // After export is done
+        if (sessionState === 'DONE' && hasExport) {
+            return [
+                { id: 'next_email_export', label: '发送到邮箱', mode: 'SEND', value: '把报告发到我邮箱' },
+                { id: 'next_schedule_export', label: '设为定期发送', mode: 'SEND', value: '每周自动发送报告' },
+                { id: 'next_new_task', label: '开始新分析', mode: 'SEND', value: '再帮我分析另一个品种' },
+            ];
+        }
+
+        // After execution failed
+        if (sessionState === 'FAILED') {
+            return [
+                { id: 'next_retry', label: '重新执行', mode: 'SEND', value: '重新执行一次' },
+                { id: 'next_modify', label: '调整参数重试', mode: 'SEND', value: '调整参数重新分析' },
+                { id: 'next_help', label: '查看帮助', mode: 'SEND', value: '帮助' },
+            ];
+        }
+
+        // During execution
+        if (sessionState === 'EXECUTING') {
+            return [
+                { id: 'next_progress', label: '查看进度', mode: 'OPEN_TAB', tab: 'progress' },
+                { id: 'next_new_question', label: '同时问个问题', mode: 'SEND' },
+            ];
+        }
+
+        // Default: initial state
+        return [
+            { id: 'next_analysis', label: '开始市场分析', mode: 'SEND', value: '分析最近一周的市场走势' },
+            { id: 'next_debate', label: '发起多方辩论', mode: 'SEND', value: '关于市场走势的多方辩论' },
+            { id: 'next_help', label: '查看我能做什么', mode: 'SEND', value: '帮助' },
+        ];
     }
 }

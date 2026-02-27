@@ -681,11 +681,23 @@ async function main() {
           recent: boolean;
           passed: boolean;
         }>;
+        executionHealth: {
+          windowDays: number;
+          compensationPendingExecutions: number;
+          hasCompensationBacklog: boolean;
+          latestCompensationPendingExecution: {
+            executionId: string;
+            action: string;
+            status: string;
+            createdAt: string;
+          } | null;
+        };
         summary: {
           standardizedReadEnabled: boolean;
           reconciliationGateEnabled: boolean;
           hasRecentRollbackEvidenceAllDatasets: boolean;
           latestDecisionApproved: boolean;
+          hasUncompensatedExecutionFailure: boolean;
           recommendsRollback: boolean;
         };
       };
@@ -701,6 +713,14 @@ async function main() {
     assert.equal(cutoverRuntimeStatusBeforeRollback.body.success, true);
     assert.equal(cutoverRuntimeStatusBeforeRollback.body.data.datasets.length, 1);
     assert.equal(cutoverRuntimeStatusBeforeRollback.body.data.datasets[0], 'SPOT_PRICE');
+    assert.equal(
+      typeof cutoverRuntimeStatusBeforeRollback.body.data.summary.hasUncompensatedExecutionFailure,
+      'boolean',
+    );
+    assert.equal(
+      typeof cutoverRuntimeStatusBeforeRollback.body.data.executionHealth.hasCompensationBacklog,
+      'boolean',
+    );
 
     const rollbackExecute = await fetchJson<{
       success: boolean;
@@ -976,6 +996,60 @@ async function main() {
       cutoverExecutionList.body.data.items.some(
         (item) => item.executionId === rollbackExecute.body.data.executionId,
       ),
+    );
+
+    const cutoverExecutionOverview = await fetchJson<{
+      success: boolean;
+      data: {
+        generatedAt: string;
+        windowDays: number;
+        datasets: string[];
+        storage: string;
+        summary: {
+          totalExecutions: number;
+          successExecutions: number;
+          failedExecutions: number;
+          partialExecutions: number;
+          compensatedExecutions: number;
+          compensationPendingExecutions: number;
+          compensationCoverageRate: number;
+        };
+        byAction: Array<{
+          action: string;
+          total: number;
+          success: number;
+          failed: number;
+          partial: number;
+          compensated: number;
+          compensationPending: number;
+        }>;
+        latestCompensationPending: Array<{
+          executionId: string;
+          action: string;
+          status: string;
+          createdAt: string;
+          datasets: string[];
+        }>;
+      };
+      traceId: string;
+      ts: string;
+    }>(
+      `${baseUrl}/market-data/reconciliation/cutover/executions/overview?windowDays=7&datasets=SPOT_PRICE&pendingLimit=10`,
+      {
+        method: 'GET',
+        headers: {
+          'x-virtual-user-id': 'admin-user',
+        },
+      },
+    );
+    assert.equal(cutoverExecutionOverview.status, 200);
+    assert.equal(cutoverExecutionOverview.body.success, true);
+    assert.equal(cutoverExecutionOverview.body.data.windowDays, 7);
+    assert.equal(cutoverExecutionOverview.body.data.datasets[0], 'SPOT_PRICE');
+    assert.ok(cutoverExecutionOverview.body.data.summary.totalExecutions >= 3);
+    assert.equal(cutoverExecutionOverview.body.data.byAction.length, 3);
+    assert.ok(
+      cutoverExecutionOverview.body.data.byAction.some((item) => item.action === 'AUTOPILOT'),
     );
 
     const cutoverExecutionDetail = await fetchJson<{

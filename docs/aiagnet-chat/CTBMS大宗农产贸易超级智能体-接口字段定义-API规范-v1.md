@@ -1051,11 +1051,18 @@
       "createdAt": "2026-02-27T11:26:00.000Z"
     }
   ],
+  "executionHealth": {
+    "windowDays": 7,
+    "compensationPendingExecutions": 0,
+    "hasCompensationBacklog": false,
+    "latestCompensationPendingExecution": null
+  },
   "summary": {
     "standardizedReadEnabled": false,
     "reconciliationGateEnabled": false,
     "hasRecentRollbackEvidenceAllDatasets": true,
     "latestDecisionApproved": true,
+    "hasUncompensatedExecutionFailure": false,
     "recommendsRollback": false
   }
 }
