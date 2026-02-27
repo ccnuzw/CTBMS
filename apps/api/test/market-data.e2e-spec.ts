@@ -1409,6 +1409,254 @@ async function main() {
       ),
     );
 
+    const cutoverCompensateBatchDryRun = await fetchJson<{
+      success: boolean;
+      data: {
+        batchId: string;
+        status: string;
+        replayed: boolean;
+        dryRun: boolean;
+        idempotencyKey?: string;
+        requestedLimit: number;
+        scanned: number;
+        matched: number;
+        attempted: number;
+        summary: {
+          compensated: number;
+          failed: number;
+          skipped: number;
+        };
+        results: Array<{
+          executionId: string;
+          statusBefore: string;
+          compensated: boolean;
+          reason?: string;
+        }>;
+      };
+      traceId: string;
+      ts: string;
+    }>(`${baseUrl}/market-data/reconciliation/cutover/executions/compensate-batch`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-virtual-user-id': 'admin-user',
+      },
+      body: JSON.stringify({
+        windowDays: 7,
+        datasets: ['SPOT_PRICE'],
+        limit: 10,
+        dryRun: true,
+        idempotencyKey: 'market-data-batch-dry-run',
+        disableReconciliationGate: true,
+      }),
+    });
+    assert.equal(cutoverCompensateBatchDryRun.status, 201);
+    assert.equal(cutoverCompensateBatchDryRun.body.success, true);
+    assert.ok(cutoverCompensateBatchDryRun.body.data.batchId.length > 0);
+    assert.equal(cutoverCompensateBatchDryRun.body.data.status, 'DRY_RUN');
+    assert.equal(cutoverCompensateBatchDryRun.body.data.replayed, false);
+    assert.equal(cutoverCompensateBatchDryRun.body.data.dryRun, true);
+    assert.equal(
+      cutoverCompensateBatchDryRun.body.data.idempotencyKey,
+      'market-data-batch-dry-run',
+    );
+    assert.equal(cutoverCompensateBatchDryRun.body.data.attempted, 0);
+    assert.ok(cutoverCompensateBatchDryRun.body.data.matched >= 1);
+
+    const cutoverCompensateBatchExecute = await fetchJson<{
+      success: boolean;
+      data: {
+        batchId: string;
+        status: string;
+        replayed: boolean;
+        dryRun: boolean;
+        idempotencyKey?: string;
+        requestedLimit: number;
+        scanned: number;
+        matched: number;
+        attempted: number;
+        summary: {
+          compensated: number;
+          failed: number;
+          skipped: number;
+        };
+        results: Array<{
+          executionId: string;
+          compensated: boolean;
+          compensationExecutionId?: string;
+          error?: string;
+          reason?: string;
+        }>;
+      };
+      traceId: string;
+      ts: string;
+    }>(`${baseUrl}/market-data/reconciliation/cutover/executions/compensate-batch`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-virtual-user-id': 'admin-user',
+      },
+      body: JSON.stringify({
+        windowDays: 7,
+        datasets: ['SPOT_PRICE'],
+        limit: 10,
+        dryRun: false,
+        idempotencyKey: 'market-data-batch-execute',
+        disableReconciliationGate: true,
+        reason: 'batch_compensation_retry',
+      }),
+    });
+    assert.equal(cutoverCompensateBatchExecute.status, 201);
+    assert.equal(cutoverCompensateBatchExecute.body.success, true);
+    assert.ok(cutoverCompensateBatchExecute.body.data.batchId.length > 0);
+    assert.equal(cutoverCompensateBatchExecute.body.data.replayed, false);
+    assert.equal(cutoverCompensateBatchExecute.body.data.dryRun, false);
+    assert.equal(
+      cutoverCompensateBatchExecute.body.data.idempotencyKey,
+      'market-data-batch-execute',
+    );
+    assert.ok(cutoverCompensateBatchExecute.body.data.attempted >= 1);
+    assert.ok(cutoverCompensateBatchExecute.body.data.summary.compensated >= 1);
+    assert.ok(
+      cutoverCompensateBatchExecute.body.data.results.some((item) => item.compensated === true),
+    );
+
+    const cutoverCompensateBatchReplay = await fetchJson<{
+      success: boolean;
+      data: {
+        batchId: string;
+        status: string;
+        replayed: boolean;
+        dryRun: boolean;
+        attempted: number;
+        summary: {
+          compensated: number;
+          failed: number;
+          skipped: number;
+        };
+      };
+      traceId: string;
+      ts: string;
+    }>(`${baseUrl}/market-data/reconciliation/cutover/executions/compensate-batch`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-virtual-user-id': 'admin-user',
+      },
+      body: JSON.stringify({
+        windowDays: 7,
+        datasets: ['SPOT_PRICE'],
+        limit: 10,
+        dryRun: false,
+        idempotencyKey: 'market-data-batch-execute',
+        disableReconciliationGate: true,
+        reason: 'batch_compensation_retry',
+      }),
+    });
+    assert.equal(cutoverCompensateBatchReplay.status, 201);
+    assert.equal(cutoverCompensateBatchReplay.body.success, true);
+    assert.equal(cutoverCompensateBatchReplay.body.data.replayed, true);
+    assert.equal(
+      cutoverCompensateBatchReplay.body.data.batchId,
+      cutoverCompensateBatchExecute.body.data.batchId,
+    );
+
+    const compensationBatchList = await fetchJson<{
+      success: boolean;
+      data: {
+        page: number;
+        pageSize: number;
+        total: number;
+        totalPages: number;
+        storage: string;
+        items: Array<{
+          batchId: string;
+          status: string;
+          dryRun: boolean;
+          replayed: boolean;
+        }>;
+      };
+      traceId: string;
+      ts: string;
+    }>(
+      `${baseUrl}/market-data/reconciliation/cutover/executions/compensation-batches?page=1&pageSize=20`,
+      {
+        method: 'GET',
+        headers: {
+          'x-virtual-user-id': 'admin-user',
+        },
+      },
+    );
+    assert.equal(compensationBatchList.status, 200);
+    assert.equal(compensationBatchList.body.success, true);
+    assert.ok(compensationBatchList.body.data.total >= 1);
+    assert.ok(
+      compensationBatchList.body.data.items.some(
+        (item) => item.batchId === cutoverCompensateBatchExecute.body.data.batchId,
+      ),
+    );
+
+    const compensationBatchDetail = await fetchJson<{
+      success: boolean;
+      data: {
+        batchId: string;
+        status: string;
+        dryRun: boolean;
+        replayed: boolean;
+        idempotencyKey?: string;
+        attempted: number;
+        results: Array<{
+          executionId: string;
+          compensated: boolean;
+        }>;
+      };
+      traceId: string;
+      ts: string;
+    }>(
+      `${baseUrl}/market-data/reconciliation/cutover/executions/compensation-batches/${cutoverCompensateBatchExecute.body.data.batchId}`,
+      {
+        method: 'GET',
+        headers: {
+          'x-virtual-user-id': 'admin-user',
+        },
+      },
+    );
+    assert.equal(compensationBatchDetail.status, 200);
+    assert.equal(compensationBatchDetail.body.success, true);
+    assert.equal(
+      compensationBatchDetail.body.data.batchId,
+      cutoverCompensateBatchExecute.body.data.batchId,
+    );
+    assert.equal(compensationBatchDetail.body.data.idempotencyKey, 'market-data-batch-execute');
+    assert.ok(compensationBatchDetail.body.data.results.length >= 1);
+
+    const failedExecutionAfterBatchCompensation = await fetchJson<{
+      success: boolean;
+      data: {
+        executionId: string;
+        status: string;
+        compensationApplied: boolean;
+      };
+      traceId: string;
+      ts: string;
+    }>(
+      `${baseUrl}/market-data/reconciliation/cutover/executions/${failedExecutionForCompensationFailure.executionId}`,
+      {
+        method: 'GET',
+        headers: {
+          'x-virtual-user-id': 'admin-user',
+        },
+      },
+    );
+    assert.equal(failedExecutionAfterBatchCompensation.status, 200);
+    assert.equal(failedExecutionAfterBatchCompensation.body.success, true);
+    assert.equal(
+      failedExecutionAfterBatchCompensation.body.data.executionId,
+      failedExecutionForCompensationFailure.executionId,
+    );
+    assert.equal(failedExecutionAfterBatchCompensation.body.data.status, 'COMPENSATED');
+    assert.equal(failedExecutionAfterBatchCompensation.body.data.compensationApplied, true);
+
     const cutoverDecisionList = await fetchJson<{
       success: boolean;
       data: {

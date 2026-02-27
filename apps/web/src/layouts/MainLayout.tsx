@@ -350,7 +350,7 @@ export const MainLayout: React.FC = () => {
     [],
   );
 
-   
+
   const findMenuLabel = (items: any[], key: string): string | undefined => {
     for (const item of items) {
       if (item.key === key) return item.label as string;

@@ -21,6 +21,7 @@ import {
   ExecuteReconciliationRollbackRequest,
   EvaluateReconciliationGateRequest,
   ListReconciliationCutoverDecisionsQueryRequest,
+  ListReconciliationCutoverCompensationBatchesQueryRequest,
   ListReconciliationCutoverExecutionsQueryRequest,
   ListReconciliationJobsRequest,
   ListReconciliationM1ReadinessReportSnapshotsQueryRequest,
@@ -33,6 +34,7 @@ import {
   ReconciliationM1ReadinessQueryRequest,
   ReconciliationM1ReadinessReportQueryRequest,
   RetryReconciliationCutoverCompensationRequest,
+  RetryReconciliationCutoverCompensationBatchRequest,
   ReconciliationWindowMetricsQueryRequest,
   MarketDataAggregateRequest,
   MarketDataQueryRequest,
@@ -371,6 +373,30 @@ export class MarketDataController {
     return this.success(req, data);
   }
 
+  @Get('reconciliation/cutover/executions/compensation-batches')
+  async listReconciliationCutoverCompensationBatches(
+    @Query() query: ListReconciliationCutoverCompensationBatchesQueryRequest,
+    @Request() req: AuthRequest,
+  ) {
+    const data = await this.marketDataService.listReconciliationCutoverCompensationBatches(
+      this.getUserId(req),
+      query,
+    );
+    return this.success(req, data);
+  }
+
+  @Get('reconciliation/cutover/executions/compensation-batches/:batchId')
+  async getReconciliationCutoverCompensationBatch(
+    @Param('batchId', ParseUUIDPipe) batchId: string,
+    @Request() req: AuthRequest,
+  ) {
+    const data = await this.marketDataService.getReconciliationCutoverCompensationBatch(
+      this.getUserId(req),
+      batchId,
+    );
+    return this.success(req, data);
+  }
+
   @Get('reconciliation/cutover/executions/:executionId')
   async getReconciliationCutoverExecution(
     @Param('executionId', ParseUUIDPipe) executionId: string,
@@ -392,6 +418,18 @@ export class MarketDataController {
     const data = await this.marketDataService.retryReconciliationCutoverExecutionCompensation(
       this.getUserId(req),
       executionId,
+      dto,
+    );
+    return this.success(req, data);
+  }
+
+  @Post('reconciliation/cutover/executions/compensate-batch')
+  async retryReconciliationCutoverExecutionCompensationBatch(
+    @Body() dto: RetryReconciliationCutoverCompensationBatchRequest,
+    @Request() req: AuthRequest,
+  ) {
+    const data = await this.marketDataService.retryReconciliationCutoverExecutionCompensationBatch(
+      this.getUserId(req),
       dto,
     );
     return this.success(req, data);

@@ -1254,6 +1254,208 @@
 - 补偿会触发标准回滚流程，并在成功后将原执行标记为 `COMPENSATED`；
 - 若补偿失败，会保留原执行状态（`FAILED|PARTIAL`）、写入 `compensationError` 并追加失败 `stepTrace`。
 
+### 3.5.22 切流执行健康总览
+
+- `GET /market-data/reconciliation/cutover/executions/overview?windowDays=7&datasets=SPOT_PRICE&pendingLimit=10`
+
+响应：
+
+```json
+{
+  "generatedAt": "2026-02-27T11:41:00.000Z",
+  "windowDays": 7,
+  "datasets": ["SPOT_PRICE"],
+  "storage": "database",
+  "summary": {
+    "totalExecutions": 6,
+    "successExecutions": 4,
+    "failedExecutions": 1,
+    "partialExecutions": 0,
+    "compensatedExecutions": 1,
+    "compensationPendingExecutions": 1,
+    "compensationCoverageRate": 0.5
+  },
+  "byAction": [
+    {
+      "action": "CUTOVER",
+      "total": 1,
+      "success": 1,
+      "failed": 0,
+      "partial": 0,
+      "compensated": 0,
+      "compensationPending": 0
+    },
+    {
+      "action": "ROLLBACK",
+      "total": 2,
+      "success": 2,
+      "failed": 0,
+      "partial": 0,
+      "compensated": 0,
+      "compensationPending": 0
+    },
+    {
+      "action": "AUTOPILOT",
+      "total": 3,
+      "success": 1,
+      "failed": 1,
+      "partial": 0,
+      "compensated": 1,
+      "compensationPending": 1
+    }
+  ],
+  "latestCompensationPending": [
+    {
+      "executionId": "9f39b956-a601-42af-ac19-f10dbf79f07a",
+      "action": "AUTOPILOT",
+      "status": "FAILED",
+      "createdAt": "2026-02-27T11:40:10.000Z",
+      "datasets": ["SPOT_PRICE"],
+      "errorMessage": "forced_autopilot_failure_for_compensation_error_path"
+    }
+  ]
+}
+```
+
+说明：
+
+- `compensationPendingExecutions` 表示当前仍处于 `FAILED|PARTIAL` 且未补偿的执行；
+- `compensationCoverageRate = COMPENSATED / (FAILED + PARTIAL + COMPENSATED)`，用于衡量补偿闭环覆盖率。
+
+### 3.5.23 批量补偿待处理执行
+
+- `POST /market-data/reconciliation/cutover/executions/compensate-batch`
+
+请求：
+
+```json
+{
+  "windowDays": 7,
+  "datasets": ["SPOT_PRICE"],
+  "limit": 10,
+  "dryRun": false,
+  "idempotencyKey": "market-data-batch-execute",
+  "disableReconciliationGate": true,
+  "reason": "batch_compensation_retry"
+}
+```
+
+响应：
+
+```json
+{
+  "batchId": "8b169b86-17a9-4174-8f17-90d4e4ec50b0",
+  "status": "PARTIAL",
+  "replayed": false,
+  "generatedAt": "2026-02-27T11:43:00.000Z",
+  "dryRun": false,
+  "windowDays": 7,
+  "datasets": ["SPOT_PRICE"],
+  "idempotencyKey": "market-data-batch-execute",
+  "requestedLimit": 10,
+  "storage": "database",
+  "scanned": 6,
+  "matched": 2,
+  "attempted": 2,
+  "results": [
+    {
+      "executionId": "9f39b956-a601-42af-ac19-f10dbf79f07a",
+      "action": "AUTOPILOT",
+      "statusBefore": "FAILED",
+      "compensated": true,
+      "compensationExecutionId": "45a17c00-cdf5-4c48-80da-2d0f02e36cb0"
+    },
+    {
+      "executionId": "4cb4d62f-4d4f-4701-a9a4-5084be8341b3",
+      "action": "AUTOPILOT",
+      "statusBefore": "PARTIAL",
+      "compensated": false,
+      "error": "rollback execution failed"
+    }
+  ],
+  "summary": {
+    "compensated": 1,
+    "failed": 1,
+    "skipped": 0
+  }
+}
+```
+
+说明：
+
+- `dryRun=true` 时仅返回候选执行，不触发真实补偿；
+- 批量补偿对每条执行独立处理，单条失败不会阻断后续执行；
+- 传入相同 `idempotencyKey` 可复用历史批量结果，响应中 `replayed=true`。
+
+### 3.5.24 查询批量补偿记录
+
+- 列表：`GET /market-data/reconciliation/cutover/executions/compensation-batches?page=1&pageSize=20&status=PARTIAL`
+
+响应：
+
+```json
+{
+  "page": 1,
+  "pageSize": 20,
+  "total": 1,
+  "totalPages": 1,
+  "storage": "database",
+  "items": [
+    {
+      "batchId": "8b169b86-17a9-4174-8f17-90d4e4ec50b0",
+      "status": "PARTIAL",
+      "dryRun": false,
+      "replayed": false,
+      "idempotencyKey": "market-data-batch-execute",
+      "windowDays": 7,
+      "datasets": ["SPOT_PRICE"],
+      "requestedLimit": 10,
+      "scanned": 6,
+      "matched": 2,
+      "attempted": 2,
+      "summary": {
+        "compensated": 1,
+        "failed": 1,
+        "skipped": 0
+      },
+      "createdAt": "2026-02-27T11:43:00.000Z"
+    }
+  ]
+}
+```
+
+- 详情：`GET /market-data/reconciliation/cutover/executions/compensation-batches/{batchId}`
+
+响应：
+
+```json
+{
+  "batchId": "8b169b86-17a9-4174-8f17-90d4e4ec50b0",
+  "status": "PARTIAL",
+  "dryRun": false,
+  "replayed": false,
+  "idempotencyKey": "market-data-batch-execute",
+  "windowDays": 7,
+  "datasets": ["SPOT_PRICE"],
+  "requestedLimit": 10,
+  "results": [
+    {
+      "executionId": "9f39b956-a601-42af-ac19-f10dbf79f07a",
+      "action": "AUTOPILOT",
+      "statusBefore": "FAILED",
+      "compensated": true,
+      "compensationExecutionId": "45a17c00-cdf5-4c48-80da-2d0f02e36cb0"
+    }
+  ],
+  "summary": {
+    "compensated": 1,
+    "failed": 1,
+    "skipped": 0
+  },
+  "storage": "database"
+}
+```
+
 ## 4. 指标中心 API
 
 ## 4.1 查询指标字典

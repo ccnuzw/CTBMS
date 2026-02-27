@@ -13,6 +13,7 @@ import type {
   CreateReconciliationJobDto,
   ExecuteReconciliationRollbackDto,
   LineageDataset,
+  ListReconciliationCutoverCompensationBatchesQueryDto,
   ListReconciliationCutoverDecisionsQueryDto,
   ListReconciliationCutoverExecutionsQueryDto,
   ListReconciliationM1ReadinessReportSnapshotsQueryDto,
@@ -20,6 +21,7 @@ import type {
   ReconciliationCutoverRuntimeStatusQueryDto,
   ReconciliationRollbackDrillStatus,
   ReconciliationDataset,
+  RetryReconciliationCutoverCompensationBatchDto,
   RetryReconciliationCutoverCompensationDto,
   ReconciliationSummaryDto,
   StandardEventRecord,
@@ -38,6 +40,7 @@ type ReconciliationM1ReadinessReportFormat = 'json' | 'markdown';
 type ReconciliationCutoverDecisionStatus = 'APPROVED' | 'REJECTED';
 type ReconciliationCutoverExecutionAction = 'CUTOVER' | 'ROLLBACK' | 'AUTOPILOT';
 type ReconciliationCutoverExecutionStatus = 'SUCCESS' | 'FAILED' | 'PARTIAL' | 'COMPENSATED';
+type ReconciliationCutoverCompensationBatchStatus = 'DRY_RUN' | 'SUCCESS' | 'PARTIAL' | 'FAILED';
 type RollbackDrillStatus = ReconciliationRollbackDrillStatus;
 type ReconciliationListSortBy = 'createdAt' | 'startedAt' | 'finishedAt' | 'status' | 'dataset';
 type ReconciliationListSortOrder = 'asc' | 'desc';
@@ -294,6 +297,66 @@ interface PersistedReconciliationCutoverExecutionRow {
   createdAt: unknown;
 }
 
+interface ReconciliationCutoverCompensationBatchResultItem {
+  executionId: string;
+  action: ReconciliationCutoverExecutionAction;
+  statusBefore: 'FAILED' | 'PARTIAL';
+  compensated: boolean;
+  compensationExecutionId?: string;
+  reason?: string;
+  error?: string;
+}
+
+interface ReconciliationCutoverCompensationBatchRecord {
+  batchId: string;
+  status: ReconciliationCutoverCompensationBatchStatus;
+  dryRun: boolean;
+  replayed: boolean;
+  idempotencyKey?: string;
+  requestedByUserId: string;
+  windowDays: number;
+  datasets: StandardDataset[];
+  requestedLimit: number;
+  disableReconciliationGate: boolean;
+  workflowVersionId?: string;
+  note?: string;
+  reason?: string;
+  storage: 'database' | 'in-memory';
+  scanned: number;
+  matched: number;
+  attempted: number;
+  results: ReconciliationCutoverCompensationBatchResultItem[];
+  summary: {
+    compensated: number;
+    failed: number;
+    skipped: number;
+  };
+  createdAt: string;
+}
+
+interface PersistedReconciliationCutoverCompensationBatchRow {
+  batchId: string;
+  status: string;
+  dryRun: unknown;
+  replayed: unknown;
+  idempotencyKey: string | null;
+  requestedByUserId: string;
+  windowDays: unknown;
+  datasets: unknown;
+  requestedLimit: unknown;
+  disableReconciliationGate: unknown;
+  workflowVersionId: string | null;
+  note: string | null;
+  reason: string | null;
+  storage: string;
+  scanned: unknown;
+  matched: unknown;
+  attempted: unknown;
+  results: unknown;
+  summary: unknown;
+  createdAt: unknown;
+}
+
 interface ReconciliationJobListResult {
   items: Array<{
     jobId: string;
@@ -539,12 +602,17 @@ export class MarketDataService {
     string,
     ReconciliationCutoverExecutionRecord
   >();
+  private readonly cutoverCompensationBatchRecords = new Map<
+    string,
+    ReconciliationCutoverCompensationBatchRecord
+  >();
   private reconciliationPersistenceUnavailable = false;
   private reconciliationDailyMetricsPersistenceUnavailable = false;
   private rollbackDrillPersistenceUnavailable = false;
   private m1ReadinessReportPersistenceUnavailable = false;
   private cutoverDecisionPersistenceUnavailable = false;
   private cutoverExecutionPersistenceUnavailable = false;
+  private cutoverCompensationBatchPersistenceUnavailable = false;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -3124,6 +3192,324 @@ export class MarketDataService {
     };
   }
 
+  async retryReconciliationCutoverExecutionCompensationBatch(
+    userId: string,
+    dto: RetryReconciliationCutoverCompensationBatchDto,
+  ): Promise<{
+    batchId: string;
+    status: ReconciliationCutoverCompensationBatchStatus;
+    replayed: boolean;
+    generatedAt: string;
+    dryRun: boolean;
+    windowDays: number;
+    datasets: StandardDataset[];
+    idempotencyKey?: string;
+    requestedLimit: number;
+    storage: 'database' | 'in-memory';
+    scanned: number;
+    matched: number;
+    attempted: number;
+    results: Array<{
+      executionId: string;
+      action: ReconciliationCutoverExecutionAction;
+      statusBefore: 'FAILED' | 'PARTIAL';
+      compensated: boolean;
+      compensationExecutionId?: string;
+      reason?: string;
+      error?: string;
+    }>;
+    summary: {
+      compensated: number;
+      failed: number;
+      skipped: number;
+    };
+  }> {
+    const windowDays = Math.max(1, Math.min(30, dto.windowDays ?? 7));
+    const limit = Math.max(1, Math.min(100, dto.limit ?? 20));
+    const datasets = this.resolveRequestedStandardDatasets(dto.datasets as StandardDataset[]);
+    const idempotencyKey = dto.idempotencyKey?.trim() || undefined;
+
+    if (idempotencyKey) {
+      const existing = await this.findReconciliationCutoverCompensationBatchByIdempotencyKey(
+        userId,
+        idempotencyKey,
+      );
+      if (existing) {
+        return this.toReconciliationCutoverCompensationBatchResponse(existing, true);
+      }
+    }
+
+    const batchId = randomUUID();
+    const createdAt = new Date().toISOString();
+
+    const overview = await this.getReconciliationCutoverExecutionOverview(userId, {
+      windowDays,
+      datasets,
+      pendingLimit: limit,
+    });
+    const candidates = overview.latestCompensationPending.slice(0, limit);
+
+    if (dto.dryRun) {
+      const record: ReconciliationCutoverCompensationBatchRecord = {
+        batchId,
+        status: 'DRY_RUN',
+        dryRun: true,
+        replayed: false,
+        idempotencyKey,
+        requestedByUserId: userId,
+        windowDays,
+        datasets,
+        requestedLimit: limit,
+        disableReconciliationGate: dto.disableReconciliationGate,
+        workflowVersionId: dto.workflowVersionId,
+        note: dto.note,
+        reason: dto.reason,
+        storage: overview.storage,
+        scanned: overview.summary.totalExecutions,
+        matched: overview.summary.compensationPendingExecutions,
+        attempted: 0,
+        results: candidates.map(
+          (item): ReconciliationCutoverCompensationBatchResultItem => ({
+            executionId: item.executionId,
+            action: item.action,
+            statusBefore: item.status,
+            compensated: false,
+            reason: 'dry_run',
+          }),
+        ),
+        summary: {
+          compensated: 0,
+          failed: 0,
+          skipped: candidates.length,
+        },
+        createdAt,
+      };
+
+      this.cutoverCompensationBatchRecords.set(record.batchId, record);
+      await this.persistReconciliationCutoverCompensationBatchRecord(record);
+      return this.toReconciliationCutoverCompensationBatchResponse(record);
+    }
+
+    const results: ReconciliationCutoverCompensationBatchResultItem[] = [];
+
+    for (const candidate of candidates) {
+      try {
+        const compensation = await this.retryReconciliationCutoverExecutionCompensation(
+          userId,
+          candidate.executionId,
+          {
+            disableReconciliationGate: dto.disableReconciliationGate,
+            workflowVersionId: dto.workflowVersionId,
+            note: dto.note,
+            reason: dto.reason ?? 'batch_compensation',
+          },
+        );
+
+        if (compensation.compensated) {
+          results.push({
+            executionId: candidate.executionId,
+            action: candidate.action,
+            statusBefore: candidate.status,
+            compensated: true,
+            compensationExecutionId: compensation.compensationExecutionId,
+          });
+          continue;
+        }
+
+        results.push({
+          executionId: candidate.executionId,
+          action: candidate.action,
+          statusBefore: candidate.status,
+          compensated: false,
+          reason: compensation.reason ?? 'execution_status_not_compensatable',
+        });
+      } catch (error) {
+        results.push({
+          executionId: candidate.executionId,
+          action: candidate.action,
+          statusBefore: candidate.status,
+          compensated: false,
+          error: this.stringifyError(error),
+        });
+      }
+    }
+
+    const summary = {
+      compensated: results.filter((item) => item.compensated).length,
+      failed: results.filter((item) => !item.compensated && !!item.error).length,
+      skipped: results.filter((item) => !item.compensated && !item.error).length,
+    };
+
+    const status: ReconciliationCutoverCompensationBatchStatus =
+      summary.failed === 0 && summary.skipped === 0
+        ? 'SUCCESS'
+        : summary.compensated > 0
+          ? 'PARTIAL'
+          : 'FAILED';
+
+    const record: ReconciliationCutoverCompensationBatchRecord = {
+      batchId,
+      status,
+      dryRun: false,
+      replayed: false,
+      idempotencyKey,
+      requestedByUserId: userId,
+      windowDays,
+      datasets,
+      requestedLimit: limit,
+      disableReconciliationGate: dto.disableReconciliationGate,
+      workflowVersionId: dto.workflowVersionId,
+      note: dto.note,
+      reason: dto.reason,
+      storage: overview.storage,
+      scanned: overview.summary.totalExecutions,
+      matched: overview.summary.compensationPendingExecutions,
+      attempted: candidates.length,
+      results,
+      summary,
+      createdAt,
+    };
+
+    this.cutoverCompensationBatchRecords.set(record.batchId, record);
+    await this.persistReconciliationCutoverCompensationBatchRecord(record);
+    return this.toReconciliationCutoverCompensationBatchResponse(record);
+  }
+
+  async listReconciliationCutoverCompensationBatches(
+    userId: string,
+    query: ListReconciliationCutoverCompensationBatchesQueryDto,
+  ): Promise<{
+    page: number;
+    pageSize: number;
+    total: number;
+    totalPages: number;
+    storage: 'database' | 'in-memory';
+    items: Array<{
+      batchId: string;
+      status: ReconciliationCutoverCompensationBatchStatus;
+      dryRun: boolean;
+      replayed: boolean;
+      idempotencyKey?: string;
+      windowDays: number;
+      datasets: StandardDataset[];
+      requestedLimit: number;
+      scanned: number;
+      matched: number;
+      attempted: number;
+      summary: {
+        compensated: number;
+        failed: number;
+        skipped: number;
+      };
+      createdAt: string;
+    }>;
+  }> {
+    const page = Math.max(1, query.page ?? 1);
+    const pageSize = Math.min(100, Math.max(1, query.pageSize ?? 20));
+
+    const persisted = await this.listPersistedReconciliationCutoverCompensationBatches(
+      userId,
+      page,
+      pageSize,
+      {
+        dryRun: query.dryRun,
+        status: query.status,
+      },
+    );
+    if (persisted) {
+      return persisted;
+    }
+
+    const filtered = Array.from(this.cutoverCompensationBatchRecords.values())
+      .filter((item) => item.requestedByUserId === userId)
+      .filter((item) => (query.dryRun === undefined ? true : item.dryRun === query.dryRun))
+      .filter((item) => (!query.status ? true : item.status === query.status))
+      .sort((a, b) => this.toTimestampMs(b.createdAt) - this.toTimestampMs(a.createdAt));
+
+    const total = filtered.length;
+    const totalPages = Math.ceil(total / pageSize) || 1;
+    const start = (page - 1) * pageSize;
+
+    return {
+      page,
+      pageSize,
+      total,
+      totalPages,
+      storage: 'in-memory',
+      items: filtered.slice(start, start + pageSize).map((item) => ({
+        batchId: item.batchId,
+        status: item.status,
+        dryRun: item.dryRun,
+        replayed: item.replayed,
+        idempotencyKey: item.idempotencyKey,
+        windowDays: item.windowDays,
+        datasets: item.datasets,
+        requestedLimit: item.requestedLimit,
+        scanned: item.scanned,
+        matched: item.matched,
+        attempted: item.attempted,
+        summary: item.summary,
+        createdAt: item.createdAt,
+      })),
+    };
+  }
+
+  async getReconciliationCutoverCompensationBatch(
+    userId: string,
+    batchId: string,
+  ): Promise<
+    ReconciliationCutoverCompensationBatchRecord & {
+      storage: 'database' | 'in-memory';
+    }
+  > {
+    const persisted = await this.findPersistedReconciliationCutoverCompensationBatch(batchId);
+    if (persisted) {
+      if (persisted.requestedByUserId !== userId) {
+        throw new ForbiddenException('no permission to access this cutover compensation batch');
+      }
+      return {
+        ...persisted,
+        storage: 'database',
+      };
+    }
+
+    const local = this.cutoverCompensationBatchRecords.get(batchId);
+    if (!local) {
+      throw new NotFoundException('cutover compensation batch not found');
+    }
+    if (local.requestedByUserId !== userId) {
+      throw new ForbiddenException('no permission to access this cutover compensation batch');
+    }
+
+    return {
+      ...local,
+      storage: 'in-memory',
+    };
+  }
+
+  private toReconciliationCutoverCompensationBatchResponse(
+    record: ReconciliationCutoverCompensationBatchRecord,
+    replayedOverride?: boolean,
+  ) {
+    return {
+      batchId: record.batchId,
+      status: record.status,
+      replayed: replayedOverride ?? record.replayed,
+      generatedAt: new Date().toISOString(),
+      dryRun: record.dryRun,
+      windowDays: record.windowDays,
+      datasets: record.datasets,
+      idempotencyKey: record.idempotencyKey,
+      requestedLimit: record.requestedLimit,
+      storage: record.storage,
+      scanned: record.scanned,
+      matched: record.matched,
+      attempted: record.attempted,
+      results: record.results,
+      summary: record.summary,
+    };
+  }
+
   async listReconciliationCutoverDecisions(
     userId: string,
     query: ListReconciliationCutoverDecisionsQueryDto,
@@ -4272,6 +4658,411 @@ export class MarketDataService {
     };
   }
 
+  private async findReconciliationCutoverCompensationBatchByIdempotencyKey(
+    userId: string,
+    idempotencyKey: string,
+  ): Promise<ReconciliationCutoverCompensationBatchRecord | null> {
+    const persisted =
+      await this.findPersistedReconciliationCutoverCompensationBatchByIdempotencyKey(
+        userId,
+        idempotencyKey,
+      );
+    if (persisted) {
+      return persisted;
+    }
+
+    const local = Array.from(this.cutoverCompensationBatchRecords.values())
+      .filter((item) => item.requestedByUserId === userId && item.idempotencyKey === idempotencyKey)
+      .sort((a, b) => this.toTimestampMs(b.createdAt) - this.toTimestampMs(a.createdAt));
+    return local[0] ?? null;
+  }
+
+  private async persistReconciliationCutoverCompensationBatchRecord(
+    record: ReconciliationCutoverCompensationBatchRecord,
+  ): Promise<boolean> {
+    if (this.cutoverCompensationBatchPersistenceUnavailable) {
+      return false;
+    }
+
+    try {
+      await this.prisma.$executeRawUnsafe(
+        `INSERT INTO "DataReconciliationCutoverCompensationBatch"
+          ("id", "batchId", "status", "dryRun", "replayed", "idempotencyKey", "requestedByUserId", "windowDays", "datasets", "requestedLimit", "disableReconciliationGate", "workflowVersionId", "note", "reason", "storage", "scanned", "matched", "attempted", "results", "summary", "createdAt", "updatedAt")
+         VALUES
+          ($1, $2, $3::"ReconciliationCutoverCompensationBatchStatus", $4, $5, $6, $7, $8, $9::jsonb, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19::jsonb, $20::jsonb, $21, $22)
+         ON CONFLICT ("batchId") DO UPDATE SET
+          "status" = EXCLUDED."status",
+          "dryRun" = EXCLUDED."dryRun",
+          "replayed" = EXCLUDED."replayed",
+          "idempotencyKey" = EXCLUDED."idempotencyKey",
+          "windowDays" = EXCLUDED."windowDays",
+          "datasets" = EXCLUDED."datasets",
+          "requestedLimit" = EXCLUDED."requestedLimit",
+          "disableReconciliationGate" = EXCLUDED."disableReconciliationGate",
+          "workflowVersionId" = EXCLUDED."workflowVersionId",
+          "note" = EXCLUDED."note",
+          "reason" = EXCLUDED."reason",
+          "storage" = EXCLUDED."storage",
+          "scanned" = EXCLUDED."scanned",
+          "matched" = EXCLUDED."matched",
+          "attempted" = EXCLUDED."attempted",
+          "results" = EXCLUDED."results",
+          "summary" = EXCLUDED."summary",
+          "updatedAt" = EXCLUDED."updatedAt"`,
+        randomUUID(),
+        record.batchId,
+        record.status,
+        record.dryRun,
+        record.replayed,
+        record.idempotencyKey ?? null,
+        record.requestedByUserId,
+        record.windowDays,
+        JSON.stringify(record.datasets),
+        record.requestedLimit,
+        record.disableReconciliationGate,
+        record.workflowVersionId ?? null,
+        record.note ?? null,
+        record.reason ?? null,
+        record.storage,
+        record.scanned,
+        record.matched,
+        record.attempted,
+        JSON.stringify(record.results),
+        JSON.stringify(record.summary),
+        new Date(record.createdAt),
+        new Date(),
+      );
+      return true;
+    } catch (error) {
+      if (this.isCutoverCompensationBatchPersistenceMissingTableError(error)) {
+        this.disableCutoverCompensationBatchPersistence(
+          'persist cutover compensation batch record',
+          error,
+        );
+        return false;
+      }
+      this.logger.error(
+        `Persist cutover compensation batch record failed: ${this.stringifyError(error)}`,
+      );
+      return false;
+    }
+  }
+
+  private async listPersistedReconciliationCutoverCompensationBatches(
+    userId: string,
+    page: number,
+    pageSize: number,
+    options: {
+      dryRun?: boolean;
+      status?: ReconciliationCutoverCompensationBatchStatus;
+    },
+  ): Promise<{
+    page: number;
+    pageSize: number;
+    total: number;
+    totalPages: number;
+    storage: 'database';
+    items: Array<{
+      batchId: string;
+      status: ReconciliationCutoverCompensationBatchStatus;
+      dryRun: boolean;
+      replayed: boolean;
+      idempotencyKey?: string;
+      windowDays: number;
+      datasets: StandardDataset[];
+      requestedLimit: number;
+      scanned: number;
+      matched: number;
+      attempted: number;
+      summary: {
+        compensated: number;
+        failed: number;
+        skipped: number;
+      };
+      createdAt: string;
+    }>;
+  } | null> {
+    if (this.cutoverCompensationBatchPersistenceUnavailable) {
+      return null;
+    }
+
+    try {
+      const whereParts: string[] = ['"requestedByUserId" = $1'];
+      const whereParams: unknown[] = [userId];
+
+      if (options.dryRun !== undefined) {
+        whereParts.push(`"dryRun" = $${whereParams.length + 1}`);
+        whereParams.push(options.dryRun);
+      }
+
+      if (options.status) {
+        whereParts.push(
+          `"status" = $${whereParams.length + 1}::"ReconciliationCutoverCompensationBatchStatus"`,
+        );
+        whereParams.push(options.status);
+      }
+
+      const whereClause = `WHERE ${whereParts.join(' AND ')}`;
+      const totalRows = await this.prisma.$queryRawUnsafe<Array<{ total: number | string }>>(
+        `SELECT COUNT(*)::int AS "total"
+         FROM "DataReconciliationCutoverCompensationBatch"
+         ${whereClause}`,
+        ...whereParams,
+      );
+
+      const total = Number(totalRows[0]?.total ?? 0);
+      const totalPages = Math.ceil(total / pageSize) || 1;
+      const offset = (page - 1) * pageSize;
+
+      const rows = await this.prisma.$queryRawUnsafe<
+        PersistedReconciliationCutoverCompensationBatchRow[]
+      >(
+        `SELECT
+             "batchId",
+             "status",
+             "dryRun",
+             "replayed",
+             "idempotencyKey",
+             "requestedByUserId",
+             "windowDays",
+             "datasets",
+             "requestedLimit",
+             "disableReconciliationGate",
+             "workflowVersionId",
+             "note",
+             "reason",
+             "storage",
+             "scanned",
+             "matched",
+             "attempted",
+             "results",
+             "summary",
+             "createdAt"
+           FROM "DataReconciliationCutoverCompensationBatch"
+           ${whereClause}
+           ORDER BY "createdAt" DESC
+           LIMIT $${whereParams.length + 1}
+           OFFSET $${whereParams.length + 2}`,
+        ...whereParams,
+        pageSize,
+        offset,
+      );
+
+      return {
+        page,
+        pageSize,
+        total,
+        totalPages,
+        storage: 'database',
+        items: rows.map((row) => {
+          const record = this.mapPersistedReconciliationCutoverCompensationBatchRow(row);
+          return {
+            batchId: record.batchId,
+            status: record.status,
+            dryRun: record.dryRun,
+            replayed: record.replayed,
+            idempotencyKey: record.idempotencyKey,
+            windowDays: record.windowDays,
+            datasets: record.datasets,
+            requestedLimit: record.requestedLimit,
+            scanned: record.scanned,
+            matched: record.matched,
+            attempted: record.attempted,
+            summary: record.summary,
+            createdAt: record.createdAt,
+          };
+        }),
+      };
+    } catch (error) {
+      if (this.isCutoverCompensationBatchPersistenceMissingTableError(error)) {
+        this.disableCutoverCompensationBatchPersistence(
+          'list cutover compensation batch records',
+          error,
+        );
+        return null;
+      }
+      this.logger.error(
+        `List cutover compensation batch records failed: ${this.stringifyError(error)}`,
+      );
+      return null;
+    }
+  }
+
+  private async findPersistedReconciliationCutoverCompensationBatch(
+    batchId: string,
+  ): Promise<ReconciliationCutoverCompensationBatchRecord | null> {
+    if (this.cutoverCompensationBatchPersistenceUnavailable) {
+      return null;
+    }
+
+    try {
+      const rows = await this.prisma.$queryRawUnsafe<
+        PersistedReconciliationCutoverCompensationBatchRow[]
+      >(
+        `SELECT
+             "batchId",
+             "status",
+             "dryRun",
+             "replayed",
+             "idempotencyKey",
+             "requestedByUserId",
+             "windowDays",
+             "datasets",
+             "requestedLimit",
+             "disableReconciliationGate",
+             "workflowVersionId",
+             "note",
+             "reason",
+             "storage",
+             "scanned",
+             "matched",
+             "attempted",
+             "results",
+             "summary",
+             "createdAt"
+           FROM "DataReconciliationCutoverCompensationBatch"
+           WHERE "batchId" = $1
+           LIMIT 1`,
+        batchId,
+      );
+
+      if (rows.length === 0) {
+        return null;
+      }
+
+      return this.mapPersistedReconciliationCutoverCompensationBatchRow(rows[0]);
+    } catch (error) {
+      if (this.isCutoverCompensationBatchPersistenceMissingTableError(error)) {
+        this.disableCutoverCompensationBatchPersistence(
+          'find cutover compensation batch record',
+          error,
+        );
+        return null;
+      }
+      this.logger.error(
+        `Find cutover compensation batch record failed: ${this.stringifyError(error)}`,
+      );
+      return null;
+    }
+  }
+
+  private async findPersistedReconciliationCutoverCompensationBatchByIdempotencyKey(
+    userId: string,
+    idempotencyKey: string,
+  ): Promise<ReconciliationCutoverCompensationBatchRecord | null> {
+    if (this.cutoverCompensationBatchPersistenceUnavailable) {
+      return null;
+    }
+
+    try {
+      const rows = await this.prisma.$queryRawUnsafe<
+        PersistedReconciliationCutoverCompensationBatchRow[]
+      >(
+        `SELECT
+             "batchId",
+             "status",
+             "dryRun",
+             "replayed",
+             "idempotencyKey",
+             "requestedByUserId",
+             "windowDays",
+             "datasets",
+             "requestedLimit",
+             "disableReconciliationGate",
+             "workflowVersionId",
+             "note",
+             "reason",
+             "storage",
+             "scanned",
+             "matched",
+             "attempted",
+             "results",
+             "summary",
+             "createdAt"
+           FROM "DataReconciliationCutoverCompensationBatch"
+           WHERE "requestedByUserId" = $1
+             AND "idempotencyKey" = $2
+           ORDER BY "createdAt" DESC
+           LIMIT 1`,
+        userId,
+        idempotencyKey,
+      );
+
+      if (rows.length === 0) {
+        return null;
+      }
+
+      return this.mapPersistedReconciliationCutoverCompensationBatchRow(rows[0]);
+    } catch (error) {
+      if (this.isCutoverCompensationBatchPersistenceMissingTableError(error)) {
+        this.disableCutoverCompensationBatchPersistence(
+          'find cutover compensation batch by idempotency key',
+          error,
+        );
+        return null;
+      }
+      this.logger.error(
+        `Find cutover compensation batch by idempotency key failed: ${this.stringifyError(error)}`,
+      );
+      return null;
+    }
+  }
+
+  private mapPersistedReconciliationCutoverCompensationBatchRow(
+    row: PersistedReconciliationCutoverCompensationBatchRow,
+  ): ReconciliationCutoverCompensationBatchRecord {
+    const datasetsRaw = this.parseJsonValue<unknown[]>(row.datasets) ?? [];
+    const datasets = datasetsRaw
+      .map((item) => this.normalizeReconciliationDataset(String(item)) as StandardDataset)
+      .filter((item, index, all) => all.indexOf(item) === index);
+
+    const resultsRaw =
+      this.parseJsonValue<Array<Record<string, unknown>>>(row.results) ??
+      ([] as Array<Record<string, unknown>>);
+    const results: ReconciliationCutoverCompensationBatchResultItem[] = resultsRaw.map((item) => ({
+      executionId: String(item.executionId ?? ''),
+      action: this.normalizeCutoverExecutionAction(item.action),
+      statusBefore:
+        item.statusBefore === 'PARTIAL' || item.statusBefore === 'FAILED'
+          ? item.statusBefore
+          : 'FAILED',
+      compensated: this.parseBoolean(item.compensated),
+      compensationExecutionId:
+        typeof item.compensationExecutionId === 'string' ? item.compensationExecutionId : undefined,
+      reason: typeof item.reason === 'string' ? item.reason : undefined,
+      error: typeof item.error === 'string' ? item.error : undefined,
+    }));
+
+    const summaryRaw = this.parseJsonValue<Record<string, unknown>>(row.summary) ?? {};
+
+    return {
+      batchId: row.batchId,
+      status: this.normalizeCutoverCompensationBatchStatus(row.status),
+      dryRun: this.parseBoolean(row.dryRun),
+      replayed: this.parseBoolean(row.replayed),
+      idempotencyKey: row.idempotencyKey ?? undefined,
+      requestedByUserId: row.requestedByUserId,
+      windowDays: this.parseInteger(row.windowDays) || 7,
+      datasets,
+      requestedLimit: this.parseInteger(row.requestedLimit) || 20,
+      disableReconciliationGate: this.parseBoolean(row.disableReconciliationGate),
+      workflowVersionId: row.workflowVersionId ?? undefined,
+      note: row.note ?? undefined,
+      reason: row.reason ?? undefined,
+      storage: row.storage === 'in-memory' ? 'in-memory' : 'database',
+      scanned: this.parseInteger(row.scanned),
+      matched: this.parseInteger(row.matched),
+      attempted: this.parseInteger(row.attempted),
+      results,
+      summary: {
+        compensated: this.parseInteger(summaryRaw.compensated),
+        failed: this.parseInteger(summaryRaw.failed),
+        skipped: this.parseInteger(summaryRaw.skipped),
+      },
+      createdAt: this.toIsoString(row.createdAt) ?? new Date().toISOString(),
+    };
+  }
+
   private normalizeM1ReadinessReportFormat(value: unknown): ReconciliationM1ReadinessReportFormat {
     if (value === 'json' || value === 'markdown') {
       return value;
@@ -4293,6 +5084,15 @@ export class MarketDataService {
       value === 'PARTIAL' ||
       value === 'COMPENSATED'
     ) {
+      return value;
+    }
+    return 'FAILED';
+  }
+
+  private normalizeCutoverCompensationBatchStatus(
+    value: unknown,
+  ): ReconciliationCutoverCompensationBatchStatus {
+    if (value === 'DRY_RUN' || value === 'SUCCESS' || value === 'PARTIAL' || value === 'FAILED') {
       return value;
     }
     return 'FAILED';
@@ -5753,6 +6553,31 @@ export class MarketDataService {
     return containsTarget && missingTableHint;
   }
 
+  private isCutoverCompensationBatchPersistenceMissingTableError(error: unknown) {
+    const code =
+      typeof error === 'object' && error !== null && 'code' in error
+        ? String((error as { code?: unknown }).code)
+        : '';
+    if (code === 'P2021') {
+      return true;
+    }
+
+    const message = this.stringifyError(error).toLowerCase();
+    const containsTarget =
+      message.includes('datareconciliationcutovercompensationbatch') ||
+      message.includes('reconciliationcutovercompensationbatchstatus');
+    const missingTableHint =
+      message.includes('does not exist') ||
+      message.includes('relation') ||
+      message.includes('column') ||
+      message.includes('undefined') ||
+      message.includes('42703') ||
+      message.includes('42704') ||
+      message.includes('p2021') ||
+      message.includes('invalid input value for enum');
+    return containsTarget && missingTableHint;
+  }
+
   private disableReconciliationPersistence(operation: string, error: unknown) {
     if (this.reconciliationPersistenceUnavailable) {
       return;
@@ -5810,6 +6635,16 @@ export class MarketDataService {
     this.cutoverExecutionPersistenceUnavailable = true;
     this.logger.warn(
       `Cutover execution persistence disabled (${operation}): ${this.stringifyError(error)}`,
+    );
+  }
+
+  private disableCutoverCompensationBatchPersistence(operation: string, error: unknown) {
+    if (this.cutoverCompensationBatchPersistenceUnavailable) {
+      return;
+    }
+    this.cutoverCompensationBatchPersistenceUnavailable = true;
+    this.logger.warn(
+      `Cutover compensation batch persistence disabled (${operation}): ${this.stringifyError(error)}`,
     );
   }
 

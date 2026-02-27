@@ -1,43 +1,76 @@
 import React, { useMemo, useState } from 'react';
+import { Segmented, theme, Flex } from 'antd';
+import { MessageOutlined, SettingOutlined } from '@ant-design/icons';
 
 import { useVirtualUser } from '../../auth/virtual-user';
-import { useCopilotVersion } from '../api/conversations';
 import { CopilotChatView } from './CopilotChatView';
 import { AgentCopilotPage as CopilotAdminView } from './AgentCopilotPage';
 
 /**
- * 入口 Shell 组件：根据用户角色和 copilot-v2 灰度开关决定显示极简对话视图或完整管理视图。
- * - v2 + 普通用户 → CopilotChatView
- * - v2 + 管理员 → CopilotChatView（可手动切换到 AdminView）
- * - v1 → CopilotAdminView（保持原始完整视图）
+ * 入口 Shell 组件：在对话助手（普通用户界面）和会话管理（管理界面）之间切换。
+ * 开发阶段所有用户都可见切换按钮。
  */
 export const CopilotPageShell: React.FC = () => {
+  const { token } = theme.useToken();
   const { currentUser } = useVirtualUser();
   const isAdminUser = useMemo(() => {
     const roleNames = Array.isArray(currentUser?.roleNames) ? currentUser.roleNames : [];
     return roleNames.some((role) => ['SUPER_ADMIN', 'ADMIN'].includes(String(role).toUpperCase()));
   }, [currentUser?.roleNames]);
 
-  const copilotVersionQuery = useCopilotVersion();
-  const effectiveVersion = copilotVersionQuery.data?.version ?? 'v2';
-
   const [viewMode, setViewMode] = useState<'CHAT' | 'ADMIN'>('CHAT');
 
-  // v1 回退到原始完整视图
-  if (effectiveVersion === 'v1') {
-    return <CopilotAdminView />;
-  }
-
-  // v2 管理员手动切换
-  if (viewMode === 'ADMIN' && isAdminUser) {
-    return <CopilotAdminView />;
-  }
-
-  // v2 默认极简对话视图
   return (
-    <CopilotChatView
-      isAdminUser={isAdminUser}
-      onSwitchToAdmin={isAdminUser ? () => setViewMode('ADMIN') : undefined}
-    />
+    <div style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
+      {/* 模式切换栏 — 放在功能区顶部（开发阶段所有用户可见） */}
+      <Flex
+        align="center"
+        gap={12}
+        style={{
+          padding: '8px 16px',
+          borderBottom: `1px solid ${token.colorBorderSecondary}`,
+          background: token.colorBgContainer,
+          flexShrink: 0,
+        }}
+      >
+        <Segmented
+          value={viewMode}
+          onChange={(value) => setViewMode(value as 'CHAT' | 'ADMIN')}
+          options={[
+            {
+              label: (
+                <span style={{ padding: '0 8px' }}>
+                  <MessageOutlined style={{ marginRight: 6 }} />
+                  对话助手
+                </span>
+              ),
+              value: 'CHAT',
+            },
+            {
+              label: (
+                <span style={{ padding: '0 8px' }}>
+                  <SettingOutlined style={{ marginRight: 6 }} />
+                  会话管理
+                </span>
+              ),
+              value: 'ADMIN',
+            },
+          ]}
+          style={{ borderRadius: 8 }}
+        />
+      </Flex>
+
+      {/* 内容区 */}
+      <div style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden' }}>
+        {viewMode === 'ADMIN' ? (
+          <CopilotAdminView />
+        ) : (
+          <CopilotChatView
+            isAdminUser={isAdminUser}
+            onSwitchToAdmin={() => setViewMode('ADMIN')}
+          />
+        )}
+      </div>
+    </div>
   );
 };

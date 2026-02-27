@@ -2695,6 +2695,13 @@ enum ReconciliationCutoverExecutionStatus {
   COMPENSATED
 }
 
+enum ReconciliationCutoverCompensationBatchStatus {
+  DRY_RUN
+  SUCCESS
+  PARTIAL
+  FAILED
+}
+
 model DataReconciliationJob {
   id String @id @default(uuid())
 
@@ -2877,6 +2884,40 @@ model DataReconciliationCutoverExecution {
   @@index([requestedByUserId, createdAt])
   @@index([action, status, createdAt])
   @@index([decisionId, createdAt])
+}
+
+model DataReconciliationCutoverCompensationBatch {
+  id String @id @default(uuid())
+
+  batchId String @unique
+  status ReconciliationCutoverCompensationBatchStatus
+  dryRun Boolean @default(false)
+  replayed Boolean @default(false)
+  idempotencyKey String?
+
+  requestedByUserId String
+  windowDays Int @default(7)
+  datasets Json
+  requestedLimit Int @default(20)
+
+  disableReconciliationGate Boolean @default(true)
+  workflowVersionId String?
+  note String? @db.Text
+  reason String? @db.Text
+
+  storage String
+  scanned Int @default(0)
+  matched Int @default(0)
+  attempted Int @default(0)
+  results Json
+  summary Json
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([requestedByUserId, idempotencyKey])
+  @@index([requestedByUserId, createdAt])
+  @@index([status, dryRun, createdAt])
 }
 
 // =============================================
