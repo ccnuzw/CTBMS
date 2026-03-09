@@ -228,8 +228,7 @@ async function main() {
         'x-virtual-user-id': ownerUserId,
       },
       body: JSON.stringify({
-        message:
-          '请分析最近一周东北玉米价格并结合日报周报，输出 markdown 和 json 的结论建议。',
+        message: '请分析最近一周东北玉米价格并结合日报周报，输出 markdown 和 json 的结论建议。',
       }),
     });
     assert.equal(sendTurn.status, 201);
@@ -283,6 +282,33 @@ async function main() {
       status: string;
       result: {
         facts: Array<{ text: string }>;
+        qualityScore?: number;
+        freshnessStatus?: string;
+        qualityBreakdown?: {
+          completeness: number;
+          timeliness: number;
+          evidenceStrength: number;
+          verification: number;
+        };
+        confidenceGate?: {
+          allowStrongConclusion: boolean;
+          reasonCodes: string[];
+          message: string;
+        } | null;
+        evidenceItems?: Array<{
+          id: string;
+          title: string;
+          source: string;
+          freshness: string;
+          quality: string;
+          tracePath?: string | null;
+        }>;
+        traceability?: {
+          executionId: string;
+          replayPath: string;
+          executionPath: string;
+          evidenceCount: number;
+        } | null;
         analysis: string;
         actions: Record<string, unknown>;
         confidence: number;
@@ -295,6 +321,33 @@ async function main() {
         status: string;
         result: {
           facts: Array<{ text: string }>;
+          qualityScore?: number;
+          freshnessStatus?: string;
+          qualityBreakdown?: {
+            completeness: number;
+            timeliness: number;
+            evidenceStrength: number;
+            verification: number;
+          };
+          confidenceGate?: {
+            allowStrongConclusion: boolean;
+            reasonCodes: string[];
+            message: string;
+          } | null;
+          evidenceItems?: Array<{
+            id: string;
+            title: string;
+            source: string;
+            freshness: string;
+            quality: string;
+            tracePath?: string | null;
+          }>;
+          traceability?: {
+            executionId: string;
+            replayPath: string;
+            executionPath: string;
+            evidenceCount: number;
+          } | null;
           analysis: string;
           actions: Record<string, unknown>;
           confidence: number;
@@ -323,6 +376,69 @@ async function main() {
       assert.equal(typeof finalResultBody.result.confidence, 'number');
     }
 
+    if (latestResultStatus === 'DONE' && finalResultBody?.result) {
+      assert.equal(typeof finalResultBody.result.qualityScore, 'number');
+      assert.ok((finalResultBody.result.qualityScore ?? 0) >= 0);
+      assert.ok((finalResultBody.result.qualityScore ?? 0) <= 1);
+      assert.ok(
+        ['WITHIN_TTL', 'NEAR_EXPIRE', 'EXPIRED', 'UNKNOWN'].includes(
+          String(finalResultBody.result.freshnessStatus ?? 'UNKNOWN'),
+        ),
+      );
+      assert.equal(typeof finalResultBody.result.confidenceGate?.allowStrongConclusion, 'boolean');
+      assert.equal(typeof finalResultBody.result.confidenceGate?.message, 'string');
+      assert.ok(Array.isArray(finalResultBody.result.evidenceItems));
+      assert.ok((finalResultBody.result.evidenceItems ?? []).length >= 1);
+      assert.equal(finalResultBody.result.traceability?.executionId, executionId);
+      assert.ok(finalResultBody.result.traceability?.replayPath?.includes(executionId));
+      assert.ok(finalResultBody.result.traceability?.executionPath?.includes(executionId));
+      assert.ok((finalResultBody.result.traceability?.evidenceCount ?? 0) >= 1);
+    }
+
+    const evidenceList = await fetchJson<{
+      executionId: string | null;
+      total: number;
+      filteredCount: number;
+      items: Array<{
+        id: string;
+        source: string;
+        freshness: string;
+        quality: string;
+        tracePath?: string | null;
+      }>;
+      traceability: {
+        executionId: string;
+        evidenceCount: number;
+      } | null;
+    }>(`${baseUrl}/agent-conversations/sessions/${conversationSessionId}/evidence?limit=20`, {
+      headers: {
+        'x-virtual-user-id': ownerUserId,
+      },
+    });
+    assert.equal(evidenceList.status, 200);
+    assert.equal(evidenceList.body.executionId, executionId);
+    assert.ok(Array.isArray(evidenceList.body.items));
+    assert.ok(evidenceList.body.filteredCount <= evidenceList.body.total);
+
+    if (latestResultStatus === 'DONE') {
+      assert.ok(evidenceList.body.items.length >= 1);
+      assert.equal(evidenceList.body.traceability?.executionId, executionId);
+      assert.ok((evidenceList.body.traceability?.evidenceCount ?? 0) >= 1);
+    }
+
+    const filteredFreshEvidence = await fetchJson<{
+      items: Array<{ freshness: string }>;
+    }>(
+      `${baseUrl}/agent-conversations/sessions/${conversationSessionId}/evidence?freshness=FRESH&limit=5`,
+      {
+        headers: {
+          'x-virtual-user-id': ownerUserId,
+        },
+      },
+    );
+    assert.equal(filteredFreshEvidence.status, 200);
+    assert.ok(filteredFreshEvidence.body.items.every((item) => item.freshness === 'FRESH'));
+
     const routingLogs = await fetchJson<
       Array<{
         id: string;
@@ -331,11 +447,14 @@ async function main() {
         selectedWorkflowDefinitionId?: string | null;
         routePolicyDetails?: Record<string, unknown>;
       }>
-    >(`${baseUrl}/agent-conversations/sessions/${conversationSessionId}/capability-routing-logs?routeType=WORKFLOW_REUSE`, {
-      headers: {
-        'x-virtual-user-id': ownerUserId,
+    >(
+      `${baseUrl}/agent-conversations/sessions/${conversationSessionId}/capability-routing-logs?routeType=WORKFLOW_REUSE`,
+      {
+        headers: {
+          'x-virtual-user-id': ownerUserId,
+        },
       },
-    });
+    );
     assert.equal(routingLogs.status, 200);
     assert.ok(routingLogs.body.length > 0);
     assert.ok(routingLogs.body.every((item) => item.routeType === 'WORKFLOW_REUSE'));
@@ -353,17 +472,74 @@ async function main() {
         ephemeralCapabilityPolicy: Record<string, unknown>;
       };
       stats: { routeType: Array<{ key: string; count: number }> };
-    }>(`${baseUrl}/agent-conversations/sessions/${conversationSessionId}/capability-routing-summary`, {
-      headers: {
-        'x-virtual-user-id': ownerUserId,
+    }>(
+      `${baseUrl}/agent-conversations/sessions/${conversationSessionId}/capability-routing-summary`,
+      {
+        headers: {
+          'x-virtual-user-id': ownerUserId,
+        },
       },
-    });
+    );
     assert.equal(routingSummary.status, 200);
     assert.ok(['1h', '24h', '7d'].includes(routingSummary.body.sampleWindow.window));
     assert.ok(routingSummary.body.sampleWindow.totalLogs >= 1);
     assert.ok(Array.isArray(routingSummary.body.stats.routeType));
     assert.ok(Boolean(routingSummary.body.effectivePolicies.capabilityRoutingPolicy));
     assert.ok(Boolean(routingSummary.body.effectivePolicies.ephemeralCapabilityPolicy));
+
+    const observabilitySummary = await fetchJson<{
+      windowDays: number;
+      sessionsInWindow: number;
+      sampledSessions: number;
+      totals: {
+        sessionsWithUserTurn: number;
+        sessionsWithExecution: number;
+        executions: number;
+        completedExecutions: number;
+      };
+      successRate: number;
+      firstResponseLatency: { sampleSize: number; p95Ms: number | null };
+      acceptanceLatency: { sampleSize: number; p95Ms: number | null };
+      completionLatency: { sampleSize: number; p95Ms: number | null };
+      citationCoverage: {
+        totalFacts: number;
+        citedFacts: number;
+        coverageRate: number;
+      };
+      nfrGate?: {
+        passed: boolean;
+        checks: Array<{ id: string; passed: boolean }>;
+      };
+    }>(
+      `${baseUrl}/agent-conversations/sessions/observability/summary?windowDays=7&maxSessions=200`,
+      {
+        headers: {
+          'x-virtual-user-id': ownerUserId,
+        },
+      },
+    );
+    assert.equal(observabilitySummary.status, 200);
+    assert.equal(observabilitySummary.body.windowDays, 7);
+    assert.ok(observabilitySummary.body.sessionsInWindow >= 1);
+    assert.ok(observabilitySummary.body.sampledSessions >= 1);
+    assert.ok(observabilitySummary.body.totals.sessionsWithUserTurn >= 1);
+    assert.ok(observabilitySummary.body.totals.sessionsWithExecution >= 1);
+    assert.ok(observabilitySummary.body.totals.executions >= 1);
+    assert.ok(observabilitySummary.body.successRate >= 0);
+    assert.ok(observabilitySummary.body.successRate <= 1);
+    assert.ok(observabilitySummary.body.firstResponseLatency.sampleSize >= 1);
+    assert.ok(observabilitySummary.body.acceptanceLatency.sampleSize >= 1);
+    assert.ok(observabilitySummary.body.citationCoverage.totalFacts >= 0);
+    assert.ok(observabilitySummary.body.citationCoverage.citedFacts >= 0);
+    assert.ok(observabilitySummary.body.citationCoverage.coverageRate >= 0);
+    assert.ok(observabilitySummary.body.citationCoverage.coverageRate <= 1);
+    assert.equal(typeof observabilitySummary.body.nfrGate?.passed, 'boolean');
+    assert.ok(Array.isArray(observabilitySummary.body.nfrGate?.checks));
+    const nfrCheckIds = new Set(
+      (observabilitySummary.body.nfrGate?.checks ?? []).map((item) => item.id),
+    );
+    assert.ok(nfrCheckIds.has('NFR-001'));
+    assert.ok(nfrCheckIds.has('NFR-005'));
   } finally {
     if (conversationSessionId) {
       await prisma.conversationSession.deleteMany({ where: { id: conversationSessionId } });

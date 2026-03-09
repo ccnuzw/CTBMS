@@ -55,9 +55,17 @@ const ConversationSessionQuerySchema = z.object({
   page: z.coerce.number().int().min(1).default(1),
   pageSize: z.coerce.number().int().min(1).max(100).default(20),
 });
+
+const ConversationObservabilitySummaryQuerySchema = z.object({
+  windowDays: z.coerce.number().int().min(1).max(90).default(7),
+  maxSessions: z.coerce.number().int().min(50).max(2000).default(500),
+});
 export class ConversationSessionQueryRequest extends createZodDto(ConversationSessionQuerySchema) {}
 export class ConversationResultDiffTimelineQueryRequest extends createZodDto(
   ConversationResultDiffTimelineQuerySchema,
+) {}
+export class ConversationObservabilitySummaryQueryRequest extends createZodDto(
+  ConversationObservabilitySummaryQuerySchema,
 ) {}
 
 export class DeliverConversationEmailRequest extends createZodDto(DeliverConversationEmailSchema) {}

@@ -96,6 +96,11 @@ export const TemplateCatalogQuickstartBusinessTemplatesQuerySchema = z.object({
   keyword: z.string().trim().min(1).max(120).optional(),
 });
 
+export const TemplateCatalogQuickstartBusinessTemplateAcceptanceChecklistQuerySchema = z.object({
+  keyword: z.string().trim().min(1).max(120).optional(),
+  strictContract: z.coerce.boolean().default(true),
+});
+
 export const TemplateCatalogQuickstartConnectorDraftSchema =
   DataConnectorQuickStartTemplateSchema.extend({
     connectorCode: z.string().regex(/^[A-Z0-9_]{3,120}$/),
@@ -121,6 +126,31 @@ export const TemplateCatalogQuickstartBusinessTemplatesResponseSchema = z.object
   total: z.number().int().min(0),
 });
 
+export const TemplateCatalogQuickstartAcceptanceCheckSchema = z.object({
+  key: z.string(),
+  passed: z.boolean(),
+  message: z.string(),
+  detail: z.record(z.unknown()).optional(),
+});
+
+export const TemplateCatalogQuickstartBusinessTemplateAcceptanceItemSchema = z.object({
+  code: TemplateCatalogQuickstartBusinessTemplateCodeEnum,
+  name: z.string(),
+  category: TemplateCategoryEnum,
+  passed: z.boolean(),
+  failedChecks: z.array(z.string()),
+  checks: z.array(TemplateCatalogQuickstartAcceptanceCheckSchema),
+});
+
+export const TemplateCatalogQuickstartBusinessTemplateAcceptanceChecklistSchema = z.object({
+  generatedAt: z.string(),
+  strictContract: z.boolean(),
+  total: z.number().int().min(0),
+  passed: z.number().int().min(0),
+  failed: z.number().int().min(0),
+  items: z.array(TemplateCatalogQuickstartBusinessTemplateAcceptanceItemSchema),
+});
+
 // ── Types ──
 
 export type TemplateCategory = z.infer<typeof TemplateCategoryEnum>;
@@ -137,6 +167,9 @@ export type TemplateCatalogQuickstartBusinessTemplateCode = z.infer<
 export type TemplateCatalogQuickstartBusinessTemplatesQueryDto = z.infer<
   typeof TemplateCatalogQuickstartBusinessTemplatesQuerySchema
 >;
+export type TemplateCatalogQuickstartBusinessTemplateAcceptanceChecklistQueryDto = z.infer<
+  typeof TemplateCatalogQuickstartBusinessTemplateAcceptanceChecklistQuerySchema
+>;
 export type TemplateCatalogQuickstartConnectorDraftDto = z.infer<
   typeof TemplateCatalogQuickstartConnectorDraftSchema
 >;
@@ -145,4 +178,13 @@ export type TemplateCatalogQuickstartBusinessTemplateDto = z.infer<
 >;
 export type TemplateCatalogQuickstartBusinessTemplatesResponseDto = z.infer<
   typeof TemplateCatalogQuickstartBusinessTemplatesResponseSchema
+>;
+export type TemplateCatalogQuickstartAcceptanceCheckDto = z.infer<
+  typeof TemplateCatalogQuickstartAcceptanceCheckSchema
+>;
+export type TemplateCatalogQuickstartBusinessTemplateAcceptanceItemDto = z.infer<
+  typeof TemplateCatalogQuickstartBusinessTemplateAcceptanceItemSchema
+>;
+export type TemplateCatalogQuickstartBusinessTemplateAcceptanceChecklistDto = z.infer<
+  typeof TemplateCatalogQuickstartBusinessTemplateAcceptanceChecklistSchema
 >;

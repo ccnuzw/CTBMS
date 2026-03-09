@@ -389,10 +389,49 @@ async function main() {
     assert.equal(deliverByDefaultProfile.body.status, 'SENT');
     assert.equal(deliverByDefaultProfile.body.channel, 'WECOM');
 
-    assert.ok(webhookPayloads.length >= 3, '投递 webhook 应至少被调用三次');
+    const deliverMissingTarget = await fetchJson<{ code?: string; message?: string }>(
+      `${baseUrl}/agent-conversations/sessions/${conversationSessionId}/deliver`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-virtual-user-id': ownerUserId,
+        },
+        body: JSON.stringify({
+          exportTaskId: exportResult.body.exportTaskId,
+          channel: 'FEISHU',
+        }),
+      },
+    );
+    assert.equal(deliverMissingTarget.status, 400);
+    assert.equal(deliverMissingTarget.body.code, 'CONV_DELIVERY_TARGET_REQUIRED');
+
+    const deliverRecovered = await fetchJson<{
+      deliveryTaskId: string;
+      channel: string;
+      status: string;
+      errorMessage?: string | null;
+    }>(`${baseUrl}/agent-conversations/sessions/${conversationSessionId}/deliver`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-virtual-user-id': ownerUserId,
+      },
+      body: JSON.stringify({
+        exportTaskId: exportResult.body.exportTaskId,
+        channel: 'FEISHU',
+        target: 'feishu-group-01',
+      }),
+    });
+    assert.equal(deliverRecovered.status, 201);
+    assert.equal(deliverRecovered.body.status, 'SENT');
+    assert.equal(deliverRecovered.body.channel, 'FEISHU');
+
+    assert.ok(webhookPayloads.length >= 4, '投递 webhook 应至少被调用四次');
     const emailPayload = webhookPayloads.find((item) => item.channel === 'EMAIL');
     const dingTalkPayload = webhookPayloads.find((item) => item.channel === 'DINGTALK');
     const wecomPayload = webhookPayloads.find((item) => item.channel === 'WECOM');
+    const feishuPayload = webhookPayloads.find((item) => item.channel === 'FEISHU');
 
     assert.ok(emailPayload, '缺少 EMAIL webhook payload');
     assert.equal(emailPayload?.exportTaskId, exportResult.body.exportTaskId);
@@ -414,6 +453,9 @@ async function main() {
       (wecomPayload?.attachment as Record<string, unknown> | undefined)?.mode,
       'RAW_FILE',
     );
+
+    assert.ok(feishuPayload, '缺少 FEISHU webhook payload');
+    assert.equal(feishuPayload?.target, 'feishu-group-01');
   } finally {
     if (conversationSessionId) {
       await prisma.conversationSession.deleteMany({ where: { id: conversationSessionId } });

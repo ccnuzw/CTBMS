@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
   App,
   Button,
@@ -11,7 +11,9 @@ import {
   Row,
   Space,
   Spin,
+  Switch,
   Tag,
+  Tooltip,
   Typography,
   theme,
 } from 'antd';
@@ -36,7 +38,10 @@ import {
   useTriggerWorkflowExecution,
   useWorkflowDefinitionDetail,
 } from '../../workflow-studio/api/workflow-definitions';
-import { useQuickstartBusinessTemplates } from '../api';
+import {
+  useQuickstartBusinessTemplateAcceptanceChecklist,
+  useQuickstartBusinessTemplates,
+} from '../api';
 import { WorkflowQuickRunnerModal } from '../../workflow-studio/components/workflow-definition/WorkflowQuickRunnerModal';
 
 const { Title, Text, Paragraph } = Typography;
@@ -47,6 +52,14 @@ const sourceDomainLabelMap: Record<string, string> = {
   FUTURES_MARKET: '期货市场',
   WEATHER: '天气数据',
   LOGISTICS: '物流数据',
+};
+
+const acceptanceCheckLabelMap: Record<string, string> = {
+  CONNECTOR_COVERAGE: '连接器覆盖',
+  CONNECTOR_CONTRACT_READY: '契约完整',
+  RUN_READY: '运行就绪',
+  EXPORT_READY: '导出就绪',
+  EVIDENCE_READY: '证据就绪',
 };
 
 export const TemplateMarketPage: React.FC = () => {
@@ -61,6 +74,7 @@ export const TemplateMarketPage: React.FC = () => {
 
   const [selectedWorkflowId, setSelectedWorkflowId] = useState<string | null>(null);
   const [quickstartKeyword, setQuickstartKeyword] = useState('');
+  const [strictContract, setStrictContract] = useState(true);
   const [creatingTemplateCode, setCreatingTemplateCode] = useState<string | null>(null);
   const [creatingDraftCode, setCreatingDraftCode] = useState<string | null>(null);
 
@@ -73,9 +87,19 @@ export const TemplateMarketPage: React.FC = () => {
   const { data: quickstartData, isLoading: isQuickstartLoading } = useQuickstartBusinessTemplates({
     keyword: quickstartKeyword.trim() || undefined,
   });
+  const { data: quickstartChecklistData, isLoading: isChecklistLoading } =
+    useQuickstartBusinessTemplateAcceptanceChecklist({
+      keyword: quickstartKeyword.trim() || undefined,
+      strictContract,
+    });
   const { data: definitionDetail, isLoading: isDetailLoading } = useWorkflowDefinitionDetail(
     selectedWorkflowId ?? undefined,
   );
+
+  const quickstartChecklistMap = useMemo(() => {
+    const entries = quickstartChecklistData?.items ?? [];
+    return new Map(entries.map((item) => [item.code, item]));
+  }, [quickstartChecklistData]);
 
   const activeVersion =
     (definitionDetail as any)?.versions?.find(
@@ -191,6 +215,21 @@ export const TemplateMarketPage: React.FC = () => {
             <Text type="secondary">按场景快速生成连接器契约，减少手工配置时间</Text>
           </Space>
           <Space>
+            <Tooltip title="严格模式会校验 request/response schema、时效 SLA 与 permissionScope">
+              <Switch
+                checked={strictContract}
+                onChange={(checked) => setStrictContract(checked)}
+                checkedChildren="严格契约"
+                unCheckedChildren="基础契约"
+              />
+            </Tooltip>
+            {quickstartChecklistData ? (
+              <Tag color={quickstartChecklistData.failed > 0 ? 'error' : 'success'}>
+                上线就绪 {quickstartChecklistData.passed}/{quickstartChecklistData.total}
+              </Tag>
+            ) : (
+              <Tag color="default">验收清单加载中</Tag>
+            )}
             <Input.Search
               allowClear
               placeholder="筛选业务模板"
@@ -212,12 +251,42 @@ export const TemplateMarketPage: React.FC = () => {
                 <Col xs={24} md={12} key={template.code}>
                   <Card size="small" style={{ height: '100%' }}>
                     <Space direction="vertical" style={{ width: '100%' }} size={10}>
-                      <Flex justify="space-between" align="center">
-                        <Title level={5} style={{ margin: 0 }}>
-                          {template.name}
-                        </Title>
-                        <Tag color="blue">{template.category}</Tag>
-                      </Flex>
+                      {(() => {
+                        const acceptance = quickstartChecklistMap.get(template.code);
+                        const failedCheckMessages =
+                          acceptance?.checks
+                            ?.filter((check) => !check.passed)
+                            .map(
+                              (check) =>
+                                `${acceptanceCheckLabelMap[check.key] ?? check.key}：${check.message}`,
+                            ) ?? [];
+
+                        const readinessTag = acceptance ? (
+                          acceptance.passed ? (
+                            <Tag color="success">验收通过</Tag>
+                          ) : (
+                            <Tooltip title={failedCheckMessages.join('\n') || '存在待修复项'}>
+                              <Tag color="error">待修复 {acceptance.failedChecks.length}</Tag>
+                            </Tooltip>
+                          )
+                        ) : isChecklistLoading ? (
+                          <Tag color="processing">验收中</Tag>
+                        ) : (
+                          <Tag color="default">未评估</Tag>
+                        );
+
+                        return (
+                          <Flex justify="space-between" align="center" wrap="wrap" gap={8}>
+                            <Title level={5} style={{ margin: 0 }}>
+                              {template.name}
+                            </Title>
+                            <Space size={4} wrap>
+                              <Tag color="blue">{template.category}</Tag>
+                              {readinessTag}
+                            </Space>
+                          </Flex>
+                        );
+                      })()}
 
                       <Paragraph
                         type="secondary"

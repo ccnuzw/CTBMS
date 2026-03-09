@@ -4,15 +4,23 @@ import { MarketDataCutoverCompensationJob } from './market-data-cutover-compensa
 import { MarketDataController } from './market-data.controller';
 import { MarketDataReconciliationMetricsJob } from './market-data-reconciliation-metrics.job';
 import { MarketDataService } from './market-data.service';
+import { MarketDataQueryService } from './services/market-data-query.service';
+import { MarketDataPersistenceService } from './services/market-data-persistence.service';
+import { MarketDataCutoverService } from './services/market-data-cutover.service';
+import { MarketDataReconciliationService } from './services/market-data-reconciliation.service';
 
 @Module({
   imports: [ConfigModule],
   controllers: [MarketDataController],
   providers: [
+    MarketDataQueryService,
+    MarketDataPersistenceService,
+    MarketDataCutoverService,
+    MarketDataReconciliationService,
     MarketDataService,
     MarketDataReconciliationMetricsJob,
     MarketDataCutoverCompensationJob,
   ],
   exports: [MarketDataService],
 })
-export class MarketDataModule {}
+export class MarketDataModule { }

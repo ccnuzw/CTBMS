@@ -11,7 +11,7 @@ export class AgentConversationSubscriptionJob {
   @Cron('*/1 * * * *')
   async tick() {
     try {
-      await this.conversationService.processDueSubscriptions();
+      await this.conversationService.subscriptionService.processDueSubscriptions();
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       this.logger.warn(`processDueSubscriptions failed: ${message}`);

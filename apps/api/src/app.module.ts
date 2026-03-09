@@ -48,6 +48,11 @@ import { WizardModule } from './modules/wizard/wizard.module';
 import { AgentSkillModule } from './modules/agent-skill';
 import { AgentConversationModule } from './modules/agent-conversation';
 import { MarketDataModule } from './modules/market-data';
+import { AuditLogModule } from './modules/audit-log';
+import { SemanticLayerModule } from './modules/semantic-layer';
+import { DataGovernanceModule } from './modules/data-governance';
+import { MetricCenterModule } from './modules/metric-center';
+import { FeatureFlagModule } from './modules/feature-flag';
 
 @Module({
   imports: [
@@ -97,6 +102,11 @@ import { MarketDataModule } from './modules/market-data';
     AgentSkillModule,
     AgentConversationModule,
     MarketDataModule,
+    AuditLogModule,
+    SemanticLayerModule,
+    DataGovernanceModule,
+    MetricCenterModule,
+    FeatureFlagModule,
   ],
   controllers: [AppController],
   providers: [],

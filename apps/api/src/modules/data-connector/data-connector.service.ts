@@ -11,7 +11,7 @@ import { PrismaService } from '../../prisma';
 
 @Injectable()
 export class DataConnectorService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private readonly prisma: PrismaService) { }
 
   async create(dto: CreateDataConnectorDto) {
     const existing = await this.prisma.dataConnector.findUnique({
@@ -502,6 +502,54 @@ export class DataConnectorService {
     } finally {
       clearTimeout(timeout);
     }
+  }
+
+  /**
+   * 获取所有活跃连接器的健康状态概览（时序快照点）
+   *
+   * WHY: 前端运营看板按一定频率轮询此接口，构建趋势图
+   */
+  async getHealthTimeSeries() {
+    const activeConnectors = await this.prisma.dataConnector.findMany({
+      where: { isActive: true },
+      select: {
+        id: true,
+        connectorCode: true,
+        connectorName: true,
+        connectorType: true,
+        isActive: true,
+        updatedAt: true,
+      },
+      orderBy: { connectorCode: 'asc' },
+    });
+
+    const checkedAt = new Date().toISOString();
+
+    // WHY: DataConnector 没有 healthStatus 持久字段，
+    //      通过 connectorType 推断基本健康状态（INTERNAL_DB 始终可用）
+    const connectorStatus = activeConnectors.map((c) => ({
+      connectorId: c.id,
+      connectorCode: c.connectorCode,
+      connectorName: c.connectorName,
+      connectorType: c.connectorType,
+      isActive: c.isActive,
+      lastUpdatedAt: c.updatedAt,
+      inferredHealth: c.connectorType === 'INTERNAL_DB' ? 'HEALTHY' : 'UNKNOWN',
+    }));
+
+    const healthyCount = connectorStatus.filter((c) => c.inferredHealth === 'HEALTHY').length;
+    const unknownCount = connectorStatus.filter((c) => c.inferredHealth === 'UNKNOWN').length;
+
+    return {
+      checkedAt,
+      total: activeConnectors.length,
+      summary: {
+        healthy: healthyCount,
+        unknown: unknownCount,
+        inactive: 0,
+      },
+      connectors: connectorStatus,
+    };
   }
 
   private buildWhere(query: DataConnectorQueryDto) {

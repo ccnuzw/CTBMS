@@ -121,6 +121,11 @@ export interface ConfirmResponse {
   executionId: string;
   status: 'EXECUTING';
   traceId: string;
+  preflight?: {
+    passed: boolean;
+    message: string;
+    reasonCodes: string[];
+  };
 }
 
 export type ConversationEvidenceFreshness = 'FRESH' | 'STALE' | 'UNKNOWN';
@@ -152,6 +157,21 @@ export interface ConversationResultTraceability {
   generatedAt: string;
 }
 
+export type ConversationFreshnessStatus = 'WITHIN_TTL' | 'NEAR_EXPIRE' | 'EXPIRED' | 'UNKNOWN';
+
+export interface ConversationResultQualityBreakdown {
+  completeness: number;
+  timeliness: number;
+  evidenceStrength: number;
+  verification: number;
+}
+
+export interface ConversationResultConfidenceGate {
+  allowStrongConclusion: boolean;
+  reasonCodes: string[];
+  message: string;
+}
+
 export interface ResultResponse {
   status: 'EXECUTING' | 'DONE' | 'FAILED' | ConversationState;
   result: {
@@ -161,6 +181,10 @@ export interface ResultResponse {
     actions: Record<string, unknown>;
     confidence: number;
     dataTimestamp: string;
+    qualityScore?: number;
+    qualityBreakdown?: ConversationResultQualityBreakdown;
+    freshnessStatus?: ConversationFreshnessStatus;
+    confidenceGate?: ConversationResultConfidenceGate | null;
     evidenceItems?: ConversationEvidenceItem[];
     traceability?: ConversationResultTraceability | null;
   } | null;
@@ -172,6 +196,15 @@ export interface ResultResponse {
   }>;
   executionId?: string;
   error?: string | null;
+}
+
+export interface ConversationEvidenceListResponse {
+  executionId: string | null;
+  total: number;
+  filteredCount: number;
+  traceability: ConversationResultTraceability | null;
+  items: ConversationEvidenceItem[];
+  generatedAt: string;
 }
 
 export interface ConversationResultDiffSnapshot {
@@ -655,6 +688,45 @@ export const useConversationResult = (sessionId?: string) =>
     },
   });
 
+export const useConversationEvidence = (
+  sessionId?: string,
+  query?: {
+    executionId?: string;
+    limit?: number;
+    freshness?: ConversationEvidenceFreshness;
+    quality?: ConversationEvidenceQuality;
+    source?: string;
+  },
+) =>
+  useQuery<ConversationEvidenceListResponse>({
+    queryKey: [
+      'agent-copilot',
+      'evidence',
+      sessionId,
+      query?.executionId,
+      query?.limit,
+      query?.freshness,
+      query?.quality,
+      query?.source,
+    ],
+    queryFn: async () => {
+      const res = await apiClient.get<ConversationEvidenceListResponse>(
+        `/agent-conversations/sessions/${sessionId}/evidence`,
+        {
+          params: {
+            executionId: query?.executionId,
+            limit: query?.limit,
+            freshness: query?.freshness,
+            quality: query?.quality,
+            source: query?.source,
+          },
+        },
+      );
+      return res.data;
+    },
+    enabled: Boolean(sessionId),
+  });
+
 export const useConversationResultDiff = (sessionId?: string) =>
   useQuery<ConversationResultDiffResponse>({
     queryKey: ['agent-copilot', 'result-diff', sessionId],
@@ -733,6 +805,7 @@ export const useSendConversationTurn = () => {
     onSuccess: ({ sessionId }) => {
       queryClient.invalidateQueries({ queryKey: ['agent-copilot', 'session', sessionId] });
       queryClient.invalidateQueries({ queryKey: ['agent-copilot', 'sessions'] });
+      queryClient.invalidateQueries({ queryKey: ['agent-copilot', 'evidence', sessionId] });
     },
   });
 };
@@ -757,6 +830,7 @@ export const useConfirmConversationPlan = () => {
       queryClient.invalidateQueries({ queryKey: ['agent-copilot', 'session', sessionId] });
       queryClient.invalidateQueries({ queryKey: ['agent-copilot', 'result', sessionId] });
       queryClient.invalidateQueries({ queryKey: ['agent-copilot', 'sessions'] });
+      queryClient.invalidateQueries({ queryKey: ['agent-copilot', 'evidence', sessionId] });
     },
   });
 };
@@ -1239,6 +1313,56 @@ export const useConversationBacktest = (sessionId?: string, backtestJobId?: stri
       return status === 'RUNNING' || status === 'QUEUED' ? 2000 : false;
     },
   });
+
+export interface BacktestListItem {
+  backtestJobId: string;
+  status: string;
+  summary: Record<string, unknown>;
+  assumptions: Record<string, unknown>;
+  createdAt: string;
+  completedAt: string | null;
+}
+
+export const useConversationBacktestList = (sessionId?: string) =>
+  useQuery<BacktestListItem[]>({
+    queryKey: ['agent-copilot', 'backtest-list', sessionId],
+    queryFn: async () => {
+      const res = await apiClient.get<BacktestListItem[]>(
+        `/agent-conversations/sessions/${sessionId}/backtests`,
+      );
+      return res.data;
+    },
+    enabled: Boolean(sessionId),
+  });
+
+export interface BacktestCompareResult {
+  jobA: { id: string; createdAt: string; assumptions: Record<string, unknown> };
+  jobB: { id: string; createdAt: string; assumptions: Record<string, unknown> };
+  comparison: {
+    returnPct: { a: number; b: number; diff: number };
+    maxDrawdownPct: { a: number; b: number; diff: number };
+    winRatePct: { a: number; b: number; diff: number };
+    score: { a: number; b: number; diff: number };
+  };
+}
+
+export const useConversationBacktestCompare = (
+  sessionId?: string,
+  jobA?: string,
+  jobB?: string,
+) =>
+  useQuery<BacktestCompareResult>({
+    queryKey: ['agent-copilot', 'backtest-compare', sessionId, jobA, jobB],
+    queryFn: async () => {
+      const res = await apiClient.get<BacktestCompareResult>(
+        `/agent-conversations/sessions/${sessionId}/backtests/compare`,
+        { params: { jobA, jobB } },
+      );
+      return res.data;
+    },
+    enabled: Boolean(sessionId && jobA && jobB && jobA !== jobB),
+  });
+
 
 export const useConversationConflicts = (sessionId?: string) =>
   useQuery<ConversationConflictsResponse>({

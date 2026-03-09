@@ -56,15 +56,14 @@ async function seedOrgStructure() {
 
     console.log('   - Seeding Organizations (Pass 1: Creation)...');
     for (const org of orgs) {
-        // Strip relations
-        const { children, departments, users, parent, ...data } = org;
+        const data = { ...org };
         // Also strip parentId for now to avoid FK error if parent not yet created
-        const { parentId, ...rootData } = data;
+        delete data.parentId;
 
         await prisma.organization.upsert({
-            where: { id: data.id },
-            update: rootData, // Update basic info first
-            create: rootData
+            where: { id: org.id },
+            update: data, // Update basic info first
+            create: data
         });
     }
 
@@ -81,15 +80,15 @@ async function seedOrgStructure() {
     // 3. Departments
     console.log('   - Seeding Departments...');
     for (const dept of depts) {
-        const { users, organization, parent, children, ...data } = dept;
+        const data = { ...dept };
         // Handle hierarchy for Departments too if needed, similar to Orgs
-        const { parentId, ...basicData } = data;
+        delete data.parentId;
 
         try {
             await prisma.department.upsert({
-                where: { id: data.id },
-                update: basicData, // parentId handled in pass 2 if self-referencing
-                create: basicData
+                where: { id: dept.id },
+                update: data, // parentId handled in pass 2 if self-referencing
+                create: data
             });
         } catch (e) {
             console.warn(`Failed to seed Dept ${data.name}:`, e);
@@ -103,7 +102,9 @@ async function seedOrgStructure() {
                     where: { id: dept.id },
                     data: { parentId: dept.parentId }
                 });
-            } catch (e) { }
+            } catch (e) {
+                console.warn(`Failed to restore department hierarchy for ${dept.id}:`, e);
+            }
         }
     }
 
@@ -111,7 +112,7 @@ async function seedOrgStructure() {
     console.log('   - Seeding Users...');
     for (const user of users) {
         // Cleanup relations
-        const { roles, organization, department, marketIntels, intelStats, intelTasks, ...userData } = user;
+        const { roles, ...userData } = user;
 
         // Ensure dates are parsed
         if (userData.birthday) userData.birthday = new Date(userData.birthday);

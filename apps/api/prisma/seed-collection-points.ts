@@ -1,7 +1,41 @@
 /// <reference types="node" />
-import { PrismaClient, CollectionPointType, RegionLevel } from '@prisma/client';
+import { CollectionPointType, PrismaClient } from '@prisma/client';
 import * as fs from 'fs';
 import * as path from 'path';
+
+type CollectionPointSeed = {
+    id: string;
+    code: string;
+    name: string;
+    shortName?: string | null;
+    aliases?: string[];
+    type: CollectionPointType;
+    matchRegionCodes?: string[];
+    regionCode?: string | null;
+    address?: string | null;
+    longitude?: number | null;
+    latitude?: number | null;
+    commodities?: string[];
+    priceSubTypes?: string[];
+    defaultSubType?: string | null;
+    isDataSource?: boolean;
+    enterpriseId?: string | null;
+    priority?: number;
+    isActive?: boolean;
+    description?: string | null;
+    createdAt?: string | Date;
+    updatedAt?: string | Date;
+    createdById?: string | null;
+    commodityConfigs?: Array<{
+        name: string;
+        allowedSubTypes: string[];
+        defaultSubType?: string | null;
+    }>;
+    isMarketEntity?: boolean;
+    enterprise?: unknown;
+    region?: unknown;
+    entityTags?: unknown;
+};
 
 const prisma = new PrismaClient();
 
@@ -10,7 +44,7 @@ async function seedCollectionPoints() {
 
     // Helper to read JSON
     // Helper to read JSON with robust path resolution
-    const readJson = (filename: string) => {
+    const readJson = (filename: string): CollectionPointSeed[] => {
         const currentDir = process.cwd();
         const possiblePaths = [
             path.join(__dirname, filename), // Same dir (Dev or copied)
@@ -21,7 +55,7 @@ async function seedCollectionPoints() {
 
         for (const p of possiblePaths) {
             if (fs.existsSync(p)) {
-                return JSON.parse(fs.readFileSync(p, 'utf-8'));
+                return JSON.parse(fs.readFileSync(p, 'utf-8')) as CollectionPointSeed[];
             }
         }
 
@@ -35,59 +69,46 @@ async function seedCollectionPoints() {
 
     for (const item of collectionPoints) {
         try {
-            // Fix for Schema Compatibility (same logic as used in previous seed-snapshot fix)
-            const data: any = { ...item };
+            const matchRegionCodes = item.matchRegionCodes?.length
+                ? item.matchRegionCodes
+                : item.regionCode
+                  ? [item.regionCode]
+                  : [];
 
-            // 1. Add missing fields
-            if (!data.matchRegionCodes) {
-                data.matchRegionCodes = [];
-                // Try to use regionCode as default match
-                if (data.regionCode && typeof data.regionCode === 'string') {
-                    data.matchRegionCodes.push(data.regionCode);
-                }
-            }
+            const priceSubTypes = item.priceSubTypes?.length
+                ? item.priceSubTypes
+                : item.type === 'PORT'
+                  ? ['ARRIVAL', 'FOB']
+                  : item.type === 'ENTERPRISE'
+                    ? ['PURCHASE', 'LISTED']
+                    : ['LISTED'];
 
-            if (data.isMarketEntity === undefined) {
-                data.isMarketEntity = false;
-            }
+            const commodities = item.commodities?.length ? item.commodities : ['玉米', '大豆'];
 
-            // 2. Handle FKs
-            // enterpriseId: The snapshot might have old UUIDs.
-            // If we want to relink to new enterprises, we'd need a map.
-            // For now, let's nullify enterpriseId to avoid errors, or only keep it if we are sure.
-            // Given we just recreated enterprises with NEW UUIDs, the old IDs are definitely invalid.
-            data.enterpriseId = null;
+            const commodityConfigs = item.commodityConfigs?.length
+                ? item.commodityConfigs
+                : commodities.map((commodity) => ({
+                      name: commodity,
+                      allowedSubTypes: priceSubTypes,
+                      defaultSubType: item.defaultSubType ?? priceSubTypes[0],
+                  }));
 
-            // 3. Remove relation fields that might conflict with 'create' / 'update' shorthand
-            // (e.g. if the JSON object includes 'enterprise' object attached)
+            const data = {
+                ...item,
+                matchRegionCodes,
+                enterpriseId: null,
+                commodities,
+                priceSubTypes,
+                commodityConfigs,
+                isMarketEntity: item.isMarketEntity ?? false,
+                enterprise: undefined,
+                region: undefined,
+                entityTags: undefined,
+            };
+
             delete data.enterprise;
             delete data.region;
-            delete data.entityTags; // We will handle tags separately or need proper connect syntax
-
-            // 4. Default commodities and priceSubTypes if missing
-            if (!data.commodities) {
-                data.commodities = ['玉米', '大豆']; // Default logic
-            }
-            if (!data.priceSubTypes) {
-                // Default based on type
-                if (data.type === 'PORT') {
-                    data.priceSubTypes = ['ARRIVAL', 'FOB'];
-                } else if (data.type === 'ENTERPRISE') {
-                    data.priceSubTypes = ['PURCHASE', 'LISTED'];
-                } else {
-                    data.priceSubTypes = ['LISTED'];
-                }
-            }
-
-            // 5. Generate commodityConfigs if missing
-            if (!data.commodityConfigs && data.commodities && data.priceSubTypes) {
-                // Default config for each commodity using the flat priceSubTypes
-                data.commodityConfigs = data.commodities.map((c: string) => ({
-                    name: c,
-                    allowedSubTypes: data.priceSubTypes,
-                    defaultSubType: data.defaultSubType || data.priceSubTypes[0],
-                }));
-            }
+            delete data.entityTags;
 
             await prisma.collectionPoint.upsert({
                 where: { id: item.id },

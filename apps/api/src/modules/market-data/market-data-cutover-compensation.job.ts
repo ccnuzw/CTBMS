@@ -6,12 +6,12 @@ import { MarketDataService } from './market-data.service';
 export class MarketDataCutoverCompensationJob {
   private readonly logger = new Logger(MarketDataCutoverCompensationJob.name);
 
-  constructor(private readonly marketDataService: MarketDataService) {}
+  constructor(private readonly marketDataService: MarketDataService) { }
 
   @Cron('*/10 * * * *')
   async runCompensationSweep() {
     try {
-      const result = await this.marketDataService.runReconciliationCutoverCompensationSweep();
+      const result = await this.marketDataService.cutoverService.runReconciliationCutoverCompensationSweep();
       if (!result.enabled) {
         return;
       }

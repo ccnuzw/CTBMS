@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { AgentConversationController } from './agent-conversation.controller';
 import { AgentConversationService } from './agent-conversation.service';
+import { MarketDataModule } from '../market-data';
 import { WorkflowExecutionModule } from '../workflow-execution';
 import { ReportExportModule } from '../report-export';
 import { AgentConversationSubscriptionJob } from './agent-conversation-subscription.job';
@@ -17,11 +18,14 @@ import {
   ConversationEphemeralService,
   ConversationSynthesizerService,
   ConversationOrchestratorService,
+  ConversationPreflightService,
   ConversationTurnService,
+  ConversationCapabilityService,
+  ConversationSubscriptionService,
 } from './services';
 
 @Module({
-  imports: [WorkflowExecutionModule, ReportExportModule],
+  imports: [WorkflowExecutionModule, ReportExportModule, MarketDataModule],
   controllers: [AgentConversationController],
   providers: [
     ConversationUtilsService,
@@ -35,12 +39,16 @@ import {
     ConversationEphemeralService,
     ConversationSynthesizerService,
     ConversationOrchestratorService,
+    ConversationPreflightService,
     ConversationTurnService,
+    ConversationCapabilityService,
+    ConversationSubscriptionService,
     AgentConversationService,
     AgentConversationSubscriptionJob,
     AgentConversationEphemeralGovernanceJob,
   ],
   exports: [
+    ConversationCapabilityService,
     AgentConversationService,
     ConversationUtilsService,
     ConversationIntentService,
@@ -53,7 +61,9 @@ import {
     ConversationEphemeralService,
     ConversationSynthesizerService,
     ConversationOrchestratorService,
+    ConversationPreflightService,
     ConversationTurnService,
+    ConversationSubscriptionService,
   ],
 })
-export class AgentConversationModule { }
+export class AgentConversationModule {}

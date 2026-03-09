@@ -10,7 +10,7 @@ export enum InfoStatus {
 // --- Category Schemas ---
 export const CreateCategorySchema = z.object({
     name: z.string().min(1, '名称不能为空'),
-    code: z.string().min(1, '编码不能为空').regex(/^[a-zA-Z0-9_\-]+$/, '编码只能包含字母、数字、下划线和连字符'),
+    code: z.string().min(1, '编码不能为空').regex(/^[a-zA-Z0-9_-]+$/, '编码只能包含字母、数字、下划线和连字符'),
     description: z.string().optional().nullable(),
     sortOrder: z.number().int().default(0),
 });

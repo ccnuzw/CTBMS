@@ -157,20 +157,23 @@ async function main() {
     nonPrivilegedVersionId = nonPrivilegedVersion.id;
 
     // ── Test 1: Non-privileged user cannot create public template ──
-    const nonPrivilegedCreate = await fetchJson<{ statusCode: number }>(`${baseUrl}/template-catalog`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-virtual-user-id': nonPrivilegedUserId,
+    const nonPrivilegedCreate = await fetchJson<{ statusCode: number }>(
+      `${baseUrl}/template-catalog`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-virtual-user-id': nonPrivilegedUserId,
+        },
+        body: JSON.stringify({
+          sourceVersionId: nonPrivilegedVersionId,
+          sourceWorkflowDefinitionId: nonPrivilegedDefinitionId,
+          templateCode: `${templateCode}_NON_PRIV`,
+          name: 'Non Privileged Create',
+          category: 'TRADING',
+        }),
       },
-      body: JSON.stringify({
-        sourceVersionId: nonPrivilegedVersionId,
-        sourceWorkflowDefinitionId: nonPrivilegedDefinitionId,
-        templateCode: `${templateCode}_NON_PRIV`,
-        name: 'Non Privileged Create',
-        category: 'TRADING',
-      }),
-    });
+    );
     assert.equal(nonPrivilegedCreate.status, 403);
 
     // ── Test 2: Create template from workflow version ──
@@ -256,6 +259,92 @@ async function main() {
     const draftInPublic = publicList.body.data.find((t) => t.id === templateId);
     assert.equal(draftInPublic, undefined, 'DRAFT template should not appear in public listing');
 
+    // ── Test 7: Quickstart business templates should expose 4 canonical scenarios ──
+    const quickstartTemplates = await fetchJson<{
+      templates: Array<{
+        code: string;
+        connectorCreateDrafts: Array<{ connectorCode: string; sourceDomain: string }>;
+        recommendedConnectors: string[];
+      }>;
+      total: number;
+    }>(`${baseUrl}/template-catalog/quickstart/business-templates`, {
+      method: 'GET',
+      headers: { 'x-virtual-user-id': ownerUserId },
+    });
+    assert.equal(quickstartTemplates.status, 200);
+    assert.ok(quickstartTemplates.body.total >= 4);
+    const quickstartCodes = quickstartTemplates.body.templates.map((item) => item.code);
+    const expectedQuickstartCodes = [
+      'WEEKLY_MARKET_REVIEW',
+      'PRICE_ALERT_MONITORING',
+      'WEATHER_LOGISTICS_IMPACT',
+      'STRATEGY_BACKTEST',
+    ];
+    for (const code of expectedQuickstartCodes) {
+      assert.ok(
+        quickstartCodes.includes(code),
+        `quickstart templates should include scenario code ${code}`,
+      );
+    }
+    assert.ok(
+      quickstartTemplates.body.templates.every(
+        (template) =>
+          template.connectorCreateDrafts.length >=
+          Math.min(template.recommendedConnectors.length, 1),
+      ),
+      'each quickstart template should provide connector drafts for execution readiness',
+    );
+
+    // ── Test 8: Quickstart acceptance checklist should pass run/export/evidence gates ──
+    const quickstartChecklist = await fetchJson<{
+      strictContract: boolean;
+      total: number;
+      passed: number;
+      failed: number;
+      items: Array<{
+        code: string;
+        passed: boolean;
+        failedChecks: string[];
+        checks: Array<{ key: string; passed: boolean }>;
+      }>;
+    }>(
+      `${baseUrl}/template-catalog/quickstart/business-templates/acceptance-checklist?strictContract=true`,
+      {
+        method: 'GET',
+        headers: { 'x-virtual-user-id': ownerUserId },
+      },
+    );
+    assert.equal(quickstartChecklist.status, 200);
+    assert.equal(quickstartChecklist.body.strictContract, true);
+    assert.ok(quickstartChecklist.body.total >= 4);
+    assert.equal(quickstartChecklist.body.failed, 0);
+    assert.equal(quickstartChecklist.body.passed, quickstartChecklist.body.total);
+    for (const code of expectedQuickstartCodes) {
+      const item = quickstartChecklist.body.items.find((entry) => entry.code === code);
+      assert.ok(item, `checklist should include scenario code ${code}`);
+      assert.equal(item?.passed, true);
+      assert.equal(item?.failedChecks.length, 0);
+      const checkKeys = new Set((item?.checks ?? []).map((check) => check.key));
+      assert.ok(checkKeys.has('RUN_READY'));
+      assert.ok(checkKeys.has('EXPORT_READY'));
+      assert.ok(checkKeys.has('EVIDENCE_READY'));
+    }
+
+    // ── Test 9: Checklist keyword filter should narrow to weather/logistics scenario ──
+    const weatherChecklist = await fetchJson<{
+      total: number;
+      items: Array<{ code: string }>;
+    }>(
+      `${baseUrl}/template-catalog/quickstart/business-templates/acceptance-checklist?keyword=${encodeURIComponent('天气')}`,
+      {
+        method: 'GET',
+        headers: { 'x-virtual-user-id': ownerUserId },
+      },
+    );
+    assert.equal(weatherChecklist.status, 200);
+    assert.equal(weatherChecklist.body.total, 1);
+    assert.equal(weatherChecklist.body.items[0]?.code, 'WEATHER_LOGISTICS_IMPACT');
+
     nonPrivilegedTemplateId = (
       await prisma.templateCatalog.create({
         data: {
@@ -275,7 +364,7 @@ async function main() {
       })
     ).id;
 
-    // ── Test 7: Non-privileged user cannot publish public template ──
+    // ── Test 10: Non-privileged user cannot publish public template ──
     const nonPrivilegedPublish = await fetchJson<{ statusCode: number }>(
       `${baseUrl}/template-catalog/${nonPrivilegedTemplateId}/publish`,
       {
@@ -285,7 +374,7 @@ async function main() {
     );
     assert.equal(nonPrivilegedPublish.status, 403);
 
-    // ── Test 8: Publish template ──
+    // ── Test 11: Publish template ──
     const published = await fetchJson<{ id: string; status: string }>(
       `${baseUrl}/template-catalog/${templateId}/publish`,
       {
@@ -296,7 +385,7 @@ async function main() {
     assert.equal(published.status, 201);
     assert.equal(published.body.status, 'PUBLISHED');
 
-    // ── Test 9: Published template now appears in public listing ──
+    // ── Test 12: Published template now appears in public listing ──
     const publicListAfter = await fetchJson<{
       data: Array<{ id: string }>;
     }>(`${baseUrl}/template-catalog`, { method: 'GET' });
@@ -304,7 +393,7 @@ async function main() {
     const publishedInPublic = publicListAfter.body.data.find((t) => t.id === templateId);
     assert.ok(publishedInPublic, 'PUBLISHED template should appear in public listing');
 
-    // ── Test 10: Duplicate publish returns 400 ──
+    // ── Test 13: Duplicate publish returns 400 ──
     const dupPublish = await fetchJson<{ statusCode: number }>(
       `${baseUrl}/template-catalog/${templateId}/publish`,
       {
@@ -314,7 +403,7 @@ async function main() {
     );
     assert.equal(dupPublish.status, 400);
 
-    // ── Test 11: Copy template to workspace ──
+    // ── Test 14: Copy template to workspace ──
     const copied = await fetchJson<{
       id: string;
       workflowId: string;
@@ -354,7 +443,7 @@ async function main() {
       .delete({ where: { id: copied.body.id } })
       .catch(() => undefined);
 
-    // ── Test 12: Archive template ──
+    // ── Test 15: Archive template ──
     const archived = await fetchJson<{ id: string; status: string }>(
       `${baseUrl}/template-catalog/${templateId}/archive`,
       {
@@ -365,7 +454,7 @@ async function main() {
     assert.equal(archived.status, 201);
     assert.equal(archived.body.status, 'ARCHIVED');
 
-    // ── Test 13: Delete template ──
+    // ── Test 16: Delete template ──
     const deleted = await fetchJson<{ deleted: boolean }>(
       `${baseUrl}/template-catalog/${templateId}`,
       {
@@ -377,32 +466,29 @@ async function main() {
     assert.equal(deleted.body.deleted, true);
     templateId = undefined; // Already deleted
 
-    // ── Test 14: Deleted template returns 404 ──
+    // ── Test 17: Deleted template returns 404 ──
     const notFound = await fetchJson<{ statusCode: number }>(
       `${baseUrl}/template-catalog/${archived.body.id}`,
       { method: 'GET' },
     );
     assert.equal(notFound.status, 404);
 
-    // ── Test 15: Non-owner cannot update ──
+    // ── Test 18: Non-owner cannot update ──
     // Create a new template for cross-user test
-    const otherTemplate = await fetchJson<{ id: string }>(
-      `${baseUrl}/template-catalog`,
-      {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-virtual-user-id': ownerUserId,
-        },
-        body: JSON.stringify({
-          sourceVersionId: versionId,
-          sourceWorkflowDefinitionId: definitionId,
-          templateCode: `${templateCode}_CROSS`,
-          name: 'Cross User Test',
-          category: 'TRADING',
-        }),
+    const otherTemplate = await fetchJson<{ id: string }>(`${baseUrl}/template-catalog`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-virtual-user-id': ownerUserId,
       },
-    );
+      body: JSON.stringify({
+        sourceVersionId: versionId,
+        sourceWorkflowDefinitionId: definitionId,
+        templateCode: `${templateCode}_CROSS`,
+        name: 'Cross User Test',
+        category: 'TRADING',
+      }),
+    });
     assert.equal(otherTemplate.status, 201);
 
     const otherUserId = randomUUID();
@@ -446,7 +532,9 @@ async function main() {
       await prisma.workflowVersion.delete({ where: { id: versionId } }).catch(() => undefined);
     }
     if (definitionId) {
-      await prisma.workflowDefinition.delete({ where: { id: definitionId } }).catch(() => undefined);
+      await prisma.workflowDefinition
+        .delete({ where: { id: definitionId } })
+        .catch(() => undefined);
     }
     if (nonPrivilegedVersionId) {
       await prisma.workflowVersion

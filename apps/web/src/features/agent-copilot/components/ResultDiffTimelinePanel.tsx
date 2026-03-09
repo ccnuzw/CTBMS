@@ -150,7 +150,64 @@ export const ResultDiffTimelinePanel: React.FC<ResultDiffTimelinePanelProps> = (
                           ) : (
                             <Tag color="success">无显著变化</Tag>
                           )}
+                          {/* 变化驱动因素标注 */}
+                          {diff.addedSources.length > 0 && diff.confidenceDelta > 0 ? (
+                            <Tag color="cyan">驱动：新证据注入</Tag>
+                          ) : diff.removedSources.length > 0 && diff.confidenceDelta < 0 ? (
+                            <Tag color="volcano">驱动：证据失效</Tag>
+                          ) : diff.addedFacts.length > 0 || diff.removedFacts.length > 0 ? (
+                            <Tag color="geekblue">驱动：数据更新</Tag>
+                          ) : diff.changedActionKeys.length > 0 ? (
+                            <Tag color="purple">驱动：策略调整</Tag>
+                          ) : null}
                         </Space>
+
+                        {/* 新增事实详情 */}
+                        {diff.addedFacts.length > 0 ? (
+                          <div style={{ paddingLeft: 8 }}>
+                            <Text type="secondary" style={{ fontSize: 11 }}>新增事实：</Text>
+                            {diff.addedFacts.slice(0, 3).map((fact, fi) => (
+                              <div key={fi} style={{ fontSize: 12, color: '#52c41a', paddingLeft: 8 }}>
+                                + {fact.length > 60 ? `${fact.slice(0, 60)}…` : fact}
+                              </div>
+                            ))}
+                            {diff.addedFacts.length > 3 ? (
+                              <Text type="secondary" style={{ fontSize: 11, paddingLeft: 8 }}>
+                                还有 {diff.addedFacts.length - 3} 条...
+                              </Text>
+                            ) : null}
+                          </div>
+                        ) : null}
+
+                        {/* 删除事实详情 */}
+                        {diff.removedFacts.length > 0 ? (
+                          <div style={{ paddingLeft: 8 }}>
+                            <Text type="secondary" style={{ fontSize: 11 }}>移除事实：</Text>
+                            {diff.removedFacts.slice(0, 3).map((fact, fi) => (
+                              <div key={fi} style={{ fontSize: 12, color: '#cf1322', paddingLeft: 8 }}>
+                                - {fact.length > 60 ? `${fact.slice(0, 60)}…` : fact}
+                              </div>
+                            ))}
+                            {diff.removedFacts.length > 3 ? (
+                              <Text type="secondary" style={{ fontSize: 11, paddingLeft: 8 }}>
+                                还有 {diff.removedFacts.length - 3} 条...
+                              </Text>
+                            ) : null}
+                          </div>
+                        ) : null}
+
+                        {/* 证据来源变化 */}
+                        {diff.addedSources.length > 0 || diff.removedSources.length > 0 ? (
+                          <Space size={[6, 4]} wrap style={{ paddingLeft: 8 }}>
+                            {diff.addedSources.slice(0, 4).map((src, si) => (
+                              <Tag key={`a${si}`} color="green" style={{ fontSize: 11 }}>+{src}</Tag>
+                            ))}
+                            {diff.removedSources.slice(0, 4).map((src, si) => (
+                              <Tag key={`r${si}`} color="red" style={{ fontSize: 11 }}>-{src}</Tag>
+                            ))}
+                          </Space>
+                        ) : null}
+
                         <Space size={12} wrap>
                           <Text type="secondary">事实 +{diff.addedFacts.length}</Text>
                           <Text type="secondary">事实 -{diff.removedFacts.length}</Text>

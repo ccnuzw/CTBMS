@@ -24,7 +24,7 @@ async function main() {
     const collectionPoints = await prisma.collectionPoint.findMany();
 
     // 2. Format Data helper
-    const formatData = (data: any[]) => {
+    const formatData = (data: unknown[]) => {
         if (!data || data.length === 0) return '[]';
 
         // Convert to JSON

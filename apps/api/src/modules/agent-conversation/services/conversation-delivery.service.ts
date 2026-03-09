@@ -4,12 +4,18 @@
  * 负责：
  *   - deliver: 多渠道投递（EMAIL, DINGTALK, WECOM, FEISHU）
  *   - deliverEmail: 邮件投递快捷方法
- *   - 模板解析、Webhook 路由、收件人合并、投递日志记录
+ *   - 模板解析、收件人合并、投递日志记录
  *   - 投递配置绑定管理（CRUD）
+ *
+ * 渠道实现:
+ *   - EMAIL: nodemailer SMTP 直发（需 SMTP_HOST/PORT/USER/PASS/FROM 环境变量）
+ *   - WECOM: 企微机器人 Webhook 直调（Markdown 卡片）
+ *   - DINGTALK/FEISHU: 通用 Webhook 代理
  */
-import { Injectable, BadRequestException } from '@nestjs/common';
+import { Injectable, BadRequestException, Logger } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { randomUUID } from 'crypto';
+import * as nodemailer from 'nodemailer';
 import { PrismaService } from '../../../prisma';
 import { ConversationUtilsService } from './conversation-utils.service';
 import { ConversationAssetService } from './conversation-asset.service';
@@ -21,8 +27,23 @@ import type {
 type DeliveryChannel = 'EMAIL' | 'DINGTALK' | 'WECOM' | 'FEISHU';
 type DeliveryTemplateCode = 'DEFAULT' | 'MORNING_BRIEF' | 'WEEKLY_REVIEW' | 'RISK_ALERT';
 
+const MAX_DELIVERY_RETRIES = 2;
+const RETRY_BASE_DELAY_MS = 1000;
+
+/** 渠道发送结果 */
+interface ChannelSendResult {
+    status: 'SENT' | 'FAILED';
+    errorMessage: string | null;
+    /** 实际使用的投递方式 */
+    deliveryMethod: 'SMTP' | 'WECOM_WEBHOOK' | 'GENERIC_WEBHOOK';
+    /** 实际重试次数 */
+    retryCount?: number;
+}
+
 @Injectable()
 export class ConversationDeliveryService {
+    private readonly logger = new Logger(ConversationDeliveryService.name);
+
     constructor(
         private readonly prisma: PrismaService,
         private readonly utilsService: ConversationUtilsService,
@@ -94,26 +115,38 @@ export class ConversationDeliveryService {
         }
 
         const deliveryTaskId = `delivery_${randomUUID()}`;
-        const webhookUrl = this.resolveDeliveryWebhook(channel);
         const subject = this.resolveDeliverySubject(channel, normalizedTemplate, dto.subject);
         const content = this.resolveDeliveryContent(channel, normalizedTemplate, dto.content);
+        const fileName = `report-export-${exportTask.id}.${String(exportTask.format).toLowerCase()}`;
+        const downloadUrl = `/report-exports/${exportTask.id}/download`;
 
-        let status: 'QUEUED' | 'SENT' | 'FAILED' = 'QUEUED';
-        let errorMessage: string | null = null;
+        // ── 按渠道分发（含重试） ────────────────────────────────────────
+        const sendOnce = async (): Promise<ChannelSendResult> => {
+            switch (channel) {
+                case 'EMAIL':
+                    return this.sendViaSmtp({
+                        to: to ?? [],
+                        subject,
+                        content,
+                        fileName,
+                        downloadUrl,
+                        sendRawFile,
+                    });
 
-        if (!webhookUrl) {
-            status = 'FAILED';
-            errorMessage = `未配置 ${channel} 投递 webhook，无法实际投递`;
-        } else {
-            try {
-                const fileName = `report-export-${exportTask.id}.${String(exportTask.format).toLowerCase()}`;
-                const downloadUrl = `/report-exports/${exportTask.id}/download`;
-                const response = await fetch(webhookUrl, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        deliveryTaskId,
+                case 'WECOM':
+                    return this.sendViaWecomWebhook({
+                        target: target ?? '',
+                        subject,
+                        content,
+                        fileName,
+                        downloadUrl,
+                    });
+
+                default:
+                    // DINGTALK / FEISHU — 通用 Webhook 代理
+                    return this.sendViaGenericWebhook({
                         channel,
+                        deliveryTaskId,
                         exportTaskId: exportTask.id,
                         to,
                         target,
@@ -121,26 +154,18 @@ export class ConversationDeliveryService {
                         content,
                         templateCode: normalizedTemplate,
                         metadata: dto.metadata,
-                        attachment: {
-                            fileName,
-                            downloadUrl,
-                            mode: sendRawFile ? 'RAW_FILE' : 'EXPORT_FILE',
-                        },
-                    }),
-                });
-
-                if (response.ok) {
-                    status = 'SENT';
-                } else {
-                    status = 'FAILED';
-                    errorMessage = `${channel} 投递网关返回 ${response.status}`;
-                }
-            } catch (error) {
-                status = 'FAILED';
-                errorMessage = error instanceof Error ? error.message : String(error);
+                        fileName,
+                        downloadUrl,
+                        sendRawFile,
+                    });
             }
-        }
+        };
 
+        const result = await this.sendWithRetry(sendOnce);
+
+        const { status, errorMessage, deliveryMethod, retryCount } = result;
+
+        // ── 投递日志持久化 ──────────────────────────────────────────────
         await this.prisma.conversationTurn.create({
             data: {
                 sessionId,
@@ -154,6 +179,8 @@ export class ConversationDeliveryService {
                     channel,
                     exportTaskId: exportTask.id,
                     status,
+                    deliveryMethod,
+                    retryCount: retryCount ?? 0,
                     to,
                     target,
                     subject,
@@ -172,6 +199,7 @@ export class ConversationDeliveryService {
                 channel,
                 exportTaskId: exportTask.id,
                 status,
+                deliveryMethod,
                 to,
                 target,
                 subject,
@@ -182,6 +210,260 @@ export class ConversationDeliveryService {
         });
 
         return { deliveryTaskId, channel, status, errorMessage };
+    }
+
+    // ── Retry Wrapper ───────────────────────────────────────────────────────
+
+    /**
+     * 发送并在失败时指数退避重试（最多 MAX_DELIVERY_RETRIES 次）
+     */
+    private async sendWithRetry(
+        sendFn: () => Promise<ChannelSendResult>,
+    ): Promise<ChannelSendResult> {
+        let lastResult: ChannelSendResult | null = null;
+
+        for (let attempt = 0; attempt <= MAX_DELIVERY_RETRIES; attempt++) {
+            lastResult = await sendFn();
+
+            if (lastResult.status === 'SENT') {
+                return { ...lastResult, retryCount: attempt };
+            }
+
+            // 最后一次不再等待
+            if (attempt < MAX_DELIVERY_RETRIES) {
+                const delayMs = RETRY_BASE_DELAY_MS * Math.pow(2, attempt);
+                this.logger.warn(
+                    `投递失败（第 ${attempt + 1}/${MAX_DELIVERY_RETRIES + 1} 次），` +
+                    `${delayMs}ms 后重试: ${lastResult.errorMessage ?? ''}`,
+                );
+                await new Promise((resolve) => setTimeout(resolve, delayMs));
+            }
+        }
+
+        this.logger.error(
+            `投递最终失败（已重试 ${MAX_DELIVERY_RETRIES} 次）: ${lastResult?.errorMessage ?? ''}`,
+        );
+        return { ...lastResult!, retryCount: MAX_DELIVERY_RETRIES };
+    }
+
+    // ── Channel-specific Senders ────────────────────────────────────────────
+
+    /**
+     * 通过 nodemailer SMTP 直发邮件
+     */
+    private async sendViaSmtp(params: {
+        to: string[];
+        subject: string;
+        content: string;
+        fileName: string;
+        downloadUrl: string;
+        sendRawFile: boolean;
+    }): Promise<ChannelSendResult> {
+        const smtpHost = process.env.SMTP_HOST?.trim();
+        const smtpPort = Number(process.env.SMTP_PORT) || 465;
+        const smtpUser = process.env.SMTP_USER?.trim();
+        const smtpPass = process.env.SMTP_PASS?.trim();
+        const smtpFrom = process.env.SMTP_FROM?.trim() || smtpUser;
+
+        if (!smtpHost || !smtpUser || !smtpPass) {
+            // 回退到 webhook 代理
+            const webhookUrl = process.env.MAIL_DELIVERY_WEBHOOK_URL?.trim();
+            if (webhookUrl) {
+                this.logger.warn('SMTP 未配置，回退到邮件 webhook 代理');
+                return this.sendViaGenericWebhook({
+                    channel: 'EMAIL',
+                    deliveryTaskId: `smtp_fallback_${randomUUID()}`,
+                    to: params.to,
+                    subject: params.subject,
+                    content: params.content,
+                    fileName: params.fileName,
+                    downloadUrl: params.downloadUrl,
+                    sendRawFile: params.sendRawFile,
+                });
+            }
+            return {
+                status: 'FAILED',
+                errorMessage: '未配置 SMTP 服务器（SMTP_HOST/USER/PASS）且无 webhook 回退',
+                deliveryMethod: 'SMTP',
+            };
+        }
+
+        try {
+            const transporter = nodemailer.createTransport({
+                host: smtpHost,
+                port: smtpPort,
+                secure: smtpPort === 465,
+                auth: { user: smtpUser, pass: smtpPass },
+            });
+
+            const apiBase = process.env.API_BASE_URL?.trim() || 'http://localhost:3000';
+            const fullDownloadUrl = `${apiBase}${params.downloadUrl}`;
+
+            const htmlBody = `
+                <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; max-width: 600px; margin: 0 auto;">
+                    <h2 style="color: #1677ff;">📊 ${params.subject}</h2>
+                    <p style="color: #333; line-height: 1.8;">${params.content}</p>
+                    <hr style="border: none; border-top: 1px solid #e8e8e8; margin: 16px 0;" />
+                    <p style="color: #999; font-size: 12px;">
+                        报告附件：<a href="${fullDownloadUrl}">${params.fileName}</a>
+                    </p>
+                    <p style="color: #bbb; font-size: 11px;">本邮件由 CTBMS 智能助手自动发送</p>
+                </div>
+            `;
+
+            await transporter.sendMail({
+                from: smtpFrom,
+                to: params.to.join(', '),
+                subject: params.subject,
+                html: htmlBody,
+            });
+
+            return { status: 'SENT', errorMessage: null, deliveryMethod: 'SMTP' };
+        } catch (error) {
+            this.logger.error(`SMTP 发送失败: ${error instanceof Error ? error.message : String(error)}`);
+            return {
+                status: 'FAILED',
+                errorMessage: `SMTP 发送失败: ${error instanceof Error ? error.message : String(error)}`,
+                deliveryMethod: 'SMTP',
+            };
+        }
+    }
+
+    /**
+     * 通过企微机器人 Webhook 直调推送 Markdown 卡片
+     */
+    private async sendViaWecomWebhook(params: {
+        target: string;
+        subject: string;
+        content: string;
+        fileName: string;
+        downloadUrl: string;
+    }): Promise<ChannelSendResult> {
+        const webhookUrl =
+            params.target.startsWith('http')
+                ? params.target
+                : process.env.WECOM_DELIVERY_WEBHOOK_URL?.trim();
+
+        if (!webhookUrl) {
+            return {
+                status: 'FAILED',
+                errorMessage: '未配置企微 Webhook URL（WECOM_DELIVERY_WEBHOOK_URL 或 target）',
+                deliveryMethod: 'WECOM_WEBHOOK',
+            };
+        }
+
+        try {
+            // WHY: 企微机器人消息格式要求 msgtype + markdown 正文
+            const markdownContent = [
+                `### ${params.subject}`,
+                '',
+                params.content,
+                '',
+                `> 📎 附件: [${params.fileName}](${params.downloadUrl})`,
+                `> ⏰ ${new Date().toLocaleString('zh-CN')}`,
+            ].join('\n');
+
+            const response = await fetch(webhookUrl, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    msgtype: 'markdown',
+                    markdown: { content: markdownContent },
+                }),
+            });
+
+            if (response.ok) {
+                const body = await response.json() as Record<string, unknown>;
+                // 企微返回 errcode=0 表示成功
+                if (body.errcode !== undefined && body.errcode !== 0) {
+                    return {
+                        status: 'FAILED',
+                        errorMessage: `企微返回错误: errcode=${String(body.errcode)} errmsg=${String(body.errmsg ?? '')}`,
+                        deliveryMethod: 'WECOM_WEBHOOK',
+                    };
+                }
+                return { status: 'SENT', errorMessage: null, deliveryMethod: 'WECOM_WEBHOOK' };
+            }
+
+            return {
+                status: 'FAILED',
+                errorMessage: `企微 Webhook 返回 HTTP ${response.status}`,
+                deliveryMethod: 'WECOM_WEBHOOK',
+            };
+        } catch (error) {
+            return {
+                status: 'FAILED',
+                errorMessage: `企微推送失败: ${error instanceof Error ? error.message : String(error)}`,
+                deliveryMethod: 'WECOM_WEBHOOK',
+            };
+        }
+    }
+
+    /**
+     * 通用 Webhook 代理（DINGTALK / FEISHU / EMAIL 回退）
+     */
+    private async sendViaGenericWebhook(params: {
+        channel?: DeliveryChannel;
+        deliveryTaskId?: string;
+        exportTaskId?: string;
+        to?: string[];
+        target?: string;
+        subject?: string;
+        content?: string;
+        templateCode?: DeliveryTemplateCode;
+        metadata?: Record<string, unknown>;
+        fileName?: string;
+        downloadUrl?: string;
+        sendRawFile?: boolean;
+    }): Promise<ChannelSendResult> {
+        const channel = params.channel ?? 'DINGTALK';
+        const webhookUrl = this.resolveDeliveryWebhook(channel);
+
+        if (!webhookUrl) {
+            return {
+                status: 'FAILED',
+                errorMessage: `未配置 ${channel} 投递 webhook，无法实际投递`,
+                deliveryMethod: 'GENERIC_WEBHOOK',
+            };
+        }
+
+        try {
+            const response = await fetch(webhookUrl, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    deliveryTaskId: params.deliveryTaskId,
+                    channel,
+                    exportTaskId: params.exportTaskId,
+                    to: params.to,
+                    target: params.target,
+                    subject: params.subject,
+                    content: params.content,
+                    templateCode: params.templateCode,
+                    metadata: params.metadata,
+                    attachment: {
+                        fileName: params.fileName,
+                        downloadUrl: params.downloadUrl,
+                        mode: params.sendRawFile ? 'RAW_FILE' : 'EXPORT_FILE',
+                    },
+                }),
+            });
+
+            if (response.ok) {
+                return { status: 'SENT', errorMessage: null, deliveryMethod: 'GENERIC_WEBHOOK' };
+            }
+            return {
+                status: 'FAILED',
+                errorMessage: `${channel} 投递网关返回 ${response.status}`,
+                deliveryMethod: 'GENERIC_WEBHOOK',
+            };
+        } catch (error) {
+            return {
+                status: 'FAILED',
+                errorMessage: error instanceof Error ? error.message : String(error),
+                deliveryMethod: 'GENERIC_WEBHOOK',
+            };
+        }
     }
 
     // ── Channel Binding Management ──────────────────────────────────────────
@@ -336,3 +618,4 @@ export class ConversationDeliveryService {
         return '飞书';
     }
 }
+

@@ -72,12 +72,12 @@ async function seedExtractionRules() {
             existing = await prisma.extractionRule.findFirst({ where: { name: rule.name } });
         }
 
-        const data: any = {
+        const data = {
             name: rule.name,
             targetType: rule.targetType,
             priority: rule.priority,
-            conditions: rule.conditions as any,
-            outputConfig: rule.outputConfig as any,
+            conditions: rule.conditions,
+            outputConfig: rule.outputConfig,
             commodities: rule.commodities,
             eventTypeId,
             insightTypeId,
@@ -92,11 +92,8 @@ async function seedExtractionRules() {
             });
             console.log(`🔄 更新规则: ${rule.name}`);
         } else {
-            // Restore ID if possible to keep relationships
-            if (rule.id) data.id = rule.id;
-
             await prisma.extractionRule.create({
-                data: data
+                data: rule.id ? { id: rule.id, ...data } : data
             });
             console.log(`✅ 创建规则: ${rule.name}`);
         }

@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { apiClient } from '../../../api/client';
 import {
   App,
   Button,
@@ -9,7 +10,6 @@ import {
   Empty,
   Grid,
   Input,
-  List,
   Popconfirm,
   Progress,
   Row,
@@ -22,6 +22,7 @@ import {
   Typography,
 } from 'antd';
 import {
+  ApartmentOutlined,
   BarChartOutlined,
   BulbOutlined,
   CheckCircleOutlined,
@@ -29,10 +30,9 @@ import {
   DeleteOutlined,
   DiffOutlined,
   ExclamationCircleOutlined,
-  LineChartOutlined,
+  ExperimentOutlined,
   MailOutlined,
   MenuOutlined,
-  NodeIndexOutlined,
   PlusOutlined,
   RobotOutlined,
   SafetyOutlined,
@@ -61,6 +61,9 @@ import {
 } from '../api/conversations';
 import type {
   ConversationEvidenceItem,
+  ConversationFreshnessStatus,
+  ConversationResultConfidenceGate,
+  ConversationResultQualityBreakdown,
   ConversationResultTraceability,
 } from '../api/conversations';
 import { useReportCards } from '../api/orchestration';
@@ -69,313 +72,41 @@ import { EphemeralAgentPanel } from './EphemeralAgentPanel';
 import { EphemeralWorkflowPanel } from './EphemeralWorkflowPanel';
 import { SecurityDashboard } from './SecurityDashboard';
 import { ResultDiffTimelinePanel } from './ResultDiffTimelinePanel';
+import { ConversationEvidencePanel } from './ConversationEvidencePanel';
+import { StructuredResultView } from './StructuredResultView';
+import { DataLineagePanel } from './DataLineagePanel';
+import { BacktestResultPanel } from './BacktestResultPanel';
+import { SubscriptionManagePanel } from './SubscriptionManagePanel';
+import { AuditLogPanel } from './AuditLogPanel';
+import {
+  type CopilotChatViewProps,
+  type LocalConversationTurn,
+  scenarioCards,
+  userFriendlyStatusText,
+  getSmartSuggestions,
+  confidenceConfig,
+  qualityConfig,
+  resultFreshnessLabel,
+  resultFreshnessColor,
+  evidenceFreshnessLabel,
+  evidenceFreshnessColor,
+  evidenceQualityLabel,
+  evidenceQualityColor,
+  getQuickPhrases,
+  groupSessionsByDate,
+  shouldShowTimeSeparator,
+  formatTurnTime,
+  animationStyles,
+  DEFAULT_VISIBLE_TURN_COUNT,
+  LOAD_MORE_TURN_STEP,
+  ASSISTANT_COLLAPSE_THRESHOLD,
+  toSafeText,
+  extractFirstParagraph,
+  parseResultData,
+} from './copilotChatConstants';
+import { useTypingEffect } from './useTypingEffect';
 
 const { Text, Title } = Typography;
-
-// ─── Types ───────────────────────────────────────────────────────────────────
-
-interface CopilotChatViewProps {
-  isAdminUser: boolean;
-  onSwitchToAdmin?: () => void;
-}
-
-type LocalConversationTurn = {
-  id: string;
-  role: 'USER' | 'ASSISTANT' | 'SYSTEM';
-  content: string;
-  structuredPayload?: Record<string, unknown>;
-  createdAt: string;
-  pending?: boolean;
-  failed?: boolean;
-};
-
-// ─── 场景卡片 ───────────────────────────────────────────────────────────────
-
-const scenarioCards = [
-  {
-    key: 'weekly-review',
-    icon: <BarChartOutlined style={{ fontSize: 28, color: '#1677ff' }} />,
-    title: '周度复盘',
-    description: '综合日报、周报与持仓数据，一键生成复盘报告',
-    prompt: '请结合日报/周报/研报和期货持仓，做过去一周复盘并给风险提示。',
-  },
-  {
-    key: 'forecast-3m',
-    icon: <LineChartOutlined style={{ fontSize: 28, color: '#52c41a' }} />,
-    title: '价格预测',
-    description: '分析近期走势，预测未来三个月行情',
-    prompt: '请分析最近一周东北玉米价格并给出未来三个月建议，输出Markdown+JSON。',
-  },
-  {
-    key: 'risk-scan',
-    icon: <SafetyOutlined style={{ fontSize: 28, color: '#fa8c16' }} />,
-    title: '风控扫描',
-    description: '扫描持仓风险敞口，生成预警与建议',
-    prompt: '请扫描当前持仓风险敞口并给出预警与优化建议。',
-  },
-  {
-    key: 'create-agent',
-    icon: <RobotOutlined style={{ fontSize: 28, color: '#722ed1' }} />,
-    title: '创建专属智能体',
-    description: '用自然语言描述需求，AI 自动生成专属分析智能体',
-    prompt: '帮我创建一个专门分析铜价走势的智能体',
-  },
-  {
-    key: 'workflow',
-    icon: <NodeIndexOutlined style={{ fontSize: 28, color: '#13c2c2' }} />,
-    title: '编排分析流程',
-    description: '组合多个智能体形成完整分析流水线',
-    prompt: '帮我组装一个工作流，先分析供给再分析需求最后汇总生成报告',
-  },
-];
-
-// ─── 术语映射 ─────────────────────────────────────────────────────────────
-
-const userFriendlyStatusText: Record<string, string> = {
-  INTENT_CAPTURE: '等待提问',
-  SLOT_FILLING: '需要补充一些信息',
-  PLAN_PREVIEW: '准备就绪',
-  USER_CONFIRM: '准备就绪',
-  EXECUTING: '分析中...',
-  RESULT_DELIVERY: '整理结论中...',
-  DONE: '已完成',
-  FAILED: '分析遇到了问题',
-};
-
-const slotLabelMap: Record<string, string> = {
-  timeRange: '时间段',
-  region: '地区',
-  outputFormat: '输出格式',
-  topic: '关注主题',
-};
-
-// ─── 智能追问建议 ────────────────────────────────────────────────────────
-
-const getSmartSuggestions = (
-  status: string,
-  hasResult: boolean,
-): Array<{ id: string; label: string; value: string }> => {
-  if (status === 'DONE' && hasResult) {
-    return [
-      { id: 'send_email', label: '帮我发到邮箱', value: '请把这份报告发到我的邮箱' },
-      { id: 'compare', label: '对比上周数据', value: '请对比上周同期数据，看看有什么变化' },
-      { id: 'backtest', label: '回测验证', value: '请用历史数据回测验证这个分析结论' },
-      { id: 'save_skill', label: '保存为常用能力', value: '保存这个智能体到系统中' },
-      { id: 'schedule', label: '设为定时执行', value: '每周一早上8点自动执行这个分析' },
-    ];
-  }
-  if (status === 'FAILED') {
-    return [
-      { id: 'retry', label: '重新分析', value: '重新分析一下' },
-      { id: 'retry_narrow', label: '缩小范围重新分析', value: '请缩小分析范围重新尝试' },
-      { id: 'retry_diff', label: '换个角度试试', value: '请换一个分析角度重新尝试' },
-    ];
-  }
-  return [];
-};
-
-// ─── 置信度渲染 ──────────────────────────────────────────────────────────
-
-const confidenceConfig = (pct: number) => {
-  if (pct >= 80) return { color: '#52c41a', label: '结论可靠性：高' } as const;
-  if (pct >= 50) return { color: '#fa8c16', label: '结论可靠性：中' } as const;
-  return { color: '#cf1322', label: '仅供参考' } as const;
-};
-
-const evidenceFreshnessLabel: Record<'FRESH' | 'STALE' | 'UNKNOWN', string> = {
-  FRESH: '新鲜',
-  STALE: '滞后',
-  UNKNOWN: '未知',
-};
-
-const evidenceFreshnessColor: Record<'FRESH' | 'STALE' | 'UNKNOWN', string> = {
-  FRESH: 'green',
-  STALE: 'orange',
-  UNKNOWN: 'default',
-};
-
-const evidenceQualityLabel: Record<'RECONCILED' | 'INTERNAL' | 'EXTERNAL' | 'UNVERIFIED', string> =
-  {
-    RECONCILED: '已对账',
-    INTERNAL: '内部',
-    EXTERNAL: '外部',
-    UNVERIFIED: '待核验',
-  };
-
-const evidenceQualityColor: Record<'RECONCILED' | 'INTERNAL' | 'EXTERNAL' | 'UNVERIFIED', string> =
-  {
-    RECONCILED: 'blue',
-    INTERNAL: 'geekblue',
-    EXTERNAL: 'purple',
-    UNVERIFIED: 'default',
-  };
-
-// ─── 快捷短语（根据对话状态动态推荐） ─────────────────────────────────────
-
-const getQuickPhrases = (status: string, hasResult: boolean, hasNoSession: boolean): string[] => {
-  if (hasNoSession || status === 'INTENT_CAPTURE') {
-    return ['玉米价格走势', '持仓风险扫描', '创建专属智能体', '编排分析流程'];
-  }
-  if (status === 'DONE' && hasResult) {
-    return ['导出报告', '发到邮箱', '回测验证', '保存为常用能力', '设为定时执行'];
-  }
-  if (status === 'FAILED') {
-    return ['重新分析', '换个角度试试', '缩小分析范围'];
-  }
-  if (status === 'SLOT_FILLING') {
-    return ['最近一周', '东北地区', '全部品种'];
-  }
-  return [];
-};
-
-// ─── 会话分组 ────────────────────────────────────────────────────────────────
-
-const groupSessionsByDate = <T extends { updatedAt: string }>(
-  sessions: T[],
-): Array<{ label: string; items: T[] }> => {
-  const now = new Date();
-  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
-  const yesterday = today - 86400000;
-  const weekStart = today - now.getDay() * 86400000;
-
-  const groups: Record<string, T[]> = { 今天: [], 昨天: [], 本周: [], 更早: [] };
-  for (const s of sessions) {
-    const t = new Date(s.updatedAt).getTime();
-    if (t >= today) groups['今天'].push(s);
-    else if (t >= yesterday) groups['昨天'].push(s);
-    else if (t >= weekStart) groups['本周'].push(s);
-    else groups['更早'].push(s);
-  }
-  return Object.entries(groups)
-    .filter(([, items]) => items.length > 0)
-    .map(([label, items]) => ({ label, items }));
-};
-
-// ─── 时间分隔判断 ────────────────────────────────────────────────────────────
-
-const shouldShowTimeSeparator = (prev: string | undefined, curr: string): boolean => {
-  if (!prev) return true;
-  return new Date(curr).getTime() - new Date(prev).getTime() > 5 * 60 * 1000; // 5分钟间隔
-};
-
-const formatTurnTime = (iso: string): string => {
-  const d = new Date(iso);
-  const now = new Date();
-  const isToday = d.toDateString() === now.toDateString();
-  if (isToday) return d.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
-  return d.toLocaleString('zh-CN', {
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
-};
-
-// ─── CSS 动画 ─────────────────────────────────────────────────────────────────
-
-const animationStyles = `
-@keyframes copilot-slide-in-left {
-  from { opacity: 0; transform: translateX(-16px); }
-  to   { opacity: 1; transform: translateX(0); }
-}
-@keyframes copilot-slide-in-right {
-  from { opacity: 0; transform: translateX(16px); }
-  to   { opacity: 1; transform: translateX(0); }
-}
-@keyframes copilot-scale-in {
-  from { opacity: 0; transform: scale(0.95); }
-  to   { opacity: 1; transform: scale(1); }
-}
-@keyframes copilot-cursor-blink {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0; }
-}
-.copilot-msg-left  { animation: copilot-slide-in-left 0.2s ease-out; }
-.copilot-msg-right { animation: copilot-slide-in-right 0.2s ease-out; }
-.copilot-card-in   { animation: copilot-scale-in 0.25s ease-out; }
-.copilot-typing-cursor::after {
-  content: '▍';
-  animation: copilot-cursor-blink 0.8s steps(2) infinite;
-  color: #1677ff;
-}
-.copilot-markdown p { margin: 0 0 0.4em; }
-.copilot-markdown table { font-size: 13px; border-collapse: collapse; }
-.copilot-markdown th, .copilot-markdown td { border: 1px solid #e8e8e8; padding: 4px 8px; }
-.copilot-markdown pre { background: #f6f8fa; padding: 8px; border-radius: 6px; overflow-x: auto; font-size: 12px; }
-.copilot-markdown code { background: #f0f0f0; padding: 1px 4px; border-radius: 3px; font-size: 12px; }
-.copilot-markdown pre code { background: none; padding: 0; }
-`;
-
-// ─── 常量 ─────────────────────────────────────────────────────────────────
-
-const DEFAULT_VISIBLE_TURN_COUNT = 30;
-const LOAD_MORE_TURN_STEP = 20;
-const ASSISTANT_COLLAPSE_THRESHOLD = 500;
-
-// ─── 工具函数 ─────────────────────────────────────────────────────────────
-
-const toSafeText = (value: unknown): string => {
-  if (typeof value === 'string') return value;
-  if (typeof value === 'number' || typeof value === 'boolean' || typeof value === 'bigint')
-    return String(value);
-  if (value === null || value === undefined) return '';
-  try {
-    return JSON.stringify(value, null, 2);
-  } catch {
-    return String(value);
-  }
-};
-
-const extractFirstParagraph = (text: string): string => {
-  const cleaned = text.trim();
-  const lines = cleaned.split('\n').map((l) => l.trim());
-  const firstContentLine = lines.find(
-    (l) => l && !l.startsWith('#') && !l.startsWith('---') && !l.startsWith('```'),
-  );
-  return firstContentLine || lines[0] || '助手已生成回复。';
-};
-
-// ─── 打字机 Hook ─────────────────────────────────────────────────────────────
-
-const useTypingEffect = (
-  text: string,
-  isActive: boolean,
-  speed = 25,
-): { displayText: string; isTyping: boolean } => {
-  const [displayText, setDisplayText] = useState('');
-  const [isTyping, setIsTyping] = useState(false);
-  const prevTextRef = useRef('');
-
-  useEffect(() => {
-    if (!isActive || !text) {
-      setDisplayText(text);
-      setIsTyping(false);
-      return;
-    }
-    // 只对新内容启动打字机（避免切换会话时重复播放）
-    if (text === prevTextRef.current) {
-      setDisplayText(text);
-      return;
-    }
-    prevTextRef.current = text;
-    setIsTyping(true);
-    setDisplayText('');
-    let idx = 0;
-    const timer = setInterval(() => {
-      idx += 1;
-      if (idx >= text.length) {
-        setDisplayText(text);
-        setIsTyping(false);
-        clearInterval(timer);
-      } else {
-        setDisplayText(text.slice(0, idx));
-      }
-    }, speed);
-    return () => clearInterval(timer);
-  }, [text, isActive, speed]);
-
-  return { displayText, isTyping };
-};
 
 // ─── 组件 ─────────────────────────────────────────────────────────────────
 
@@ -396,8 +127,10 @@ export const CopilotChatView: React.FC<CopilotChatViewProps> = ({
   const [isMobileDrawerOpen, setIsMobileDrawerOpen] = useState(false);
   const [showEmailForm, setShowEmailForm] = useState(false);
   const [emailTo, setEmailTo] = useState('');
+  const [isScheduleQuickOpen, setIsScheduleQuickOpen] = useState(false);
+  const [scheduleInstruction, setScheduleInstruction] = useState('每周一早上8点自动执行这个分析');
   const [isToolDrawerOpen, setIsToolDrawerOpen] = useState(false);
-  const [toolTabKey, setToolTabKey] = useState('agents');
+  const [toolTabKey, setToolTabKey] = useState('evidence');
   const timelineRef = useRef<HTMLDivElement | null>(null);
   const isMobile = !screens.md;
 
@@ -441,134 +174,10 @@ export const CopilotChatView: React.FC<CopilotChatViewProps> = ({
   const hasResult = Boolean(resultQuery.data?.result);
 
   // ── 结果数据提取 ──
-  const resultData = useMemo(() => {
-    const raw = resultQuery.data?.result as Record<string, unknown> | null | undefined;
-    if (!raw) return null;
-
-    const confidenceRaw = typeof raw.confidence === 'number' ? raw.confidence : null;
-    const confidence = confidenceRaw !== null ? Math.round(confidenceRaw * 100) : null;
-
-    const conclusion =
-      typeof raw.conclusion === 'string'
-        ? raw.conclusion
-        : typeof raw.analysis === 'string'
-          ? raw.analysis
-          : null;
-
-    const actionTexts: string[] = [];
-    if (Array.isArray(raw.actions)) {
-      for (const action of raw.actions as Array<Record<string, unknown>>) {
-        if (typeof action === 'string') {
-          actionTexts.push(action);
-          continue;
-        }
-        if (typeof action?.text === 'string') {
-          actionTexts.push(action.text);
-          continue;
-        }
-        if (typeof action?.label === 'string') {
-          actionTexts.push(action.label);
-          continue;
-        }
-        actionTexts.push(toSafeText(action));
-      }
-    } else if (raw.actions && typeof raw.actions === 'object') {
-      const actionRecord = raw.actions as Record<string, unknown>;
-      const preferredAction =
-        typeof actionRecord.recommendedAction === 'string' ? actionRecord.recommendedAction : null;
-      if (preferredAction) {
-        actionTexts.push(`建议动作：${preferredAction}`);
-      }
-
-      for (const [key, value] of Object.entries(actionRecord)) {
-        if (key === 'riskDisclosure' || key === 'recommendedAction') {
-          continue;
-        }
-        if (typeof value === 'string' && value.trim()) {
-          actionTexts.push(`${key}: ${value}`);
-          continue;
-        }
-        if (Array.isArray(value)) {
-          for (const entry of value) {
-            if (typeof entry === 'string' && entry.trim()) {
-              actionTexts.push(entry);
-            }
-          }
-        }
-      }
-    }
-
-    const traceabilityRaw =
-      raw.traceability && typeof raw.traceability === 'object' && !Array.isArray(raw.traceability)
-        ? (raw.traceability as Record<string, unknown>)
-        : null;
-
-    const traceability: ConversationResultTraceability | null = traceabilityRaw
-      ? {
-          executionId: toSafeText(traceabilityRaw.executionId),
-          replayPath: toSafeText(traceabilityRaw.replayPath),
-          executionPath: toSafeText(traceabilityRaw.executionPath),
-          evidenceCount: Number(traceabilityRaw.evidenceCount ?? 0) || 0,
-          strongEvidenceCount: Number(traceabilityRaw.strongEvidenceCount ?? 0) || 0,
-          externalEvidenceCount: Number(traceabilityRaw.externalEvidenceCount ?? 0) || 0,
-          generatedAt: toSafeText(traceabilityRaw.generatedAt),
-        }
-      : null;
-
-    const evidenceItemsRaw = Array.isArray(raw.evidenceItems)
-      ? raw.evidenceItems
-      : ([] as Array<Record<string, unknown>>);
-
-    const evidenceItems = evidenceItemsRaw.reduce<ConversationEvidenceItem[]>(
-      (acc, item, index) => {
-        if (!item || typeof item !== 'object' || Array.isArray(item)) {
-          return acc;
-        }
-        const row = item as Record<string, unknown>;
-        const freshnessCandidate = toSafeText(row.freshness).toUpperCase();
-        const freshness: ConversationEvidenceItem['freshness'] =
-          freshnessCandidate === 'FRESH' || freshnessCandidate === 'STALE'
-            ? (freshnessCandidate as 'FRESH' | 'STALE')
-            : 'UNKNOWN';
-        const qualityCandidate = toSafeText(row.quality).toUpperCase();
-        const quality: ConversationEvidenceItem['quality'] =
-          qualityCandidate === 'RECONCILED' ||
-          qualityCandidate === 'INTERNAL' ||
-          qualityCandidate === 'EXTERNAL'
-            ? (qualityCandidate as 'RECONCILED' | 'INTERNAL' | 'EXTERNAL')
-            : 'UNVERIFIED';
-        acc.push({
-          id: typeof row.id === 'string' && row.id ? row.id : `evidence_${index}`,
-          title: toSafeText(row.title) || `证据 ${index + 1}`,
-          summary: toSafeText(row.summary) || '无摘要',
-          source: toSafeText(row.source) || 'unknown',
-          sourceNodeId: typeof row.sourceNodeId === 'string' ? row.sourceNodeId : null,
-          sourceNodeType: typeof row.sourceNodeType === 'string' ? row.sourceNodeType : null,
-          sourceUrl: typeof row.sourceUrl === 'string' ? row.sourceUrl : null,
-          tracePath: typeof row.tracePath === 'string' ? row.tracePath : null,
-          collectedAt:
-            typeof row.collectedAt === 'string' && row.collectedAt
-              ? row.collectedAt
-              : new Date().toISOString(),
-          timestamp: typeof row.timestamp === 'string' && row.timestamp ? row.timestamp : null,
-          freshness,
-          quality,
-        });
-        return acc;
-      },
-      [],
-    );
-
-    const dedupedActions = [...new Set(actionTexts.filter((item) => item.trim()))];
-
-    return {
-      confidence,
-      conclusion,
-      actions: dedupedActions.slice(0, 6),
-      evidenceItems,
-      traceability,
-    };
-  }, [resultQuery.data?.result]);
+  const resultData = useMemo(
+    () => parseResultData(resultQuery.data?.result as Record<string, unknown> | null | undefined),
+    [resultQuery.data?.result],
+  );
 
   // ── 智能追问 ──
   const smartSuggestions = useMemo(
@@ -828,12 +437,74 @@ export const CopilotChatView: React.FC<CopilotChatViewProps> = ({
       const exportData = result.data;
       if (exportData.downloadUrl) {
         message.success('报告已生成，正在下载...');
-        window.open(exportData.downloadUrl, '_blank');
+        // downloadUrl 是相对后端路径，需加 API base 前缀
+        const apiBase = apiClient.defaults.baseURL || '/api';
+        window.open(`${apiBase}${exportData.downloadUrl}`, '_blank');
       } else {
         message.info('报告生成中，请稍后在结果区查看');
       }
     } catch (error) {
       showError(error, '导出失败');
+    }
+  };
+
+  const handleSendEmail = async () => {
+    if (!activeSessionId || !emailTo.trim()) return;
+    try {
+      const exportResult = await exportMutation.mutateAsync({
+        sessionId: activeSessionId,
+        format: 'PDF',
+        sections: ['CONCLUSION', 'EVIDENCE', 'RISK_ASSESSMENT'],
+      });
+      const exportTaskId =
+        (
+          exportResult.data as unknown as {
+            exportTaskId?: string;
+            taskId?: string;
+          }
+        )?.exportTaskId ??
+        (
+          exportResult.data as unknown as {
+            exportTaskId?: string;
+            taskId?: string;
+          }
+        )?.taskId;
+      if (!exportTaskId || typeof exportTaskId !== 'string') {
+        message.warning('导出任务创建失败，无法发送邮件');
+        return;
+      }
+      await deliverMutation.mutateAsync({
+        sessionId: activeSessionId,
+        exportTaskId,
+        channel: 'EMAIL',
+        to: emailTo
+          .split(',')
+          .map((s) => s.trim())
+          .filter(Boolean),
+      });
+      message.success('邮件已发送');
+      setShowEmailForm(false);
+      setEmailTo('');
+    } catch (error) {
+      showError(error, '发送邮件失败');
+    }
+  };
+
+  const handleResolveSchedule = async () => {
+    if (!activeSessionId || !scheduleInstruction.trim()) return;
+    try {
+      const result = await resolveScheduleMutation.mutateAsync({
+        sessionId: activeSessionId,
+        instruction: scheduleInstruction.trim(),
+      });
+      const resolution = result.data;
+      const nextRunText = resolution.nextRunAt
+        ? `，下次执行：${new Date(resolution.nextRunAt).toLocaleString('zh-CN')}`
+        : '';
+      message.success(`已设置自动更新${nextRunText}`);
+      setIsScheduleQuickOpen(false);
+    } catch (error) {
+      showError(error, '设置自动更新失败');
     }
   };
 
@@ -851,15 +522,15 @@ export const CopilotChatView: React.FC<CopilotChatViewProps> = ({
   const hasNoSession = !activeSessionId;
   // 执行中时输入框提示文字
   const inputPlaceholder = isExecuting
-    ? '分析进行中，你可以继续提其他问题...'
-    : '有什么想问的，直接说就好...';
+    ? '分析进行中，你也可以继续追问内贸玉米相关问题...'
+    : '例如：东北玉米价格怎么走，港口库存有什么变化？';
 
   // ── 会话列表渲染（桌面端侧栏 / 移动端 Drawer 共享） ──
   const sessionListContent = (
     <Space direction="vertical" style={{ width: '100%' }} size={8}>
       <Input
         prefix={<SearchOutlined />}
-        placeholder="搜索历史对话"
+        placeholder="搜索玉米分析记录"
         allowClear
         size="small"
         value={sessionSearch}
@@ -893,7 +564,7 @@ export const CopilotChatView: React.FC<CopilotChatViewProps> = ({
                 >
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <Text strong ellipsis style={{ display: 'block' }}>
-                      {item.title || '新对话'}
+                      {item.title || '未命名分析'}
                     </Text>
                     <Text type="secondary" style={{ fontSize: 11 }}>
                       {new Date(item.updatedAt).toLocaleTimeString('zh-CN', {
@@ -904,12 +575,12 @@ export const CopilotChatView: React.FC<CopilotChatViewProps> = ({
                   </div>
                   <Popconfirm
                     title="确认删除"
-                    description="删除后无法恢复，确定要删除这个会话吗？"
+                    description="删除后无法恢复，确定要删除这条分析记录吗？"
                     onConfirm={(e) => {
                       e?.stopPropagation();
                       deleteSessionMutation.mutate(item.id, {
                         onSuccess: () => {
-                          message.success('会话已删除');
+                          message.success('分析记录已删除');
                           if (activeSessionId === item.id) {
                             setActiveSessionId(undefined);
                           }
@@ -942,7 +613,7 @@ export const CopilotChatView: React.FC<CopilotChatViewProps> = ({
       ) : (
         <Empty
           image={Empty.PRESENTED_IMAGE_SIMPLE}
-          description="还没有对话，开始你的第一次提问吧"
+          description="还没有玉米分析记录，可以先问我内贸玉米行情"
         />
       )}
     </Space>
@@ -963,22 +634,22 @@ export const CopilotChatView: React.FC<CopilotChatViewProps> = ({
               ) : null}
               <BulbOutlined style={{ color: '#1677ff' }} />
               <Title level={4} style={{ margin: 0 }}>
-                智能助手
+                内贸玉米分析助手
               </Title>
-              {!isMobile ? <Text type="secondary">有什么想问的，直接说就好</Text> : null}
+              {!isMobile ? <Text type="secondary">直接问内贸玉米相关问题，我会先给你结论，再补充依据和建议</Text> : null}
             </Space>
             <Space>
               <Button type="primary" icon={<PlusOutlined />} onClick={handleCreateSession}>
-                {isMobile ? '' : '新对话'}
+                {isMobile ? '' : '新建分析'}
               </Button>
               {activeSessionId ? (
                 <Button icon={<ToolOutlined />} onClick={() => setIsToolDrawerOpen(true)}>
-                  {isMobile ? '' : '工具箱'}
+                  {isMobile ? '' : '查看更多分析'}
                 </Button>
               ) : null}
               {isAdminUser && onSwitchToAdmin ? (
                 <Button icon={<SettingOutlined />} onClick={onSwitchToAdmin}>
-                  {isMobile ? '' : '管理视图'}
+                  {isMobile ? '' : '进入管理台'}
                 </Button>
               ) : null}
             </Space>
@@ -988,7 +659,7 @@ export const CopilotChatView: React.FC<CopilotChatViewProps> = ({
         {/* ── 移动端 Drawer ── */}
         {isMobile ? (
           <Drawer
-            title="历史对话"
+            title="最近分析"
             placement="left"
             width={280}
             open={isMobileDrawerOpen}
@@ -1003,7 +674,7 @@ export const CopilotChatView: React.FC<CopilotChatViewProps> = ({
           {/* ── 桌面端会话列表 ── */}
           {!isMobile ? (
             <Col md={6} lg={5}>
-              <Card title="历史对话" bodyStyle={{ padding: 8 }}>
+              <Card title="最近分析" bodyStyle={{ padding: 8 }}>
                 {sessionListContent}
               </Card>
             </Col>
@@ -1063,17 +734,17 @@ export const CopilotChatView: React.FC<CopilotChatViewProps> = ({
                       // 解析回复选项
                       const turnReplyOptions = Array.isArray(turnPayload.replyOptions)
                         ? (turnPayload.replyOptions as Array<Record<string, unknown>>)
-                            .filter((item) => typeof item.label === 'string' && item.label)
-                            .filter((item) => item.mode === 'SEND')
-                            .map((item) => ({
-                              id:
-                                typeof item.id === 'string'
-                                  ? item.id
-                                  : `r_${Math.random().toString(36).slice(2, 6)}`,
-                              label: String(item.label),
-                              mode: 'SEND' as const,
-                              value: typeof item.value === 'string' ? item.value : undefined,
-                            }))
+                          .filter((item) => typeof item.label === 'string' && item.label)
+                          .filter((item) => item.mode === 'SEND')
+                          .map((item) => ({
+                            id:
+                              typeof item.id === 'string'
+                                ? item.id
+                                : `r_${Math.random().toString(36).slice(2, 6)}`,
+                            label: String(item.label),
+                            mode: 'SEND' as const,
+                            value: typeof item.value === 'string' ? item.value : undefined,
+                          }))
                         : [];
 
                       // 助手消息：折叠长文本
@@ -1154,9 +825,9 @@ export const CopilotChatView: React.FC<CopilotChatViewProps> = ({
                                   </div>
                                   {/* ── 嵌入报告卡片（如果有的话） ── */}
                                   {Array.isArray(reportCardsQuery.data) &&
-                                  reportCardsQuery.data.length > 0 &&
-                                  turn.id === latestAssistantTurn?.id &&
-                                  currentStatus === 'DONE' ? (
+                                    reportCardsQuery.data.length > 0 &&
+                                    turn.id === latestAssistantTurn?.id &&
+                                    currentStatus === 'DONE' ? (
                                     <div style={{ marginTop: 10 }}>
                                       <ReportCardView cards={reportCardsQuery.data} />
                                     </div>
@@ -1179,7 +850,7 @@ export const CopilotChatView: React.FC<CopilotChatViewProps> = ({
                                 <Space style={{ marginTop: 6 }}>
                                   <Spin size="small" />
                                   <Text type="secondary" style={{ fontSize: 12 }}>
-                                    思考中...
+                                    琢磨中...
                                   </Text>
                                 </Space>
                               ) : null}
@@ -1232,7 +903,7 @@ export const CopilotChatView: React.FC<CopilotChatViewProps> = ({
                                     type="secondary"
                                     style={{ fontSize: 12, display: 'block', marginBottom: 4 }}
                                   >
-                                    你可以接着问我：
+                                    你也可以继续这样说：
                                   </Text>
                                   <Space direction="vertical" size={4}>
                                     {turnReplyOptions.slice(0, 3).map((option) => (
@@ -1276,290 +947,171 @@ export const CopilotChatView: React.FC<CopilotChatViewProps> = ({
                         <Space direction="vertical" style={{ width: '100%' }} size={8}>
                           <Space align="center">
                             <CheckCircleOutlined style={{ color: '#389e0d', fontSize: 16 }} />
-                            <Text strong>分析完成</Text>
+                            <Text strong>结果已经好了</Text>
                           </Space>
 
-                          {/* 置信度 */}
-                          {resultData.confidence !== null ? (
-                            <div>
-                              <Text type="secondary" style={{ fontSize: 12 }}>
-                                {confidenceConfig(resultData.confidence).label}
-                              </Text>
-                              <Progress
-                                percent={resultData.confidence}
-                                strokeColor={confidenceConfig(resultData.confidence).color}
-                                size="small"
-                                showInfo={false}
-                                style={{ marginTop: 2 }}
-                              />
-                            </div>
-                          ) : null}
+                          {/* 四段式结构化结论（PRD §9.2） */}
+                          <StructuredResultView
+                            resultData={resultData}
+                            onOpenEvidencePanel={() => {
+                              setToolTabKey('evidence');
+                              setIsToolDrawerOpen(true);
+                            }}
+                          />
 
-                          {/* 核心结论 */}
-                          {resultData.conclusion ? (
-                            <div
-                              className="copilot-markdown"
-                              style={{ fontSize: 13, lineHeight: 1.6 }}
-                            >
-                              <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                                {resultData.conclusion.slice(0, 300)}
-                              </ReactMarkdown>
-                            </div>
-                          ) : null}
-
-                          {/* 可追溯摘要 */}
-                          {resultData.traceability ? (
-                            <Space size={[6, 6]} wrap>
-                              <Tag color="blue">
-                                证据 {resultData.traceability.evidenceCount} 条
-                              </Tag>
-                              <Tag color="green">
-                                强证据 {resultData.traceability.strongEvidenceCount}
-                              </Tag>
-                              <Tag color="purple">
-                                外部 {resultData.traceability.externalEvidenceCount}
-                              </Tag>
-                              <Button
-                                type="link"
-                                size="small"
-                                style={{ paddingInline: 0 }}
-                                onClick={() => {
-                                  const replayPath = resultData.traceability?.replayPath;
-                                  if (replayPath) {
-                                    window.open(replayPath, '_blank');
-                                  }
-                                }}
-                              >
-                                查看执行回放
-                              </Button>
-                            </Space>
-                          ) : null}
-
-                          {/* 证据链（来源 + 时间戳 + 新鲜度/质量） */}
-                          {resultData.evidenceItems.length > 0 ? (
-                            <div>
-                              <Text
-                                type="secondary"
-                                style={{ fontSize: 12, display: 'block', marginBottom: 4 }}
-                              >
-                                证据链（点击可追溯）：
-                              </Text>
-                              <Space direction="vertical" size={6} style={{ width: '100%' }}>
-                                {resultData.evidenceItems.slice(0, 4).map((evidence) => (
-                                  <Card
-                                    key={evidence.id}
-                                    size="small"
-                                    bodyStyle={{ padding: '8px 10px' }}
-                                  >
-                                    <Space direction="vertical" size={4} style={{ width: '100%' }}>
-                                      <Space size={[4, 4]} wrap>
-                                        <Text strong style={{ fontSize: 12 }}>
-                                          {evidence.title}
-                                        </Text>
-                                        <Tag>{evidence.source}</Tag>
-                                        {evidence.timestamp ? (
-                                          <Tag icon={<ClockCircleOutlined />}>
-                                            {formatTurnTime(evidence.timestamp)}
-                                          </Tag>
-                                        ) : null}
-                                        <Tag color={evidenceFreshnessColor[evidence.freshness]}>
-                                          {evidenceFreshnessLabel[evidence.freshness]}
-                                        </Tag>
-                                        <Tag color={evidenceQualityColor[evidence.quality]}>
-                                          {evidenceQualityLabel[evidence.quality]}
-                                        </Tag>
-                                      </Space>
-                                      <Text type="secondary" style={{ fontSize: 12 }}>
-                                        {evidence.summary}
-                                      </Text>
-                                      <Space size={8} wrap>
-                                        {evidence.sourceUrl ? (
-                                          <Button
-                                            size="small"
-                                            type="link"
-                                            href={evidence.sourceUrl}
-                                            target="_blank"
-                                            style={{ paddingInline: 0 }}
-                                          >
-                                            查看来源
-                                          </Button>
-                                        ) : null}
-                                        <Button
-                                          size="small"
-                                          type="link"
-                                          style={{ paddingInline: 0 }}
-                                          onClick={() => {
-                                            const tracePath =
-                                              evidence.tracePath ??
-                                              resultData.traceability?.replayPath;
-                                            if (tracePath) {
-                                              window.open(tracePath, '_blank');
-                                            }
-                                          }}
-                                        >
-                                          追溯轨迹
-                                        </Button>
-                                      </Space>
-                                    </Space>
-                                  </Card>
-                                ))}
-                              </Space>
-                              {resultData.evidenceItems.length > 4 ? (
-                                <Text type="secondary" style={{ fontSize: 12, marginTop: 4 }}>
-                                  已展示前 4 条证据，可在执行回放中查看完整链路。
-                                </Text>
-                              ) : null}
-                            </div>
-                          ) : null}
-
-                          {/* 行动建议 */}
-                          {resultData.actions.length > 0 ? (
-                            <div>
-                              <Text
-                                type="secondary"
-                                style={{ fontSize: 12, display: 'block', marginBottom: 4 }}
-                              >
-                                行动建议：
-                              </Text>
-                              {resultData.actions.map((action, idx) => (
-                                <Tag
-                                  key={idx}
-                                  color="blue"
-                                  style={{ marginBottom: 4, fontSize: 12 }}
-                                >
-                                  {action}
-                                </Tag>
-                              ))}
-                            </div>
-                          ) : null}
-
-                          {/* 操作按钮 */}
-                          <Space size={8} wrap>
-                            <Button
-                              size="small"
-                              icon={<BarChartOutlined />}
-                              loading={exportMutation.isPending}
-                              onClick={handleExportPdf}
-                            >
-                              导出 PDF
-                            </Button>
-                            <Button
-                              size="small"
-                              icon={<MailOutlined />}
-                              onClick={() => setShowEmailForm(!showEmailForm)}
-                            >
-                              发送到邮箱
-                            </Button>
-                            <Divider type="vertical" />
-                            <Button
-                              size="small"
-                              icon={<SaveOutlined />}
-                              onClick={() => void handleQuickPromptSend('保存这个智能体到系统中')}
-                            >
-                              保存为常用
-                            </Button>
-                            <Button
-                              size="small"
-                              icon={<ScheduleOutlined />}
-                              onClick={() =>
-                                void handleQuickPromptSend('每周一早上8点自动执行这个分析')
-                              }
-                            >
-                              定时执行
-                            </Button>
-                            <Button
-                              size="small"
-                              icon={<SyncOutlined />}
-                              onClick={() => void handleQuickPromptSend('调整参数后重新分析')}
-                            >
-                              调参重跑
-                            </Button>
-                            <Button
-                              size="small"
-                              icon={<DiffOutlined />}
-                              onClick={() => {
-                                setToolTabKey('result-diff');
-                                setIsToolDrawerOpen(true);
-                              }}
-                            >
-                              结论变化
-                            </Button>
-                          </Space>
-
-                          {/* 内嵌邮件发送表单 */}
-                          {showEmailForm ? (
-                            <Card size="small" style={{ background: '#fff', marginTop: 4 }}>
-                              <Space direction="vertical" style={{ width: '100%' }} size={8}>
-                                <Input
-                                  placeholder="收件人邮箱（多个用逗号分隔）"
-                                  value={emailTo}
-                                  onChange={(e) => setEmailTo(e.target.value)}
-                                  prefix={<MailOutlined />}
-                                />
-                                <Space>
+                          <Space direction="vertical" style={{ width: '100%' }} size={12}>
+                            <Card size="small" style={{ background: '#fff' }}>
+                              <Space direction="vertical" size={8} style={{ width: '100%' }}>
+                                <Text strong>如果你还想继续，我可以马上帮你做这些</Text>
+                                <Space size={8} wrap>
                                   <Button
-                                    type="primary"
                                     size="small"
-                                    loading={deliverMutation.isPending}
-                                    disabled={!emailTo.trim()}
-                                    onClick={async () => {
-                                      if (!activeSessionId) return;
-                                      try {
-                                        // 先导出获取 exportTaskId
-                                        const exportResult = await exportMutation.mutateAsync({
-                                          sessionId: activeSessionId,
-                                          format: 'PDF',
-                                          sections: ['CONCLUSION', 'EVIDENCE', 'RISK_ASSESSMENT'],
-                                        });
-                                        const exportTaskId =
-                                          (
-                                            exportResult.data as unknown as {
-                                              exportTaskId?: string;
-                                              taskId?: string;
-                                            }
-                                          )?.exportTaskId ??
-                                          (
-                                            exportResult.data as unknown as {
-                                              exportTaskId?: string;
-                                              taskId?: string;
-                                            }
-                                          )?.taskId;
-                                        if (!exportTaskId || typeof exportTaskId !== 'string') {
-                                          message.warning('导出任务创建失败，无法发送邮件');
-                                          return;
-                                        }
-                                        await deliverMutation.mutateAsync({
-                                          sessionId: activeSessionId,
-                                          exportTaskId,
-                                          channel: 'EMAIL',
-                                          to: emailTo
-                                            .split(',')
-                                            .map((s) => s.trim())
-                                            .filter(Boolean),
-                                        });
-                                        message.success('邮件已发送');
-                                        setShowEmailForm(false);
-                                        setEmailTo('');
-                                      } catch (error) {
-                                        showError(error, '发送邮件失败');
-                                      }
+                                    type="primary"
+                                    icon={<MailOutlined />}
+                                    onClick={() => {
+                                      setShowEmailForm((prev) => !prev);
+                                      setIsScheduleQuickOpen(false);
                                     }}
                                   >
-                                    发送
+                                    发给同事
                                   </Button>
                                   <Button
                                     size="small"
+                                    icon={<ScheduleOutlined />}
                                     onClick={() => {
+                                      setIsScheduleQuickOpen((prev) => !prev);
                                       setShowEmailForm(false);
-                                      setEmailTo('');
                                     }}
                                   >
-                                    取消
+                                    设为每周更新
+                                  </Button>
+                                  <Button
+                                    size="small"
+                                    icon={<BarChartOutlined />}
+                                    loading={exportMutation.isPending}
+                                    onClick={handleExportPdf}
+                                  >
+                                    导出这份报告
+                                  </Button>
+                                  <Button
+                                    size="small"
+                                    icon={<SyncOutlined />}
+                                    onClick={() =>
+                                      void handleQuickPromptSend('请换一个角度，重新分析内贸玉米采购节奏和库存变化')
+                                    }
+                                  >
+                                    换个角度再看
+                                  </Button>
+                                </Space>
+                                <Space size={8} wrap>
+                                  <Button
+                                    size="small"
+                                    icon={<DiffOutlined />}
+                                    onClick={() => {
+                                      setToolTabKey('result-diff');
+                                      setIsToolDrawerOpen(true);
+                                    }}
+                                  >
+                                    对比前后变化
+                                  </Button>
+                                  <Button
+                                    size="small"
+                                    icon={<SearchOutlined />}
+                                    onClick={() => {
+                                      setToolTabKey('evidence');
+                                      setIsToolDrawerOpen(true);
+                                    }}
+                                  >
+                                    看看依据
+                                  </Button>
+                                  <Button
+                                    size="small"
+                                    icon={<SaveOutlined />}
+                                    onClick={() =>
+                                      void handleQuickPromptSend('请保存这次内贸玉米分析，方便后面继续追问和复盘')
+                                    }
+                                  >
+                                    先留着这次分析
                                   </Button>
                                 </Space>
                               </Space>
                             </Card>
-                          ) : null}
+
+                            {showEmailForm ? (
+                              <Card size="small" style={{ background: '#fff' }}>
+                                <Space direction="vertical" style={{ width: '100%' }} size={8}>
+                                  <Text strong>把这份结果发给谁？</Text>
+                                  <Input
+                                    placeholder="收件人邮箱（多个用逗号分隔）"
+                                    value={emailTo}
+                                    onChange={(e) => setEmailTo(e.target.value)}
+                                    prefix={<MailOutlined />}
+                                  />
+                                  <Space>
+                                    <Button
+                                      type="primary"
+                                      size="small"
+                                      loading={deliverMutation.isPending || exportMutation.isPending}
+                                      disabled={!emailTo.trim()}
+                                      onClick={() => void handleSendEmail()}
+                                    >
+                                      发出这份分析
+                                    </Button>
+                                    <Button
+                                      size="small"
+                                      onClick={() => {
+                                        setShowEmailForm(false);
+                                        setEmailTo('');
+                                      }}
+                                    >
+                                      先不发了
+                                    </Button>
+                                  </Space>
+                                </Space>
+                              </Card>
+                            ) : null}
+
+                            {isScheduleQuickOpen ? (
+                              <Card size="small" style={{ background: '#fff' }}>
+                                <Space direction="vertical" style={{ width: '100%' }} size={8}>
+                                  <Text strong>想按什么频率自动更新？</Text>
+                                  <Select
+                                    size="small"
+                                    value={scheduleInstruction}
+                                    onChange={setScheduleInstruction}
+                                    options={[
+                                      { label: '每周一早上 8 点推送玉米周报', value: '每周一早上8点自动执行这个分析' },
+                                      { label: '每个工作日早上 8 点更新晨报', value: '每个工作日早上8点自动执行这个分析' },
+                                      { label: '每天下午 6 点更新收盘复盘', value: '每天下午6点自动执行这个分析' },
+                                    ]}
+                                  />
+                                  <Space>
+                                    <Button
+                                      type="primary"
+                                      size="small"
+                                      loading={resolveScheduleMutation.isPending}
+                                      onClick={() => void handleResolveSchedule()}
+                                    >
+                                      就按这个频率
+                                    </Button>
+                                    <Button size="small" onClick={() => setIsScheduleQuickOpen(false)}>
+                                      先不设置
+                                    </Button>
+                                    <Button
+                                      size="small"
+                                      type="link"
+                                      onClick={() => {
+                                        setToolTabKey('subscriptions');
+                                        setIsToolDrawerOpen(true);
+                                      }}
+                                    >
+                                      查看全部自动更新
+                                    </Button>
+                                  </Space>
+                                </Space>
+                              </Card>
+                            ) : null}
+                          </Space>
                         </Space>
                       </Card>
                     ) : null}
@@ -1571,7 +1123,7 @@ export const CopilotChatView: React.FC<CopilotChatViewProps> = ({
                           type="secondary"
                           style={{ fontSize: 12, display: 'block', marginBottom: 6 }}
                         >
-                          💡 你可以继续问我：
+                          你还可以继续这样问：
                         </Text>
                         <Space size={8} wrap>
                           {smartSuggestions.map((s) => (
@@ -1593,9 +1145,12 @@ export const CopilotChatView: React.FC<CopilotChatViewProps> = ({
                   <div
                     style={{ padding: isMobile ? '20px 10px' : '40px 20px', textAlign: 'center' }}
                   >
-                    <Title level={4} style={{ marginBottom: 24, fontWeight: 400 }}>
-                      👋 你好，有什么我可以帮你的？
+                    <Title level={4} style={{ marginBottom: 12, fontWeight: 400 }}>
+                      你好，直接告诉我你想看哪一块内贸玉米市场
                     </Title>
+                    <Text type="secondary" style={{ display: 'block', marginBottom: 24 }}>
+                      我可以帮你看价格、上量、港口库存、成交变化、采购节奏和短期走势。
+                    </Text>
                     <Row gutter={[16, 16]} justify="center">
                       {scenarioCards.map((card) => (
                         <Col key={card.key} xs={24} sm={8}>
@@ -1617,7 +1172,7 @@ export const CopilotChatView: React.FC<CopilotChatViewProps> = ({
                     </Row>
                   </div>
                 ) : (
-                  <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="开始你的第一个问题吧" />
+                  <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="先问我一个内贸玉米问题吧" />
                 )}
               </div>
 
@@ -1658,7 +1213,7 @@ export const CopilotChatView: React.FC<CopilotChatViewProps> = ({
                     }}
                   >
                     <Text style={{ display: 'block', marginBottom: 8 }}>
-                      我已经准备好分析方案了，需要我开始吗？
+                      我已经把这次玉米分析整理好了，要我现在直接给你结论吗？
                     </Text>
                     <Space size={8}>
                       <Button
@@ -1668,10 +1223,10 @@ export const CopilotChatView: React.FC<CopilotChatViewProps> = ({
                         loading={confirmPlanMutation.isPending}
                         onClick={handleConfirmPlan}
                       >
-                        开始分析
+                        直接看结论
                       </Button>
-                      <Button size="small" onClick={() => setInput('请调整方案，')}>
-                        🔧 调整一下
+                      <Button size="small" onClick={() => setInput('请调整一下，')}>
+                        换个分析重点
                       </Button>
                     </Space>
                   </div>
@@ -1684,7 +1239,7 @@ export const CopilotChatView: React.FC<CopilotChatViewProps> = ({
                   size="small"
                   current={progressStep}
                   style={{ marginBottom: 8, padding: '0 20px' }}
-                  items={[{ title: '理解需求' }, { title: '分析中' }, { title: '生成结论' }]}
+                  items={[{ title: '整理问题' }, { title: '分析玉米行情' }, { title: '给出结论' }]}
                 />
               ) : null}
 
@@ -1699,18 +1254,21 @@ export const CopilotChatView: React.FC<CopilotChatViewProps> = ({
                     marginBottom: 4,
                   }}
                 >
-                  <Space size={8}>
-                    {currentStatus === 'FAILED' ? (
-                      <ExclamationCircleOutlined style={{ color: '#cf1322' }} />
-                    ) : ['DONE', 'RESULT_DELIVERY'].includes(currentStatus) ? (
-                      <CheckCircleOutlined style={{ color: '#389e0d' }} />
-                    ) : isLoading ? (
-                      <SyncOutlined spin style={{ color: '#1677ff' }} />
-                    ) : null}
-                    <Text type="secondary" style={{ fontSize: 13 }}>
-                      {statusText}
-                    </Text>
-                  </Space>
+                    <Space size={8}>
+                      <Text type="secondary" style={{ fontSize: 12 }}>
+                        现在这条分析：
+                      </Text>
+                      {currentStatus === 'FAILED' ? (
+                        <ExclamationCircleOutlined style={{ color: '#cf1322' }} />
+                      ) : ['DONE', 'RESULT_DELIVERY'].includes(currentStatus) ? (
+                        <CheckCircleOutlined style={{ color: '#389e0d' }} />
+                      ) : isLoading ? (
+                        <SyncOutlined spin style={{ color: '#1677ff' }} />
+                      ) : null}
+                      <Text type="secondary" style={{ fontSize: 13 }}>
+                        {statusText}
+                      </Text>
+                    </Space>
                 </div>
               ) : null}
 
@@ -1760,11 +1318,11 @@ export const CopilotChatView: React.FC<CopilotChatViewProps> = ({
                 style={
                   isMobile
                     ? {
-                        position: 'sticky',
-                        bottom: 0,
-                        background: '#fff',
-                        paddingBottom: 'env(safe-area-inset-bottom)',
-                      }
+                      position: 'sticky',
+                      bottom: 0,
+                      background: '#fff',
+                      paddingBottom: 'env(safe-area-inset-bottom)',
+                    }
                     : undefined
                 }
               >
@@ -1788,7 +1346,7 @@ export const CopilotChatView: React.FC<CopilotChatViewProps> = ({
                     onClick={handleSend}
                     style={{ height: 'auto', width: 80 }}
                   >
-                    发送
+                    继续提问
                   </Button>
                 </Space.Compact>
               </div>
@@ -1797,9 +1355,9 @@ export const CopilotChatView: React.FC<CopilotChatViewProps> = ({
         </Row>
       </Space>
 
-      {/* ── 工具箱 Drawer ── */}
+      {/* ── 玉米分析辅助信息 ── */}
       <Drawer
-        title="🧰 工具箱"
+        title="更多可查看内容"
         placement="right"
         width={isMobile ? '100%' : 480}
         open={isToolDrawerOpen}
@@ -1815,7 +1373,7 @@ export const CopilotChatView: React.FC<CopilotChatViewProps> = ({
               label: (
                 <span>
                   <RobotOutlined style={{ marginRight: 4 }} />
-                  智能体
+                  助手分工
                 </span>
               ),
               children: <EphemeralAgentPanel sessionId={activeSessionId ?? null} />,
@@ -1825,7 +1383,7 @@ export const CopilotChatView: React.FC<CopilotChatViewProps> = ({
               label: (
                 <span>
                   <BarChartOutlined style={{ marginRight: 4 }} />
-                  工作流
+                  分析步骤
                 </span>
               ),
               children: <EphemeralWorkflowPanel sessionId={activeSessionId ?? null} />,
@@ -1835,7 +1393,7 @@ export const CopilotChatView: React.FC<CopilotChatViewProps> = ({
               label: (
                 <span>
                   <SafetyOutlined style={{ marginRight: 4 }} />
-                  安全
+                  风险校验
                 </span>
               ),
               children: <SecurityDashboard sessionId={activeSessionId ?? null} />,
@@ -1845,10 +1403,60 @@ export const CopilotChatView: React.FC<CopilotChatViewProps> = ({
               label: (
                 <span>
                   <DiffOutlined style={{ marginRight: 4 }} />
-                  结果对比
+                  结论对比
                 </span>
               ),
               children: <ResultDiffTimelinePanel sessionId={activeSessionId ?? null} />,
+            },
+            {
+              key: 'evidence',
+              label: (
+                <span>
+                  <SearchOutlined style={{ marginRight: 4 }} />
+                  行情依据
+                </span>
+              ),
+              children: <ConversationEvidencePanel sessionId={activeSessionId ?? null} />,
+            },
+            {
+              key: 'lineage',
+              label: (
+                <span>
+                  <ApartmentOutlined style={{ marginRight: 4 }} />
+                  数据来路
+                </span>
+              ),
+              children: <DataLineagePanel sessionId={activeSessionId ?? null} />,
+            },
+            {
+              key: 'backtest',
+              label: (
+                <span>
+                  <ExperimentOutlined style={{ marginRight: 4 }} />
+                  历史验证
+                </span>
+              ),
+              children: <BacktestResultPanel sessionId={activeSessionId ?? null} />,
+            },
+            {
+              key: 'subscriptions',
+              label: (
+                <span>
+                  <ScheduleOutlined style={{ marginRight: 4 }} />
+                  自动盯盘
+                </span>
+              ),
+              children: <SubscriptionManagePanel sessionId={activeSessionId ?? null} />,
+            },
+            {
+              key: 'audit',
+              label: (
+                <span>
+                  <SafetyOutlined style={{ marginRight: 4 }} />
+                  分析留痕
+                </span>
+              ),
+              children: <AuditLogPanel sessionId={activeSessionId ?? null} />,
             },
           ]}
         />

@@ -38,6 +38,8 @@ import {
   RocketOutlined,
   AlertOutlined,
   MessageOutlined,
+  DatabaseOutlined,
+  FundOutlined,
 } from '@ant-design/icons';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { ThemeSwitcher } from '../components/ThemeSwitcher';
@@ -99,6 +101,16 @@ export const MainLayout: React.FC = () => {
             key: '/workflow/advanced',
             icon: <SettingOutlined />,
             label: '高级管理',
+          },
+          {
+            key: '/workflow/metrics',
+            icon: <DatabaseOutlined />,
+            label: '指标字典',
+          },
+          {
+            key: '/workflow/quality',
+            icon: <FundOutlined />,
+            label: '质量看板',
           },
         ],
       },
@@ -306,6 +318,28 @@ export const MainLayout: React.FC = () => {
               {
                 key: '/system/config/dictionaries',
                 label: '数据字典',
+              },
+              {
+                key: '/system/config/feature-flags',
+                icon: <ExperimentOutlined />,
+                label: '灰度开关',
+              },
+            ],
+          },
+          {
+            key: 'ops-center',
+            icon: <AlertOutlined />,
+            label: '运维监控',
+            children: [
+              {
+                key: '/system/config/connector-health',
+                icon: <RocketOutlined />,
+                label: '连接器健康',
+              },
+              {
+                key: '/system/config/audit-trace',
+                icon: <AuditOutlined />,
+                label: '审计追踪',
               },
             ],
           },

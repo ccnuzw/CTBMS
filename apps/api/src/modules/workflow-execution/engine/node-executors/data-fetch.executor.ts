@@ -6,7 +6,11 @@ import {
   MarketDataService,
   type ReconciliationGateEvaluationResult,
 } from '../../../market-data/market-data.service';
-import { validateConnectorContract } from '../../../connector/connector-contract.util';
+import {
+  validateConnectorContract,
+  validateConnectorPayloadBySchema,
+  validateConnectorSchemaDefinitions,
+} from '../../../connector/connector-contract.util';
 import {
   NodeExecutionContext,
   NodeExecutionResult,
@@ -50,7 +54,7 @@ export class DataFetchNodeExecutor implements WorkflowNodeExecutor {
     private readonly prisma: PrismaService,
     private readonly marketDataService: MarketDataService,
     private readonly configService: ConfigService,
-  ) {}
+  ) { }
 
   supports(node: WorkflowNode): boolean {
     return node.type === 'data-fetch';
@@ -143,6 +147,11 @@ export class DataFetchNodeExecutor implements WorkflowNodeExecutor {
       throw new Error(`连接器契约缺失字段: ${contractValidation.missingFields.join(', ')}`);
     }
 
+    const schemaDefinitionValidation = validateConnectorSchemaDefinitions(connector);
+    if (!schemaDefinitionValidation.valid) {
+      throw new Error(`连接器 schema 声明非法: ${schemaDefinitionValidation.issues.join('; ')}`);
+    }
+
     const connectorType = connector.connectorType as string;
 
     switch (connectorType) {
@@ -180,6 +189,15 @@ export class DataFetchNodeExecutor implements WorkflowNodeExecutor {
     // 构建查询参数
     const queryParams = this.buildQueryParams(config, context);
 
+    const requestPayloadValidation = validateConnectorPayloadBySchema(
+      connector,
+      'request',
+      queryParams,
+    );
+    if (!requestPayloadValidation.valid) {
+      throw new Error(`连接器请求参数不符合 schema: ${requestPayloadValidation.issues.join('; ')}`);
+    }
+
     // 应用限流配置
     const rateLimitConfig = connector.rateLimitConfig as Record<string, unknown> | null;
     const timeoutSeconds = (rateLimitConfig?.timeoutSeconds as number) ?? 30000;
@@ -212,6 +230,15 @@ export class DataFetchNodeExecutor implements WorkflowNodeExecutor {
       const responseMapping = connector.responseMapping as Record<string, string> | null;
       const mappedData = responseMapping ? this.applyResponseMapping(data, responseMapping) : data;
 
+      const responsePayloadValidation = validateConnectorPayloadBySchema(
+        connector,
+        'response',
+        mappedData,
+      );
+      if (!responsePayloadValidation.valid) {
+        throw new Error(`连接器响应不符合 schema: ${responsePayloadValidation.issues.join('; ')}`);
+      }
+
       return {
         data: mappedData,
         metadata: {
@@ -243,48 +270,45 @@ export class DataFetchNodeExecutor implements WorkflowNodeExecutor {
 
     const filters = config.filters as Record<string, unknown> | undefined;
 
-    const useStandardizedRead =
-      this.toBoolean(config.useStandardizedRead) ||
-      this.toBoolean(queryTemplates?.useStandardizedRead);
+    // FR-DATA-008: 标准层读取默认开启。仅当 useStandardizedRead 显式设为 false 时跳过。
+    const explicitlyDisabled =
+      this.parseBooleanFlag(config.useStandardizedRead) === false ||
+      this.parseBooleanFlag(queryTemplates?.useStandardizedRead) === false;
+
+    const standardDatasetRaw =
+      (config.standardDataset as string | undefined) ??
+      (queryTemplates?.standardDataset as string | undefined);
+
+    const standardDataset =
+      this.normalizeStandardDataset(standardDatasetRaw) ??
+      STANDARD_DATASET_BY_TABLE[tableName ?? ''];
 
     let reconciliationGate: ReconciliationGateEvaluationResult | undefined;
 
-    if (useStandardizedRead) {
+    if (standardDataset && !explicitlyDisabled) {
       const standardizedReadEnabled = await this.isWorkflowStandardizedReadEnabled();
-      if (!standardizedReadEnabled) {
-        this.logger.warn(
-          'useStandardizedRead 已启用但全局开关关闭，回退到 legacy INTERNAL_DB 读取',
+      if (standardizedReadEnabled) {
+        const nodeMaxAgeMinutes = this.parsePositiveInteger(config.reconciliationMaxAgeMinutes);
+        const gateResult = await this.marketDataService.reconciliationService.evaluateReconciliationGate(
+          standardDataset,
+          {
+            filters,
+            maxAgeMinutes: nodeMaxAgeMinutes ?? undefined,
+          },
         );
-      } else {
-        const standardDatasetRaw =
-          (config.standardDataset as string | undefined) ??
-          (queryTemplates?.standardDataset as string | undefined);
-
-        const standardDataset =
-          this.normalizeStandardDataset(standardDatasetRaw) ??
-          STANDARD_DATASET_BY_TABLE[tableName ?? ''];
-
-        if (standardDataset) {
-          const nodeMaxAgeMinutes = this.parsePositiveInteger(config.reconciliationMaxAgeMinutes);
-          const gateResult = await this.marketDataService.evaluateReconciliationGate(
-            standardDataset,
-            {
-              filters,
-              maxAgeMinutes: nodeMaxAgeMinutes ?? undefined,
-            },
-          );
-          reconciliationGate = gateResult;
-          if (gateResult.passed) {
-            return this.fetchFromStandardReadModel(standardDataset, config, gateResult);
-          }
-
-          this.logger.warn(`标准化读门禁未通过，回退 legacy INTERNAL_DB: ${gateResult.reason}`);
-        } else {
-          this.logger.warn(
-            `data-fetch 节点开启 useStandardizedRead 但未识别 standardDataset/tableName=${String(tableName)}`,
-          );
+        reconciliationGate = gateResult;
+        if (gateResult.passed) {
+          return this.fetchFromStandardReadModel(standardDataset, config, gateResult);
         }
+
+        this.logger.warn(`标准化读门禁未通过，回退 legacy INTERNAL_DB: ${gateResult.reason}`);
+      } else {
+        this.logger.warn(
+          '标准层全局开关关闭，回退到 legacy INTERNAL_DB 读取',
+        );
       }
+    } else if (explicitlyDisabled && standardDataset) {
+      this.logger.debug(`data-fetch 节点显式禁用标准层读取: ${tableName}`);
     }
 
     // 构建时间范围过滤
@@ -350,6 +374,11 @@ export class DataFetchNodeExecutor implements WorkflowNodeExecutor {
 
     const data = await this.prisma.$queryRawUnsafe(query, ...params);
 
+    const responsePayloadValidation = validateConnectorPayloadBySchema(connector, 'response', data);
+    if (!responsePayloadValidation.valid) {
+      throw new Error(`连接器响应不符合 schema: ${responsePayloadValidation.issues.join('; ')}`);
+    }
+
     return {
       data,
       metadata: {
@@ -403,13 +432,14 @@ export class DataFetchNodeExecutor implements WorkflowNodeExecutor {
     } catch {
       const fallback = this.parseBooleanFlag(
         process.env.WORKFLOW_STANDARDIZED_READ_MODE ??
-          process.env.WORKFLOW_STANDARDIZED_READ_ENABLED,
+        process.env.WORKFLOW_STANDARDIZED_READ_ENABLED,
       );
       if (fallback !== null) {
         this.logger.warn('读取 standardized read mode 配置失败，回退到环境变量');
         return fallback;
       }
-      return false;
+      // FR-DATA-008: 默认启用标准层读取
+      return true;
     }
   }
 

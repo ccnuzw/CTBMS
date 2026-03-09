@@ -1,4 +1,4 @@
-import { PrismaClient } from '@prisma/client';
+import { IntelCategory, PrismaClient } from '@prisma/client';
 
 const prisma = new PrismaClient();
 
@@ -142,7 +142,13 @@ const PROMPT_DEFAULTS = [
 {{content}}
 ===== 原文结束 =====`
     }
-];
+] as const satisfies ReadonlyArray<{
+    code: string;
+    name: string;
+    category: IntelCategory;
+    system: string;
+    user: string;
+}>;
 
 async function seedPrompts() {
     console.log('🤖 开始播种 Prompt 模板 (Seed Prompts)...');
@@ -152,14 +158,14 @@ async function seedPrompts() {
             where: { code: t.code },
             update: {
                 name: t.name,
-                category: t.category as any,
+                category: t.category,
                 systemPrompt: t.system,
                 userPrompt: t.user,
             },
             create: {
                 code: t.code,
                 name: t.name,
-                category: t.category as any,
+                category: t.category,
                 systemPrompt: t.system,
                 userPrompt: t.user,
                 version: 1,

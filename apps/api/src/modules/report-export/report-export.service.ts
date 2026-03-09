@@ -20,7 +20,7 @@ import { Document, Packer, Paragraph, TextRun, HeadingLevel, AlignmentType } fro
 export class ReportExportService {
   private readonly logger = new Logger(ReportExportService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private readonly prisma: PrismaService) { }
 
   /**
    * 创建导出任务并组装报告数据
@@ -536,13 +536,58 @@ export class ReportExportService {
   }
 
   /**
-   * PDF 报告渲染 — 使用 pdfkit
+   * 查找系统中可用的中文字体路径
+   */
+  private async resolveCjkFontPath(): Promise<string | null> {
+    const candidates = [
+      // macOS
+      '/System/Library/Fonts/STHeiti Medium.ttc',
+      '/System/Library/Fonts/Hiragino Sans GB.ttc',
+      '/System/Library/Fonts/Supplemental/Songti.ttc',
+      '/System/Library/Fonts/PingFang.ttc',
+      '/Library/Fonts/Arial Unicode.ttf',
+      '/System/Library/Fonts/Supplemental/Arial Unicode.ttf',
+      // Linux (Docker)
+      '/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc',
+      '/usr/share/fonts/noto-cjk/NotoSansCJK-Regular.ttc',
+      '/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc',
+      '/usr/share/fonts/truetype/wqy/wqy-microhei.ttc',
+      '/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc',
+      '/usr/share/fonts/google-noto-cjk/NotoSansCJK-Regular.ttc',
+      // Windows
+      'C:\\Windows\\Fonts\\msyh.ttc',
+      'C:\\Windows\\Fonts\\simsun.ttc',
+    ];
+    for (const fontPath of candidates) {
+      try {
+        await access(fontPath, fsConstants.R_OK);
+        return fontPath;
+      } catch {
+        // 继续尝试下一个
+      }
+    }
+    return null;
+  }
+
+  /**
+   * PDF 报告渲染 — 使用 pdfkit + 中文字体
    */
   private async renderPdfReport(filePath: string, data: ExportReportDataDto): Promise<void> {
+    const cjkFontPath = await this.resolveCjkFontPath();
+    if (!cjkFontPath) {
+      this.logger.warn('未找到中文字体，PDF 将使用 Markdown 纯文本替代');
+      await writeFile(filePath, this.renderPlainTextReport(data), 'utf-8');
+      return;
+    }
+
     return new Promise((resolve, reject) => {
       const doc = new PDFDocument({ size: 'A4', margin: 50 });
       const stream = createWriteStream(filePath);
       doc.pipe(stream);
+
+      // 注册中文字体
+      doc.registerFont('CJK', cjkFontPath);
+      doc.font('CJK');
 
       // 标题
       doc.fontSize(20).text(data.title, { align: 'center' });

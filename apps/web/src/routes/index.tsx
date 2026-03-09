@@ -62,6 +62,8 @@ import { UserConfigBindingPage } from '../features/user-config-binding';
 import { ReplayEvaluationPage } from '../features/replay-evaluation';
 import { WorkflowAdvancedHubPage } from '../features/workflow-advanced/components/WorkflowAdvancedHubPage';
 import { AgentCopilotPage } from '../features/agent-copilot';
+import { MetricDictionaryPanel } from '../features/semantic-layer';
+import { DataQualityDashboard } from '../features/data-quality';
 
 // Backward-compatible redirect: /workstation/report/:type -> unified editor
 const WorkstationReportRedirect = () => {
@@ -208,6 +210,14 @@ export const router = createBrowserRouter([
       {
         path: 'workflow/advanced',
         element: <WorkflowAdvancedHubPage />,
+      },
+      {
+        path: 'workflow/metrics',
+        element: <MetricDictionaryPanel />,
+      },
+      {
+        path: 'workflow/quality',
+        element: <DataQualityDashboard />,
       },
       {
         path: 'system',

@@ -1,6 +1,6 @@
 /// <reference types="node" />
 import { PrismaClient, PriceSourceType, PriceSubType, GeoLevel } from '@prisma/client';
-import { addDays, format, subDays } from 'date-fns';
+import { addDays, subDays } from 'date-fns';
 
 const prisma = new PrismaClient();
 

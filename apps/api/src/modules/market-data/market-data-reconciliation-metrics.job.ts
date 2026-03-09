@@ -6,12 +6,12 @@ import { MarketDataService } from './market-data.service';
 export class MarketDataReconciliationMetricsJob {
   private readonly logger = new Logger(MarketDataReconciliationMetricsJob.name);
 
-  constructor(private readonly marketDataService: MarketDataService) {}
+  constructor(private readonly marketDataService: MarketDataService) { }
 
   @Cron('10 0 * * *')
   async snapshotDailyReconciliationMetrics() {
     try {
-      const result = await this.marketDataService.snapshotReconciliationWindowMetrics({
+      const result = await this.marketDataService.reconciliationService.snapshotReconciliationWindowMetrics({
         windowDays: 7,
       });
 

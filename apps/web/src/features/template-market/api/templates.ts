@@ -10,6 +10,36 @@ import type {
 } from '@packages/types';
 import { apiClient } from '../../../api/client';
 
+export interface QuickstartTemplateAcceptanceCheck {
+  key: string;
+  passed: boolean;
+  message: string;
+  detail?: Record<string, unknown>;
+}
+
+export interface QuickstartTemplateAcceptanceItem {
+  code: string;
+  name: string;
+  category: string;
+  passed: boolean;
+  failedChecks: string[];
+  checks: QuickstartTemplateAcceptanceCheck[];
+}
+
+export interface QuickstartTemplateAcceptanceChecklist {
+  generatedAt: string;
+  strictContract: boolean;
+  total: number;
+  passed: number;
+  failed: number;
+  items: QuickstartTemplateAcceptanceItem[];
+}
+
+export interface QuickstartTemplateAcceptanceChecklistQuery {
+  keyword?: string;
+  strictContract?: boolean;
+}
+
 export interface TemplateCatalogQuery {
   category?: string;
   status?: string;
@@ -146,6 +176,23 @@ export const useQuickstartBusinessTemplates = (
     queryFn: async () => {
       const res = await apiClient.get<TemplateCatalogQuickstartBusinessTemplatesResponseDto>(
         '/template-catalog/quickstart/business-templates',
+        {
+          params: query,
+        },
+      );
+      return res.data;
+    },
+  });
+};
+
+export const useQuickstartBusinessTemplateAcceptanceChecklist = (
+  query?: QuickstartTemplateAcceptanceChecklistQuery,
+) => {
+  return useQuery<QuickstartTemplateAcceptanceChecklist>({
+    queryKey: ['template-catalog-quickstart-acceptance-checklist', query],
+    queryFn: async () => {
+      const res = await apiClient.get<QuickstartTemplateAcceptanceChecklist>(
+        '/template-catalog/quickstart/business-templates/acceptance-checklist',
         {
           params: query,
         },

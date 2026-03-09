@@ -40,7 +40,9 @@ import {
   MarketDataAggregateRequest,
   MarketDataQueryRequest,
   MarketDataLineageQueryRequest,
+  ReconciliationSingleWriteGovernanceQueryRequest,
   StandardizationPreviewRequest,
+  WeatherLogisticsImpactIndexQueryRequest,
 } from './dto';
 import { MarketDataService } from './market-data.service';
 
@@ -63,6 +65,7 @@ export class MarketDataController {
         to,
         filters: dto.dimensions,
         limit: dto.limit,
+        enforceReconciliationGate: true,
       },
       dto.groupBy,
       dto.metrics,
@@ -85,12 +88,23 @@ export class MarketDataController {
       to,
       filters: dto.dimensions,
       limit: dto.limit,
+      enforceReconciliationGate: true,
     });
 
     return this.success(req, {
       rows: result.rows,
       meta: result.meta,
     });
+  }
+
+  @Get('weather-logistics/impact-index')
+  async getWeatherLogisticsImpactIndex(
+    @Query() query: WeatherLogisticsImpactIndexQueryRequest,
+    @Request() req: AuthRequest,
+  ) {
+    this.getUserId(req);
+    const data = await this.marketDataService.getWeatherLogisticsImpactIndex(query);
+    return this.success(req, data);
   }
 
   @Post('standardization/preview')
@@ -115,7 +129,7 @@ export class MarketDataController {
     @Body() dto: CreateReconciliationJobRequest,
     @Request() req: AuthRequest,
   ) {
-    const data = await this.marketDataService.createReconciliationJob(this.getUserId(req), dto);
+    const data = await this.marketDataService.reconciliationService.createReconciliationJob(this.getUserId(req), dto);
     return this.success(req, data);
   }
 
@@ -124,7 +138,7 @@ export class MarketDataController {
     @Query() query: ListReconciliationJobsRequest,
     @Request() req: AuthRequest,
   ) {
-    const data = await this.marketDataService.listReconciliationJobs(this.getUserId(req), query);
+    const data = await this.marketDataService.reconciliationService.listReconciliationJobs(this.getUserId(req), query);
     return this.success(req, data);
   }
 
@@ -133,7 +147,7 @@ export class MarketDataController {
     @Param('jobId', ParseUUIDPipe) jobId: string,
     @Request() req: AuthRequest,
   ) {
-    const data = await this.marketDataService.getReconciliationJob(this.getUserId(req), jobId);
+    const data = await this.marketDataService.reconciliationService.getReconciliationJob(this.getUserId(req), jobId);
     return this.success(req, data);
   }
 
@@ -142,7 +156,7 @@ export class MarketDataController {
     @Param('jobId', ParseUUIDPipe) jobId: string,
     @Request() req: AuthRequest,
   ) {
-    const data = await this.marketDataService.retryReconciliationJob(this.getUserId(req), jobId);
+    const data = await this.marketDataService.reconciliationService.retryReconciliationJob(this.getUserId(req), jobId);
     return this.success(req, data);
   }
 
@@ -152,7 +166,7 @@ export class MarketDataController {
     @Body() dto: CancelReconciliationJobRequest,
     @Request() req: AuthRequest,
   ) {
-    const data = await this.marketDataService.cancelReconciliationJob(
+    const data = await this.marketDataService.reconciliationService.cancelReconciliationJob(
       this.getUserId(req),
       jobId,
       dto.reason,
@@ -166,7 +180,7 @@ export class MarketDataController {
     @Request() req: AuthRequest,
   ) {
     this.getUserId(req);
-    const data = await this.marketDataService.evaluateReconciliationGate(dto.dataset, {
+    const data = await this.marketDataService.reconciliationService.evaluateReconciliationGate(dto.dataset, {
       filters: dto.filters,
       maxAgeMinutes: dto.maxAgeMinutes,
     });
@@ -179,7 +193,7 @@ export class MarketDataController {
     @Request() req: AuthRequest,
   ) {
     this.getUserId(req);
-    const data = await this.marketDataService.getReconciliationWindowMetrics(query.dataset, {
+    const data = await this.marketDataService.reconciliationService.getReconciliationWindowMetrics(query.dataset, {
       days: query.days,
     });
     return this.success(req, data);
@@ -191,7 +205,7 @@ export class MarketDataController {
     @Request() req: AuthRequest,
   ) {
     this.getUserId(req);
-    const data = await this.marketDataService.snapshotReconciliationWindowMetrics({
+    const data = await this.marketDataService.reconciliationService.snapshotReconciliationWindowMetrics({
       windowDays: dto.windowDays,
       datasets: dto.datasets,
     });
@@ -204,7 +218,7 @@ export class MarketDataController {
     @Request() req: AuthRequest,
   ) {
     this.getUserId(req);
-    const data = await this.marketDataService.getReconciliationDailyMetricsHistory(query.dataset, {
+    const data = await this.marketDataService.reconciliationService.getReconciliationDailyMetricsHistory(query.dataset, {
       windowDays: query.windowDays,
       days: query.days,
     });
@@ -217,10 +231,24 @@ export class MarketDataController {
     @Request() req: AuthRequest,
   ) {
     this.getUserId(req);
-    const data = await this.marketDataService.getReconciliationReadCoverageMetrics({
+    const data = await this.marketDataService.reconciliationService.getReconciliationReadCoverageMetrics({
       days: dto.days,
       workflowVersionIds: dto.workflowVersionIds,
       targetCoverageRate: dto.targetCoverageRate,
+    });
+    return this.success(req, data);
+  }
+
+  @Get('reconciliation/single-write-governance')
+  async getSingleWriteGovernanceStatus(
+    @Query() query: ReconciliationSingleWriteGovernanceQueryRequest,
+    @Request() req: AuthRequest,
+  ) {
+    this.getUserId(req);
+    const data = await this.marketDataService.reconciliationService.getSingleWriteGovernanceStatus({
+      days: query.days,
+      targetCoverageRate: query.targetCoverageRate,
+      datasets: query.datasets,
     });
     return this.success(req, data);
   }
@@ -231,7 +259,7 @@ export class MarketDataController {
     @Request() req: AuthRequest,
   ) {
     this.getUserId(req);
-    const data = await this.marketDataService.getReconciliationM1Readiness({
+    const data = await this.marketDataService.reconciliationService.getReconciliationM1Readiness({
       windowDays: query.windowDays,
       targetCoverageRate: query.targetCoverageRate,
       datasets: query.datasets,
@@ -245,7 +273,7 @@ export class MarketDataController {
     @Request() req: AuthRequest,
   ) {
     this.getUserId(req);
-    const data = await this.marketDataService.getReconciliationM1ReadinessReport({
+    const data = await this.marketDataService.reconciliationService.getReconciliationM1ReadinessReport({
       format: query.format,
       windowDays: query.windowDays,
       targetCoverageRate: query.targetCoverageRate,
@@ -259,7 +287,7 @@ export class MarketDataController {
     @Body() dto: CreateReconciliationM1ReadinessReportSnapshotRequest,
     @Request() req: AuthRequest,
   ) {
-    const data = await this.marketDataService.createReconciliationM1ReadinessReportSnapshot(
+    const data = await this.marketDataService.reconciliationService.createReconciliationM1ReadinessReportSnapshot(
       this.getUserId(req),
       dto,
     );
@@ -271,7 +299,7 @@ export class MarketDataController {
     @Query() query: ListReconciliationM1ReadinessReportSnapshotsQueryRequest,
     @Request() req: AuthRequest,
   ) {
-    const data = await this.marketDataService.listReconciliationM1ReadinessReportSnapshots(
+    const data = await this.marketDataService.reconciliationService.listReconciliationM1ReadinessReportSnapshots(
       this.getUserId(req),
       query,
     );
@@ -283,7 +311,7 @@ export class MarketDataController {
     @Param('snapshotId', ParseUUIDPipe) snapshotId: string,
     @Request() req: AuthRequest,
   ) {
-    const data = await this.marketDataService.getReconciliationM1ReadinessReportSnapshot(
+    const data = await this.marketDataService.reconciliationService.getReconciliationM1ReadinessReportSnapshot(
       this.getUserId(req),
       snapshotId,
     );
@@ -295,7 +323,7 @@ export class MarketDataController {
     @Body() dto: CreateReconciliationCutoverDecisionRequest,
     @Request() req: AuthRequest,
   ) {
-    const data = await this.marketDataService.createReconciliationCutoverDecision(
+    const data = await this.marketDataService.cutoverService.createReconciliationCutoverDecision(
       this.getUserId(req),
       dto,
     );
@@ -307,7 +335,7 @@ export class MarketDataController {
     @Body() dto: CreateReconciliationCutoverDecisionRequest,
     @Request() req: AuthRequest,
   ) {
-    const data = await this.marketDataService.executeReconciliationCutover(
+    const data = await this.marketDataService.cutoverService.executeReconciliationCutover(
       this.getUserId(req),
       dto,
     );
@@ -319,7 +347,7 @@ export class MarketDataController {
     @Body() dto: CreateReconciliationCutoverAutopilotRequest,
     @Request() req: AuthRequest,
   ) {
-    const data = await this.marketDataService.executeReconciliationCutoverAutopilot(
+    const data = await this.marketDataService.cutoverService.executeReconciliationCutoverAutopilot(
       this.getUserId(req),
       dto,
     );
@@ -331,7 +359,7 @@ export class MarketDataController {
     @Body() dto: ExecuteReconciliationRollbackRequest,
     @Request() req: AuthRequest,
   ) {
-    const data = await this.marketDataService.executeReconciliationRollback(
+    const data = await this.marketDataService.cutoverService.executeReconciliationRollback(
       this.getUserId(req),
       dto,
     );
@@ -343,7 +371,7 @@ export class MarketDataController {
     @Query() query: ReconciliationCutoverRuntimeStatusQueryRequest,
     @Request() req: AuthRequest,
   ) {
-    const data = await this.marketDataService.getReconciliationCutoverRuntimeStatus(
+    const data = await this.marketDataService.cutoverService.getReconciliationCutoverRuntimeStatus(
       this.getUserId(req),
       query,
     );
@@ -355,7 +383,7 @@ export class MarketDataController {
     @Query() query: ListReconciliationCutoverExecutionsQueryRequest,
     @Request() req: AuthRequest,
   ) {
-    const data = await this.marketDataService.listReconciliationCutoverExecutions(
+    const data = await this.marketDataService.cutoverService.listReconciliationCutoverExecutions(
       this.getUserId(req),
       query,
     );
@@ -367,7 +395,7 @@ export class MarketDataController {
     @Query() query: ReconciliationCutoverExecutionOverviewQueryRequest,
     @Request() req: AuthRequest,
   ) {
-    const data = await this.marketDataService.getReconciliationCutoverExecutionOverview(
+    const data = await this.marketDataService.cutoverService.getReconciliationCutoverExecutionOverview(
       this.getUserId(req),
       query,
     );
@@ -379,7 +407,7 @@ export class MarketDataController {
     @Query() query: ListReconciliationCutoverCompensationBatchesQueryRequest,
     @Request() req: AuthRequest,
   ) {
-    const data = await this.marketDataService.listReconciliationCutoverCompensationBatches(
+    const data = await this.marketDataService.cutoverService.listReconciliationCutoverCompensationBatches(
       this.getUserId(req),
       query,
     );
@@ -391,7 +419,7 @@ export class MarketDataController {
     @Param('batchId', ParseUUIDPipe) batchId: string,
     @Request() req: AuthRequest,
   ) {
-    const data = await this.marketDataService.getReconciliationCutoverCompensationBatch(
+    const data = await this.marketDataService.cutoverService.getReconciliationCutoverCompensationBatch(
       this.getUserId(req),
       batchId,
     );
@@ -404,7 +432,7 @@ export class MarketDataController {
     @Query() query: ReconciliationCutoverCompensationBatchReportQueryRequest,
     @Request() req: AuthRequest,
   ) {
-    const data = await this.marketDataService.getReconciliationCutoverCompensationBatchReport(
+    const data = await this.marketDataService.cutoverService.getReconciliationCutoverCompensationBatchReport(
       this.getUserId(req),
       batchId,
       query,
@@ -417,7 +445,7 @@ export class MarketDataController {
     @Param('executionId', ParseUUIDPipe) executionId: string,
     @Request() req: AuthRequest,
   ) {
-    const data = await this.marketDataService.getReconciliationCutoverExecution(
+    const data = await this.marketDataService.cutoverService.getReconciliationCutoverExecution(
       this.getUserId(req),
       executionId,
     );
@@ -430,7 +458,7 @@ export class MarketDataController {
     @Body() dto: RetryReconciliationCutoverCompensationRequest,
     @Request() req: AuthRequest,
   ) {
-    const data = await this.marketDataService.retryReconciliationCutoverExecutionCompensation(
+    const data = await this.marketDataService.cutoverService.retryReconciliationCutoverExecutionCompensation(
       this.getUserId(req),
       executionId,
       dto,
@@ -443,7 +471,7 @@ export class MarketDataController {
     @Body() dto: RetryReconciliationCutoverCompensationBatchRequest,
     @Request() req: AuthRequest,
   ) {
-    const data = await this.marketDataService.retryReconciliationCutoverExecutionCompensationBatch(
+    const data = await this.marketDataService.cutoverService.retryReconciliationCutoverExecutionCompensationBatch(
       this.getUserId(req),
       dto,
     );
@@ -455,7 +483,7 @@ export class MarketDataController {
     @Query() query: ListReconciliationCutoverDecisionsQueryRequest,
     @Request() req: AuthRequest,
   ) {
-    const data = await this.marketDataService.listReconciliationCutoverDecisions(
+    const data = await this.marketDataService.cutoverService.listReconciliationCutoverDecisions(
       this.getUserId(req),
       query,
     );
@@ -467,7 +495,7 @@ export class MarketDataController {
     @Param('decisionId', ParseUUIDPipe) decisionId: string,
     @Request() req: AuthRequest,
   ) {
-    const data = await this.marketDataService.getReconciliationCutoverDecision(
+    const data = await this.marketDataService.cutoverService.getReconciliationCutoverDecision(
       this.getUserId(req),
       decisionId,
     );
@@ -479,7 +507,7 @@ export class MarketDataController {
     @Body() dto: CreateReconciliationRollbackDrillRequest,
     @Request() req: AuthRequest,
   ) {
-    const data = await this.marketDataService.createReconciliationRollbackDrill(
+    const data = await this.marketDataService.reconciliationService.createReconciliationRollbackDrill(
       this.getUserId(req),
       dto,
     );
@@ -491,7 +519,7 @@ export class MarketDataController {
     @Query() query: ListReconciliationRollbackDrillsQueryRequest,
     @Request() req: AuthRequest,
   ) {
-    const data = await this.marketDataService.listReconciliationRollbackDrills(
+    const data = await this.marketDataService.reconciliationService.listReconciliationRollbackDrills(
       this.getUserId(req),
       query,
     );

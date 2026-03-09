@@ -124,6 +124,7 @@ export const WorkflowQuickRunnerModal: React.FC<WorkflowQuickRunnerModalProps> =
         {
             key: 'manual',
             label: '📝 手动填写',
+            forceRender: true,
             children: (
                 <Form form={form} layout="vertical">
                     <Typography.Paragraph type="secondary" style={{ marginBottom: 24 }}>
@@ -178,6 +179,7 @@ export const WorkflowQuickRunnerModal: React.FC<WorkflowQuickRunnerModalProps> =
             okText="立即运行"
             cancelText="取消"
             width={620}
+            forceRender
             destroyOnClose
         >
             <Tabs

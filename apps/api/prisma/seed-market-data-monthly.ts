@@ -7,7 +7,37 @@ const prisma = new PrismaClient();
 // Configuration
 const END_DATE = new Date('2026-01-25');
 const START_DATE = subDays(END_DATE, 90); // 3 Months
-const USER_EMAIL = 'admin@ctbms.com';
+
+type PriceSeedRecord = {
+    sourceType: PriceSourceType;
+    subType: PriceSubType;
+    geoLevel: GeoLevel;
+    location: string;
+    province: string | null;
+    collectionPointId: string;
+    effectiveDate: Date;
+    commodity: string;
+    grade: string;
+    price: number;
+    dayChange: number;
+    authorId: string;
+};
+
+type IntelSeedRecord = {
+    category: IntelCategory;
+    contentType: ContentType;
+    sourceType: IntelSourceType;
+    effectiveTime: Date;
+    location: string;
+    rawContent: string;
+    summary: string;
+    authorId: string;
+    aiAnalysis: {
+        summary: string;
+        sentiment: 'NEUTRAL';
+        confidenceScore: number;
+    };
+};
 
 async function main() {
     console.log(`📈 开始生成季度全量行情数据 (${format(START_DATE, 'yyyy-MM-dd')} ~ ${format(END_DATE, 'yyyy-MM-dd')})...`);
@@ -39,8 +69,8 @@ async function main() {
 
     // 4. Time Series Generation
     let currentDate = START_DATE;
-    const allPriceData: any[] = [];
-    const allIntelData: any[] = [];
+    const allPriceData: PriceSeedRecord[] = [];
+    const allIntelData: IntelSeedRecord[] = [];
 
     while (currentDate <= END_DATE) {
         // Change momentum every ~5-10 days to creating "Waves"

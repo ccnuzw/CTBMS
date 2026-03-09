@@ -76,6 +76,70 @@ export const ConversationSessionQuerySchema = z.object({
   pageSize: z.coerce.number().int().min(1).max(100).default(20),
 });
 
+export const ConversationObservabilitySummaryQuerySchema = z.object({
+  windowDays: z.coerce.number().int().min(1).max(90).default(7),
+  maxSessions: z.coerce.number().int().min(50).max(2000).default(500),
+});
+
+export const ConversationObservabilityLatencySchema = z.object({
+  sampleSize: z.number().int().min(0),
+  p50Ms: z.number().int().nullable(),
+  p95Ms: z.number().int().nullable(),
+});
+
+export const ConversationObservabilityCitationCoverageSchema = z.object({
+  executionWithFacts: z.number().int().min(0),
+  totalFacts: z.number().int().min(0),
+  citedFacts: z.number().int().min(0),
+  coverageRate: z.number().min(0).max(1),
+});
+
+export const ConversationObservabilitySummarySchema = z.object({
+  generatedAt: z.string(),
+  windowDays: z.number().int().min(1),
+  windowStart: z.string(),
+  windowEnd: z.string(),
+  sessionsInWindow: z.number().int().min(0),
+  sampledSessions: z.number().int().min(0),
+  truncated: z.boolean(),
+  totals: z.object({
+    sessionsWithUserTurn: z.number().int().min(0),
+    sessionsWithExecution: z.number().int().min(0),
+    executions: z.number().int().min(0),
+    completedExecutions: z.number().int().min(0),
+    successExecutions: z.number().int().min(0),
+    failedExecutions: z.number().int().min(0),
+  }),
+  successRate: z.number().min(0).max(1),
+  firstResponseLatency: ConversationObservabilityLatencySchema,
+  acceptanceLatency: ConversationObservabilityLatencySchema,
+  completionLatency: ConversationObservabilityLatencySchema,
+  citationCoverage: ConversationObservabilityCitationCoverageSchema,
+  nfrGate: z
+    .object({
+      passed: z.boolean(),
+      generatedAt: z.string(),
+      thresholds: z.object({
+        firstResponseP95Ms: z.number().int().min(0),
+        acceptanceP95Ms: z.number().int().min(0),
+        completionP95Ms: z.number().int().min(0),
+        successRateMin: z.number().min(0).max(1),
+        citationCoverageMin: z.number().min(0).max(1),
+        traceCoverageMin: z.number().min(0).max(1),
+      }),
+      checks: z.array(
+        z.object({
+          id: z.string(),
+          label: z.string(),
+          target: z.string(),
+          actual: z.number().nullable(),
+          passed: z.boolean(),
+        }),
+      ),
+    })
+    .optional(),
+});
+
 export const ConversationSubscriptionStatusEnum = z.enum([
   'ACTIVE',
   'PAUSED',
@@ -330,6 +394,12 @@ export type ExportConversationResultDto = z.infer<typeof ExportConversationResul
 export type DeliverConversationEmailDto = z.infer<typeof DeliverConversationEmailSchema>;
 export type DeliverConversationDto = z.infer<typeof DeliverConversationSchema>;
 export type ConversationSessionQueryDto = z.infer<typeof ConversationSessionQuerySchema>;
+export type ConversationObservabilitySummaryQueryDto = z.infer<
+  typeof ConversationObservabilitySummaryQuerySchema
+>;
+export type ConversationObservabilitySummaryDto = z.infer<
+  typeof ConversationObservabilitySummarySchema
+>;
 export type ConversationSubscriptionStatus = z.infer<typeof ConversationSubscriptionStatusEnum>;
 export type BacktestStatus = z.infer<typeof BacktestStatusEnum>;
 export type SkillDraftStatus = z.infer<typeof SkillDraftStatusEnum>;

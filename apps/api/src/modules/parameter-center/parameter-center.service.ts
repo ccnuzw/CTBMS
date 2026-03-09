@@ -132,6 +132,40 @@ export class ParameterCenterService {
   async publishSet(ownerUserId: string, id: string, dto: PublishParameterSetDto) {
     await this.ensureEditableSet(ownerUserId, id);
     await this.validateSetBeforePublish(id);
+
+    // 发布前自动创建快照 — 用于版本回滚
+    const currentSet = await this.prisma.parameterSet.findUniqueOrThrow({
+      where: { id },
+      include: { items: true },
+    });
+
+    await this.prisma.parameterSetSnapshot.create({
+      data: {
+        parameterSetId: id,
+        version: currentSet.version,
+        data: {
+          setCode: currentSet.setCode,
+          name: currentSet.name,
+          description: currentSet.description,
+          items: currentSet.items.map((item) => ({
+            paramCode: item.paramCode,
+            paramName: item.paramName,
+            paramType: item.paramType,
+            unit: item.unit,
+            value: item.value,
+            defaultValue: item.defaultValue,
+            minValue: item.minValue,
+            maxValue: item.maxValue,
+            scopeLevel: item.scopeLevel,
+            scopeValue: item.scopeValue,
+            isActive: item.isActive,
+          })),
+        } as Prisma.InputJsonValue,
+        comment: dto.comment ?? '发布参数包',
+        createdByUserId: ownerUserId,
+      },
+    });
+
     const updated = await this.prisma.parameterSet.update({
       where: { id },
       data: {
@@ -146,6 +180,106 @@ export class ParameterCenterService {
       changeReason: dto.comment ?? '发布参数包',
     });
     return updated;
+  }
+
+  /**
+   * 回滚参数包到指定版本的快照
+   */
+  async rollbackSet(ownerUserId: string, id: string, targetVersion: number) {
+    await this.ensureEditableSet(ownerUserId, id);
+
+    const snapshot = await this.prisma.parameterSetSnapshot.findFirst({
+      where: { parameterSetId: id, version: targetVersion },
+      orderBy: { createdAt: 'desc' },
+    });
+    if (!snapshot) {
+      throw new BadRequestException({
+        code: 'PARAM_SNAPSHOT_NOT_FOUND',
+        message: `版本 ${targetVersion} 的快照不存在`,
+      });
+    }
+
+    const snapshotData = snapshot.data as Record<string, unknown>;
+    const items = Array.isArray(snapshotData.items) ? snapshotData.items : [];
+
+    // 先删除现有 items，再从快照恢复
+    await this.prisma.parameterItem.deleteMany({ where: { parameterSetId: id } });
+    for (const raw of items) {
+      const item = raw as Record<string, unknown>;
+      await this.prisma.parameterItem.create({
+        data: {
+          parameterSetId: id,
+          paramCode: String(item.paramCode ?? ''),
+          paramName: String(item.paramName ?? ''),
+          paramType: String(item.paramType ?? 'STRING'),
+          unit: item.unit ? String(item.unit) : null,
+          value: item.value as Prisma.InputJsonValue ?? null,
+          defaultValue: item.defaultValue as Prisma.InputJsonValue ?? null,
+          minValue: item.minValue as Prisma.InputJsonValue ?? null,
+          maxValue: item.maxValue as Prisma.InputJsonValue ?? null,
+          scopeLevel: String(item.scopeLevel ?? 'GLOBAL'),
+          scopeValue: item.scopeValue ? String(item.scopeValue) : null,
+          isActive: typeof item.isActive === 'boolean' ? item.isActive : true,
+          ownerUserId,
+        },
+      });
+    }
+
+    const updated = await this.prisma.parameterSet.update({
+      where: { id },
+      data: { version: { increment: 1 } },
+    });
+
+    await this.recordChangeLog(id, ownerUserId, 'ROLLBACK', {
+      fieldPath: 'parameter-set.version',
+      oldValue: updated.version - 1,
+      newValue: updated.version,
+      changeReason: `回滚到版本 ${targetVersion}`,
+    });
+
+    return { ...updated, rolledBackToVersion: targetVersion };
+  }
+
+  /**
+   * 查询参数包发布历史（快照列表）
+   */
+  async getPublishHistory(id: string) {
+    return this.prisma.parameterSetSnapshot.findMany({
+      where: { parameterSetId: id },
+      orderBy: { createdAt: 'desc' },
+      take: 50,
+      select: {
+        id: true,
+        version: true,
+        comment: true,
+        createdByUserId: true,
+        createdAt: true,
+      },
+    });
+  }
+
+  /**
+   * 分析参数包影响面：哪些模板和工作流引用了此参数包
+   */
+  async analyzeImpact(id: string) {
+    const set = await this.prisma.parameterSet.findUnique({ where: { id } });
+    if (!set) return null;
+
+    // WHY: 工作流模板可能在 paramSnapshot 中引用参数包的 setCode
+    const referencingExecutions = await this.prisma.workflowExecution.findMany({
+      where: {
+        paramSnapshot: { path: ['parameterSetCode'], equals: set.setCode },
+      },
+      take: 20,
+      select: { id: true, workflowVersionId: true, createdAt: true },
+    });
+
+    return {
+      parameterSetId: id,
+      setCode: set.setCode,
+      referencingExecutionCount: referencingExecutions.length,
+      recentExecutions: referencingExecutions.slice(0, 10),
+    };
   }
 
   async addItem(ownerUserId: string, setId: string, dto: CreateParameterItemDto) {

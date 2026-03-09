@@ -105,6 +105,7 @@ async function main() {
   // 9.3 参数包（工作流参数外置配置）
   runSeedScript('seed-parameter-sets.ts');
   runSeedScript('seed-data-connectors.ts');
+  runSeedScript('seed-data-governance.ts');
 
   // 9.4 内置工作流模板 + 触发器 + 用户默认绑定
   runSeedScript('seed-workflow-templates.ts');

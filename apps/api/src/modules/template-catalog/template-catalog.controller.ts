@@ -21,6 +21,7 @@ import {
   TemplateCatalogQueryRequest,
   CopyTemplateRequest,
   TemplateCatalogQuickstartBusinessTemplatesQueryRequest,
+  TemplateCatalogQuickstartBusinessTemplateAcceptanceChecklistQueryRequest,
 } from './dto';
 
 type AuthRequest = ExpressRequest & { user?: { id?: string } };
@@ -57,6 +58,13 @@ export class TemplateCatalogController {
     @Query() query: TemplateCatalogQuickstartBusinessTemplatesQueryRequest,
   ) {
     return this.service.getQuickstartBusinessTemplates(query);
+  }
+
+  @Get('quickstart/business-templates/acceptance-checklist')
+  getQuickstartBusinessTemplateAcceptanceChecklist(
+    @Query() query: TemplateCatalogQuickstartBusinessTemplateAcceptanceChecklistQueryRequest,
+  ) {
+    return this.service.getQuickstartBusinessTemplateAcceptanceChecklist(query);
   }
 
   @Get(':id')

@@ -1,5 +1,5 @@
 /// <reference types="node" />
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient, RegionLevel } from '@prisma/client';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -7,7 +7,7 @@ import * as path from 'path';
 interface RegionData {
     code: string;
     name: string;
-    level: any; // 使用 any 避免 Enum 类型导入困难，Prisma 会处理字符串匹配
+    level: RegionLevel;
     parentCode: string | null;
     isActive: boolean;
     sortOrder: number;

@@ -6,6 +6,10 @@
 2. 研发任务拆解与 Backlog：`docs/aiagnet-chat/CTBMS大宗农产贸易超级智能体-研发任务拆解与Backlog-v1.md`
 3. 数据字典与指标口径：`docs/aiagnet-chat/CTBMS大宗农产贸易超级智能体-数据字典与指标口径-v1.md`
 4. 开发落地手册：`docs/aiagnet-chat/CTBMS大宗农产贸易超级智能体-开发落地手册-v1.md`
+5. 对话产品文档治理与落地执行计划：`docs/aiagnet-chat/CTBMS对话产品文档治理与落地执行计划-v1.md`
+6. 对话能力-功能菜单路由映射表：`docs/aiagnet-chat/CTBMS对话能力-功能菜单路由映射表-v1.md`
+7. 对话主线执行看板（US-503/504/601/602）：`docs/aiagnet-chat/CTBMS对话主线执行看板-US503-602-2026-03-06.md`
+8. 对话主线 US-504 UI 验收脚本：`docs/aiagnet-chat/CTBMS对话主线US-504-UI验收脚本-v1.md`
 
 ## 2. 技术文档
 
@@ -17,16 +21,22 @@
 
 1. 开发落地手册
 2. Backlog（Epic + Sprint）
-3. 数据字典与指标口径
-4. TDD（适配层 + 双跑 + 切流）
-5. API 规范（标准接口 + 对账接口）
-6. Prisma DDL（新增实体与迁移顺序）
+3. 对话产品文档治理与落地执行计划
+4. 对话能力-功能菜单路由映射表
+5. 数据字典与指标口径
+6. TDD（适配层 + 双跑 + 切流）
+7. API 规范（标准接口 + 对账接口）
+8. Prisma DDL（新增实体与迁移顺序）
 
 ## 4. 推荐阅读顺序
 
 1. PRD
-2. Backlog
-3. 数据字典与指标口径
-4. TDD
-5. API 规范
-6. Prisma DDL
+2. 对话产品文档治理与落地执行计划
+3. 对话能力-功能菜单路由映射表
+4. Backlog
+5. 数据字典与指标口径
+6. TDD
+7. API 规范
+8. Prisma DDL
+9. 对话主线执行看板（US-503/504/601/602）
+10. 对话主线 US-504 UI 验收脚本

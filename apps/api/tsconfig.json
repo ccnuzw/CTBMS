@@ -1,6 +1,12 @@
 {
     "extends": "../../packages/tsconfig/nestjs.json",
     "compilerOptions": {
+        "baseUrl": ".",
+        "paths": {
+            "@packages/types": [
+                "../../packages/types/src"
+            ]
+        },
         "declaration": false,
         "outDir": "./dist"
     },

@@ -15,6 +15,7 @@ import { Request as ExpressRequest } from 'express';
 import { AgentConversationService } from './agent-conversation.service';
 import {
   ConfirmConversationPlanRequest,
+  ConversationObservabilitySummaryQueryRequest,
   ConversationResultDiffTimelineQueryRequest,
   ConversationSessionQueryRequest,
   CreateConversationBacktestRequest,
@@ -46,7 +47,7 @@ export class AgentConversationController {
 
   @Get('copilot-version')
   resolveCopilotVersion(@Request() req: AuthRequest) {
-    return this.service.resolveCopilotVersion(this.getUserId(req));
+    return this.service.subscriptionService.resolveCopilotVersion(this.getUserId(req));
   }
 
   @Post()
@@ -57,6 +58,14 @@ export class AgentConversationController {
   @Get()
   listSessions(@Request() req: AuthRequest, @Query() query: ConversationSessionQueryRequest) {
     return this.service.listSessions(this.getUserId(req), query);
+  }
+
+  @Get('observability/summary')
+  getObservabilitySummary(
+    @Request() req: AuthRequest,
+    @Query() query: ConversationObservabilitySummaryQueryRequest,
+  ) {
+    return this.service.getObservabilitySummary(this.getUserId(req), query);
   }
 
   @Get(':sessionId')
@@ -117,7 +126,34 @@ export class AgentConversationController {
 
   @Get(':sessionId/result')
   async getResult(@Request() req: AuthRequest, @Param('sessionId') sessionId: string) {
-    const result = await this.service.getResult(this.getUserId(req), sessionId);
+    const result = await this.service.resultService.getResult(this.getUserId(req), sessionId);
+    if (!result) {
+      throw new NotFoundException({
+        code: 'CONV_RESULT_NOT_FOUND',
+        message: '会话不存在、无权限访问或执行实例不可见',
+      });
+    }
+    return result;
+  }
+
+  @Get(':sessionId/evidence')
+  async listResultEvidence(
+    @Request() req: AuthRequest,
+    @Param('sessionId') sessionId: string,
+    @Query('executionId') executionId?: string,
+    @Query('limit') limit?: string,
+    @Query('freshness') freshness?: string,
+    @Query('quality') quality?: string,
+    @Query('source') source?: string,
+  ) {
+    const parsedLimit = limit ? Number(limit) : undefined;
+    const result = await this.service.resultService.listResultEvidence(this.getUserId(req), sessionId, {
+      executionId,
+      limit: Number.isFinite(parsedLimit) ? parsedLimit : undefined,
+      freshness,
+      quality,
+      source,
+    });
     if (!result) {
       throw new NotFoundException({
         code: 'CONV_RESULT_NOT_FOUND',
@@ -129,7 +165,7 @@ export class AgentConversationController {
 
   @Get(':sessionId/result-diff')
   async getResultDiff(@Request() req: AuthRequest, @Param('sessionId') sessionId: string) {
-    const result = await this.service.getResultDiff(this.getUserId(req), sessionId);
+    const result = await this.service.resultService.getResultDiff(this.getUserId(req), sessionId);
     if (!result) {
       throw new NotFoundException({
         code: 'CONV_SESSION_NOT_FOUND',
@@ -145,7 +181,7 @@ export class AgentConversationController {
     @Param('sessionId') sessionId: string,
     @Query() query: ConversationResultDiffTimelineQueryRequest,
   ) {
-    const result = await this.service.getResultDiffTimeline(this.getUserId(req), sessionId, query);
+    const result = await this.service.resultService.getResultDiffTimeline(this.getUserId(req), sessionId, query);
     if (!result) {
       throw new NotFoundException({
         code: 'CONV_SESSION_NOT_FOUND',
@@ -177,7 +213,7 @@ export class AgentConversationController {
     @Param('sessionId') sessionId: string,
     @Body() dto: DeliverConversationEmailRequest,
   ) {
-    const result = await this.service.deliverEmail(this.getUserId(req), sessionId, dto);
+    const result = await this.service.subscriptionService.deliverEmail(this.getUserId(req), sessionId, dto);
     if (!result) {
       throw new NotFoundException({
         code: 'CONV_SESSION_NOT_FOUND',
@@ -193,7 +229,7 @@ export class AgentConversationController {
     @Param('sessionId') sessionId: string,
     @Body() dto: DeliverConversationRequest,
   ) {
-    const result = await this.service.deliver(this.getUserId(req), sessionId, dto);
+    const result = await this.service.subscriptionService.deliver(this.getUserId(req), sessionId, dto);
     if (!result) {
       throw new NotFoundException({
         code: 'CONV_SESSION_NOT_FOUND',
@@ -205,7 +241,7 @@ export class AgentConversationController {
 
   @Get(':sessionId/subscriptions')
   async listSubscriptions(@Request() req: AuthRequest, @Param('sessionId') sessionId: string) {
-    const result = await this.service.listSubscriptions(this.getUserId(req), sessionId);
+    const result = await this.service.subscriptionService.listSubscriptions(this.getUserId(req), sessionId);
     if (!result) {
       throw new NotFoundException({
         code: 'CONV_SESSION_NOT_FOUND',
@@ -221,7 +257,7 @@ export class AgentConversationController {
     @Param('sessionId') sessionId: string,
     @Body() dto: CreateConversationSubscriptionRequest,
   ) {
-    const result = await this.service.createSubscription(this.getUserId(req), sessionId, dto);
+    const result = await this.service.subscriptionService.createSubscription(this.getUserId(req), sessionId, dto);
     if (!result) {
       throw new NotFoundException({
         code: 'CONV_SESSION_NOT_FOUND',
@@ -237,7 +273,7 @@ export class AgentConversationController {
     @Param('sessionId') sessionId: string,
     @Param('subscriptionId') subscriptionId: string,
   ) {
-    const result = await this.service.runSubscriptionNow(
+    const result = await this.service.subscriptionService.runSubscriptionNow(
       this.getUserId(req),
       sessionId,
       subscriptionId,
@@ -257,7 +293,7 @@ export class AgentConversationController {
     @Param('sessionId') sessionId: string,
     @Body() dto: ResolveConversationScheduleRequest,
   ) {
-    const result = await this.service.resolveScheduleCommand(this.getUserId(req), sessionId, dto);
+    const result = await this.service.subscriptionService.resolveScheduleCommand(this.getUserId(req), sessionId, dto);
     if (!result) {
       throw new NotFoundException({
         code: 'CONV_SESSION_NOT_FOUND',
@@ -274,7 +310,7 @@ export class AgentConversationController {
     @Param('subscriptionId') subscriptionId: string,
     @Body() dto: UpdateConversationSubscriptionRequest,
   ) {
-    const result = await this.service.updateSubscription(
+    const result = await this.service.subscriptionService.updateSubscription(
       this.getUserId(req),
       sessionId,
       subscriptionId,
@@ -303,6 +339,21 @@ export class AgentConversationController {
       });
     }
     return result;
+  }
+
+  @Get(':sessionId/backtests')
+  async listBacktests(@Request() req: AuthRequest, @Param('sessionId') sessionId: string) {
+    return this.service.listBacktests(this.getUserId(req), sessionId);
+  }
+
+  @Get(':sessionId/backtests/compare')
+  async compareBacktests(
+    @Request() req: AuthRequest,
+    @Param('sessionId') sessionId: string,
+    @Query('jobA') jobA: string,
+    @Query('jobB') jobB: string,
+  ) {
+    return this.service.compareBacktests(this.getUserId(req), sessionId, jobA, jobB);
   }
 
   @Get(':sessionId/backtests/:backtestJobId')
@@ -370,7 +421,7 @@ export class AgentConversationController {
     @Query('window') window?: '1h' | '24h' | '7d',
   ) {
     const parsedLimit = limit ? Number(limit) : undefined;
-    const result = await this.service.listCapabilityRoutingLogs(this.getUserId(req), sessionId, {
+    const result = await this.service.capabilityService.listCapabilityRoutingLogs(this.getUserId(req), sessionId, {
       routeType,
       limit: Number.isFinite(parsedLimit) ? parsedLimit : undefined,
       window,
@@ -392,7 +443,7 @@ export class AgentConversationController {
     @Query('window') window?: '1h' | '24h' | '7d',
   ) {
     const parsedLimit = limit ? Number(limit) : undefined;
-    const result = await this.service.getCapabilityRoutingSummary(this.getUserId(req), sessionId, {
+    const result = await this.service.capabilityService.getCapabilityRoutingSummary(this.getUserId(req), sessionId, {
       limit: Number.isFinite(parsedLimit) ? parsedLimit : undefined,
       window,
     });
@@ -411,7 +462,7 @@ export class AgentConversationController {
     @Param('sessionId') sessionId: string,
     @Query('window') window?: '1h' | '24h' | '7d',
   ) {
-    const result = await this.service.getEphemeralCapabilitySummary(
+    const result = await this.service.capabilityService.getEphemeralCapabilitySummary(
       this.getUserId(req),
       sessionId,
       {
@@ -432,7 +483,7 @@ export class AgentConversationController {
     @Request() req: AuthRequest,
     @Param('sessionId') sessionId: string,
   ) {
-    const result = await this.service.runEphemeralCapabilityHousekeeping(
+    const result = await this.service.capabilityService.runEphemeralCapabilityHousekeeping(
       this.getUserId(req),
       sessionId,
     );
@@ -451,7 +502,7 @@ export class AgentConversationController {
     @Param('sessionId') sessionId: string,
     @Query('window') window?: '1h' | '24h' | '7d',
   ) {
-    const result = await this.service.getEphemeralCapabilityEvolutionPlan(
+    const result = await this.service.capabilityService.getEphemeralCapabilityEvolutionPlan(
       this.getUserId(req),
       sessionId,
       {
@@ -473,7 +524,7 @@ export class AgentConversationController {
     @Param('sessionId') sessionId: string,
     @Query('window') window?: '1h' | '24h' | '7d',
   ) {
-    const result = await this.service.applyEphemeralCapabilityEvolutionPlan(
+    const result = await this.service.capabilityService.applyEphemeralCapabilityEvolutionPlan(
       this.getUserId(req),
       sessionId,
       {
@@ -496,7 +547,7 @@ export class AgentConversationController {
     @Query('window') window?: '1h' | '24h' | '7d',
     @Query('status') status?: string,
   ) {
-    const result = await this.service.listEphemeralCapabilityPromotionTasks(
+    const result = await this.service.capabilityService.listEphemeralCapabilityPromotionTasks(
       this.getUserId(req),
       sessionId,
       {
@@ -519,7 +570,7 @@ export class AgentConversationController {
     @Param('sessionId') sessionId: string,
     @Query('window') window?: '1h' | '24h' | '7d',
   ) {
-    const result = await this.service.getEphemeralCapabilityPromotionTaskSummary(
+    const result = await this.service.capabilityService.getEphemeralCapabilityPromotionTaskSummary(
       this.getUserId(req),
       sessionId,
       {
@@ -542,7 +593,7 @@ export class AgentConversationController {
     @Param('taskAssetId') taskAssetId: string,
     @Body() dto: { action: string; comment?: string },
   ) {
-    const result = await this.service.updateEphemeralCapabilityPromotionTask(
+    const result = await this.service.capabilityService.updateEphemeralCapabilityPromotionTask(
       this.getUserId(req),
       sessionId,
       taskAssetId,
@@ -572,7 +623,7 @@ export class AgentConversationController {
       maxRetries?: number;
     },
   ) {
-    const result = await this.service.batchUpdateEphemeralCapabilityPromotionTasks(
+    const result = await this.service.capabilityService.batchUpdateEphemeralCapabilityPromotionTasks(
       this.getUserId(req),
       sessionId,
       dto,
@@ -594,7 +645,7 @@ export class AgentConversationController {
     @Query('action') action?: string,
     @Query('limit') limit?: string,
   ) {
-    const result = await this.service.listEphemeralCapabilityPromotionTaskBatches(
+    const result = await this.service.capabilityService.listEphemeralCapabilityPromotionTaskBatches(
       this.getUserId(req),
       sessionId,
       {
@@ -625,7 +676,7 @@ export class AgentConversationController {
       errorCodes?: string[];
     },
   ) {
-    const result = await this.service.replayFailedEphemeralCapabilityPromotionTaskBatch(
+    const result = await this.service.capabilityService.replayFailedEphemeralCapabilityPromotionTaskBatch(
       this.getUserId(req),
       sessionId,
       batchAssetId,
@@ -733,7 +784,7 @@ export class AgentConversationController {
 
   @Get(':sessionId/report-cards')
   async getReportCards(@Request() req: AuthRequest, @Param('sessionId') sessionId: string) {
-    const result = await this.service.getResult(this.getUserId(req), sessionId);
+    const result = await this.service.resultService.getResult(this.getUserId(req), sessionId);
     if (!result) {
       throw new NotFoundException({ code: 'CONV_RESULT_NOT_FOUND', message: '结果不存在' });
     }

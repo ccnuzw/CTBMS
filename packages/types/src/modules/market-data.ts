@@ -375,6 +375,101 @@ export const MarketDataAggregateSchema = z.object({
   limit: z.coerce.number().int().min(1).max(5000).default(1000),
 });
 
+export const WeatherLogisticsImpactIndexQuerySchema = z
+  .object({
+    from: z.string().datetime().optional(),
+    to: z.string().datetime().optional(),
+    windowDays: z.coerce.number().int().min(1).max(90).default(14),
+    commodityCode: z.string().trim().max(64).optional(),
+    regionCode: z.string().trim().max(64).optional(),
+  })
+  .superRefine((value, ctx) => {
+    if (!value.from || !value.to) {
+      return;
+    }
+    const from = new Date(value.from).getTime();
+    const to = new Date(value.to).getTime();
+    if (from > to) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'from 必须小于或等于 to',
+        path: ['from'],
+      });
+    }
+  });
+
+export const ReconciliationSingleWriteGovernanceQuerySchema = z.object({
+  days: z.coerce.number().int().min(1).max(30).default(7),
+  targetCoverageRate: z.coerce.number().min(0).max(1).default(0.9),
+  datasets: ReconciliationDatasetListQuerySchema.optional(),
+});
+
+export const ReconciliationGateSnapshotSchema = z.object({
+  jobId: z.string().uuid(),
+  status: ReconciliationJobStatusEnum,
+  retriedFromJobId: z.string().uuid().nullable(),
+  retryCount: z.number().int().min(0),
+  summaryPass: z.boolean().optional(),
+  createdAt: z.string().datetime(),
+  finishedAt: z.string().datetime().optional(),
+  cancelledAt: z.string().datetime().optional(),
+  dimensions: z.record(z.unknown()).optional(),
+  source: z.enum(['database', 'in-memory']),
+});
+
+export const ReconciliationGateEvaluationResultSchema = z.object({
+  enabled: z.boolean(),
+  passed: z.boolean(),
+  reason: ReconciliationGateReasonEnum,
+  checkedAt: z.string().datetime(),
+  maxAgeMinutes: z.number().int().positive().optional(),
+  ageMinutes: z.number().min(0).optional(),
+  latest: ReconciliationGateSnapshotSchema.optional(),
+});
+
+export const SingleWriteGovernanceStatusSchema = z.object({
+  generatedAt: z.string().datetime(),
+  compliant: z.boolean(),
+  reasonCodes: z.array(z.string().min(1)),
+  message: z.string(),
+  runtime: z.object({
+    standardizedRead: z.object({
+      enabled: z.boolean(),
+      source: z.string(),
+      updatedAt: z.string().datetime().nullable(),
+    }),
+    reconciliationGate: z.object({
+      enabled: z.boolean(),
+      datasets: z.array(ReconciliationDatasetEnum),
+      evaluated: z.record(ReconciliationDatasetEnum, ReconciliationGateEvaluationResultSchema),
+      allPassed: z.boolean(),
+      checkedAt: z.string().datetime(),
+    }),
+  }),
+  coverage: z.object({
+    windowDays: z.number().int().positive(),
+    targetCoverageRate: z.number().min(0).max(1),
+    coverageRate: z.number().min(0).max(1),
+    meetsCoverageTarget: z.boolean(),
+    totalDataFetchNodes: z.number().int().min(0),
+    standardReadNodes: z.number().int().min(0),
+    legacyReadNodes: z.number().int().min(0),
+    otherSourceNodes: z.number().int().min(0),
+    gateEvaluatedNodes: z.number().int().min(0),
+    gatePassedNodes: z.number().int().min(0),
+    consecutiveCoverageDays: z.number().int().min(0),
+  }),
+});
+
+export const MarketDataGovernanceMetaSchema = z.object({
+  standardizedRead: z.object({
+    enabled: z.boolean(),
+    source: z.string(),
+    updatedAt: z.string().datetime().nullable(),
+  }),
+  reconciliationGate: ReconciliationGateEvaluationResultSchema,
+});
+
 export const MarketDataQualityGradeEnum = z.enum(['A', 'B', 'C', 'D']);
 
 export const MarketDataFreshnessStatusEnum = z.enum(['FRESH', 'STALE', 'OUTDATED', 'UNKNOWN']);
@@ -390,6 +485,7 @@ export const MarketDataQualityScoreSchema = z.object({
     completeness: z.number().min(0).max(100),
     timeliness: z.number().min(0).max(100),
     consistency: z.number().min(0).max(100),
+    anomalyStability: z.number().min(0).max(100),
   }),
 });
 
@@ -402,13 +498,24 @@ export const MarketDataFreshnessSchema = z.object({
   oldestDataTime: z.string().datetime().optional(),
 });
 
+export const MarketDataLineageMetaSchema = z.object({
+  dataset: ReconciliationDatasetEnum,
+  sourceTables: z.array(z.string().min(1)).min(1),
+  ruleSetId: z.string().min(1),
+  metricVersions: z.record(z.string().min(1)).default({}),
+});
+
 export const MarketDataMetaSchema = z.object({
   recordCount: z.number().int().min(0),
   mappingVersion: z.string().min(1),
+  schemaVersion: z.string().min(1).default('v1'),
+  lineageVersion: z.string().min(1).default('v1'),
   fetchedAt: z.string().datetime(),
   degradeAction: MarketDataDegradeActionEnum,
   qualityScore: MarketDataQualityScoreSchema,
   freshness: MarketDataFreshnessSchema,
+  lineage: MarketDataLineageMetaSchema.optional(),
+  governance: MarketDataGovernanceMetaSchema.optional(),
 });
 
 export const StandardSpotRecordSchema = z.object({
@@ -553,12 +660,25 @@ export type MarketDataQueryDto = z.infer<typeof MarketDataQuerySchema>;
 export type AggregateOp = z.infer<typeof AggregateOpEnum>;
 export type MarketDataAggregateMetricDto = z.infer<typeof MarketDataAggregateMetricSchema>;
 export type MarketDataAggregateDto = z.infer<typeof MarketDataAggregateSchema>;
+export type WeatherLogisticsImpactIndexQueryDto = z.infer<
+  typeof WeatherLogisticsImpactIndexQuerySchema
+>;
+export type ReconciliationSingleWriteGovernanceQueryDto = z.infer<
+  typeof ReconciliationSingleWriteGovernanceQuerySchema
+>;
+export type ReconciliationGateSnapshotDto = z.infer<typeof ReconciliationGateSnapshotSchema>;
+export type ReconciliationGateEvaluationResultDto = z.infer<
+  typeof ReconciliationGateEvaluationResultSchema
+>;
+export type SingleWriteGovernanceStatusDto = z.infer<typeof SingleWriteGovernanceStatusSchema>;
+export type MarketDataGovernanceMetaDto = z.infer<typeof MarketDataGovernanceMetaSchema>;
 export type MarketDataQualityGrade = z.infer<typeof MarketDataQualityGradeEnum>;
 export type MarketDataFreshnessStatus = z.infer<typeof MarketDataFreshnessStatusEnum>;
 export type MarketDataDegradeSeverity = z.infer<typeof MarketDataDegradeSeverityEnum>;
 export type MarketDataDegradeAction = z.infer<typeof MarketDataDegradeActionEnum>;
 export type MarketDataQualityScoreDto = z.infer<typeof MarketDataQualityScoreSchema>;
 export type MarketDataFreshnessDto = z.infer<typeof MarketDataFreshnessSchema>;
+export type MarketDataLineageMetaDto = z.infer<typeof MarketDataLineageMetaSchema>;
 export type MarketDataMetaDto = z.infer<typeof MarketDataMetaSchema>;
 export type ReconciliationSummaryDto = z.infer<typeof ReconciliationSummarySchema>;
 export type StandardSpotRecord = z.infer<typeof StandardSpotRecordSchema>;

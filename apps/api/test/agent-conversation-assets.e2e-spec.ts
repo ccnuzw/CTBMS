@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
-import { MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
+import { INestApplication, MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { Prisma, PrismaClient } from '@prisma/client';
 import { ScheduleModule } from '@nestjs/schedule';
@@ -95,13 +95,96 @@ const fetchJson = async <T>(
   return { status: response.status, body };
 };
 
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+const postJsonWithRetry = async <T>(
+  url: string,
+  ownerUserId: string,
+  payload: unknown,
+  maxAttempts = 3,
+): Promise<{ status: number; body: T }> => {
+  let lastResponse: { status: number; body: T } | null = null;
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    const response = await fetchJson<T>(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-virtual-user-id': ownerUserId },
+      body: JSON.stringify(payload),
+    });
+    lastResponse = response;
+    if (response.status === 201) {
+      return response;
+    }
+    const shouldRetry = response.status >= 500 || response.status === 429;
+    if (!shouldRetry || attempt === maxAttempts) {
+      return response;
+    }
+    await sleep(200 * attempt);
+  }
+  return lastResponse as { status: number; body: T };
+};
+
+const postTurnWithRetry = async <T>(
+  baseUrl: string,
+  sessionId: string,
+  ownerUserId: string,
+  payload: { message: string; contextPatch?: Record<string, unknown> },
+  maxAttempts = 3,
+): Promise<{ status: number; body: T }> =>
+  postJsonWithRetry<T>(
+    `${baseUrl}/agent-conversations/sessions/${sessionId}/turns`,
+    ownerUserId,
+    payload,
+    maxAttempts,
+  );
+
+const waitForAssetRefCount = async (
+  sessionId: string,
+  minCount: number,
+  maxAttempts = 10,
+): Promise<number> => {
+  let lastCount = 0;
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    lastCount = await prisma.conversationAssetRef.count({ where: { sessionId } });
+    if (lastCount >= minCount) {
+      return lastCount;
+    }
+    await sleep(200 * attempt);
+  }
+  return lastCount;
+};
+
 async function main() {
-  const app = await NestFactory.create(AgentConversationAssetsE2eModule, {
-    logger: ['error', 'warn'],
-  });
-  app.useGlobalPipes(new ZodValidationPipe());
-  await app.listen(0);
-  const baseUrl = (await app.getUrl()).replace('[::1]', '127.0.0.1');
+  const bootstrapAppWithRetry = async (
+    maxAttempts = 3,
+  ): Promise<{ app: INestApplication; baseUrl: string }> => {
+    let lastError: unknown;
+    for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+      const app = await NestFactory.create(AgentConversationAssetsE2eModule, {
+        logger: ['error', 'warn'],
+      });
+      app.useGlobalPipes(new ZodValidationPipe());
+      try {
+        await app.listen(0);
+        const baseUrl = (await app.getUrl()).replace('[::1]', '127.0.0.1');
+        return { app, baseUrl };
+      } catch (error) {
+        lastError = error;
+        await app.close().catch(() => undefined);
+        const message = error instanceof Error ? error.message : String(error);
+        const retryable =
+          message.includes("Can't reach database server") || message.includes('ECONNREFUSED');
+        if (!retryable || attempt === maxAttempts) {
+          throw error;
+        }
+        await sleep(300 * attempt);
+      }
+    }
+    throw lastError;
+  };
+
+  const bootstrapped = await bootstrapAppWithRetry();
+  const app = bootstrapped.app;
+  const baseUrl = bootstrapped.baseUrl;
 
   const ownerUserId = randomUUID();
   const token = `agent_assets_${Date.now()}`;
@@ -182,13 +265,11 @@ async function main() {
     assert.equal(createSession.status, 201);
     conversationSessionId = createSession.body.id;
 
-    const sendTurn = await fetchJson<{ executionId?: string }>(
-      `${baseUrl}/agent-conversations/sessions/${conversationSessionId}/turns`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'x-virtual-user-id': ownerUserId },
-        body: JSON.stringify({ message: '请分析最近一周东北玉米价格并输出 markdown 和 json。' }),
-      },
+    const sendTurn = await postTurnWithRetry<{ executionId?: string }>(
+      baseUrl,
+      conversationSessionId,
+      ownerUserId,
+      { message: '请分析最近一周东北玉米价格并输出 markdown 和 json。' },
     );
     assert.equal(sendTurn.status, 201);
 
@@ -203,25 +284,20 @@ async function main() {
     const planAsset = assetsResp.body.find((item) => item.assetType === 'PLAN');
     assert.ok(planAsset);
 
-    const reuseResp = await fetchJson<{ state: string }>(
+    const reuseResp = await postJsonWithRetry<{ state: string }>(
       `${baseUrl}/agent-conversations/sessions/${conversationSessionId}/assets/${planAsset?.id}/reuse`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'x-virtual-user-id': ownerUserId },
-        body: JSON.stringify({ message: '请在这个计划基础上补充风险控制说明。' }),
-      },
+      ownerUserId,
+      { message: '请在这个计划基础上补充风险控制说明。' },
     );
     assert.equal(reuseResp.status, 201);
     assert.ok(['SLOT_FILLING', 'PLAN_PREVIEW', 'EXECUTING'].includes(reuseResp.body.state));
 
-    const explicitNaturalReuse = await fetchJson<{ state: string }>(
-      `${baseUrl}/agent-conversations/sessions/${conversationSessionId}/turns`,
+    const explicitNaturalReuse = await postTurnWithRetry<{ state: string }>(
+      baseUrl,
+      conversationSessionId,
+      ownerUserId,
       {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'x-virtual-user-id': ownerUserId },
-        body: JSON.stringify({
-          message: `请基于[asset:${planAsset?.id}]继续输出结论和风险摘要。`,
-        }),
+        message: `请基于[asset:${planAsset?.id}]继续输出结论和风险摘要。`,
       },
     );
     assert.equal(explicitNaturalReuse.status, 201);
@@ -229,7 +305,7 @@ async function main() {
       ['SLOT_FILLING', 'PLAN_PREVIEW', 'EXECUTING'].includes(explicitNaturalReuse.body.state),
     );
 
-    const semanticNaturalReuse = await fetchJson<{
+    const semanticNaturalReuse = await postTurnWithRetry<{
       state: string;
       reuseResolution?: {
         semanticResolution?: {
@@ -237,13 +313,14 @@ async function main() {
           topCandidates?: Array<{ id: string; title: string }>;
         };
       };
-    }>(`${baseUrl}/agent-conversations/sessions/${conversationSessionId}/turns`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'x-virtual-user-id': ownerUserId },
-      body: JSON.stringify({
+    }>(
+      baseUrl,
+      conversationSessionId,
+      ownerUserId,
+      {
         message: '请基于最近一次计划继续补充执行步骤。',
-      }),
-    });
+      },
+    );
     assert.equal(semanticNaturalReuse.status, 201);
     assert.ok(
       ['SLOT_FILLING', 'PLAN_PREVIEW', 'EXECUTING'].includes(semanticNaturalReuse.body.state),
@@ -252,62 +329,63 @@ async function main() {
       semanticNaturalReuse.body.reuseResolution?.semanticResolution?.candidateCount ?? 0;
     assert.ok(candidateCount >= 0);
 
-    const followupByRank = await fetchJson<{
+    const followupByRank = await postTurnWithRetry<{
       state: string;
       reuseResolution?: {
         followupAssetRefCount?: number;
       };
-    }>(`${baseUrl}/agent-conversations/sessions/${conversationSessionId}/turns`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'x-virtual-user-id': ownerUserId },
-      body: JSON.stringify({
+    }>(
+      baseUrl,
+      conversationSessionId,
+      ownerUserId,
+      {
         message: '请用第2个继续补充风险说明。',
-      }),
-    });
+      },
+    );
     assert.equal(followupByRank.status, 201);
     assert.ok(['SLOT_FILLING', 'PLAN_PREVIEW', 'EXECUTING'].includes(followupByRank.body.state));
     assert.ok((followupByRank.body.reuseResolution?.followupAssetRefCount ?? 0) >= 0);
 
-    const semanticNaturalReuseRound2 = await fetchJson<{
+    const semanticNaturalReuseRound2 = await postTurnWithRetry<{
       state: string;
       reuseResolution?: {
         semanticResolution?: {
           candidateCount?: number;
         };
       };
-    }>(`${baseUrl}/agent-conversations/sessions/${conversationSessionId}/turns`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'x-virtual-user-id': ownerUserId },
-      body: JSON.stringify({
+    }>(
+      baseUrl,
+      conversationSessionId,
+      ownerUserId,
+      {
         message: '请基于最近一次计划继续补充执行步骤并标注风险优先级。',
-      }),
-    });
+      },
+    );
     assert.equal(semanticNaturalReuseRound2.status, 201);
     assert.ok(
       ['SLOT_FILLING', 'PLAN_PREVIEW', 'EXECUTING'].includes(semanticNaturalReuseRound2.body.state),
     );
 
-    const followupPreviousRound = await fetchJson<{
+    const followupPreviousRound = await postTurnWithRetry<{
       state: string;
       reuseResolution?: {
         followupAssetRefCount?: number;
       };
-    }>(`${baseUrl}/agent-conversations/sessions/${conversationSessionId}/turns`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'x-virtual-user-id': ownerUserId },
-      body: JSON.stringify({
+    }>(
+      baseUrl,
+      conversationSessionId,
+      ownerUserId,
+      {
         message: '还是用上轮第2个继续输出。',
-      }),
-    });
+      },
+    );
     assert.equal(followupPreviousRound.status, 201);
     assert.ok(
       ['SLOT_FILLING', 'PLAN_PREVIEW', 'EXECUTING'].includes(followupPreviousRound.body.state),
     );
     assert.ok((followupPreviousRound.body.reuseResolution?.followupAssetRefCount ?? 0) >= 0);
 
-    const refCount = await prisma.conversationAssetRef.count({
-      where: { sessionId: conversationSessionId },
-    });
+    const refCount = await waitForAssetRefCount(conversationSessionId, 3);
     assert.ok(refCount >= 3);
   } finally {
     if (conversationSessionId) {

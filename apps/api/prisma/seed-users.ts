@@ -29,7 +29,7 @@ async function main() {
 
     // Get existing organizations and departments
     let orgs = await prisma.organization.findMany();
-    let depts = await prisma.department.findMany();
+    const depts = await prisma.department.findMany();
 
     if (orgs.length === 0) {
         console.log('No organizations found. Creating a default HQ...');

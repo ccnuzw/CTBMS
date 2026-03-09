@@ -67,6 +67,7 @@ export const SaveTemplateModal: React.FC<SaveTemplateModalProps> = ({
             onOk={handleOk}
             onCancel={onClose}
             confirmLoading={isPending}
+            forceRender
             destroyOnClose
         >
             <Form form={form} layout="vertical">

@@ -1,4 +1,4 @@
-import { PrismaClient, EnterpriseType, ContactRole, EntityStatus, TaggableEntityType } from '@prisma/client';
+import { PrismaClient, EnterpriseType, ContactRole, TaggableEntityType } from '@prisma/client';
 
 const prisma = new PrismaClient();
 
@@ -421,12 +421,14 @@ const enterprises = [
     },
 ];
 
+type EnterpriseSeed = (typeof enterprises)[number];
+
 async function main() {
     console.log('🌱 开始导入客商Mock数据 (with Redesigned Tags)...\n');
 
     for (const enterprise of enterprises) {
         // Strip targetTags before Upsert, handle separately
-        const { contacts, bankAccounts, targetTags, ...enterpriseData } = enterprise as any;
+        const { contacts, bankAccounts, targetTags, ...enterpriseData } = enterprise as EnterpriseSeed;
 
         try {
             // 使用 upsert 以支持更新经纬度

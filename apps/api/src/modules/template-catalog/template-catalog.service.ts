@@ -12,6 +12,12 @@ import type {
 } from '@packages/types';
 import { Prisma, WorkflowMode, WorkflowUsageMethod } from '@prisma/client';
 import { DataConnectorService } from '../data-connector';
+import { validateConnectorContract } from '../connector/connector-contract.util';
+
+type TemplateQuickstartAcceptanceChecklistQueryDto = {
+  keyword?: string;
+  strictContract?: boolean;
+};
 
 @Injectable()
 export class TemplateCatalogService {
@@ -339,6 +345,167 @@ export class TemplateCatalogService {
     return {
       templates: filtered,
       total: filtered.length,
+    };
+  }
+
+  getQuickstartBusinessTemplateAcceptanceChecklist(
+    query: TemplateQuickstartAcceptanceChecklistQueryDto,
+  ) {
+    const strictContract = query.strictContract !== false;
+    const quickstartTemplates = this.getQuickstartBusinessTemplates({
+      keyword: query.keyword,
+    });
+
+    const exportArtifactKeywords = ['report', 'brief', 'snapshot', 'scorecard', 'event'];
+    const evidenceArtifactKeywords = ['evidence', 'risk', 'watchlist', 'map'];
+    const requiredContractFields = [
+      'queryTemplates.requestSchema',
+      'queryTemplates.responseSchema',
+      'freshnessPolicy.ttlSeconds',
+      'freshnessPolicy.maxDelaySeconds',
+      'healthCheckConfig.permissionScope.orgIds',
+      'healthCheckConfig.permissionScope.fieldAllowlist',
+    ];
+
+    const items = quickstartTemplates.templates.map((template) => {
+      const recommendedConnectors = template.recommendedConnectors;
+      const connectorTemplateDomains = new Set(
+        template.connectorTemplates.map((item) => item.sourceDomain),
+      );
+      const connectorDraftDomains = new Set(
+        template.connectorCreateDrafts.map((item) => item.sourceDomain),
+      );
+      const missingConnectorTemplateDomains = recommendedConnectors.filter(
+        (domain) => !connectorTemplateDomains.has(domain),
+      );
+      const missingConnectorDraftDomains = recommendedConnectors.filter(
+        (domain) => !connectorDraftDomains.has(domain),
+      );
+
+      const invalidDrafts = template.connectorCreateDrafts
+        .map((draft) => {
+          const validation = validateConnectorContract(
+            {
+              connectorCode: draft.connectorCode,
+              connectorType: 'QUICKSTART_DRAFT',
+              queryTemplates: {
+                requestSchema: draft.requestSchema,
+                responseSchema: draft.responseSchema,
+              },
+              freshnessPolicy: draft.freshnessSla,
+              healthCheckConfig: {
+                permissionScope: draft.permissionScope,
+              },
+            },
+            {
+              additionalRequiredFields: strictContract ? requiredContractFields : [],
+            },
+          );
+
+          if (validation.valid) {
+            return null;
+          }
+
+          return {
+            connectorCode: draft.connectorCode,
+            missingFields: validation.missingFields,
+          };
+        })
+        .filter((item): item is { connectorCode: string; missingFields: string[] } => !!item);
+
+      const hasExportArtifact = template.outputArtifacts.some((artifact) =>
+        exportArtifactKeywords.some((keyword) => artifact.toLowerCase().includes(keyword)),
+      );
+      const hasEvidenceArtifact = template.outputArtifacts.some((artifact) =>
+        evidenceArtifactKeywords.some((keyword) => artifact.toLowerCase().includes(keyword)),
+      );
+
+      const checks: Array<{
+        key: string;
+        passed: boolean;
+        message: string;
+        detail?: Record<string, unknown>;
+      }> = [
+        {
+          key: 'CONNECTOR_COVERAGE',
+          passed:
+            missingConnectorTemplateDomains.length === 0 &&
+            missingConnectorDraftDomains.length === 0,
+          message:
+            missingConnectorTemplateDomains.length === 0 &&
+            missingConnectorDraftDomains.length === 0
+              ? '推荐数据域均已具备连接器模板与创建草稿'
+              : '存在推荐数据域未覆盖的连接器模板或草稿',
+          detail: {
+            recommendedConnectors,
+            missingConnectorTemplateDomains,
+            missingConnectorDraftDomains,
+          },
+        },
+        {
+          key: 'CONNECTOR_CONTRACT_READY',
+          passed: invalidDrafts.length === 0,
+          message: invalidDrafts.length === 0 ? '连接器草稿契约字段完整' : '连接器草稿契约字段缺失',
+          detail: {
+            strictContract,
+            invalidDrafts,
+          },
+        },
+        {
+          key: 'RUN_READY',
+          passed:
+            template.connectorCreateDrafts.length > 0 &&
+            missingConnectorTemplateDomains.length === 0 &&
+            missingConnectorDraftDomains.length === 0,
+          message:
+            template.connectorCreateDrafts.length > 0 &&
+            missingConnectorTemplateDomains.length === 0 &&
+            missingConnectorDraftDomains.length === 0
+              ? '具备执行前所需连接器草稿'
+              : '执行前连接器准备不足',
+          detail: {
+            connectorDraftCount: template.connectorCreateDrafts.length,
+          },
+        },
+        {
+          key: 'EXPORT_READY',
+          passed: hasExportArtifact,
+          message: hasExportArtifact ? '模板包含可导出产物' : '模板缺少可导出产物定义',
+          detail: {
+            outputArtifacts: template.outputArtifacts,
+          },
+        },
+        {
+          key: 'EVIDENCE_READY',
+          passed: hasEvidenceArtifact,
+          message: hasEvidenceArtifact ? '模板包含证据链/风险产物' : '模板缺少证据链相关产物定义',
+          detail: {
+            outputArtifacts: template.outputArtifacts,
+          },
+        },
+      ];
+
+      const failedChecks = checks.filter((item) => !item.passed).map((item) => item.key);
+
+      return {
+        code: template.code,
+        name: template.name,
+        category: template.category,
+        passed: failedChecks.length === 0,
+        failedChecks,
+        checks,
+      };
+    });
+
+    const passed = items.filter((item) => item.passed).length;
+
+    return {
+      generatedAt: new Date().toISOString(),
+      strictContract,
+      total: items.length,
+      passed,
+      failed: items.length - passed,
+      items,
     };
   }
 

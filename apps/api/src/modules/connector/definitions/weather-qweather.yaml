@@ -1,0 +1,77 @@
+# ═════════════════════════════════════════════
+# 天气 API 连接器 — PRD §5.1 天气数据源
+# 供应商: 和风天气 (QWeather) / 备选 OpenWeatherMap
+# ═════════════════════════════════════════════
+
+meta:
+  id: weather-qweather
+  name: 和风天气
+  description: 获取产区/港口关键区域天气数据，用于天气扰动指数计算。
+  version: 1.0.0
+  icon: CloudOutlined
+  domain: WEATHER
+  auth:
+    type: API_KEY
+    config:
+      keyParamName: key
+      keyIn: QUERY
+      envVar: QWEATHER_API_KEY
+
+endpoints:
+  - id: getCurrentWeather
+    name: 当前天气
+    method: GET
+    url: https://devapi.qweather.com/v7/weather/now
+    params:
+      - name: location
+        in: QUERY
+        required: true
+        description: 地点 LocationID 或经纬度 (lng,lat)
+    rateLimit:
+      maxQpm: 300
+
+  - id: getWeatherForecast7d
+    name: 7天天气预报
+    method: GET
+    url: https://devapi.qweather.com/v7/weather/7d
+    params:
+      - name: location
+        in: QUERY
+        required: true
+    rateLimit:
+      maxQpm: 300
+
+  - id: getWeatherWarning
+    name: 气象预警
+    method: GET
+    url: https://devapi.qweather.com/v7/warning/now
+    params:
+      - name: location
+        in: QUERY
+        required: true
+    rateLimit:
+      maxQpm: 200
+
+  - id: getRainfall
+    name: 降水预报
+    method: GET
+    url: https://devapi.qweather.com/v7/minutely/5m
+    params:
+      - name: location
+        in: QUERY
+        required: true
+        description: 经纬度 (lng,lat)
+    rateLimit:
+      maxQpm: 200
+
+transform:
+  - op: json_pick
+    args:
+      path: $
+  - op: flatten_nested
+    args:
+      resultKey: weatherData
+
+freshnessPolicy:
+  ttlSeconds: 3600
+  maxDelaySeconds: 7200

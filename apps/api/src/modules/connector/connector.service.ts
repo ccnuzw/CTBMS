@@ -4,9 +4,17 @@ import * as path from 'path';
 import * as yaml from 'js-yaml';
 import axios from 'axios';
 import { get } from 'lodash';
-import { ConnectorManifest, ETLProcess } from '@packages/types';
+import {
+  ConnectorManifest,
+  ConnectorManifestSchema,
+  ETLProcess,
+} from '@packages/types';
 import { PrismaService } from '../../prisma';
-import { validateConnectorContract } from './connector-contract.util';
+import {
+  validateConnectorContract,
+  validateConnectorPayloadBySchema,
+  validateConnectorSchemaDefinitions,
+} from './connector-contract.util';
 
 @Injectable()
 export class ConnectorService {
@@ -39,9 +47,20 @@ export class ConnectorService {
         try {
           const filePath = path.join(this.definitionsPath, file);
           const fileContents = fs.readFileSync(filePath, 'utf8');
-          const manifest = yaml.load(fileContents) as ConnectorManifest;
+          const loadedManifest = yaml.load(fileContents);
+          const parsed = ConnectorManifestSchema.safeParse(loadedManifest);
+          if (!parsed.success) {
+            this.logger.error(
+              `Failed to parse connector file ${file}: ${parsed.error.issues
+                .map((issue) => `${issue.path.join('.')}: ${issue.message}`)
+                .join('; ')}`,
+            );
+            continue;
+          }
 
-          if (manifest && manifest.meta && manifest.meta.id) {
+          const manifest = this.normalizeManifest(parsed.data);
+
+          if (manifest.meta.id) {
             this.connectorRegistry.set(manifest.meta.id, manifest);
             this.logger.log(`Loaded connector: ${manifest.meta.id} (${manifest.meta.name})`);
           }
@@ -107,20 +126,59 @@ export class ConnectorService {
       throw new BadRequestException(`Endpoint ${endpointId} not found in connector ${connectorId}`);
     }
 
-    const contractValidation = validateConnectorContract({
+    const endpointConfig = {
+      ...(this.toRecord(manifest.endpointConfig) ?? {}),
+      method: endpoint.method,
+      url: endpoint.url,
+      authConfig: this.resolveManifestAuthConfig(manifest),
+    };
+
+    const runtimeContract = {
       connectorCode: manifest.meta.id,
       connectorType: 'REST_API',
-      endpointConfig: { url: endpoint.url },
-    });
+      endpointConfig,
+      queryTemplates: {
+        requestSchema: this.buildManifestRequestSchema(endpoint),
+      },
+      responseMapping: this.toRecord(manifest.responseMapping),
+      freshnessPolicy: this.toRecord(manifest.freshnessPolicy),
+      rateLimitConfig: this.toRecord(manifest.rateLimitConfig),
+      healthCheckConfig: this.toRecord(manifest.healthCheckConfig),
+    };
+
+    const contractValidation = validateConnectorContract(runtimeContract);
     if (!contractValidation.valid) {
       throw new BadRequestException(
         `Connector contract invalid: ${contractValidation.missingFields.join(', ')}`,
       );
     }
 
-    // specific logic for GET request params construction
+    const schemaDefinitionValidation = validateConnectorSchemaDefinitions(runtimeContract);
+    if (!schemaDefinitionValidation.valid) {
+      throw new BadRequestException(
+        `Connector schema definition invalid: ${schemaDefinitionValidation.issues.join('; ')}`,
+      );
+    }
+
+    const requestSchemaValidation = validateConnectorPayloadBySchema(
+      {
+        queryTemplates: {
+          requestSchema: this.buildManifestRequestSchema(endpoint),
+        },
+      },
+      'request',
+      params,
+    );
+    if (!requestSchemaValidation.valid) {
+      throw new BadRequestException(
+        `Connector request payload invalid: ${requestSchemaValidation.issues.join('; ')}`,
+      );
+    }
+
     let url = endpoint.url;
     const queryParams: Record<string, unknown> = {};
+    const headers: Record<string, string> = {};
+    let bodyPayload: unknown;
 
     if (endpoint.params) {
       for (const paramDef of endpoint.params) {
@@ -134,32 +192,60 @@ export class ConnectorService {
             queryParams[paramDef.name] = value;
           } else if (paramDef.in === 'PATH') {
             url = url.replace(`:${paramDef.name}`, String(value));
+          } else if (paramDef.in === 'HEADER') {
+            headers[paramDef.name] = String(value);
+          } else if (paramDef.in === 'BODY') {
+            const bodyRecord = this.toRecord(bodyPayload);
+            bodyRecord[paramDef.name] = value;
+            bodyPayload = bodyRecord;
           }
         }
       }
     }
+
+    const authResolved = this.applyManifestAuth(
+      endpointConfig.authConfig,
+      params,
+      queryParams,
+      headers,
+      bodyPayload,
+    );
+    bodyPayload = authResolved.bodyPayload;
 
     this.logger.log(`Executing ${endpoint.method} ${url} with connector ${connectorId}`);
 
     try {
       const response = await axios({
         method: endpoint.method,
-        url: url,
-        params: queryParams,
+        url,
+        params: Object.keys(queryParams).length > 0 ? queryParams : undefined,
+        data: bodyPayload,
+        headers: Object.keys(headers).length > 0 ? headers : undefined,
       });
 
       let result = response.data;
 
-      // Apply ETL Transformation
       if (manifest.transform) {
         result = await this.applyETL(result, manifest.transform, params);
       }
 
-      return result;
+      const responseSchemaValidation = validateConnectorPayloadBySchema(
+        {
+          responseMapping: {
+            responseSchema: this.resolveManifestResponseSchema(manifest),
+          },
+        },
+        'response',
+        result,
+      );
+      if (!responseSchemaValidation.valid) {
+        throw new BadRequestException(
+          `Connector response payload invalid: ${responseSchemaValidation.issues.join('; ')}`,
+        );
+      }
 
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      return result;
     } catch (error: unknown) {
-      // axios error often has specific structure, keeping any for now but adding comment or using unknown + cast
       const message = error instanceof Error ? error.message : String(error);
       this.logger.error(
         `Connector execution failed: ${message}`,
@@ -185,6 +271,12 @@ export class ConnectorService {
     if (!contractValidation.valid) {
       throw new BadRequestException(
         `Connector contract invalid: ${contractValidation.missingFields.join(', ')}`,
+      );
+    }
+    const schemaDefinitionValidation = validateConnectorSchemaDefinitions(connector);
+    if (!schemaDefinitionValidation.valid) {
+      throw new BadRequestException(
+        `Connector schema definition invalid: ${schemaDefinitionValidation.issues.join('; ')}`,
       );
     }
 
@@ -215,14 +307,32 @@ export class ConnectorService {
     const timeout = this.resolveTimeoutMs(endpointConfig, rateLimitConfig);
     const sendBody = method === 'POST' || method === 'PUT';
 
+    const requestSchemaValidation = validateConnectorPayloadBySchema(connector, 'request', params);
+    if (!requestSchemaValidation.valid) {
+      throw new BadRequestException(
+        `Connector request payload invalid: ${requestSchemaValidation.issues.join('; ')}`,
+      );
+    }
+
+    const queryPayload: Record<string, unknown> = sendBody ? {} : { ...params };
+    let bodyPayload: unknown = sendBody ? { ...params } : undefined;
+    const authResolved = this.applyManifestAuth(
+      endpointConfig.authConfig,
+      params,
+      queryPayload,
+      headers,
+      bodyPayload,
+    );
+    bodyPayload = authResolved.bodyPayload;
+
     this.logger.log(`Executing ${method} ${url} with data connector ${connectorId}`);
 
     try {
       const response = await axios({
         method,
         url,
-        params: sendBody ? undefined : params,
-        data: sendBody ? params : undefined,
+        params: Object.keys(queryPayload).length > 0 ? queryPayload : undefined,
+        data: bodyPayload,
         headers: Object.keys(headers).length > 0 ? headers : undefined,
         timeout,
       });
@@ -232,6 +342,17 @@ export class ConnectorService {
       const dataPath = responseMapping.dataPath;
       if (typeof dataPath === 'string' && dataPath.trim()) {
         result = get(result, dataPath.trim(), result);
+      }
+
+      const responseSchemaValidation = validateConnectorPayloadBySchema(
+        connector,
+        'response',
+        result,
+      );
+      if (!responseSchemaValidation.valid) {
+        throw new BadRequestException(
+          `Connector response payload invalid: ${responseSchemaValidation.issues.join('; ')}`,
+        );
       }
 
       return result;
@@ -258,26 +379,124 @@ export class ConnectorService {
 
     for (const step of pipeline) {
       switch (step.op) {
-        case 'json_pick':
-          if (step.args.path) {
-            const path = step.args.path.replace(/^\$\./, '');
-            current = get(current, path);
+        case 'json_pick': {
+          const rawPath = step.args.path;
+          if (typeof rawPath === 'string' && rawPath.trim()) {
+            const normalizedPath = rawPath.replace(/^\$\./, '');
+            current = get(current, normalizedPath);
           }
           break;
+        }
 
-        case 'template_render':
-          if (step.args.tmpl) {
-            let tmpl = step.args.tmpl;
-            tmpl = tmpl.replace('{{result}}', String(current));
+        case 'template_render': {
+          const rawTemplate = step.args.tmpl;
+          if (typeof rawTemplate === 'string') {
+            let template = rawTemplate;
+            template = template.replace('{{result}}', String(current));
             for (const [key, value] of Object.entries(originalParams)) {
-              tmpl = tmpl.replace(`{{${key}}}`, String(value));
+              template = template.replace(`{{${key}}}`, String(value));
             }
-            current = tmpl;
+            current = template;
           }
           break;
+        }
       }
     }
     return current;
+  }
+
+  private normalizeManifest(manifest: ConnectorManifest): ConnectorManifest {
+    const metaAuth = manifest.meta.auth ?? manifest.auth;
+    return {
+      ...manifest,
+      meta: {
+        ...manifest.meta,
+        auth: metaAuth,
+      },
+      auth: metaAuth,
+      endpointConfig: this.toRecord(manifest.endpointConfig),
+      queryTemplates: this.toRecord(manifest.queryTemplates),
+      responseMapping: this.toRecord(manifest.responseMapping),
+      freshnessPolicy: this.toRecord(manifest.freshnessPolicy),
+      rateLimitConfig: this.toRecord(manifest.rateLimitConfig),
+      healthCheckConfig: this.toRecord(manifest.healthCheckConfig),
+    };
+  }
+
+  private resolveManifestAuthConfig(manifest: ConnectorManifest): Record<string, unknown> {
+    const auth = manifest.meta.auth ?? manifest.auth;
+    if (!auth) {
+      return { type: 'NONE' };
+    }
+
+    return {
+      ...auth,
+      ...(this.toRecord(auth.config) ?? {}),
+    };
+  }
+
+  private buildManifestRequestSchema(endpoint: ConnectorManifest['endpoints'][number]): unknown {
+    const schema: Record<string, unknown> = {};
+    for (const paramDef of endpoint.params ?? []) {
+      const marker = paramDef.in === 'BODY' ? 'any' : 'string';
+      schema[paramDef.required ? paramDef.name : `${paramDef.name}?`] = marker;
+    }
+    return schema;
+  }
+
+  private resolveManifestResponseSchema(manifest: ConnectorManifest): unknown {
+    const responseMapping = this.toRecord(manifest.responseMapping);
+    const responseSchema = responseMapping.responseSchema;
+    if (responseSchema !== undefined) {
+      return responseSchema;
+    }
+    return 'any';
+  }
+
+  private applyManifestAuth(
+    authConfig: unknown,
+    params: Record<string, unknown>,
+    queryParams: Record<string, unknown>,
+    headers: Record<string, string>,
+    bodyPayload: unknown,
+  ): { bodyPayload: unknown } {
+    const auth = this.toRecord(authConfig);
+    const authType = typeof auth.type === 'string' ? auth.type.toUpperCase() : 'NONE';
+
+    if (authType === 'NONE') {
+      return { bodyPayload };
+    }
+
+    const authParam = typeof auth.param === 'string' && auth.param.trim() ? auth.param.trim() : 'apiKey';
+    const credential = params[authParam];
+    if (credential === undefined || credential === null || String(credential).trim() === '') {
+      throw new BadRequestException(`Missing required auth credential: ${authParam}`);
+    }
+
+    const authPlacement =
+      typeof auth.in === 'string' && auth.in.trim() ? auth.in.trim().toUpperCase() : 'HEADER';
+
+    if (authPlacement === 'QUERY') {
+      queryParams[authParam] = credential;
+      return { bodyPayload };
+    }
+
+    if (authPlacement === 'BODY') {
+      const bodyRecord = this.toRecord(bodyPayload);
+      bodyRecord[authParam] = credential;
+      return { bodyPayload: bodyRecord };
+    }
+
+    const headerName =
+      typeof auth.header_name === 'string' && auth.header_name.trim()
+        ? auth.header_name.trim()
+        : 'Authorization';
+    const tokenPrefix =
+      typeof auth.token_prefix === 'string' && auth.token_prefix.trim()
+        ? `${auth.token_prefix.trim()} `
+        : '';
+    headers[headerName] = `${tokenPrefix}${String(credential)}`;
+    return { bodyPayload };
   }
 
   private toRecord(value: unknown): Record<string, unknown> {

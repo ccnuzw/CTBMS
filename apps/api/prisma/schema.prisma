@@ -75,6 +75,10 @@ model User {
 
   // [NEW] 工作流发布审计
   workflowPublishAudits WorkflowPublishAudit[]
+  metricCatalogs MetricCatalog[]
+  evidenceBundles EvidenceBundle[]
+  dataQualityResolutions DataQualityIssue[]
+  standardizationMappingRules StandardizationMappingRule[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -2134,6 +2138,41 @@ enum ConversationAssetType {
   NOTE
 }
 
+enum DataFreshnessStatus {
+  WITHIN_TTL
+  NEAR_EXPIRE
+  EXPIRED
+}
+
+enum DataSourceType {
+  INTERNAL
+  PUBLIC
+  FUTURES_API
+  WEATHER_API
+  LOGISTICS_API
+  MANUAL
+}
+
+enum MetricStatus {
+  DRAFT
+  ACTIVE
+  DEPRECATED
+}
+
+enum EvidenceConflictResolution {
+  PREFER_SOURCE_A
+  PREFER_SOURCE_B
+  MANUAL_REVIEW
+  KEEP_BOTH
+}
+
+enum QualityIssueSeverity {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
 model WorkflowDefinition {
   id                String                   @id @default(uuid())
   workflowId        String                   @unique
@@ -2209,6 +2248,7 @@ model WorkflowExecution {
   nodeExecutions  NodeExecution[]
   runtimeEvents   WorkflowRuntimeEvent[]
   decisionRecords DecisionRecord[]
+  evidenceBundles EvidenceBundle[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -2442,6 +2482,8 @@ model AgentSkill {
   name        String
   description String @db.Text
   parameters  Json // JSON Schema for tool input arguments
+  outputSchema Json? // JSON Schema for tool output contract (Skill 契约)
+  sideEffectLevel String @default("NONE") @db.VarChar(20) // NONE | READ | WRITE | DESTRUCTIVE
   handlerCode String // Backend method identifier or local endpoint to execute the tool
 
   ownerUserId    String?
@@ -2611,6 +2653,19 @@ model ParameterItem {
   @@index([ownerUserId, isActive])
 }
 
+model ParameterSetSnapshot {
+  id              String   @id @default(uuid())
+  parameterSetId  String
+  version         Int
+  data            Json
+  comment         String?
+  createdAt       DateTime @default(now())
+  createdByUserId String?
+
+  @@index([parameterSetId, version])
+  @@index([parameterSetId, createdAt])
+}
+
 model AgentPromptTemplateSnapshot {
   id              String   @id @default(uuid())
   templateId      String
@@ -2655,11 +2710,235 @@ model DataConnector {
   isActive  Boolean @default(true)
   version   Int     @default(1)
 
+  weatherObservations      WeatherObservation[]
+  logisticsRouteSnapshots  LogisticsRouteSnapshot[]
+  dataQualityIssues        DataQualityIssue[]
+  dataSourceHealthSnapshots DataSourceHealthSnapshot[]
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@index([category, isActive])
   @@index([connectorType, isActive])
+}
+
+model WeatherObservation {
+  id              String              @id @default(uuid())
+  connectorId     String?
+  regionCode      String
+  stationCode     String?
+  dataTime        DateTime
+  tempC           Decimal?            @db.Decimal(10, 2)
+  rainfallMm      Decimal?            @db.Decimal(10, 2)
+  windSpeed       Decimal?            @db.Decimal(10, 2)
+  anomalyScore    Decimal?            @db.Decimal(10, 4)
+  eventLevel      String?
+  freshnessStatus DataFreshnessStatus @default(WITHIN_TTL)
+  qualityScore    Decimal             @db.Decimal(5, 4)
+  sourceType      DataSourceType
+  sourceRecordId  String?
+  collectedAt     DateTime            @default(now())
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
+
+  connector DataConnector? @relation(fields: [connectorId], references: [id])
+
+  @@index([regionCode, dataTime])
+  @@index([connectorId, dataTime])
+  @@index([freshnessStatus, dataTime])
+}
+
+model LogisticsRouteSnapshot {
+  id                    String              @id @default(uuid())
+  connectorId           String?
+  routeCode             String
+  originRegionCode      String
+  destinationRegionCode String
+  transportMode         String
+  dataTime              DateTime
+  freightCost           Decimal             @db.Decimal(18, 4)
+  transitHours          Decimal?            @db.Decimal(10, 2)
+  delayIndex            Decimal?            @db.Decimal(10, 4)
+  capacityUtilization   Decimal?            @db.Decimal(10, 4)
+  eventFlag             String?
+  freshnessStatus       DataFreshnessStatus @default(WITHIN_TTL)
+  qualityScore          Decimal             @db.Decimal(5, 4)
+  sourceType            DataSourceType
+  sourceRecordId        String?
+  collectedAt           DateTime            @default(now())
+  createdAt             DateTime            @default(now())
+  updatedAt             DateTime            @updatedAt
+
+  connector DataConnector? @relation(fields: [connectorId], references: [id])
+
+  @@index([routeCode, dataTime])
+  @@index([originRegionCode, destinationRegionCode, dataTime])
+  @@index([freshnessStatus, dataTime])
+}
+
+model MetricCatalog {
+  id          String       @id @default(uuid())
+  metricCode  String
+  metricName  String
+  description String?
+  version     String
+  expression  String       @db.Text
+  unit        String?
+  granularity String?
+  dimensions  Json?
+  status      MetricStatus @default(DRAFT)
+  ownerUserId String?
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  owner     User?                 @relation(fields: [ownerUserId], references: [id])
+  snapshots MetricValueSnapshot[]
+
+  @@unique([metricCode, version])
+  @@index([status, updatedAt])
+}
+
+model MetricValueSnapshot {
+  id              String              @id @default(uuid())
+  metricCatalogId String
+  metricCode      String
+  metricVersion   String
+  value           Decimal             @db.Decimal(20, 6)
+  valueText       String?
+  dimensions      Json?
+  dataTime        DateTime
+  freshnessStatus DataFreshnessStatus @default(WITHIN_TTL)
+  qualityScore    Decimal             @db.Decimal(5, 4)
+  confidenceScore Decimal?            @db.Decimal(5, 4)
+  sourceSummary   Json?
+  createdAt       DateTime            @default(now())
+
+  metricCatalog MetricCatalog @relation(fields: [metricCatalogId], references: [id], onDelete: Cascade)
+
+  @@index([metricCode, dataTime])
+  @@index([metricCatalogId, dataTime])
+}
+
+model EvidenceBundle {
+  id                    String   @id @default(uuid())
+  conversationSessionId String?
+  workflowExecutionId   String?
+  title                 String?
+  confidenceScore       Decimal? @db.Decimal(5, 4)
+  consistencyScore      Decimal? @db.Decimal(5, 4)
+  summary               Json?
+  createdByUserId       String?
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  session   ConversationSession? @relation(fields: [conversationSessionId], references: [id])
+  execution WorkflowExecution?   @relation(fields: [workflowExecutionId], references: [id])
+  creator   User?                @relation(fields: [createdByUserId], references: [id])
+  claims    EvidenceClaim[]
+  conflicts EvidenceConflict[]
+
+  @@index([conversationSessionId, createdAt])
+  @@index([workflowExecutionId, createdAt])
+}
+
+model EvidenceClaim {
+  id            String   @id @default(uuid())
+  bundleId      String
+  claimText     String   @db.Text
+  claimType     String?
+  confidenceScore Decimal? @db.Decimal(5, 4)
+  evidenceItems Json
+  sourceCount   Int      @default(0)
+  dataTimestamp DateTime?
+  createdAt     DateTime @default(now())
+
+  bundle EvidenceBundle @relation(fields: [bundleId], references: [id], onDelete: Cascade)
+
+  @@index([bundleId, createdAt])
+}
+
+model EvidenceConflict {
+  id         String                     @id @default(uuid())
+  bundleId   String
+  topic      String
+  sourceA    String
+  sourceB    String
+  valueA     Json?
+  valueB     Json?
+  resolution EvidenceConflictResolution
+  reason     String?
+  impactLevel String?
+  createdAt  DateTime                   @default(now())
+
+  bundle EvidenceBundle @relation(fields: [bundleId], references: [id], onDelete: Cascade)
+
+  @@index([bundleId, createdAt])
+  @@index([topic, createdAt])
+}
+
+model DataQualityIssue {
+  id             String               @id @default(uuid())
+  datasetName    String
+  sourceType     DataSourceType
+  connectorId    String?
+  issueType      String
+  severity       QualityIssueSeverity
+  message        String
+  payload        Json?
+  detectedAt     DateTime             @default(now())
+  resolvedAt     DateTime?
+  resolverUserId String?
+  resolutionNote String?
+
+  connector DataConnector? @relation(fields: [connectorId], references: [id])
+  resolver  User?          @relation(fields: [resolverUserId], references: [id])
+
+  @@index([datasetName, detectedAt])
+  @@index([severity, detectedAt])
+  @@index([connectorId, detectedAt])
+}
+
+model DataSourceHealthSnapshot {
+  id                String       @id @default(uuid())
+  connectorId       String
+  sourceType        DataSourceType
+  windowStartAt     DateTime
+  windowEndAt       DateTime
+  requestCount      Int          @default(0)
+  successCount      Int          @default(0)
+  errorCount        Int          @default(0)
+  p95LatencyMs      Int?
+  avgLatencyMs      Int?
+  availabilityRatio Decimal?     @db.Decimal(6, 4)
+  createdAt         DateTime     @default(now())
+
+  connector DataConnector @relation(fields: [connectorId], references: [id], onDelete: Cascade)
+
+  @@index([connectorId, windowEndAt])
+  @@index([sourceType, windowEndAt])
+}
+
+model StandardizationMappingRule {
+  id             String   @id @default(uuid())
+  datasetName    String
+  mappingVersion String
+  sourceField    String
+  targetField    String
+  transformExpr  String?  @db.Text
+  isRequired     Boolean  @default(false)
+  nullPolicy     String   @default("FAIL")
+  defaultValue   Json?
+  rulePriority   Int      @default(0)
+  isActive       Boolean  @default(true)
+  createdByUserId String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  creator User? @relation(fields: [createdByUserId], references: [id])
+
+  @@index([datasetName, isActive])
+  @@index([datasetName, mappingVersion])
+  @@unique([datasetName, mappingVersion, sourceField, targetField])
 }
 
 enum ReconcileJobStatus {
@@ -3194,6 +3473,7 @@ model ConversationSession {
   skillRuntimeGrants AgentSkillRuntimeGrant[]
   assets        ConversationAsset[]
   assetRefs     ConversationAssetRef[]
+  evidenceBundles EvidenceBundle[]
 
   @@index([ownerUserId, createdAt])
   @@index([state, updatedAt])
@@ -3580,4 +3860,129 @@ model VirtualTradeLedger {
   @@index([positionId])
   @@index([ownerUserId, tradedAt])
   @@index([contractCode, tradedAt])
+}
+
+// ─────────────── AuditLog (审计日志) ───────────────
+
+model AuditLog {
+  id         String   @id @default(uuid())
+  userId     String
+  action     String   @db.VarChar(30) // CREATE | UPDATE | DELETE | EXECUTE | DELIVER | LOGIN
+  resource   String   @db.VarChar(50) // conversation | workflow | subscription | export | connector
+  resourceId String?
+  detail     Json?
+  ipAddress  String?  @db.VarChar(45)
+  userAgent  String?  @db.VarChar(255)
+  createdAt  DateTime @default(now())
+
+  @@index([userId, createdAt])
+  @@index([resource, createdAt])
+  @@index([action, createdAt])
+}
+
+// ═══════════════════════════════════════════════════════════
+// 语义层 - 主数据实体 (PRD §8.3)
+// ═══════════════════════════════════════════════════════════
+
+model MasterCommodity {
+  code          String   @id @db.VarChar(20)
+  name          String   @db.VarChar(60)
+  nameEn        String?  @db.VarChar(60)
+  category      String   @db.VarChar(20) // GRAIN | OILSEED | FIBER | SUGAR | LIVESTOCK | OTHER
+  unit          String   @db.VarChar(20)
+  futuresSymbols Json    @default("[]")  // JSON array of String
+  description   String?  @db.VarChar(500)
+  isActive      Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([category])
+  @@index([isActive])
+}
+
+model MasterRegion {
+  code       String   @id @db.VarChar(30)
+  name       String   @db.VarChar(80)
+  nameEn     String?  @db.VarChar(80)
+  regionType String   @db.VarChar(20) // PRODUCTION | SALES | PORT | PROCESSING | OTHER
+  parentCode String?  @db.VarChar(30)
+  country    String   @default("CN") @db.VarChar(4)
+  province   String?  @db.VarChar(30)
+  latitude   Float?
+  longitude  Float?
+  isActive   Boolean  @default(true)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([regionType])
+  @@index([parentCode])
+  @@index([isActive])
+}
+
+model MetricDefinition {
+  metricCode       String   @id @db.VarChar(64)
+  name             String   @db.VarChar(120)
+  nameEn           String?  @db.VarChar(120)
+  domain           String   @db.VarChar(20) // SPOT_PRICE | FUTURES | BASIS | INVENTORY | COST | LOGISTICS | WEATHER | SUPPLY_DEMAND | RISK
+  dataType         String   @db.VarChar(20) // NUMERIC | PERCENTAGE | INDEX | CATEGORY | BOOLEAN
+  unit             String?  @db.VarChar(20)
+  formula          String?  @db.VarChar(2000)
+  description      String?  @db.VarChar(1000)
+  frequency        String   @db.VarChar(20) // REAL_TIME | MINUTE | HOURLY | DAILY | WEEKLY | MONTHLY
+  ttlMinutes       Int
+  sourceConnectors Json     @default("[]") // JSON array of String
+  version          String   @default("v1") @db.VarChar(20)
+  isActive         Boolean  @default(true)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@index([domain])
+  @@index([frequency])
+  @@index([isActive])
+}
+
+// ═══════════════════════════════════════════════════════════
+// 数据血缘追踪 (PRD §6.5 端到端数据血缘)
+// ═══════════════════════════════════════════════════════════
+
+model DataLineage {
+  id              String   @id @default(uuid())
+  executionId     String   @db.VarChar(64)  // WorkflowExecution ID
+  nodeExecutionId String?  @db.VarChar(64)  // NodeExecution ID
+  sourceType      String   @db.VarChar(30)  // CONNECTOR | INTERNAL_DB | COMPUTED | USER_INPUT
+  sourceId        String   @db.VarChar(120) // connector code or table name
+  sourceEndpoint  String?  @db.VarChar(120) // endpoint ID within connector
+  targetType      String   @db.VarChar(30)  // NODE_OUTPUT | REPORT | METRIC | ALERT
+  targetId        String   @db.VarChar(120) // node ID or report ID
+  datasetCode     String?  @db.VarChar(60)  // semantic dataset code
+  recordCount     Int?                      // number of records transferred
+  transformations Json     @default("[]")   // ETL operations applied
+  qualityScore    Float?                    // quality score at this point (0-100)
+  latencyMs       Int?                      // data transfer latency
+  createdAt       DateTime @default(now())
+
+  @@index([executionId])
+  @@index([sourceType, sourceId])
+  @@index([targetType, targetId])
+  @@index([createdAt])
+}
+
+// ═══════════════════════════════════════════════════════════
+// Feature Flag 灰度开关 (PRD §8.1 变更控制 & 灰度发布)
+// ═══════════════════════════════════════════════════════════
+
+model FeatureFlag {
+  id              String   @id @default(uuid())
+  flagKey         String   @unique @db.VarChar(120) // e.g. "agent.subscription.enable"
+  description     String?
+  isEnabled       Boolean  @default(false)          // 全局开关
+  rolloutPercent  Int      @default(0)              // 百分比灰度 0-100
+  allowUserIds    Json     @default("[]")           // 白名单用户 ID 列表
+  environments    Json     @default("[\"production\"]") // 生效环境 ["production","staging"]
+  metadata        Json?                              // 额外配置（如参数阈值）
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([flagKey])
+  @@index([isEnabled])
 }

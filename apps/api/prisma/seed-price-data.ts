@@ -127,8 +127,9 @@ async function main() {
                 if (result.count < priceDataList.length) {
                     skipped += priceDataList.length - result.count;
                 }
-            } catch (error: any) {
-                console.log(`   ❌ 插入失败 (${point.name}): ${error.message}`);
+            } catch (error: unknown) {
+                const message = error instanceof Error ? error.message : String(error);
+                console.log(`   ❌ 插入失败 (${point.name}): ${message}`);
             }
         }
 

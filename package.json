@@ -69,6 +69,7 @@
     "agent:ops-report": "node scripts/agent-ops-monitoring-report.mjs",
     "agent:gray-rollback-report": "node scripts/agent-gray-rollback-drill-report.mjs",
     "agent:release-gate-summary": "node scripts/agent-release-gate-summary.mjs",
+    "agent:us504:ui-check": "node scripts/agent-us504-ui-check.mjs",
     "format": "prettier --write \"**/*.{ts,tsx,md}\""
   },
   "devDependencies": {

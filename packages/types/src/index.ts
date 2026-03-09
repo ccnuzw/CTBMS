@@ -24,3 +24,7 @@ export * from './modules/user-config-binding.js';
 export * from './modules/connector.js';
 export * from './modules/agent-conversation.js';
 export * from './modules/market-data.js';
+export * from './modules/data-governance.js';
+export * from './modules/metric-center.js';
+export * from './modules/permission.js';
+export * from './modules/semantic-layer.js';

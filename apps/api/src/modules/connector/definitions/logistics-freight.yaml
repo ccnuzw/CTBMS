@@ -1,0 +1,108 @@
+# ═════════════════════════════════════════════
+# 物流 API 连接器 — PRD §5.1 物流数据源
+# 供应商: 聚合物流信息 (运费/港口/铁路等)
+# ═════════════════════════════════════════════
+
+meta:
+  id: logistics-freight
+  name: 物流运费数据
+  description: 获取公路/铁路/水路运费及港口吞吐量数据，用于运输摩擦指数计算。
+  version: 1.0.0
+  icon: CarOutlined
+  domain: LOGISTICS
+  auth:
+    type: API_KEY
+    config:
+      keyParamName: apiKey
+      keyIn: HEADER
+      headerName: X-API-Key
+      envVar: LOGISTICS_API_KEY
+
+endpoints:
+  - id: getRoadFreight
+    name: 公路运费查询
+    method: GET
+    url: ${LOGISTICS_BASE_URL}/v1/freight/road
+    params:
+      - name: origin
+        in: QUERY
+        required: true
+        description: 出发地编码
+      - name: destination
+        in: QUERY
+        required: true
+        description: 目的地编码
+      - name: commodity
+        in: QUERY
+        required: false
+        description: 品类编码
+      - name: date
+        in: QUERY
+        required: false
+        description: 查询日期 (YYYY-MM-DD)
+    rateLimit:
+      maxQpm: 200
+
+  - id: getRailFreight
+    name: 铁路运费查询
+    method: GET
+    url: ${LOGISTICS_BASE_URL}/v1/freight/rail
+    params:
+      - name: origin
+        in: QUERY
+        required: true
+      - name: destination
+        in: QUERY
+        required: true
+      - name: commodity
+        in: QUERY
+        required: false
+    rateLimit:
+      maxQpm: 200
+
+  - id: getPortThroughput
+    name: 港口吞吐量
+    method: GET
+    url: ${LOGISTICS_BASE_URL}/v1/port/throughput
+    params:
+      - name: portCode
+        in: QUERY
+        required: true
+        description: 港口编码
+      - name: startDate
+        in: QUERY
+        required: false
+      - name: endDate
+        in: QUERY
+        required: false
+    rateLimit:
+      maxQpm: 100
+
+  - id: getShippingSchedule
+    name: 船期查询
+    method: GET
+    url: ${LOGISTICS_BASE_URL}/v1/shipping/schedule
+    params:
+      - name: departurePort
+        in: QUERY
+        required: true
+      - name: arrivalPort
+        in: QUERY
+        required: true
+      - name: commodity
+        in: QUERY
+        required: false
+    rateLimit:
+      maxQpm: 100
+
+transform:
+  - op: json_pick
+    args:
+      path: $.data
+  - op: flatten_nested
+    args:
+      resultKey: freightData
+
+freshnessPolicy:
+  ttlSeconds: 7200
+  maxDelaySeconds: 14400

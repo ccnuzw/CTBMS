@@ -96,430 +96,54 @@ import {
   useUpsertCopilotPromptTemplates,
   useUpsertCopilotDeliveryProfiles,
 } from '../api/conversations';
+import {
+  QuickPromptTemplate,
+  LocalConversationTurn,
+  QUICK_PROMPT_STORAGE_KEY_PREFIX,
+  COPILOT_DIAG_STORAGE_KEY,
+  LOAD_MORE_TURN_STEP,
+  TURN_CONTENT_PREVIEW_LIMIT,
+  ASSISTANT_MESSAGE_COLLAPSE_MIN_LENGTH,
+  SYSTEM_MESSAGE_COLLAPSE_MIN_LENGTH,
+  RESULT_ANALYSIS_PREVIEW_LIMIT,
+  SYSTEM_SUMMARY_MAX_KEYS,
+  DEFAULT_CAPABILITY_ROUTING_POLICY,
+  DEFAULT_EPHEMERAL_CAPABILITY_POLICY,
+  RETRY_POLICY_PRESET_STRICT,
+  defaultQuickPrompts,
+  isSameQuickPromptTemplates,
+  toSafeText,
+  summarizeStructuredMessage,
+  summarizeAssistantMessage,
+  appendCopilotDiagEvent,
+  getOppositeScope,
+  sessionStateLabel,
+  stateColor,
+  planTypeLabel,
+  subscriptionStatusLabel,
+  deliveryStatusLabel,
+  backtestStatusLabel,
+  assetTypeLabel,
+  capabilityRouteTypeLabel,
+  promotionTaskStatusLabel,
+  promotionBatchActionLabel,
+  formatGovernanceEventMessage,
+  formatRoutePolicyDetails,
+  DEFAULT_VISIBLE_TURN_COUNT,
+  PROMOTION_FILTERS_STORAGE_KEY,
+  EPHEMERAL_POLICY_AUDIT_STORAGE_KEY,
+  PROMOTION_BATCH_FAILED_PAGE_SIZE,
+  copilotErrorMessageByCode,
+  RETRY_POLICY_PRESET_NETWORK,
+  statusColor,
+  channelLabel,
+  runtimeGrantStatusLabel,
+  governanceEventLabel,
+} from './copilot-constants';
+import { CopilotAdminModals } from './CopilotAdminModals';
+
 
 const { Text, Title, Paragraph } = Typography;
-
-const QUICK_PROMPT_STORAGE_KEY_PREFIX = 'ctbms.agent.copilot.quick-prompts.v1';
-const COPILOT_DIAG_STORAGE_KEY = 'ctbms.agent.copilot.diag.v1';
-const DEFAULT_VISIBLE_TURN_COUNT = 40;
-const LOAD_MORE_TURN_STEP = 40;
-const TURN_CONTENT_PREVIEW_LIMIT = 3000;
-const RESULT_ANALYSIS_PREVIEW_LIMIT = 4000;
-const PROMOTION_BATCH_FAILED_PAGE_SIZE = 8;
-const SYSTEM_MESSAGE_COLLAPSE_MIN_LENGTH = 240;
-const PROMOTION_FILTERS_STORAGE_KEY = 'agent-copilot-promotion-filters-v1';
-const EPHEMERAL_POLICY_AUDIT_STORAGE_KEY = 'agent-copilot-ephemeral-policy-audit-v1';
-const ASSISTANT_MESSAGE_COLLAPSE_MIN_LENGTH = 1200;
-const SYSTEM_SUMMARY_PREVIEW_LENGTH = 80;
-const ASSISTANT_SUMMARY_PREVIEW_LENGTH = 160;
-const ASSISTANT_SUMMARY_MAX_HEADINGS = 3;
-const ASSISTANT_SUMMARY_MAX_BULLETS = 4;
-const SYSTEM_SUMMARY_MAX_KEYS = 5;
-const DEFAULT_CAPABILITY_ROUTING_POLICY: CapabilityRoutingPolicy = {
-  allowOwnerPool: true,
-  allowPublicPool: true,
-  preferOwnerFirst: true,
-  minOwnerScore: 0,
-  minPublicScore: 0.35,
-};
-
-const DEFAULT_EPHEMERAL_CAPABILITY_POLICY: EphemeralCapabilityPolicy = {
-  draftSemanticReuseThreshold: 0.72,
-  publishedSkillReuseThreshold: 0.76,
-  runtimeGrantTtlHours: 24,
-  runtimeGrantMaxUseCount: 30,
-  replayRetryableErrorCodeAllowlist: ['NETWORK_ERROR', 'TIMEOUT', 'FETCH_FAILED', 'HTTP_429', 'HTTP_5XX'],
-  replayNonRetryableErrorCodeBlocklist: [
-    'CONV_PROMOTION_TASK_NOT_FOUND',
-    'CONV_PROMOTION_TASK_ACTION_INVALID',
-    'CONV_PROMOTION_TASK_PUBLISH_BLOCKED',
-    'SKILL_REVIEWER_CONFLICT',
-    'SKILL_HIGH_RISK_REVIEW_REQUIRED',
-  ],
-};
-
-const RETRY_POLICY_PRESET_NETWORK: Pick<
-  EphemeralCapabilityPolicy,
-  'replayRetryableErrorCodeAllowlist' | 'replayNonRetryableErrorCodeBlocklist'
-> = {
-  replayRetryableErrorCodeAllowlist: ['NETWORK_ERROR', 'TIMEOUT', 'FETCH_FAILED', 'HTTP_429', 'HTTP_5XX'],
-  replayNonRetryableErrorCodeBlocklist: [
-    'CONV_PROMOTION_TASK_NOT_FOUND',
-    'CONV_PROMOTION_TASK_ACTION_INVALID',
-    'CONV_PROMOTION_TASK_PUBLISH_BLOCKED',
-    'SKILL_REVIEWER_CONFLICT',
-    'SKILL_HIGH_RISK_REVIEW_REQUIRED',
-  ],
-};
-
-const RETRY_POLICY_PRESET_STRICT: Pick<
-  EphemeralCapabilityPolicy,
-  'replayRetryableErrorCodeAllowlist' | 'replayNonRetryableErrorCodeBlocklist'
-> = {
-  replayRetryableErrorCodeAllowlist: ['HTTP_429'],
-  replayNonRetryableErrorCodeBlocklist: [
-    'CONV_PROMOTION_TASK_NOT_FOUND',
-    'CONV_PROMOTION_TASK_ACTION_INVALID',
-    'CONV_PROMOTION_TASK_PUBLISH_BLOCKED',
-    'SKILL_REVIEWER_CONFLICT',
-    'SKILL_HIGH_RISK_REVIEW_REQUIRED',
-    'HTTP_5XX',
-    'NETWORK_ERROR',
-    'TIMEOUT',
-    'FETCH_FAILED',
-  ],
-};
-
-type QuickPromptTemplate = {
-  key: string;
-  label: string;
-  prompt: string;
-};
-
-type LocalConversationTurn = {
-  id: string;
-  role: 'USER' | 'ASSISTANT' | 'SYSTEM';
-  content: string;
-  structuredPayload?: Record<string, unknown>;
-  createdAt: string;
-  pending?: boolean;
-  failed?: boolean;
-};
-
-const isSameQuickPromptTemplates = (
-  left: QuickPromptTemplate[],
-  right: QuickPromptTemplate[],
-): boolean => {
-  if (left.length !== right.length) {
-    return false;
-  }
-  return left.every(
-    (item, index) =>
-      item.key === right[index]?.key &&
-      item.label === right[index]?.label &&
-      item.prompt === right[index]?.prompt,
-  );
-};
-
-const toSafeText = (value: unknown): string => {
-  if (typeof value === 'string') {
-    return value;
-  }
-  if (typeof value === 'number' || typeof value === 'boolean' || typeof value === 'bigint') {
-    return String(value);
-  }
-  if (value === null || value === undefined) {
-    return '';
-  }
-  try {
-    return JSON.stringify(value, null, 2);
-  } catch {
-    return String(value);
-  }
-};
-
-const summarizeStructuredMessage = (raw: string): string => {
-  const text = raw.trim();
-  if (!text) {
-    return '系统消息';
-  }
-  try {
-    const parsed = JSON.parse(text) as Record<string, unknown>;
-    const state = typeof parsed.state === 'string' ? parsed.state : null;
-    const status = typeof parsed.status === 'string' ? parsed.status : null;
-    const message = typeof parsed.message === 'string' ? parsed.message : null;
-    const action = typeof parsed.action === 'string' ? parsed.action : null;
-    const phase = typeof parsed.phase === 'string' ? parsed.phase : null;
-    const parts = [state, status, action, phase, message].filter((item): item is string => Boolean(item));
-    if (parts.length) {
-      return `系统消息摘要：${parts.slice(0, 3).join(' / ')}`;
-    }
-    const keys = Object.keys(parsed);
-    if (keys.length) {
-      return `系统消息摘要：包含 ${keys.slice(0, SYSTEM_SUMMARY_MAX_KEYS).join('、')} 等字段`;
-    }
-  } catch {
-    // ignore
-  }
-  return `系统消息摘要：${text.slice(0, SYSTEM_SUMMARY_PREVIEW_LENGTH)}${text.length > SYSTEM_SUMMARY_PREVIEW_LENGTH ? '...' : ''}`;
-};
-
-const summarizeAssistantMessage = (raw: string): string => {
-  const text = raw.trim();
-  if (!text) {
-    return '助手已生成回复。';
-  }
-  const lines = text
-    .split('\n')
-    .map((line) => line.trim())
-    .filter(Boolean);
-  const headingLines = lines.filter((line) => /^#{1,3}\s+/.test(line)).slice(0, ASSISTANT_SUMMARY_MAX_HEADINGS);
-  const bulletLines = lines
-    .filter((line) => /^[-*]\s+/.test(line) || /^\d+[.)]\s+/.test(line))
-    .slice(0, ASSISTANT_SUMMARY_MAX_BULLETS)
-    .map((line) => line.replace(/^[-*]\s+/, '').replace(/^\d+[.)]\s+/, ''));
-  const intro = lines.find((line) => !/^#{1,3}\s+/.test(line)) || '';
-
-  if (headingLines.length || bulletLines.length) {
-    const parts: string[] = [];
-    if (headingLines.length) {
-      parts.push(`主题：${headingLines.map((line) => line.replace(/^#{1,3}\s+/, '')).join(' / ')}`);
-    }
-    if (bulletLines.length) {
-      parts.push(`要点：${bulletLines.join('；')}`);
-    }
-    return parts.join('\n');
-  }
-
-  return `结论摘要：${intro.slice(0, ASSISTANT_SUMMARY_PREVIEW_LENGTH)}${intro.length > ASSISTANT_SUMMARY_PREVIEW_LENGTH ? '...' : ''}`;
-};
-
-const appendCopilotDiagEvent = (event: {
-  type: string;
-  sessionId?: string;
-  meta?: Record<string, unknown>;
-}) => {
-  if (typeof window === 'undefined') {
-    return;
-  }
-  try {
-    const raw = window.localStorage.getItem(COPILOT_DIAG_STORAGE_KEY);
-    const current = raw ? (JSON.parse(raw) as Array<Record<string, unknown>>) : [];
-    const events = Array.isArray(current) ? current : [];
-    events.push({
-      ts: new Date().toISOString(),
-      type: event.type,
-      sessionId: event.sessionId,
-      meta: event.meta,
-    });
-    if (events.length > 80) {
-      events.splice(0, events.length - 80);
-    }
-    window.localStorage.setItem(COPILOT_DIAG_STORAGE_KEY, JSON.stringify(events));
-  } catch {
-    // ignore diagnostics write failure
-  }
-};
-
-const getOppositeScope = (scope: CopilotPromptScope): CopilotPromptScope =>
-  scope === 'PERSONAL' ? 'TEAM' : 'PERSONAL';
-
-const defaultQuickPrompts: QuickPromptTemplate[] = [
-  {
-    key: 'weekly-review',
-    label: '周度复盘',
-    prompt: '请结合日报/周报/研报和期货持仓，做过去一周复盘并给风险提示。',
-  },
-  {
-    key: 'forecast-3m',
-    label: '三月展望',
-    prompt: '请分析最近一周东北玉米价格并给出未来三个月建议，输出Markdown+JSON。',
-  },
-  {
-    key: 'debate-judge',
-    label: '辩论裁判',
-    prompt: '请就东北玉米未来三个月是否缺口并涨价进行多智能体辩论，并给出裁判结论。',
-  },
-];
-
-const stateColor: Record<string, string> = {
-  INTENT_CAPTURE: 'default',
-  SLOT_FILLING: 'processing',
-  PLAN_PREVIEW: 'warning',
-  USER_CONFIRM: 'warning',
-  EXECUTING: 'processing',
-  RESULT_DELIVERY: 'success',
-  DONE: 'success',
-  FAILED: 'error',
-};
-
-const sessionStateLabel: Record<string, string> = {
-  INTENT_CAPTURE: '待理解',
-  SLOT_FILLING: '待补充信息',
-  PLAN_PREVIEW: '方案预览',
-  USER_CONFIRM: '待确认',
-  EXECUTING: '执行中',
-  RESULT_DELIVERY: '结果整理中',
-  DONE: '已完成',
-  FAILED: '执行失败',
-};
-
-const planTypeLabel: Record<string, string> = {
-  RUN_PLAN: '执行方案',
-  DEBATE_PLAN: '多方案讨论',
-};
-
-const subscriptionStatusLabel: Record<string, string> = {
-  ACTIVE: '已开启',
-  PAUSED: '已暂停',
-  FAILED: '失败',
-  ARCHIVED: '已归档',
-};
-
-const deliveryStatusLabel: Record<string, string> = {
-  SENT: '已发送',
-  FAILED: '发送失败',
-};
-
-const backtestStatusLabel: Record<string, string> = {
-  QUEUED: '排队中',
-  RUNNING: '进行中',
-  COMPLETED: '已完成',
-  FAILED: '失败',
-};
-
-const statusColor: Record<string, string> = {
-  ACTIVE: 'success',
-  PAUSED: 'default',
-  FAILED: 'error',
-  ARCHIVED: 'default',
-  SENT: 'success',
-  EXPIRED: 'default',
-  REVOKED: 'default',
-};
-
-const channelLabel: Record<string, string> = {
-  EMAIL: '邮箱',
-  DINGTALK: '钉钉',
-  WECOM: '企业微信',
-  FEISHU: '飞书',
-};
-
-const runtimeGrantStatusLabel: Record<string, string> = {
-  ACTIVE: '生效中',
-  EXPIRED: '已过期',
-  REVOKED: '已撤销',
-};
-
-const governanceEventLabel: Record<string, string> = {
-  DRAFT_CREATED: '已创建草稿',
-  REVIEW_SUBMITTED: '已提交审核',
-  REVIEW_APPROVED: '审核通过',
-  REVIEW_REJECTED: '审核拒绝',
-  PUBLISHED: '已发布',
-  RUNTIME_GRANT_CREATED: '已创建试用权限',
-  RUNTIME_GRANT_REVOKED: '试用权限已撤销',
-  RUNTIME_GRANT_EXPIRED: '试用权限已过期',
-  RUNTIME_GRANT_USED: '试用权限已使用',
-};
-
-const assetTypeLabel: Record<string, string> = {
-  PLAN: '执行方案',
-  EXECUTION: '执行记录',
-  RESULT_SUMMARY: '结果摘要',
-  EXPORT_FILE: '导出文件',
-  BACKTEST_SUMMARY: '验证结果',
-  CONFLICT_SUMMARY: '一致性检查',
-  SKILL_DRAFT: '能力草稿',
-};
-
-const capabilityRouteTypeLabel: Record<string, string> = {
-  WORKFLOW_REUSE: '工作流复用',
-  SKILL_DRAFT_REUSE: '能力草稿复用',
-  SKILL_DRAFT_CREATE: '新建能力草稿',
-};
-
-const promotionTaskStatusLabel: Record<string, string> = {
-  PENDING_REVIEW: '待处理',
-  IN_REVIEW: '审核中',
-  APPROVED: '已通过',
-  REJECTED: '已拒绝',
-  PUBLISHED: '已发布',
-};
-
-const promotionBatchActionLabel: Record<string, string> = {
-  START_REVIEW: '推进审核中',
-  MARK_APPROVED: '标记通过',
-  MARK_REJECTED: '标记拒绝',
-  MARK_PUBLISHED: '标记已发布',
-  SYNC_DRAFT_STATUS: '同步草稿状态',
-};
-
-const formatGovernanceEventMessage = (item: {
-  eventType: string;
-  message: string;
-  payload?: Record<string, unknown> | null;
-}): string => {
-  const payload = item.payload && typeof item.payload === 'object' ? item.payload : null;
-  if (item.eventType === 'RUNTIME_GRANT_USED') {
-    const useCount = Number(payload?.useCount ?? NaN);
-    const maxUseCount = Number(payload?.maxUseCount ?? NaN);
-    if (Number.isFinite(useCount) && Number.isFinite(maxUseCount)) {
-      return `试用权限使用进度：${useCount}/${maxUseCount}`;
-    }
-  }
-  if (item.eventType === 'RUNTIME_GRANT_REVOKED') {
-    const reason = typeof payload?.reason === 'string' ? payload.reason : '';
-    return reason ? `撤销原因：${reason}` : '已手动撤销试用权限';
-  }
-  if (item.eventType === 'REVIEW_APPROVED' || item.eventType === 'REVIEW_REJECTED') {
-    const comment = typeof payload?.comment === 'string' ? payload.comment : '';
-    return comment ? `审核意见：${comment}` : '审核已完成';
-  }
-  if (item.eventType === 'PUBLISHED') {
-    const skillCode = typeof payload?.skillCode === 'string' ? payload.skillCode : '';
-    return skillCode ? `已发布并更新能力：${skillCode}` : '已发布到可用能力库';
-  }
-  return item.message;
-};
-
-const formatRoutePolicyDetails = (details?: Record<string, unknown>) => {
-  if (!details) {
-    return '';
-  }
-  const capability =
-    details.capabilityRoutingPolicy && typeof details.capabilityRoutingPolicy === 'object'
-      ? (details.capabilityRoutingPolicy as Record<string, unknown>)
-      : null;
-  const ephemeral =
-    details.ephemeralCapabilityPolicy && typeof details.ephemeralCapabilityPolicy === 'object'
-      ? (details.ephemeralCapabilityPolicy as Record<string, unknown>)
-      : null;
-
-  const parts: string[] = [];
-  if (capability) {
-    parts.push(
-      `路由策略：私有池${capability.allowOwnerPool ? '开' : '关'}，公共池${capability.allowPublicPool ? '开' : '关'}，私有优先${capability.preferOwnerFirst ? '开' : '关'}`,
-    );
-  }
-  if (ephemeral) {
-    parts.push(
-      `临时策略：草稿阈值${String(ephemeral.draftSemanticReuseThreshold ?? '-')}, 发布阈值${String(ephemeral.publishedSkillReuseThreshold ?? '-')}, 授权${String(ephemeral.runtimeGrantTtlHours ?? '-')}h/${String(ephemeral.runtimeGrantMaxUseCount ?? '-')}次`,
-    );
-  }
-  return parts.join('；');
-};
-
-const copilotErrorMessageByCode: Record<string, string> = {
-  CONV_SESSION_NOT_FOUND: '会话不存在或无权限访问，请刷新后重试。',
-  CONV_RESULT_NOT_FOUND: '会话结果不可见，请确认任务是否已执行。',
-  CONV_PLAN_VERSION_NOT_FOUND: '计划版本已过期，请重新生成计划。',
-  CONV_PLAN_ALREADY_CONFIRMED: '该计划已执行，请勿重复提交。',
-  CONV_PLAN_ID_MISMATCH: '计划内容已变化，请刷新后确认。',
-  CONV_WORKFLOW_NOT_BINDABLE: '未绑定可执行流程，请先选择模板。',
-  CONV_EXECUTION_TRIGGER_FAILED: '执行触发失败，请稍后重试。',
-  CONV_EXPORT_EXECUTION_NOT_FOUND: '没有可导出的执行结果，请先运行任务。',
-  CONV_EXPORT_TASK_NOT_FOUND: '导出任务不存在或无权限访问。',
-  CONV_EXPORT_TASK_NOT_READY: '导出任务尚未完成，请稍后再发送邮箱。',
-  CONV_DELIVERY_TARGET_REQUIRED: '请补充投递目标信息。',
-  CONV_SUB_PLAN_NOT_FOUND: '未找到可订阅计划，请先确认并执行计划。',
-  CONV_SUB_NOT_FOUND: '订阅不存在或无权限访问。',
-  CONV_BACKTEST_EXECUTION_NOT_FOUND: '未找到可回测的执行实例，请先完成一次执行。',
-  CONV_BACKTEST_NOT_FOUND: '回测任务不存在或无权限访问。',
-  CONV_BACKTEST_RUN_FAILED: '回测执行失败，请稍后重试。',
-  SKILL_DRAFT_NOT_FOUND: '能力草稿不存在或无权限访问。',
-  SKILL_RUNTIME_GRANT_NOT_FOUND: '运行时授权不存在或无权限访问。',
-  SKILL_RUNTIME_GRANT_INACTIVE: '运行时授权已失效。',
-  SKILL_RUNTIME_GRANT_EXPIRED: '运行时授权已过期。',
-  SKILL_REVIEWER_CONFLICT: '高风险草稿不能由创建者本人审批通过。',
-  SKILL_HIGH_RISK_REVIEW_REQUIRED: '高风险草稿必须由非创建者审批后才能发布。',
-  CONV_SCHEDULE_SUB_NOT_FOUND: '未找到可操作订阅，请先创建或指定正确名称。',
-  CONV_PROMOTION_TASK_NOT_FOUND: '能力晋升任务不存在，请刷新后重试。',
-  CONV_PROMOTION_TASK_PUBLISH_BLOCKED: '草稿尚未发布，请先发布能力后再同步任务状态。',
-  CONV_PROMOTION_TASK_ACTION_INVALID: '任务操作无效，请刷新页面后重试。',
-  CONV_PROMOTION_BATCH_NOT_FOUND: '能力晋升批次不存在，请刷新后重试。',
-  CONV_PROMOTION_BATCH_INVALID: '能力晋升批次数据异常，无法执行失败重放。',
-};
 
 export const AgentCopilotPage: React.FC = () => {
   const { message, modal } = App.useApp();
@@ -600,7 +224,6 @@ export const AgentCopilotPage: React.FC = () => {
   const [backtestDetailModalOpen, setBacktestDetailModalOpen] = useState(false);
   const [conflictDetailModalOpen, setConflictDetailModalOpen] = useState(false);
   const timelineRef = useRef<HTMLDivElement | null>(null);
-  const templateFileInputRef = useRef<HTMLInputElement | null>(null);
   const screens = Grid.useBreakpoint();
   const { currentUser } = useVirtualUser();
   const isAdminUser = useMemo(() => {
@@ -2619,190 +2242,6 @@ export const AgentCopilotPage: React.FC = () => {
     }
   };
 
-  const normalizeTemplateArray = (input: Array<Record<string, unknown>>) => {
-    return input
-      .map((item) => {
-        const key = typeof item.key === 'string' ? item.key.trim() : '';
-        const label = typeof item.label === 'string' ? item.label.trim() : '';
-        const prompt = typeof item.prompt === 'string' ? item.prompt.trim() : '';
-        if (!key || !label || !prompt) {
-          return null;
-        }
-        return { key, label, prompt };
-      })
-      .filter((item): item is QuickPromptTemplate => Boolean(item));
-  };
-
-  const collectDuplicates = (items: QuickPromptTemplate[], field: 'key' | 'label') => {
-    const seen = new Map<string, number>();
-    for (const item of items) {
-      const value = item[field].trim();
-      seen.set(value, (seen.get(value) ?? 0) + 1);
-    }
-    return Array.from(seen.entries())
-      .filter(([, count]) => count > 1)
-      .map(([value]) => value);
-  };
-
-  const persistTemplates = async (next: QuickPromptTemplate[]) => {
-    setQuickPrompts(next);
-    localStorage.setItem(`${QUICK_PROMPT_STORAGE_KEY_PREFIX}.${templateScope}`, JSON.stringify(next));
-    try {
-      await upsertPromptTemplatesMutation.mutateAsync({
-        scope: templateScope,
-        bindingId: activePromptTemplate?.id,
-        templates: next,
-      });
-      message.success('模板保存成功（已同步到配置中心）');
-    } catch {
-      message.warning('模板已本地保存，但配置中心同步失败');
-    } finally {
-      setTemplateModalOpen(false);
-    }
-  };
-
-  const handleSaveTemplates = async () => {
-    try {
-      const next =
-        templateMode === 'FORM'
-          ? templateDraft.filter((item) => item.key && item.label && item.prompt)
-          : normalizeTemplateArray(JSON.parse(templateEditor) as Array<Record<string, unknown>>);
-
-      if (!next.length) {
-        message.error('至少保留一个有效模板（含 key/label/prompt）');
-        return;
-      }
-
-      const duplicateKeys = collectDuplicates(next, 'key');
-      if (duplicateKeys.length) {
-        message.error(`存在重复 key：${duplicateKeys.join('、')}，请修改后保存`);
-        return;
-      }
-
-      const duplicateLabels = collectDuplicates(next, 'label');
-      if (duplicateLabels.length) {
-        modal.confirm({
-          title: '检测到重复模板名称',
-          content: `重复名称：${duplicateLabels.join('、')}。是否继续保存？`,
-          okText: '继续保存',
-          cancelText: '返回修改',
-          onOk: async () => {
-            await persistTemplates(next);
-          },
-        });
-        return;
-      }
-
-      await persistTemplates(next);
-    } catch {
-      message.error('JSON 解析失败，请检查格式');
-    }
-  };
-
-  const handleTemplateScopeChange = (scope: CopilotPromptScope) => {
-    setTemplateScope(scope);
-  };
-
-  const handleCopyFromOppositeScope = () => {
-    const sourceTemplates = (oppositePromptTemplate?.metadata as Record<string, unknown> | undefined)
-      ?.templates;
-    if (!Array.isArray(sourceTemplates)) {
-      message.warning('来源作用域暂无可复制模板');
-      return;
-    }
-
-    const normalized = normalizeTemplateArray(sourceTemplates as Array<Record<string, unknown>>);
-    if (!normalized.length) {
-      message.warning('来源作用域模板无有效数据');
-      return;
-    }
-
-    setTemplateDraft(normalized);
-    setTemplateEditor(JSON.stringify(normalized, null, 2));
-    setTemplateMode('FORM');
-    message.success(`已从${getOppositeScope(templateScope) === 'PERSONAL' ? '个人' : '团队'}模板复制`);
-  };
-
-  const handleAddTemplate = () => {
-    const idx = templateDraft.length + 1;
-    setTemplateDraft([
-      ...templateDraft,
-      {
-        key: `custom-${Date.now()}-${idx}`,
-        label: `模板${idx}`,
-        prompt: '',
-      },
-    ]);
-  };
-
-  const handleRemoveTemplate = (key: string) => {
-    setTemplateDraft(templateDraft.filter((item) => item.key !== key));
-  };
-
-  const handleUpdateTemplate = (key: string, patch: Partial<QuickPromptTemplate>) => {
-    setTemplateDraft(
-      templateDraft.map((item) => {
-        if (item.key !== key) {
-          return item;
-        }
-        const nextLabel = patch.label ?? item.label;
-        const nextKey =
-          patch.key ??
-          item.key ??
-          `tmpl-${nextLabel.replace(/\s+/g, '-').replace(/[^a-zA-Z0-9\u4e00-\u9fa5\-_]/g, '')}`;
-        return {
-          ...item,
-          ...patch,
-          key: nextKey,
-        };
-      }),
-    );
-  };
-
-  const handleExportTemplates = () => {
-    const payload = JSON.stringify(templateMode === 'FORM' ? templateDraft : quickPrompts, null, 2);
-    const blob = new Blob([payload], { type: 'application/json;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'ctbms-agent-copilot-templates.json';
-    a.click();
-    URL.revokeObjectURL(url);
-  };
-
-  const handleImportTemplatesClick = () => {
-    templateFileInputRef.current?.click();
-  };
-
-  const handleImportTemplatesFile = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    event.target.value = '';
-    if (!file) {
-      return;
-    }
-
-    try {
-      const text = await file.text();
-      const parsed = JSON.parse(text) as Array<Record<string, unknown>>;
-      if (!Array.isArray(parsed)) {
-        message.error('导入失败：JSON 必须是数组');
-        return;
-      }
-
-      const normalized = normalizeTemplateArray(parsed);
-      if (!normalized.length) {
-        message.error('导入失败：未识别到有效模板');
-        return;
-      }
-
-      setTemplateDraft(normalized);
-      setTemplateEditor(JSON.stringify(normalized, null, 2));
-      setTemplateMode('FORM');
-      message.success(`导入成功，共 ${normalized.length} 个模板`);
-    } catch {
-      message.error('导入失败：文件不是合法 JSON');
-    }
-  };
 
   return (
     <Space direction="vertical" style={{ width: '100%' }} size={16}>
@@ -4431,413 +3870,52 @@ export const AgentCopilotPage: React.FC = () => {
         </Space>
       </Modal>
 
-      <Modal
-        title="快捷问题模板管理"
-        open={templateModalOpen}
-        onOk={handleSaveTemplates}
-        onCancel={() => setTemplateModalOpen(false)}
-        confirmLoading={upsertPromptTemplatesMutation.isPending}
-        width={760}
-      >
-        <Space direction="vertical" style={{ width: '100%' }}>
-          <Space style={{ justifyContent: 'space-between', width: '100%' }}>
-            <Segmented
-              value={templateMode}
-              options={[
-                { label: '表单编辑', value: 'FORM' },
-                { label: 'JSON 编辑', value: 'JSON' },
-              ]}
-              onChange={(value) => setTemplateMode(value as 'FORM' | 'JSON')}
-            />
-            <Segmented
-              value={templateScope}
-              options={[
-                { label: '个人模板', value: 'PERSONAL' },
-                { label: '团队模板', value: 'TEAM' },
-              ]}
-              onChange={(value) => handleTemplateScopeChange(value as CopilotPromptScope)}
-            />
-            <Space>
-              <Button onClick={handleCopyFromOppositeScope}>从另一作用域复制</Button>
-              <Button icon={<UploadOutlined />} onClick={handleImportTemplatesClick}>
-                导入 JSON
-              </Button>
-              <Button onClick={handleExportTemplates}>导出 JSON</Button>
-            </Space>
-          </Space>
-
-          <input
-            ref={templateFileInputRef}
-            type="file"
-            accept="application/json,.json"
-            style={{ display: 'none' }}
-            onChange={handleImportTemplatesFile}
-          />
-
-          <Alert
-            type="info"
-            showIcon
-            message="JSON 数组格式"
-            description='每项需包含 key、label、prompt。示例：[{"key":"k1","label":"周度复盘","prompt":"..."}]'
-          />
-
-          {templateMode === 'FORM' ? (
-            <Space direction="vertical" style={{ width: '100%' }}>
-              <Button onClick={handleAddTemplate} icon={<PlusOutlined />}>
-                新增模板
-              </Button>
-              <List
-                size="small"
-                dataSource={templateDraft}
-                renderItem={(item) => (
-                  <List.Item
-                    actions={[
-                      <Button key="remove" danger size="small" onClick={() => handleRemoveTemplate(item.key)}>
-                        删除
-                      </Button>,
-                    ]}
-                  >
-                    <Space direction="vertical" style={{ width: '100%' }}>
-                      <Input
-                        value={item.label}
-                        placeholder="模板名称"
-                        onChange={(e) =>
-                          handleUpdateTemplate(item.key, {
-                            label: e.target.value,
-                          })
-                        }
-                      />
-                      <Input.TextArea
-                        value={item.prompt}
-                        placeholder="模板提示词"
-                        autoSize={{ minRows: 2, maxRows: 6 }}
-                        onChange={(e) => handleUpdateTemplate(item.key, { prompt: e.target.value })}
-                      />
-                      <Text type="secondary" style={{ fontSize: 12 }}>
-                        key: {item.key}
-                      </Text>
-                    </Space>
-                  </List.Item>
-                )}
-              />
-            </Space>
-          ) : (
-            <Input.TextArea
-              value={templateEditor}
-              onChange={(e) => setTemplateEditor(e.target.value)}
-              autoSize={{ minRows: 12, maxRows: 20 }}
-            />
-          )}
-        </Space>
-      </Modal>
-
-      <Modal
-        title="投递配置中心"
-        open={deliveryProfileModalOpen}
-        onOk={handleSaveDeliveryProfiles}
-        onCancel={() => setDeliveryProfileModalOpen(false)}
-        confirmLoading={upsertDeliveryProfilesMutation.isPending}
-        width={760}
-      >
-        <Space direction="vertical" style={{ width: '100%' }}>
-          <Alert
-            type="info"
-            showIcon
-            message="使用 JSON 管理各渠道默认投递目标与模板"
-            description="字段建议：id/channel/isDefault/target/to/templateCode/sendRawFile/description"
-          />
-          <Input.TextArea
-            value={deliveryProfileEditor}
-            onChange={(e) => setDeliveryProfileEditor(e.target.value)}
-            autoSize={{ minRows: 12, maxRows: 22 }}
-          />
-        </Space>
-      </Modal>
-
-      <Modal
-        title="能力路由策略"
-        open={routingPolicyModalOpen}
-        onOk={handleSaveRoutingPolicy}
-        onCancel={() => setRoutingPolicyModalOpen(false)}
-        confirmLoading={upsertCapabilityRoutingPolicyMutation.isPending}
-        width={760}
-      >
-        <Space direction="vertical" style={{ width: '100%' }}>
-          <Alert
-            type="info"
-            showIcon
-            message="用于控制能力复用顺序与命中阈值（普通用户无感）"
-            description="建议默认：优先私有池，其次公共池。阈值越高，复用越保守。"
-          />
-          <Space>
-            <Button
-              size="small"
-              onClick={() => setRoutingPolicyDraft(DEFAULT_CAPABILITY_ROUTING_POLICY)}
-            >
-              恢复推荐默认值
-            </Button>
-          </Space>
-          <Card size="small">
-            <Space direction="vertical" style={{ width: '100%' }} size={12}>
-              <Space style={{ justifyContent: 'space-between', width: '100%' }}>
-                <Text>启用私有能力池</Text>
-                <Switch
-                  checked={routingPolicyDraft.allowOwnerPool}
-                  onChange={(checked) =>
-                    setRoutingPolicyDraft((prev) => ({
-                      ...prev,
-                      allowOwnerPool: checked,
-                    }))
-                  }
-                />
-              </Space>
-              <Space style={{ justifyContent: 'space-between', width: '100%' }}>
-                <Text>启用公共能力池</Text>
-                <Switch
-                  checked={routingPolicyDraft.allowPublicPool}
-                  onChange={(checked) =>
-                    setRoutingPolicyDraft((prev) => ({
-                      ...prev,
-                      allowPublicPool: checked,
-                    }))
-                  }
-                />
-              </Space>
-              <Space style={{ justifyContent: 'space-between', width: '100%' }}>
-                <Text>优先使用私有能力</Text>
-                <Switch
-                  checked={routingPolicyDraft.preferOwnerFirst}
-                  onChange={(checked) =>
-                    setRoutingPolicyDraft((prev) => ({
-                      ...prev,
-                      preferOwnerFirst: checked,
-                    }))
-                  }
-                />
-              </Space>
-              <Space style={{ justifyContent: 'space-between', width: '100%' }}>
-                <Text>私有池最低命中分</Text>
-                <InputNumber
-                  min={0}
-                  max={1}
-                  step={0.01}
-                  value={routingPolicyDraft.minOwnerScore}
-                  onChange={(value) =>
-                    setRoutingPolicyDraft((prev) => ({
-                      ...prev,
-                      minOwnerScore: typeof value === 'number' ? value : prev.minOwnerScore,
-                    }))
-                  }
-                />
-              </Space>
-              <Space style={{ justifyContent: 'space-between', width: '100%' }}>
-                <Text>公共池最低命中分</Text>
-                <InputNumber
-                  min={0}
-                  max={1}
-                  step={0.01}
-                  value={routingPolicyDraft.minPublicScore}
-                  onChange={(value) =>
-                    setRoutingPolicyDraft((prev) => ({
-                      ...prev,
-                      minPublicScore: typeof value === 'number' ? value : prev.minPublicScore,
-                    }))
-                  }
-                />
-              </Space>
-            </Space>
-          </Card>
-        </Space>
-      </Modal>
-
-      <Modal
-        title="临时能力策略"
-        open={ephemeralPolicyModalOpen}
-        onOk={handleSaveEphemeralPolicy}
-        onCancel={() => setEphemeralPolicyModalOpen(false)}
-        confirmLoading={upsertEphemeralCapabilityPolicyMutation.isPending}
-        width={760}
-      >
-        <Space direction="vertical" style={{ width: '100%' }}>
-          <Alert
-            type="info"
-            showIcon
-            message="控制临时能力复用阈值与运行时授权策略"
-            description="建议先保持默认，再根据 UAT 指标逐步微调。"
-          />
-          <Space>
-            <Segmented
-              size="small"
-              value={ephemeralPolicyScope}
-              options={[
-                { label: '个人策略', value: 'PERSONAL' },
-                { label: '团队策略', value: 'TEAM' },
-              ]}
-              onChange={(value) => setEphemeralPolicyScope(value as EphemeralPolicyScope)}
-            />
-            <Button
-              size="small"
-              onClick={() => setEphemeralPolicyDraft(DEFAULT_EPHEMERAL_CAPABILITY_POLICY)}
-            >
-              恢复推荐默认值
-            </Button>
-            <Button size="small" onClick={() => handleApplyRetryPolicyPreset('NETWORK')}>
-              应用网络波动型
-            </Button>
-            <Button size="small" onClick={() => handleApplyRetryPolicyPreset('STRICT')}>
-              应用严格型
-            </Button>
-          </Space>
-          <Card size="small">
-            <Space direction="vertical" style={{ width: '100%' }} size={8}>
-              <Text strong>策略变更审计（最近20次）</Text>
-              <Text type="secondary" style={{ fontSize: 12 }}>
-                当前服务端版本更新时间：
-                {ephemeralCapabilityPolicyBinding?.updatedAt
-                  ? new Date(ephemeralCapabilityPolicyBinding.updatedAt).toLocaleString('zh-CN')
-                  : '-'}
-              </Text>
-              <Text type="secondary" style={{ fontSize: 12 }}>
-                审计汇总：
-                {ephemeralCapabilityPolicyAuditSummaryQuery.data
-                  ? `共 ${ephemeralCapabilityPolicyAuditSummaryQuery.data.total} 条，动作 ${ephemeralCapabilityPolicyAuditSummaryQuery.data.stats.action
-                      .slice(0, 3)
-                      .map((item) => `${item.key}(${item.count})`)
-                      .join(' / ') || '-'}`
-                  : '-'}
-              </Text>
-              <List
-                size="small"
-                dataSource={displayedEphemeralPolicyAuditHistory.slice(0, 6)}
-                loading={ephemeralCapabilityPolicyAuditsQuery.isLoading}
-                locale={{ emptyText: '暂无审计记录（首次保存策略后自动生成）' }}
-                renderItem={(item) => (
-                  <List.Item
-                    actions={[
-                      <Button
-                        key={`rollback-${item.id}`}
-                        size="small"
-                        loading={rollbackEphemeralPolicyAuditMutation.isPending}
-                        onClick={() => void handleRollbackEphemeralPolicyAudit(item.id)}
-                      >
-                        回滚到此版本
-                      </Button>,
-                    ]}
-                  >
-                    <Space direction="vertical" size={2} style={{ width: '100%' }}>
-                      <Text type="secondary" style={{ fontSize: 12 }}>
-                        {new Date(item.savedAt).toLocaleString('zh-CN')} · TTL {item.runtimeGrantTtlHours}h · MaxUse{' '}
-                        {item.runtimeGrantMaxUseCount}
-                      </Text>
-                      <Text type="secondary" style={{ fontSize: 12 }}>
-                        白名单 {item.retryableAllowlist.length} 项 / 黑名单 {item.nonRetryableBlocklist.length} 项
-                      </Text>
-                    </Space>
-                  </List.Item>
-                )}
-              />
-            </Space>
-          </Card>
-          <Card size="small">
-            <Space direction="vertical" style={{ width: '100%' }} size={12}>
-              <Space style={{ justifyContent: 'space-between', width: '100%' }}>
-                <Text>草稿语义复用阈值</Text>
-                <InputNumber
-                  min={0}
-                  max={1}
-                  step={0.01}
-                  value={ephemeralPolicyDraft.draftSemanticReuseThreshold}
-                  onChange={(value) =>
-                    setEphemeralPolicyDraft((prev) => ({
-                      ...prev,
-                      draftSemanticReuseThreshold:
-                        typeof value === 'number' ? value : prev.draftSemanticReuseThreshold,
-                    }))
-                  }
-                />
-              </Space>
-              <Space style={{ justifyContent: 'space-between', width: '100%' }}>
-                <Text>已发布能力复用阈值</Text>
-                <InputNumber
-                  min={0}
-                  max={1}
-                  step={0.01}
-                  value={ephemeralPolicyDraft.publishedSkillReuseThreshold}
-                  onChange={(value) =>
-                    setEphemeralPolicyDraft((prev) => ({
-                      ...prev,
-                      publishedSkillReuseThreshold:
-                        typeof value === 'number' ? value : prev.publishedSkillReuseThreshold,
-                    }))
-                  }
-                />
-              </Space>
-              <Space style={{ justifyContent: 'space-between', width: '100%' }}>
-                <Text>运行时授权时长（小时）</Text>
-                <InputNumber
-                  min={1}
-                  max={168}
-                  step={1}
-                  value={ephemeralPolicyDraft.runtimeGrantTtlHours}
-                  onChange={(value) =>
-                    setEphemeralPolicyDraft((prev) => ({
-                      ...prev,
-                      runtimeGrantTtlHours: typeof value === 'number' ? value : prev.runtimeGrantTtlHours,
-                    }))
-                  }
-                />
-              </Space>
-              <Space style={{ justifyContent: 'space-between', width: '100%' }}>
-                <Text>运行时授权最大使用次数</Text>
-                <InputNumber
-                  min={1}
-                  max={200}
-                  step={1}
-                  value={ephemeralPolicyDraft.runtimeGrantMaxUseCount}
-                  onChange={(value) =>
-                    setEphemeralPolicyDraft((prev) => ({
-                      ...prev,
-                      runtimeGrantMaxUseCount: typeof value === 'number' ? value : prev.runtimeGrantMaxUseCount,
-                    }))
-                  }
-                />
-              </Space>
-              <Space direction="vertical" style={{ width: '100%' }} size={4}>
-                <Text>可重试错误码白名单（每行一个）</Text>
-                <Input.TextArea
-                  autoSize={{ minRows: 3, maxRows: 6 }}
-                  value={ephemeralPolicyDraft.replayRetryableErrorCodeAllowlist.join('\n')}
-                  onChange={(e) =>
-                    setEphemeralPolicyDraft((prev) => ({
-                      ...prev,
-                      replayRetryableErrorCodeAllowlist: e.target.value
-                        .split('\n')
-                        .map((item) => item.trim().toUpperCase())
-                        .filter(Boolean),
-                    }))
-                  }
-                />
-              </Space>
-              <Space direction="vertical" style={{ width: '100%' }} size={4}>
-                <Text>不可重试错误码黑名单（每行一个）</Text>
-                <Input.TextArea
-                  autoSize={{ minRows: 3, maxRows: 6 }}
-                  value={ephemeralPolicyDraft.replayNonRetryableErrorCodeBlocklist.join('\n')}
-                  onChange={(e) =>
-                    setEphemeralPolicyDraft((prev) => ({
-                      ...prev,
-                      replayNonRetryableErrorCodeBlocklist: e.target.value
-                        .split('\n')
-                        .map((item) => item.trim().toUpperCase())
-                        .filter(Boolean),
-                    }))
-                  }
-                />
-              </Space>
-            </Space>
-          </Card>
-        </Space>
-      </Modal>
+    {isAdminUser ? (
+        <CopilotAdminModals
+          templateModalOpen={templateModalOpen}
+          setTemplateModalOpen={setTemplateModalOpen}
+          templateMode={templateMode}
+          setTemplateMode={setTemplateMode}
+          templateScope={templateScope}
+          setTemplateScope={setTemplateScope}
+          templateDraft={templateDraft}
+          setTemplateDraft={setTemplateDraft}
+          templateEditor={templateEditor}
+          setTemplateEditor={setTemplateEditor}
+          quickPrompts={quickPrompts}
+          setQuickPrompts={setQuickPrompts}
+          activePromptTemplate={activePromptTemplate}
+          oppositePromptTemplate={oppositePromptTemplate}
+          upsertPromptTemplatesMutation={upsertPromptTemplatesMutation}
+          deliveryProfileModalOpen={deliveryProfileModalOpen}
+          setDeliveryProfileModalOpen={setDeliveryProfileModalOpen}
+          deliveryProfileEditor={deliveryProfileEditor}
+          setDeliveryProfileEditor={setDeliveryProfileEditor}
+          handleSaveDeliveryProfiles={handleSaveDeliveryProfiles}
+          upsertDeliveryProfilesMutation={upsertDeliveryProfilesMutation}
+          routingPolicyModalOpen={routingPolicyModalOpen}
+          setRoutingPolicyModalOpen={setRoutingPolicyModalOpen}
+          routingPolicyDraft={routingPolicyDraft}
+          setRoutingPolicyDraft={setRoutingPolicyDraft}
+          handleSaveRoutingPolicy={handleSaveRoutingPolicy}
+          upsertCapabilityRoutingPolicyMutation={upsertCapabilityRoutingPolicyMutation}
+          ephemeralPolicyModalOpen={ephemeralPolicyModalOpen}
+          setEphemeralPolicyModalOpen={setEphemeralPolicyModalOpen}
+          ephemeralPolicyDraft={ephemeralPolicyDraft}
+          setEphemeralPolicyDraft={setEphemeralPolicyDraft}
+          ephemeralPolicyScope={ephemeralPolicyScope}
+          setEphemeralPolicyScope={setEphemeralPolicyScope}
+          handleSaveEphemeralPolicy={handleSaveEphemeralPolicy}
+          handleApplyRetryPolicyPreset={handleApplyRetryPolicyPreset}
+          handleRollbackEphemeralPolicyAudit={handleRollbackEphemeralPolicyAudit}
+          upsertEphemeralCapabilityPolicyMutation={upsertEphemeralCapabilityPolicyMutation}
+          rollbackEphemeralPolicyAuditMutation={rollbackEphemeralPolicyAuditMutation}
+          ephemeralCapabilityPolicyBinding={ephemeralCapabilityPolicyBinding}
+          ephemeralCapabilityPolicyAuditsQuery={ephemeralCapabilityPolicyAuditsQuery}
+          ephemeralCapabilityPolicyAuditSummaryQuery={ephemeralCapabilityPolicyAuditSummaryQuery}
+          displayedEphemeralPolicyAuditHistory={displayedEphemeralPolicyAuditHistory}
+        />
+      ) : null}
     </Space>
   );
 };

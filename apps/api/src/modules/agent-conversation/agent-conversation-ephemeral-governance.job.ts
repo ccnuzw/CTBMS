@@ -41,7 +41,7 @@ export class AgentConversationEphemeralGovernanceJob {
     for (const session of sessions) {
       try {
         // Phase 1-5 capability evolution
-        await this.agentConversationService.applyEphemeralCapabilityEvolutionPlan(
+        await this.agentConversationService.capabilityService.applyEphemeralCapabilityEvolutionPlan(
           session.ownerUserId,
           session.id,
           { window: '7d' },

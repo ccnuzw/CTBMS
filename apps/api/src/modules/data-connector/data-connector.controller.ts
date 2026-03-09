@@ -25,7 +25,7 @@ type AuthRequest = ExpressRequest & { user?: { id?: string } };
 
 @Controller('data-connectors')
 export class DataConnectorController {
-  constructor(private readonly dataConnectorService: DataConnectorService) {}
+  constructor(private readonly dataConnectorService: DataConnectorService) { }
 
   @Post()
   create(@Body() dto: CreateDataConnectorRequest, @Request() req: AuthRequest) {
@@ -99,5 +99,10 @@ export class DataConnectorController {
       throw new UnauthorizedException('User not authenticated');
     }
     return this.dataConnectorService.healthCheck(id, dto);
+  }
+
+  @Get('health/time-series')
+  getHealthTimeSeries() {
+    return this.dataConnectorService.getHealthTimeSeries();
   }
 }

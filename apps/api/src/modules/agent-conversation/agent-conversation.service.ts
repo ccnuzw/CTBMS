@@ -3,17 +3,11 @@ import { PrismaService } from '../../prisma';
 import type {
   CreateConversationBacktestDto,
   CreateSkillDraftDto,
-  CreateConversationSubscriptionDto,
   ConfirmConversationPlanDto,
   CreateConversationSessionDto,
   CreateConversationTurnDto,
-  DeliverConversationDto,
-  DeliverConversationEmailDto,
   ExportConversationResultDto,
-  ConversationResultDiffTimelineQueryDto,
-  ResolveConversationScheduleDto,
   ReuseConversationAssetDto,
-  UpdateConversationSubscriptionDto,
 } from '@packages/types';
 import { Prisma } from '@prisma/client';
 import { randomUUID } from 'node:crypto';
@@ -26,6 +20,10 @@ import {
   ConversationIntentService,
   ConversationOrchestratorService,
   ConversationSynthesizerService,
+  ConversationPreflightService,
+  ConversationCapabilityService,
+  ConversationResultService,
+  ConversationSubscriptionService,
 } from './services';
 
 type SessionState =
@@ -78,70 +76,16 @@ type ReplyOption = {
   tab?: 'progress' | 'result' | 'delivery' | 'schedule';
 };
 
-type ConversationResultDiffSnapshot = {
-  assetId: string;
-  createdAt: string;
-  executionId: string | null;
-  status: string;
-  confidence: number;
-  analysis: string;
-  facts: string[];
-  sources: string[];
-  actions: Record<string, unknown>;
-};
-
-type ConversationResultDiff = {
-  confidenceDelta: number;
-  analysisChanged: boolean;
-  addedFacts: string[];
-  removedFacts: string[];
-  addedSources: string[];
-  removedSources: string[];
-  changedActionKeys: string[];
-  changeSummary: string[];
-};
-
-type ConversationEvidenceFreshness = 'FRESH' | 'STALE' | 'UNKNOWN';
-
-type ConversationEvidenceQuality = 'RECONCILED' | 'INTERNAL' | 'EXTERNAL' | 'UNVERIFIED';
-
-type ConversationEvidenceItem = {
-  id: string;
-  title: string;
-  summary: string;
-  source: string;
-  sourceNodeId: string | null;
-  sourceNodeType: string | null;
-  sourceUrl: string | null;
-  tracePath: string;
-  collectedAt: string;
-  timestamp: string | null;
-  freshness: ConversationEvidenceFreshness;
-  quality: ConversationEvidenceQuality;
-};
-
-type ConversationResultTraceability = {
-  executionId: string;
-  replayPath: string;
-  executionPath: string;
-  evidenceCount: number;
-  strongEvidenceCount: number;
-  externalEvidenceCount: number;
-  generatedAt: string;
-};
-
-type ConversationResultDiffTimelineItem = {
-  comparable: boolean;
-  current: ConversationResultDiffSnapshot;
-  baseline: ConversationResultDiffSnapshot | null;
-  diff: ConversationResultDiff | null;
-};
-
 type ConversationSessionQueryDto = {
   state?: SessionState;
   keyword?: string;
   page?: number;
   pageSize?: number;
+};
+
+type ConversationObservabilitySummaryQueryDto = {
+  windowDays?: number;
+  maxSessions?: number;
 };
 
 type CapabilityRoutingPolicy = {
@@ -151,24 +95,6 @@ type CapabilityRoutingPolicy = {
   minOwnerScore: number;
   minPublicScore: number;
 };
-
-type EphemeralCapabilityPolicy = {
-  draftSemanticReuseThreshold: number;
-  publishedSkillReuseThreshold: number;
-  runtimeGrantTtlHours: number;
-  runtimeGrantMaxUseCount: number;
-  replayRetryableErrorCodeAllowlist: string[];
-  replayNonRetryableErrorCodeBlocklist: string[];
-};
-
-type PromotionTaskStatus = 'PENDING_REVIEW' | 'IN_REVIEW' | 'APPROVED' | 'REJECTED' | 'PUBLISHED';
-
-type PromotionTaskAction =
-  | 'START_REVIEW'
-  | 'MARK_APPROVED'
-  | 'MARK_REJECTED'
-  | 'MARK_PUBLISHED'
-  | 'SYNC_DRAFT_STATUS';
 
 const SESSION_DETAIL_TURN_LIMIT = 80;
 const SESSION_DETAIL_PLAN_LIMIT = 20;
@@ -185,7 +111,41 @@ export class AgentConversationService {
     private readonly utilsService: ConversationUtilsService,
     private readonly orchestratorService: ConversationOrchestratorService,
     private readonly synthesizerService: ConversationSynthesizerService,
-  ) { }
+    private readonly preflightService: ConversationPreflightService,
+    readonly capabilityService: ConversationCapabilityService,
+    readonly resultService: ConversationResultService,
+    readonly subscriptionService: ConversationSubscriptionService,
+  ) {
+    this.resultService.setDelegate({
+      createConversationAsset: (input) => this.createConversationAsset(input),
+      getAuthorizedExecution: (userId, executionId) => this.getAuthorizedExecution(userId, executionId),
+      mapExecutionStatus: (status) => this.mapExecutionStatus(status),
+      synthesizeResult: (sessionId, executionResult) => this.synthesizeResult(sessionId, executionResult),
+      buildReportCards: (report) => this.buildReportCards(report),
+    });
+    this.subscriptionService.setDelegate({
+      createConversationAsset: (input) => this.createConversationAsset(input),
+      compileExecutionParams: (mergedPlan, paramSnapshot) => this.compileExecutionParams(mergedPlan, paramSnapshot),
+      mergeDeliveryRecipients: (existing, incoming) => this.mergeDeliveryRecipients(existing as string[], incoming as string[]) as unknown[],
+      confirmPlan: (userId, sessionId, dto, options) =>
+        this.confirmPlan(userId, sessionId, dto as ConfirmConversationPlanDto, options),
+      preflightCheck: (input) =>
+        this.preflightService.runExecutionPreflight(
+          input as Parameters<ConversationPreflightService['runExecutionPreflight']>[0],
+        ),
+    });
+    this.capabilityService.setDelegate({
+      createConversationAsset: (input) => this.createConversationAsset(input),
+      batchUpdateEphemeralCapabilityPromotionTasks: async (userId, sessionId, data) =>
+        (await this.capabilityService.batchUpdateEphemeralCapabilityPromotionTasks(
+          userId,
+          sessionId,
+          data as Parameters<
+            ConversationCapabilityService['batchUpdateEphemeralCapabilityPromotionTasks']
+          >[2],
+        )) as Record<string, unknown>,
+    });
+  }
 
   async createSession(userId: string, dto: CreateConversationSessionDto) {
     return this.prisma.conversationSession.create({
@@ -418,7 +378,7 @@ export class AgentConversationService {
             const exportTaskId =
               typeof exportResult?.exportTaskId === 'string' ? exportResult.exportTaskId : '';
             if (exportTaskId) {
-              await this.deliver(userId, sessionId, {
+              await this.subscriptionService.deliver(userId, sessionId, {
                 exportTaskId,
                 channel: 'EMAIL',
                 to: actionIntent.emailTo,
@@ -737,7 +697,7 @@ export class AgentConversationService {
       this.utilsService.isSlotMissing(slotsWithDefaults[key]),
     );
     const hasMissingSlots = missingSlots.length > 0;
-    const routingPolicy = await this.resolveCapabilityRoutingPolicy(session.ownerUserId);
+    const routingPolicy = await this.capabilityService.resolveCapabilityRoutingPolicy(session.ownerUserId);
 
     const state: SessionState = hasMissingSlots ? 'SLOT_FILLING' : 'PLAN_PREVIEW';
     const planId = `plan_${randomUUID()}`;
@@ -792,7 +752,7 @@ export class AgentConversationService {
         sourceTurnId: userTurn.id,
         sourcePlanVersion: nextPlanVersion,
       });
-      await this.logCapabilityRoutingDecisionAsset(sessionId, {
+      await this.capabilityService.logCapabilityRoutingDecisionAsset(sessionId, {
         routeType: 'WORKFLOW_REUSE',
         routePolicy: ['USER_PRIVATE', 'TEAM_OR_PUBLIC'],
         selectedSource: proposedPlan.workflowReuseSource ?? 'NONE',
@@ -1018,8 +978,24 @@ export class AgentConversationService {
 
     const compiledParamSnapshot = this.compileExecutionParams(mergedPlan, paramSnapshot);
 
+    const preflight = await this.preflightService.runExecutionPreflight({
+      userId,
+      workflowDefinitionId,
+      planSnapshot: mergedPlan,
+      paramSnapshot: compiledParamSnapshot,
+    });
+
+    if (!preflight.passed) {
+      throw new BadRequestException({
+        code: 'CONV_PREFLIGHT_FAILED',
+        message: preflight.message,
+        preflight,
+      });
+    }
+
     const execution = await this.workflowExecutionService.trigger(userId, {
       workflowDefinitionId,
+      workflowVersionId: preflight.workflowVersionId ?? undefined,
       triggerType: 'MANUAL',
       paramSnapshot: compiledParamSnapshot,
       idempotencyKey: `conversation-${sessionId}-plan-${dto.planVersion}`,
@@ -1059,7 +1035,9 @@ export class AgentConversationService {
         executionId: execution.id,
         planVersion: dto.planVersion,
         workflowDefinitionId,
+        workflowVersionId: preflight.workflowVersionId,
         paramSnapshot: compiledParamSnapshot,
+        preflight,
       },
       sourceExecutionId: execution.id,
       sourcePlanVersion: dto.planVersion,
@@ -1074,6 +1052,7 @@ export class AgentConversationService {
           structuredPayload: {
             executionId: execution.id,
             planVersion: dto.planVersion,
+            preflight,
           } as Prisma.InputJsonValue,
         },
       });
@@ -1084,297 +1063,7 @@ export class AgentConversationService {
       executionId: execution.id,
       status: 'EXECUTING',
       traceId: session.traceId ?? `trace_${sessionId}`,
-    };
-  }
-
-  async getResult(userId: string, sessionId: string) {
-    const session = await this.prisma.conversationSession.findFirst({
-      where: { id: sessionId, ownerUserId: userId },
-    });
-    if (!session) {
-      return null;
-    }
-
-    const executionId = session.latestExecutionId;
-    if (!executionId) {
-      return {
-        status: session.state,
-        result: null,
-        artifacts: [],
-      };
-    }
-
-    const execution = await this.prisma.workflowExecution.findUnique({
-      where: { id: executionId },
-      include: {
-        workflowVersion: {
-          include: {
-            workflowDefinition: {
-              select: { ownerUserId: true },
-            },
-          },
-        },
-      },
-    });
-
-    if (!execution) {
-      return {
-        status: 'FAILED',
-        result: null,
-        artifacts: [],
-        error: '执行实例不存在',
-      };
-    }
-
-    const definitionOwner = execution.workflowVersion.workflowDefinition.ownerUserId;
-    if (execution.triggerUserId !== userId && definitionOwner !== userId) {
-      return null;
-    }
-
-    const exportTasks = await this.prisma.exportTask.findMany({
-      where: { workflowExecutionId: execution.id },
-      orderBy: { createdAt: 'desc' },
-      take: 10,
-    });
-
-    const outputRecord = this.toRecord(execution.outputSnapshot);
-    const evidenceItems = this.buildResultEvidenceItems(outputRecord, execution.id);
-    const traceability = this.buildResultTraceability(execution.id, outputRecord, evidenceItems);
-    const result = this.normalizeResult(outputRecord, evidenceItems, traceability);
-    const status = this.mapExecutionStatus(execution.status);
-
-    if (status === 'DONE') {
-      await this.createConversationAsset({
-        sessionId,
-        assetType: 'RESULT_SUMMARY',
-        title: `分析结论 ${execution.id.slice(0, 8)}`,
-        payload: {
-          executionId: execution.id,
-          result,
-          status,
-        },
-        sourceExecutionId: execution.id,
-      });
-
-      // ── C1: 自动合成报告卡片并缓存 ──
-      try {
-        const synthesized = await this.synthesizerService.synthesizeResult(sessionId, outputRecord);
-        if (synthesized) {
-          const reportCards = this.synthesizerService.buildReportCards(synthesized);
-          if (reportCards.length > 0) {
-            await this.createConversationAsset({
-              sessionId,
-              assetType: 'NOTE',
-              title: '报告卡片',
-              payload: { cards: reportCards } as unknown as Record<string, unknown>,
-              tags: { type: 'REPORT_CARDS', cached: true },
-            });
-          }
-        }
-      } catch {
-        // 合成失败不阻塞主流程，前端仍可按需请求
-      }
-
-      // ── C2: 成功后创建助手消息 + replyOptions 引导下一步 ──
-      try {
-        const conclusionSnippet =
-          typeof (result as Record<string, unknown>)?.conclusion === 'string'
-            ? ((result as Record<string, unknown>).conclusion as string).slice(0, 80) + '...'
-            : '分析已完成';
-        await this.prisma.conversationTurn.create({
-          data: {
-            sessionId,
-            role: 'ASSISTANT',
-            content: `✅ ${conclusionSnippet}\n\n你可以继续操作：`,
-            structuredPayload: {
-              autoGenerated: true,
-              replyOptions: [
-                { id: 'export', label: '导出 PDF 报告', mode: 'SEND', value: '导出PDF报告' },
-                { id: 'email', label: '发到我的邮箱', mode: 'SEND', value: '发到我的邮箱' },
-                {
-                  id: 'save',
-                  label: '保存为常用能力',
-                  mode: 'SEND',
-                  value: '保存这个智能体到系统中',
-                },
-                {
-                  id: 'schedule',
-                  label: '设为定时执行',
-                  mode: 'SEND',
-                  value: '每周一早上8点自动执行这个分析',
-                },
-                {
-                  id: 'backtest',
-                  label: '回测验证结论',
-                  mode: 'SEND',
-                  value: '用历史数据回测验证这个分析结论',
-                },
-              ],
-            } as unknown as Prisma.InputJsonValue,
-          },
-        });
-      } catch {
-        // 助手消息创建失败不阻塞主流程
-      }
-
-      // ── 跨会话偏好保存：提取用户常用参数 ──
-      try {
-        const currentSlots = this.toRecord(session.currentSlots);
-        const prefPayload: Record<string, unknown> = {};
-        const prefKeys = ['region', 'topic', 'lookbackDays', 'email'] as const;
-        for (const key of prefKeys) {
-          if (currentSlots[key] != null) {
-            prefPayload[key] = currentSlots[key];
-          }
-        }
-        if (Object.keys(prefPayload).length > 0) {
-          // 查找是否已有偏好资产，有则更新，无则创建
-          const existingPref = await this.prisma.conversationAsset.findFirst({
-            where: {
-              session: { ownerUserId: userId },
-              assetType: 'NOTE',
-              tags: { path: ['type'], equals: 'USER_PREFERENCE' },
-            },
-            select: { id: true },
-          });
-          if (existingPref) {
-            await this.prisma.conversationAsset.update({
-              where: { id: existingPref.id },
-              data: { payload: prefPayload as Prisma.InputJsonValue, updatedAt: new Date() },
-            });
-          } else {
-            await this.createConversationAsset({
-              sessionId,
-              assetType: 'NOTE',
-              title: '用户偏好',
-              payload: prefPayload,
-              tags: { type: 'USER_PREFERENCE' },
-            });
-          }
-        }
-      } catch {
-        // 偏好保存失败不阻塞主流程
-      }
-    }
-
-    const nextState: SessionState =
-      status === 'DONE' ? 'DONE' : status === 'FAILED' ? 'FAILED' : 'RESULT_DELIVERY';
-
-    if (session.state !== nextState) {
-      await this.prisma.conversationSession.update({
-        where: { id: sessionId },
-        data: {
-          state: nextState,
-          endedAt: nextState === 'DONE' || nextState === 'FAILED' ? new Date() : session.endedAt,
-        },
-      });
-    }
-
-    return {
-      status,
-      result,
-      artifacts: exportTasks.map((task) => ({
-        type: task.format,
-        exportTaskId: task.id,
-        status: task.status,
-        downloadUrl: task.status === 'COMPLETED' ? `/report-exports/${task.id}/download` : null,
-      })),
-      executionId: execution.id,
-      error: execution.errorMessage,
-    };
-  }
-
-  async getResultDiff(userId: string, sessionId: string) {
-    const session = await this.prisma.conversationSession.findFirst({
-      where: { id: sessionId, ownerUserId: userId },
-      select: { id: true },
-    });
-    if (!session) {
-      return null;
-    }
-
-    const assets = await this.prisma.conversationAsset.findMany({
-      where: {
-        sessionId,
-        assetType: 'RESULT_SUMMARY',
-      },
-      orderBy: [{ createdAt: 'desc' }],
-      take: 2,
-      select: {
-        id: true,
-        sourceExecutionId: true,
-        payload: true,
-        createdAt: true,
-      },
-    });
-
-    const current = assets[0] ? this.buildResultDiffSnapshot(assets[0]) : null;
-    const baseline = assets[1] ? this.buildResultDiffSnapshot(assets[1]) : null;
-
-    if (!current || !baseline) {
-      return {
-        comparable: false,
-        reason: 'INSUFFICIENT_HISTORY',
-        current,
-        baseline,
-        diff: null,
-      };
-    }
-
-    return {
-      comparable: true,
-      reason: null,
-      current,
-      baseline,
-      diff: this.buildResultDiff(current, baseline),
-    };
-  }
-
-  async getResultDiffTimeline(
-    userId: string,
-    sessionId: string,
-    query: ConversationResultDiffTimelineQueryDto,
-  ) {
-    const session = await this.prisma.conversationSession.findFirst({
-      where: { id: sessionId, ownerUserId: userId },
-      select: { id: true },
-    });
-    if (!session) {
-      return null;
-    }
-
-    const limit = Math.min(30, Math.max(2, query.limit ?? 10));
-    const assets = await this.prisma.conversationAsset.findMany({
-      where: {
-        sessionId,
-        assetType: 'RESULT_SUMMARY',
-      },
-      orderBy: [{ createdAt: 'desc' }],
-      take: limit,
-      select: {
-        id: true,
-        sourceExecutionId: true,
-        payload: true,
-        createdAt: true,
-      },
-    });
-
-    const snapshots = assets.map((asset) => this.buildResultDiffSnapshot(asset));
-    const items: ConversationResultDiffTimelineItem[] = snapshots.map((current, index) => {
-      const baseline = snapshots[index + 1] ?? null;
-      return {
-        comparable: Boolean(baseline),
-        current,
-        baseline,
-        diff: baseline ? this.buildResultDiff(current, baseline) : null,
-      };
-    });
-
-    return {
-      limit,
-      totalSnapshots: snapshots.length,
-      comparableCount: items.filter((item) => item.comparable).length,
-      items,
+      preflight,
     };
   }
 
@@ -1436,166 +1125,6 @@ export class AgentConversationService {
     };
   }
 
-  async deliverEmail(userId: string, sessionId: string, dto: DeliverConversationEmailDto) {
-    return this.deliver(userId, sessionId, {
-      exportTaskId: dto.exportTaskId,
-      channel: 'EMAIL',
-      to: dto.to,
-      subject: dto.subject,
-      content: dto.content,
-      templateCode: 'DEFAULT',
-      sendRawFile: true,
-    });
-  }
-
-  async deliver(userId: string, sessionId: string, dto: DeliverConversationDto) {
-    const session = await this.prisma.conversationSession.findFirst({
-      where: { id: sessionId, ownerUserId: userId },
-    });
-    if (!session) {
-      return null;
-    }
-
-    const exportTask = await this.prisma.exportTask.findFirst({
-      where: { id: dto.exportTaskId, createdByUserId: userId },
-    });
-    if (!exportTask) {
-      throw new BadRequestException({
-        code: 'CONV_EXPORT_TASK_NOT_FOUND',
-        message: '导出任务不存在或无权限访问',
-      });
-    }
-    if (exportTask.status !== 'COMPLETED') {
-      throw new BadRequestException({
-        code: 'CONV_EXPORT_TASK_NOT_READY',
-        message: '导出任务尚未完成，暂不可发送邮件',
-      });
-    }
-
-    const channel = dto.channel;
-    const profileDefaults = await this.resolveDeliveryProfileDefaults(userId, channel);
-    const to =
-      channel === 'EMAIL' ? this.mergeDeliveryRecipients(dto.to, profileDefaults.to) : undefined;
-    const target =
-      channel === 'EMAIL'
-        ? undefined
-        : dto.target?.trim() || profileDefaults.target?.trim() || undefined;
-    const normalizedTemplate = this.normalizeDeliveryTemplateCode(
-      dto.templateCode ?? profileDefaults.templateCode,
-    );
-    const sendRawFile = dto.sendRawFile ?? profileDefaults.sendRawFile ?? true;
-
-    if (channel === 'EMAIL' && (!to || to.length === 0)) {
-      throw new BadRequestException({
-        code: 'CONV_DELIVERY_TARGET_REQUIRED',
-        message: '邮件投递至少需要一个收件人',
-      });
-    }
-    if (channel !== 'EMAIL' && !target) {
-      throw new BadRequestException({
-        code: 'CONV_DELIVERY_TARGET_REQUIRED',
-        message: '请提供投递目标（群ID或接收端标识）',
-      });
-    }
-
-    const deliveryTaskId = `delivery_${randomUUID()}`;
-    const webhookUrl = this.resolveDeliveryWebhook(channel);
-    const subject = this.resolveDeliverySubject(channel, normalizedTemplate, dto.subject);
-    const content = this.resolveDeliveryContent(channel, normalizedTemplate, dto.content);
-
-    let status: 'QUEUED' | 'SENT' | 'FAILED' = 'QUEUED';
-    let errorMessage: string | null = null;
-
-    if (!webhookUrl) {
-      status = 'FAILED';
-      errorMessage = `未配置 ${channel} 投递 webhook，无法实际投递`;
-    } else {
-      try {
-        const fileName = `report-export-${exportTask.id}.${String(exportTask.format).toLowerCase()}`;
-        const downloadUrl = `/report-exports/${exportTask.id}/download`;
-        const response = await fetch(webhookUrl, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            deliveryTaskId,
-            channel,
-            exportTaskId: exportTask.id,
-            to,
-            target,
-            subject,
-            content,
-            templateCode: normalizedTemplate,
-            metadata: dto.metadata,
-            attachment: {
-              fileName,
-              downloadUrl,
-              mode: sendRawFile ? 'RAW_FILE' : 'EXPORT_FILE',
-            },
-          }),
-        });
-
-        if (response.ok) {
-          status = 'SENT';
-        } else {
-          status = 'FAILED';
-          errorMessage = `${channel} 投递网关返回 ${response.status}`;
-        }
-      } catch (error) {
-        status = 'FAILED';
-        errorMessage = error instanceof Error ? error.message : String(error);
-      }
-    }
-
-    await this.prisma.conversationTurn.create({
-      data: {
-        sessionId,
-        role: 'ASSISTANT',
-        content:
-          status === 'SENT'
-            ? `${this.channelDisplayName(channel)} 投递已发送。`
-            : `${this.channelDisplayName(channel)} 投递失败：${errorMessage ?? '未知错误'}。`,
-        structuredPayload: {
-          deliveryTaskId,
-          channel,
-          exportTaskId: exportTask.id,
-          status,
-          to,
-          target,
-          subject,
-          templateCode: normalizedTemplate,
-          errorMessage,
-        } as Prisma.InputJsonValue,
-      },
-    });
-
-    await this.createConversationAsset({
-      sessionId,
-      assetType: 'NOTE',
-      title: `${this.channelDisplayName(channel)}投递${status === 'SENT' ? '成功' : '失败'}`,
-      payload: {
-        deliveryTaskId,
-        channel,
-        exportTaskId: exportTask.id,
-        status,
-        to,
-        target,
-        subject,
-        templateCode: normalizedTemplate,
-        errorMessage,
-      },
-      sourceExecutionId: exportTask.workflowExecutionId,
-    });
-
-    return {
-      deliveryTaskId,
-      channel,
-      status,
-      errorMessage,
-    };
-  }
-
   async createBacktest(userId: string, sessionId: string, dto: CreateConversationBacktestDto) {
     const session = await this.prisma.conversationSession.findFirst({
       where: { id: sessionId, ownerUserId: userId },
@@ -1639,7 +1168,7 @@ export class AgentConversationService {
 
     try {
       const outputRecord = this.toRecord(execution.outputSnapshot);
-      const result = this.normalizeResult(outputRecord);
+      const result = this.resultService.normalizeResult(outputRecord);
       const summary = this.computeBacktestSummary(
         result.confidence,
         dto.lookbackDays,
@@ -1737,6 +1266,76 @@ export class AgentConversationService {
     };
   }
 
+  async listBacktests(userId: string, sessionId: string) {
+    const session = await this.prisma.conversationSession.findFirst({
+      where: { id: sessionId, ownerUserId: userId },
+    });
+    if (!session) {
+      return [];
+    }
+
+    const jobs = await this.prisma.conversationBacktestJob.findMany({
+      where: { sessionId },
+      orderBy: [{ createdAt: 'desc' }],
+      take: 50,
+    });
+
+    return jobs.map((job) => ({
+      backtestJobId: job.id,
+      status: job.status,
+      summary: this.toRecord(job.resultSummary),
+      assumptions: this.toRecord(job.inputConfig),
+      createdAt: job.createdAt,
+      completedAt: job.completedAt,
+    }));
+  }
+
+  async compareBacktests(userId: string, sessionId: string, jobA: string, jobB: string) {
+    const session = await this.prisma.conversationSession.findFirst({
+      where: { id: sessionId, ownerUserId: userId },
+    });
+    if (!session) {
+      return null;
+    }
+
+    const [a, b] = await Promise.all([
+      this.prisma.conversationBacktestJob.findFirst({
+        where: { id: jobA, sessionId },
+      }),
+      this.prisma.conversationBacktestJob.findFirst({
+        where: { id: jobB, sessionId },
+      }),
+    ]);
+
+    if (!a || !b) {
+      throw new BadRequestException({
+        code: 'CONV_BACKTEST_COMPARE_INVALID',
+        message: '其中一个或两个回测任务不存在',
+      });
+    }
+
+    const summaryA = this.toRecord(a.resultSummary);
+    const summaryB = this.toRecord(b.resultSummary);
+
+    const toNum = (v: unknown): number => (typeof v === 'number' ? v : 0);
+    const delta = (key: string) => ({
+      a: toNum(summaryA[key]),
+      b: toNum(summaryB[key]),
+      diff: Number((toNum(summaryB[key]) - toNum(summaryA[key])).toFixed(4)),
+    });
+
+    return {
+      jobA: { id: a.id, createdAt: a.createdAt, assumptions: this.toRecord(a.inputConfig) },
+      jobB: { id: b.id, createdAt: b.createdAt, assumptions: this.toRecord(b.inputConfig) },
+      comparison: {
+        returnPct: delta('returnPct'),
+        maxDrawdownPct: delta('maxDrawdownPct'),
+        winRatePct: delta('winRatePct'),
+        score: delta('score'),
+      },
+    };
+  }
+
   async getConflicts(userId: string, sessionId: string) {
     const session = await this.prisma.conversationSession.findFirst({
       where: { id: sessionId, ownerUserId: userId },
@@ -1754,7 +1353,7 @@ export class AgentConversationService {
     if (!conflicts.length && session.latestExecutionId && this.isUuid(session.latestExecutionId)) {
       const execution = await this.getAuthorizedExecution(userId, session.latestExecutionId);
       if (execution) {
-        const generated = this.deriveConflictsFromExecutionOutput(execution.outputSnapshot);
+        const generated = this.resultService.deriveConflictsFromExecutionOutput(execution.outputSnapshot);
         if (generated.length) {
           await this.prisma.conversationConflictRecord.createMany({
             data: generated.map((item) => ({
@@ -1779,7 +1378,7 @@ export class AgentConversationService {
       }
     }
 
-    const consistencyScore = this.computeConflictConsistencyScore(conflicts);
+    const consistencyScore = this.resultService.computeConflictConsistencyScore(conflicts);
 
     if (conflicts.length) {
       await this.createConversationAsset({
@@ -1824,11 +1423,11 @@ export class AgentConversationService {
     }
 
     const derivedRisk = this.resolveSkillRisk(dto);
-    const routingPolicy = await this.resolveCapabilityRoutingPolicy(userId);
-    const ephemeralPolicy = await this.resolveEphemeralCapabilityPolicy(userId);
-    const reuseCandidate = await this.findReusableSkillDraft(userId, dto, ephemeralPolicy);
+    const routingPolicy = await this.capabilityService.resolveCapabilityRoutingPolicy(userId);
+    const ephemeralPolicy = await this.capabilityService.resolveEphemeralCapabilityPolicy(userId);
+    const reuseCandidate = await this.capabilityService.findReusableSkillDraft(userId, dto, ephemeralPolicy);
     if (reuseCandidate) {
-      const runtimeGrantId = await this.ensureRuntimeGrantForDraft(
+      const runtimeGrantId = await this.capabilityService.ensureRuntimeGrantForDraft(
         reuseCandidate.id,
         sessionId,
         userId,
@@ -1871,7 +1470,7 @@ export class AgentConversationService {
         sourceTurnId: null,
       });
 
-      await this.logCapabilityRoutingDecisionAsset(sessionId, {
+      await this.capabilityService.logCapabilityRoutingDecisionAsset(sessionId, {
         routeType: 'SKILL_DRAFT_REUSE',
         routePolicy: ['USER_PRIVATE'],
         selectedSource: reuseCandidate.reuseReason,
@@ -1898,14 +1497,14 @@ export class AgentConversationService {
       };
     }
 
-    const reusablePublishedSkill = await this.findReusablePublishedSkill(
+    const reusablePublishedSkill = await this.capabilityService.findReusablePublishedSkill(
       userId,
       dto,
       routingPolicy,
       ephemeralPolicy,
     );
     if (reusablePublishedSkill) {
-      const bridgeDraft = await this.upsertPublishedSkillBridgeDraft({
+      const bridgeDraft = await this.capabilityService.upsertPublishedSkillBridgeDraft({
         sessionId,
         ownerUserId: userId,
         dto,
@@ -1949,7 +1548,7 @@ export class AgentConversationService {
         sourceTurnId: null,
       });
 
-      await this.logCapabilityRoutingDecisionAsset(sessionId, {
+      await this.capabilityService.logCapabilityRoutingDecisionAsset(sessionId, {
         routeType: 'SKILL_DRAFT_REUSE',
         routePolicy: ['USER_PRIVATE', 'TEAM_OR_PUBLIC'],
         selectedSource: 'PUBLISHED_SKILL',
@@ -2073,7 +1672,7 @@ export class AgentConversationService {
       sourceTurnId: null,
     });
 
-    await this.logCapabilityRoutingDecisionAsset(sessionId, {
+    await this.capabilityService.logCapabilityRoutingDecisionAsset(sessionId, {
       routeType: 'SKILL_DRAFT_CREATE',
       routePolicy: ['USER_PRIVATE'],
       selectedSource: 'NEW_DRAFT',
@@ -2115,1295 +1714,6 @@ export class AgentConversationService {
     });
   }
 
-  async listCapabilityRoutingLogs(
-    userId: string,
-    sessionId: string,
-    query?: { routeType?: string; limit?: number; window?: '1h' | '24h' | '7d' },
-  ) {
-    const session = await this.prisma.conversationSession.findFirst({
-      where: { id: sessionId, ownerUserId: userId },
-      select: { id: true },
-    });
-    if (!session) {
-      return null;
-    }
-
-    const limit = Math.max(1, Math.min(200, query?.limit ?? 50));
-    const routeTypeFilter = this.pickString(query?.routeType)?.toUpperCase();
-    const createdAfter = this.resolveRoutingWindowStart(query?.window);
-    const notes = await this.prisma.conversationAsset.findMany({
-      where: {
-        sessionId,
-        assetType: 'NOTE',
-        title: {
-          startsWith: '能力路由日志',
-        },
-        ...(createdAfter
-          ? {
-            createdAt: {
-              gte: createdAfter,
-            },
-          }
-          : {}),
-      },
-      orderBy: [{ createdAt: 'desc' }],
-      take: 300,
-    });
-
-    const filtered = notes.filter((item) => {
-      if (!routeTypeFilter) {
-        return true;
-      }
-      const payload = this.toRecord(item.payload);
-      const routeType = this.pickString(payload.routeType)?.toUpperCase();
-      return routeType === routeTypeFilter;
-    });
-
-    return filtered.slice(0, limit).map((item) => {
-      const payload = this.toRecord(item.payload);
-      return {
-        id: item.id,
-        title: item.title,
-        routeType: this.pickString(payload.routeType) ?? 'UNKNOWN',
-        selectedSource: this.pickString(payload.selectedSource),
-        selectedScore: this.normalizeNumber(payload.selectedScore),
-        selectedWorkflowDefinitionId: this.pickString(payload.selectedWorkflowDefinitionId),
-        selectedDraftId: this.pickString(payload.selectedDraftId),
-        selectedSkillCode: this.pickString(payload.selectedSkillCode),
-        routePolicy: Array.isArray(payload.routePolicy)
-          ? payload.routePolicy.filter((value): value is string => typeof value === 'string')
-          : [],
-        reason: this.pickString(payload.reason),
-        routePolicyDetails: this.toRecord(payload.routePolicyDetails),
-        createdAt: item.createdAt,
-      };
-    });
-  }
-
-  async getCapabilityRoutingSummary(
-    userId: string,
-    sessionId: string,
-    query?: { limit?: number; window?: '1h' | '24h' | '7d' },
-  ) {
-    const session = await this.prisma.conversationSession.findFirst({
-      where: { id: sessionId, ownerUserId: userId },
-      select: { id: true },
-    });
-    if (!session) {
-      return null;
-    }
-
-    const effectiveCapabilityRoutingPolicy = await this.resolveCapabilityRoutingPolicy(userId);
-    const effectiveEphemeralCapabilityPolicy = await this.resolveEphemeralCapabilityPolicy(userId);
-    const limit = Math.max(20, Math.min(500, query?.limit ?? 200));
-    const createdAfter = this.resolveRoutingWindowStart(query?.window);
-
-    const notes = await this.prisma.conversationAsset.findMany({
-      where: {
-        sessionId,
-        assetType: 'NOTE',
-        title: {
-          startsWith: '能力路由日志',
-        },
-        ...(createdAfter
-          ? {
-            createdAt: {
-              gte: createdAfter,
-            },
-          }
-          : {}),
-      },
-      orderBy: [{ createdAt: 'desc' }],
-      take: limit,
-    });
-
-    const routeTypeStats = new Map<string, number>();
-    const selectedSourceStats = new Map<string, number>();
-    const trendBuckets = new Map<string, { total: number; byRouteType: Record<string, number> }>();
-
-    for (const item of notes) {
-      const payload = this.toRecord(item.payload);
-      const routeType = this.pickString(payload.routeType) ?? 'UNKNOWN';
-      const selectedSource = this.pickString(payload.selectedSource) ?? 'UNKNOWN';
-
-      routeTypeStats.set(routeType, (routeTypeStats.get(routeType) ?? 0) + 1);
-      selectedSourceStats.set(selectedSource, (selectedSourceStats.get(selectedSource) ?? 0) + 1);
-
-      const bucketKey = item.createdAt.toISOString().slice(0, 13);
-      const bucket = trendBuckets.get(bucketKey) ?? { total: 0, byRouteType: {} };
-      bucket.total += 1;
-      bucket.byRouteType[routeType] = (bucket.byRouteType[routeType] ?? 0) + 1;
-      trendBuckets.set(bucketKey, bucket);
-    }
-
-    const toSortedArray = (statMap: Map<string, number>) =>
-      Array.from(statMap.entries())
-        .map(([key, count]) => ({ key, count }))
-        .sort((a, b) => b.count - a.count);
-
-    const trend = Array.from(trendBuckets.entries())
-      .map(([bucket, value]) => ({
-        bucket,
-        total: value.total,
-        byRouteType: value.byRouteType,
-      }))
-      .sort((a, b) => (a.bucket < b.bucket ? -1 : 1));
-
-    return {
-      sampleWindow: {
-        window: query?.window ?? '24h',
-        totalLogs: notes.length,
-        analyzedLimit: limit,
-      },
-      effectivePolicies: {
-        capabilityRoutingPolicy: effectiveCapabilityRoutingPolicy,
-        ephemeralCapabilityPolicy: effectiveEphemeralCapabilityPolicy,
-      },
-      stats: {
-        routeType: toSortedArray(routeTypeStats),
-        selectedSource: toSortedArray(selectedSourceStats),
-      },
-      trend,
-    };
-  }
-
-  async getEphemeralCapabilitySummary(
-    userId: string,
-    sessionId: string,
-    query?: { window?: '1h' | '24h' | '7d' },
-  ) {
-    const session = await this.prisma.conversationSession.findFirst({
-      where: { id: sessionId, ownerUserId: userId },
-      select: { id: true },
-    });
-    if (!session) {
-      return null;
-    }
-
-    const effectivePolicy = await this.resolveEphemeralCapabilityPolicy(userId);
-    const createdAfter = this.resolveRoutingWindowStart(query?.window);
-    const now = new Date();
-    const staleDraftBefore = new Date(
-      now.getTime() - effectivePolicy.runtimeGrantTtlHours * 3 * 60 * 60 * 1000,
-    );
-
-    const drafts = await this.prisma.agentSkillDraft.findMany({
-      where: {
-        sessionId,
-        ...(createdAfter
-          ? {
-            createdAt: {
-              gte: createdAfter,
-            },
-          }
-          : {}),
-      },
-      select: {
-        id: true,
-        status: true,
-        suggestedSkillCode: true,
-        updatedAt: true,
-        provisionalEnabled: true,
-      },
-      orderBy: [{ createdAt: 'desc' }],
-      take: 500,
-    });
-
-    const grants = await this.prisma.agentSkillRuntimeGrant.findMany({
-      where: {
-        sessionId,
-        ...(createdAfter
-          ? {
-            createdAt: {
-              gte: createdAfter,
-            },
-          }
-          : {}),
-      },
-      select: {
-        id: true,
-        status: true,
-        expiresAt: true,
-        useCount: true,
-        maxUseCount: true,
-      },
-      orderBy: [{ createdAt: 'desc' }],
-      take: 500,
-    });
-
-    const draftStatusStats = new Map<string, number>();
-    const grantStatusStats = new Map<string, number>();
-    const skillCodeStats = new Map<string, number>();
-
-    for (const draft of drafts) {
-      draftStatusStats.set(draft.status, (draftStatusStats.get(draft.status) ?? 0) + 1);
-      skillCodeStats.set(
-        draft.suggestedSkillCode,
-        (skillCodeStats.get(draft.suggestedSkillCode) ?? 0) + 1,
-      );
-    }
-    for (const grant of grants) {
-      grantStatusStats.set(grant.status, (grantStatusStats.get(grant.status) ?? 0) + 1);
-    }
-
-    const expiringIn24h = grants.filter(
-      (grant) =>
-        grant.status === 'ACTIVE' &&
-        grant.expiresAt > now &&
-        grant.expiresAt <= new Date(now.getTime() + 24 * 60 * 60 * 1000),
-    ).length;
-
-    const staleDrafts = drafts.filter(
-      (draft) =>
-        ['DRAFT', 'SANDBOX_TESTING', 'READY_FOR_REVIEW'].includes(draft.status) &&
-        draft.updatedAt < staleDraftBefore &&
-        draft.provisionalEnabled,
-    ).length;
-
-    const toSortedArray = (statMap: Map<string, number>) =>
-      Array.from(statMap.entries())
-        .map(([key, count]) => ({ key, count }))
-        .sort((a, b) => b.count - a.count);
-
-    return {
-      window: query?.window ?? '24h',
-      totals: {
-        drafts: drafts.length,
-        runtimeGrants: grants.length,
-        expiringRuntimeGrantsIn24h: expiringIn24h,
-        staleDrafts,
-      },
-      policy: effectivePolicy,
-      stats: {
-        draftStatus: toSortedArray(draftStatusStats),
-        grantStatus: toSortedArray(grantStatusStats),
-        topSkillCodes: toSortedArray(skillCodeStats).slice(0, 10),
-      },
-    };
-  }
-
-  async runEphemeralCapabilityHousekeeping(userId: string, sessionId: string) {
-    const session = await this.prisma.conversationSession.findFirst({
-      where: { id: sessionId, ownerUserId: userId },
-      select: { id: true },
-    });
-    if (!session) {
-      return null;
-    }
-
-    const policy = await this.resolveEphemeralCapabilityPolicy(userId);
-    const now = new Date();
-    const staleDraftBefore = new Date(
-      now.getTime() - policy.runtimeGrantTtlHours * 3 * 60 * 60 * 1000,
-    );
-
-    const expiredGrants = await this.prisma.agentSkillRuntimeGrant.updateMany({
-      where: {
-        sessionId,
-        status: 'ACTIVE',
-        expiresAt: { lt: now },
-      },
-      data: {
-        status: 'EXPIRED',
-      },
-    });
-
-    const disabledDrafts = await this.prisma.agentSkillDraft.updateMany({
-      where: {
-        sessionId,
-        status: {
-          in: ['DRAFT', 'SANDBOX_TESTING', 'READY_FOR_REVIEW'],
-        },
-        provisionalEnabled: true,
-        updatedAt: {
-          lt: staleDraftBefore,
-        },
-      },
-      data: {
-        provisionalEnabled: false,
-      },
-    });
-
-    await this.createConversationAsset({
-      sessionId,
-      assetType: 'NOTE',
-      title: '临时能力治理清理',
-      payload: {
-        expiredGrantCount: expiredGrants.count,
-        disabledDraftCount: disabledDrafts.count,
-        policy,
-        checkedAt: now.toISOString(),
-      },
-      tags: {
-        housekeeping: true,
-      },
-    });
-
-    return {
-      checkedAt: now.toISOString(),
-      expiredGrantCount: expiredGrants.count,
-      disabledDraftCount: disabledDrafts.count,
-      policy,
-    };
-  }
-
-  async getEphemeralCapabilityEvolutionPlan(
-    userId: string,
-    sessionId: string,
-    query?: { window?: '1h' | '24h' | '7d' },
-  ) {
-    const session = await this.prisma.conversationSession.findFirst({
-      where: { id: sessionId, ownerUserId: userId },
-      select: { id: true },
-    });
-    if (!session) {
-      return null;
-    }
-
-    const policy = await this.resolveEphemeralCapabilityPolicy(userId);
-    const createdAfter = this.resolveRoutingWindowStart(query?.window);
-    const staleDraftBefore = new Date(
-      Date.now() - policy.runtimeGrantTtlHours * 3 * 60 * 60 * 1000,
-    );
-
-    const routingLogs = await this.listCapabilityRoutingLogs(userId, sessionId, {
-      routeType: 'SKILL_DRAFT_REUSE',
-      limit: 300,
-      window: query?.window,
-    });
-
-    const draftHitMap = new Map<string, number>();
-    const skillCodeHitMap = new Map<string, number>();
-    for (const log of routingLogs ?? []) {
-      const draftId = this.pickString((log as unknown as Record<string, unknown>).selectedDraftId);
-      const skillCode = this.pickString(
-        (log as unknown as Record<string, unknown>).selectedSkillCode,
-      );
-      if (draftId) {
-        draftHitMap.set(draftId, (draftHitMap.get(draftId) ?? 0) + 1);
-      }
-      if (skillCode) {
-        skillCodeHitMap.set(skillCode, (skillCodeHitMap.get(skillCode) ?? 0) + 1);
-      }
-    }
-
-    const drafts = await this.prisma.agentSkillDraft.findMany({
-      where: {
-        sessionId,
-        ...(createdAfter
-          ? {
-            createdAt: {
-              gte: createdAfter,
-            },
-          }
-          : {}),
-      },
-      select: {
-        id: true,
-        status: true,
-        suggestedSkillCode: true,
-        updatedAt: true,
-        provisionalEnabled: true,
-        publishedSkillId: true,
-      },
-      orderBy: [{ updatedAt: 'desc' }],
-      take: 500,
-    });
-
-    const promoteDraftCandidates = drafts
-      .map((draft) => ({
-        draftId: draft.id,
-        suggestedSkillCode: draft.suggestedSkillCode,
-        hitCount: draftHitMap.get(draft.id) ?? 0,
-        reason: draft.publishedSkillId
-          ? '已映射到发布能力，可进入能力池优先级提升评估'
-          : '复用命中较高，建议进入发布评审',
-      }))
-      .filter((item) => item.hitCount >= 2)
-      .slice(0, 20);
-
-    const staleDraftCandidates = drafts
-      .filter(
-        (draft) =>
-          ['DRAFT', 'SANDBOX_TESTING', 'READY_FOR_REVIEW'].includes(draft.status) &&
-          draft.provisionalEnabled &&
-          draft.updatedAt < staleDraftBefore,
-      )
-      .map((draft) => ({
-        draftId: draft.id,
-        suggestedSkillCode: draft.suggestedSkillCode,
-        status: draft.status,
-        updatedAt: draft.updatedAt,
-      }))
-      .slice(0, 50);
-
-    const grants = await this.prisma.agentSkillRuntimeGrant.findMany({
-      where: {
-        sessionId,
-        status: 'ACTIVE',
-      },
-      select: {
-        id: true,
-        draftId: true,
-        expiresAt: true,
-      },
-      orderBy: [{ expiresAt: 'asc' }],
-      take: 300,
-    });
-
-    const expiredGrantCandidates = grants
-      .filter((grant) => grant.expiresAt < new Date())
-      .map((grant) => ({
-        grantId: grant.id,
-        draftId: grant.draftId,
-        expiresAt: grant.expiresAt,
-      }));
-
-    return {
-      window: query?.window ?? '24h',
-      policy,
-      recommendations: {
-        promoteDraftCandidates,
-        staleDraftCandidates,
-        expiredGrantCandidates,
-      },
-      metrics: {
-        totalRoutingLogs: (routingLogs ?? []).length,
-        uniqueDraftHits: draftHitMap.size,
-        uniqueSkillCodeHits: skillCodeHitMap.size,
-      },
-    };
-  }
-
-  async applyEphemeralCapabilityEvolutionPlan(
-    userId: string,
-    sessionId: string,
-    query?: { window?: '1h' | '24h' | '7d' },
-  ) {
-    const plan = await this.getEphemeralCapabilityEvolutionPlan(userId, sessionId, query);
-    if (!plan) {
-      return null;
-    }
-
-    const now = new Date();
-    const expiredGrantIds = plan.recommendations.expiredGrantCandidates.map((item) => item.grantId);
-    const staleDraftIds = plan.recommendations.staleDraftCandidates.map((item) => item.draftId);
-
-    const expiredGrantResult = expiredGrantIds.length
-      ? await this.prisma.agentSkillRuntimeGrant.updateMany({
-        where: {
-          id: { in: expiredGrantIds },
-          status: 'ACTIVE',
-        },
-        data: {
-          status: 'EXPIRED',
-        },
-      })
-      : { count: 0 };
-
-    const staleDraftResult = staleDraftIds.length
-      ? await this.prisma.agentSkillDraft.updateMany({
-        where: {
-          id: { in: staleDraftIds },
-          provisionalEnabled: true,
-        },
-        data: {
-          provisionalEnabled: false,
-        },
-      })
-      : { count: 0 };
-
-    const promotionTaskCount = await this.createPromotionTaskAssets(
-      sessionId,
-      plan.recommendations.promoteDraftCandidates,
-      plan.window,
-    );
-
-    await this.createConversationAsset({
-      sessionId,
-      assetType: 'NOTE',
-      title: '临时能力进化执行记录',
-      payload: {
-        checkedAt: now.toISOString(),
-        expiredGrantCount: expiredGrantResult.count,
-        disabledDraftCount: staleDraftResult.count,
-        promoteSuggestionCount: plan.recommendations.promoteDraftCandidates.length,
-        promotionTaskCount,
-        window: plan.window,
-      },
-      tags: {
-        housekeeping: true,
-        evolution: true,
-      },
-    });
-
-    return {
-      checkedAt: now.toISOString(),
-      window: plan.window,
-      expiredGrantCount: expiredGrantResult.count,
-      disabledDraftCount: staleDraftResult.count,
-      promoteSuggestionCount: plan.recommendations.promoteDraftCandidates.length,
-      promotionTaskCount,
-    };
-  }
-
-  async listEphemeralCapabilityPromotionTasks(
-    userId: string,
-    sessionId: string,
-    query?: { window?: '1h' | '24h' | '7d'; status?: string },
-  ) {
-    const session = await this.prisma.conversationSession.findFirst({
-      where: { id: sessionId, ownerUserId: userId },
-      select: { id: true },
-    });
-    if (!session) {
-      return null;
-    }
-
-    const createdAfter = this.resolveRoutingWindowStart(query?.window);
-    const statusFilter = this.normalizePromotionTaskStatus(query?.status);
-    const assets = await this.prisma.conversationAsset.findMany({
-      where: {
-        sessionId,
-        assetType: 'NOTE',
-        title: {
-          startsWith: '能力晋升任务',
-        },
-        ...(createdAfter
-          ? {
-            createdAt: {
-              gte: createdAfter,
-            },
-          }
-          : {}),
-      },
-      orderBy: [{ createdAt: 'desc' }],
-      take: 300,
-    });
-
-    const parsed = assets
-      .map((asset) => this.toPromotionTask(asset))
-      .filter((item): item is NonNullable<typeof item> => Boolean(item));
-
-    const draftIds = parsed
-      .map((item) => item.draftId)
-      .filter((value): value is string => Boolean(value));
-    const uniqueDraftIds = Array.from(new Set(draftIds));
-    const drafts = uniqueDraftIds.length
-      ? await this.prisma.agentSkillDraft.findMany({
-        where: {
-          id: {
-            in: uniqueDraftIds,
-          },
-        },
-        select: {
-          id: true,
-          status: true,
-          publishedSkillId: true,
-          updatedAt: true,
-        },
-      })
-      : [];
-    const draftMap = new Map(drafts.map((item) => [item.id, item]));
-
-    const enriched = parsed.map((item) => {
-      const draft = item.draftId ? draftMap.get(item.draftId) : null;
-      return {
-        ...item,
-        draftStatus: draft?.status ?? null,
-        publishedSkillId: item.publishedSkillId ?? draft?.publishedSkillId ?? null,
-        draftUpdatedAt: draft?.updatedAt ?? null,
-      };
-    });
-
-    return statusFilter ? enriched.filter((item) => item.status === statusFilter) : enriched;
-  }
-
-  async getEphemeralCapabilityPromotionTaskSummary(
-    userId: string,
-    sessionId: string,
-    query?: { window?: '1h' | '24h' | '7d' },
-  ) {
-    const tasks = await this.listEphemeralCapabilityPromotionTasks(userId, sessionId, query);
-    if (!tasks) {
-      return null;
-    }
-
-    const statusStats = new Map<string, number>();
-    const draftStatusStats = new Map<string, number>();
-    let publishedLinkedCount = 0;
-    let pendingActionCount = 0;
-
-    for (const item of tasks) {
-      statusStats.set(item.status, (statusStats.get(item.status) ?? 0) + 1);
-      const draftStatus = this.pickString(item.draftStatus) ?? 'UNKNOWN';
-      draftStatusStats.set(draftStatus, (draftStatusStats.get(draftStatus) ?? 0) + 1);
-      if (item.publishedSkillId) {
-        publishedLinkedCount += 1;
-      }
-      if (['PENDING_REVIEW', 'IN_REVIEW', 'APPROVED'].includes(item.status)) {
-        pendingActionCount += 1;
-      }
-    }
-
-    const toSortedArray = (statMap: Map<string, number>) =>
-      Array.from(statMap.entries())
-        .map(([key, count]) => ({ key, count }))
-        .sort((a, b) => b.count - a.count);
-
-    return {
-      window: query?.window ?? '24h',
-      totalTasks: tasks.length,
-      pendingActionCount,
-      publishedLinkedCount,
-      stats: {
-        byStatus: toSortedArray(statusStats),
-        byDraftStatus: toSortedArray(draftStatusStats),
-      },
-    };
-  }
-
-  async batchUpdateEphemeralCapabilityPromotionTasks(
-    userId: string,
-    sessionId: string,
-    dto: {
-      action: string;
-      comment?: string;
-      taskAssetIds?: string[];
-      window?: '1h' | '24h' | '7d';
-      status?: string;
-      maxConcurrency?: number;
-      maxRetries?: number;
-      sourceBatchAssetId?: string;
-    },
-  ) {
-    const session = await this.prisma.conversationSession.findFirst({
-      where: { id: sessionId, ownerUserId: userId },
-      select: { id: true },
-    });
-    if (!session) {
-      return null;
-    }
-
-    const explicitTaskIds = Array.isArray(dto.taskAssetIds)
-      ? dto.taskAssetIds.filter((id): id is string => typeof id === 'string' && id.length > 0)
-      : [];
-
-    const taskIds = explicitTaskIds.length
-      ? explicitTaskIds
-      : ((
-        await this.listEphemeralCapabilityPromotionTasks(userId, sessionId, {
-          window: dto.window,
-          status: dto.status,
-        })
-      )
-        ?.map((item) => item.taskAssetId)
-        .filter((id): id is string => typeof id === 'string' && id.length > 0) ?? []);
-
-    const uniqueTaskIds = Array.from(new Set(taskIds));
-    const succeeded: Array<{ taskAssetId: string; status: string }> = [];
-    const failed: Array<{ taskAssetId: string; code?: string; message: string }> = [];
-    const maxConcurrency = this.normalizeBatchConcurrency(dto.maxConcurrency);
-    const maxRetries = this.normalizeBatchRetry(dto.maxRetries);
-
-    const runUpdateOnce = async (taskAssetId: string) => {
-      const updated = await this.updateEphemeralCapabilityPromotionTask(
-        userId,
-        sessionId,
-        taskAssetId,
-        {
-          action: dto.action,
-          comment: dto.comment,
-        },
-      );
-      const status = this.pickString(updated?.task?.status) ?? 'UNKNOWN';
-      succeeded.push({ taskAssetId, status });
-    };
-
-    const runUpdateWithRetry = async (taskAssetId: string) => {
-      let attempt = 0;
-      while (attempt <= maxRetries) {
-        try {
-          await runUpdateOnce(taskAssetId);
-          return;
-        } catch (error) {
-          if (
-            attempt >= maxRetries ||
-            error instanceof BadRequestException ||
-            !this.isTransientPromotionBatchError(error)
-          ) {
-            throw error;
-          }
-          attempt += 1;
-        }
-      }
-    };
-
-    let cursor = 0;
-    const workerCount = Math.min(maxConcurrency, Math.max(uniqueTaskIds.length, 1));
-    const workers = Array.from({ length: workerCount }).map(async () => {
-      while (cursor < uniqueTaskIds.length) {
-        const taskAssetId = uniqueTaskIds[cursor];
-        cursor += 1;
-        try {
-          await runUpdateWithRetry(taskAssetId);
-        } catch (error) {
-          if (error instanceof BadRequestException) {
-            const response = error.getResponse() as Record<string, unknown>;
-            failed.push({
-              taskAssetId,
-              code: this.pickString(response.code) ?? undefined,
-              message: this.pickString(response.message) ?? '批量更新失败',
-            });
-          } else {
-            failed.push({
-              taskAssetId,
-              message: error instanceof Error ? error.message : String(error),
-            });
-          }
-        }
-      }
-    });
-    await Promise.all(workers);
-
-    const batchId = randomUUID();
-    const batchAsset = await this.createConversationAsset({
-      sessionId,
-      assetType: 'NOTE',
-      title: `能力晋升批次 ${dto.action} ${batchId.slice(0, 8)}`,
-      payload: {
-        batchId,
-        action: dto.action,
-        sourceBatchAssetId: dto.sourceBatchAssetId ?? null,
-        requestedCount: uniqueTaskIds.length,
-        succeededCount: succeeded.length,
-        failedCount: failed.length,
-        maxConcurrency,
-        maxRetries,
-        window: dto.window ?? null,
-        statusFilter: dto.status ?? null,
-        failed,
-        generatedAt: new Date().toISOString(),
-      },
-      tags: {
-        taskType: 'PROMOTION_TASK_BATCH',
-        batchId,
-      },
-    });
-
-    return {
-      action: dto.action,
-      batchId,
-      batchAssetId: batchAsset.id,
-      requestedCount: uniqueTaskIds.length,
-      succeededCount: succeeded.length,
-      failedCount: failed.length,
-      succeeded,
-      failed,
-    };
-  }
-
-  async listEphemeralCapabilityPromotionTaskBatches(
-    userId: string,
-    sessionId: string,
-    query?: { window?: '1h' | '24h' | '7d'; action?: string; limit?: number },
-  ) {
-    const session = await this.prisma.conversationSession.findFirst({
-      where: { id: sessionId, ownerUserId: userId },
-      select: { id: true },
-    });
-    if (!session) {
-      return null;
-    }
-
-    const createdAfter = this.resolveRoutingWindowStart(query?.window);
-    const actionFilter = this.pickString(query?.action)?.toUpperCase();
-    const limitValue = this.normalizeNumber(query?.limit);
-    const limit = Number.isFinite(limitValue)
-      ? Math.min(Math.max(Math.floor(limitValue), 1), 100)
-      : 20;
-
-    const assets = await this.prisma.conversationAsset.findMany({
-      where: {
-        sessionId,
-        assetType: 'NOTE',
-        title: {
-          startsWith: '能力晋升批次',
-        },
-        ...(createdAfter
-          ? {
-            createdAt: {
-              gte: createdAfter,
-            },
-          }
-          : {}),
-      },
-      orderBy: [{ createdAt: 'desc' }],
-      take: limit,
-    });
-
-    const batches = assets
-      .map((asset) => this.toPromotionTaskBatch(asset))
-      .filter((item): item is NonNullable<typeof item> => Boolean(item));
-
-    return actionFilter ? batches.filter((item) => item.action === actionFilter) : batches;
-  }
-
-  async replayFailedEphemeralCapabilityPromotionTaskBatch(
-    userId: string,
-    sessionId: string,
-    batchAssetId: string,
-    dto?: {
-      maxConcurrency?: number;
-      maxRetries?: number;
-      replayMode?: 'RETRYABLE_ONLY' | 'ALL_FAILED';
-      errorCodes?: string[];
-    },
-  ) {
-    const session = await this.prisma.conversationSession.findFirst({
-      where: { id: sessionId, ownerUserId: userId },
-      select: { id: true },
-    });
-    if (!session) {
-      return null;
-    }
-
-    const batchAsset = await this.prisma.conversationAsset.findFirst({
-      where: {
-        id: batchAssetId,
-        sessionId,
-        assetType: 'NOTE',
-      },
-      select: {
-        id: true,
-        title: true,
-        payload: true,
-      },
-    });
-    if (!batchAsset || !batchAsset.title.startsWith('能力晋升批次')) {
-      throw new BadRequestException({
-        code: 'CONV_PROMOTION_BATCH_NOT_FOUND',
-        message: '能力晋升批次不存在或不属于当前会话',
-      });
-    }
-
-    const payload = this.toRecord(batchAsset.payload);
-    const action = this.pickString(payload.action)?.toUpperCase();
-    if (!action) {
-      throw new BadRequestException({
-        code: 'CONV_PROMOTION_BATCH_INVALID',
-        message: '能力晋升批次缺少动作信息，无法重放',
-      });
-    }
-
-    const replayMode = dto?.replayMode === 'ALL_FAILED' ? 'ALL_FAILED' : 'RETRYABLE_ONLY';
-    const policy = await this.resolveEphemeralCapabilityPolicy(userId);
-    const requestedErrorCodes = Array.isArray(dto?.errorCodes)
-      ? dto.errorCodes
-        .map((item) => this.pickString(item)?.toUpperCase())
-        .filter((item): item is string => Boolean(item))
-      : [];
-
-    const failedItems = this.toArray(payload.failed)
-      .map((item) => this.toRecord(item))
-      .map((item) => ({
-        taskAssetId: this.pickString(item.taskAssetId),
-        code: this.pickString(item.code),
-        message: this.pickString(item.message),
-      }))
-      .filter((item) => Boolean(item.taskAssetId));
-
-    const selectedFailedItems =
-      replayMode === 'ALL_FAILED'
-        ? failedItems
-        : failedItems.filter((item) =>
-          this.isRetryablePromotionFailure(item.code, item.message, policy),
-        );
-    const finalSelectedFailedItems = requestedErrorCodes.length
-      ? selectedFailedItems.filter((item) =>
-        requestedErrorCodes.includes((item.code ?? 'UNKNOWN').toUpperCase()),
-      )
-      : selectedFailedItems;
-    const taskAssetIds = Array.from(
-      new Set(
-        finalSelectedFailedItems
-          .map((item) => item.taskAssetId)
-          .filter((value): value is string => Boolean(value)),
-      ),
-    );
-
-    const replayResult = await this.batchUpdateEphemeralCapabilityPromotionTasks(
-      userId,
-      sessionId,
-      {
-        action,
-        comment: `重放失败任务（来源批次 ${batchAsset.id}，模式 ${replayMode}）`,
-        taskAssetIds,
-        maxConcurrency: dto?.maxConcurrency,
-        maxRetries: dto?.maxRetries,
-        sourceBatchAssetId: batchAsset.id,
-      },
-    );
-
-    return {
-      sourceBatchAssetId: batchAsset.id,
-      sourceAction: action,
-      sourceFailedCount: failedItems.length,
-      selectedReplayCount: taskAssetIds.length,
-      replayMode,
-      selectedErrorCodes: requestedErrorCodes,
-      replayResult,
-    };
-  }
-
-  async updateEphemeralCapabilityPromotionTask(
-    userId: string,
-    sessionId: string,
-    taskAssetId: string,
-    dto: { action: string; comment?: string },
-  ) {
-    const session = await this.prisma.conversationSession.findFirst({
-      where: { id: sessionId, ownerUserId: userId },
-      select: { id: true },
-    });
-    if (!session) {
-      return null;
-    }
-
-    const taskAsset = await this.prisma.conversationAsset.findFirst({
-      where: {
-        id: taskAssetId,
-        sessionId,
-        assetType: 'NOTE',
-      },
-    });
-    if (!taskAsset || !taskAsset.title.startsWith('能力晋升任务')) {
-      throw new BadRequestException({
-        code: 'CONV_PROMOTION_TASK_NOT_FOUND',
-        message: '能力晋升任务不存在或不属于当前会话',
-      });
-    }
-
-    const action = String(dto.action || '').toUpperCase() as PromotionTaskAction;
-    const currentPayload = this.toRecord(taskAsset.payload);
-    const currentStatus =
-      this.normalizePromotionTaskStatus(currentPayload.status) ?? 'PENDING_REVIEW';
-    const nextPayload: Record<string, unknown> = {
-      ...currentPayload,
-    };
-    const draftId = this.pickString(currentPayload.draftId);
-    const draft = draftId
-      ? await this.prisma.agentSkillDraft.findUnique({
-        where: { id: draftId },
-        select: {
-          id: true,
-          status: true,
-          publishedSkillId: true,
-        },
-      })
-      : null;
-
-    const resolveStatusByDraft = (status: string | null | undefined): PromotionTaskStatus => {
-      if (status === 'PUBLISHED') {
-        return 'PUBLISHED';
-      }
-      if (status === 'APPROVED') {
-        return 'APPROVED';
-      }
-      if (status === 'REJECTED') {
-        return 'REJECTED';
-      }
-      return 'IN_REVIEW';
-    };
-
-    let nextStatus: PromotionTaskStatus = currentStatus;
-    if (action === 'START_REVIEW') {
-      nextStatus = 'IN_REVIEW';
-    } else if (action === 'MARK_APPROVED') {
-      nextStatus = 'APPROVED';
-    } else if (action === 'MARK_REJECTED') {
-      nextStatus = 'REJECTED';
-    } else if (action === 'MARK_PUBLISHED') {
-      if (!draft?.publishedSkillId) {
-        throw new BadRequestException({
-          code: 'CONV_PROMOTION_TASK_PUBLISH_BLOCKED',
-          message: '该草稿尚未发布，请先完成发布后再标记为已发布',
-        });
-      }
-      nextStatus = 'PUBLISHED';
-      nextPayload.publishedSkillId = draft.publishedSkillId;
-    } else if (action === 'SYNC_DRAFT_STATUS') {
-      nextStatus = resolveStatusByDraft(draft?.status);
-      nextPayload.publishedSkillId =
-        draft?.publishedSkillId ?? this.pickString(currentPayload.publishedSkillId);
-    } else {
-      throw new BadRequestException({
-        code: 'CONV_PROMOTION_TASK_ACTION_INVALID',
-        message: '不支持的能力晋升任务操作',
-      });
-    }
-
-    nextPayload.status = nextStatus;
-    nextPayload.lastAction = action;
-    nextPayload.lastActionAt = new Date().toISOString();
-    nextPayload.lastActionBy = userId;
-    if (dto.comment?.trim()) {
-      nextPayload.lastComment = dto.comment.trim();
-    }
-
-    const updated = await this.prisma.conversationAsset.update({
-      where: { id: taskAsset.id },
-      data: {
-        payload: nextPayload as Prisma.InputJsonValue,
-      },
-    });
-
-    await this.createConversationAsset({
-      sessionId,
-      assetType: 'NOTE',
-      title:
-        `能力晋升任务状态变更 ${this.pickString(currentPayload.suggestedSkillCode) ?? ''}`.trim(),
-      payload: {
-        taskAssetId: taskAsset.id,
-        draftId,
-        action,
-        fromStatus: currentStatus,
-        toStatus: nextStatus,
-        comment: dto.comment?.trim() || null,
-      },
-      tags: {
-        taskType: 'PROMOTION_TASK',
-        taskAssetId: taskAsset.id,
-      },
-    });
-
-    const task = this.toPromotionTask(updated);
-    return {
-      task,
-    };
-  }
-
-  private async createPromotionTaskAssets(
-    sessionId: string,
-    candidates: Array<{
-      draftId: string;
-      suggestedSkillCode: string;
-      hitCount: number;
-      reason: string;
-    }>,
-    window: '1h' | '24h' | '7d',
-  ): Promise<number> {
-    if (!candidates.length) {
-      return 0;
-    }
-
-    const existing = await this.prisma.conversationAsset.findMany({
-      where: {
-        sessionId,
-        assetType: 'NOTE',
-        title: {
-          startsWith: '能力晋升任务',
-        },
-      },
-      select: {
-        payload: true,
-      },
-      take: 500,
-      orderBy: [{ createdAt: 'desc' }],
-    });
-
-    const existingDraftIds = new Set<string>();
-    for (const item of existing) {
-      const payload = this.toRecord(item.payload);
-      const draftId = this.pickString(payload.draftId);
-      if (draftId) {
-        existingDraftIds.add(draftId);
-      }
-    }
-
-    let created = 0;
-    for (const candidate of candidates) {
-      if (existingDraftIds.has(candidate.draftId)) {
-        continue;
-      }
-      await this.createConversationAsset({
-        sessionId,
-        assetType: 'NOTE',
-        title: `能力晋升任务 ${candidate.suggestedSkillCode}`,
-        payload: {
-          draftId: candidate.draftId,
-          suggestedSkillCode: candidate.suggestedSkillCode,
-          hitCount: candidate.hitCount,
-          reason: candidate.reason,
-          window,
-          status: 'PENDING_REVIEW',
-          generatedAt: new Date().toISOString(),
-        },
-        tags: {
-          taskType: 'PROMOTION_TASK',
-          draftId: candidate.draftId,
-        },
-      });
-      created += 1;
-    }
-
-    return created;
-  }
-
-  private normalizePromotionTaskStatus(input: unknown): PromotionTaskStatus | null {
-    const value = this.pickString(input)?.toUpperCase();
-    if (!value) {
-      return null;
-    }
-    if (['PENDING_REVIEW', 'IN_REVIEW', 'APPROVED', 'REJECTED', 'PUBLISHED'].includes(value)) {
-      return value as PromotionTaskStatus;
-    }
-    return null;
-  }
-
-  private normalizeBatchConcurrency(input: unknown): number {
-    const value = this.normalizeNumber(input);
-    if (!Number.isFinite(value) || value <= 0) {
-      return 4;
-    }
-    return Math.min(Math.max(Math.floor(value), 1), 12);
-  }
-
-  private normalizeBatchRetry(input: unknown): number {
-    const value = this.normalizeNumber(input);
-    if (!Number.isFinite(value) || value < 0) {
-      return 1;
-    }
-    return Math.min(Math.max(Math.floor(value), 0), 3);
-  }
-
-  private isTransientPromotionBatchError(error: unknown): boolean {
-    if (!error || error instanceof BadRequestException) {
-      return false;
-    }
-    const errorText = error instanceof Error ? error.message : String(error);
-    return /fetch failed|timeout|temporarily unavailable|network|econnreset|etimedout/i.test(
-      errorText,
-    );
-  }
-
-  private isRetryablePromotionFailure(
-    code: string | null,
-    message: string | null,
-    policy?: EphemeralCapabilityPolicy,
-  ): boolean {
-    const normalizedCode = (code ?? '').toUpperCase();
-    const blocklist = policy?.replayNonRetryableErrorCodeBlocklist ?? [
-      'CONV_PROMOTION_TASK_NOT_FOUND',
-      'CONV_PROMOTION_TASK_ACTION_INVALID',
-      'CONV_PROMOTION_TASK_PUBLISH_BLOCKED',
-      'SKILL_REVIEWER_CONFLICT',
-      'SKILL_HIGH_RISK_REVIEW_REQUIRED',
-    ];
-    if (blocklist.includes(normalizedCode)) {
-      return false;
-    }
-    const allowlist = policy?.replayRetryableErrorCodeAllowlist ?? [];
-    if (allowlist.includes(normalizedCode)) {
-      return true;
-    }
-    const text = `${code ?? ''} ${message ?? ''}`;
-    return /fetch failed|timeout|temporarily unavailable|network|econnreset|etimedout|429|5\d{2}/i.test(
-      text,
-    );
-  }
-
-  private toPromotionTask(asset: {
-    id: string;
-    title: string;
-    payload: Prisma.JsonValue;
-    createdAt: Date;
-    updatedAt: Date;
-  }) {
-    const payload = this.toRecord(asset.payload);
-    const status = this.normalizePromotionTaskStatus(payload.status);
-    const draftId = this.pickString(payload.draftId);
-    const suggestedSkillCode = this.pickString(payload.suggestedSkillCode);
-    const hitCount = this.normalizeNumber(payload.hitCount);
-    if (!draftId || !suggestedSkillCode) {
-      return null;
-    }
-    return {
-      taskAssetId: asset.id,
-      title: asset.title,
-      draftId,
-      suggestedSkillCode,
-      hitCount: Number.isFinite(hitCount) ? hitCount : 0,
-      reason: this.pickString(payload.reason),
-      window: this.pickString(payload.window),
-      status: status ?? 'PENDING_REVIEW',
-      generatedAt: this.pickString(payload.generatedAt),
-      lastAction: this.pickString(payload.lastAction),
-      lastActionAt: this.pickString(payload.lastActionAt),
-      lastActionBy: this.pickString(payload.lastActionBy),
-      lastComment: this.pickString(payload.lastComment),
-      publishedSkillId: this.pickString(payload.publishedSkillId),
-      createdAt: asset.createdAt,
-      updatedAt: asset.updatedAt,
-    };
-  }
-
-  private toPromotionTaskBatch(asset: {
-    id: string;
-    title: string;
-    payload: Prisma.JsonValue;
-    createdAt: Date;
-    updatedAt: Date;
-  }) {
-    const payload = this.toRecord(asset.payload);
-    const action = this.pickString(payload.action)?.toUpperCase();
-    if (!action) {
-      return null;
-    }
-    const failed = this.toArray(payload.failed)
-      .map((item) => this.toRecord(item))
-      .map((item) => ({
-        taskAssetId: this.pickString(item.taskAssetId),
-        code: this.pickString(item.code),
-        message: this.pickString(item.message) ?? '批次处理失败',
-      }))
-      .filter((item) => Boolean(item.taskAssetId));
-    return {
-      batchAssetId: asset.id,
-      batchId: this.pickString(payload.batchId) ?? asset.id,
-      title: asset.title,
-      action,
-      requestedCount: this.normalizeNumber(payload.requestedCount),
-      succeededCount: this.normalizeNumber(payload.succeededCount),
-      failedCount: this.normalizeNumber(payload.failedCount),
-      maxConcurrency: this.normalizeNumber(payload.maxConcurrency),
-      maxRetries: this.normalizeNumber(payload.maxRetries),
-      window: this.pickString(payload.window),
-      statusFilter: this.pickString(payload.statusFilter),
-      sourceBatchAssetId: this.pickString(payload.sourceBatchAssetId),
-      failed,
-      generatedAt: this.pickString(payload.generatedAt),
-      createdAt: asset.createdAt,
-      updatedAt: asset.updatedAt,
-    };
-  }
-
-  private resolveRoutingWindowStart(window?: '1h' | '24h' | '7d'): Date | null {
-    if (!window) {
-      return new Date(Date.now() - 24 * 60 * 60 * 1000);
-    }
-    if (window === '1h') {
-      return new Date(Date.now() - 60 * 60 * 1000);
-    }
-    if (window === '24h') {
-      return new Date(Date.now() - 24 * 60 * 60 * 1000);
-    }
-    if (window === '7d') {
-      return new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
-    }
-    return null;
-  }
-
   async reuseAsset(
     userId: string,
     sessionId: string,
@@ -3432,269 +1742,6 @@ export class AgentConversationService {
         reusedAssetId: asset.id,
       },
     });
-  }
-
-  async listSubscriptions(userId: string, sessionId: string) {
-    const session = await this.prisma.conversationSession.findFirst({
-      where: { id: sessionId, ownerUserId: userId },
-    });
-    if (!session) {
-      return null;
-    }
-
-    return this.prisma.conversationSubscription.findMany({
-      where: { sessionId, ownerUserId: userId },
-      orderBy: [{ createdAt: 'desc' }],
-      include: {
-        runs: {
-          orderBy: { startedAt: 'desc' },
-          take: 5,
-        },
-      },
-    });
-  }
-
-  async createSubscription(
-    userId: string,
-    sessionId: string,
-    dto: CreateConversationSubscriptionDto,
-  ) {
-    const session = await this.prisma.conversationSession.findFirst({
-      where: { id: sessionId, ownerUserId: userId },
-    });
-    if (!session) {
-      return null;
-    }
-
-    const plan = dto.planVersion
-      ? await this.prisma.conversationPlan.findUnique({
-        where: { sessionId_version: { sessionId, version: dto.planVersion } },
-      })
-      : await this.prisma.conversationPlan.findFirst({
-        where: { sessionId, isConfirmed: true },
-        orderBy: { version: 'desc' },
-      });
-
-    if (!plan) {
-      throw new BadRequestException({
-        code: 'CONV_SUB_PLAN_NOT_FOUND',
-        message: '未找到可订阅的计划，请先执行并确认计划',
-      });
-    }
-
-    const planSnapshot = this.toRecord(plan.planSnapshot);
-    const nextRunAt = this.computeNextRunAt(dto.cronExpr, dto.timezone);
-
-    const subscription = await this.prisma.conversationSubscription.create({
-      data: {
-        sessionId,
-        ownerUserId: userId,
-        name: dto.name,
-        planSnapshot: planSnapshot as Prisma.InputJsonValue,
-        cronExpr: dto.cronExpr,
-        timezone: dto.timezone,
-        status: 'ACTIVE',
-        deliveryConfig: (dto.deliveryConfig ?? {}) as Prisma.InputJsonValue,
-        quietHours: dto.quietHours ? (dto.quietHours as Prisma.InputJsonValue) : Prisma.JsonNull,
-        nextRunAt,
-      },
-    });
-
-    await this.prisma.conversationTurn.create({
-      data: {
-        sessionId,
-        role: 'ASSISTANT',
-        content: `已创建订阅：${dto.name}`,
-        structuredPayload: {
-          subscriptionId: subscription.id,
-          status: subscription.status,
-          nextRunAt,
-        } as Prisma.InputJsonValue,
-      },
-    });
-
-    return subscription;
-  }
-
-  async updateSubscription(
-    userId: string,
-    sessionId: string,
-    subscriptionId: string,
-    dto: UpdateConversationSubscriptionDto,
-  ) {
-    const subscription = await this.prisma.conversationSubscription.findFirst({
-      where: { id: subscriptionId, sessionId, ownerUserId: userId },
-    });
-    if (!subscription) {
-      return null;
-    }
-
-    const nextStatus = dto.status ?? subscription.status;
-    const nextCronExpr = dto.cronExpr ?? subscription.cronExpr;
-    const nextTimezone = dto.timezone ?? subscription.timezone;
-    const shouldComputeNextRunAt = nextStatus === 'ACTIVE';
-
-    return this.prisma.conversationSubscription.update({
-      where: { id: subscriptionId },
-      data: {
-        name: dto.name ?? subscription.name,
-        cronExpr: nextCronExpr,
-        timezone: nextTimezone,
-        status: nextStatus,
-        deliveryConfig:
-          dto.deliveryConfig !== undefined
-            ? (dto.deliveryConfig as Prisma.InputJsonValue)
-            : undefined,
-        quietHours:
-          dto.quietHours !== undefined ? (dto.quietHours as Prisma.InputJsonValue) : undefined,
-        nextRunAt: shouldComputeNextRunAt
-          ? this.computeNextRunAt(nextCronExpr, nextTimezone)
-          : null,
-      },
-    });
-  }
-
-  async runSubscriptionNow(userId: string, sessionId: string, subscriptionId: string) {
-    const subscription = await this.prisma.conversationSubscription.findFirst({
-      where: { id: subscriptionId, sessionId, ownerUserId: userId },
-    });
-    if (!subscription) {
-      return null;
-    }
-
-    return this.runSubscription(subscription.id, 'RERUN', userId);
-  }
-
-  async resolveScheduleCommand(
-    userId: string,
-    sessionId: string,
-    dto: ResolveConversationScheduleDto,
-  ) {
-    const session = await this.prisma.conversationSession.findFirst({
-      where: { id: sessionId, ownerUserId: userId },
-    });
-    if (!session) {
-      return null;
-    }
-
-    const parsed = this.parseScheduleInstruction(dto.instruction);
-    let result: Record<string, unknown>;
-
-    if (parsed.action === 'CREATE') {
-      const created = await this.createSubscription(userId, sessionId, {
-        name: parsed.subscriptionName,
-        cronExpr: parsed.cronExpr,
-        timezone: parsed.timezone,
-        deliveryConfig: {
-          channel: parsed.channel,
-          target: parsed.target,
-        },
-      });
-      if (!created) {
-        return null;
-      }
-      result = {
-        action: 'CREATE',
-        subscriptionId: created.id,
-        status: created.status,
-        cronExpr: created.cronExpr,
-        timezone: created.timezone,
-        nextRunAt: created.nextRunAt,
-        channel: parsed.channel,
-        target: parsed.target,
-      };
-    } else {
-      const subscription = await this.pickTargetSubscription(
-        userId,
-        sessionId,
-        parsed.subscriptionName,
-      );
-      if (!subscription) {
-        throw new BadRequestException({
-          code: 'CONV_SCHEDULE_SUB_NOT_FOUND',
-          message: '未找到可操作的订阅，请先创建订阅或指定名称',
-        });
-      }
-
-      if (parsed.action === 'PAUSE') {
-        const updated = await this.updateSubscription(userId, sessionId, subscription.id, {
-          status: 'PAUSED',
-        });
-        result = {
-          action: 'PAUSE',
-          subscriptionId: subscription.id,
-          status: updated?.status,
-        };
-      } else if (parsed.action === 'RESUME') {
-        const updated = await this.updateSubscription(userId, sessionId, subscription.id, {
-          status: 'ACTIVE',
-        });
-        result = {
-          action: 'RESUME',
-          subscriptionId: subscription.id,
-          status: updated?.status,
-          nextRunAt: updated?.nextRunAt,
-        };
-      } else if (parsed.action === 'RUN') {
-        const run = await this.runSubscriptionNow(userId, sessionId, subscription.id);
-        result = {
-          action: 'RUN',
-          subscriptionId: subscription.id,
-          runId: run?.runId,
-          status: run?.status,
-        };
-      } else {
-        const updated = await this.updateSubscription(userId, sessionId, subscription.id, {
-          cronExpr: parsed.cronExpr,
-          timezone: parsed.timezone,
-          status: 'ACTIVE',
-          deliveryConfig: {
-            channel: parsed.channel,
-            target: parsed.target,
-          },
-        });
-        result = {
-          action: 'UPDATE',
-          subscriptionId: subscription.id,
-          status: updated?.status,
-          cronExpr: updated?.cronExpr,
-          timezone: updated?.timezone,
-          nextRunAt: updated?.nextRunAt,
-          channel: parsed.channel,
-          target: parsed.target,
-        };
-      }
-    }
-
-    await this.prisma.conversationTurn.create({
-      data: {
-        sessionId,
-        role: 'ASSISTANT',
-        content: this.buildScheduleResolutionMessage(result),
-        structuredPayload: {
-          scheduleResolution: result,
-          instruction: dto.instruction,
-        } as Prisma.InputJsonValue,
-      },
-    });
-
-    return result;
-  }
-
-  async processDueSubscriptions() {
-    const now = new Date();
-    const dueSubscriptions = await this.prisma.conversationSubscription.findMany({
-      where: {
-        status: 'ACTIVE',
-        nextRunAt: { lte: now },
-      },
-      orderBy: { nextRunAt: 'asc' },
-      take: 20,
-    });
-
-    for (const subscription of dueSubscriptions) {
-      await this.runSubscription(subscription.id, 'SCHEDULED', subscription.ownerUserId);
-    }
   }
 
   private shouldAutoExecute(contextPatch?: Record<string, unknown>): boolean {
@@ -4041,292 +2088,11 @@ export class AgentConversationService {
     return `已复用资产：${selected.title}。`;
   }
 
-  private normalizeDeliveryTemplateCode(
-    templateCode: unknown,
-  ): 'DEFAULT' | 'MORNING_BRIEF' | 'WEEKLY_REVIEW' | 'RISK_ALERT' {
-    if (templateCode === 'MORNING_BRIEF') {
-      return 'MORNING_BRIEF';
-    }
-    if (templateCode === 'WEEKLY_REVIEW') {
-      return 'WEEKLY_REVIEW';
-    }
-    if (templateCode === 'RISK_ALERT') {
-      return 'RISK_ALERT';
-    }
-    return 'DEFAULT';
-  }
-
-  private resolveDeliverySubject(
-    channel: 'EMAIL' | 'DINGTALK' | 'WECOM' | 'FEISHU',
-    templateCode: 'DEFAULT' | 'MORNING_BRIEF' | 'WEEKLY_REVIEW' | 'RISK_ALERT',
-    customSubject?: string,
-  ) {
-    if (customSubject?.trim()) {
-      return customSubject.trim();
-    }
-    const channelName = this.channelDisplayName(channel);
-    if (templateCode === 'MORNING_BRIEF') {
-      return `${channelName}晨报 - CTBMS 对话助手`;
-    }
-    if (templateCode === 'WEEKLY_REVIEW') {
-      return `${channelName}周复盘 - CTBMS 对话助手`;
-    }
-    if (templateCode === 'RISK_ALERT') {
-      return `${channelName}风险提示 - CTBMS 对话助手`;
-    }
-    return 'CTBMS 对话助手分析报告';
-  }
-
-  private resolveDeliveryContent(
-    channel: 'EMAIL' | 'DINGTALK' | 'WECOM' | 'FEISHU',
-    templateCode: 'DEFAULT' | 'MORNING_BRIEF' | 'WEEKLY_REVIEW' | 'RISK_ALERT',
-    customContent?: string,
-  ) {
-    if (customContent?.trim()) {
-      return customContent.trim();
-    }
-    const channelName = this.channelDisplayName(channel);
-    if (templateCode === 'MORNING_BRIEF') {
-      return `${channelName}晨报已生成，请查收附件原文件与摘要。`;
-    }
-    if (templateCode === 'WEEKLY_REVIEW') {
-      return `${channelName}周度复盘已生成，请查收本周关键结论和风险提示。`;
-    }
-    if (templateCode === 'RISK_ALERT') {
-      return `${channelName}风险告警已触发，请优先查看风险暴露与应对建议。`;
-    }
-    return '请查收本次对话分析结果。';
-  }
-
-  private resolveDeliveryWebhook(channel: 'EMAIL' | 'DINGTALK' | 'WECOM' | 'FEISHU') {
-    if (channel === 'EMAIL') {
-      return process.env.MAIL_DELIVERY_WEBHOOK_URL?.trim();
-    }
-    if (channel === 'DINGTALK') {
-      return process.env.DINGTALK_DELIVERY_WEBHOOK_URL?.trim();
-    }
-    if (channel === 'WECOM') {
-      return process.env.WECOM_DELIVERY_WEBHOOK_URL?.trim();
-    }
-    if (channel === 'FEISHU') {
-      return process.env.FEISHU_DELIVERY_WEBHOOK_URL?.trim();
-    }
-    return null;
-  }
-
   private mergeDeliveryRecipients(primary?: string[], fallback?: string[]): string[] {
     const merged = [...(primary ?? []), ...(fallback ?? [])]
       .map((item) => item.trim())
       .filter(Boolean);
     return merged.filter((item, index) => merged.indexOf(item) === index);
-  }
-
-  private async resolveDeliveryProfileDefaults(
-    userId: string,
-    channel: 'EMAIL' | 'DINGTALK' | 'WECOM' | 'FEISHU',
-  ): Promise<{
-    to?: string[];
-    target?: string;
-    templateCode?: 'DEFAULT' | 'MORNING_BRIEF' | 'WEEKLY_REVIEW' | 'RISK_ALERT';
-    sendRawFile?: boolean;
-  }> {
-    const bindings = await this.prisma.userConfigBinding.findMany({
-      where: {
-        userId,
-        bindingType: 'AGENT_COPILOT_DELIVERY_PROFILES',
-        isActive: true,
-      },
-      orderBy: [{ priority: 'desc' }, { updatedAt: 'desc' }],
-      take: 10,
-      select: {
-        metadata: true,
-      },
-    });
-
-    for (const binding of bindings) {
-      const metadata = this.toRecord(binding.metadata);
-      const rawProfiles = metadata.profiles;
-      if (!Array.isArray(rawProfiles)) {
-        continue;
-      }
-
-      const profiles = rawProfiles.map((item) => this.toRecord(item));
-      const channelProfiles = profiles.filter(
-        (profile) => this.pickString(profile.channel) === channel,
-      );
-      if (!channelProfiles.length) {
-        continue;
-      }
-
-      const selected =
-        channelProfiles.find((profile) => Boolean(profile.isDefault)) ?? channelProfiles[0] ?? null;
-      if (!selected) {
-        continue;
-      }
-
-      const to = Array.isArray(selected.to)
-        ? selected.to
-          .map((item) => this.pickString(item))
-          .filter((item): item is string => Boolean(item))
-        : undefined;
-      const rawTemplateCode = this.pickString(selected.templateCode);
-
-      return {
-        to,
-        target: this.pickString(selected.target) ?? undefined,
-        templateCode: rawTemplateCode
-          ? this.normalizeDeliveryTemplateCode(rawTemplateCode)
-          : undefined,
-        sendRawFile: typeof selected.sendRawFile === 'boolean' ? selected.sendRawFile : undefined,
-      };
-    }
-
-    return {};
-  }
-
-  private channelDisplayName(channel: 'EMAIL' | 'DINGTALK' | 'WECOM' | 'FEISHU') {
-    if (channel === 'EMAIL') {
-      return '邮件';
-    }
-    if (channel === 'DINGTALK') {
-      return '钉钉';
-    }
-    if (channel === 'WECOM') {
-      return '企业微信';
-    }
-    return '飞书';
-  }
-
-  private parseScheduleInstruction(instruction: string): {
-    action: 'CREATE' | 'UPDATE' | 'PAUSE' | 'RESUME' | 'RUN';
-    subscriptionName: string;
-    cronExpr: string;
-    timezone: string;
-    channel: 'EMAIL' | 'DINGTALK' | 'WECOM' | 'FEISHU';
-    target: string | null;
-  } {
-    const text = instruction.trim();
-    const normalized = text.toLowerCase();
-
-    const action =
-      normalized.includes('暂停') || normalized.includes('停用')
-        ? 'PAUSE'
-        : normalized.includes('恢复') || normalized.includes('启用') || normalized.includes('开启')
-          ? 'RESUME'
-          : normalized.includes('补跑') ||
-            normalized.includes('立即执行') ||
-            normalized.includes('马上执行')
-            ? 'RUN'
-            : normalized.includes('修改') ||
-              normalized.includes('改成') ||
-              normalized.includes('改为')
-              ? 'UPDATE'
-              : 'CREATE';
-
-    const channel: 'EMAIL' | 'DINGTALK' | 'WECOM' | 'FEISHU' = normalized.includes('钉钉')
-      ? 'DINGTALK'
-      : normalized.includes('企微') || normalized.includes('企业微信')
-        ? 'WECOM'
-        : normalized.includes('飞书')
-          ? 'FEISHU'
-          : 'EMAIL';
-
-    const targetMatch = text.match(/(?:发到|发送到|推送到|到)\s*([^，。\s]+)/);
-    const target = targetMatch ? targetMatch[1] : null;
-
-    const nameMatch = text.match(/(?:订阅名|订阅名称|名称)[:：]?\s*([^，。\s]+)/);
-    const subscriptionName = nameMatch?.[1] ?? `对话订阅-${new Date().toISOString().slice(0, 10)}`;
-
-    const cronExpr = this.inferCronExprFromInstruction(text);
-
-    return {
-      action,
-      subscriptionName,
-      cronExpr,
-      timezone: 'Asia/Shanghai',
-      channel,
-      target,
-    };
-  }
-
-  private inferCronExprFromInstruction(text: string): string {
-    const timeMatch = text.match(/(\d{1,2})\s*(?:点|:|时)(\d{1,2})?/);
-    const hour = Math.max(0, Math.min(23, Number(timeMatch?.[1] ?? 9)));
-    const minute = Math.max(0, Math.min(59, Number(timeMatch?.[2] ?? 0)));
-
-    if (text.includes('每周')) {
-      const day = text.includes('周一')
-        ? 1
-        : text.includes('周二')
-          ? 2
-          : text.includes('周三')
-            ? 3
-            : text.includes('周四')
-              ? 4
-              : text.includes('周五')
-                ? 5
-                : text.includes('周六')
-                  ? 6
-                  : text.includes('周日') || text.includes('周天')
-                    ? 0
-                    : 1;
-      return `0 ${minute} ${hour} * * ${day}`;
-    }
-
-    if (text.includes('每月')) {
-      const dayMatch = text.match(/每月\s*(\d{1,2})\s*(?:号|日)?/);
-      const day = Math.max(1, Math.min(28, Number(dayMatch?.[1] ?? 1)));
-      return `0 ${minute} ${hour} ${day} * *`;
-    }
-
-    return `0 ${minute} ${hour} * * *`;
-  }
-
-  private async pickTargetSubscription(
-    userId: string,
-    sessionId: string,
-    subscriptionName?: string,
-  ) {
-    if (subscriptionName) {
-      const named = await this.prisma.conversationSubscription.findFirst({
-        where: {
-          ownerUserId: userId,
-          sessionId,
-          name: {
-            contains: subscriptionName,
-            mode: 'insensitive',
-          },
-        },
-        orderBy: { updatedAt: 'desc' },
-      });
-      if (named) {
-        return named;
-      }
-    }
-
-    return this.prisma.conversationSubscription.findFirst({
-      where: { ownerUserId: userId, sessionId },
-      orderBy: { updatedAt: 'desc' },
-    });
-  }
-
-  private buildScheduleResolutionMessage(result: Record<string, unknown>) {
-    const action = this.pickString(result.action) || 'UNKNOWN';
-    const status = this.pickString(result.status) || '-';
-    const subscriptionId = this.pickString(result.subscriptionId) || '-';
-    if (action === 'RUN') {
-      return `已执行订阅补跑：${subscriptionId}，状态 ${status}。`;
-    }
-    if (action === 'PAUSE') {
-      return `已暂停订阅：${subscriptionId}。`;
-    }
-    if (action === 'RESUME') {
-      return `已恢复订阅：${subscriptionId}，状态 ${status}。`;
-    }
-    if (action === 'UPDATE') {
-      return `已更新订阅：${subscriptionId}，状态 ${status}。`;
-    }
-    return `已创建订阅：${subscriptionId}，状态 ${status}。`;
   }
 
   private async createConversationAsset(input: {
@@ -4373,512 +2139,6 @@ export class AgentConversationService {
         tags: input.tags ? (input.tags as Prisma.InputJsonValue) : Prisma.JsonNull,
       },
     });
-  }
-
-  private async resolveCapabilityRoutingPolicy(userId: string): Promise<CapabilityRoutingPolicy> {
-    const defaults: CapabilityRoutingPolicy = {
-      allowOwnerPool: true,
-      allowPublicPool: true,
-      preferOwnerFirst: true,
-      minOwnerScore: 0,
-      minPublicScore: 0.35,
-    };
-
-    const binding = await this.prisma.userConfigBinding.findFirst({
-      where: {
-        userId,
-        bindingType: 'AGENT_CAPABILITY_ROUTING_POLICY',
-        isActive: true,
-      },
-      orderBy: [{ priority: 'desc' }, { updatedAt: 'desc' }],
-      select: { metadata: true },
-    });
-    if (!binding?.metadata) {
-      return defaults;
-    }
-
-    const metadata = this.toRecord(binding.metadata);
-    const toBoolean = (value: unknown, fallback: boolean) =>
-      typeof value === 'boolean' ? value : fallback;
-    const toScore = (value: unknown, fallback: number) => {
-      const parsed =
-        typeof value === 'number' ? value : typeof value === 'string' ? Number(value) : NaN;
-      if (!Number.isFinite(parsed)) {
-        return fallback;
-      }
-      return Math.max(0, Math.min(1, parsed));
-    };
-
-    return {
-      allowOwnerPool: toBoolean(metadata.allowOwnerPool, defaults.allowOwnerPool),
-      allowPublicPool: toBoolean(metadata.allowPublicPool, defaults.allowPublicPool),
-      preferOwnerFirst: toBoolean(metadata.preferOwnerFirst, defaults.preferOwnerFirst),
-      minOwnerScore: toScore(metadata.minOwnerScore, defaults.minOwnerScore),
-      minPublicScore: toScore(metadata.minPublicScore, defaults.minPublicScore),
-    };
-  }
-
-  private async resolveEphemeralCapabilityPolicy(
-    userId: string,
-  ): Promise<EphemeralCapabilityPolicy> {
-    const defaults: EphemeralCapabilityPolicy = {
-      draftSemanticReuseThreshold: 0.72,
-      publishedSkillReuseThreshold: 0.76,
-      runtimeGrantTtlHours: 24,
-      runtimeGrantMaxUseCount: 30,
-      replayRetryableErrorCodeAllowlist: [
-        'NETWORK_ERROR',
-        'TIMEOUT',
-        'FETCH_FAILED',
-        'HTTP_429',
-        'HTTP_5XX',
-      ],
-      replayNonRetryableErrorCodeBlocklist: [
-        'CONV_PROMOTION_TASK_NOT_FOUND',
-        'CONV_PROMOTION_TASK_ACTION_INVALID',
-        'CONV_PROMOTION_TASK_PUBLISH_BLOCKED',
-        'SKILL_REVIEWER_CONFLICT',
-        'SKILL_HIGH_RISK_REVIEW_REQUIRED',
-      ],
-    };
-
-    const binding = await this.prisma.userConfigBinding.findFirst({
-      where: {
-        userId,
-        bindingType: 'AGENT_EPHEMERAL_CAPABILITY_POLICY',
-        isActive: true,
-      },
-      orderBy: [{ priority: 'desc' }, { updatedAt: 'desc' }],
-      select: { metadata: true },
-    });
-    if (!binding?.metadata) {
-      return defaults;
-    }
-
-    const metadata = this.toRecord(binding.metadata);
-    const toScore = (value: unknown, fallback: number) => {
-      const parsed =
-        typeof value === 'number' ? value : typeof value === 'string' ? Number(value) : NaN;
-      if (!Number.isFinite(parsed)) {
-        return fallback;
-      }
-      return Math.max(0, Math.min(1, parsed));
-    };
-    const toInt = (value: unknown, fallback: number, min: number, max: number) => {
-      const parsed =
-        typeof value === 'number' ? value : typeof value === 'string' ? Number(value) : NaN;
-      if (!Number.isFinite(parsed)) {
-        return fallback;
-      }
-      return Math.max(min, Math.min(max, Math.round(parsed)));
-    };
-    const toStringArray = (value: unknown, fallback: string[]) => {
-      if (!Array.isArray(value)) {
-        return fallback;
-      }
-      const normalized = value
-        .map((item) => this.pickString(item)?.toUpperCase())
-        .filter((item): item is string => Boolean(item));
-      return normalized.length ? Array.from(new Set(normalized)) : fallback;
-    };
-
-    return {
-      draftSemanticReuseThreshold: toScore(
-        metadata.draftSemanticReuseThreshold,
-        defaults.draftSemanticReuseThreshold,
-      ),
-      publishedSkillReuseThreshold: toScore(
-        metadata.publishedSkillReuseThreshold,
-        defaults.publishedSkillReuseThreshold,
-      ),
-      runtimeGrantTtlHours: toInt(
-        metadata.runtimeGrantTtlHours,
-        defaults.runtimeGrantTtlHours,
-        1,
-        168,
-      ),
-      runtimeGrantMaxUseCount: toInt(
-        metadata.runtimeGrantMaxUseCount,
-        defaults.runtimeGrantMaxUseCount,
-        1,
-        200,
-      ),
-      replayRetryableErrorCodeAllowlist: toStringArray(
-        metadata.replayRetryableErrorCodeAllowlist,
-        defaults.replayRetryableErrorCodeAllowlist,
-      ),
-      replayNonRetryableErrorCodeBlocklist: toStringArray(
-        metadata.replayNonRetryableErrorCodeBlocklist,
-        defaults.replayNonRetryableErrorCodeBlocklist,
-      ),
-    };
-  }
-
-  private async logCapabilityRoutingDecisionAsset(
-    sessionId: string,
-    payload: {
-      routeType: 'WORKFLOW_REUSE' | 'SKILL_DRAFT_REUSE' | 'SKILL_DRAFT_CREATE';
-      routePolicy: string[];
-      selectedSource: string;
-      selectedScore?: number;
-      selectedWorkflowDefinitionId?: string | null;
-      selectedDraftId?: string | null;
-      selectedSkillCode?: string | null;
-      intent?: string | null;
-      missingSlots?: string[];
-      reason?: string;
-      routePolicyDetails?: Record<string, unknown>;
-    },
-  ) {
-    const key = this.computeRoutingDecisionKey(payload);
-    return this.createConversationAsset({
-      sessionId,
-      assetType: 'NOTE',
-      title: `能力路由日志 ${payload.routeType} ${key.slice(0, 12)}`,
-      payload: {
-        ...payload,
-        dedupeKey: key,
-        loggedAt: new Date().toISOString(),
-      },
-      tags: {
-        routeType: payload.routeType,
-        dedupeKey: key,
-      },
-    });
-  }
-
-  private computeRoutingDecisionKey(input: {
-    routeType: string;
-    selectedSource: string;
-    selectedWorkflowDefinitionId?: string | null;
-    selectedDraftId?: string | null;
-    selectedSkillCode?: string | null;
-    intent?: string | null;
-  }): string {
-    return [
-      input.routeType,
-      input.selectedSource,
-      input.selectedWorkflowDefinitionId ?? '-',
-      input.selectedDraftId ?? '-',
-      input.selectedSkillCode ?? '-',
-      input.intent ?? '-',
-    ].join('|');
-  }
-
-  private async findReusableSkillDraft(
-    ownerUserId: string,
-    dto: CreateSkillDraftDto,
-    policy: EphemeralCapabilityPolicy,
-  ): Promise<{
-    id: string;
-    gapType: string;
-    requiredCapability: string;
-    suggestedSkillCode: string;
-    status: string;
-    riskLevel: 'LOW' | 'MEDIUM' | 'HIGH';
-    provisionalEnabled: boolean;
-    reuseReason: 'EXACT_CODE' | 'SEMANTIC_MATCH';
-  } | null> {
-    const normalizedCode = this.normalizeCapabilityText(dto.suggestedSkillCode);
-    const capabilityTokens = this.extractCapabilityTokens(
-      `${dto.gapType} ${dto.requiredCapability}`,
-    );
-
-    const candidates = await this.prisma.agentSkillDraft.findMany({
-      where: {
-        ownerUserId,
-        status: {
-          in: ['DRAFT', 'SANDBOX_TESTING', 'READY_FOR_REVIEW', 'APPROVED', 'PUBLISHED'],
-        },
-      },
-      orderBy: [{ updatedAt: 'desc' }],
-      take: 80,
-      select: {
-        id: true,
-        gapType: true,
-        requiredCapability: true,
-        suggestedSkillCode: true,
-        status: true,
-        riskLevel: true,
-        provisionalEnabled: true,
-      },
-    });
-
-    for (const draft of candidates) {
-      if (this.normalizeCapabilityText(draft.suggestedSkillCode) === normalizedCode) {
-        return {
-          ...draft,
-          reuseReason: 'EXACT_CODE',
-        };
-      }
-    }
-
-    let bestCandidate: {
-      id: string;
-      gapType: string;
-      requiredCapability: string;
-      suggestedSkillCode: string;
-      status: string;
-      riskLevel: 'LOW' | 'MEDIUM' | 'HIGH';
-      provisionalEnabled: boolean;
-      score: number;
-    } | null = null;
-
-    for (const draft of candidates) {
-      const draftTokens = this.extractCapabilityTokens(
-        `${draft.gapType} ${draft.requiredCapability}`,
-      );
-      const score = this.computeCapabilitySimilarity(capabilityTokens, draftTokens);
-      if (!bestCandidate || score > bestCandidate.score) {
-        bestCandidate = {
-          ...draft,
-          score,
-        };
-      }
-    }
-
-    if (bestCandidate && bestCandidate.score >= policy.draftSemanticReuseThreshold) {
-      return {
-        id: bestCandidate.id,
-        gapType: bestCandidate.gapType,
-        requiredCapability: bestCandidate.requiredCapability,
-        suggestedSkillCode: bestCandidate.suggestedSkillCode,
-        status: bestCandidate.status,
-        riskLevel: bestCandidate.riskLevel,
-        provisionalEnabled: bestCandidate.provisionalEnabled,
-        reuseReason: 'SEMANTIC_MATCH',
-      };
-    }
-
-    return null;
-  }
-
-  private async findReusablePublishedSkill(
-    ownerUserId: string,
-    dto: CreateSkillDraftDto,
-    policy: CapabilityRoutingPolicy,
-    ephemeralPolicy: EphemeralCapabilityPolicy,
-  ): Promise<{
-    id: string;
-    skillCode: string;
-    name: string;
-    description: string;
-    templateSource: string;
-    score: number;
-  } | null> {
-    const normalizedCode = this.normalizeCapabilityText(dto.suggestedSkillCode);
-    const capabilityTokens = this.extractCapabilityTokens(
-      `${dto.gapType} ${dto.requiredCapability}`,
-    );
-    const whereOr: Array<Record<string, unknown>> = [];
-    if (policy.allowOwnerPool) {
-      whereOr.push({ ownerUserId });
-    }
-    if (policy.allowPublicPool) {
-      whereOr.push({ templateSource: 'PUBLIC' });
-    }
-    if (!whereOr.length) {
-      return null;
-    }
-
-    const candidates = await this.prisma.agentSkill.findMany({
-      where: {
-        isActive: true,
-        OR: whereOr,
-      },
-      orderBy: [{ updatedAt: 'desc' }],
-      take: 100,
-      select: {
-        id: true,
-        ownerUserId: true,
-        skillCode: true,
-        name: true,
-        description: true,
-        templateSource: true,
-      },
-    });
-
-    const ownerCandidates = candidates.filter((item) => item.ownerUserId === ownerUserId);
-    const publicCandidates = candidates.filter((item) => item.ownerUserId !== ownerUserId);
-
-    const preferredOrdered = policy.preferOwnerFirst
-      ? [...ownerCandidates, ...publicCandidates]
-      : [...candidates];
-
-    for (const skill of preferredOrdered) {
-      if (this.normalizeCapabilityText(skill.skillCode) === normalizedCode) {
-        if (skill.ownerUserId !== ownerUserId && !policy.allowPublicPool) {
-          continue;
-        }
-        return {
-          ...skill,
-          score: 1,
-        };
-      }
-    }
-
-    let best: {
-      id: string;
-      skillCode: string;
-      name: string;
-      description: string;
-      templateSource: string;
-      score: number;
-    } | null = null;
-
-    for (const skill of preferredOrdered) {
-      const skillTokens = this.extractCapabilityTokens(`${skill.name} ${skill.description}`);
-      const score = this.computeCapabilitySimilarity(capabilityTokens, skillTokens);
-      if (skill.ownerUserId !== ownerUserId && score < policy.minPublicScore) {
-        continue;
-      }
-      if (skill.ownerUserId === ownerUserId && score < policy.minOwnerScore) {
-        continue;
-      }
-      if (!best || score > best.score) {
-        best = {
-          ...skill,
-          score,
-        };
-      }
-    }
-
-    if (best && best.score >= ephemeralPolicy.publishedSkillReuseThreshold) {
-      return {
-        ...best,
-        score: Number(best.score.toFixed(3)),
-      };
-    }
-
-    return null;
-  }
-
-  private async upsertPublishedSkillBridgeDraft(input: {
-    sessionId: string;
-    ownerUserId: string;
-    dto: CreateSkillDraftDto;
-    skill: {
-      id: string;
-      skillCode: string;
-      score: number;
-      templateSource: string;
-    };
-    derivedRisk: {
-      riskLevel: 'LOW' | 'MEDIUM' | 'HIGH';
-      sideEffectRisk: boolean;
-      allowRuntimeGrant: boolean;
-    };
-  }) {
-    const existing = await this.prisma.agentSkillDraft.findFirst({
-      where: {
-        ownerUserId: input.ownerUserId,
-        publishedSkillId: input.skill.id,
-      },
-      orderBy: [{ updatedAt: 'desc' }],
-    });
-    if (existing) {
-      return existing;
-    }
-
-    return this.prisma.agentSkillDraft.create({
-      data: {
-        sessionId: input.sessionId,
-        ownerUserId: input.ownerUserId,
-        gapType: input.dto.gapType,
-        requiredCapability: input.dto.requiredCapability,
-        suggestedSkillCode: input.skill.skillCode,
-        draftSpec: {
-          source: 'PUBLISHED_SKILL_REUSE',
-          score: input.skill.score,
-          templateSource: input.skill.templateSource,
-          publishedSkillId: input.skill.id,
-        } as Prisma.InputJsonValue,
-        status: 'PUBLISHED',
-        riskLevel: input.derivedRisk.riskLevel,
-        sideEffectRisk: input.derivedRisk.sideEffectRisk,
-        provisionalEnabled: false,
-        publishedSkillId: input.skill.id,
-      },
-    });
-  }
-
-  private async ensureRuntimeGrantForDraft(
-    draftId: string,
-    sessionId: string,
-    ownerUserId: string,
-    provisionalEnabled: boolean,
-    policy: EphemeralCapabilityPolicy,
-  ): Promise<string | null> {
-    if (!provisionalEnabled) {
-      return null;
-    }
-    const activeGrant = await this.prisma.agentSkillRuntimeGrant.findFirst({
-      where: {
-        draftId,
-        status: 'ACTIVE',
-        expiresAt: { gt: new Date() },
-      },
-      orderBy: [{ createdAt: 'desc' }],
-      select: { id: true },
-    });
-    if (activeGrant) {
-      return activeGrant.id;
-    }
-
-    const runtimeGrant = await this.prisma.agentSkillRuntimeGrant.create({
-      data: {
-        draftId,
-        sessionId,
-        ownerUserId,
-        status: 'ACTIVE',
-        maxUseCount: policy.runtimeGrantMaxUseCount,
-        expiresAt: new Date(Date.now() + policy.runtimeGrantTtlHours * 60 * 60 * 1000),
-      },
-    });
-
-    await this.prisma.agentSkillGovernanceEvent.create({
-      data: {
-        ownerUserId,
-        draftId,
-        runtimeGrantId: runtimeGrant.id,
-        eventType: 'RUNTIME_GRANT_CREATED',
-        message: `运行时授权已创建：${runtimeGrant.id}`,
-        payload: {
-          maxUseCount: runtimeGrant.maxUseCount,
-          expiresAt: runtimeGrant.expiresAt,
-          reuseGenerated: true,
-        } as Prisma.InputJsonValue,
-      },
-    });
-
-    return runtimeGrant.id;
-  }
-
-  private normalizeCapabilityText(value: string): string {
-    return value
-      .trim()
-      .toLowerCase()
-      .replace(/[^\p{L}\p{N}]+/gu, '');
-  }
-
-  private extractCapabilityTokens(value: string): string[] {
-    const tokens = value.toLowerCase().match(/[\p{L}\p{N}]{2,}/gu) ?? [];
-    const unique = new Set(tokens.filter(Boolean));
-    return Array.from(unique);
-  }
-
-  private computeCapabilitySimilarity(baseTokens: string[], candidateTokens: string[]): number {
-    if (!baseTokens.length || !candidateTokens.length) {
-      return 0;
-    }
-    const base = new Set(baseTokens);
-    const candidate = new Set(candidateTokens);
-    const intersection = Array.from(base).filter((token) => candidate.has(token)).length;
-    const union = new Set([...base, ...candidate]).size;
-    if (union === 0) {
-      return 0;
-    }
-    return Number((intersection / union).toFixed(3));
   }
 
   private resolveSkillRisk(dto: CreateSkillDraftDto): {
@@ -5365,401 +2625,6 @@ export class AgentConversationService {
     return 'EXECUTING';
   }
 
-  private normalizeResult(
-    outputRecord: Record<string, unknown>,
-    evidenceItems: ConversationEvidenceItem[] = [],
-    traceability?: ConversationResultTraceability,
-  ) {
-    const replayBundle = this.toRecord(outputRecord.replayBundle);
-    const decisionOutput = this.toRecord(replayBundle.decisionOutput);
-
-    const outputFacts = this.normalizeFacts(outputRecord.facts);
-    const facts =
-      outputFacts.length > 0
-        ? outputFacts
-        : this.buildFactsFromEvidenceItems(evidenceItems).slice(0, 20);
-
-    const analysis =
-      this.pickString(outputRecord.analysis) ??
-      this.pickString(outputRecord.summary) ??
-      this.pickString(outputRecord.conclusion) ??
-      this.pickString(decisionOutput.reasoningSummary) ??
-      '';
-    const conclusion = this.pickString(outputRecord.conclusion) ?? (analysis ? analysis : null);
-    const actions = this.normalizeActions(outputRecord.actions, decisionOutput);
-    const confidence = this.normalizeConfidenceValue(
-      outputRecord.confidence,
-      decisionOutput.confidence,
-    );
-    const dataTimestamp =
-      this.pickString(outputRecord.dataTimestamp) ??
-      this.deriveLatestEvidenceTimestamp(evidenceItems) ??
-      new Date().toISOString();
-
-    return {
-      facts,
-      analysis,
-      conclusion,
-      actions,
-      confidence,
-      dataTimestamp,
-      evidenceItems,
-      traceability: traceability ?? null,
-    };
-  }
-
-  private normalizeFacts(
-    value: unknown,
-  ): Array<{ text: string; citations: Array<Record<string, unknown>> }> {
-    if (!Array.isArray(value)) {
-      return [];
-    }
-    return value
-      .map((item) => {
-        if (!item || typeof item !== 'object' || Array.isArray(item)) {
-          return null;
-        }
-        const row = item as Record<string, unknown>;
-        const text = this.pickString(row.text) ?? '';
-        const citations = Array.isArray(row.citations)
-          ? row.citations.filter(
-            (entry) => entry && typeof entry === 'object' && !Array.isArray(entry),
-          )
-          : [];
-        if (!text) {
-          return null;
-        }
-        return {
-          text,
-          citations: citations as Array<Record<string, unknown>>,
-        };
-      })
-      .filter((item): item is { text: string; citations: Array<Record<string, unknown>> } =>
-        Boolean(item),
-      );
-  }
-
-  private buildResultEvidenceItems(
-    outputRecord: Record<string, unknown>,
-    executionId: string,
-  ): ConversationEvidenceItem[] {
-    const replayPath = `/workflow/replay?executionId=${executionId}`;
-    const results: ConversationEvidenceItem[] = [];
-    const dedupe = new Set<string>();
-
-    const appendEvidenceItem = (item: ConversationEvidenceItem) => {
-      const dedupeKey = [
-        item.sourceNodeId ?? '-',
-        item.source,
-        item.title,
-        item.timestamp ?? '-',
-      ].join('|');
-      if (dedupe.has(dedupeKey)) {
-        return;
-      }
-      dedupe.add(dedupeKey);
-      results.push(item);
-    };
-
-    const evidenceBundle = this.toRecord(outputRecord.evidenceBundle);
-    const bundledEvidence = this.toArray(evidenceBundle.evidence);
-
-    for (const rawItem of bundledEvidence) {
-      const item = this.toRecord(rawItem);
-      const rawData = this.toRecord(item.rawData);
-      const sourceNodeId = this.pickString(item.sourceNodeId);
-      const sourceNodeType = this.pickString(item.sourceNodeType);
-      const source =
-        this.pickString(item.dataSource) ??
-        this.pickString(rawData.dataSource) ??
-        this.pickString(item.sourceNodeName) ??
-        sourceNodeId ??
-        'unknown';
-      const sourceUrl =
-        this.pickString(item.sourceUrl) ??
-        this.pickString(rawData.url) ??
-        this.pickString(rawData.sourceUrl);
-      const timestamp =
-        this.pickString(rawData.fetchedAt) ??
-        this.pickString(rawData.timestamp) ??
-        this.pickString(rawData.publishedAt) ??
-        this.pickString(rawData.snapshotAt) ??
-        this.pickString(rawData.eventDate);
-      const collectedAt = this.pickString(item.collectedAt) ?? new Date().toISOString();
-      const reconciliationGate = this.toRecord(rawData.reconciliationGate);
-
-      appendEvidenceItem({
-        id: this.pickString(item.id) ?? randomUUID(),
-        title: this.pickString(item.title) ?? `证据项 ${results.length + 1}`,
-        summary: this.pickString(item.summary) ?? this.pickString(rawData.message) ?? '无摘要',
-        source,
-        sourceNodeId,
-        sourceNodeType,
-        sourceUrl,
-        tracePath: replayPath,
-        collectedAt,
-        timestamp,
-        freshness: this.deriveEvidenceFreshness(
-          timestamp,
-          this.readBooleanOrNull(rawData.isFresh) ?? this.readBooleanOrNull(item.isFresh),
-        ),
-        quality: this.deriveEvidenceQuality({
-          isExternal: this.readBooleanOrNull(item.isExternal),
-          gatePassed: this.readBooleanOrNull(reconciliationGate.passed),
-        }),
-      });
-    }
-
-    const facts = this.normalizeFacts(outputRecord.facts);
-    for (const fact of facts.slice(0, 12)) {
-      for (const rawCitation of fact.citations) {
-        const citation = this.toRecord(rawCitation);
-        const source =
-          this.pickString(citation.source) ??
-          this.pickString(citation.type) ??
-          this.pickString(citation.label) ??
-          'fact-citation';
-        const sourceUrl = this.pickString(citation.url) ?? this.pickString(citation.link);
-        const timestamp =
-          this.pickString(citation.timestamp) ??
-          this.pickString(citation.dataTimestamp) ??
-          this.pickString(citation.publishedAt) ??
-          this.pickString(citation.collectedAt);
-        const sourceNodeId = this.pickString(citation.sourceNodeId);
-        const sourceNodeType = this.pickString(citation.sourceNodeType);
-
-        appendEvidenceItem({
-          id: this.pickString(citation.id) ?? randomUUID(),
-          title: this.pickString(citation.title) ?? `事实引用: ${source}`,
-          summary:
-            this.pickString(citation.summary) ??
-            this.pickString(citation.snippet) ??
-            fact.text.slice(0, 160),
-          source,
-          sourceNodeId,
-          sourceNodeType,
-          sourceUrl,
-          tracePath: replayPath,
-          collectedAt: new Date().toISOString(),
-          timestamp,
-          freshness: this.deriveEvidenceFreshness(timestamp, null),
-          quality: this.deriveEvidenceQuality({
-            isExternal: sourceUrl ? true : null,
-            gatePassed: null,
-          }),
-        });
-      }
-    }
-
-    if (results.length === 0) {
-      const replayBundle = this.toRecord(outputRecord.replayBundle);
-      const timeline = this.toArray(replayBundle.timeline);
-      for (const rawNode of timeline) {
-        const node = this.toRecord(rawNode);
-        const nodeType = this.pickString(node.nodeType) ?? '';
-        if (!nodeType.includes('fetch')) {
-          continue;
-        }
-        const output = this.toRecord(node.outputSnapshot);
-        const metadata = this.toRecord(output.metadata);
-        const reconciliationGate = this.toRecord(metadata.reconciliationGate);
-        const timestamp = this.pickString(output.fetchedAt) ?? this.pickString(metadata.fetchedAt);
-
-        appendEvidenceItem({
-          id: this.pickString(node.nodeId) ?? randomUUID(),
-          title: `${this.pickString(node.nodeName) ?? '数据节点'} 输出`,
-          summary:
-            this.pickString(output.freshnessMessage) ??
-            this.pickString(metadata.summary) ??
-            `节点 ${this.pickString(node.nodeName) ?? '-'} 执行完成`,
-          source:
-            this.pickString(output.dataSourceCode) ??
-            this.pickString(output.connectorCode) ??
-            this.pickString(metadata.source) ??
-            this.pickString(node.nodeName) ??
-            'unknown',
-          sourceNodeId: this.pickString(node.nodeId),
-          sourceNodeType: nodeType,
-          sourceUrl: this.pickString(metadata.url),
-          tracePath: replayPath,
-          collectedAt: this.pickString(node.completedAt) ?? new Date().toISOString(),
-          timestamp,
-          freshness: this.deriveEvidenceFreshness(
-            timestamp,
-            this.readBooleanOrNull(output.isFresh),
-          ),
-          quality: this.deriveEvidenceQuality({
-            isExternal: null,
-            gatePassed: this.readBooleanOrNull(reconciliationGate.passed),
-          }),
-        });
-      }
-    }
-
-    return results
-      .sort((left, right) => {
-        const leftTs = Date.parse(left.timestamp ?? left.collectedAt);
-        const rightTs = Date.parse(right.timestamp ?? right.collectedAt);
-        return (Number.isFinite(rightTs) ? rightTs : 0) - (Number.isFinite(leftTs) ? leftTs : 0);
-      })
-      .slice(0, 30);
-  }
-
-  private buildResultTraceability(
-    executionId: string,
-    outputRecord: Record<string, unknown>,
-    evidenceItems: ConversationEvidenceItem[],
-  ): ConversationResultTraceability {
-    const evidenceBundle = this.toRecord(outputRecord.evidenceBundle);
-    const evidenceCount =
-      this.readNumberOrNull(evidenceBundle.evidenceCount) ??
-      this.toArray(evidenceBundle.evidence).length ??
-      evidenceItems.length;
-    const strongEvidenceCount =
-      this.readNumberOrNull(evidenceBundle.strongEvidenceCount) ??
-      evidenceItems.filter((item) => item.quality === 'INTERNAL' || item.quality === 'RECONCILED')
-        .length;
-    const externalEvidenceCount =
-      this.readNumberOrNull(evidenceBundle.externalEvidenceCount) ??
-      evidenceItems.filter((item) => item.quality === 'EXTERNAL').length;
-
-    return {
-      executionId,
-      replayPath: `/workflow/replay?executionId=${executionId}`,
-      executionPath: '/workflow/executions',
-      evidenceCount,
-      strongEvidenceCount,
-      externalEvidenceCount,
-      generatedAt: new Date().toISOString(),
-    };
-  }
-
-  private buildFactsFromEvidenceItems(
-    evidenceItems: ConversationEvidenceItem[],
-  ): Array<{ text: string; citations: Array<Record<string, unknown>> }> {
-    return evidenceItems.slice(0, 8).map((item) => ({
-      text: `${item.title}: ${item.summary}`,
-      citations: [
-        {
-          source: item.source,
-          timestamp: item.timestamp,
-          sourceUrl: item.sourceUrl,
-          sourceNodeId: item.sourceNodeId,
-          sourceNodeType: item.sourceNodeType,
-          freshness: item.freshness,
-          quality: item.quality,
-        },
-      ],
-    }));
-  }
-
-  private deriveLatestEvidenceTimestamp(evidenceItems: ConversationEvidenceItem[]): string | null {
-    const timestamps = evidenceItems
-      .map((item) => item.timestamp ?? item.collectedAt)
-      .map((value) => Date.parse(value))
-      .filter((value) => Number.isFinite(value));
-    if (timestamps.length === 0) {
-      return null;
-    }
-    return new Date(Math.max(...timestamps)).toISOString();
-  }
-
-  private deriveEvidenceFreshness(
-    timestamp: string | null,
-    explicitFreshness: boolean | null,
-  ): ConversationEvidenceFreshness {
-    if (explicitFreshness === true) {
-      return 'FRESH';
-    }
-    if (explicitFreshness === false) {
-      return 'STALE';
-    }
-    if (!timestamp) {
-      return 'UNKNOWN';
-    }
-    const parsed = Date.parse(timestamp);
-    if (!Number.isFinite(parsed)) {
-      return 'UNKNOWN';
-    }
-    const ageMinutes = (Date.now() - parsed) / (1000 * 60);
-    if (!Number.isFinite(ageMinutes) || ageMinutes < 0) {
-      return 'UNKNOWN';
-    }
-    return ageMinutes <= 180 ? 'FRESH' : 'STALE';
-  }
-
-  private deriveEvidenceQuality(params: {
-    isExternal: boolean | null;
-    gatePassed: boolean | null;
-  }): ConversationEvidenceQuality {
-    if (params.gatePassed === true) {
-      return 'RECONCILED';
-    }
-    if (params.isExternal === true) {
-      return 'EXTERNAL';
-    }
-    if (params.isExternal === false) {
-      return 'INTERNAL';
-    }
-    return 'UNVERIFIED';
-  }
-
-  private readBooleanOrNull(value: unknown): boolean | null {
-    if (typeof value === 'boolean') {
-      return value;
-    }
-    if (typeof value === 'number' && Number.isFinite(value)) {
-      if (value === 1) {
-        return true;
-      }
-      if (value === 0) {
-        return false;
-      }
-      return null;
-    }
-    if (typeof value === 'string') {
-      const normalized = value.trim().toLowerCase();
-      if (['true', '1', 'yes', 'on', 'enabled'].includes(normalized)) {
-        return true;
-      }
-      if (['false', '0', 'no', 'off', 'disabled'].includes(normalized)) {
-        return false;
-      }
-    }
-    return null;
-  }
-
-  private normalizeActions(
-    value: unknown,
-    decisionOutput?: Record<string, unknown>,
-  ): Record<string, unknown> {
-    const fallbackRiskDisclosure = '建议仅供参考，请结合业务实际与风控要求审慎执行。';
-    const decisionAction = this.pickString(decisionOutput?.action);
-    const decisionRiskLevel = this.pickString(decisionOutput?.riskLevel);
-
-    if (!value || typeof value !== 'object' || Array.isArray(value)) {
-      return {
-        spot: [],
-        futures: [],
-        recommendedAction: decisionAction ?? 'HOLD',
-        riskLevel: decisionRiskLevel,
-        riskDisclosure: fallbackRiskDisclosure,
-      };
-    }
-    const record = value as Record<string, unknown>;
-
-    return {
-      ...record,
-      ...(decisionAction && !this.pickString(record.recommendedAction)
-        ? { recommendedAction: decisionAction }
-        : {}),
-      ...(decisionRiskLevel && !this.pickString(record.riskLevel)
-        ? { riskLevel: decisionRiskLevel }
-        : {}),
-      riskDisclosure: this.pickString(record.riskDisclosure) ?? fallbackRiskDisclosure,
-    };
-  }
-
   private normalizeNumber(value: unknown): number {
     if (typeof value === 'number' && Number.isFinite(value)) {
       return value;
@@ -5771,133 +2636,6 @@ export class AgentConversationService {
       }
     }
     return 0;
-  }
-
-  private normalizeConfidenceValue(primary: unknown, fallback: unknown): number {
-    const candidate = this.readNumberOrNull(primary) ?? this.readNumberOrNull(fallback) ?? 0;
-    if (candidate > 1) {
-      return Math.max(0, Math.min(1, candidate / 100));
-    }
-    if (candidate < 0) {
-      return 0;
-    }
-    return Math.min(1, candidate);
-  }
-
-  private readNumberOrNull(value: unknown): number | null {
-    if (typeof value === 'number' && Number.isFinite(value)) {
-      return value;
-    }
-    if (typeof value === 'string') {
-      const parsed = Number(value.trim());
-      if (Number.isFinite(parsed)) {
-        return parsed;
-      }
-    }
-    return null;
-  }
-
-  private buildResultDiffSnapshot(asset: {
-    id: string;
-    sourceExecutionId: string | null;
-    payload: unknown;
-    createdAt: Date;
-  }): ConversationResultDiffSnapshot {
-    const payload = this.toRecord(asset.payload);
-    const result = this.toRecord(payload.result);
-    const facts = this.normalizeFacts(result.facts);
-    const factTexts = facts
-      .map((item) => item.text)
-      .filter((item, index, arr) => arr.indexOf(item) === index);
-
-    const sourceSet = new Set<string>();
-    for (const fact of facts) {
-      for (const citation of fact.citations) {
-        const source =
-          this.pickString(citation.source) ??
-          this.pickString(citation.type) ??
-          this.pickString(citation.label);
-        if (source) {
-          sourceSet.add(source);
-        }
-      }
-    }
-
-    return {
-      assetId: asset.id,
-      createdAt: asset.createdAt.toISOString(),
-      executionId: this.pickString(payload.executionId) ?? asset.sourceExecutionId,
-      status: this.pickString(payload.status) ?? 'UNKNOWN',
-      confidence: this.normalizeNumber(result.confidence),
-      analysis: this.pickString(result.analysis) ?? this.pickString(result.summary) ?? '',
-      facts: factTexts,
-      sources: [...sourceSet],
-      actions: this.normalizeActions(result.actions),
-    };
-  }
-
-  private buildResultDiff(
-    current: ConversationResultDiffSnapshot,
-    baseline: ConversationResultDiffSnapshot,
-  ): ConversationResultDiff {
-    const baselineFacts = new Set(baseline.facts);
-    const currentFacts = new Set(current.facts);
-    const addedFacts = current.facts.filter((fact) => !baselineFacts.has(fact));
-    const removedFacts = baseline.facts.filter((fact) => !currentFacts.has(fact));
-
-    const baselineSources = new Set(baseline.sources);
-    const currentSources = new Set(current.sources);
-    const addedSources = current.sources.filter((source) => !baselineSources.has(source));
-    const removedSources = baseline.sources.filter((source) => !currentSources.has(source));
-
-    const actionKeys = new Set([...Object.keys(baseline.actions), ...Object.keys(current.actions)]);
-    const changedActionKeys = [...actionKeys].filter((key) => {
-      const currentValue = this.serializeComparable(current.actions[key]);
-      const baselineValue = this.serializeComparable(baseline.actions[key]);
-      return currentValue !== baselineValue;
-    });
-
-    const confidenceDelta = Number((current.confidence - baseline.confidence).toFixed(4));
-    const analysisChanged = current.analysis !== baseline.analysis;
-
-    const changeSummary: string[] = [];
-    if (Math.abs(confidenceDelta) >= 0.05) {
-      changeSummary.push('CONFIDENCE_SHIFT');
-    }
-    if (addedFacts.length > 0 || removedFacts.length > 0) {
-      changeSummary.push('FACTS_CHANGED');
-    }
-    if (addedSources.length > 0 || removedSources.length > 0) {
-      changeSummary.push('EVIDENCE_SOURCES_CHANGED');
-    }
-    if (changedActionKeys.length > 0) {
-      changeSummary.push('ACTIONS_CHANGED');
-    }
-    if (analysisChanged) {
-      changeSummary.push('ANALYSIS_CHANGED');
-    }
-
-    return {
-      confidenceDelta,
-      analysisChanged,
-      addedFacts,
-      removedFacts,
-      addedSources,
-      removedSources,
-      changedActionKeys,
-      changeSummary,
-    };
-  }
-
-  private serializeComparable(value: unknown): string {
-    if (value === undefined) {
-      return '__undefined__';
-    }
-    try {
-      return JSON.stringify(value);
-    } catch {
-      return String(value);
-    }
   }
 
   private async getAuthorizedExecution(userId: string, executionId: string) {
@@ -5943,87 +2681,6 @@ export class AgentConversationService {
       winRatePct: Number(winRate.toFixed(2)),
       score: Number(score.toFixed(3)),
     };
-  }
-
-  private deriveConflictsFromExecutionOutput(outputSnapshot: unknown) {
-    const outputRecord = this.toRecord(outputSnapshot);
-    const facts = this.normalizeFacts(outputRecord.facts);
-    if (facts.length < 2) {
-      return [] as Array<{
-        topic: string;
-        consistencyScore: number;
-        sourceA: string;
-        sourceB: string;
-        valueA: Record<string, unknown>;
-        valueB: Record<string, unknown>;
-        resolution: string;
-        reason: string;
-      }>;
-    }
-
-    const first = facts[0];
-    const second = facts[1];
-    const sourceA = this.extractPrimarySource(first.citations, 'source_a');
-    const sourceB = this.extractPrimarySource(second.citations, 'source_b');
-    const variance = ((first.text.length + second.text.length) % 21) / 100;
-    const score = Number((0.62 + variance).toFixed(2));
-    const preferA = sourceA.includes('price') || sourceA.includes('spot');
-
-    return [
-      {
-        topic: '多源事实冲突',
-        consistencyScore: score,
-        sourceA,
-        sourceB,
-        valueA: {
-          text: first.text,
-          citations: first.citations,
-        },
-        valueB: {
-          text: second.text,
-          citations: second.citations,
-        },
-        resolution: preferA ? 'prefer_source_a' : 'prefer_source_b',
-        reason: preferA ? '来源A数据新鲜度更高' : '来源B证据链更完整',
-      },
-    ];
-  }
-
-  private extractPrimarySource(
-    citations: Array<Record<string, unknown>>,
-    fallback: string,
-  ): string {
-    for (const citation of citations) {
-      const code = this.pickString(citation.source);
-      if (code) {
-        return code;
-      }
-      const type = this.pickString(citation.type);
-      if (type) {
-        return type;
-      }
-      const label = this.pickString(citation.label);
-      if (label) {
-        return label;
-      }
-    }
-    return fallback;
-  }
-
-  private computeConflictConsistencyScore(
-    conflicts: Array<{ consistencyScore: number | null }>,
-  ): number {
-    if (!conflicts.length) {
-      return 1;
-    }
-    const scores = conflicts
-      .map((item) => item.consistencyScore)
-      .filter((item): item is number => typeof item === 'number' && Number.isFinite(item));
-    if (!scores.length) {
-      return 0.7;
-    }
-    const avg = scores.reduce((sum, value) => sum + value, 0) / scores.length;
-    return Number(avg.toFixed(2));
   }
 
   private async pickWorkflowDefinitionCandidate(
@@ -6292,358 +2949,11 @@ export class AgentConversationService {
     ];
   }
 
-  private computeNextRunAt(cronExpr: string, timezone: string): Date {
-    const fields = cronExpr.trim().split(/\s+/);
-    if (fields.length < 6) {
-      return new Date(Date.now() + 60 * 60 * 1000);
-    }
-
-    const [, minuteField, hourField, , , dayOfWeekField] = fields;
-    const minute = Number(minuteField);
-    const hour = Number(hourField);
-    const dayOfWeek = dayOfWeekField;
-
-    const now = new Date();
-    const base = new Date(now.getTime() + 60 * 1000);
-
-    if (Number.isFinite(minute) && Number.isFinite(hour)) {
-      const candidate = new Date(base);
-      candidate.setUTCMinutes(minute, 0, 0);
-      candidate.setUTCHours(hour);
-
-      if (dayOfWeek === '*' || dayOfWeek === '?') {
-        if (candidate <= now) {
-          candidate.setUTCDate(candidate.getUTCDate() + 1);
-        }
-        return candidate;
-      }
-
-      const targetDow = Number(dayOfWeek);
-      if (Number.isFinite(targetDow)) {
-        const normalizedTarget = targetDow % 7;
-        let diff = normalizedTarget - candidate.getUTCDay();
-        if (diff < 0) {
-          diff += 7;
-        }
-        candidate.setUTCDate(candidate.getUTCDate() + diff);
-        if (candidate <= now) {
-          candidate.setUTCDate(candidate.getUTCDate() + 7);
-        }
-        return candidate;
-      }
-    }
-
-    const tzFallback = timezone ? 60 : 60;
-    return new Date(Date.now() + tzFallback * 60 * 1000);
-  }
-
-  private async runSubscription(
-    subscriptionId: string,
-    triggerMode: 'SCHEDULED' | 'RERUN',
-    userId: string,
-  ) {
-    const subscription = await this.prisma.conversationSubscription.findUnique({
-      where: { id: subscriptionId },
-      include: { session: true },
-    });
-    if (!subscription) {
-      return null;
-    }
-
-    const run = await this.prisma.conversationSubscriptionRun.create({
-      data: {
-        subscriptionId,
-        status: 'RUNNING',
-        triggerMode,
-      },
-    });
-
-    try {
-      const planSnapshot = this.toRecord(subscription.planSnapshot);
-      const workflowDefinitionId = this.pickString(planSnapshot.workflowDefinitionId);
-      if (!workflowDefinitionId || !this.isUuid(workflowDefinitionId)) {
-        throw new Error('订阅计划缺少有效 workflowDefinitionId');
-      }
-      const paramSnapshot = this.toRecord(planSnapshot.paramSnapshot);
-
-      // ── D2: 定时执行也注入前轮结果（让定时分析能参考上次结论） ──
-      try {
-        const latestResultAsset = await this.prisma.conversationAsset.findFirst({
-          where: { sessionId: subscription.sessionId, assetType: 'RESULT_SUMMARY' },
-          orderBy: { createdAt: 'desc' },
-          select: { payload: true },
-        });
-        if (latestResultAsset?.payload) {
-          const resultPayload = this.toRecord(latestResultAsset.payload);
-          const previousResult = this.toRecord(resultPayload.result);
-          const previousAnalysis: Record<string, unknown> = {};
-          if (previousResult.conclusion) previousAnalysis.conclusion = previousResult.conclusion;
-          if (previousResult.confidence) previousAnalysis.confidence = previousResult.confidence;
-          if (Array.isArray(previousResult.facts))
-            previousAnalysis.facts = (previousResult.facts as string[]).slice(0, 10);
-          if (Object.keys(previousAnalysis).length > 0) {
-            paramSnapshot.previousAnalysis = previousAnalysis;
-          }
-        }
-      } catch {
-        // 注入失败不阻塞定时执行
-      }
-
-      const compiledParamSnapshot = this.compileExecutionParams(planSnapshot, paramSnapshot);
-
-      const execution = await this.workflowExecutionService.trigger(userId, {
-        workflowDefinitionId,
-        triggerType: 'SCHEDULE',
-        paramSnapshot: compiledParamSnapshot,
-        idempotencyKey: `subscription-${subscriptionId}-${Date.now()}`,
-      });
-      if (!execution) {
-        throw new Error('订阅任务触发执行失败');
-      }
-
-      await this.prisma.conversationSubscriptionRun.update({
-        where: { id: run.id },
-        data: {
-          status: 'SUCCESS',
-          workflowExecutionId: execution.id,
-          endedAt: new Date(),
-        },
-      });
-
-      const nextRunAt = this.computeNextRunAt(subscription.cronExpr, subscription.timezone);
-      await this.prisma.conversationSubscription.update({
-        where: { id: subscriptionId },
-        data: {
-          lastRunAt: new Date(),
-          nextRunAt,
-          status: 'ACTIVE',
-        },
-      });
-
-      await this.prisma.conversationTurn.create({
-        data: {
-          sessionId: subscription.sessionId,
-          role: 'SYSTEM',
-          content: `订阅任务已执行（${triggerMode}）。`,
-          structuredPayload: {
-            subscriptionId,
-            runId: run.id,
-            workflowExecutionId: execution.id,
-            triggerMode,
-            nextRunAt,
-          } as Prisma.InputJsonValue,
-        },
-      });
-
-      return {
-        runId: run.id,
-        workflowExecutionId: execution.id,
-        status: 'SUCCESS',
-        nextRunAt,
-      };
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      await this.prisma.conversationSubscriptionRun.update({
-        where: { id: run.id },
-        data: {
-          status: 'FAILED',
-          errorMessage,
-          endedAt: new Date(),
-        },
-      });
-      await this.prisma.conversationSubscription.update({
-        where: { id: subscriptionId },
-        data: {
-          status: 'FAILED',
-          nextRunAt: null,
-        },
-      });
-
-      await this.prisma.conversationTurn.create({
-        data: {
-          sessionId: subscription.sessionId,
-          role: 'SYSTEM',
-          content: `订阅任务执行失败：${errorMessage}`,
-          structuredPayload: {
-            subscriptionId,
-            runId: run.id,
-            triggerMode,
-            errorMessage,
-          } as Prisma.InputJsonValue,
-        },
-      });
-
-      return {
-        runId: run.id,
-        status: 'FAILED',
-        errorMessage,
-      };
-    }
-  }
-
   // ─── copilot-v2 灰度开关 ───────────────────────────────────────────────
-
-  async resolveCopilotVersion(userId: string): Promise<{ version: 'v1' | 'v2' }> {
-    const binding = await this.prisma.userConfigBinding.findFirst({
-      where: {
-        userId,
-        bindingType: 'AGENT_COPILOT_VERSION',
-        isActive: true,
-      },
-      orderBy: { priority: 'desc' },
-      select: { metadata: true },
-    });
-    const metadata = this.toRecord(binding?.metadata);
-    const version = metadata.version === 'v2' ? 'v2' : 'v1';
-    return { version };
-  }
 
   // ─── DeliveryChannelBinding 独立查询 ────────────────────────────────────
 
-  async resolveDeliveryChannelBinding(
-    userId: string,
-    channel: 'EMAIL' | 'DINGTALK' | 'WECOM' | 'FEISHU',
-  ): Promise<{
-    id: string;
-    to?: string[];
-    target?: string;
-    templateCode?: 'DEFAULT' | 'MORNING_BRIEF' | 'WEEKLY_REVIEW' | 'RISK_ALERT';
-    sendRawFile?: boolean;
-  } | null> {
-    const binding = await this.prisma.deliveryChannelBinding.findFirst({
-      where: {
-        ownerUserId: userId,
-        channel,
-        isActive: true,
-      },
-      orderBy: [{ isDefault: 'desc' }, { updatedAt: 'desc' }],
-    });
-    if (!binding) {
-      return null;
-    }
-    const to = Array.isArray(binding.to)
-      ? (binding.to as unknown[])
-        .map((item) => (typeof item === 'string' ? item.trim() : ''))
-        .filter(Boolean)
-      : undefined;
-    const rawTemplateCode = binding.templateCode;
-    return {
-      id: binding.id,
-      to,
-      target: binding.target ?? undefined,
-      templateCode: rawTemplateCode
-        ? this.normalizeDeliveryTemplateCode(rawTemplateCode)
-        : undefined,
-      sendRawFile: binding.sendRawFile,
-    };
-  }
-
-  async listDeliveryChannelBindings(userId: string) {
-    return this.prisma.deliveryChannelBinding.findMany({
-      where: { ownerUserId: userId, isActive: true },
-      orderBy: [{ channel: 'asc' }, { isDefault: 'desc' }, { updatedAt: 'desc' }],
-    });
-  }
-
-  async upsertDeliveryChannelBinding(
-    userId: string,
-    data: {
-      id?: string;
-      channel: string;
-      target?: string;
-      to?: string[];
-      templateCode?: string;
-      sendRawFile?: boolean;
-      description?: string;
-      isDefault?: boolean;
-    },
-  ) {
-    if (data.id) {
-      return this.prisma.deliveryChannelBinding.update({
-        where: { id: data.id },
-        data: {
-          channel: data.channel,
-          target: data.target,
-          to: data.to ?? undefined,
-          templateCode: data.templateCode,
-          sendRawFile: data.sendRawFile,
-          description: data.description,
-          isDefault: data.isDefault,
-        },
-      });
-    }
-    return this.prisma.deliveryChannelBinding.create({
-      data: {
-        ownerUserId: userId,
-        channel: data.channel,
-        target: data.target,
-        to: data.to ?? undefined,
-        templateCode: data.templateCode,
-        sendRawFile: data.sendRawFile ?? true,
-        description: data.description,
-        isDefault: data.isDefault ?? false,
-      },
-    });
-  }
-
   // ─── ConversationSchedulePolicy 独立查询 ─────────────────────────────────
-
-  async listSchedulePolicies(userId: string) {
-    return this.prisma.conversationSchedulePolicy.findMany({
-      where: { ownerUserId: userId, isActive: true },
-      orderBy: { updatedAt: 'desc' },
-    });
-  }
-
-  async upsertSchedulePolicy(
-    userId: string,
-    data: {
-      id?: string;
-      name: string;
-      cronExpr: string;
-      timezone?: string;
-      quietHoursStart?: string;
-      quietHoursEnd?: string;
-      maxRetries?: number;
-      retryIntervalMs?: number;
-      maxConcurrent?: number;
-    },
-  ) {
-    if (data.id) {
-      return this.prisma.conversationSchedulePolicy.update({
-        where: { id: data.id },
-        data: {
-          name: data.name,
-          cronExpr: data.cronExpr,
-          timezone: data.timezone,
-          quietHoursStart: data.quietHoursStart,
-          quietHoursEnd: data.quietHoursEnd,
-          maxRetries: data.maxRetries,
-          retryIntervalMs: data.retryIntervalMs,
-          maxConcurrent: data.maxConcurrent,
-        },
-      });
-    }
-    return this.prisma.conversationSchedulePolicy.create({
-      data: {
-        ownerUserId: userId,
-        name: data.name,
-        cronExpr: data.cronExpr,
-        timezone: data.timezone ?? 'Asia/Shanghai',
-        quietHoursStart: data.quietHoursStart,
-        quietHoursEnd: data.quietHoursEnd,
-        maxRetries: data.maxRetries ?? 3,
-        retryIntervalMs: data.retryIntervalMs ?? 60000,
-        maxConcurrent: data.maxConcurrent ?? 1,
-      },
-    });
-  }
-
-  async resolveSchedulePolicy(policyId: string) {
-    return this.prisma.conversationSchedulePolicy.findUnique({
-      where: { id: policyId },
-    });
-  }
 
   // ── Phase 7: 动态编排 Facade Delegates ──────────────────────────────────
 
@@ -6692,7 +3002,439 @@ export class AgentConversationService {
     return this.orchestratorService.promoteEphemeralAgent(userId, sessionId, agentAssetId, dto);
   }
 
+  async getObservabilitySummary(userId: string, query: ConversationObservabilitySummaryQueryDto) {
+    const now = new Date();
+    const windowDays = Math.min(
+      90,
+      Math.max(1, Math.round(this.normalizeNumber(query.windowDays) || 7)),
+    );
+    const maxSessions = Math.min(
+      2000,
+      Math.max(50, Math.round(this.normalizeNumber(query.maxSessions) || 500)),
+    );
+    const windowStart = new Date(now.getTime() - windowDays * 24 * 60 * 60 * 1000);
+
+    const totalSessionsInWindow = await this.prisma.conversationSession.count({
+      where: {
+        ownerUserId: userId,
+        createdAt: { gte: windowStart },
+      },
+    });
+
+    const sampledSessions = await this.prisma.conversationSession.findMany({
+      where: {
+        ownerUserId: userId,
+        createdAt: { gte: windowStart },
+      },
+      orderBy: { createdAt: 'desc' },
+      take: maxSessions,
+      select: {
+        id: true,
+      },
+    });
+
+    const sessionIds = sampledSessions.map((item) => item.id);
+
+    if (sessionIds.length === 0) {
+      return {
+        generatedAt: now.toISOString(),
+        windowDays,
+        windowStart: windowStart.toISOString(),
+        windowEnd: now.toISOString(),
+        sessionsInWindow: totalSessionsInWindow,
+        sampledSessions: 0,
+        truncated: false,
+        totals: {
+          sessionsWithUserTurn: 0,
+          sessionsWithExecution: 0,
+          executions: 0,
+          completedExecutions: 0,
+          successExecutions: 0,
+          failedExecutions: 0,
+        },
+        successRate: 0,
+        firstResponseLatency: {
+          sampleSize: 0,
+          p50Ms: null,
+          p95Ms: null,
+        },
+        acceptanceLatency: {
+          sampleSize: 0,
+          p50Ms: null,
+          p95Ms: null,
+        },
+        completionLatency: {
+          sampleSize: 0,
+          p50Ms: null,
+          p95Ms: null,
+        },
+        citationCoverage: {
+          executionWithFacts: 0,
+          totalFacts: 0,
+          citedFacts: 0,
+          coverageRate: 0,
+        },
+      };
+    }
+
+    const turns = await this.prisma.conversationTurn.findMany({
+      where: {
+        sessionId: { in: sessionIds },
+        role: { in: ['USER', 'ASSISTANT'] },
+      },
+      orderBy: [{ sessionId: 'asc' }, { createdAt: 'asc' }],
+      select: {
+        sessionId: true,
+        role: true,
+        createdAt: true,
+      },
+    });
+
+    const firstUserTurnBySession = new Map<string, Date>();
+    const firstAssistantTurnBySession = new Map<string, Date>();
+    for (const turn of turns) {
+      if (turn.role === 'USER') {
+        if (!firstUserTurnBySession.has(turn.sessionId)) {
+          firstUserTurnBySession.set(turn.sessionId, turn.createdAt);
+        }
+        continue;
+      }
+      const firstUserTurn = firstUserTurnBySession.get(turn.sessionId);
+      if (!firstUserTurn) {
+        continue;
+      }
+      if (!firstAssistantTurnBySession.has(turn.sessionId) && turn.createdAt >= firstUserTurn) {
+        firstAssistantTurnBySession.set(turn.sessionId, turn.createdAt);
+      }
+    }
+
+    const firstResponseLatencyValues: number[] = [];
+    for (const [sessionId, firstUserTurn] of firstUserTurnBySession.entries()) {
+      const firstAssistantTurn = firstAssistantTurnBySession.get(sessionId);
+      if (!firstAssistantTurn) {
+        continue;
+      }
+      firstResponseLatencyValues.push(firstAssistantTurn.getTime() - firstUserTurn.getTime());
+    }
+
+    const confirmedPlans = await this.prisma.conversationPlan.findMany({
+      where: {
+        sessionId: { in: sessionIds },
+        isConfirmed: true,
+        confirmedAt: { not: null },
+      },
+      orderBy: [{ sessionId: 'asc' }, { confirmedAt: 'asc' }],
+      select: {
+        sessionId: true,
+        confirmedAt: true,
+        workflowExecutionId: true,
+      },
+    });
+
+    const firstConfirmedPlanBySession = new Map<
+      string,
+      {
+        confirmedAt: Date;
+        workflowExecutionId: string | null;
+      }
+    >();
+
+    for (const plan of confirmedPlans) {
+      if (firstConfirmedPlanBySession.has(plan.sessionId) || !plan.confirmedAt) {
+        continue;
+      }
+      firstConfirmedPlanBySession.set(plan.sessionId, {
+        confirmedAt: plan.confirmedAt,
+        workflowExecutionId: this.pickString(plan.workflowExecutionId),
+      });
+    }
+
+    const acceptanceLatencyValues: number[] = [];
+    const executionIds = new Set<string>();
+    for (const [sessionId, plan] of firstConfirmedPlanBySession.entries()) {
+      const firstUserTurn = firstUserTurnBySession.get(sessionId);
+      if (firstUserTurn) {
+        acceptanceLatencyValues.push(plan.confirmedAt.getTime() - firstUserTurn.getTime());
+      }
+      if (plan.workflowExecutionId) {
+        executionIds.add(plan.workflowExecutionId);
+      }
+    }
+
+    const executions = executionIds.size
+      ? await this.prisma.workflowExecution.findMany({
+        where: {
+          id: { in: Array.from(executionIds) },
+        },
+        select: {
+          id: true,
+          status: true,
+          completedAt: true,
+          outputSnapshot: true,
+        },
+      })
+      : [];
+
+    const executionById = new Map(executions.map((item) => [item.id, item]));
+    const completionLatencyValues: number[] = [];
+    let completedExecutions = 0;
+    let successExecutions = 0;
+    let failedExecutions = 0;
+    let executionWithFacts = 0;
+    let totalFacts = 0;
+    let citedFacts = 0;
+
+    for (const execution of executions) {
+      if (execution.status === 'SUCCESS') {
+        successExecutions += 1;
+      }
+      if (execution.status === 'FAILED' || execution.status === 'CANCELED') {
+        failedExecutions += 1;
+      }
+      if (
+        execution.status === 'SUCCESS' ||
+        execution.status === 'FAILED' ||
+        execution.status === 'CANCELED'
+      ) {
+        completedExecutions += 1;
+      }
+
+      const outputRecord = this.toRecord(execution.outputSnapshot);
+      const facts = this.resultService.normalizeFacts(outputRecord.facts);
+      if (facts.length > 0) {
+        executionWithFacts += 1;
+      }
+      totalFacts += facts.length;
+      citedFacts += facts.filter((fact) => fact.citations.length > 0).length;
+    }
+
+    for (const [sessionId, plan] of firstConfirmedPlanBySession.entries()) {
+      const executionId = plan.workflowExecutionId;
+      const firstUserTurn = firstUserTurnBySession.get(sessionId);
+      if (!executionId || !firstUserTurn) {
+        continue;
+      }
+      const execution = executionById.get(executionId);
+      if (!execution?.completedAt) {
+        continue;
+      }
+      completionLatencyValues.push(execution.completedAt.getTime() - firstUserTurn.getTime());
+    }
+
+    const successRate =
+      completedExecutions > 0
+        ? successExecutions / completedExecutions
+        : successExecutions > 0
+          ? 1
+          : 0;
+    const citationCoverageRate = totalFacts > 0 ? citedFacts / totalFacts : 0;
+    const traceCoveredExecutions = Array.from(firstConfirmedPlanBySession.values()).filter(
+      (plan) => !!plan.workflowExecutionId && executionById.has(plan.workflowExecutionId),
+    ).length;
+    const traceCoverageRate =
+      firstConfirmedPlanBySession.size > 0
+        ? traceCoveredExecutions / firstConfirmedPlanBySession.size
+        : 0;
+
+    const firstResponseLatency = this.buildLatencyPercentileSummary(firstResponseLatencyValues);
+    const acceptanceLatency = this.buildLatencyPercentileSummary(acceptanceLatencyValues);
+    const completionLatency = this.buildLatencyPercentileSummary(completionLatencyValues);
+    const nfrGate = this.buildObservabilityNfrGate({
+      firstResponseP95Ms: firstResponseLatency.p95Ms,
+      acceptanceP95Ms: acceptanceLatency.p95Ms,
+      completionP95Ms: completionLatency.p95Ms,
+      successRate,
+      citationCoverageRate,
+      traceCoverageRate,
+    });
+
+    return {
+      generatedAt: now.toISOString(),
+      windowDays,
+      windowStart: windowStart.toISOString(),
+      windowEnd: now.toISOString(),
+      sessionsInWindow: totalSessionsInWindow,
+      sampledSessions: sampledSessions.length,
+      truncated: totalSessionsInWindow > sampledSessions.length,
+      totals: {
+        sessionsWithUserTurn: firstUserTurnBySession.size,
+        sessionsWithExecution: firstConfirmedPlanBySession.size,
+        executions: executions.length,
+        completedExecutions,
+        successExecutions,
+        failedExecutions,
+      },
+      successRate: Number(successRate.toFixed(4)),
+      firstResponseLatency,
+      acceptanceLatency,
+      completionLatency,
+      citationCoverage: {
+        executionWithFacts,
+        totalFacts,
+        citedFacts,
+        coverageRate: Number(citationCoverageRate.toFixed(4)),
+      },
+      nfrGate,
+    };
+  }
+
+  private buildObservabilityNfrGate(input: {
+    firstResponseP95Ms: number | null;
+    acceptanceP95Ms: number | null;
+    completionP95Ms: number | null;
+    successRate: number;
+    citationCoverageRate: number;
+    traceCoverageRate: number;
+  }) {
+    const thresholdFirstResponseP95Ms = this.resolveNfrThreshold(
+      process.env.CONV_NFR_FIRST_RESPONSE_P95_MS,
+      3000,
+      100,
+      120000,
+    );
+    const thresholdAcceptanceP95Ms = this.resolveNfrThreshold(
+      process.env.CONV_NFR_ACCEPTANCE_P95_MS,
+      2000,
+      100,
+      120000,
+    );
+    const thresholdCompletionP95Ms = this.resolveNfrThreshold(
+      process.env.CONV_NFR_COMPLETION_P95_MS,
+      30000,
+      500,
+      600000,
+    );
+    const thresholdSuccessRate = this.resolveNfrThreshold(
+      process.env.CONV_NFR_SUCCESS_RATE_MIN,
+      0.99,
+      0,
+      1,
+    );
+    const thresholdCitationCoverage = this.resolveNfrThreshold(
+      process.env.CONV_NFR_CITATION_COVERAGE_MIN,
+      0.95,
+      0,
+      1,
+    );
+    const thresholdTraceCoverage = this.resolveNfrThreshold(
+      process.env.CONV_NFR_TRACE_COVERAGE_MIN,
+      1,
+      0,
+      1,
+    );
+
+    const checks = [
+      {
+        id: 'NFR-001',
+        label: '对话首响应 P95',
+        target: `<= ${thresholdFirstResponseP95Ms}ms`,
+        actual: input.firstResponseP95Ms,
+        passed:
+          input.firstResponseP95Ms !== null &&
+          input.firstResponseP95Ms <= thresholdFirstResponseP95Ms,
+      },
+      {
+        id: 'NFR-002',
+        label: '执行受理响应 P95',
+        target: `<= ${thresholdAcceptanceP95Ms}ms`,
+        actual: input.acceptanceP95Ms,
+        passed: input.acceptanceP95Ms !== null && input.acceptanceP95Ms <= thresholdAcceptanceP95Ms,
+      },
+      {
+        id: 'NFR-003',
+        label: '工作流端到端成功率',
+        target: `>= ${(thresholdSuccessRate * 100).toFixed(1)}%`,
+        actual: Number((input.successRate * 100).toFixed(2)),
+        passed: input.successRate >= thresholdSuccessRate,
+      },
+      {
+        id: 'NFR-004',
+        label: '核心链路 trace 覆盖率',
+        target: `>= ${(thresholdTraceCoverage * 100).toFixed(1)}%`,
+        actual: Number((input.traceCoverageRate * 100).toFixed(2)),
+        passed: input.traceCoverageRate >= thresholdTraceCoverage,
+      },
+      {
+        id: 'NFR-005',
+        label: '事实型回答引用覆盖率',
+        target: `>= ${(thresholdCitationCoverage * 100).toFixed(1)}%`,
+        actual: Number((input.citationCoverageRate * 100).toFixed(2)),
+        passed: input.citationCoverageRate >= thresholdCitationCoverage,
+      },
+      {
+        id: 'NFR-006',
+        label: '端到端完成时延 P95',
+        target: `<= ${thresholdCompletionP95Ms}ms`,
+        actual: input.completionP95Ms,
+        passed: input.completionP95Ms !== null && input.completionP95Ms <= thresholdCompletionP95Ms,
+      },
+    ];
+
+    const passed = checks.every((item) => item.passed);
+    return {
+      passed,
+      generatedAt: new Date().toISOString(),
+      thresholds: {
+        firstResponseP95Ms: thresholdFirstResponseP95Ms,
+        acceptanceP95Ms: thresholdAcceptanceP95Ms,
+        completionP95Ms: thresholdCompletionP95Ms,
+        successRateMin: thresholdSuccessRate,
+        citationCoverageMin: thresholdCitationCoverage,
+        traceCoverageMin: thresholdTraceCoverage,
+      },
+      checks,
+    };
+  }
+
+  private resolveNfrThreshold(
+    value: string | undefined,
+    fallback: number,
+    min: number,
+    max: number,
+  ): number {
+    const parsed = this.readNumberOrNull(value);
+    if (parsed === null) {
+      return fallback;
+    }
+    if (parsed < min) {
+      return min;
+    }
+    if (parsed > max) {
+      return max;
+    }
+    return parsed;
+  }
+
+  private buildLatencyPercentileSummary(values: number[]) {
+    const cleaned = values
+      .filter((value) => Number.isFinite(value) && value >= 0)
+      .map((value) => Math.round(value));
+    return {
+      sampleSize: cleaned.length,
+      p50Ms: this.calculateLatencyPercentile(cleaned, 0.5),
+      p95Ms: this.calculateLatencyPercentile(cleaned, 0.95),
+    };
+  }
+
+  private calculateLatencyPercentile(values: number[], percentile: number): number | null {
+    if (!values.length) {
+      return null;
+    }
+    const sorted = [...values].sort((a, b) => a - b);
+    const rank = Math.max(1, Math.ceil(sorted.length * percentile));
+    return sorted[Math.min(sorted.length - 1, rank - 1)];
+  }
+
   async getSessionCostSummary(userId: string, sessionId: string) {
     return this.orchestratorService.getSessionCostSummary(userId, sessionId);
+  }
+
+  private readNumberOrNull(value: unknown): number | null {
+    if (typeof value === 'number' && Number.isFinite(value)) return value;
+    if (typeof value === 'string') {
+      const parsed = Number(value.trim());
+      if (Number.isFinite(parsed)) return parsed;
+    }
+    return null;
   }
 }

@@ -29,7 +29,7 @@ type AuthRequest = ExpressRequest & { user?: { id?: string } };
 
 @Controller('parameter-sets')
 export class ParameterCenterController {
-  constructor(private readonly parameterCenterService: ParameterCenterService) {}
+  constructor(private readonly parameterCenterService: ParameterCenterService) { }
 
   @Post()
   createSet(@Body() dto: CreateParameterSetRequest, @Request() req: AuthRequest) {
@@ -207,5 +207,28 @@ export class ParameterCenterController {
       throw new UnauthorizedException('User not authenticated');
     }
     return this.parameterCenterService.batchResetToDefault(userId, id, dto);
+  }
+
+  @Get(':id/publish-history')
+  getPublishHistory(@Param('id', ParseUUIDPipe) id: string) {
+    return this.parameterCenterService.getPublishHistory(id);
+  }
+
+  @Post(':id/rollback')
+  rollbackSet(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: { targetVersion: number },
+    @Request() req: AuthRequest,
+  ) {
+    const userId = req.user?.id;
+    if (!userId) {
+      throw new UnauthorizedException('User not authenticated');
+    }
+    return this.parameterCenterService.rollbackSet(userId, id, dto.targetVersion);
+  }
+
+  @Get(':id/impact')
+  analyzeImpact(@Param('id', ParseUUIDPipe) id: string) {
+    return this.parameterCenterService.analyzeImpact(id);
   }
 }

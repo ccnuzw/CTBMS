@@ -116,6 +116,8 @@ const ENRICHED_RULES = [
     { domain: 'SENTIMENT', matchMode: 'CONTAINS', pattern: '有价无市', targetValue: 'neutral', priority: 3 },
 ];
 
+type EnrichedRule = (typeof ENRICHED_RULES)[number];
+
 async function main() {
     console.log('Start seeding enriched logic rules...');
 
@@ -132,7 +134,7 @@ async function main() {
             await prisma.businessMappingRule.update({
                 where: { id: existing.id },
                 data: {
-                    matchMode: rule.matchMode as any,
+                    matchMode: rule.matchMode as EnrichedRule['matchMode'],
                     targetValue: rule.targetValue,
                     priority: rule.priority,
                     description: rule.description,
@@ -144,7 +146,7 @@ async function main() {
             await prisma.businessMappingRule.create({
                 data: {
                     domain: rule.domain,
-                    matchMode: rule.matchMode as any,
+                    matchMode: rule.matchMode as EnrichedRule['matchMode'],
                     pattern: rule.pattern,
                     targetValue: rule.targetValue,
                     priority: rule.priority,
