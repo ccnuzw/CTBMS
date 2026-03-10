@@ -45,6 +45,7 @@ export interface StandardizedQueryOptions {
     to?: Date;
     filters?: Record<string, unknown>;
     limit?: number;
+    enforceReconciliationGate?: boolean;
 }
 
 export interface StandardizedDataQualityScore {
@@ -67,13 +68,81 @@ export interface StandardizedDataFreshness {
     oldestDataTime?: string;
 }
 
+export interface StandardizedDataGovernanceMeta {
+    standardizedRead: {
+        enabled: boolean;
+        source: string;
+        updatedAt: string | null;
+    };
+    reconciliationGate: {
+        enabled: boolean;
+        passed: boolean;
+        reason: ReconciliationGateReason;
+        checkedAt: string;
+        maxAgeMinutes?: number;
+        ageMinutes?: number;
+        latest?: {
+            jobId: string;
+            status: ReconciliationJobStatus;
+            retriedFromJobId: string | null;
+            retryCount: number;
+            summaryPass?: boolean;
+            createdAt: string;
+            finishedAt?: string;
+            cancelledAt?: string;
+            dimensions?: Record<string, unknown>;
+            source: 'database' | 'in-memory';
+        };
+    };
+}
+
 export interface StandardizedDataMeta {
     recordCount: number;
     mappingVersion: string;
+    schemaVersion?: string;
+    lineageVersion?: string;
     fetchedAt: string;
     degradeAction: 'ALLOW' | 'WARN' | 'BLOCK';
     qualityScore: StandardizedDataQualityScore;
     freshness: StandardizedDataFreshness;
+    lineage?: {
+        dataset: StandardDataset;
+        sourceTables: string[];
+        ruleSetId: string;
+        metricVersions: Record<string, string>;
+    };
+    governance?: StandardizedDataGovernanceMeta;
+}
+
+export interface WeatherLogisticsImpactIndexQueryInput {
+    from?: string;
+    to?: string;
+    windowDays?: number;
+    commodityCode?: string;
+    regionCode?: string;
+}
+
+export type WeatherLogisticsRiskLevel = 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
+
+export interface WeatherLogisticsImpactIndexPoint {
+    date: string;
+    weatherDisturbanceIndex: number;
+    transportFrictionIndex: number;
+    supplyRiskIndex: number;
+    deliveryDelayRisk: number;
+    weatherEventCount: number;
+    logisticsEventCount: number;
+    freightSampleCount: number;
+    riskLevel: WeatherLogisticsRiskLevel;
+}
+
+export interface WeatherLogisticsComputationBucket {
+    date: string;
+    weatherSignal: number;
+    logisticsSignal: number;
+    weatherEventCount: number;
+    logisticsEventCount: number;
+    freightValues: number[];
 }
 
 export interface ReconciliationJob {

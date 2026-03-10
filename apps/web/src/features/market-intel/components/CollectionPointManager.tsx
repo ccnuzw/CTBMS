@@ -80,7 +80,7 @@ export const CollectionPointManager: React.FC = () => {
         try {
             await deleteMutation.mutateAsync(id);
             message.success('删除成功');
-         
+
         } catch (error: any) {
             message.error(error.message || '删除失败');
         }
@@ -201,12 +201,9 @@ export const CollectionPointManager: React.FC = () => {
     ];
 
     return (
-        <div style={{ padding: 24 }}>
-            <Flex justify="space-between" align="center" style={{ marginBottom: 24 }}>
-                <div>
-                    <Title level={4} style={{ margin: 0 }}>🎯 采集点配置管理</Title>
-                    <Text type="secondary">配置 AI 智能识别所需的企业、港口、地域等关键词库</Text>
-                </div>
+        <div>
+            <Flex justify="space-between" align="center" style={{ marginBottom: 12 }}>
+                <Text type="secondary">配置 AI 智能识别所需的企业、港口、地域等关键词库</Text>
                 <Space>
                     <CollectionPointConfigHelp />
                     <Button
@@ -219,9 +216,8 @@ export const CollectionPointManager: React.FC = () => {
                 </Space>
             </Flex>
 
-            {/* 统计卡片 */}
             {stats && stats.length > 0 && (
-                <Row gutter={16} style={{ marginBottom: 24 }}>
+                <Row gutter={[12, 12]} style={{ marginBottom: 12 }}>
                     {stats.map((stat) => (
                         <Col key={stat.type} xs={12} sm={8} md={4}>
                             <Card size="small">
@@ -251,7 +247,7 @@ export const CollectionPointManager: React.FC = () => {
             )}
 
             {/* 筛选区 */}
-            <Card size="small" style={{ marginBottom: 16 }}>
+            <Card size="small" style={{ marginBottom: 8 }}>
                 <Flex gap={16} wrap="wrap" align="center">
                     <Select
                         placeholder="类型"
@@ -290,26 +286,22 @@ export const CollectionPointManager: React.FC = () => {
                 </Flex>
             </Card>
 
-            {/* 表格 */}
-            <Card>
-                <Table
-                    rowKey="id"
-                    columns={columns}
-                    dataSource={data?.data}
-                    loading={isLoading}
-                    scroll={{ x: 1200 }}
-                    pagination={{
-                        current: filters.page,
-                        pageSize: filters.pageSize,
-                        total: data?.total,
-                        showSizeChanger: true,
-                        showTotal: (total) => `共 ${total} 条`,
-                        onChange: (page, pageSize) => setFilters((f) => ({ ...f, page, pageSize })),
-                    }}
-                />
-            </Card>
+            <Table
+                rowKey="id"
+                columns={columns}
+                dataSource={data?.data}
+                loading={isLoading}
+                scroll={{ x: 1200 }}
+                pagination={{
+                    current: filters.page,
+                    pageSize: filters.pageSize,
+                    total: data?.total,
+                    showSizeChanger: true,
+                    showTotal: (total) => `共 ${total} 条`,
+                    onChange: (page, pageSize) => setFilters((f) => ({ ...f, page, pageSize })),
+                }}
+            />
 
-            {/* 编辑弹窗 */}
             <CollectionPointEditor
                 open={editorOpen}
                 editId={editingId}

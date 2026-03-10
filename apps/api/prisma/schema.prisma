@@ -1928,6 +1928,7 @@ model AIModelConfig {
 
   provider       String // "google", "openai"
   modelName      String // "gemini-1.5-pro"
+  wireApi        String? // [NEW] 'responses' | 'chat' (OpenAI/Sub2API wire protocol)
   embeddingModel String? // [NEW] Embedding model name (e.g. "text-embedding-004")
   apiUrl         String? // [NEW] Custom API Endpoint
 

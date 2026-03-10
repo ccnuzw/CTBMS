@@ -69,10 +69,30 @@ const SEVERITY_COLOR: Record<MarketAlert['severity'], string> = {
     CRITICAL: 'red',
 };
 
+const SEVERITY_LABEL: Record<MarketAlert['severity'], string> = {
+    LOW: '低',
+    MEDIUM: '中',
+    HIGH: '高',
+    CRITICAL: '严重',
+};
+
 const STATUS_COLOR: Record<MarketAlert['status'], string> = {
     OPEN: 'red',
     ACKNOWLEDGED: 'blue',
     CLOSED: 'green',
+};
+
+const STATUS_LABEL: Record<MarketAlert['status'], string> = {
+    OPEN: '待处理',
+    ACKNOWLEDGED: '已确认',
+    CLOSED: '已关闭',
+};
+
+const RULE_TYPE_LABEL: Record<string, string> = {
+    DAY_CHANGE_ABS: '单日涨跌额',
+    DAY_CHANGE_PCT: '单日涨跌幅',
+    DEVIATION_FROM_MEAN_PCT: '偏离均值幅度',
+    CONTINUOUS_DAYS: '连续涨跌',
 };
 
 export const AlertCenterPage: React.FC = () => {
@@ -195,7 +215,7 @@ export const AlertCenterPage: React.FC = () => {
             key: 'severity',
             width: 90,
             render: (value: MarketAlert['severity']) => (
-                <Tag color={SEVERITY_COLOR[value]}>{value}</Tag>
+                <Tag color={SEVERITY_COLOR[value]}>{SEVERITY_LABEL[value] || value}</Tag>
             ),
         },
         {
@@ -204,7 +224,7 @@ export const AlertCenterPage: React.FC = () => {
             key: 'status',
             width: 120,
             render: (value: MarketAlert['status']) => (
-                <Tag color={STATUS_COLOR[value]}>{value}</Tag>
+                <Tag color={STATUS_COLOR[value]}>{STATUS_LABEL[value] || value}</Tag>
             ),
         },
         {
@@ -279,10 +299,10 @@ export const AlertCenterPage: React.FC = () => {
             log.action === 'CLOSE'
                 ? 'red'
                 : log.action === 'AUTO_CLOSE'
-                  ? 'orange'
-                  : log.action === 'ACK'
-                    ? 'blue'
-                    : 'green',
+                    ? 'orange'
+                    : log.action === 'ACK'
+                        ? 'blue'
+                        : 'green',
         children: (
             <Flex vertical gap={2}>
                 <Text strong>{`${log.action} ${log.fromStatus ? `${log.fromStatus} -> ` : ''}${log.toStatus}`}</Text>
@@ -301,6 +321,7 @@ export const AlertCenterPage: React.FC = () => {
             dataIndex: 'type',
             key: 'type',
             width: 160,
+            render: (value: string) => RULE_TYPE_LABEL[value] || value,
         },
         {
             title: '参数',
@@ -317,7 +338,7 @@ export const AlertCenterPage: React.FC = () => {
             dataIndex: 'severity',
             key: 'severity',
             width: 90,
-            render: (value: MarketAlertRule['severity']) => <Tag color={SEVERITY_COLOR[value]}>{value}</Tag>,
+            render: (value: MarketAlertRule['severity']) => <Tag color={SEVERITY_COLOR[value]}>{SEVERITY_LABEL[value] || value}</Tag>,
         },
         {
             title: '优先级',

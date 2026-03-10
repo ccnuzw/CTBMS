@@ -95,14 +95,15 @@ export class ToolAdapterService {
                 error: result.status === 'FAILED' ? (result.message ?? '执行失败') : undefined,
                 durationMs,
             };
-        } catch (error: any) {
-            this.logger.error(`工具调用失败: ${request.toolId}`, error.stack);
+        } catch (error: unknown) {
+            const err = error instanceof Error ? error : new Error(String(error));
+            this.logger.error(`工具调用失败: ${request.toolId}`, err.stack);
             return {
                 toolId: request.toolId,
                 status: 'FAILED',
                 data: {},
-                summary: `执行「${toolDef.displayName}」时发生错误: ${error.message}`,
-                error: error.message,
+                summary: `执行「${toolDef.displayName}」时发生错误: ${err.message}`,
+                error: err.message,
                 durationMs: Date.now() - startTime,
             };
         }

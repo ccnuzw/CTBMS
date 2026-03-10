@@ -321,6 +321,7 @@ export const AgentEditDrawer: React.FC<AgentEditDrawerProps> = ({
                 width={1200}
                 open={open}
                 onClose={onClose}
+                forceRender
                 extra={
                     <Space>
                         <Button onClick={onClose}>取消</Button>

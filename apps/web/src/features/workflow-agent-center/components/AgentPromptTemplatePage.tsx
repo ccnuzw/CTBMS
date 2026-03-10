@@ -257,6 +257,7 @@ export const AgentPromptTemplatePage: React.FC = () => {
                 width={1000}
                 open={editVisible}
                 onClose={() => setEditVisible(false)}
+                forceRender
                 extra={
                     <Space>
                         <Button onClick={() => setEditVisible(false)}>关闭</Button>

@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Row, Col, App, theme } from 'antd';
+import { PageContainer } from '@ant-design/pro-components';
 import {
   ContentType,
   CONTENT_TYPE_SOURCE_OPTIONS,
@@ -65,7 +66,7 @@ export const DataEntry: React.FC<DataEntryProps> = ({ onSuccess }) => {
     if (content.length > 500) score += 20;
 
     if (gpsStatus === 'success') score += 30;
-    else if (sourceType !== IntelSourceType.FIRST_LINE) score += 20; // Official sources are trusted
+    else if (sourceType !== IntelSourceType.FIRST_LINE) score += 20;
 
     if (imageData) score += 20;
     return Math.min(score, 100);
@@ -73,7 +74,6 @@ export const DataEntry: React.FC<DataEntryProps> = ({ onSuccess }) => {
 
   const previewScore = calculatePreviewScore();
 
-  // GPS Verification Simulation
   const handleGpsVerify = () => {
     setGpsStatus('verifying');
     setTimeout(() => {
@@ -82,7 +82,6 @@ export const DataEntry: React.FC<DataEntryProps> = ({ onSuccess }) => {
     }, 1500);
   };
 
-  // AI Analysis Handler
   const handleAnalyze = async () => {
     if (!content.trim() && !imageData) {
       message.warning('请先输入内容或上传图片');
@@ -90,7 +89,6 @@ export const DataEntry: React.FC<DataEntryProps> = ({ onSuccess }) => {
     }
 
     try {
-      // Map legacy category
       let legacyCategory = IntelCategory.B_SEMI_STRUCTURED;
       if (contentType === ContentType.RESEARCH_REPORT) {
         legacyCategory = IntelCategory.C_DOCUMENT;
@@ -99,14 +97,13 @@ export const DataEntry: React.FC<DataEntryProps> = ({ onSuccess }) => {
       const result = await analyzeMutation.mutateAsync({
         content,
         category: legacyCategory,
-        contentType, // Pass explicitly for specific AI handling
+        contentType,
         location: '锦州港物流园区',
         base64Image: imageData?.data,
         mimeType: imageData?.mimeType,
       });
       setAiResult(result);
 
-      // Append OCR text if content is empty/short
       if (result.ocrText && content.length < 50) {
         setContent((prev) => {
           const separator = prev ? '\n\n--- OCR 识别结果 ---\n' : '--- OCR 识别结果 ---\n';
@@ -119,7 +116,6 @@ export const DataEntry: React.FC<DataEntryProps> = ({ onSuccess }) => {
     }
   };
 
-  // Submit Handler
   const handleSubmit = async () => {
     if (!aiResult) {
       message.warning('请先进行 AI 分析');
@@ -132,7 +128,7 @@ export const DataEntry: React.FC<DataEntryProps> = ({ onSuccess }) => {
         legacyCategory = IntelCategory.C_DOCUMENT;
       }
 
-      const totalScore = Math.round(previewScore * 0.4 + 80 * 0.3 + 0 * 0.3); // Simple formula
+      const totalScore = Math.round(previewScore * 0.4 + 80 * 0.3 + 0 * 0.3);
 
       const payload = {
         category: legacyCategory,
@@ -163,7 +159,6 @@ export const DataEntry: React.FC<DataEntryProps> = ({ onSuccess }) => {
     }
   };
 
-  // Reset Handler
   const handleReset = () => {
     setContent('');
     setAiResult(null);
@@ -172,16 +167,14 @@ export const DataEntry: React.FC<DataEntryProps> = ({ onSuccess }) => {
   };
 
   return (
-    <div
-      style={{
-        height: 'calc(100vh - 64px - 48px)', // Adjust based on layout headers/footers
-        background: token.colorBgLayout,
-        padding: '16px',
-        overflow: 'hidden',
+    <PageContainer
+      header={{ title: null, breadcrumb: undefined }}
+      token={{
+        paddingInlinePageContainerContent: 16,
+        paddingBlockPageContainerContent: 16,
       }}
     >
-      <Row gutter={16} style={{ height: '100%' }}>
-        {/* LEFT: Operation Console */}
+      <Row gutter={16} style={{ height: 'calc(100vh - 96px - 48px)' }}>
         <Col xs={24} md={9} lg={8} style={{ height: '100%' }}>
           <CollectionConsole
             contentType={contentType}
@@ -205,8 +198,6 @@ export const DataEntry: React.FC<DataEntryProps> = ({ onSuccess }) => {
             previewScore={previewScore}
           />
         </Col>
-
-        {/* RIGHT: Insight Panel */}
         <Col xs={24} md={15} lg={16} style={{ height: '100%' }}>
           <IntelInsightPanel
             isLoading={analyzeMutation.isPending}
@@ -215,6 +206,6 @@ export const DataEntry: React.FC<DataEntryProps> = ({ onSuccess }) => {
           />
         </Col>
       </Row>
-    </div>
+    </PageContainer>
   );
 };

@@ -1,6 +1,6 @@
-import { Button, App, Popconfirm, Tag, Space, Modal, Typography, Divider, Descriptions, Switch , theme } from 'antd';
-import { useMemo, useState, useRef } from 'react';
-import { ActionType, ProColumns, ProTable, ModalForm, ProFormText, ProFormSelect, ProFormDigit, ProFormSwitch, ProFormDependency } from '@ant-design/pro-components';
+import { Button, App, Popconfirm, Tag, Space, Modal, Typography, Divider, Descriptions, Switch, Input, theme } from 'antd';
+import React, { useMemo, useState, useRef } from 'react';
+import { ActionType, ProColumns, ProTable, ModalForm, ProFormText, ProFormSelect, ProFormDigit, ProFormSwitch, ProFormDependency, ProFormTextArea } from '@ant-design/pro-components';
 import { useMappingRules, useCreateMappingRule, useUpdateMappingRule, useDeleteMappingRule, useDictionaryDomains } from '../api';
 import { BusinessMappingRule } from '../types';
 import { PlusOutlined, EditOutlined, DeleteOutlined, QuestionCircleOutlined } from '@ant-design/icons';
@@ -59,11 +59,132 @@ const TARGET_OPTIONS_FALLBACK: Record<string, Record<string, string>> = {
     },
 };
 
+/**
+ * 常用正则模板
+ */
+const REGEX_TEMPLATES = [
+    { label: '邮箱', pattern: '[\\w.-]+@[\\w.-]+\\.\\w+' },
+    { label: '数字', pattern: '\\d+(\\.\\d+)?' },
+    { label: '中文词组', pattern: '[\\u4e00-\\u9fa5]+' },
+    { label: '日期 (YYYY-MM-DD)', pattern: '\\d{4}-\\d{2}-\\d{2}' },
+    { label: 'URL', pattern: 'https?://[\\w\\-._~:/?#\\[\\]@!$&\'()*+,;=%]+' },
+    { label: '手机号', pattern: '1[3-9]\\d{9}' },
+];
+
+/**
+ * 正则实时测试器组件
+ */
+const RegexTester: React.FC<{ pattern?: string }> = ({ pattern }) => {
+    const { token } = theme.useToken();
+    const [testText, setTestText] = useState('');
+
+    const testResult = useMemo(() => {
+        if (!pattern?.trim() || !testText.trim()) {
+            return { status: 'empty' as const, segments: [] as React.ReactNode[] };
+        }
+        try {
+            const regex = new RegExp(pattern, 'g');
+            const matches: { start: number; end: number }[] = [];
+            let match: RegExpExecArray | null;
+            while ((match = regex.exec(testText)) !== null) {
+                matches.push({ start: match.index, end: match.index + match[0].length });
+                if (match[0].length === 0) break;
+            }
+
+            if (matches.length === 0) {
+                return { status: 'no_match' as const, segments: [testText] };
+            }
+
+            const segments: React.ReactNode[] = [];
+            let lastEnd = 0;
+            matches.forEach((m, i) => {
+                if (m.start > lastEnd) {
+                    segments.push(testText.slice(lastEnd, m.start));
+                }
+                segments.push(
+                    <span
+                        key={i}
+                        style={{
+                            backgroundColor: token.colorSuccessBg,
+                            border: `1px solid ${token.colorSuccessBorder}`,
+                            borderRadius: 2,
+                            padding: '0 2px',
+                        }}
+                    >
+                        {testText.slice(m.start, m.end)}
+                    </span>,
+                );
+                lastEnd = m.end;
+            });
+            if (lastEnd < testText.length) {
+                segments.push(testText.slice(lastEnd));
+            }
+
+            return { status: 'matched' as const, count: matches.length, segments };
+        } catch {
+            return { status: 'error' as const, segments: [] };
+        }
+    }, [pattern, testText, token]);
+
+    return (
+        <div
+            style={{
+                backgroundColor: token.colorFillAlter,
+                padding: '12px 16px',
+                borderRadius: 8,
+                marginTop: 8,
+                marginBottom: 16,
+            }}
+        >
+            <Space direction="vertical" style={{ width: '100%' }} size={8}>
+                <Space>
+                    <Typography.Text strong style={{ fontSize: 13 }}>
+                        🧪 正则实时测试
+                    </Typography.Text>
+                    {testResult.status === 'matched' && (
+                        <Tag color="success">✅ 命中 {testResult.count} 处</Tag>
+                    )}
+                    {testResult.status === 'no_match' && <Tag color="warning">❌ 未命中</Tag>}
+                    {testResult.status === 'error' && <Tag color="error">⚠️ 表达式语法错误</Tag>}
+                    {testResult.status === 'empty' && (
+                        <Tag color="default">输入测试文本以验证</Tag>
+                    )}
+                </Space>
+                <Input.TextArea
+                    rows={2}
+                    value={testText}
+                    onChange={(e) => setTestText(e.target.value)}
+                    placeholder="在此粘贴待匹配的测试文本，实时查看高亮结果..."
+                    style={{ fontFamily: 'monospace', fontSize: 13 }}
+                />
+                {testResult.segments.length > 0 && testText.trim() && (
+                    <div
+                        style={{
+                            background: token.colorBgContainer,
+                            padding: '8px 12px',
+                            borderRadius: 6,
+                            fontFamily: 'monospace',
+                            fontSize: 13,
+                            lineHeight: 1.8,
+                            whiteSpace: 'pre-wrap',
+                            wordBreak: 'break-all',
+                            border: `1px solid ${token.colorBorderSecondary}`,
+                        }}
+                    >
+                        {testResult.segments}
+                    </div>
+                )}
+            </Space>
+        </div>
+    );
+};
+
 export const LogicRulesPage = () => {
     const { message } = App.useApp();
     const { token } = theme.useToken();
     const actionRef = useRef<ActionType>();
     const { data: rules, isLoading, refetch } = useMappingRules();
+    const [currentPattern, setCurrentPattern] = useState('');
     const { data: dictionaryDomains } = useDictionaryDomains(false);
     const domainCodes = useMemo(() => (dictionaryDomains || []).map((domain) => domain.code), [dictionaryDomains]);
     const { data: dictionaries } = useDictionaries(domainCodes);
@@ -348,7 +469,51 @@ export const LogicRulesPage = () => {
                         label="匹配范式 (Pattern)"
                         tooltip="需要匹配的关键词或正则表达式"
                         rules={[{ required: true }]}
+                        fieldProps={{
+                            onChange: (e: React.ChangeEvent<HTMLInputElement>) => setCurrentPattern(e.target.value),
+                        }}
                     />
+
+                    <ProFormDependency name={['matchMode']}>
+                        {({ matchMode }) => {
+                            if (matchMode !== 'REGEX') return null;
+                            return (
+                                <>
+                                    <div style={{ marginTop: -8, marginBottom: 8 }}>
+                                        <Space size={4} wrap>
+                                            <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                                                常用模板：
+                                            </Typography.Text>
+                                            {REGEX_TEMPLATES.map((tpl) => (
+                                                <Tag
+                                                    key={tpl.label}
+                                                    color="blue"
+                                                    style={{ cursor: 'pointer' }}
+                                                    onClick={() => {
+                                                        setCurrentPattern(tpl.pattern);
+                                                        const patternInput = document.querySelector(
+                                                            'input[id$="pattern"]',
+                                                        ) as HTMLInputElement | null;
+                                                        if (patternInput) {
+                                                            const nativeInputValueSetter = Object.getOwnPropertyDescriptor(
+                                                                window.HTMLInputElement.prototype,
+                                                                'value',
+                                                            )?.set;
+                                                            nativeInputValueSetter?.call(patternInput, tpl.pattern);
+                                                            patternInput.dispatchEvent(new Event('input', { bubbles: true }));
+                                                        }
+                                                    }}
+                                                >
+                                                    {tpl.label}
+                                                </Tag>
+                                            ))}
+                                        </Space>
+                                    </div>
+                                    <RegexTester pattern={currentPattern} />
+                                </>
+                            );
+                        }}
+                    </ProFormDependency>
 
 
 
@@ -395,6 +560,12 @@ export const LogicRulesPage = () => {
                     <ProFormSwitch
                         name="isActive"
                         label="启用状态"
+                    />
+
+                    <ProFormTextArea
+                        name="description"
+                        label="内部备注"
+                        placeholder="选填，关于这条规则的补充说明"
                     />
 
                 </div>

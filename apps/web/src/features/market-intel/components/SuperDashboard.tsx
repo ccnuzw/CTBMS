@@ -13,6 +13,7 @@ import {
     Spin,
     Empty,
 } from 'antd';
+import { PageContainer } from '@ant-design/pro-components';
 import {
     DashboardOutlined,
     RiseOutlined,
@@ -313,61 +314,56 @@ export const SuperDashboard: React.FC = () => {
 
     if (isLoading) {
         return (
-            <Flex justify="center" align="center" style={{ height: '100%', background: token.colorBgLayout }}>
-                <Flex vertical align="center" gap={16}>
-                    <Spin size="large" />
-                    <Text type="secondary">加载全域数据...</Text>
+            <PageContainer header={{ title: null, breadcrumb: undefined }}>
+                <Flex justify="center" align="center" style={{ height: 400 }}>
+                    <Flex vertical align="center" gap={16}>
+                        <Spin size="large" />
+                        <Text type="secondary">加载全域数据...</Text>
+                    </Flex>
                 </Flex>
-            </Flex>
+            </PageContainer>
         );
     }
 
     return (
-        <div style={{ height: '100%', overflow: 'auto', padding: 24, background: token.colorBgLayout }}>
-            {/* 顶部工具栏 */}
-            <Flex justify="space-between" align="center" style={{ marginBottom: 24 }}>
-                <div>
-                    <Title level={3} style={{ margin: 0 }}>
-                        <DashboardOutlined style={{ marginRight: 8, color: token.colorPrimary }} />
-                        全域商情驾驶舱 (Super Cockpit)
-                    </Title>
-                    <Text type="secondary">
-                        数据截止: {new Date().toLocaleString()} • 已接入 {filteredCards.length} 个情报节点
-                    </Text>
-                </div>
-
-                <Card size="small" bodyStyle={{ padding: 8 }}>
-                    <Flex gap={12} align="center">
-                        <Select
-                            value={selectedCommodity}
-                            onChange={setSelectedCommodity}
-                            style={{ width: 100 }}
-                            size="small"
-                            options={commodityOptions}
-                        />
-                        <Select
-                            value={selectedRegion}
-                            onChange={setSelectedRegion}
-                            style={{ width: 120 }}
-                            size="small"
-                            options={regionOptions}
-                        />
-                        <div style={{ width: 1, height: 24, background: token.colorBorder }} />
-                        <Segmented
-                            options={[
-                                { label: '7D', value: '7D' },
-                                { label: '30D', value: '30D' },
-                                { label: '90D', value: '90D' },
-                                { label: 'YTD', value: 'YTD' },
-                                { label: 'ALL', value: 'ALL' },
-                            ]}
-                            value={timeRange}
-                            onChange={(val) => setTimeRange(val as TimeRange)}
-                            size="small"
-                        />
-                    </Flex>
-                </Card>
-            </Flex>
+        <PageContainer
+            header={{ title: null, breadcrumb: undefined }}
+            extra={
+                <Flex gap={12} align="center">
+                    <Select
+                        value={selectedCommodity}
+                        onChange={setSelectedCommodity}
+                        style={{ width: 100 }}
+                        size="small"
+                        options={commodityOptions}
+                    />
+                    <Select
+                        value={selectedRegion}
+                        onChange={setSelectedRegion}
+                        style={{ width: 120 }}
+                        size="small"
+                        options={regionOptions}
+                    />
+                    <div style={{ width: 1, height: 24, background: token.colorBorder }} />
+                    <Segmented
+                        options={[
+                            { label: '7D', value: '7D' },
+                            { label: '30D', value: '30D' },
+                            { label: '90D', value: '90D' },
+                            { label: 'YTD', value: 'YTD' },
+                            { label: 'ALL', value: 'ALL' },
+                        ]}
+                        value={timeRange}
+                        onChange={(val) => setTimeRange(val as TimeRange)}
+                        size="small"
+                    />
+                </Flex>
+            }
+            token={{
+                paddingInlinePageContainerContent: 16,
+                paddingBlockPageContainerContent: 16,
+            }}
+        >
 
             {/* KPI 卡片 */}
             <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
@@ -648,7 +644,7 @@ export const SuperDashboard: React.FC = () => {
                     </Card>
                 </Col>
             </Row>
-        </div>
+        </PageContainer>
     );
 };
 

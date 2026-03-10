@@ -29,7 +29,7 @@ import {
   AppstoreOutlined,
 } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
-import { useSearchParams } from 'react-router-dom';
+
 import type { ExportTaskDto, ExportReportSection, ExportFormat, ExportReportDataDto } from '@packages/types';
 import {
   useExportTasks,
@@ -68,12 +68,11 @@ const sectionLabels: Record<string, string> = {
 export const ReportExportPage: React.FC = () => {
   const { token } = theme.useToken();
   const { message } = App.useApp();
-  const [searchParams, setSearchParams] = useSearchParams();
 
-  const page = Number(searchParams.get('page') ?? '1');
-  const pageSize = Number(searchParams.get('pageSize') ?? '20');
-  const statusFilter = searchParams.get('status') ?? undefined;
-  const formatFilter = searchParams.get('format') ?? undefined;
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(20);
+  const [statusFilter, setStatusFilter] = useState<string | undefined>(undefined);
+  const [formatFilter, setFormatFilter] = useState<string | undefined>(undefined);
 
   const [selectedTaskId, setSelectedTaskId] = useState<string | undefined>();
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
@@ -246,11 +245,8 @@ export const ReportExportPage: React.FC = () => {
               placeholder="格式"
               value={formatFilter}
               onChange={(v) => {
-                const next = new URLSearchParams(searchParams);
-                if (v) next.set('format', v);
-                else next.delete('format');
-                next.set('page', '1');
-                setSearchParams(next);
+                setFormatFilter(v || undefined);
+                setPage(1);
               }}
               options={[
                 { label: 'PDF', value: 'PDF' },
@@ -265,11 +261,8 @@ export const ReportExportPage: React.FC = () => {
               placeholder="状态"
               value={statusFilter}
               onChange={(v) => {
-                const next = new URLSearchParams(searchParams);
-                if (v) next.set('status', v);
-                else next.delete('status');
-                next.set('page', '1');
-                setSearchParams(next);
+                setStatusFilter(v || undefined);
+                setPage(1);
               }}
               options={[
                 { label: '等待中', value: 'PENDING' },
@@ -310,10 +303,8 @@ export const ReportExportPage: React.FC = () => {
             showSizeChanger: true,
             showTotal: (total) => `共 ${total} 条`,
             onChange: (p, ps) => {
-              const next = new URLSearchParams(searchParams);
-              next.set('page', String(p));
-              next.set('pageSize', String(ps));
-              setSearchParams(next);
+              setPage(p);
+              setPageSize(ps);
             },
           }}
         />

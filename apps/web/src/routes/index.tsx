@@ -11,21 +11,15 @@ import { GlobalTagList, TagGroupList } from '../features/tags';
 import { EnterpriseDashboard } from '../features/enterprise';
 import {
   SuperDashboard,
-  Dashboard,
   DataEntry,
   Leaderboard,
   AlertCenterPage,
-  IntelligenceFeed,
+  IntelFeedDashboard,
   MarketData,
-  KnowledgeBase,
-  OperationalWorkbench,
   UniversalSearch,
   CollectionPointConfigCenter,
   RegionManager,
   TaskDistributionPage,
-  TaskMonitor,
-  ResearchReportListPage,
-  ResearchReportDashboard,
   ResearchReportCreatePage,
   KnowledgeLayout,
   KnowledgeDefaultRedirect,
@@ -136,27 +130,6 @@ export const router = createBrowserRouter([
           </div>
         ),
       },
-      // ── 兼容重定向 ──
-      { path: 'workflow/executions', element: <Navigate to="/workflow/hub?tab=executions" replace /> },
-      { path: 'workflow/rules', element: <Navigate to="/workflow/hub?tab=rules" replace /> },
-      { path: 'workflow/parameters', element: <Navigate to="/workflow/hub?tab=parameters" replace /> },
-      { path: 'workflow/connectors', element: <Navigate to="/workflow/hub?tab=connectors" replace /> },
-      { path: 'workflow/decisions', element: <Navigate to="/workflow/hub?tab=executions" replace /> },
-      { path: 'workflow/agents', element: <Navigate to="/workflow/config?tab=agents" replace /> },
-      { path: 'workflow/agents/wizard', element: <Navigate to="/workflow/assistant" replace /> },
-      { path: 'workflow/prompts', element: <Navigate to="/workflow/config?tab=prompts" replace /> },
-      { path: 'workflow/skills', element: <Navigate to="/workflow/config?tab=skills" replace /> },
-      { path: 'workflow/triggers', element: <Navigate to="/workflow/config?tab=triggers" replace /> },
-      { path: 'workflow/exports', element: <Navigate to="/workflow/config?tab=tools" replace /> },
-      { path: 'workflow/templates', element: <Navigate to="/workflow/config?tab=tools" replace /> },
-      { path: 'workflow/bindings', element: <Navigate to="/workflow/config?tab=tools" replace /> },
-      { path: 'workflow/futures', element: <Navigate to="/workflow/config?tab=tools" replace /> },
-      { path: 'workflow/analytics', element: <Navigate to="/workflow/insight?tab=analytics" replace /> },
-      { path: 'workflow/replay', element: <Navigate to="/workflow/insight?tab=replay" replace /> },
-      { path: 'workflow/experiments', element: <Navigate to="/workflow/insight?tab=analytics" replace /> },
-      { path: 'workflow/advanced', element: <Navigate to="/workflow/insight?tab=analytics" replace /> },
-      { path: 'workflow/workbench', element: <Navigate to="/workflow/assistant" replace /> },
-      { path: 'workflow/copilot', element: <Navigate to="/workflow/assistant" replace /> },
       {
         path: 'workflow/metrics',
         element: <MetricDictionaryPanel />,
@@ -165,6 +138,9 @@ export const router = createBrowserRouter([
         path: 'workflow/quality',
         element: <DataQualityDashboard />,
       },
+      // ── 兼容重定向（精简保留关键入口） ──
+      { path: 'workflow/agents', element: <Navigate to="/workflow/config?tab=agents" replace /> },
+      { path: 'workflow/prompts', element: <Navigate to="/workflow/config?tab=prompts" replace /> },
       {
         path: 'system',
         children: [
@@ -178,15 +154,15 @@ export const router = createBrowserRouter([
         path: 'intel',
         children: [
           { index: true, element: <SuperDashboard /> },
-          { path: 'dashboard', element: <Dashboard /> },
-          { path: 'workbench', element: <OperationalWorkbench /> },
+          { path: 'dashboard', element: <Navigate to="/intel" replace /> },
+          { path: 'workbench', element: <Navigate to="/intel/feed" replace /> },
           { path: 'search', element: <UniversalSearch /> },
 
           { path: 'entry', element: <DataEntry /> },
           { path: 'market-data', element: <MarketData /> },
           { path: 'alerts', element: <AlertCenterPage /> },
-          { path: 'feed', element: <IntelligenceFeed /> },
-          { path: 'feed/:id', element: <IntelligenceFeed /> },
+          { path: 'feed', element: <IntelFeedDashboard /> },
+          { path: 'feed/:id', element: <IntelFeedDashboard /> },
 
           {
             path: 'knowledge',
@@ -220,7 +196,7 @@ export const router = createBrowserRouter([
           { path: 'leaderboard', element: <Leaderboard /> },
           { path: 'collection-points', element: <CollectionPointConfigCenter /> },
           { path: 'tasks', element: <TaskDistributionPage /> },
-          { path: 'monitor', element: <TaskMonitor /> },
+          { path: 'monitor', element: <Navigate to="/intel/tasks" replace /> },
           { path: 'extraction-config', element: <ExtractionConfigPage /> },
         ],
       },
@@ -232,14 +208,9 @@ export const router = createBrowserRouter([
           { path: 'reports', element: <ReviewWorkbench /> },
         ],
       },
-      {
-        path: 'intel/research-reports',
-        element: <Navigate to="/intel/knowledge?tab=library&content=reports" replace />,
-      },
-      {
-        path: 'intel/research-reports/:id',
-        element: <LegacyKnowledgeRedirectPage source="report" />,
-      },
+      // Legacy redirects kept for bookmark compatibility
+      { path: 'intel/research-reports', element: <Navigate to="/intel/knowledge?tab=library&content=reports" replace /> },
+      { path: 'intel/research-reports/:id', element: <LegacyKnowledgeRedirectPage source="report" /> },
       // 我的工作台路由
       {
         path: 'workstation',

@@ -18,7 +18,7 @@ import {
   Tabs,
 } from 'antd';
 import type { DecisionRecordDto } from '@packages/types';
-import { useSearchParams } from 'react-router-dom';
+
 import { getErrorMessage } from '../../../api/client';
 import {
   useDecisionRecords,
@@ -58,44 +58,19 @@ const parsePositiveInt = (value: string | null, fallback: number): number => {
 
 export const DecisionRecordPage: React.FC = () => {
   const { message, modal } = App.useApp();
-  const [searchParams, setSearchParams] = useSearchParams();
-  const [activeTab, setActiveTab] = useState(searchParams.get('tab') || 'dashboard');
+  const [activeTab, setActiveTab] = useState('dashboard');
 
-  const [keywordInput, setKeywordInput] = useState(searchParams.get('keyword')?.trim() || '');
-  const [keyword, setKeyword] = useState<string | undefined>(
-    searchParams.get('keyword')?.trim() || undefined,
-  );
-  const [actionFilter, setActionFilter] = useState<string | undefined>(
-    searchParams.get('action') || undefined,
-  );
-  const [publishedFilter, setPublishedFilter] = useState<boolean | undefined>(
-    searchParams.get('isPublished') === 'true'
-      ? true
-      : searchParams.get('isPublished') === 'false'
-        ? false
-        : undefined,
-  );
+  const [keywordInput, setKeywordInput] = useState('');
+  const [keyword, setKeyword] = useState<string | undefined>(undefined);
+  const [actionFilter, setActionFilter] = useState<string | undefined>(undefined);
+  const [publishedFilter, setPublishedFilter] = useState<boolean | undefined>(undefined);
   const [dateRange, setDateRange] = useState<[dayjs.Dayjs | null, dayjs.Dayjs | null] | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [page, setPage] = useState(parsePositiveInt(searchParams.get('page'), 1));
-  const [pageSize, setPageSize] = useState(parsePositiveInt(searchParams.get('pageSize'), 20));
-
-  React.useEffect(() => {
-    const next = new URLSearchParams();
-    if (keyword) next.set('keyword', keyword);
-    if (actionFilter) next.set('action', actionFilter);
-    if (publishedFilter !== undefined) next.set('isPublished', String(publishedFilter));
-    next.set('page', String(page));
-    next.set('pageSize', String(pageSize));
-    // Persist tab
-    if (activeTab) next.set('tab', activeTab);
-
-    setSearchParams(next, { replace: true });
-  }, [actionFilter, keyword, page, pageSize, publishedFilter, setSearchParams, activeTab]);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(20);
 
   const handleTabChange = (key: string) => {
     setActiveTab(key);
-    // useEffect will update URL
   };
 
   const { data, isLoading } = useDecisionRecords({

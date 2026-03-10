@@ -1,14 +1,8 @@
 export { SuperDashboard } from './SuperDashboard';
-export { Dashboard } from './Dashboard';
 export { DataEntry } from './DataEntry';
-export { DocumentUploader } from './DocumentUploader';
 export { Leaderboard } from './Leaderboard';
-export { IntelligenceFeed } from './IntelligenceFeed';
 export { MarketData } from './MarketData';
 export { KnowledgeBase } from './KnowledgeBase';
-export { UnifiedKnowledgeBase } from './UnifiedKnowledgeBase';
-export { UnifiedAnalytics } from './UnifiedAnalytics';
-export { GlobalSearchModal, useGlobalSearch } from './GlobalSearchModal';
 
 export { OperationalWorkbench } from './OperationalWorkbench';
 export { UniversalSearch } from './UniversalSearch';
@@ -18,7 +12,6 @@ export { CollectionPointEditor } from './CollectionPointEditor';
 export { RegionManager } from './RegionManager';
 export { ResearchReportListPage } from './ResearchReportListPage';
 export { ResearchReportDetailPage } from './ResearchReportDetailPage';
-export { ResearchReportDashboard } from './ResearchReportDashboard';
 export { ResearchReportCreatePage } from './ResearchReportCreatePage';
 export { AlertCenterPage } from './AlertCenterPage';
 export { KnowledgeCenterPage } from './KnowledgeCenterPage';
@@ -34,6 +27,5 @@ export * from './DocumentStatsDashboard';
 export { AllocationMatrix } from './AllocationMatrix';
 export { CollectionPointAllocationCenter } from './CollectionPointAllocationCenter';
 export { DistributionPreview } from './DistributionPreview';
-// ReportEntryForm removed - merged into ResearchReportCreatePage
 export { ReviewWorkbench } from './ReviewWorkbench';
-
+export { IntelFeedDashboard } from './intel-feed';

@@ -179,7 +179,6 @@ export const WorkflowQuickRunnerModal: React.FC<WorkflowQuickRunnerModalProps> =
             okText="立即运行"
             cancelText="取消"
             width={620}
-            forceRender
             destroyOnClose
         >
             <Tabs

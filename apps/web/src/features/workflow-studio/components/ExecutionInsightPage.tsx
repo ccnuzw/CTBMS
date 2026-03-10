@@ -8,7 +8,7 @@ import {
 import { useSearchParams } from 'react-router-dom';
 import { ExecutionAnalyticsDashboard } from '../../execution-analytics';
 import { ReplayEvaluationPage } from '../../replay-evaluation';
-import { DecisionReportHubPage } from '../../decision-record/components/DecisionReportHubPage';
+import { DecisionRecordPage } from '../../decision-record/components/DecisionRecordPage';
 
 const { Title, Paragraph } = Typography;
 
@@ -23,19 +23,19 @@ export const ExecutionInsightPage: React.FC = () => {
     const activeTab = searchParams.get('tab') ?? 'analytics';
 
     const handleTabChange = (key: string) => {
-        const next = new URLSearchParams();
+        const next = new URLSearchParams(searchParams);
         next.set('tab', key);
-        setSearchParams(next);
+        setSearchParams(next, { replace: true });
     };
 
     return (
         <div>
             <div style={{ marginBottom: token.marginMD }}>
                 <Title level={4} style={{ margin: 0 }}>
-                    执行洞察
+                    分析报告
                 </Title>
                 <Paragraph type="secondary" style={{ margin: 0, marginTop: 4 }}>
-                    执行统计分析、历史回放评估与决策记录追踪
+                    运营统计分析、历史回放评估与决策追踪
                 </Paragraph>
             </div>
             <Tabs
@@ -43,13 +43,14 @@ export const ExecutionInsightPage: React.FC = () => {
                 onChange={handleTabChange}
                 type="card"
                 size="large"
+                destroyInactiveTabPane
                 items={[
                     {
                         key: 'analytics',
                         label: (
                             <Space>
                                 <BarChartOutlined />
-                                执行统计
+                                运营统计
                             </Space>
                         ),
                         children: <ExecutionAnalyticsDashboard />,
@@ -59,7 +60,7 @@ export const ExecutionInsightPage: React.FC = () => {
                         label: (
                             <Space>
                                 <PlayCircleOutlined />
-                                回放评估
+                                历史回放
                             </Space>
                         ),
                         children: <ReplayEvaluationPage />,
@@ -69,10 +70,10 @@ export const ExecutionInsightPage: React.FC = () => {
                         label: (
                             <Space>
                                 <FileProtectOutlined />
-                                决策记录
+                                决策追踪
                             </Space>
                         ),
-                        children: <DecisionReportHubPage />,
+                        children: <DecisionRecordPage />,
                     },
                 ]}
             />

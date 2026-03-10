@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 
+import { AIProvider, AIProviderSchema } from '@packages/types';
 import { AIProviderFactory } from '../ai/providers/provider.factory';
 import { AIMessage, AIRequestOptions } from '../ai/providers/base.provider';
 import { ToolAdapterService } from '../agent-tool/tool-adapter.service';
@@ -136,9 +137,7 @@ export class AgentChatService {
             round++;
 
             const messages = this.buildMessages(session.turns);
-            const provider = this.aiProviderFactory.getProvider(
-                (aiOptions.provider ?? 'openai') as any,
-            );
+            const provider = this.aiProviderFactory.getProvider(aiOptions.provider ?? 'openai');
 
             if (!provider.generateChat) {
                 throw new Error('当前AI服务不支持对话模式');
@@ -148,7 +147,7 @@ export class AgentChatService {
 
             const response = await provider.generateChat(messages, {
                 ...aiOptions.requestOptions,
-                tools: tools as any,
+                tools,
             });
 
             // 情况A：LLM 返回文本回复（没有 tool call）
@@ -269,13 +268,21 @@ export class AgentChatService {
 
     /** 获取 AI 配置（从环境变量） */
     private getAIOptions(): {
-        provider: string;
+        provider: AIProvider;
         requestOptions: AIRequestOptions;
     } {
         const modelName = process.env.DEFAULT_AI_MODEL ?? 'gpt-4o';
         const apiKey = process.env.OPENAI_API_KEY ?? process.env.AI_API_KEY ?? '';
         const apiUrl = process.env.OPENAI_API_URL ?? process.env.AI_API_URL;
-        const provider = process.env.AI_PROVIDER ?? 'openai';
+        const providerRaw = process.env.AI_PROVIDER ?? 'openai';
+        const providerParsed = AIProviderSchema.safeParse(providerRaw);
+        const provider = providerParsed.success ? providerParsed.data : 'openai';
+
+        if (!providerParsed.success) {
+            this.logger.warn(
+                `Invalid AI_PROVIDER "${providerRaw}", fallback to "openai".`,
+            );
+        }
 
         return {
             provider,

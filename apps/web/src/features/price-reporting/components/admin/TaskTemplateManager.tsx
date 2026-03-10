@@ -21,7 +21,7 @@ import {
   Alert,
   DatePicker,
   Segmented,
-    theme,
+  theme,
 } from 'antd';
 import {
   PlusOutlined,
@@ -57,86 +57,20 @@ import dayjs from 'dayjs';
 const { Text } = Typography;
 const { TextArea } = Input;
 
-// 任务类型选项
-const TASK_TYPE_OPTIONS = [
-  { value: 'COLLECTION', label: '采集任务', color: 'blue' },
-  { value: 'REPORT', label: '报告任务', color: 'orange' },
-  { value: 'VERIFICATION', label: '核实任务', color: 'red' },
-];
-
-// 周期类型选项
-const CYCLE_TYPE_OPTIONS = [
-  { value: 'DAILY', label: '每日', description: '每天自动执行' },
-  { value: 'WEEKLY', label: '每周', description: '每周执行一次' },
-  { value: 'MONTHLY', label: '每月', description: '每月执行一次' },
-  { value: 'ONE_TIME', label: '一次性', description: '仅执行一次' },
-];
-
-// 优先级选项
-const PRIORITY_OPTIONS = [
-  { value: 'LOW', label: '低', color: 'default' },
-  { value: 'MEDIUM', label: '中', color: 'blue' },
-  { value: 'HIGH', label: '高', color: 'orange' },
-  { value: 'URGENT', label: '紧急', color: 'red' },
-];
-
-const WEEKDAY_OPTIONS = [
-  { value: 1, label: '周一' },
-  { value: 2, label: '周二' },
-  { value: 3, label: '周三' },
-  { value: 4, label: '周四' },
-  { value: 5, label: '周五' },
-  { value: 6, label: '周六' },
-  { value: 7, label: '周日' },
-];
-
-const MONTH_DAY_OPTIONS = [
-  ...Array.from({ length: 31 }, (_, index) => ({
-    value: index + 1,
-    label: `${index + 1}日`,
-  })),
-  { value: 0, label: '月末' },
-];
-
-// 采集点类型选项
-const POINT_TYPE_OPTIONS = [
-  { value: 'PORT', label: '港口', icon: '⚓' },
-  { value: 'ENTERPRISE', label: '企业', icon: '🏭' },
-  { value: 'STATION', label: '站台', icon: '🚂' },
-  { value: 'MARKET', label: '市场', icon: '🏪' },
-  { value: 'REGION', label: '区域', icon: '📍' },
-];
-
-// 分配模式选项
-const ASSIGNEE_MODE_OPTIONS = [
-  { value: 'BY_COLLECTION_POINT', label: '按采集点负责人', description: '按采集点类型或指定采集点分配负责人' },
-  { value: 'MANUAL', label: '手动指定', description: '手动选择分配人员' },
-  { value: 'BY_DEPARTMENT', label: '按部门', description: '分配给指定部门的所有成员' },
-  { value: 'BY_ORGANIZATION', label: '按组织', description: '分配给指定组织的所有成员' },
-];
-
-const getTaskTypeInfo = (type: string) => {
-  return TASK_TYPE_OPTIONS.find((t) => t.value === type) || { label: type, color: 'default' };
-};
-
-const getCycleTypeInfo = (type: string) => {
-  return CYCLE_TYPE_OPTIONS.find((t) => t.value === type) || { label: type };
-};
-
-const getPriorityInfo = (priority: string) => {
-  return PRIORITY_OPTIONS.find((p) => p.value === priority) || { label: priority, color: 'default' };
-};
-
-const getPointTypeInfo = (type: string) => {
-  return POINT_TYPE_OPTIONS.find((t) => t.value === type) || { label: type, icon: '📍' };
-};
-
-// 格式化时间（分钟 -> HH:MM）
-const formatMinuteToTime = (minute: number) => {
-  const hours = Math.floor(minute / 60);
-  const mins = minute % 60;
-  return `${hours.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}`;
-};
+import {
+  TASK_TYPE_OPTIONS,
+  CYCLE_TYPE_OPTIONS,
+  PRIORITY_OPTIONS,
+  WEEKDAY_OPTIONS,
+  MONTH_DAY_OPTIONS,
+  POINT_TYPE_OPTIONS,
+  ASSIGNEE_MODE_OPTIONS,
+  getTaskTypeInfo,
+  getCycleTypeInfo,
+  getPriorityInfo,
+  getPointTypeInfo,
+  formatMinuteToTime,
+} from '../../../market-intel/components/task-distribution/components/templateFormConstants';
 
 export const TaskTemplateManager: React.FC = () => {
   const [modalVisible, setModalVisible] = useState(false);
@@ -276,7 +210,7 @@ export const TaskTemplateManager: React.FC = () => {
         message.success('模板创建成功');
       }
       setModalVisible(false);
-     
+
     } catch (err: any) {
       message.error(err.response?.data?.message || '操作失败');
     }
@@ -298,7 +232,7 @@ export const TaskTemplateManager: React.FC = () => {
       const result = await executeTemplate.mutateAsync(id);
       message.success(result.message || `成功创建 ${result.count} 个任务`);
       setPreviewVisible(false); // Close preview if open
-     
+
     } catch (err: any) {
       message.error(err.response?.data?.message || '执行失败');
     }
@@ -311,7 +245,7 @@ export const TaskTemplateManager: React.FC = () => {
       const data = await previewDistribution.mutateAsync(id);
       setPreviewData(data);
       setPreviewVisible(true);
-     
+
     } catch (err: any) {
       message.error('获取预览数据失败');
     }
@@ -376,7 +310,7 @@ export const TaskTemplateManager: React.FC = () => {
       title: '分配范围',
       key: 'scope',
       width: 180,
-       
+
       render: (_: any, record: TaskTemplate) => {
         if (record.assigneeMode === 'BY_COLLECTION_POINT') {
           if (record.targetPointType) {
@@ -429,7 +363,7 @@ export const TaskTemplateManager: React.FC = () => {
       title: '执行时间',
       key: 'schedule',
       width: 150,
-       
+
       render: (_: any, record: TaskTemplate) => (
         <div>
           <div>
@@ -460,7 +394,7 @@ export const TaskTemplateManager: React.FC = () => {
       title: '操作',
       key: 'action',
       width: 180,
-       
+
       render: (_: any, record: TaskTemplate) => (
         <Space>
           <Tooltip title="预览分发结果">

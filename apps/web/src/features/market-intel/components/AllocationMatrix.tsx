@@ -47,6 +47,8 @@ import {
 } from '../../price-reporting/api/hooks';
 import { OrgDeptTreeSelect } from '../../organization/components/OrgDeptTreeSelect';
 import { CollectionPointMap } from './CollectionPointMap';
+import { AllocationUserList } from './AllocationUserList';
+import { AllocationPointList } from './AllocationPointList';
 
 const { Text, Title } = Typography;
 
@@ -58,12 +60,7 @@ const POINT_TYPE_META_FALLBACK: Record<string, { label: string; color: string; i
   REGION: { label: '地域', color: 'orange', icon: '🌍' },
 };
 
-// 负载状态颜色
-const getWorkloadColor = (count: number) => {
-  if (count < 5) return 'success';
-  if (count < 20) return 'warning';
-  return 'error';
-};
+
 
 export const AllocationMatrix: React.FC = () => {
   const { message, modal } = App.useApp();
@@ -156,7 +153,7 @@ export const AllocationMatrix: React.FC = () => {
 
   const allocationIdByPointId = useMemo(() => {
     const map = new Map<string, string>();
-     
+
     (userAllocations || []).forEach((allocation: any) => {
       if (allocation.collectionPointId) {
         map.set(allocation.collectionPointId, allocation.id);
@@ -333,7 +330,7 @@ export const AllocationMatrix: React.FC = () => {
       setSelectedCommodity([]);
       refetch();
       refetchUserAllocations();
-     
+
     } catch (err: any) {
       message.error(err?.response?.data?.message || '操作失败');
     }
@@ -349,7 +346,7 @@ export const AllocationMatrix: React.FC = () => {
     if (currentAllocated) {
       // 查找当前用户在该点的所有分配
       const allocations =
-         
+
         userAllocations?.filter((a: any) => a.collectionPointId === pointId) || [];
 
       if (allocations.length === 0) {
@@ -361,7 +358,7 @@ export const AllocationMatrix: React.FC = () => {
         title: '确认取消分配？',
         content:
           allocations.length > 1
-             
+
             ? `该用户在此采集点有 ${allocations.length} 项分配记录（${allocations.map((a: any) => a.commodity || '全品种').join(', ')}），将全部取消。`
             : '取消后该采集点将不再分配给当前负责人',
         okText: '确认',
@@ -369,12 +366,12 @@ export const AllocationMatrix: React.FC = () => {
         onOk: async () => {
           try {
             // 并行删除所有关联分配
-             
+
             await Promise.all(allocations.map((a: any) => deleteAllocation.mutateAsync(a.id)));
             message.success('已取消分配');
             refetch();
             refetchUserAllocations();
-           
+
           } catch (err: any) {
             message.error(err?.response?.data?.message || '操作失败');
           }
@@ -404,7 +401,7 @@ export const AllocationMatrix: React.FC = () => {
         message.success('已分配');
         refetch();
         refetchUserAllocations();
-       
+
       } catch (err: any) {
         message.error(err?.response?.data?.message || '操作失败');
       }
@@ -486,275 +483,39 @@ export const AllocationMatrix: React.FC = () => {
   };
 
   // 渲染用户列表
-  const renderUserList = () => {
-    if (!userQueryEnabled && !isLoading) {
-      return (
-        <Empty
-          image={Empty.PRESENTED_IMAGE_SIMPLE}
-          description="请先选择组织/部门或输入姓名搜索负责人"
-          style={{ marginTop: 40 }}
-        />
-      );
-    }
-
-    if (isError) {
-      return (
-        <Alert
-          type="error"
-          showIcon
-          message="加载负责人失败"
-          description={(error as Error)?.message || '请稍后重试'}
-          style={{ margin: 16 }}
-        />
-      );
-    }
-
-    if ((!sortedUsers || sortedUsers.length === 0) && !isLoading) {
-      return (
-        <Empty
-          image={Empty.PRESENTED_IMAGE_SIMPLE}
-          description="请在上方选择组织/部门或输入姓名搜索"
-          style={{ marginTop: 40 }}
-        />
-      );
-    }
-
-    return (
-      <List
-        dataSource={sortedUsers}
-        loading={userQueryEnabled && isFetching}
-        renderItem={(user) => {
-          // Workload Logic
-          // Note: assignedPointCount / pendingTaskCount might be undefined if API not fully aligned yet, so default to 0
-          const pointCount = (user as any).assignedPointCount || 0;
-          const taskCount = (user as any).pendingTaskCount || 0;
-
-          return (
-            <List.Item
-              className={`user-list-item ${selectedUserId === user.id ? 'selected' : ''}`}
-              onClick={() => setSelectedUserId(user.id)}
-              style={{
-                cursor: 'pointer',
-                background: selectedUserId === user.id ? token.colorPrimaryBg : 'transparent',
-                padding: '12px',
-                borderRadius: '6px',
-                marginBottom: '4px',
-                border:
-                  selectedUserId === user.id
-                    ? `1px solid ${token.colorPrimaryBorder}`
-                    : '1px solid transparent',
-              }}
-            >
-              <List.Item.Meta
-                avatar={
-                  <Badge count={taskCount} size="small" offset={[0, 0]}>
-                    <Avatar
-                      icon={<UserOutlined />}
-                      style={{
-                        backgroundColor:
-                          selectedUserId === user.id ? token.colorPrimary : token.colorFill,
-                      }}
-                    />
-                  </Badge>
-                }
-                title={
-                  <Space style={{ width: '100%', justifyContent: 'space-between' }}>
-                    <Text
-                      strong={selectedUserId === user.id}
-                      style={{ color: selectedUserId === user.id ? token.colorText : undefined }}
-                    >
-                      {user.name}
-                    </Text>
-                    <Tooltip title={`已分配采集点: ${pointCount}`}>
-                      <Tag color={getWorkloadColor(pointCount)} bordered={false}>
-                        {pointCount} 点
-                      </Tag>
-                    </Tooltip>
-                  </Space>
-                }
-                description={
-                  <Space direction="vertical" size={0} style={{ fontSize: '12px', width: '100%' }}>
-                    <Space split={<Divider type="vertical" />}>
-                      {user.organizationName && (
-                        <Text type="secondary">{user.organizationName}</Text>
-                      )}
-                      {user.departmentName && <Text type="secondary">{user.departmentName}</Text>}
-                    </Space>
-                  </Space>
-                }
-              />
-            </List.Item>
-          );
-        }}
-        style={{ height: 'calc(100vh - 300px)', overflow: 'auto' }}
-      />
-    );
-  };
+  const renderUserList = () => (
+    <AllocationUserList
+      sortedUsers={sortedUsers}
+      selectedUserId={selectedUserId}
+      setSelectedUserId={setSelectedUserId}
+      userQueryEnabled={userQueryEnabled}
+      isLoading={isLoading}
+      isFetching={isFetching}
+      isError={isError}
+      error={error as Error | null}
+      token={token}
+    />
+  );
 
   // 渲染采集点列表
-  const renderPointList = () => {
-    if (!queryEnabled && !isLoading) {
-      return (
-        <Empty
-          image={Empty.PRESENTED_IMAGE_SIMPLE}
-          description="请先选择组织/部门或输入人员/采集点关键词"
-          style={{ marginTop: 40 }}
-        />
-      );
-    }
-
-    if (isError) {
-      return (
-        <Alert
-          type="error"
-          showIcon
-          message="加载采集点失败"
-          description={(error as Error)?.message || '请稍后重试'}
-          style={{ margin: 16 }}
-        />
-      );
-    }
-
-    if (!filteredPoints.length && !isLoading) {
-      return (
-        <Empty
-          image={Empty.PRESENTED_IMAGE_SIMPLE}
-          description="未找到符合条件的采集点"
-          style={{ marginTop: 40 }}
-        />
-      );
-    }
-
-    return (
-      <List
-        grid={{ gutter: 16, column: 2 }}
-        dataSource={filteredPoints}
-        loading={queryEnabled && isFetching}
-        renderItem={(point) => {
-          // 获取当前选中用户在该点的分配详情
-          const userAllocationsForPoint =
-            selectedUserId && point.allocations
-               
-              ? point.allocations.filter((a: any) => a.userId === selectedUserId)
-              : [];
-          const isAssignedToCurrentUser = userAllocationsForPoint.length > 0;
-          const assignedCommodities = userAllocationsForPoint.map(
-             
-            (a: any) => a.commodity || '全品种',
-          );
-
-          const isSelected = selectedPointIds.has(point.pointId);
-          const actionDisabled =
-            !selectedUserId || (isAssignedToCurrentUser && isLoadingUserAllocations);
-
-          return (
-            <List.Item>
-              <Card
-                size="small"
-                hoverable
-                onClick={() => {
-                  if (isSelectionMode && !isAssignedToCurrentUser) {
-                    handleSelectPoint(point.pointId, !isSelected);
-                  }
-                }}
-                className={isAssignedToCurrentUser ? 'point-card-assigned' : ''}
-                style={{
-                  borderColor:
-                    isSelectionMode && isSelected
-                      ? token.colorPrimary
-                      : isAssignedToCurrentUser
-                        ? token.colorSuccessBorder
-                        : token.colorBorder,
-                  background:
-                    isSelectionMode && isSelected
-                      ? token.colorPrimaryBg
-                      : isAssignedToCurrentUser
-                        ? token.colorSuccessBg
-                        : token.colorBgContainer,
-                  transition: 'all 0.3s',
-                }}
-                actions={
-                  !isSelectionMode
-                    ? [
-                        <Checkbox
-                          checked={isAssignedToCurrentUser}
-                          disabled={actionDisabled}
-                          onChange={(e) => {
-                            e.stopPropagation();
-                            handleToggleAllocation(point.pointId, isAssignedToCurrentUser);
-                          }}
-                        >
-                          {isAssignedToCurrentUser ? '已分配' : '分配'}
-                        </Checkbox>,
-                      ]
-                    : [
-                        <Checkbox
-                          checked={isSelected}
-                          disabled={!selectedUserId || isAssignedToCurrentUser}
-                          onChange={(e) => handleSelectPoint(point.pointId, e.target.checked)}
-                        >
-                          选择
-                        </Checkbox>,
-                      ]
-                }
-              >
-                <Card.Meta
-                  title={
-                    <Space>
-                      {pointTypeMeta[point.pointType]?.icon && (
-                        <span>{pointTypeMeta[point.pointType]?.icon}</span>
-                      )}
-                      <span>{point.pointName}</span>
-                    </Space>
-                  }
-                  description={
-                    <Space direction="vertical" size={4} style={{ width: '100%' }}>
-                      <Tag color={pointTypeMeta[point.pointType]?.color || 'default'}>
-                        {pointTypeMeta[point.pointType]?.label || point.pointType}
-                      </Tag>
-
-                      {isAssignedToCurrentUser ? (
-                        <div style={{ marginTop: 4 }}>
-                          <Text
-                            type="secondary"
-                            style={{ fontSize: 12, display: 'block', marginBottom: 2 }}
-                          >
-                            负责品种:
-                          </Text>
-                          <Space size={4} wrap>
-                            {assignedCommodities.map((c: string, idx: number) => (
-                              <Tag key={idx} color="green" style={{ margin: 0 }}>
-                                {c}
-                              </Tag>
-                            ))}
-                          </Space>
-                        </div>
-                      ) : point.allocatedUserIds.length > 0 ? (
-                        <Space size={2} wrap>
-                          <Text type="secondary" style={{ fontSize: 12 }}>
-                            已分配给:
-                          </Text>
-                          <Badge
-                            count={point.allocatedUserIds.length}
-                            style={{ backgroundColor: token.colorSuccess }}
-                          />
-                        </Space>
-                      ) : (
-                        <Tag icon={<WarningOutlined />} color="warning">
-                          未分配
-                        </Tag>
-                      )}
-                    </Space>
-                  }
-                />
-              </Card>
-            </List.Item>
-          );
-        }}
-        style={{ height: 'calc(100vh - 300px)', overflow: 'auto', padding: '0 8px' }}
-      />
-    );
-  };
+  const renderPointList = () => (
+    <AllocationPointList
+      filteredPoints={filteredPoints}
+      queryEnabled={queryEnabled}
+      isLoading={isLoading}
+      isFetching={isFetching}
+      isError={isError}
+      error={error as Error | null}
+      selectedUserId={selectedUserId}
+      isSelectionMode={isSelectionMode}
+      selectedPointIds={selectedPointIds}
+      isLoadingUserAllocations={isLoadingUserAllocations}
+      pointTypeMeta={pointTypeMeta}
+      token={token}
+      onSelectPoint={handleSelectPoint}
+      onToggleAllocation={handleToggleAllocation}
+    />
+  );
 
   return (
     <div className="allocation-matrix">
@@ -862,7 +623,7 @@ export const AllocationMatrix: React.FC = () => {
               <Space>
                 <Segmented
                   value={viewMode}
-                   
+
                   onChange={(val: any) => setViewMode(val)}
                   options={[
                     { label: '列表', value: 'list', icon: <BarsOutlined /> },
@@ -920,7 +681,7 @@ export const AllocationMatrix: React.FC = () => {
               <Space wrap>
                 <Segmented
                   value={pointStatusFilter}
-                   
+
                   onChange={(val: any) => setPointStatusFilter(val)}
                   options={pointStatusOptions}
                 />

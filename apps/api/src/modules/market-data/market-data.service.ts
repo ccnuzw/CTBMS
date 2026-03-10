@@ -7,7 +7,6 @@ import {
 } from '@nestjs/common';
 import type {
   LineageDataset,
-  ReconciliationRollbackDrillStatus,
   StandardEventRecord,
   StandardFuturesRecord,
   StandardSpotRecord,
@@ -29,319 +28,48 @@ import {
 import { MarketDataPersistenceService } from './services/market-data-persistence.service';
 import { MarketDataCutoverService } from './services/market-data-cutover.service';
 import { MarketDataReconciliationService } from './services/market-data-reconciliation.service';
+import type {
+  StandardDataset,
+  ReconciliationJobStatus,
+  AggregateOp,
+  MarketDataAggregateMetricInput,
+  StandardizedQueryOptions,
+  StandardizedDataQualityScore,
+  StandardizedDataFreshness,
+  StandardizedDataMeta,
+  WeatherLogisticsImpactIndexQueryInput,
+  WeatherLogisticsRiskLevel,
+  WeatherLogisticsImpactIndexPoint,
+  WeatherLogisticsComputationBucket,
+  ReconciliationGateEvaluationResult,
+  ReconciliationWindowMetricsResult,
+  ReconciliationDailyMetricsHistoryResult,
+  ReconciliationReadCoverageMetricsResult,
+  ReconciliationM1ReadinessResult,
+  ReconciliationM1ReadinessReportResult,
+  ReconciliationM1ReadinessReportSnapshotResult,
+  ReconciliationCutoverDecisionResult,
+  ReconciliationGateReason,
+} from './services/market-data.types';
+import {
+  COMMODITY_CODE_MAP,
+  MARKET_INTEL_EVENT_TYPE_MAP,
+  RECONCILIATION_GATE_REASON,
+  STANDARD_RECONCILIATION_DATASETS,
+} from './services/market-data.types';
 
-type StandardDataset = 'SPOT_PRICE' | 'FUTURES_QUOTE' | 'MARKET_EVENT';
-type ReconciliationJobStatus = 'PENDING' | 'RUNNING' | 'DONE' | 'FAILED' | 'CANCELLED';
-type ReconciliationM1ReadinessReportFormat = 'json' | 'markdown';
-type ReconciliationCutoverDecisionStatus = 'APPROVED' | 'REJECTED';
-type RollbackDrillStatus = ReconciliationRollbackDrillStatus;
-type AggregateOp = 'sum' | 'avg' | 'min' | 'max' | 'count';
-
-interface MarketDataAggregateMetricInput {
-  field: string;
-  op: AggregateOp;
-  as?: string;
-}
-
-interface StandardizedQueryOptions {
-  from?: Date;
-  to?: Date;
-  filters?: Record<string, unknown>;
-  limit?: number;
-  enforceReconciliationGate?: boolean;
-}
-
-interface StandardizedDataQualityScore {
-  overall: number;
-  grade: 'A' | 'B' | 'C' | 'D';
-  dimensions: {
-    completeness: number;
-    timeliness: number;
-    consistency: number;
-    anomalyStability: number;
-  };
-}
-
-interface StandardizedDataFreshness {
-  status: 'FRESH' | 'STALE' | 'OUTDATED' | 'UNKNOWN';
-  degradeSeverity: 'NONE' | 'WARNING' | 'CRITICAL';
-  ttlMinutes: number;
-  dataLagMinutes?: number;
-  newestDataTime?: string;
-  oldestDataTime?: string;
-}
-
-interface StandardizedDataGovernanceMeta {
-  standardizedRead: {
-    enabled: boolean;
-    source: string;
-    updatedAt: string | null;
-  };
-  reconciliationGate: {
-    enabled: boolean;
-    passed: boolean;
-    reason: ReconciliationGateReason;
-    checkedAt: string;
-    maxAgeMinutes?: number;
-    ageMinutes?: number;
-    latest?: {
-      jobId: string;
-      status: ReconciliationJobStatus;
-      retriedFromJobId: string | null;
-      retryCount: number;
-      summaryPass?: boolean;
-      createdAt: string;
-      finishedAt?: string;
-      cancelledAt?: string;
-      dimensions?: Record<string, unknown>;
-      source: 'database' | 'in-memory';
-    };
-  };
-}
-
-interface StandardizedDataMeta {
-  recordCount: number;
-  mappingVersion: string;
-  schemaVersion: string;
-  lineageVersion: string;
-  fetchedAt: string;
-  degradeAction: 'ALLOW' | 'WARN' | 'BLOCK';
-  qualityScore: StandardizedDataQualityScore;
-  freshness: StandardizedDataFreshness;
-  lineage?: {
-    dataset: StandardDataset;
-    sourceTables: string[];
-    ruleSetId: string;
-    metricVersions: Record<string, string>;
-  };
-  governance?: StandardizedDataGovernanceMeta;
-}
-
-interface WeatherLogisticsImpactIndexQueryInput {
-  from?: string;
-  to?: string;
-  windowDays?: number;
-  commodityCode?: string;
-  regionCode?: string;
-}
-
-type WeatherLogisticsRiskLevel = 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
-
-interface WeatherLogisticsImpactIndexPoint {
-  date: string;
-  weatherDisturbanceIndex: number;
-  transportFrictionIndex: number;
-  supplyRiskIndex: number;
-  deliveryDelayRisk: number;
-  weatherEventCount: number;
-  logisticsEventCount: number;
-  freightSampleCount: number;
-  riskLevel: WeatherLogisticsRiskLevel;
-}
-
-interface WeatherLogisticsComputationBucket {
-  date: string;
-  weatherSignal: number;
-  logisticsSignal: number;
-  weatherEventCount: number;
-  logisticsEventCount: number;
-  freightValues: number[];
-}
-
-interface ReconciliationGateSnapshot {
-  jobId: string;
-  status: ReconciliationJobStatus;
-  retriedFromJobId: string | null;
-  retryCount: number;
-  summaryPass?: boolean;
-  createdAt: string;
-  finishedAt?: string;
-  cancelledAt?: string;
-  dimensions?: Record<string, unknown>;
-  source: 'database' | 'in-memory';
-}
-
-export interface ReconciliationGateEvaluationResult {
-  enabled: boolean;
-  passed: boolean;
-  reason: ReconciliationGateReason;
-  checkedAt: string;
-  maxAgeMinutes?: number;
-  ageMinutes?: number;
-  latest?: ReconciliationGateSnapshot;
-}
-
-export interface ReconciliationWindowMetricsResult {
-  dataset: StandardDataset;
-  windowDays: number;
-  fromDate: string;
-  toDate: string;
-  source: 'database' | 'in-memory';
-  totalJobs: number;
-  doneJobs: number;
-  passedJobs: number;
-  daily: Array<{
-    date: string;
-    totalJobs: number;
-    doneJobs: number;
-    passedJobs: number;
-    passed: boolean;
-    latestJobId?: string;
-  }>;
-  consecutivePassedDays: number;
-  meetsWindowTarget: boolean;
-}
-
-export interface ReconciliationDailyMetricsHistoryResult {
-  dataset: StandardDataset;
-  windowDays: number;
-  days: number;
-  source: 'database' | 'in-memory';
-  items: Array<{
-    metricDate: string;
-    totalJobs: number;
-    doneJobs: number;
-    passedJobs: number;
-    dayPassed: boolean;
-    consecutivePassedDays: number;
-    meetsWindowTarget: boolean;
-    generatedAt: string;
-    payload?: Record<string, unknown>;
-  }>;
-}
-
-export interface ReconciliationReadCoverageMetricsResult {
-  windowDays: number;
-  fromDate: string;
-  toDate: string;
-  targetCoverageRate: number;
-  totalDataFetchNodes: number;
-  standardReadNodes: number;
-  legacyReadNodes: number;
-  otherSourceNodes: number;
-  gateEvaluatedNodes: number;
-  gatePassedNodes: number;
-  coverageRate: number;
-  meetsCoverageTarget: boolean;
-  consecutiveCoverageDays: number;
-  daily: Array<{
-    date: string;
-    totalDataFetchNodes: number;
-    standardReadNodes: number;
-    legacyReadNodes: number;
-    otherSourceNodes: number;
-    gateEvaluatedNodes: number;
-    gatePassedNodes: number;
-    coverageRate: number;
-    meetsTarget: boolean;
-  }>;
-}
-
-export interface ReconciliationM1ReadinessResult {
-  generatedAt: string;
-  windowDays: number;
-  datasets: StandardDataset[];
-  summary: {
-    meetsReconciliationTarget: boolean;
-    meetsCoverageTarget: boolean;
-    hasRecentRollbackDrillEvidence: boolean;
-    ready: boolean;
-  };
-  coverage: ReconciliationReadCoverageMetricsResult;
-  reconciliation: Array<{
-    dataset: StandardDataset;
-    meetsWindowTarget: boolean;
-    consecutivePassedDays: number;
-    totalJobs: number;
-    passedJobs: number;
-    source: 'database' | 'in-memory';
-  }>;
-  rollbackDrills: Array<{
-    dataset: StandardDataset;
-    exists: boolean;
-    recent: boolean;
-    passed: boolean;
-    drillId?: string;
-    status?: RollbackDrillStatus;
-    createdAt?: string;
-  }>;
-}
-
-export interface ReconciliationM1ReadinessReportResult {
-  format: ReconciliationM1ReadinessReportFormat;
-  generatedAt: string;
-  fileName: string;
-  readiness: ReconciliationM1ReadinessResult;
-  report: ReconciliationM1ReadinessResult | string;
-}
-
-export interface ReconciliationM1ReadinessReportSnapshotResult {
-  snapshotId: string;
-  format: ReconciliationM1ReadinessReportFormat;
-  fileName: string;
-  windowDays: number;
-  targetCoverageRate: number;
-  datasets: StandardDataset[];
-  readiness: ReconciliationM1ReadinessResult;
-  report: ReconciliationM1ReadinessResult | string;
-  requestedByUserId: string;
-  createdAt: string;
-  storage: 'database' | 'in-memory';
-}
-
-export interface ReconciliationCutoverDecisionResult {
-  decisionId: string;
-  status: ReconciliationCutoverDecisionStatus;
-  reasonCodes: string[];
-  windowDays: number;
-  targetCoverageRate: number;
-  datasets: StandardDataset[];
-  reportFormat: ReconciliationM1ReadinessReportFormat;
-  reportSnapshotId: string;
-  readinessSummary: {
-    meetsReconciliationTarget: boolean;
-    meetsCoverageTarget: boolean;
-    hasRecentRollbackDrillEvidence: boolean;
-    ready: boolean;
-  };
-  note?: string;
-  requestedByUserId: string;
-  createdAt: string;
-  storage: 'database' | 'in-memory';
-}
-
-const COMMODITY_CODE_MAP: Record<string, string> = {
-  玉米: 'CORN',
-  豆粕: 'SOY_MEAL',
-  大豆: 'SOYBEAN',
-  小麦: 'WHEAT',
+export type {
+  ReconciliationGateEvaluationResult,
+  ReconciliationWindowMetricsResult,
+  ReconciliationDailyMetricsHistoryResult,
+  ReconciliationReadCoverageMetricsResult,
+  ReconciliationM1ReadinessResult,
+  ReconciliationM1ReadinessReportResult,
+  ReconciliationM1ReadinessReportSnapshotResult,
+  ReconciliationCutoverDecisionResult,
+  ReconciliationGateReason,
 };
-
-const MARKET_INTEL_EVENT_TYPE_MAP: Record<string, string> = {
-  DAILY_REPORT: 'REPORT',
-  RESEARCH_REPORT: 'REPORT',
-  POLICY: 'POLICY',
-  NEWS: 'NEWS',
-};
-
-export const RECONCILIATION_GATE_REASON = {
-  GATE_DISABLED: 'gate_disabled',
-  NO_RECONCILIATION_JOB: 'no_reconciliation_job',
-  LATEST_STATUS_NOT_DONE: 'latest_status_not_done',
-  LATEST_SUMMARY_NOT_PASSED: 'latest_summary_not_passed',
-  LATEST_TIME_INVALID: 'latest_time_invalid',
-  LATEST_OUTDATED: 'latest_outdated',
-  GATE_PASSED: 'gate_passed',
-} as const;
-
-export type ReconciliationGateReason =
-  (typeof RECONCILIATION_GATE_REASON)[keyof typeof RECONCILIATION_GATE_REASON];
-
-export const STANDARD_RECONCILIATION_DATASETS: StandardDataset[] = [
-  'SPOT_PRICE',
-  'FUTURES_QUOTE',
-  'MARKET_EVENT',
-];
+export { RECONCILIATION_GATE_REASON, STANDARD_RECONCILIATION_DATASETS };
 
 @Injectable()
 export class MarketDataService {
@@ -1554,21 +1282,21 @@ export class MarketDataService {
     const governance =
       context?.standardizedRead && context.gate
         ? {
-            standardizedRead: {
-              enabled: context.standardizedRead.enabled,
-              source: context.standardizedRead.source,
-              updatedAt: context.standardizedRead.updatedAt,
-            },
-            reconciliationGate: {
-              enabled: context.gate.enabled,
-              passed: context.gate.passed,
-              reason: context.gate.reason,
-              checkedAt: context.gate.checkedAt,
-              maxAgeMinutes: context.gate.maxAgeMinutes,
-              ageMinutes: context.gate.ageMinutes,
-              latest: context.gate.latest,
-            },
-          }
+          standardizedRead: {
+            enabled: context.standardizedRead.enabled,
+            source: context.standardizedRead.source,
+            updatedAt: context.standardizedRead.updatedAt,
+          },
+          reconciliationGate: {
+            enabled: context.gate.enabled,
+            passed: context.gate.passed,
+            reason: context.gate.reason,
+            checkedAt: context.gate.checkedAt,
+            maxAgeMinutes: context.gate.maxAgeMinutes,
+            ageMinutes: context.gate.ageMinutes,
+            latest: context.gate.latest,
+          },
+        }
         : undefined;
 
     return {

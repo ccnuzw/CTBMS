@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useState } from 'react';
 import {
   Alert,
   App,
@@ -23,7 +23,7 @@ import {
   NodeIndexOutlined,
   SearchOutlined,
 } from '@ant-design/icons';
-import { useSearchParams } from 'react-router-dom';
+
 import { DebateReplayViewer } from './DebateReplayViewer';
 import { ReplayTimeline } from './ReplayTimeline';
 import { MetricsDashboard } from './MetricsDashboard';
@@ -59,12 +59,10 @@ const formatLatency = (valueMs: number | null): string => {
 export const ReplayEvaluationPage: React.FC = () => {
   const { message } = App.useApp();
   const { token } = theme.useToken();
-  const [searchParams, setSearchParams] = useSearchParams();
-
-  const executionId = searchParams.get('executionId') ?? '';
-  const compareId = searchParams.get('compareId') ?? '';
-  const [inputId, setInputId] = useState(executionId);
-  const [compareInputId, setCompareInputId] = useState(compareId);
+  const [executionId, setExecutionId] = useState('');
+  const [compareId, setCompareId] = useState('');
+  const [inputId, setInputId] = useState('');
+  const [compareInputId, setCompareInputId] = useState('');
   const [activeTab, setActiveTab] = useState('replay');
   const [resolvingId, setResolvingId] = useState(false);
   const [resolvingCompareId, setResolvingCompareId] = useState(false);
@@ -93,13 +91,7 @@ export const ReplayEvaluationPage: React.FC = () => {
     maxSessions: 500,
   });
 
-  useEffect(() => {
-    setInputId(executionId);
-  }, [executionId]);
 
-  useEffect(() => {
-    setCompareInputId(compareId);
-  }, [compareId]);
 
   const resolveExecutionId = async (rawId: string): Promise<string | null> => {
     const normalized = rawId.trim();
@@ -151,7 +143,7 @@ export const ReplayEvaluationPage: React.FC = () => {
       if (resolved !== normalized) {
         message.info(`已自动解析为完整 ID: ${resolved}`);
       }
-      setSearchParams(compareId ? { executionId: resolved, compareId } : { executionId: resolved });
+      setExecutionId(resolved);
       setInputId(resolved);
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : '加载执行实例失败';
@@ -169,7 +161,7 @@ export const ReplayEvaluationPage: React.FC = () => {
 
     const normalized = compareInputId.trim();
     if (!normalized) {
-      setSearchParams({ executionId });
+      setCompareId('');
       return;
     }
 
@@ -189,7 +181,7 @@ export const ReplayEvaluationPage: React.FC = () => {
       if (resolved !== normalized) {
         message.info(`对比实例已解析为完整 ID: ${resolved}`);
       }
-      setSearchParams({ executionId, compareId: resolved });
+      setCompareId(resolved);
       setCompareInputId(resolved);
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : '加载对比执行实例失败';
@@ -467,7 +459,7 @@ export const ReplayEvaluationPage: React.FC = () => {
                       <Button
                         onClick={() => {
                           setCompareInputId('');
-                          setSearchParams({ executionId });
+                          setCompareId('');
                         }}
                       >
                         清空

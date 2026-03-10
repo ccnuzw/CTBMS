@@ -38,7 +38,7 @@ export const WorkflowHubPage: React.FC = () => {
                     运营中心
                 </Title>
                 <Paragraph type="secondary" style={{ margin: 0, marginTop: 4 }}>
-                    工作流运行记录、数据连接器、参数和规则的统一管理
+                    工作流运行记录、数据源、参数和业务规则管理
                 </Paragraph>
             </div>
             <Tabs
@@ -62,7 +62,7 @@ export const WorkflowHubPage: React.FC = () => {
                         label: (
                             <Space>
                                 <ApiOutlined />
-                                数据连接器
+                                数据源
                             </Space>
                         ),
                         children: <DataConnectorPage />,
@@ -72,7 +72,7 @@ export const WorkflowHubPage: React.FC = () => {
                         label: (
                             <Space>
                                 <ControlOutlined />
-                                参数中心
+                                参数配置
                             </Space>
                         ),
                         children: <ParameterSetPage />,
@@ -82,7 +82,7 @@ export const WorkflowHubPage: React.FC = () => {
                         label: (
                             <Space>
                                 <SafetyCertificateOutlined />
-                                规则中心
+                                业务规则
                             </Space>
                         ),
                         children: <DecisionRulePackPage />,

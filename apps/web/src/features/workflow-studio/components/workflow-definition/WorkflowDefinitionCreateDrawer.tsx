@@ -100,6 +100,7 @@ export const WorkflowDefinitionCreateDrawer: React.FC<WorkflowDefinitionCreateDr
             open={open}
             width={560}
             onClose={onClose}
+            forceRender
             extra={
                 <Space>
                     <Button onClick={onClose}>取消</Button>

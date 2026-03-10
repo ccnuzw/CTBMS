@@ -80,12 +80,12 @@ export const MainLayout: React.FC = () => {
           {
             key: '/workflow/assistant',
             icon: <MessageOutlined />,
-            label: 'AI 对话助手',
+            label: '对话助手',
           },
           {
             key: '/workflow/definitions',
             icon: <ApartmentOutlined />,
-            label: '工作流编排',
+            label: '工作流管理',
           },
           {
             key: '/workflow/hub',
@@ -95,12 +95,22 @@ export const MainLayout: React.FC = () => {
           {
             key: '/workflow/insight',
             icon: <FundOutlined />,
-            label: '执行洞察',
+            label: '分析报告',
           },
           {
             key: '/workflow/config',
             icon: <SettingOutlined />,
             label: '配置管理',
+          },
+          {
+            key: '/workflow/metrics',
+            icon: <DatabaseOutlined />,
+            label: '指标字典',
+          },
+          {
+            key: '/workflow/quality',
+            icon: <ExperimentOutlined />,
+            label: '数据质量',
           },
         ],
       },
@@ -132,81 +142,65 @@ export const MainLayout: React.FC = () => {
         label: '商情中心',
         children: [
           {
-            key: 'intel-collection',
-            icon: <NodeIndexOutlined />,
-            label: '采集管理',
+            key: 'intel-overview',
+            icon: <DashboardOutlined />,
+            label: '数据总览',
             children: [
               {
-                key: '/intel/collection-points',
-                icon: <SettingOutlined />,
-                label: '采集点配置',
+                key: '/intel',
+                icon: <DashboardOutlined />,
+                label: '驾驶舱',
               },
+              {
+                key: '/intel/search',
+                icon: <SearchOutlined />,
+                label: '全景检索',
+              },
+            ],
+          },
+          {
+            key: 'intel-ops',
+            icon: <FileTextOutlined />,
+            label: '业务操作',
+            children: [
+              {
+                key: '/intel/market-data',
+                icon: <FundOutlined />,
+                label: 'A类行情',
+              },
+              {
+                key: '/intel/feed',
+                icon: <FileTextOutlined />,
+                label: 'B类情报流',
+              },
+              {
+                key: '/intel/knowledge/items',
+                icon: <DatabaseOutlined />,
+                label: '知识库',
+              },
+              {
+                key: '/intel/entry',
+                icon: <CloudOutlined />,
+                label: '智能采集',
+              },
+            ],
+          },
+          {
+            key: 'intel-config',
+            icon: <SettingOutlined />,
+            label: '配置管理',
+            children: [
               {
                 key: '/intel/tasks',
                 icon: <ScheduleOutlined />,
                 label: '任务管理',
               },
               {
-                key: '/intel/monitor',
-                icon: <AuditOutlined />,
-                label: '任务监控',
-              },
-              {
-                key: '/intel/leaderboard',
-                icon: <TeamOutlined />,
-                label: '绩效排行',
+                key: '/intel/collection-points',
+                icon: <SettingOutlined />,
+                label: '采集点配置',
               },
             ],
-          },
-          {
-            key: '/intel',
-            icon: <DashboardOutlined />,
-            label: '全域驾驶舱',
-          },
-          {
-            key: '/intel/dashboard',
-            icon: <DashboardOutlined />,
-            label: '简版看板',
-          },
-          {
-            key: '/intel/workbench',
-            icon: <SettingOutlined />,
-            label: '业务工作台',
-          },
-          {
-            key: '/intel/search',
-            icon: <SearchOutlined />,
-            label: '全景检索',
-          },
-          {
-            key: '/intel/market-data',
-            icon: <FileTextOutlined />,
-            label: 'A类行情',
-          },
-          {
-            key: '/intel/alerts',
-            icon: <BellOutlined />,
-            label: 'A类预警',
-          },
-          {
-            key: '/intel/feed',
-            icon: <FileTextOutlined />,
-            label: 'B类情报流',
-          },
-          {
-            key: '/intel/knowledge/items',
-            icon: <FileTextOutlined />,
-            label: '商情知识库',
-          },
-          {
-            key: '/intel/extraction-config',
-            icon: <SettingOutlined />,
-            label: '配置中心',
-          },
-          {
-            key: '/intel/entry',
-            icon: <CloudOutlined />,
-            label: '智能采集',
           },
         ],
       },
@@ -290,12 +284,8 @@ export const MainLayout: React.FC = () => {
             label: '配置中心',
             children: [
               {
-                key: '/system/config/mapping-rules',
-                label: '通用映射规则',
-              },
-              {
                 key: '/system/config/rules',
-                label: '业务逻辑规则',
+                label: '映射规则',
               },
               {
                 key: '/system/config/ai-models',
@@ -324,7 +314,7 @@ export const MainLayout: React.FC = () => {
               {
                 key: '/system/config/connector-health',
                 icon: <RocketOutlined />,
-                label: '连接器健康',
+                label: '连接器',
               },
               {
                 key: '/system/config/audit-trace',
@@ -400,7 +390,14 @@ export const MainLayout: React.FC = () => {
                     body {
                         margin: 0;
                         padding: 0;
-                        overflow: hidden; /* Prevent body scroll, let Layout handle it */
+                        overflow: hidden;
+                    }
+                    .sidebar-scroll::-webkit-scrollbar {
+                        display: none;
+                    }
+                    .sidebar-scroll {
+                        -ms-overflow-style: none;
+                        scrollbar-width: none;
                     }
                 `}
       </style>
@@ -409,7 +406,7 @@ export const MainLayout: React.FC = () => {
           trigger={null}
           collapsible
           collapsed={collapsed}
-          width={220}
+          width={240}
           style={{
             background: colorBgContainer,
             borderRight: `1px solid ${token.colorBorderSecondary}`,
@@ -458,7 +455,7 @@ export const MainLayout: React.FC = () => {
               )}
             </div>
 
-            <div style={{ flex: 1, overflowY: 'auto' }}>
+            <div className="sidebar-scroll" style={{ flex: 1, overflowY: 'auto' }}>
               <Menu
                 mode="inline"
                 selectedKeys={[location.pathname]}
@@ -508,7 +505,7 @@ export const MainLayout: React.FC = () => {
         onClose={() => setCollapsed(true)}
         open={!collapsed && isMobile}
         styles={{ body: { padding: 0 }, header: { display: 'none' } }}
-        style={{ width: 220 }}
+        style={{ width: 240 }}
       >
         <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
           <div

@@ -114,6 +114,7 @@ export const AgentPromptTemplateCreateDrawer: React.FC<AgentPromptTemplateCreate
             width={1000}
             open={open}
             onClose={onClose}
+            forceRender
             extra={
                 <Space>
                     <Button onClick={onClose}>取消</Button>

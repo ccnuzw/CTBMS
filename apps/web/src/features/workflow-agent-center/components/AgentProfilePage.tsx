@@ -245,27 +245,28 @@ export const AgentProfilePage: React.FC = () => {
       {
         title: '名称',
         dataIndex: 'agentName',
-        width: 180,
+        width: 200,
         render: (_: string, record) => getAgentDisplayName(record.agentName, record.agentCode),
       },
       {
         title: '角色',
         dataIndex: 'roleType',
-        width: 140,
+        width: 100,
         render: (v: AgentRoleType) => <Tag>{getAgentRoleLabel(v)}</Tag>,
       },
-      { title: '模型配置Key', dataIndex: 'modelConfigKey', width: 160 },
+      { title: '模型配置Key', dataIndex: 'modelConfigKey', width: 120 },
       {
         title: '提示词编码',
         dataIndex: 'agentPromptCode',
         width: 180,
+        ellipsis: true,
         render: (code: string) => (code ? <Link to={`/workflow/prompts?keyword=${code}`}>{code}</Link> : '-'),
       },
-      { title: '版本', dataIndex: 'version', width: 80 },
+      { title: '版本', dataIndex: 'version', width: 60 },
       {
         title: '状态',
         dataIndex: 'isActive',
-        width: 90,
+        width: 70,
         render: (value: boolean) => (
           <Tag color={value ? 'green' : 'red'}>{getAgentStatusLabel(value)}</Tag>
         ),
@@ -273,13 +274,13 @@ export const AgentProfilePage: React.FC = () => {
       {
         title: '更新时间',
         dataIndex: 'updatedAt',
-        width: 180,
+        width: 170,
         render: (value?: Date) => (value ? dayjs(value).format('YYYY-MM-DD HH:mm:ss') : '-'),
       },
       {
         title: '操作',
         key: 'actions',
-        width: 160,
+        width: 200,
         render: (_, record) => (
           <Space size={4}>
             <Button type="link" onClick={() => setSelectedAgent(record)}>
@@ -439,7 +440,7 @@ export const AgentProfilePage: React.FC = () => {
                 }
                 : {}
             }
-            scroll={{ x: 1300 }}
+            scroll={{ x: 1100 }}
             pagination={{
               current: data?.page ?? page,
               pageSize: data?.pageSize ?? pageSize,

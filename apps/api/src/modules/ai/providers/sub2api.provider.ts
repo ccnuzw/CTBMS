@@ -463,8 +463,6 @@ export class Sub2ApiProvider implements IAIProvider {
   }
 
   async generateChat(messages: AIMessage[], options: AIRequestOptions): Promise<AIChatResponse> {
-    const wireApi = this.resolveWireApi(options);
-
     // Build OpenAI Chat Completions format messages
     const openAiMessages = messages.map((msg) => {
       const baseMsg: Record<string, unknown> = {
@@ -555,8 +553,6 @@ export class Sub2ApiProvider implements IAIProvider {
     authMode?: string;
     pathUsed?: string;
   }> {
-    const wireApi = this.resolveWireApi(options);
-
     const responsesBody: Record<string, unknown> = {
       model: options.modelName,
       input: this.toResponsesInput([{ role: 'user', content: 'Hello' }]),

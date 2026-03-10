@@ -595,6 +595,7 @@ export const TriggerGatewayPage: React.FC = () => {
         onOk={handleCreate}
         confirmLoading={createMutation.isPending}
         width={640}
+        forceRender
       >
         <Form<CreateTriggerConfigDto>
           layout="vertical"
