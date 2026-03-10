@@ -2,7 +2,7 @@ import { z } from 'zod';
 
 // --- ETL Process ---
 export const ETLProcessSchema = z.object({
-  op: z.enum(['json_pick', 'list_slice', 'unit_convert', 'template_render']),
+  op: z.enum(['json_pick', 'list_slice', 'unit_convert', 'template_render', 'flatten_nested']),
   args: z.record(z.unknown()),
 });
 

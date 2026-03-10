@@ -14,13 +14,13 @@ import {
   CreateUserRequest,
   UpdateUserRequest,
   AssignRolesRequest,
+  UserQueryRequest,
   BatchAssignUsersRequest,
 } from './dto';
-import { UserStatus } from '@packages/types';
 
 @Controller('users')
 export class UsersController {
-  constructor(private readonly usersService: UsersService) {}
+  constructor(private readonly usersService: UsersService) { }
 
   /**
    * 创建用户
@@ -31,96 +31,18 @@ export class UsersController {
   }
 
   /**
-   * 获取所有用户（支持筛选）
+   * 获取用户列表（统一分页 + 筛选）
+   * GET /users?page=1&pageSize=20&keyword=xxx&status=ACTIVE&...
    */
   @Get()
-  findAll(
-    @Query('organizationId') organizationId?: string,
-    @Query('departmentId') departmentId?: string,
-    @Query('organizationIds') organizationIds?: string,
-    @Query('departmentIds') departmentIds?: string,
-    @Query('ids') ids?: string,
-    @Query('keyword') keyword?: string,
-    @Query('status') status?: string,
-    @Query('unassigned') unassigned?: string,
-  ) {
-    const normalizedOrgIds = organizationIds
-      ? organizationIds
-          .split(',')
-          .map((item) => item.trim())
-          .filter(Boolean)
-      : organizationId
-        ? [organizationId]
-        : undefined;
-    const normalizedDeptIds = departmentIds
-      ? departmentIds
-          .split(',')
-          .map((item) => item.trim())
-          .filter(Boolean)
-      : departmentId
-        ? [departmentId]
-        : undefined;
-    const normalizedIds = ids
-      ? ids
-          .split(',')
-          .map((item) => item.trim())
-          .filter(Boolean)
-      : undefined;
-
-    const normalizedUnassigned =
-      typeof unassigned === 'string'
-        ? ['1', 'true', 'yes', 'on'].includes(unassigned.toLowerCase())
-        : undefined;
-
-    return this.usersService.findAll({
-      organizationIds: normalizedOrgIds,
-      departmentIds: normalizedDeptIds,
-      ids: normalizedIds,
-      keyword,
-      status: status ? (status as UserStatus) : undefined,
-      unassigned: normalizedUnassigned,
-    });
-  }
-
-  /**
-   * 分页获取用户（筛选 + 分页）
-   */
-  @Get('paged')
-  findPaged(
-    @Query('organizationIds') organizationIds?: string,
-    @Query('departmentIds') departmentIds?: string,
-    @Query('keyword') keyword?: string,
-    @Query('status') status?: string,
-    @Query('page') page?: string,
-    @Query('pageSize') pageSize?: string,
-  ) {
-    const normalizedOrgIds = organizationIds
-      ? organizationIds
-          .split(',')
-          .map((item) => item.trim())
-          .filter(Boolean)
-      : undefined;
-    const normalizedDeptIds = departmentIds
-      ? departmentIds
-          .split(',')
-          .map((item) => item.trim())
-          .filter(Boolean)
-      : undefined;
-
-    return this.usersService.findPaged({
-      organizationIds: normalizedOrgIds,
-      departmentIds: normalizedDeptIds,
-      keyword,
-      status: status ? (status as UserStatus) : undefined,
-      page: page ? Number(page) : 1,
-      pageSize: pageSize ? Number(pageSize) : 20,
-    });
+  findAll(@Query() query: UserQueryRequest) {
+    return this.usersService.findPaged(query);
   }
 
   /**
    * 批量分配用户到组织/部门
    */
-  @Post('batch-assign')
+  @Post('actions/batch-assign')
   batchAssign(@Body() dto: BatchAssignUsersRequest) {
     return this.usersService.batchAssign(dto);
   }
@@ -144,7 +66,7 @@ export class UsersController {
   /**
    * 分配角色
    */
-  @Post(':id/roles')
+  @Post(':id/actions/assign-roles')
   assignRoles(@Param('id', ParseUUIDPipe) id: string, @Body() dto: AssignRolesRequest) {
     return this.usersService.assignRoles(id, dto);
   }

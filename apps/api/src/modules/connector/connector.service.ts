@@ -22,7 +22,10 @@ export class ConnectorService {
   private connectorRegistry: Map<string, ConnectorManifest> = new Map();
   private readonly definitionsPath = path.resolve(
     process.cwd(),
-    'apps/api/src/modules/connector/definitions',
+    'src',
+    'modules',
+    'connector',
+    'definitions',
   );
 
   constructor(private readonly prisma: PrismaService) {

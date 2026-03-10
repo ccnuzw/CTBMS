@@ -328,7 +328,7 @@ export const KnowledgeDetailPage: React.FC = () => {
                             type="text"
                             icon={<DownloadOutlined />}
                             onClick={() => {
-                              window.open(`/api/knowledge/attachments/${att.id}/download`, '_blank');
+                              window.open(`/api/v1/knowledge/attachments/${att.id}/download`, '_blank');
                             }}
                           />
                         </div>

@@ -86,6 +86,7 @@ const UserIdListSchema = z.preprocess((value) => {
 }, z.array(z.string()).optional());
 
 export const UserQuerySchema = z.object({
+  ids: UserIdListSchema.optional(),
   organizationIds: UserIdListSchema.optional(),
   departmentIds: UserIdListSchema.optional(),
   keyword: z.string().optional(),

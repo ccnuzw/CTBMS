@@ -9,6 +9,10 @@ import {
   KNOWLEDGE_TYPE_LABELS,
 } from '../constants/knowledge-labels';
 
+const KNOWLEDGE_API_BASE = '/v1/knowledge-items';
+const KNOWLEDGE_MISC_API_BASE = '/v1/knowledge';
+const REPORTS_API_BASE = '/v1/reports';
+
 export type PaginatedResponse<T> = {
   data: T[];
   total: number;
@@ -173,7 +177,7 @@ export const useKnowledgeItems = (query?: KnowledgeListQuery) => {
     queryFn: async () => {
       const params = toParams(query);
       const res = await apiClient.get<KnowledgeListResponse>(
-        `/knowledge/items?${params.toString()}`,
+        `${KNOWLEDGE_API_BASE}?${params.toString()}`,
       );
       return {
         ...res.data,
@@ -187,7 +191,7 @@ export const useKnowledgeItem = (id?: string) => {
   return useQuery<KnowledgeItem>({
     queryKey: ['knowledge', id],
     queryFn: async () => {
-      const res = await apiClient.get<KnowledgeItem>(`/knowledge/items/${id}`);
+      const res = await apiClient.get<KnowledgeItem>(`${KNOWLEDGE_API_BASE}/${id}`);
       return mapKnowledgeItem(res.data);
     },
     enabled: !!id,
@@ -205,7 +209,9 @@ export const useReanalyzeKnowledge = () => {
       id: string;
       triggerDeepAnalysis?: boolean;
     }) => {
-      const res = await apiClient.post(`/knowledge/items/${id}/reanalyze`, { triggerDeepAnalysis });
+      const res = await apiClient.post(`${KNOWLEDGE_API_BASE}/${id}/actions/reanalyze`, {
+        triggerDeepAnalysis,
+      });
       return res.data;
     },
     onSuccess: (_, variables) => {
@@ -226,7 +232,7 @@ export const useKnowledgeRelations = (id?: string, query?: KnowledgeRelationQuer
       if (query?.direction) params.set('direction', query.direction);
 
       const res = await apiClient.get<KnowledgeRelationsResponse>(
-        `/knowledge/items/${id}/relations${params.toString() ? `?${params.toString()}` : ''}`,
+        `${KNOWLEDGE_API_BASE}/${id}/relations${params.toString() ? `?${params.toString()}` : ''}`,
       );
       return {
         outgoing: res.data.outgoing.map(mapKnowledgeRelation),
@@ -242,7 +248,7 @@ export const useResolveLegacyKnowledge = (source?: 'intel' | 'report', id?: stri
     queryKey: ['knowledge', 'legacy-resolve', source, id],
     queryFn: async () => {
       const res = await apiClient.get<{ id: string; type: string; title: string }>(
-        `/knowledge/legacy/${source}/${id}`,
+        `${KNOWLEDGE_MISC_API_BASE}/legacy/${source}/${id}`,
       );
       return res.data;
     },
@@ -260,7 +266,10 @@ export const useGenerateWeeklyRollup = () => {
       authorId?: string;
       triggerAnalysis?: boolean;
     }) => {
-      const res = await apiClient.post('/knowledge/admin/weekly-rollup', payload || {});
+      const res = await apiClient.post(
+        `${KNOWLEDGE_MISC_API_BASE}/admin/weekly-rollup`,
+        payload || {},
+      );
       return res.data;
     },
     onSuccess: () => {
@@ -275,7 +284,7 @@ export const useWeeklyOverview = (periodKey?: string) => {
     queryKey: ['knowledge', 'analytics', 'weekly-overview', periodKey],
     queryFn: async () => {
       const res = await apiClient.get<WeeklyOverviewResponse>(
-        `/knowledge/analytics/weekly-overview${periodKey ? `?periodKey=${encodeURIComponent(periodKey)}` : ''}`,
+        `${KNOWLEDGE_MISC_API_BASE}/analytics/weekly-overview${periodKey ? `?periodKey=${encodeURIComponent(periodKey)}` : ''}`,
       );
       return {
         ...res.data,
@@ -308,7 +317,7 @@ export const useTopicEvolution = (query?: { commodity?: string; weeks?: number }
       if (query?.commodity) params.set('commodity', query.commodity);
       if (query?.weeks) params.set('weeks', String(query.weeks));
       const res = await apiClient.get<TopicEvolutionResponse>(
-        `/knowledge/analytics/topic-evolution${params.toString() ? `?${params.toString()}` : ''}`,
+        `${KNOWLEDGE_MISC_API_BASE}/analytics/topic-evolution${params.toString() ? `?${params.toString()}` : ''}`,
       );
       return {
         ...res.data,
@@ -346,7 +355,7 @@ export const useSubmitReport = () => {
   return useMutation({
     mutationFn: async (payload: SubmitReportPayload) => {
       const res = await apiClient.post<KnowledgeItem>(
-        '/knowledge/items/submit-report',
+        `${KNOWLEDGE_API_BASE}/actions/submit-report`,
         payload,
       );
       return mapKnowledgeItem(res.data);
@@ -364,7 +373,7 @@ export const useMyReports = (authorId?: string) => {
     queryKey: ['knowledge', 'my-reports', authorId],
     queryFn: async () => {
       if (!authorId) return { data: [], total: 0, page: 1, pageSize: 20 };
-      const res = await apiClient.get<PaginatedResponse<KnowledgeItem>>('/knowledge/items', {
+      const res = await apiClient.get<PaginatedResponse<KnowledgeItem>>(KNOWLEDGE_API_BASE, {
         params: {
           authorId,
           pageSize: 20,
@@ -385,7 +394,7 @@ export const useUpdateReport = () => {
   return useMutation({
     mutationFn: async ({ id, ...payload }: SubmitReportPayload & { id: string }) => {
       const res = await apiClient.patch<KnowledgeItem>(
-        `/knowledge/items/${id}/report`,
+        `${KNOWLEDGE_API_BASE}/${id}/report`,
         payload,
       );
       return mapKnowledgeItem(res.data);
@@ -404,7 +413,7 @@ export const usePendingReviews = (query?: KnowledgeListQuery) => {
     queryFn: async () => {
       const params = toParams(query);
       const res = await apiClient.get<PaginatedResponse<KnowledgeItem>>(
-        `/knowledge/items/pending-review?${params.toString()}`
+        `${KNOWLEDGE_API_BASE}/pending-review?${params.toString()}`
       );
       return {
         ...res.data,
@@ -425,7 +434,7 @@ export const useReviewReport = () => {
       rejectReason?: string;
     }) => {
       const res = await apiClient.post<KnowledgeItem>(
-        `/knowledge/items/${payload.id}/review`,
+        `${KNOWLEDGE_API_BASE}/${payload.id}/actions/review`,
         {
           action: payload.action,
           reviewerId: payload.reviewerId,
@@ -531,7 +540,7 @@ export const useKnowledgeReports = (query?: ReportListQuery) => {
         });
       }
       const res = await apiClient.get<PaginatedResponse<KnowledgeItem>>(
-        `/knowledge/reports?${params.toString()}`,
+        `${REPORTS_API_BASE}?${params.toString()}`,
       );
       return {
         ...res.data,
@@ -548,7 +557,7 @@ export const useKnowledgeReport = (id?: string) => {
   return useQuery<KnowledgeItem>({
     queryKey: ['knowledge', 'report', id],
     queryFn: async () => {
-      const res = await apiClient.get<KnowledgeItem>(`/knowledge/reports/${id}`);
+      const res = await apiClient.get<KnowledgeItem>(`${REPORTS_API_BASE}/${id}`);
       return mapKnowledgeItem(res.data);
     },
     enabled: !!id,
@@ -563,7 +572,7 @@ export const useCreateKnowledgeReport = () => {
 
   return useMutation({
     mutationFn: async (payload: CreateReportPayload) => {
-      const res = await apiClient.post<KnowledgeItem>('/knowledge/reports', payload);
+      const res = await apiClient.post<KnowledgeItem>(REPORTS_API_BASE, payload);
       return mapKnowledgeItem(res.data);
     },
     onSuccess: () => {
@@ -581,7 +590,7 @@ export const useUpdateKnowledgeReport = () => {
 
   return useMutation({
     mutationFn: async ({ id, ...payload }: UpdateReportPayload & { id: string }) => {
-      const res = await apiClient.patch<KnowledgeItem>(`/knowledge/reports/${id}`, payload);
+      const res = await apiClient.patch<KnowledgeItem>(`${REPORTS_API_BASE}/${id}`, payload);
       return mapKnowledgeItem(res.data);
     },
     onSuccess: (_, variables) => {
@@ -600,7 +609,7 @@ export const useSubmitDraftReport = () => {
 
   return useMutation({
     mutationFn: async ({ id, taskId, authorId }: { id: string; taskId?: string; authorId?: string }) => {
-      const res = await apiClient.post<KnowledgeItem>(`/knowledge/reports/${id}/submit`, { taskId, authorId });
+      const res = await apiClient.post<KnowledgeItem>(`${REPORTS_API_BASE}/${id}/submit`, { taskId, authorId });
       return mapKnowledgeItem(res.data);
     },
     onSuccess: (_, variables) => {
@@ -623,7 +632,7 @@ export const useDeleteKnowledgeReport = () => {
 
   return useMutation({
     mutationFn: async (id: string) => {
-      const res = await apiClient.delete(`/knowledge/reports/${id}`);
+      const res = await apiClient.delete(`${REPORTS_API_BASE}/${id}`);
       return res.data;
     },
     onSuccess: () => {
@@ -641,7 +650,7 @@ export const useBatchDeleteKnowledgeReports = () => {
 
   return useMutation({
     mutationFn: async (ids: string[]) => {
-      const res = await apiClient.post('/knowledge/reports/batch-delete', { ids });
+      const res = await apiClient.post(`${REPORTS_API_BASE}/batch-delete`, { ids });
       return res.data;
     },
     onSuccess: () => {
@@ -659,7 +668,7 @@ export const useKnowledgeReportStats = (days?: number) => {
     queryKey: ['knowledge', 'report-stats', days],
     queryFn: async () => {
       const params = days ? `?days=${days}` : '';
-      const res = await apiClient.get<ReportStatsResponse>(`/knowledge/reports/stats${params}`);
+      const res = await apiClient.get<ReportStatsResponse>(`${REPORTS_API_BASE}/stats${params}`);
       return res.data;
     },
   });
@@ -673,7 +682,7 @@ export const useIncrementReportView = () => {
 
   return useMutation({
     mutationFn: async (id: string) => {
-      const res = await apiClient.post(`/knowledge/reports/${id}/view`);
+      const res = await apiClient.post(`${REPORTS_API_BASE}/${id}/view`);
       return res.data;
     },
     onSuccess: (_, id) => {
@@ -690,7 +699,7 @@ export const useIncrementReportDownload = () => {
 
   return useMutation({
     mutationFn: async (id: string) => {
-      const res = await apiClient.post(`/knowledge/reports/${id}/download`);
+      const res = await apiClient.post(`${REPORTS_API_BASE}/${id}/download`);
       return res.data;
     },
     onSuccess: (_, id) => {
@@ -705,7 +714,7 @@ export const useIncrementReportDownload = () => {
 export const useExportKnowledgeReports = () => {
   return useMutation({
     mutationFn: async (body: { ids?: string[]; query?: ReportListQuery }) => {
-      const res = await apiClient.post('/knowledge/reports/export', body, {
+      const res = await apiClient.post(`${REPORTS_API_BASE}/export`, body, {
         responseType: 'blob',
       });
       const blob = new Blob([res.data as BlobPart], {
@@ -736,7 +745,7 @@ export const useReviewKnowledgeReport = () => {
       rejectReason?: string;
     }) => {
       const res = await apiClient.post<KnowledgeItem>(
-        `/knowledge/reports/${payload.id}/review`,
+        `${REPORTS_API_BASE}/${payload.id}/review`,
         {
           action: payload.action,
           reviewerId: payload.reviewerId,

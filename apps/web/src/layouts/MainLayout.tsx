@@ -35,8 +35,6 @@ import {
   AuditOutlined,
   NodeIndexOutlined,
   ExperimentOutlined,
-  RocketOutlined,
-  AlertOutlined,
   MessageOutlined,
   DatabaseOutlined,
   FundOutlined,
@@ -298,28 +296,6 @@ export const MainLayout: React.FC = () => {
               {
                 key: '/system/config/dictionaries',
                 label: '数据字典',
-              },
-              {
-                key: '/system/config/feature-flags',
-                icon: <ExperimentOutlined />,
-                label: '灰度开关',
-              },
-            ],
-          },
-          {
-            key: 'ops-center',
-            icon: <AlertOutlined />,
-            label: '运维监控',
-            children: [
-              {
-                key: '/system/config/connector-health',
-                icon: <RocketOutlined />,
-                label: '连接器',
-              },
-              {
-                key: '/system/config/audit-trace',
-                icon: <AuditOutlined />,
-                label: '审计追踪',
               },
             ],
           },

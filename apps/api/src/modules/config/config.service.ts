@@ -8,6 +8,7 @@ import {
   UpdateDictionaryItemDto,
 } from './dto/dictionary.dto';
 import { CreateAIModelConfigDto } from './dto/create-ai-model-config.dto';
+import { UpdateAIModelConfigDto } from './dto/update-ai-model-config.dto';
 
 type WorkflowRuntimeFlagSource = 'DB' | 'ENV' | 'DEFAULT';
 
@@ -221,6 +222,12 @@ export class ConfigService implements OnModuleInit {
     }
 
     return Array.from(this.aiConfigCache.values());
+  }
+
+  async findAIModelConfigByKey(key: string): Promise<AIModelConfig | null> {
+    return this.prisma.aIModelConfig.findUnique({
+      where: { configKey: key },
+    });
   }
 
   async getWorkflowAgentStrictMode(): Promise<{
@@ -1030,6 +1037,31 @@ export class ConfigService implements OnModuleInit {
           where: { configKey: key },
           create: { ...data, configKey: key },
           update: updateInput,
+        });
+
+        return config;
+      })
+      .then(async (res) => {
+        await this.refreshCache();
+        return res;
+      });
+  }
+
+  async updateAIModelConfig(key: string, data: UpdateAIModelConfigDto) {
+    const updateInput = data as Prisma.AIModelConfigUncheckedUpdateInput;
+
+    return this.prisma
+      .$transaction(async (tx) => {
+        if (data.isDefault) {
+          await tx.aIModelConfig.updateMany({
+            where: { configKey: { not: key }, isDefault: true },
+            data: { isDefault: false },
+          });
+        }
+
+        const config = await tx.aIModelConfig.update({
+          where: { configKey: key },
+          data: updateInput,
         });
 
         return config;

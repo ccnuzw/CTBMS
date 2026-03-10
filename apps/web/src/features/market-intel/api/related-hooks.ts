@@ -20,7 +20,7 @@ export const useRelatedIntel = (intelId?: string) => {
         queryFn: async () => {
             if (!intelId) return [];
             const res = await apiClient.get<RelatedIntelResponse[]>(
-                `/market-intel/${intelId}/related`,
+                `/v1/market-intel/${intelId}/related`,
             );
             return res.data;
         },

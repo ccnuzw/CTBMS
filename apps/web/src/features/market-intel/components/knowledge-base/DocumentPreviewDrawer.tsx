@@ -82,7 +82,7 @@ export const DocumentPreviewDrawer: React.FC<DocumentPreviewDrawerProps> = ({
             return;
         }
         const target = attachments[0];
-        const url = target.fileUrl || `/api/market-intel/attachments/${target.id}/download`;
+        const url = target.fileUrl || `/api/v1/market-intel/attachments/${target.id}/download`;
         window.open(url, '_self');
     };
 

@@ -1,79 +1,103 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { DocumentParserService } from './document-parser.service';
 import { AIService } from '../ai/ai.service';
-import { ConfigService } from '../config/config.service';
-import { AIProviderFactory } from '../ai/providers/provider.factory';
 
 @Injectable()
 export class PdfToMarkdownService {
     private readonly logger = new Logger(PdfToMarkdownService.name);
 
+    /** 每块最大字符数 — 控制输出规模，避免代理超时 */
+    private readonly CHUNK_SIZE = 3000;
+
     constructor(
         private readonly documentParserService: DocumentParserService,
         private readonly aiService: AIService,
-        private readonly configService: ConfigService,
-        private readonly aiProviderFactory: AIProviderFactory,
     ) { }
 
     async convertToMarkdown(buffer: Buffer, mimeType: string): Promise<string> {
         // 1. 解析原始文档
         const parseResult = await this.documentParserService.parse(buffer, mimeType);
 
-        // 如果提取内容为空，直接返回空串
+        this.logger.log(
+            `[PDF→MD] 文档解析完成: textLength=${parseResult.text?.length || 0}, ` +
+            `pages=${parseResult.pageCount || 'N/A'}`,
+        );
+
         if (!parseResult.text || parseResult.text.trim().length === 0) {
-            this.logger.warn('Document parsing returned empty text.');
+            this.logger.warn('[PDF→MD] 文档解析返回空文本');
             return '';
         }
 
-        // 2. 如果文件太小（例如少于 200 字），直接返回原文，不浪费 Token
         if (parseResult.text.length < 200) {
             return parseResult.text;
         }
 
-        // 3. 构建 Prompt 调用 LLM
-        const prompt = `
-You are an expert document formatter. Your task is to convert the following raw text extracted from a PDF/Word document into clean, well-structured Markdown.
+        // 2. 分块 + 并行处理
+        //    原因: PDF→MD 的输出量 ≈ 输入量，7K输入 → 7K+输出 → 生成耗时超过代理超时
+        //    AI分析成功是因为输出仅 1-2K，生成快
+        const fullText = parseResult.text.slice(0, 30000);
+        const chunks = this.splitIntoChunks(fullText, this.CHUNK_SIZE);
 
-**Rules:**
-1. **Preserve Content**: Do not summarize or delete important information. Keep the full fidelity of the original text.
-2. **Structure**: Use appropriate Markdown headers (#, ##, ###) to represent the document structure.
-3. **Tables**: Format any tabular data into Markdown tables.
-4. **Lists**: Use bullet points or numbered lists where appropriate.
-5. **Clean Up**: Remove page numbers, headers, footers, and artifact characters usually found in PDF extracts.
-6. **No Comments**: Output ONLY the Markdown content. Do not add "Here is the markdown..." or similar conversational fillers.
+        this.logger.log(
+            `[PDF→MD] 分块并行处理: 总长度=${fullText.length}, 分块数=${chunks.length}`,
+        );
 
-**Raw Text:**
-${parseResult.text.slice(0, 15000)}
-`;
+        const markdownParts = await Promise.all(
+            chunks.map(async (chunk, i) => {
+                this.logger.log(`[PDF→MD] 并行处理第 ${i + 1}/${chunks.length} 块 (${chunk.length} 字符)...`);
+                try {
+                    const result = await this.convertChunk(chunk, i + 1, chunks.length);
+                    this.logger.log(`[PDF→MD] 第 ${i + 1} 块完成 (${result.length} 字符)`);
+                    return result;
+                } catch (error) {
+                    const errMsg = error instanceof Error ? error.message : String(error);
+                    this.logger.error(`[PDF→MD] 第 ${i + 1} 块失败: ${errMsg}`);
+                    return chunk;
+                }
+            }),
+        );
 
-        try {
-            return await this.callLLMDirectly(prompt);
-        } catch (error) {
-            this.logger.error('Failed to convert to Markdown via LLM', error);
-            // Fallback: return raw text
-            return parseResult.text;
-        }
+        const finalResult = markdownParts.join('\n\n');
+        this.logger.log(`[PDF→MD] 全部完成: ${finalResult.length} 字符`);
+        return finalResult;
     }
 
-    private async callLLMDirectly(prompt: string): Promise<string> {
-        const aiConfig = await this.configService.getDefaultAIConfig();
-        const providerType = (aiConfig?.provider || 'google') as 'google' | 'openai' | 'sub2api'; // Cast to any to avoid strict union check if types don't match perfectly
+    private async convertChunk(text: string, index: number, total: number): Promise<string> {
+        const systemPrompt =
+            'You are a helpful assistant that converts raw text to clean, well-structured Markdown.';
 
-        const provider = this.aiProviderFactory.getProvider(providerType);
+        const contextHint = total > 1
+            ? `\nThis is part ${index} of ${total}. Format as Markdown without adding overall document headers.`
+            : '';
 
-        const options = {
-            modelName: aiConfig?.modelName || 'gemini-pro',
-            apiKey: aiConfig?.apiKey || process.env.GEMINI_API_KEY || '',
-            apiUrl: aiConfig?.apiUrl || undefined,
-            authType: aiConfig?.authType as 'api-key' | 'bearer',
-            headers: aiConfig?.headers as Record<string, string>,
-            maxTokens: 4000
-        };
+        const userPrompt = `Convert this text to Markdown.${contextHint}
 
-        // System Prompt: You are a helpful assistant.
-        const systemPrompt = "You are a helpful assistant that converts raw text to Markdown.";
+Rules: Preserve content, use headers/tables/lists, remove page artifacts, output ONLY Markdown.
 
-        const result = await provider.generateResponse(systemPrompt, prompt, options);
-        return result || '';
+Text:
+${text}`;
+
+        return await this.aiService.chat(systemPrompt, userPrompt);
+    }
+
+    private splitIntoChunks(text: string, maxSize: number): string[] {
+        if (text.length <= maxSize) return [text];
+
+        const chunks: string[] = [];
+        let remaining = text;
+
+        while (remaining.length > 0) {
+            if (remaining.length <= maxSize) {
+                chunks.push(remaining);
+                break;
+            }
+            let splitAt = remaining.lastIndexOf('\n\n', maxSize);
+            if (splitAt <= 0) splitAt = remaining.lastIndexOf('\n', maxSize);
+            if (splitAt <= 0) splitAt = maxSize;
+
+            chunks.push(remaining.slice(0, splitAt).trim());
+            remaining = remaining.slice(splitAt).trim();
+        }
+        return chunks.filter((c) => c.length > 0);
     }
 }

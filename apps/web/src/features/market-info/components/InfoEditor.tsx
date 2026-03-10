@@ -87,7 +87,7 @@ export const InfoEditor: React.FC = () => {
         }
 
         try {
-            const res = await apiClient.get<any>(`/market/info/${id}`);
+            const res = await apiClient.get<any>(`/v1/market-info-items/${id}`);
             const data = res.data;
 
             setContent(data.content);
@@ -320,7 +320,7 @@ export const InfoEditor: React.FC = () => {
                         max={10}
                         fileList={fileList}
                         onChange={({ fileList }) => setFileList(fileList)}
-                        action="http://localhost:3000/market/info/upload"
+                        action="/api/v1/market-info-items/actions/upload"
                         colProps={isMobile ? { span: 24 } : undefined}
                         fieldProps={{
                             name: 'file',

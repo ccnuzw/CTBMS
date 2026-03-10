@@ -114,7 +114,7 @@ export const ResearchReportCreatePage = () => {
     ) {
       return (
         <iframe
-          src={`/api/market-intel/attachments/${vm.state.uploadedAttachment.id}/download?inline=true`}
+          src={`/api/v1/market-intel/attachments/${vm.state.uploadedAttachment.id}/download?inline=true`}
           style={{ width: '100%', height: previewHeight, border: 'none' }}
           title="Document Preview"
         />
@@ -140,7 +140,7 @@ export const ResearchReportCreatePage = () => {
             extra={
               <Button
                 type="primary"
-                href={`/api/market-intel/attachments/${vm.state.uploadedAttachment.id}/download`}
+                href={`/api/v1/market-intel/attachments/${vm.state.uploadedAttachment.id}/download`}
                 target="_blank"
               >
                 下载查看
@@ -155,7 +155,7 @@ export const ResearchReportCreatePage = () => {
       return (
         <div style={{ padding: 20, textAlign: 'center' }}>
           <img
-            src={`/api/market-intel/attachments/${vm.state.uploadedAttachment.id}/download?inline=true`}
+            src={`/api/v1/market-intel/attachments/${vm.state.uploadedAttachment.id}/download?inline=true`}
             alt="Preview"
             style={{ maxWidth: '100%', maxHeight: previewHeight }}
           />
@@ -465,7 +465,7 @@ export const ResearchReportCreatePage = () => {
                       <Button
                         type="link"
                         size="small"
-                        href={`/api/market-intel/attachments/${vm.state.uploadedAttachment.id}/download`}
+                        href={`/api/v1/market-intel/attachments/${vm.state.uploadedAttachment.id}/download`}
                         target="_blank"
                         style={{ padding: 0, marginTop: 8 }}
                       >

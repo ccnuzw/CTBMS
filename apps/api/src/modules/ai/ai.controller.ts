@@ -1,14 +1,24 @@
-import { Body, Controller, Get, Post, Query } from '@nestjs/common';
+import { Body, Controller, Get, Post, Query, Res } from '@nestjs/common';
 import { AIService } from './ai.service';
 import { AIModelService } from './ai-model.service';
 import { AIProvider } from '@packages/types';
+import { Response } from 'express';
+import { setDeprecationHeaders } from '../../common/utils/deprecation';
 
 @Controller('ai')
 export class AIController {
     constructor(private readonly aiModelService: AIModelService, private readonly aiService: AIService) { }
 
     @Get('test-connection')
-    async testConnection(@Query('configKey') configKey?: string) {
+    async testConnection(@Query('configKey') configKey?: string, @Res({ passthrough: true }) res?: Response) {
+        if (res) {
+            setDeprecationHeaders(
+                res,
+                configKey
+                    ? `/v1/ai-model-configs/${configKey}/actions/test`
+                    : '/v1/ai-model-configs/{configKey}/actions/test',
+            );
+        }
         return this.aiModelService.testConnection(configKey);
     }
 
@@ -19,7 +29,11 @@ export class AIController {
         @Query('apiKey') apiKey?: string,
         @Query('apiUrl') apiUrl?: string,
         @Query('wireApi') wireApi?: string,
+        @Res({ passthrough: true }) res?: Response,
     ) {
+        if (res) {
+            setDeprecationHeaders(res, '/v1/ai-models/actions/fetch');
+        }
         if (!provider && !configKey) {
             throw new Error('Provider parameter is required');
         }
@@ -42,7 +56,10 @@ export class AIController {
         allowCompatPathFallback?: boolean;
         timeoutSeconds?: number;
         maxRetries?: number;
-    }) {
+    }, @Res({ passthrough: true }) res?: Response) {
+        if (res) {
+            setDeprecationHeaders(res, '/v1/ai-models/actions/fetch');
+        }
         if (!payload.provider && !payload.configKey) {
             throw new Error('Provider parameter is required');
         }
@@ -68,7 +85,10 @@ export class AIController {
         temperature?: number;
         maxTokens?: number;
         topP?: number;
-    }) {
+    }, @Res({ passthrough: true }) res?: Response) {
+        if (res) {
+            setDeprecationHeaders(res, '/v1/ai-models/actions/test');
+        }
         return this.aiModelService.testModelDirect(payload);
     }
 }

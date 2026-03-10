@@ -24,7 +24,7 @@ export class Sub2ApiProvider implements IAIProvider {
   private readonly logger = new Logger(Sub2ApiProvider.name);
 
   private isRetriableStatus(status: number): boolean {
-    return status === 429 || status === 500 || status === 502 || status === 503 || status === 504;
+    return status === 429 || status === 500 || status === 502 || status === 503;
   }
 
   private isRetriableErrorMessage(message: string): boolean {
@@ -278,11 +278,13 @@ export class Sub2ApiProvider implements IAIProvider {
 
     let lastError = '';
     for (let attempt = 0; attempt <= retries; attempt++) {
+      const timeoutMs = (options.timeoutSeconds ?? 120) * 1000;
       try {
         const response = await fetch(url, {
           method: 'POST',
           headers,
           body: JSON.stringify(body),
+          signal: AbortSignal.timeout(timeoutMs),
         });
 
         if (!response.ok) {
@@ -327,11 +329,13 @@ export class Sub2ApiProvider implements IAIProvider {
 
     let lastError = '';
     for (let attempt = 0; attempt <= retries; attempt++) {
+      const timeoutMs = (options.timeoutSeconds ?? 120) * 1000;
       try {
         const response = await fetch(url, {
           method: 'POST',
           headers,
           body: JSON.stringify(body),
+          signal: AbortSignal.timeout(timeoutMs),
         });
 
         if (!response.ok) {
@@ -448,9 +452,35 @@ export class Sub2ApiProvider implements IAIProvider {
     };
 
     try {
-      const { data, wireApi } = await this.callWithFallback(options, responsesBody, chatBody);
+      const wireApi = this.resolveWireApi(options);
+      const endpoint = this.getEndpoint(options, wireApi === 'responses' ? 'responses' : 'chat');
+
+      this.logger.log(
+        `[Sub2API] generateResponse: wireApi=${wireApi}, endpoint=${endpoint}, ` +
+        `model=${options.modelName}, maxTokens=${options.maxTokens}, ` +
+        `temperature=${options.temperature}, topP=${options.topP}, ` +
+        `systemPromptLen=${systemPrompt.length}, userPromptLen=${userPrompt.length}`,
+      );
 
       if (wireApi === 'responses') {
+        this.logger.debug(
+          `[Sub2API] Responses body (without input text): ${JSON.stringify({
+            ...responsesBody,
+            input: `[${(responsesBody.input as unknown[]).length} messages]`,
+          })}`,
+        );
+      } else {
+        this.logger.debug(
+          `[Sub2API] Chat body (without message text): ${JSON.stringify({
+            ...chatBody,
+            messages: `[${(chatBody.messages as unknown[]).length} messages]`,
+          })}`,
+        );
+      }
+
+      const { data, wireApi: usedWireApi } = await this.callWithFallback(options, responsesBody, chatBody);
+
+      if (usedWireApi === 'responses') {
         return this.extractResponsesContent(data);
       }
 

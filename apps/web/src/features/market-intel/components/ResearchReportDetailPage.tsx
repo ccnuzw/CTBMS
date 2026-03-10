@@ -151,7 +151,7 @@ export const ResearchReportDetailPage: React.FC = () => {
                 setLocalDownloadCount((prev) => (prev || 0) + 1);
                 message.success('开始下载...');
                 // Trigger download
-                window.open(`/api/market-intel/attachments/${targetAttachmentId}/download`, '_self');
+                window.open(`/api/v1/market-intel/attachments/${targetAttachmentId}/download`, '_self');
             } else {
                 message.warning('该研报暂无附件可下载');
             }
@@ -180,7 +180,7 @@ export const ResearchReportDetailPage: React.FC = () => {
 
     const selectedAttachment = attachments.find((att) => att.id === selectedAttachmentId) || attachments[0];
     const previewUrl = selectedAttachment
-        ? (selectedAttachment.fileUrl || `/api/market-intel/attachments/${selectedAttachment.id}/download?inline=true`)
+        ? (selectedAttachment.fileUrl || `/api/v1/market-intel/attachments/${selectedAttachment.id}/download?inline=true`)
         : undefined;
 
     const heroBackground = `linear-gradient(135deg, ${token.colorPrimaryBg} 0%, ${token.colorBgLayout} 100%)`;

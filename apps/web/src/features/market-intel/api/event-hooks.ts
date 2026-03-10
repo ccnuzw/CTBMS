@@ -12,7 +12,7 @@ export const useIntelAttachments = (intelId: string) => {
         queryKey: ['intel-attachments', intelId],
         queryFn: async () => {
             const res = await apiClient.get<IntelAttachmentResponse[]>(
-                `/market-intel/${intelId}/attachments`,
+                `/v1/market-intel/${intelId}/attachments`,
             );
             return res.data;
         },
@@ -39,7 +39,7 @@ export const useSearchAttachments = (keyword: string, limit = 20) => {
         queryKey: ['attachment-search', keyword, limit],
         queryFn: async () => {
             const res = await apiClient.get<AttachmentSearchResult[]>(
-                `/market-intel/attachments/search?keyword=${encodeURIComponent(keyword)}&limit=${limit}`,
+                `/v1/market-intel/attachments/search?keyword=${encodeURIComponent(keyword)}&limit=${limit}`,
             );
             return res.data;
         },
@@ -154,7 +154,7 @@ export const useMarketEvents = (query?: EventQuery) => {
                 });
             }
             const res = await apiClient.get<PaginatedResponse<MarketEventResponse>>(
-                `/market-intel/events?${params.toString()}`,
+                `/v1/market-intel/events?${params.toString()}`,
             );
             return res.data;
         },
@@ -165,7 +165,7 @@ export const useMarketEvent = (id: string) => {
     return useQuery<MarketEventResponse>({
         queryKey: ['market-events', id],
         queryFn: async () => {
-            const res = await apiClient.get<MarketEventResponse>(`/market-intel/events/${id}`);
+            const res = await apiClient.get<MarketEventResponse>(`/v1/market-intel/events/${id}`);
             return res.data;
         },
         enabled: !!id,
@@ -189,7 +189,7 @@ export const useEventStats = (query?: {
                 if (query.regions?.length) params.append('regions', query.regions.join(','));
             }
             const res = await apiClient.get<EventStats>(
-                `/market-intel/events/stats?${params.toString()}`,
+                `/v1/market-intel/events/stats?${params.toString()}`,
             );
             return res.data;
         },
@@ -208,7 +208,7 @@ export const useFilterOptions = () => {
     return useQuery<FilterOptions>({
         queryKey: ['filter-options'],
         queryFn: async () => {
-            const res = await apiClient.get<FilterOptions>('/market-intel/filter-options');
+            const res = await apiClient.get<FilterOptions>('/v1/market-intel/filter-options');
             return res.data;
         },
         staleTime: 5 * 60 * 1000, // 5 minutes cache
@@ -238,7 +238,7 @@ export const useTrendAnalysis = (query?: {
                 if (query.regions?.length) params.append('regions', query.regions.join(','));
             }
             const res = await apiClient.get<TrendData[]>(
-                `/market-intel/trend-analysis?${params.toString()}`,
+                `/v1/market-intel/trend-analysis?${params.toString()}`,
             );
             return res.data;
         },

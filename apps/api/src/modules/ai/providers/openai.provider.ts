@@ -691,8 +691,11 @@ export class OpenAIProvider implements IAIProvider {
       return { models: [], activeUrl: options.apiUrl };
     }
 
+    const isOfficialBase = this.isOfficialOpenAIBase(options.apiUrl);
     const shouldPreferDirect =
-      options.modelFetchMode === 'custom' || Boolean(options.pathOverrides?.models);
+      options.modelFetchMode === 'custom' ||
+      Boolean(options.pathOverrides?.models) ||
+      !isOfficialBase;
     const authModes = this.resolveAuthModes(options);
     const fetchModelsDirectWithAuthFallback = async (url: string | undefined): Promise<string[]> => {
       let lastError: unknown;
@@ -713,16 +716,26 @@ export class OpenAIProvider implements IAIProvider {
         : await this.fetchModels(options.apiUrl, options);
       return { models, activeUrl: options.apiUrl };
     } catch (error) {
-      this.logger.warn(
-        `Failed to fetch models from default URL: ${error instanceof Error ? error.message : String(error)}`,
-      );
-
-      try {
-        const models = await fetchModelsDirectWithAuthFallback(options.apiUrl);
-        return { models, activeUrl: options.apiUrl };
-      } catch (directError) {
+      if (!shouldPreferDirect) {
         this.logger.warn(
-          `Direct fetch fallback failed: ${directError instanceof Error ? directError.message : String(directError)}`,
+          `Failed to fetch models from default URL: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
+
+        try {
+          const models = await fetchModelsDirectWithAuthFallback(options.apiUrl);
+          return { models, activeUrl: options.apiUrl };
+        } catch (directError) {
+          this.logger.warn(
+            `Direct fetch fallback failed: ${
+              directError instanceof Error ? directError.message : String(directError)
+            }`,
+          );
+        }
+      } else {
+        this.logger.warn(
+          `Direct model fetch failed: ${error instanceof Error ? error.message : String(error)}`,
         );
       }
 

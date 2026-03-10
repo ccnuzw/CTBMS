@@ -96,6 +96,7 @@ export * from '../types'; // Ensure types are re-exported if needed by consumers
 
 
 const API_BASE = '/api/config';
+const AI_CONFIG_API_BASE = '/api/v1/ai-model-configs';
 const PROMPT_API_BASE = '/api/prompts'; // New Controller
 const DICTIONARY_DOMAIN_API_BASE = '/api/config/dictionary-domains';
 
@@ -171,7 +172,7 @@ export const useAIConfigs = (includeInactive: boolean = false) => {
         queryFn: async () => {
             const params = new URLSearchParams();
             if (includeInactive) params.append('includeInactive', 'true');
-            const res = await fetch(`${API_BASE}/ai-models?${params.toString()}`);
+            const res = await fetch(`${AI_CONFIG_API_BASE}?${params.toString()}`);
             if (!res.ok) throw new Error('Failed to fetch AI configs');
             return res.json() as Promise<AIModelConfig[]>;
         },
@@ -182,7 +183,7 @@ export const useAIConfig = (key: string = 'DEFAULT') => {
     return useQuery({
         queryKey: ['ai-config', key],
         queryFn: async () => {
-            const res = await fetch(`${API_BASE}/ai-models/${key}`);
+            const res = await fetch(`${AI_CONFIG_API_BASE}/${key}`);
             if (!res.ok) throw new Error('Failed to fetch AI config');
             return res.json() as Promise<AIModelConfig>;
         },
@@ -192,10 +193,13 @@ export const useAIConfig = (key: string = 'DEFAULT') => {
 export const useUpdateAIConfig = () => {
     const queryClient = useQueryClient();
     return useMutation({
-         
+
         mutationFn: async (data: any) => {
-            const res = await fetch(`${API_BASE}/ai-models`, {
-                method: 'POST',
+            if (!data?.configKey) {
+                throw new Error('configKey is required');
+            }
+            const res = await fetch(`${AI_CONFIG_API_BASE}/${data.configKey}`, {
+                method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(data),
             });
@@ -213,7 +217,7 @@ export const useDeleteAIConfig = () => {
     const queryClient = useQueryClient();
     return useMutation({
         mutationFn: async (key: string) => {
-            const res = await fetch(`${API_BASE}/ai-models/${key}`, {
+            const res = await fetch(`${AI_CONFIG_API_BASE}/${key}`, {
                 method: 'DELETE',
             });
             if (!res.ok) throw new Error('Failed to delete AI config');
@@ -254,14 +258,18 @@ export const useUpdateWorkflowAgentStrictMode = () => {
     });
 };
 
-const AI_API_BASE = '/api/ai';
+const AI_MODEL_API_BASE = '/api/v1/ai-models';
+const AI_MODEL_CONFIG_API_BASE = '/api/v1/ai-model-configs';
 
 export const useTestAIConnection = () => {
     return useMutation({
         mutationFn: async (configKey?: string) => {
-            const params = new URLSearchParams();
-            if (configKey) params.append('configKey', configKey);
-            const res = await fetch(`${AI_API_BASE}/test-connection?${params.toString()}`);
+            if (!configKey) {
+                throw new Error('configKey is required');
+            }
+            const res = await fetch(`${AI_MODEL_CONFIG_API_BASE}/${configKey}/actions/test`, {
+                method: 'POST',
+            });
 
             if (!res.ok) throw new Error('Network error during connection test');
             return res.json() as Promise<{
@@ -287,6 +295,7 @@ export const useTestAIModel = () => {
             modelName: string;
             apiKey?: string;
             apiUrl?: string;
+            wireApi?: string;
             authType?: 'bearer' | 'api-key' | 'custom' | 'none';
             headers?: Record<string, string>;
             queryParams?: Record<string, string>;
@@ -300,7 +309,7 @@ export const useTestAIModel = () => {
             maxTokens?: number;
             topP?: number;
         }) => {
-            const res = await fetch(`${AI_API_BASE}/test-model`, {
+            const res = await fetch(`${AI_MODEL_API_BASE}/actions/test`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(payload),
@@ -329,6 +338,7 @@ export const useFetchAIModels = () => {
             apiKey,
             apiUrl,
             configKey,
+            wireApi,
             authType,
             headers,
             queryParams,
@@ -343,6 +353,7 @@ export const useFetchAIModels = () => {
             apiKey?: string;
             apiUrl?: string;
             configKey?: string;
+            wireApi?: string;
             authType?: 'bearer' | 'api-key' | 'custom' | 'none';
             headers?: Record<string, string>;
             queryParams?: Record<string, string>;
@@ -353,7 +364,7 @@ export const useFetchAIModels = () => {
             timeoutSeconds?: number;
             maxRetries?: number;
         }) => {
-            const res = await fetch(`${AI_API_BASE}/models`, {
+            const res = await fetch(`${AI_MODEL_API_BASE}/actions/fetch`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -361,6 +372,7 @@ export const useFetchAIModels = () => {
                     apiKey,
                     apiUrl,
                     configKey,
+                    wireApi,
                     authType,
                     headers,
                     queryParams,

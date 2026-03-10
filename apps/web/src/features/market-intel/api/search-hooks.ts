@@ -42,7 +42,7 @@ export const useIntelligenceFeed = (query?: Partial<IntelligenceFeedQuery>) => {
                     }
                 });
             }
-            const res = await apiClient.get<any[]>(`/market-intel/feed?${params.toString()}`);
+            const res = await apiClient.get<any[]>(`/v1/market-intel/feed?${params.toString()}`);
             return res.data;
         },
     });
@@ -86,7 +86,7 @@ export const useIntelDashboardStats = (query?: Partial<IntelligenceFeedQuery>) =
                 });
             }
             const res = await apiClient.get<IntelDashboardStats>(
-                `/market-intel/dashboard/stats?${params.toString()}`,
+                `/v1/market-intel/dashboard/stats?${params.toString()}`,
             );
             return res.data;
         },
@@ -110,7 +110,7 @@ export const useIntelSmartBriefing = () => {
                 });
             }
             const res = await apiClient.post<{ summary: string }>(
-                '/market-intel/dashboard/briefing',
+                '/v1/market-intel/dashboard/briefing',
                 payload,
             );
             return res.data;
@@ -132,7 +132,7 @@ export const useHotTopics = (limit = 20) => {
     return useQuery<HotTopic[]>({
         queryKey: ['hot-topics', limit],
         queryFn: async () => {
-            const res = await apiClient.get<HotTopic[]>(`/market-intel/hot-topics?limit=${limit}`);
+            const res = await apiClient.get<HotTopic[]>(`/v1/market-intel/hot-topics?limit=${limit}`);
             return res.data;
         },
         refetchInterval: 60000,
@@ -202,7 +202,7 @@ export const useUniversalSearch = (
                 });
             }
             const res = await apiClient.get<UniversalSearchResponse>(
-                `/market-intel/universal-search?${params.toString()}`,
+                `/v1/market-intel/universal-search?${params.toString()}`,
             );
             return res.data;
         },
@@ -232,7 +232,7 @@ export const useSearchSuggestions = (prefix?: string, options?: { enabled?: bool
         queryKey: ['search-suggestions', prefix],
         queryFn: async () => {
             const res = await apiClient.get<SearchSuggestionsResponse>(
-                `/market-intel/search-suggestions?prefix=${encodeURIComponent(prefix || '')}`,
+                `/v1/market-intel/search-suggestions?prefix=${encodeURIComponent(prefix || '')}`,
             );
             return res.data;
         },
@@ -287,7 +287,7 @@ export const useFullTextSearch = (
                 if (query.pageSize) params.append('pageSize', String(query.pageSize));
             }
             const res = await apiClient.get<FullTextSearchResponse>(
-                `/market-intel/full-text-search?${params.toString()}`,
+                `/v1/market-intel/full-text-search?${params.toString()}`,
             );
             return res.data;
         },

@@ -235,6 +235,7 @@ export const AIModelConfigPage = () => {
                 apiKey,
                 apiUrl,
                 configKey,
+                wireApi: values.wireApi,
                 authType: values.authType,
                 headers,
                 queryParams,
@@ -334,6 +335,7 @@ export const AIModelConfigPage = () => {
                 modelName,
                 apiKey: values.apiKey,
                 apiUrl: values.apiUrl,
+                wireApi: values.wireApi,
                 authType: values.authType,
                 headers: parseJsonField(values.headers, 'Headers'),
                 queryParams: parseJsonField(values.queryParams, 'Query Params'),
@@ -449,6 +451,7 @@ export const AIModelConfigPage = () => {
             provider: string;
             apiKey?: string;
             apiUrl?: string;
+            wireApi?: string;
             authType?: 'bearer' | 'api-key' | 'custom' | 'none';
             headers?: Record<string, string>;
             queryParams?: Record<string, string>;
@@ -468,6 +471,7 @@ export const AIModelConfigPage = () => {
                 provider: values.provider,
                 apiKey: values.apiKey,
                 apiUrl: values.apiUrl,
+                wireApi: values.wireApi,
                 authType: values.authType,
                 headers: parseJsonField(values.headers, 'Headers'),
                 queryParams: parseJsonField(values.queryParams, 'Query Params'),
@@ -749,7 +753,6 @@ export const AIModelConfigPage = () => {
                                                 ? 'Sub2API 以 Responses API 为主要协议。若遇到 404/400 错误，系统会自动回退到 Chat Completions。'
                                                 : 'OpenAI 默认使用 Chat Completions 协议。如需使用最新的 Responses API，可在此切换。'
                                         }
-                                        initialValue={provider === 'sub2api' ? 'responses' : ''}
                                     />
                                 );
                             }

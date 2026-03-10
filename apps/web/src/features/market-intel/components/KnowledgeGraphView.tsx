@@ -40,7 +40,7 @@ export const KnowledgeGraphView: React.FC<KnowledgeGraphViewProps> = ({ intelId,
     const { data, isLoading, refetch } = useQuery(
         ['knowledge-graph', intelId],
         async () => {
-            const response = await axios.get<GraphData>('/api/knowledge/graph', {
+            const response = await axios.get<GraphData>('/api/v1/knowledge/graph', {
                 params: { intelId, limit: 200 }
             });
             return response.data;

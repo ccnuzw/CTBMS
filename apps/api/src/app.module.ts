@@ -19,6 +19,8 @@ import { RegionModule } from './modules/region';
 import { ExtractionConfigModule } from './modules/extraction-config';
 import { LoggerMiddleware } from './common/middleware/logger.middleware';
 import { MockAuthMiddleware } from './common/middleware/mock-auth.middleware';
+import { RequestIdMiddleware } from './common/middleware/request-id.middleware';
+import { LegacyApiDeprecationMiddleware } from './common/middleware/legacy-api-deprecation.middleware';
 import { IntelTaskModule } from './modules/intel-task';
 import { ConfigModule } from './modules/config/config.module';
 import { CollectionPointAllocationModule } from './modules/collection-point-allocation';
@@ -105,7 +107,8 @@ import { AgentToolModule } from './modules/agent-tool';
 })
 export class AppModule implements NestModule {
   configure(consumer: MiddlewareConsumer) {
-    consumer.apply(LoggerMiddleware).forRoutes('*');
-    consumer.apply(MockAuthMiddleware).forRoutes('*');
+    consumer
+      .apply(RequestIdMiddleware, LegacyApiDeprecationMiddleware, LoggerMiddleware, MockAuthMiddleware)
+      .forRoutes('*');
   }
 }

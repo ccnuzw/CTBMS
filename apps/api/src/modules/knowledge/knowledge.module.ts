@@ -3,6 +3,8 @@ import { PrismaModule } from '../../prisma/prisma.module';
 import { AIModule } from '../ai/ai.module';
 import { ConfigModule } from '../config/config.module';
 import { KnowledgeController } from './knowledge.controller';
+import { KnowledgeItemsV1Controller } from './knowledge-items.v1.controller';
+import { KnowledgeV1Controller } from './knowledge.v1.controller';
 import { KnowledgeService } from './knowledge.service';
 import { KnowledgeSyncService } from './knowledge-sync.service';
 import { KnowledgeSearchService } from './knowledge-search.service';
@@ -18,10 +20,17 @@ import { KnowledgeQueryExpansionService } from './services/knowledge-query-expan
 import { KnowledgeUploadController } from './knowledge-upload.controller';
 import { KnowledgeExtractionService } from './services/knowledge-extraction.service';
 import { DeepAnalysisService } from './services/deep-analysis.service';
+import { ReportsV1Controller } from './reports.v1.controller';
 
 @Module({
   imports: [PrismaModule, AIModule, ConfigModule, IntelTaskModule],
-  controllers: [KnowledgeController, KnowledgeUploadController],
+  controllers: [
+    KnowledgeController,
+    KnowledgeUploadController,
+    KnowledgeItemsV1Controller,
+    ReportsV1Controller,
+    KnowledgeV1Controller,
+  ],
   providers: [
     KnowledgeService, KnowledgeSyncService, KnowledgeSearchService, KnowledgeAggregationService,
     KnowledgeWeeklyRollupJob,

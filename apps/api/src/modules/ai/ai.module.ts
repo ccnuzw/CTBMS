@@ -7,6 +7,8 @@ import { RuleEngineService } from './rule-engine.service';
 import { PromptService } from './prompt.service';
 import { PromptController } from './prompt.controller';
 import { AIController } from './ai.controller';
+import { AIModelsV1Controller } from './ai-models.v1.controller';
+import { AIModelConfigActionsV1Controller } from './ai-model-config-actions.v1.controller';
 import { AIProviderFactory } from './providers/provider.factory';
 import { ConfigModule } from '../config/config.module';
 
@@ -31,6 +33,6 @@ import { ConfigModule } from '../config/config.module';
     PromptService,
     AIProviderFactory,
   ],
-  controllers: [PromptController, AIController],
+  controllers: [PromptController, AIController, AIModelsV1Controller, AIModelConfigActionsV1Controller],
 })
 export class AIModule {}

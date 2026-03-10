@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { MarketIntelController } from './market-intel.controller';
+import { MarketIntelV1Controller } from './market-intel.v1.controller';
 import { IntelCrudService } from './intel-crud.service';
 import { IntelEventInsightService } from './intel-event-insight.service';
 import { IntelAnalysisService } from './intel-analysis.service';
@@ -19,7 +20,7 @@ import { KnowledgeModule } from '../knowledge/knowledge.module';
 
 @Module({
   imports: [KnowledgeModule],
-  controllers: [MarketIntelController],
+  controllers: [MarketIntelController, MarketIntelV1Controller],
   providers: [
     IntelCrudService,
     IntelAnalysisService,

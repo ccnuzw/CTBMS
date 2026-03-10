@@ -89,7 +89,7 @@ export const useMarketInsights = (query?: InsightQuery) => {
                 });
             }
             const res = await apiClient.get<PaginatedResponse<MarketInsightResponse>>(
-                `/market-intel/insights?${params.toString()}`,
+                `/v1/market-intel/insights?${params.toString()}`,
             );
             return res.data;
         },
@@ -100,7 +100,7 @@ export const useMarketInsight = (id: string) => {
     return useQuery<MarketInsightResponse>({
         queryKey: ['market-insights', id],
         queryFn: async () => {
-            const res = await apiClient.get<MarketInsightResponse>(`/market-intel/insights/${id}`);
+            const res = await apiClient.get<MarketInsightResponse>(`/v1/market-intel/insights/${id}`);
             return res.data;
         },
         enabled: !!id,
@@ -111,7 +111,7 @@ export const useInsightStats = () => {
     return useQuery<InsightStats>({
         queryKey: ['insight-stats'],
         queryFn: async () => {
-            const res = await apiClient.get<InsightStats>('/market-intel/insights/stats');
+            const res = await apiClient.get<InsightStats>('/v1/market-intel/insights/stats');
             return res.data;
         },
         refetchInterval: 60000,
@@ -182,7 +182,7 @@ export const useRelatedContent = (
                 if (query.limit) params.append('limit', String(query.limit));
             }
             const res = await apiClient.get<RelatedContentResponse>(
-                `/market-intel/related-content?${params.toString()}`,
+                `/v1/market-intel/related-content?${params.toString()}`,
             );
             return res.data;
         },

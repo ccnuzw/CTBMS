@@ -1,5 +1,6 @@
-import { Controller, Get, Post, Put, Delete, Body, Param, Query } from '@nestjs/common';
+import { Controller, Get, Post, Put, Delete, Body, Param, Query, Res } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
+import { Response } from 'express';
 import { ConfigService } from './config.service';
 import {
   CreateDictionaryDomainDto,
@@ -8,6 +9,7 @@ import {
   UpdateDictionaryItemDto,
 } from './dto/dictionary.dto';
 import { CreateAIModelConfigDto } from './dto/create-ai-model-config.dto';
+import { setDeprecationHeaders } from '../../common/utils/deprecation';
 
 @Controller('config')
 export class ConfigController {
@@ -44,22 +46,37 @@ export class ConfigController {
   // ===== AI Config =====
 
   @Get('ai-models')
-  async getAllAIConfigs(@Query('includeInactive') includeInactive?: string) {
+  async getAllAIConfigs(
+    @Query('includeInactive') includeInactive?: string,
+    @Res({ passthrough: true }) res?: Response,
+  ) {
+    if (res) {
+      setDeprecationHeaders(res, '/v1/ai-model-configs');
+    }
     return this.configService.getAllAIModelConfigs(includeInactive === 'true');
   }
 
   @Get('ai-models/:key')
-  async getAIConfig(@Param('key') key: string) {
+  async getAIConfig(@Param('key') key: string, @Res({ passthrough: true }) res?: Response) {
+    if (res) {
+      setDeprecationHeaders(res, `/v1/ai-model-configs/${key}`);
+    }
     return this.configService.getAIModelConfig(key);
   }
 
   @Post('ai-models')
-  async saveAIConfig(@Body() body: CreateAIModelConfigDto) {
+  async saveAIConfig(@Body() body: CreateAIModelConfigDto, @Res({ passthrough: true }) res?: Response) {
+    if (res) {
+      setDeprecationHeaders(res, '/v1/ai-model-configs');
+    }
     return this.configService.upsertAIModelConfig(body.configKey, body);
   }
 
   @Delete('ai-models/:key')
-  async deleteAIConfig(@Param('key') key: string) {
+  async deleteAIConfig(@Param('key') key: string, @Res({ passthrough: true }) res?: Response) {
+    if (res) {
+      setDeprecationHeaders(res, `/v1/ai-model-configs/${key}`);
+    }
     return this.configService.deleteAIModelConfig(key);
   }
 

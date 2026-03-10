@@ -120,7 +120,7 @@ export const DocumentUploader: React.FC<DocumentUploaderProps> = ({
     setUploading(true);
 
     try {
-      const endpoint = uploadMode === 'parse_only' ? '/api/market-intel/parse-document' : '/api/market-intel/upload';
+      const endpoint = uploadMode === 'parse_only' ? '/api/v1/market-intel/parse-document' : '/api/v1/market-intel/upload';
       const response = await fetch(endpoint, {
         method: 'POST',
         body: formData,

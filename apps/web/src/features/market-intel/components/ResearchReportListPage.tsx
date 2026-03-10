@@ -404,7 +404,7 @@ export const ResearchReportListPage: React.FC = () => {
                     }
 
                     try {
-                        const res = await apiClient.get<any>(`/knowledge/reports?${queryParams.toString()}`);
+                        const res = await apiClient.get<any>(`/v1/reports?${queryParams.toString()}`);
 
                         return {
                             data: res.data.data,

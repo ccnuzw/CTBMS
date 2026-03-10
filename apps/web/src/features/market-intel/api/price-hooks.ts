@@ -72,7 +72,7 @@ export const usePriceData = (query?: PriceDataQueryWithQuality, options?: UsePri
                 });
             }
             const res = await apiClient.get<PaginatedResponse<PriceDataResponse>>(
-                `/market-intel/price-data?${params.toString()}`,
+                `/v1/market-intel/price-data?${params.toString()}`,
             );
             return res.data;
         },
@@ -145,7 +145,7 @@ export const usePriceContinuityHealth = (
                 });
             }
             const res = await apiClient.get<PriceContinuityHealthResponse>(
-                `/market-intel/price-data/continuity-health?${params.toString()}`,
+                `/v1/market-intel/price-data/continuity-health?${params.toString()}`,
             );
             return res.data;
         },
@@ -237,7 +237,7 @@ export const useAlertRules = () => {
     return useQuery<MarketAlertRule[]>({
         queryKey: ['alert-rules'],
         queryFn: async () => {
-            const res = await apiClient.get<MarketAlertRule[]>('/market-intel/alerts/rules');
+            const res = await apiClient.get<MarketAlertRule[]>('/v1/market-intel/alerts/rules');
             return res.data;
         },
     });
@@ -247,7 +247,7 @@ export const useCreateAlertRule = () => {
     const queryClient = useQueryClient();
     return useMutation({
         mutationFn: async (payload: Omit<MarketAlertRule, 'id' | 'createdAt' | 'updatedAt'>) => {
-            const res = await apiClient.post<MarketAlertRule[]>('/market-intel/alerts/rules', payload);
+            const res = await apiClient.post<MarketAlertRule[]>('/v1/market-intel/alerts/rules', payload);
             return res.data;
         },
         onSuccess: () => {
@@ -268,7 +268,7 @@ export const useUpdateAlertRule = () => {
             payload: Partial<Omit<MarketAlertRule, 'id' | 'createdAt' | 'updatedAt'>>;
         }) => {
             const res = await apiClient.put<MarketAlertRule[]>(
-                `/market-intel/alerts/rules/${id}`,
+                `/v1/market-intel/alerts/rules/${id}`,
                 payload,
             );
             return res.data;
@@ -284,7 +284,7 @@ export const useDeleteAlertRule = () => {
     const queryClient = useQueryClient();
     return useMutation({
         mutationFn: async (id: string) => {
-            const res = await apiClient.delete<{ success: boolean }>(`/market-intel/alerts/rules/${id}`);
+            const res = await apiClient.delete<{ success: boolean }>(`/v1/market-intel/alerts/rules/${id}`);
             return res.data;
         },
         onSuccess: () => {
@@ -315,7 +315,7 @@ export const useAlerts = (query?: AlertQuery) => {
                 });
             }
             const res = await apiClient.get<AlertListResponse>(
-                `/market-intel/alerts?${params.toString()}`,
+                `/v1/market-intel/alerts?${params.toString()}`,
             );
             return res.data;
         },
@@ -344,7 +344,7 @@ export const useEvaluateAlerts = () => {
             }
             const suffix = params.toString();
             const res = await apiClient.post<EvaluateAlertsResponse>(
-                `/market-intel/alerts/evaluate${suffix ? `?${suffix}` : ''}`,
+                `/v1/market-intel/alerts/evaluate${suffix ? `?${suffix}` : ''}`,
             );
             return res.data;
         },
@@ -359,7 +359,7 @@ export const useAlertLogs = (id?: string) => {
         queryKey: ['alerts', 'logs', id],
         enabled: !!id,
         queryFn: async () => {
-            const res = await apiClient.get<AlertStatusLog[]>(`/market-intel/alerts/${id}/logs`);
+            const res = await apiClient.get<AlertStatusLog[]>(`/v1/market-intel/alerts/${id}/logs`);
             return res.data;
         },
     });
@@ -381,7 +381,7 @@ export const useUpdateAlertStatus = () => {
             reason?: string;
             operator?: string;
         }) => {
-            const res = await apiClient.patch(`/market-intel/alerts/${id}/status`, {
+            const res = await apiClient.patch(`/v1/market-intel/alerts/${id}/status`, {
                 status,
                 note,
                 reason,
@@ -405,7 +405,7 @@ export const useCreatePriceData = () => {
 
     return useMutation({
         mutationFn: async (data: CreatePriceDataDto) => {
-            const res = await apiClient.post<PriceDataResponse>('/market-intel/price-data', data);
+            const res = await apiClient.post<PriceDataResponse>('/v1/market-intel/price-data', data);
             return res.data;
         },
         onSuccess: () => {
@@ -423,7 +423,7 @@ export const usePriceTrend = (commodity: string, location: string, days = 30) =>
         queryKey: ['price-trend', commodity, location, days],
         queryFn: async () => {
             const res = await apiClient.get<PriceTrendPoint[]>(
-                `/market-intel/price-data/trend?commodity=${encodeURIComponent(commodity)}&location=${encodeURIComponent(location)}&days=${days}`,
+                `/v1/market-intel/price-data/trend?commodity=${encodeURIComponent(commodity)}&location=${encodeURIComponent(location)}&days=${days}`,
             );
             return res.data;
         },
@@ -439,7 +439,7 @@ export const usePriceHeatmap = (commodity: string, date?: string) => {
             params.append('commodity', commodity);
             if (date) params.append('date', date);
             const res = await apiClient.get<PriceHeatmapPoint[]>(
-                `/market-intel/price-data/heatmap?${params.toString()}`,
+                `/v1/market-intel/price-data/heatmap?${params.toString()}`,
             );
             return res.data;
         },
@@ -518,7 +518,7 @@ export const usePriceByCollectionPoint = (
             if (paramsValue?.reviewScope) params.append('reviewScope', paramsValue.reviewScope);
             if (paramsValue?.sourceScope) params.append('sourceScope', paramsValue.sourceScope);
             const res = await apiClient.get<CollectionPointPriceData>(
-                `/market-intel/price-data/by-collection-point/${collectionPointId}?${params.toString()}`,
+                `/v1/market-intel/price-data/by-collection-point/${collectionPointId}?${params.toString()}`,
             );
             return res.data;
         },
@@ -605,7 +605,7 @@ export const usePriceByRegion = (
                 params.append('includeData', String(paramsValue.includeData));
             }
             const res = await apiClient.get<RegionPriceData>(
-                `/market-intel/price-data/by-region/${regionCode}?${params.toString()}`,
+                `/v1/market-intel/price-data/by-region/${regionCode}?${params.toString()}`,
             );
             return res.data;
         },
@@ -676,7 +676,7 @@ export const useMultiPointCompare = (
             if (paramsValue?.reviewScope) params.append('reviewScope', paramsValue.reviewScope);
             if (paramsValue?.sourceScope) params.append('sourceScope', paramsValue.sourceScope);
             const res = await apiClient.get<MultiPointTrendItem[]>(
-                `/market-intel/price-data/compare?${params.toString()}`,
+                `/v1/market-intel/price-data/compare?${params.toString()}`,
             );
             return res.data;
         },
@@ -821,7 +821,7 @@ export const usePriceCompareAnalytics = (
             if (query.regionLevel) params.append('regionLevel', query.regionLevel);
             if (query.regionWindow) params.append('regionWindow', query.regionWindow);
             const res = await apiClient.get<PriceCompareAnalyticsResponse>(
-                `/market-intel/price-data/compare-analytics?${params.toString()}`,
+                `/v1/market-intel/price-data/compare-analytics?${params.toString()}`,
             );
             return res.data;
         },

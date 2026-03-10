@@ -45,7 +45,7 @@ export const useMarketIntels = (query?: Partial<MarketIntelQuery>) => {
                 });
             }
             const res = await apiClient.get<PaginatedResponse<MarketIntelResponse>>(
-                `/market-intel?${params.toString()}`,
+                `/v1/market-intel?${params.toString()}`,
             );
             return res.data;
         },
@@ -60,7 +60,7 @@ export const useMarketIntel = (id: string) => {
     return useQuery<MarketIntelResponse>({
         queryKey: ['market-intels', id],
         queryFn: async () => {
-            const res = await apiClient.get<MarketIntelResponse>(`/market-intel/${id}`);
+            const res = await apiClient.get<MarketIntelResponse>(`/v1/market-intel/${id}`);
             return res.data;
         },
         enabled: !!id,
@@ -76,7 +76,7 @@ export const useCreateMarketIntel = () => {
 
     return useMutation({
         mutationFn: async (data: CreateMarketIntelDto) => {
-            const res = await apiClient.post<MarketIntelResponse>('/market-intel', data);
+            const res = await apiClient.post<MarketIntelResponse>('/v1/market-intel', data);
             return res.data;
         },
         onSuccess: () => {
@@ -95,7 +95,7 @@ export const useUpdateMarketIntel = () => {
 
     return useMutation({
         mutationFn: async ({ id, data }: { id: string; data: UpdateMarketIntelDto }) => {
-            const res = await apiClient.put<MarketIntelResponse>(`/market-intel/${id}`, data);
+            const res = await apiClient.put<MarketIntelResponse>(`/v1/market-intel/${id}`, data);
             return res.data;
         },
         onSuccess: (_, variables) => {
@@ -113,7 +113,7 @@ export const useDeleteMarketIntel = () => {
     const queryClient = useQueryClient();
     return useMutation({
         mutationFn: async (id: string) => {
-            const res = await apiClient.delete(`/market-intel/${id}`);
+            const res = await apiClient.delete(`/v1/market-intel/${id}`);
             return res.data;
         },
         onSuccess: () => {
@@ -127,7 +127,7 @@ export const useUpdateMarketIntelTags = () => {
     const queryClient = useQueryClient();
     return useMutation({
         mutationFn: async ({ id, tags }: { id: string; tags: string[] }) => {
-            const res = await apiClient.patch(`/market-intel/${id}/tags`, { tags });
+            const res = await apiClient.patch(`/v1/market-intel/${id}/tags`, { tags });
             return res.data;
         },
         onSuccess: () => {
@@ -141,7 +141,7 @@ export const useBatchDeleteMarketIntel = () => {
     const queryClient = useQueryClient();
     return useMutation({
         mutationFn: async (ids: string[]) => {
-            const res = await apiClient.post('/market-intel/documents/batch-delete', { ids });
+            const res = await apiClient.post('/v1/market-intel/documents/batch-delete', { ids });
             return res.data;
         },
         onSuccess: () => {
@@ -155,7 +155,7 @@ export const useBatchUpdateTags = () => {
     const queryClient = useQueryClient();
     return useMutation({
         mutationFn: async (params: { ids: string[]; addTags: string[]; removeTags: string[] }) => {
-            const res = await apiClient.post('/market-intel/documents/batch-tags', params);
+            const res = await apiClient.post('/v1/market-intel/documents/batch-tags', params);
             return res.data;
         },
         onSuccess: (data) => {
@@ -176,7 +176,7 @@ export const useMarketIntelStats = () => {
     return useQuery<MarketIntelStats>({
         queryKey: ['market-intel-stats'],
         queryFn: async () => {
-            const res = await apiClient.get<MarketIntelStats>('/market-intel/stats');
+            const res = await apiClient.get<MarketIntelStats>('/v1/market-intel/stats');
             return res.data;
         },
         refetchInterval: 30000, // 每 30 秒刷新
@@ -187,7 +187,7 @@ export const useDocumentStats = (days = 30) => {
     return useQuery({
         queryKey: ['document-stats', days],
         queryFn: async () => {
-            const res = await apiClient.get('/market-intel/documents/stats', { params: { days } });
+            const res = await apiClient.get('/v1/market-intel/documents/stats', { params: { days } });
             return res.data;
         },
     });
@@ -205,7 +205,7 @@ export const useLeaderboard = (
         queryKey: ['market-intel-leaderboard', limit, timeframe],
         queryFn: async () => {
             const res = await apiClient.get<LeaderboardEntry[]>(
-                `/market-intel/leaderboard?limit=${limit}&timeframe=${timeframe}`,
+                `/v1/market-intel/leaderboard?limit=${limit}&timeframe=${timeframe}`,
             );
             return res.data;
         },
@@ -219,7 +219,7 @@ export const useLeaderboard = (
 export const useAnalyzeContent = () => {
     return useMutation({
         mutationFn: async (data: AnalyzeContentDto) => {
-            const res = await apiClient.post<AIAnalysisResult>('/market-intel/analyze', data);
+            const res = await apiClient.post<AIAnalysisResult>('/v1/market-intel/analyze', data);
             return res.data;
         },
     });
@@ -228,7 +228,7 @@ export const useAnalyzeContent = () => {
 export const useGenerateInsight = () => {
     return useMutation({
         mutationFn: async (data: { content: string }) => {
-            const res = await apiClient.post<{ summary: string }>('/market-intel/generate-insight', data);
+            const res = await apiClient.post<{ summary: string }>('/v1/market-intel/generate-insight', data);
             return res.data;
         },
     });
@@ -247,7 +247,7 @@ interface AITestResult {
 export const useTestAI = () => {
     return useMutation({
         mutationFn: async () => {
-            const res = await apiClient.get<AITestResult>('/market-intel/test-ai');
+            const res = await apiClient.get<AITestResult>('/v1/market-intel/test-ai');
             return res.data;
         },
     });
@@ -275,7 +275,7 @@ export const usePromoteToReport = () => {
     return useMutation({
         mutationFn: async (data: PromoteToReportRequest) => {
             const res = await apiClient.post<PromoteToReportResponse>(
-                `/market-intel/${data.intelId}/promote-to-report`,
+                `/v1/market-intel/${data.intelId}/promote-to-report`,
                 {
                     reportType: data.reportType,
                     triggerDeepAnalysis: data.triggerDeepAnalysis ?? true,

@@ -7,16 +7,17 @@ export class LoggerMiddleware implements NestMiddleware {
 
     use(req: Request, res: Response, next: NextFunction) {
         const { method, originalUrl, body } = req;
+        const requestId = (req as Request & { requestId?: string }).requestId;
         const userAgent = req.get('user-agent') || '';
 
         this.logger.log(
-            `Incoming Request: ${method} ${originalUrl} - Body: ${JSON.stringify(body)}`,
+            `Incoming Request: ${method} ${originalUrl} - Body: ${JSON.stringify(body)}${requestId ? ` - RequestId: ${requestId}` : ''}`,
         );
 
         res.on('finish', () => {
             const { statusCode } = res;
             this.logger.log(
-                `Response: ${method} ${originalUrl} ${statusCode} - ${userAgent}`,
+                `Response: ${method} ${originalUrl} ${statusCode} - ${userAgent}${requestId ? ` - RequestId: ${requestId}` : ''}`,
             );
         });
 
