@@ -11,6 +11,7 @@ type GetAvailableModelsInput = {
   apiKey?: string;
   apiUrl?: string;
   configKey?: string;
+  wireApi?: string;
   authType?: AIRequestOptions['authType'];
   headers?: Record<string, string>;
   queryParams?: Record<string, string>;
@@ -21,6 +22,8 @@ type GetAvailableModelsInput = {
   timeoutSeconds?: number;
   maxRetries?: number;
 };
+
+type AIModelConfigWithWireApi = AIModelConfig & { wireApi?: string | null };
 
 @Injectable()
 export class AIModelService {
@@ -51,7 +54,8 @@ export class AIModelService {
     const modelId = aiConfig?.modelName || this.modelId;
     const apiKey = this.resolveApiKey(aiConfig, this.apiKey);
     const apiUrl = this.resolveApiUrl(aiConfig, this.apiUrl) || undefined;
-    const wireApi = this.resolveRecord(aiConfig?.pathOverrides)?.['wireApi'];
+    const pathOverrides = this.resolveRecord(aiConfig?.pathOverrides);
+    const wireApi = this.resolveWireApi(provider, aiConfig, undefined, pathOverrides);
 
     if (!apiKey) {
       return null;
@@ -92,6 +96,84 @@ export class AIModelService {
   public resolveRecord(value?: unknown): Record<string, string> | undefined {
     if (!value || typeof value !== 'object') return undefined;
     return value as Record<string, string>;
+  }
+
+  public resolveWireApi(
+    provider: string | undefined,
+    config?: (AIModelConfigWithWireApi & { provider?: string | null }) | null,
+    override?: string,
+    pathOverrides?: Record<string, string>,
+  ): string | undefined {
+    const normalizedOverride = override?.trim();
+    if (normalizedOverride) return normalizedOverride;
+
+    const normalizedConfigWireApi = config?.wireApi?.trim();
+    if (normalizedConfigWireApi) return normalizedConfigWireApi;
+
+    const normalizedPathOverride = pathOverrides?.wireApi?.trim();
+    if (normalizedPathOverride) return normalizedPathOverride;
+
+    const resolvedProvider = provider ?? config?.provider ?? undefined;
+    if (resolvedProvider === 'sub2api') {
+      return 'responses';
+    }
+
+    return undefined;
+  }
+
+  public buildAIRequestOptions(
+    params: {
+      provider?: string;
+      config?: AIModelConfigWithWireApi | null;
+      modelName: string;
+      apiKey: string;
+      apiUrl?: string;
+      wireApi?: string;
+      authType?: AIRequestOptions['authType'];
+      headers?: Record<string, string>;
+      queryParams?: Record<string, string>;
+      pathOverrides?: Record<string, string>;
+      modelFetchMode?: AIRequestOptions['modelFetchMode'];
+      allowUrlProbe?: boolean;
+      allowCompatPathFallback?: boolean;
+      timeoutSeconds?: number;
+      maxRetries?: number;
+      temperature?: number;
+      maxTokens?: number;
+      topP?: number;
+      images?: AIRequestOptions['images'];
+      tools?: AIRequestOptions['tools'];
+    },
+  ): AIRequestOptions {
+    const pathOverrides = params.pathOverrides ?? this.resolveRecord(params.config?.pathOverrides);
+    const provider = params.provider ?? params.config?.provider ?? undefined;
+
+    return {
+      modelName: params.modelName,
+      apiKey: params.apiKey,
+      apiUrl: params.apiUrl,
+      authType:
+        params.authType ??
+        ((params.config?.authType as AIRequestOptions['authType'] | undefined) ?? undefined),
+      headers: params.headers ?? this.resolveRecord(params.config?.headers),
+      queryParams: params.queryParams ?? this.resolveRecord(params.config?.queryParams),
+      pathOverrides,
+      wireApi: this.resolveWireApi(provider, params.config, params.wireApi, pathOverrides),
+      modelFetchMode:
+        params.modelFetchMode ??
+        ((params.config?.modelFetchMode as AIRequestOptions['modelFetchMode'] | undefined) ??
+          undefined),
+      allowUrlProbe: params.allowUrlProbe ?? params.config?.allowUrlProbe ?? undefined,
+      allowCompatPathFallback:
+        params.allowCompatPathFallback ?? params.config?.allowCompatPathFallback ?? undefined,
+      timeoutSeconds: params.timeoutSeconds ?? params.config?.timeoutSeconds ?? undefined,
+      maxRetries: params.maxRetries ?? params.config?.maxRetries ?? undefined,
+      temperature: params.temperature ?? params.config?.temperature ?? undefined,
+      maxTokens: params.maxTokens ?? params.config?.maxTokens ?? undefined,
+      topP: params.topP ?? params.config?.topP ?? undefined,
+      images: params.images,
+      tools: params.tools,
+    };
   }
 
   public buildTestHint(
@@ -156,21 +238,13 @@ export class AIModelService {
 
     try {
       const provider = this.aiProviderFactory.getProvider(providerType);
-      const options: AIRequestOptions = {
+      const options = this.buildAIRequestOptions({
+        provider: providerType,
+        config: aiConfig,
         modelName: currentModelId,
         apiKey: currentApiKey,
         apiUrl: currentApiUrl || undefined,
-        authType: aiConfig?.authType as AIRequestOptions['authType'],
-        headers: this.resolveRecord(aiConfig?.headers),
-        queryParams: this.resolveRecord(aiConfig?.queryParams),
-        pathOverrides: this.resolveRecord(aiConfig?.pathOverrides),
-        wireApi: this.resolveRecord(aiConfig?.pathOverrides)?.['wireApi'], // [NEW] Extract wireApi
-        modelFetchMode: aiConfig?.modelFetchMode as AIRequestOptions['modelFetchMode'],
-        allowUrlProbe: aiConfig?.allowUrlProbe ?? undefined,
-        allowCompatPathFallback: aiConfig?.allowCompatPathFallback ?? undefined,
-        timeoutSeconds: aiConfig?.timeoutSeconds ?? undefined,
-        maxRetries: aiConfig?.maxRetries ?? undefined,
-      };
+      });
 
       const result = await provider.testConnection(options);
 
@@ -209,6 +283,7 @@ export class AIModelService {
     modelName: string;
     apiKey?: string;
     apiUrl?: string;
+    wireApi?: string;
     authType?: AIRequestOptions['authType'];
     headers?: Record<string, string>;
     queryParams?: Record<string, string>;
@@ -244,15 +319,16 @@ export class AIModelService {
 
     try {
       const provider = this.aiProviderFactory.getProvider(providerType);
-      const options: AIRequestOptions = {
+      const options = this.buildAIRequestOptions({
+        provider: providerType,
         modelName,
         apiKey: currentApiKey,
         apiUrl: currentApiUrl || undefined,
+        wireApi: payload.wireApi,
         authType: payload.authType,
         headers: payload.headers,
         queryParams: payload.queryParams,
         pathOverrides: payload.pathOverrides,
-        wireApi: payload.pathOverrides?.['wireApi'], // [NEW] Extract wireApi
         modelFetchMode: payload.modelFetchMode,
         allowUrlProbe: payload.allowUrlProbe,
         allowCompatPathFallback: payload.allowCompatPathFallback,
@@ -261,7 +337,7 @@ export class AIModelService {
         temperature: payload.temperature,
         maxTokens: payload.maxTokens,
         topP: payload.topP,
-      };
+      });
 
       const result = await provider.testConnection(options);
       return {
@@ -387,25 +463,23 @@ export class AIModelService {
 
       for (const candidate of providerCandidates) {
         const provider = this.aiProviderFactory.getProvider(candidate);
-        const mergedPathOverrides = input.pathOverrides ?? this.resolveRecord(resolvedConfig?.pathOverrides);
-        const options: AIRequestOptions = {
+        const options = this.buildAIRequestOptions({
+          provider: candidate,
+          config: resolvedConfig,
           modelName: 'model-listing-placeholder',
           apiKey: finalApiKey,
           apiUrl: finalApiUrl || undefined,
-          authType: input.authType ?? (resolvedConfig?.authType as AIRequestOptions['authType']),
-          headers: input.headers ?? this.resolveRecord(resolvedConfig?.headers),
-          queryParams: input.queryParams ?? this.resolveRecord(resolvedConfig?.queryParams),
-          pathOverrides: mergedPathOverrides,
-          wireApi: mergedPathOverrides?.['wireApi'], // [NEW] Extract wireApi
-          modelFetchMode:
-            input.modelFetchMode ??
-            (resolvedConfig?.modelFetchMode as AIRequestOptions['modelFetchMode']),
-          allowUrlProbe: input.allowUrlProbe ?? resolvedConfig?.allowUrlProbe ?? undefined,
-          allowCompatPathFallback:
-            input.allowCompatPathFallback ?? resolvedConfig?.allowCompatPathFallback ?? undefined,
-          timeoutSeconds: input.timeoutSeconds ?? resolvedConfig?.timeoutSeconds ?? undefined,
-          maxRetries: input.maxRetries ?? resolvedConfig?.maxRetries ?? undefined,
-        };
+          wireApi: input.wireApi,
+          authType: input.authType,
+          headers: input.headers,
+          queryParams: input.queryParams,
+          pathOverrides: input.pathOverrides,
+          modelFetchMode: input.modelFetchMode,
+          allowUrlProbe: input.allowUrlProbe,
+          allowCompatPathFallback: input.allowCompatPathFallback,
+          timeoutSeconds: input.timeoutSeconds,
+          maxRetries: input.maxRetries,
+        });
 
         try {
           const result = await provider.getModels(options);

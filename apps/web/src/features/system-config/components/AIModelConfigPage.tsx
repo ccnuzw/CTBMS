@@ -78,17 +78,19 @@ export const AIModelConfigPage = () => {
     const templateOptions = [
         { label: 'OpenAI 官方', value: 'openai_official' },
         { label: 'OpenAI 兼容中转', value: 'openai_proxy' },
+        { label: 'Sub2API (Codex)', value: 'sub2api_default' },
         { label: 'Gemini 官方', value: 'gemini_official' },
         { label: 'Gemini 代理/中转', value: 'gemini_proxy' },
     ];
 
-    const templateMap: Record<string, Partial<AIModelConfig>> = {
+    const templateMap: Record<string, Partial<AIModelConfig> & { wireApi?: string }> = {
         openai_official: {
             provider: 'openai',
             apiUrl: 'https://api.openai.com/v1',
             authType: 'bearer',
             modelFetchMode: 'official',
             allowUrlProbe: true,
+            wireApi: '',
         },
         openai_proxy: {
             provider: 'openai',
@@ -96,6 +98,15 @@ export const AIModelConfigPage = () => {
             authType: 'bearer',
             modelFetchMode: 'official',
             allowUrlProbe: true,
+            wireApi: '',
+        },
+        sub2api_default: {
+            provider: 'sub2api',
+            apiUrl: 'https://sub2api.526566.xyz/v1',
+            authType: 'bearer',
+            modelFetchMode: 'official',
+            allowUrlProbe: false,
+            wireApi: 'responses',
         },
         gemini_official: {
             provider: 'google',
@@ -119,7 +130,7 @@ export const AIModelConfigPage = () => {
         return JSON.stringify(value, null, 2);
     };
 
-     
+
     const parseJsonField = (value: any, label: string) => {
         if (value === undefined || value === null || value === '') return undefined;
         if (typeof value === 'object') return value as Record<string, string>;
@@ -145,6 +156,7 @@ export const AIModelConfigPage = () => {
             authType: template.authType,
             modelFetchMode: template.modelFetchMode,
             allowUrlProbe: template.allowUrlProbe,
+            wireApi: template.wireApi ?? '',
             headers: formatJsonField(template.headers as Record<string, string> | string),
             queryParams: formatJsonField(template.queryParams as Record<string, string> | string),
             pathOverrides: formatJsonField(template.pathOverrides as Record<string, string> | string),
@@ -231,7 +243,7 @@ export const AIModelConfigPage = () => {
         try {
             // Include id if editing
             const { __template, showAdvanced, ...restValues } = values;
-             
+
             const payload: Record<string, any> = {
                 ...restValues,
                 headers: parseJsonField(values.headers, 'Headers'),
@@ -324,7 +336,7 @@ export const AIModelConfigPage = () => {
                 message.info(`已使用 ${result.provider} 模式获取模型列表`);
             }
             message.success(`成功获取 ${models.length} 个模型，请从列表选择添加`);
-         
+
         } catch (error: any) {
             message.error(`获取失败: ${error.message}`);
         } finally {
@@ -863,18 +875,29 @@ export const AIModelConfigPage = () => {
 
                     <ProFormDependency name={['provider']}>
                         {({ provider }) => {
-                            if (provider === 'sub2api') {
+                            if (provider === 'sub2api' || provider === 'openai') {
                                 return (
                                     <ProFormSelect
-                                        name={['pathOverrides', 'wireApi']}
+                                        name="wireApi"
                                         label="协议类型 (Protocol)"
-                                        options={[
-                                            { label: 'Standard Chat (OpenAI)', value: 'chat' },
-                                            { label: 'Codex Responses (Legacy)', value: 'responses' },
-                                        ]}
+                                        options={
+                                            provider === 'sub2api'
+                                                ? [
+                                                    { label: 'Responses API (推荐)', value: 'responses' },
+                                                    { label: 'Chat Completions', value: 'chat' },
+                                                ]
+                                                : [
+                                                    { label: 'Chat Completions (默认)', value: '' },
+                                                    { label: 'Responses API', value: 'responses' },
+                                                ]
+                                        }
                                         placeholder="选择 API 协议"
-                                        tooltip="Sub2API 支持标准 Chat 协议和旧版 Codex Responses 协议。若遇到 404 错误请尝试切换。"
-                                        initialValue="responses"
+                                        tooltip={
+                                            provider === 'sub2api'
+                                                ? 'Sub2API 以 Responses API 为主要协议。若遇到 404/400 错误，系统会自动回退到 Chat Completions。'
+                                                : 'OpenAI 默认使用 Chat Completions 协议。如需使用最新的 Responses API，可在此切换。'
+                                        }
+                                        initialValue={provider === 'sub2api' ? 'responses' : ''}
                                     />
                                 );
                             }

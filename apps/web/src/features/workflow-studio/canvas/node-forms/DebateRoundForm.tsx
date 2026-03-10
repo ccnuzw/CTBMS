@@ -105,7 +105,7 @@ export const DebateRoundForm: React.FC<DebateRoundFormProps> = ({ config, onChan
 
   return (
     <Form layout="vertical" size="small">
-      <Form.Item label="最大辩论轮次" help="建议设置 3 轮，轮数越多讨论越充分，但消耗 Token 越多且耗时更久。">
+      <Form.Item label="最多讨论轮次" help="建议设置 3 轮，轮数越多讨论越充分，但耗时更久。">
         <InputNumber
           min={1}
           max={10}
@@ -115,30 +115,30 @@ export const DebateRoundForm: React.FC<DebateRoundFormProps> = ({ config, onChan
         />
       </Form.Item>
 
-      <Form.Item label="裁判研判策略" required help="决定最终如何合并各位虚拟辩手的意见">
+      <Form.Item label="裁决方式" required help="决定最终如何合并各方观点">
         <Select
           value={(config.judgePolicy as string) ?? 'WEIGHTED'}
           onChange={(value) => onChange('judgePolicy', value)}
           options={[
-            { label: '⚖️ 加权投票 (根据下方每个辩手的权重统计得分)', value: 'WEIGHTED' },
-            { label: '🛡️ 一票否决 (只要有一名辩手反对，即可推翻共识)', value: 'VETO' },
-            { label: '🙋 多数决 (少数服从多数，忽略权重)', value: 'MAJORITY' },
+            { label: '⚖️ 加权投票（根据每位参与者的权重统计得分）', value: 'WEIGHTED' },
+            { label: '🛡️ 一票否决（任一参与者反对即推翻共识）', value: 'VETO' },
+            { label: '🙋 多数决（少数服从多数，忽略权重）', value: 'MAJORITY' },
           ]}
         />
       </Form.Item>
 
       <Card
         size="small"
-        title="辩论席位配置"
+        title="参与者配置"
         extra={
           <Button type="dashed" size="small" icon={<PlusOutlined />} onClick={addParticipant}>
-            添加辩手
+            添加参与者
           </Button>
         }
       >
         <Space direction="vertical" size={10} style={{ width: '100%' }}>
           <Text type="secondary" style={{ fontSize: 12 }}>
-            通过此面板，为每位虚拟辩手分配特有的出场身份、思考立场与发言权重。
+            为每位参与者分配特有的角色、思考立场与发言权重。
           </Text>
 
           {participants.length === 0 ? <Text type="secondary">暂无参与者，请先添加。</Text> : null}
@@ -162,7 +162,7 @@ export const DebateRoundForm: React.FC<DebateRoundFormProps> = ({ config, onChan
                   showSearch
                   loading={isLoading}
                   value={participant.agentCode || undefined}
-                  placeholder="选择智能体"
+                  placeholder="选择AI角色"
                   options={(agentProfilePage?.data || [])
                     .filter((item) => item.isActive)
                     .map((item) => ({

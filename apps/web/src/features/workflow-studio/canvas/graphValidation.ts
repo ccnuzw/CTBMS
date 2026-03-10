@@ -40,7 +40,7 @@ export const validateGraph = (
     });
     if (duplicates.size > 0) {
         duplicates.forEach(id => {
-            errors.push({ message: `存在重复节点 ID: ${id} (WF002)`, nodeId: id });
+            errors.push({ message: `存在重复节点: ${id}`, nodeId: id });
         });
     }
 
@@ -48,7 +48,7 @@ export const validateGraph = (
     const nodeIds = new Set(nodes.map((n) => n.id));
     edges.forEach((edge) => {
         if (!nodeIds.has(edge.source) || !nodeIds.has(edge.target)) {
-            errors.push({ message: `连线端点不存在 (WF003)`, edgeId: edge.id });
+            errors.push({ message: `连线的端点节点不存在`, edgeId: edge.id });
         }
     });
 
@@ -69,11 +69,11 @@ export const validateGraph = (
             // const isOutput = config?.category === 'OUTPUT';
 
             if (isTrigger && !outgoingEdges.has(n.id)) {
-                errors.push({ message: `触发节点未连接后续流程 (WF004)`, nodeId: n.id });
+                errors.push({ message: `触发节点未连接后续流程`, nodeId: n.id });
             }
 
             if (!isTrigger && !incomingEdges.has(n.id)) {
-                errors.push({ message: `节点缺少输入连线 (WF004)`, nodeId: n.id });
+                errors.push({ message: `步骤缺少输入连线，未与其他步骤相连`, nodeId: n.id });
             }
         });
     }
@@ -111,13 +111,13 @@ const validateDebate = (nodes: Node[], edges: Edge[]): ValidationResult => {
     );
 
     if (contextBuilderNodes.length !== 1) {
-        errors.push({ message: '辩论模式需要恰好 1 个 "上下文构建 (Context Builder)" 节点' });
+        errors.push({ message: '讨论模式需要恰好 1 个“准备讨论背景”步骤' });
     }
     if (agentNodes.length < 1) {
-        errors.push({ message: '辩论模式至少需要 1 个 "辩论轮次" 或 "智能体" 节点' });
+        errors.push({ message: '讨论模式至少需要 1 个“多方讨论”或“AI分析”步骤' });
     }
     if (judgeNodes.length !== 1) {
-        errors.push({ message: '辩论模式需要恰好 1 个 "裁判 (Judge)" 节点' });
+        errors.push({ message: '讨论模式需要恰好 1 个“综合裁判”步骤' });
     }
 
     return { isValid: errors.length === 0, errors };
@@ -126,7 +126,7 @@ const validateDebate = (nodes: Node[], edges: Edge[]): ValidationResult => {
 const validateDAG = (nodes: Node[], edges: Edge[]): ValidationResult => {
     const errors: ValidationError[] = [];
     if (hasCycle(nodes, edges)) {
-        errors.push({ message: '检测到循环依赖 (Cycle Detected)' });
+        errors.push({ message: '检测到循环依赖，流程中存在环路' });
     }
 
     const splitNodes = nodes.filter(n => n.data.type === 'parallel-split');
@@ -134,7 +134,7 @@ const validateDAG = (nodes: Node[], edges: Edge[]): ValidationResult => {
 
     if (splitNodes.length > 0 && joinNodes.length === 0) {
         splitNodes.forEach(n => {
-            errors.push({ message: '使用 "并行拆分" 时，通常需要配对 "汇聚等待" 节点', nodeId: n.id, severity: 'WARNING' });
+            errors.push({ message: '使用“并行拆分”时，通常需要配对“汇聚等待”步骤', nodeId: n.id, severity: 'WARNING' });
         });
     }
 
@@ -145,7 +145,7 @@ const validateLinear = (nodes: Node[], edges: Edge[]): ValidationResult => {
     const errors: ValidationError[] = [];
 
     if (hasCycle(nodes, edges)) {
-        errors.push({ message: '线性模式不支持循环 (Cycle Detected)' });
+        errors.push({ message: '线性模式不支持循环' });
     }
 
     const sourceCounts = new Map<string, number>();
@@ -155,7 +155,7 @@ const validateLinear = (nodes: Node[], edges: Edge[]): ValidationResult => {
 
     sourceCounts.forEach((count, nodeId) => {
         if (count > 1) {
-            errors.push({ message: `线性模式下节点不允许有多个后续分支`, nodeId });
+            errors.push({ message: `线性模式下每个步骤只能连接一个后续步骤`, nodeId });
         }
     });
 

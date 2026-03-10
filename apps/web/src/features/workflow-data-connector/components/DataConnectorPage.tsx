@@ -958,7 +958,7 @@ export const DataConnectorPage: React.FC = () => {
               label: '分类',
               children: getConnectorCategoryLabel(selectedConnector?.category),
             },
-            { key: 'owner', label: 'OwnerType', children: selectedConnector?.ownerType || '-' },
+            { key: 'owner', label: '所有者类型', children: selectedConnector?.ownerType || '-' },
             { key: 'version', label: '版本', children: selectedConnector?.version ?? '-' },
             {
               key: 'status',
@@ -973,7 +973,7 @@ export const DataConnectorPage: React.FC = () => {
             },
             {
               key: 'endpoint',
-              label: 'Endpoint配置',
+              label: '端点配置',
               span: 2,
               children: (
                 <pre style={{ margin: 0, whiteSpace: 'pre-wrap' }}>

@@ -27,10 +27,8 @@ import { KnowledgeModule } from './modules/knowledge/knowledge.module';
 import { WorkflowDefinitionModule } from './modules/workflow-definition';
 import { WorkflowExecutionModule } from './modules/workflow-execution';
 import { WorkflowValidationModule } from './modules/workflow-validation';
-import { WorkflowReplayModule } from './modules/workflow-replay';
 import { DecisionRuleModule } from './modules/decision-rule';
-import { AgentProfileModule } from './modules/agent-profile';
-import { AgentPromptTemplateModule } from './modules/agent-prompt-template';
+import { AgentConfigModule } from './modules/agent-config';
 import { ParameterCenterModule } from './modules/parameter-center';
 import { DataConnectorModule } from './modules/data-connector';
 import { DecisionRecordModule } from './modules/decision-record';
@@ -38,21 +36,19 @@ import { WorkflowExperimentModule } from './modules/workflow-experiment';
 import { DebateTraceModule } from './modules/debate-trace';
 import { TriggerGatewayModule } from './modules/trigger-gateway';
 import { ReportExportModule } from './modules/report-export';
-import { ExecutionAnalyticsModule } from './modules/execution-analytics';
+import { ExecutionInsightModule } from './modules/execution-insight';
 import { TemplateCatalogModule } from './modules/template-catalog';
 import { FuturesSimModule } from './modules/futures-sim';
 import { UserConfigBindingModule } from './modules/user-config-binding';
 import { ConnectorModule } from './modules/connector/connector.module';
-import { AgentPersonaModule } from './modules/agent-persona/agent-persona.module';
 import { WizardModule } from './modules/wizard/wizard.module';
-import { AgentSkillModule } from './modules/agent-skill';
-import { AgentConversationModule } from './modules/agent-conversation';
 import { MarketDataModule } from './modules/market-data';
 import { AuditLogModule } from './modules/audit-log';
 import { SemanticLayerModule } from './modules/semantic-layer';
 import { DataGovernanceModule } from './modules/data-governance';
 import { MetricCenterModule } from './modules/metric-center';
 import { FeatureFlagModule } from './modules/feature-flag';
+import { AgentToolModule } from './modules/agent-tool';
 
 @Module({
   imports: [
@@ -81,10 +77,8 @@ import { FeatureFlagModule } from './modules/feature-flag';
     WorkflowDefinitionModule,
     WorkflowExecutionModule,
     WorkflowValidationModule,
-    WorkflowReplayModule,
     DecisionRuleModule,
-    AgentProfileModule,
-    AgentPromptTemplateModule,
+    AgentConfigModule,
     ParameterCenterModule,
     DataConnectorModule,
     DecisionRecordModule,
@@ -92,21 +86,19 @@ import { FeatureFlagModule } from './modules/feature-flag';
     DebateTraceModule,
     TriggerGatewayModule,
     ReportExportModule,
-    ExecutionAnalyticsModule,
+    ExecutionInsightModule,
     TemplateCatalogModule,
     FuturesSimModule,
     UserConfigBindingModule,
     ConnectorModule,
-    AgentPersonaModule,
     WizardModule,
-    AgentSkillModule,
-    AgentConversationModule,
     MarketDataModule,
     AuditLogModule,
     SemanticLayerModule,
     DataGovernanceModule,
     MetricCenterModule,
     FeatureFlagModule,
+    AgentToolModule,
   ],
   controllers: [AppController],
   providers: [],

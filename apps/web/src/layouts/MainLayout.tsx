@@ -75,17 +75,12 @@ export const MainLayout: React.FC = () => {
       {
         key: 'workflow-center',
         icon: <NodeIndexOutlined />,
-        label: '智能体工作流',
+        label: '智能工作流',
         children: [
           {
-            key: '/workflow/workbench',
-            icon: <AppstoreOutlined />,
-            label: '应用中心',
-          },
-          {
-            key: '/workflow/copilot',
+            key: '/workflow/assistant',
             icon: <MessageOutlined />,
-            label: '对话助手',
+            label: 'AI 对话助手',
           },
           {
             key: '/workflow/definitions',
@@ -93,24 +88,19 @@ export const MainLayout: React.FC = () => {
             label: '工作流编排',
           },
           {
-            key: '/workflow/executions',
+            key: '/workflow/hub',
             icon: <ScheduleOutlined />,
-            label: '运行记录',
+            label: '运营中心',
           },
           {
-            key: '/workflow/advanced',
-            icon: <SettingOutlined />,
-            label: '高级管理',
-          },
-          {
-            key: '/workflow/metrics',
-            icon: <DatabaseOutlined />,
-            label: '指标字典',
-          },
-          {
-            key: '/workflow/quality',
+            key: '/workflow/insight',
             icon: <FundOutlined />,
-            label: '质量看板',
+            label: '执行洞察',
+          },
+          {
+            key: '/workflow/config',
+            icon: <SettingOutlined />,
+            label: '配置管理',
           },
         ],
       },

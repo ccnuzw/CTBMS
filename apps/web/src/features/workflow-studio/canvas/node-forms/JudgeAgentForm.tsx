@@ -43,7 +43,7 @@ export const JudgeAgentForm: React.FC<FormProps> = ({ config, onChange }) => {
 
   return (
     <Form layout="vertical" size="small">
-      <Form.Item label="裁判智能体" required>
+      <Form.Item label="综合裁判角色" required>
         <Select
           value={selectedAgentCode}
           onChange={(value) => {
@@ -59,11 +59,11 @@ export const JudgeAgentForm: React.FC<FormProps> = ({ config, onChange }) => {
               label: `${item.agentName} (${item.agentCode})`,
               value: item.agentCode,
             }))}
-          placeholder="选择裁判智能体"
+          placeholder="选择综合裁判角色"
         />
       </Form.Item>
 
-      <Form.Item label="裁决策略" help="决定当出现分歧时该听谁的">
+      <Form.Item label="裁决方式" help="当参与者观点分歧时，如何做最终判断">
         <Select
           value={(config.judgePolicy as string) ?? 'WEIGHTED'}
           onChange={(value) => onChange('judgePolicy', value)}

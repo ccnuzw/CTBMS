@@ -91,6 +91,7 @@ export const PropertyPanel: React.FC<PropertyPanelProps> = ({
   const [viewMode, setViewMode] = React.useState<'ui' | 'json'>('ui');
   const [activeTab, setActiveTab] = React.useState('overview');
   const [runCollapseKey, setRunCollapseKey] = React.useState<string[]>([]);
+  const [configMode, setConfigMode] = React.useState<'简化' | '高级'>('简化');
 
   React.useEffect(() => {
     setActiveTab('overview');
@@ -435,6 +436,13 @@ export const PropertyPanel: React.FC<PropertyPanelProps> = ({
                   {selectedNode.id}
                 </Text>
               </Space>
+              {nodeTypeConfig?.businessTip && (
+                <div style={{ marginTop: 4 }}>
+                  <Text type="secondary" style={{ fontSize: 12 }}>
+                    💡 {nodeTypeConfig.businessTip}
+                  </Text>
+                </div>
+              )}
             </Form.Item>
 
             <Form.Item label="启用" style={{ marginBottom: 12 }}>
@@ -564,6 +572,11 @@ export const PropertyPanel: React.FC<PropertyPanelProps> = ({
     },
   ];
 
+  const SIMPLE_TABS = new Set(['overview', 'capability']);
+  const visibleTabs = configMode === '简化'
+    ? tabs.filter((t) => SIMPLE_TABS.has(t.key))
+    : tabs;
+
   return (
     <div
       style={{
@@ -607,17 +620,30 @@ export const PropertyPanel: React.FC<PropertyPanelProps> = ({
             步骤设置
           </Text>
         </Space>
-        <CloseOutlined
-          style={{ cursor: 'pointer', color: token.colorTextSecondary }}
-          onClick={onClose}
-        />
+        <Space size={8}>
+          <Segmented
+            size="small"
+            options={['简化', '高级']}
+            value={configMode}
+            onChange={(value) => {
+              setConfigMode(value as '简化' | '高级');
+              if (value === '简化' && !SIMPLE_TABS.has(activeTab)) {
+                setActiveTab('overview');
+              }
+            }}
+          />
+          <CloseOutlined
+            style={{ cursor: 'pointer', color: token.colorTextSecondary }}
+            onClick={onClose}
+          />
+        </Space>
       </div>
 
       <div style={{ flex: 1, overflowY: 'auto', padding: '8px 12px 0 12px' }}>
         <Tabs
           activeKey={activeTab}
           onChange={setActiveTab}
-          items={tabs}
+          items={visibleTabs}
           size="small"
           tabBarStyle={{ marginBottom: 8 }}
         />
@@ -766,10 +792,10 @@ const EdgePropertyPanel: React.FC<EdgePropertyPanelProps> = ({
               value={edgeType}
               onChange={handleTypeChange}
               options={[
-                { label: '数据流 (Data Edge)', value: 'data-edge' },
-                { label: '控制流 (Control Edge)', value: 'control-edge' },
-                { label: '条件流 (Condition Edge)', value: 'condition-edge' },
-                { label: '错误流 (Error Edge)', value: 'error-edge' },
+                { label: '数据传递', value: 'data-edge' },
+                { label: '执行顺序', value: 'control-edge' },
+                { label: '条件判断', value: 'condition-edge' },
+                { label: '异常处理', value: 'error-edge' },
               ]}
             />
           </Form.Item>

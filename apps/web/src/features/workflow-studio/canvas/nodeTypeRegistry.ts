@@ -55,6 +55,8 @@ export interface NodeTypeConfig {
     color: string;
     icon: React.ComponentType;
     description: string;
+    /** 业务场景举例，帮助行业用户理解节点用途 */
+    businessTip?: string;
     defaultConfig: Record<string, unknown>;
     outputFields?: { name: string; label: string; type: string }[];
     inputsSchema?: { name: string; type: string; required?: boolean }[];
@@ -68,6 +70,7 @@ interface NodeUiMeta {
     category: NodeCategory;
     icon: React.ComponentType;
     description: string;
+    businessTip?: string;
     aliases?: string[];
     recommendedNextNodes?: string[];
 }
@@ -89,7 +92,8 @@ const NODE_UI_META: Record<WorkflowCanonicalNodeType, NodeUiMeta> = {
         label: '手动触发',
         category: 'TRIGGER',
         icon: PlayCircleOutlined,
-        description: '手动点击触发流程',
+        description: '点击按钮即可启动分析流程',
+        businessTip: '如：交易员在开盘前手动启动晨间综判',
         aliases: ['trigger'],
         recommendedNextNodes: ['data-fetch', 'agent-call', 'rule-pack-eval'],
     },
@@ -97,14 +101,16 @@ const NODE_UI_META: Record<WorkflowCanonicalNodeType, NodeUiMeta> = {
         label: '定时触发',
         category: 'TRIGGER',
         icon: ClockCircleOutlined,
-        description: '按设定的时间表自动启动',
+        description: '设好时间，每天/每周自动运行',
+        businessTip: '如：每天早上7点自动生成日报',
         recommendedNextNodes: ['data-fetch', 'market-data-fetch', 'report-fetch'],
     },
     'api-trigger': {
         label: '接口触发',
         category: 'TRIGGER',
         icon: ApiOutlined,
-        description: '由外部系统调用启动',
+        description: '其他系统或页面按钮一键调用',
+        businessTip: '如：在交易界面点击“智能风险评估”按钮自动触发',
         aliases: ['on-demand-trigger'],
         recommendedNextNodes: ['data-fetch', 'rule-pack-eval'],
     },
@@ -112,14 +118,16 @@ const NODE_UI_META: Record<WorkflowCanonicalNodeType, NodeUiMeta> = {
         label: '事件触发',
         category: 'TRIGGER',
         icon: ThunderboltOutlined,
-        description: '当特定事件发生时自动启动',
+        description: '价格异动、政策发布等事件发生时自动启动',
+        businessTip: '如：玉米价格波动超过3%时自动触发异动速报',
         recommendedNextNodes: ['data-fetch', 'feature-calc'],
     },
     'data-fetch': {
         label: '数据获取',
         category: 'DATA',
         icon: DatabaseOutlined,
-        description: '从已配置的数据源获取数据',
+        description: '获取价格、库存、情报等业务数据',
+        businessTip: '如：获取最近7天华北地区玉米现货价格',
         aliases: ['market-data-fetch', 'mock-fetch'],
         recommendedNextNodes: ['formula-calc', 'rule-pack-eval', 'agent-call'],
     },
@@ -127,7 +135,8 @@ const NODE_UI_META: Record<WorkflowCanonicalNodeType, NodeUiMeta> = {
         label: '期货数据获取',
         category: 'DATA',
         icon: DatabaseOutlined,
-        description: '获取期货行情与基差信息',
+        description: '获取期货合约价格、持仓和基差数据',
+        businessTip: '如：获取大连玉米主力合约最新行情',
     },
     'report-fetch': {
         label: '研报获取',
@@ -151,7 +160,8 @@ const NODE_UI_META: Record<WorkflowCanonicalNodeType, NodeUiMeta> = {
         label: '公式计算',
         category: 'COMPUTE',
         icon: CalculatorOutlined,
-        description: '自定义公式或引用公式库',
+        description: '计算价差、利润、成本等业务指标',
+        businessTip: '如：计算 南港价 - 北港价 - 运费 = 套利利润',
         aliases: ['compute'],
         recommendedNextNodes: ['rule-eval', 'decision-merge', 'agent-call'],
     },
@@ -159,7 +169,8 @@ const NODE_UI_META: Record<WorkflowCanonicalNodeType, NodeUiMeta> = {
         label: '统计分析',
         category: 'COMPUTE',
         icon: ExperimentOutlined,
-        description: '计算同比/环比/移动平均等统计指标',
+        description: '计算涨跌幅、同比环比、趋势走向等',
+        businessTip: '如：计算本周玉米现货价格的周环比和月同比',
     },
     'quantile-calc': {
         label: '分位数计算',
@@ -174,10 +185,11 @@ const NODE_UI_META: Record<WorkflowCanonicalNodeType, NodeUiMeta> = {
         description: '单规则逻辑评估',
     },
     'rule-pack-eval': {
-        label: '规则包评估',
+        label: '规则评估',
         category: 'RULE',
         icon: SafetyOutlined,
-        description: '执行一组规则并给出综合评分',
+        description: '按预设的业务规则自动打分判断',
+        businessTip: '如：检查价差是否达到套利阈值、库存是否触发预警线',
         recommendedNextNodes: ['decision-merge', 'risk-gate', 'agent-call'],
     },
     'alert-check': {
@@ -187,10 +199,11 @@ const NODE_UI_META: Record<WorkflowCanonicalNodeType, NodeUiMeta> = {
         description: '检查是否触发市场告警',
     },
     'agent-call': {
-        label: '智能体调用',
+        label: 'AI分析',
         category: 'AGENT',
         icon: RobotOutlined,
-        description: '让 AI 智能体执行分析任务',
+        description: 'AI自动分析数据并给出研判意见',
+        businessTip: '如：让AI分析师综合价格和情报，写出行情研判',
         aliases: ['single-agent'],
         recommendedNextNodes: ['decision-merge', 'risk-gate', 'notify'],
     },
@@ -201,24 +214,27 @@ const NODE_UI_META: Record<WorkflowCanonicalNodeType, NodeUiMeta> = {
         description: '多智能体协同组',
     },
     'context-builder': {
-        label: '上下文构建',
+        label: '准备讨论背景',
         category: 'AGENT',
         icon: BuildOutlined,
-        description: '为智能体讨论或决策准备背景信息',
+        description: '收集相关信息，为多方讨论做准备',
+        businessTip: '如：汇总最新政策、市场数据和历史事件作为讨论依据',
         aliases: ['debate-topic'],
     },
     'debate-round': {
         label: '多方讨论',
         category: 'AGENT',
         icon: TeamOutlined,
-        description: '多个智能体进行讨论交流',
+        description: '多个AI角色从不同角度讨论分析',
+        businessTip: '如：看多方和看空方分别阐述观点，相互质询',
         aliases: ['debate-agent-a', 'debate-agent-b'],
     },
     'judge-agent': {
-        label: '裁判智能体',
+        label: '综合裁判',
         category: 'AGENT',
         icon: SafetyCertificateOutlined,
-        description: '对辩论结果进行裁决',
+        description: '汇总各方观点，给出最终判断和依据',
+        businessTip: '如：综合看多看空双方意见，给出行情方向的最终判断',
         aliases: ['debate-judge'],
     },
     'if-else': {
@@ -266,16 +282,18 @@ const NODE_UI_META: Record<WorkflowCanonicalNodeType, NodeUiMeta> = {
         description: '调用已发布的子工作流',
     },
     'decision-merge': {
-        label: '决策合成',
+        label: '综合研判',
         category: 'DECISION',
         icon: SolutionOutlined,
-        description: '多路信号合成最终决策',
+        description: '综合各方面分析结果，形成最终结论',
+        businessTip: '如：综合价格分析、供需判断和规则评估，给出操作建议',
     },
     'risk-gate': {
         label: '风控检查',
         category: 'DECISION',
         icon: ThunderboltOutlined,
-        description: '判断风险等级并决定是否继续',
+        description: '检查结果是否存在风险，给出风险提示',
+        businessTip: '如：检查建议是否违反仓位上限或止损规则',
     },
     approval: {
         label: '人工审批',
@@ -290,10 +308,11 @@ const NODE_UI_META: Record<WorkflowCanonicalNodeType, NodeUiMeta> = {
         description: '发送通知消息',
     },
     'report-generate': {
-        label: '报告生成',
+        label: '生成报告',
         category: 'OUTPUT',
         icon: FileDoneOutlined,
-        description: '生成分析报告',
+        description: '将分析结果整理为可阅读、可分享的中文报告',
+        businessTip: '如：生成日报、周报、研报、辩论纪要等',
     },
     'dashboard-publish': {
         label: '看板发布',
@@ -358,6 +377,7 @@ const buildNodeTypeConfig = (nodeType: WorkflowCanonicalNodeType): NodeTypeConfi
         color: categoryColor,
         icon: ui.icon,
         description: ui.description,
+        businessTip: ui.businessTip,
         aliases: ui.aliases,
         recommendedNextNodes: ui.recommendedNextNodes,
         defaultConfig: { ...(contract?.defaultConfig ?? {}) },
@@ -411,13 +431,13 @@ export const getCategoryConfig = (category: NodeCategory) => {
 };
 
 export const CATEGORY_LABELS: Record<NodeCategory, string> = {
-    TRIGGER: '启动方式',
-    DATA: '数据获取',
-    COMPUTE: '数据计算',
-    RULE: '规则判断',
-    AGENT: 'AI 智能体',
+    TRIGGER: '如何启动',
+    DATA: '获取数据',
+    COMPUTE: '计算分析',
+    RULE: '规则检查',
+    AGENT: 'AI分析',
     CONTROL: '流程控制',
-    DECISION: '决策与审批',
-    OUTPUT: '结果输出',
+    DECISION: '研判决策',
+    OUTPUT: '输出结果',
     GROUP: '分组',
 };

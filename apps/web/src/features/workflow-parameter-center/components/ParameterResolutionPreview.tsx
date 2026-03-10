@@ -15,16 +15,16 @@ interface ParameterResolutionPreviewProps {
     parameterSetId: string;
 }
 
-// Define scope configuration for visualization (color and icon)
+// 作用域配置：颜色、图标、中文标签
 const scopeConfig: Record<string, { color: string; icon: React.ReactNode; label: string }> = {
-    PUBLIC_TEMPLATE: { color: 'blue', icon: <GlobalOutlined />, label: 'Public' },
-    USER_TEMPLATE: { color: 'cyan', icon: <DeploymentUnitOutlined />, label: 'Template' },
-    GLOBAL: { color: 'green', icon: <GlobalOutlined />, label: 'Global' },
-    COMMODITY: { color: 'orange', icon: <ShopOutlined />, label: 'Commodity' },
-    REGION: { color: 'purple', icon: <EnvironmentOutlined />, label: 'Region' },
-    ROUTE: { color: 'magenta', icon: <RocketOutlined />, label: 'Route' },
-    STRATEGY: { color: 'geekblue', icon: <DeploymentUnitOutlined />, label: 'Strategy' },
-    SESSION: { color: 'red', icon: <DeploymentUnitOutlined />, label: 'Session' },
+    PUBLIC_TEMPLATE: { color: 'blue', icon: <GlobalOutlined />, label: '公共模板' },
+    USER_TEMPLATE: { color: 'cyan', icon: <DeploymentUnitOutlined />, label: '用户模板' },
+    GLOBAL: { color: 'green', icon: <GlobalOutlined />, label: '全局' },
+    COMMODITY: { color: 'orange', icon: <ShopOutlined />, label: '品种' },
+    REGION: { color: 'purple', icon: <EnvironmentOutlined />, label: '区域' },
+    ROUTE: { color: 'magenta', icon: <RocketOutlined />, label: '路线' },
+    STRATEGY: { color: 'geekblue', icon: <DeploymentUnitOutlined />, label: '策略' },
+    SESSION: { color: 'red', icon: <DeploymentUnitOutlined />, label: '会话' },
 };
 
 type ResolvedItem = {
@@ -44,23 +44,23 @@ export const ParameterResolutionPreview: React.FC<ParameterResolutionPreviewProp
             const values = await form.validateFields();
             const res = await resolveMutation.mutateAsync({ setId: parameterSetId, dto: values });
             setResults(res.resolved);
-            message.success('Resolved successfully');
+            message.success('参数解析成功');
         } catch (error) {
             if (import.meta.env.DEV) console.error(error);
-            message.error('Failed to resolve parameters');
+            message.error('参数解析失败');
         }
     };
 
     const columns: ColumnsType<ResolvedItem> = [
         {
-            title: 'Parameter Code',
+            title: '参数编码',
             dataIndex: 'paramCode',
             key: 'paramCode',
             width: 200,
             render: (text) => <Text strong>{text}</Text>,
         },
         {
-            title: 'Effective Value',
+            title: '生效值',
             dataIndex: 'value',
             key: 'value',
             render: (value) => (
@@ -70,7 +70,7 @@ export const ParameterResolutionPreview: React.FC<ParameterResolutionPreviewProp
             ),
         },
         {
-            title: 'Source Scope',
+            title: '来源作用域',
             dataIndex: 'sourceScope',
             key: 'sourceScope',
             width: 150,
@@ -87,7 +87,7 @@ export const ParameterResolutionPreview: React.FC<ParameterResolutionPreviewProp
 
     return (
         <Space direction="vertical" style={{ width: '100%' }} size={24}>
-            <Card title="Context Simulation" size="small">
+            <Card title="上下文模拟" size="small">
                 <Form<ResolveParameterSetDto>
                     form={form}
                     layout="vertical"
@@ -95,48 +95,48 @@ export const ParameterResolutionPreview: React.FC<ParameterResolutionPreviewProp
                 >
                     <Row gutter={16}>
                         <Col span={6}>
-                            <Form.Item name="commodity" label="Commodity">
-                                <Input placeholder="e.g. CORN" />
+                            <Form.Item name="commodity" label="品种">
+                                <Input placeholder="例如 CORN" />
                             </Form.Item>
                         </Col>
                         <Col span={6}>
-                            <Form.Item name="region" label="Region">
-                                <Input placeholder="e.g. US_MIDWEST" />
+                            <Form.Item name="region" label="区域">
+                                <Input placeholder="例如 US_MIDWEST" />
                             </Form.Item>
                         </Col>
                         <Col span={6}>
-                            <Form.Item name="route" label="Route">
-                                <Input placeholder="e.g. RAIL_NORTH" />
+                            <Form.Item name="route" label="路线">
+                                <Input placeholder="例如 RAIL_NORTH" />
                             </Form.Item>
                         </Col>
                         <Col span={6}>
-                            <Form.Item name="strategy" label="Strategy">
-                                <Input placeholder="e.g. HEDGING_V1" />
+                            <Form.Item name="strategy" label="策略">
+                                <Input placeholder="例如 HEDGING_V1" />
                             </Form.Item>
                         </Col>
                     </Row>
                     <Row justify="end">
                         <Button type="primary" htmlType="submit" loading={resolveMutation.isPending}>
-                            Simulate Resolution
+                            模拟解析
                         </Button>
                     </Row>
                 </Form>
             </Card>
 
             {results.length > 0 && (
-                <Card title="Effective Parameters" size="small">
-                    {/* Visual Hierarchy Summary */}
+                <Card title="生效参数" size="small">
+                    {/* 优先级层级摘要 */}
                     <div style={{ marginBottom: 16, padding: 12, background: token.colorBgLayout, borderRadius: 8 }}>
                         <Space split={<Divider type="vertical" />}>
-                            <Text type="secondary">Hierarchy Priority:</Text>
+                            <Text type="secondary">优先级层级：</Text>
                             <Space size={4}>
-                                <Tag color="red">Session</Tag> &gt;
-                                <Tag color="geekblue">Strategy</Tag> &gt;
-                                <Tag color="magenta">Route</Tag> &gt;
-                                <Tag color="purple">Region</Tag> &gt;
-                                <Tag color="orange">Commodity</Tag> &gt;
-                                <Tag color="green">Global</Tag> &gt;
-                                <Tag color="blue">Template</Tag>
+                                <Tag color="red">会话</Tag> &gt;
+                                <Tag color="geekblue">策略</Tag> &gt;
+                                <Tag color="magenta">路线</Tag> &gt;
+                                <Tag color="purple">区域</Tag> &gt;
+                                <Tag color="orange">品种</Tag> &gt;
+                                <Tag color="green">全局</Tag> &gt;
+                                <Tag color="blue">模板</Tag>
                             </Space>
                         </Space>
                     </div>

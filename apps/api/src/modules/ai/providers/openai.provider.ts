@@ -228,6 +228,40 @@ export class OpenAIProvider implements IAIProvider {
     return typed.choices?.[0]?.message?.content || '';
   }
 
+  /**
+   * Normalise ChatCompletions-style tools to Responses API flat format.
+   *
+   * ChatCompletions: { type: "function", function: { name, description, parameters } }
+   * Responses:       { type: "function", name, description, parameters }
+   *
+   * Reference: sub2api normalizeCodexTools().
+   */
+  private normalizeToolsForResponses(
+    tools?: AIRequestOptions['tools'],
+  ): Array<Record<string, unknown>> | undefined {
+    if (!tools || tools.length === 0) return undefined;
+
+    return tools.map((tool) => {
+      const flatTool: Record<string, unknown> = { type: 'function' };
+
+      if ('name' in tool && typeof (tool as Record<string, unknown>).name === 'string') {
+        return tool as unknown as Record<string, unknown>;
+      }
+
+      if (tool.function) {
+        flatTool.name = tool.function.name;
+        if (tool.function.description) {
+          flatTool.description = tool.function.description;
+        }
+        if (tool.function.parameters) {
+          flatTool.parameters = tool.function.parameters;
+        }
+      }
+
+      return flatTool;
+    });
+  }
+
   private async callResponsesFetch(
     baseUrl: string,
     options: AIRequestOptions,
@@ -249,6 +283,7 @@ export class OpenAIProvider implements IAIProvider {
       temperature: options.temperature ?? 0.3,
       top_p: options.topP,
       stream: false,
+      tools: this.normalizeToolsForResponses(options.tools),
     };
 
     const tryRequest = async (body: Record<string, unknown>): Promise<string> => {
@@ -302,6 +337,45 @@ export class OpenAIProvider implements IAIProvider {
       }
       throw error;
     }
+  }
+
+  /**
+   * Extract tool_calls from Responses API output items (function_call type).
+   */
+  private extractResponsesToolCalls(
+    data: unknown,
+  ): Array<{ id: string; type: 'function'; function: { name: string; arguments: string } }> | undefined {
+    if (!data || typeof data !== 'object') return undefined;
+    const typed = data as {
+      output?: Array<{
+        type?: string;
+        id?: string;
+        call_id?: string;
+        name?: string;
+        arguments?: string;
+        tool_calls?: Array<{ id: string; type: 'function'; function: { name: string; arguments: string } }>;
+      }>;
+    };
+    if (!typed.output) return undefined;
+
+    const toolCalls: Array<{ id: string; type: 'function'; function: { name: string; arguments: string } }> = [];
+    for (const item of typed.output) {
+      if (item.tool_calls) {
+        toolCalls.push(...item.tool_calls);
+        continue;
+      }
+      if (item.type === 'function_call' && item.name) {
+        toolCalls.push({
+          id: item.call_id || item.id || `call_${toolCalls.length}`,
+          type: 'function',
+          function: {
+            name: item.name,
+            arguments: item.arguments || '{}',
+          },
+        });
+      }
+    }
+    return toolCalls.length > 0 ? toolCalls : undefined;
   }
 
   private async callWithCompatFallback(
@@ -422,14 +496,14 @@ export class OpenAIProvider implements IAIProvider {
         role: 'user',
         content: options.images?.length
           ? [
-              { type: 'text', text: userPrompt },
-              ...options.images.map((img) => ({
-                type: 'image_url' as const,
-                image_url: {
-                  url: `data:${img.mimeType};base64,${img.base64}`,
-                },
-              })),
-            ]
+            { type: 'text', text: userPrompt },
+            ...options.images.map((img) => ({
+              type: 'image_url' as const,
+              image_url: {
+                url: `data:${img.mimeType};base64,${img.base64}`,
+              },
+            })),
+          ]
           : userPrompt,
       },
     ];
@@ -531,10 +605,10 @@ export class OpenAIProvider implements IAIProvider {
         tool_calls: toolCalls?.length ? toolCalls : undefined,
         usage: response.usage
           ? {
-              prompt_tokens: response.usage.prompt_tokens,
-              completion_tokens: response.usage.completion_tokens,
-              total_tokens: response.usage.total_tokens,
-            }
+            prompt_tokens: response.usage.prompt_tokens,
+            completion_tokens: response.usage.completion_tokens,
+            total_tokens: response.usage.total_tokens,
+          }
           : undefined,
       };
     } catch (error) {

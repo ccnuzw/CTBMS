@@ -15,7 +15,6 @@ import { PromptService } from './prompt.service';
 import { RuleEngineService } from './rule-engine.service';
 import { ConfigService } from '../config/config.service';
 import { AIProviderFactory } from './providers/provider.factory';
-import { AIRequestOptions } from './providers/base.provider';
 import { AIModelService } from './ai-model.service';
 import { AIPromptService } from './ai-prompt.service';
 import { AIEntityExtractorService } from './ai-entity-extractor.service';
@@ -225,25 +224,17 @@ export class AIService implements OnModuleInit {
         // 3. 获取 Provider 实例
         const provider = this.aiProviderFactory.getProvider(providerType);
 
-        const options: AIRequestOptions = {
+        const options = this.aiModelService.buildAIRequestOptions({
+            provider: providerType,
+            config: aiConfig,
             modelName: targetModel,
             apiKey: targetApiKey,
             apiUrl: currentApiUrl || aiConfig?.apiUrl || undefined,
-            authType: aiConfig?.authType as AIRequestOptions['authType'],
-            headers: this.aiModelService.resolveRecord(aiConfig?.headers),
-            queryParams: this.aiModelService.resolveRecord(aiConfig?.queryParams),
-            pathOverrides: this.aiModelService.resolveRecord(aiConfig?.pathOverrides),
-            wireApi: this.aiModelService.resolveRecord(aiConfig?.pathOverrides)?.['wireApi'], // [NEW] Extract wireApi
-            modelFetchMode: aiConfig?.modelFetchMode as AIRequestOptions['modelFetchMode'],
-            allowUrlProbe: aiConfig?.allowUrlProbe ?? undefined,
-            allowCompatPathFallback: aiConfig?.allowCompatPathFallback ?? undefined,
             temperature: aiConfig?.temperature ?? 0.3,
             maxTokens: aiConfig?.maxTokens ?? 8192,
             topP: aiConfig?.topP ?? undefined,
-            timeoutSeconds: aiConfig?.timeoutSeconds ?? undefined,
-            maxRetries: aiConfig?.maxRetries ?? undefined,
-            images: base64Image && mimeType ? [{ base64: base64Image, mimeType }] : undefined
-        };
+            images: base64Image && mimeType ? [{ base64: base64Image, mimeType }] : undefined,
+        });
 
         // 4. 执行调用
         try {
@@ -294,20 +285,13 @@ export class AIService implements OnModuleInit {
             }
 
             const provider = this.aiProviderFactory.getProvider(providerType);
-            const options: AIRequestOptions = {
+            const options = this.aiModelService.buildAIRequestOptions({
+                provider: providerType,
+                config: aiConfig,
                 modelName: currentModelId,
                 apiKey: currentApiKey,
                 apiUrl: currentApiUrl || undefined,
-                authType: aiConfig?.authType as AIRequestOptions['authType'],
-                headers: this.aiModelService.resolveRecord(aiConfig?.headers),
-                queryParams: this.aiModelService.resolveRecord(aiConfig?.queryParams),
-                pathOverrides: this.aiModelService.resolveRecord(aiConfig?.pathOverrides),
-                wireApi: this.aiModelService.resolveRecord(aiConfig?.pathOverrides)?.['wireApi'],
-                modelFetchMode: aiConfig?.modelFetchMode as AIRequestOptions['modelFetchMode'],
-                allowUrlProbe: aiConfig?.allowUrlProbe ?? undefined,
-                timeoutSeconds: aiConfig?.timeoutSeconds ?? undefined,
-                maxRetries: aiConfig?.maxRetries ?? undefined,
-            };
+            });
 
             return await provider.generateResponse(prompt.system, prompt.user, options);
         } catch (error) {
@@ -570,22 +554,15 @@ export class AIService implements OnModuleInit {
 
         try {
             const provider = this.aiProviderFactory.getProvider(providerType);
-            const options: AIRequestOptions = {
+            const options = this.aiModelService.buildAIRequestOptions({
+                provider: providerType,
+                config: aiConfig,
                 modelName: currentModelId,
-                apiKey: currentApiKey || this.apiKey, // fallback
+                apiKey: currentApiKey || this.apiKey,
                 apiUrl: currentApiUrl || undefined,
-                authType: aiConfig?.authType as AIRequestOptions['authType'],
-                headers: this.aiModelService.resolveRecord(aiConfig?.headers),
-                queryParams: this.aiModelService.resolveRecord(aiConfig?.queryParams),
-                pathOverrides: this.aiModelService.resolveRecord(aiConfig?.pathOverrides),
-                wireApi: this.aiModelService.resolveRecord(aiConfig?.pathOverrides)?.['wireApi'],
-                modelFetchMode: aiConfig?.modelFetchMode as AIRequestOptions['modelFetchMode'],
-                allowUrlProbe: aiConfig?.allowUrlProbe ?? undefined,
-                timeoutSeconds: aiConfig?.timeoutSeconds ?? undefined,
-                maxRetries: aiConfig?.maxRetries ?? undefined,
-                temperature: aiConfig?.temperature ?? 0.7, // Chat usually needs higher temp
+                temperature: aiConfig?.temperature ?? 0.7,
                 maxTokens: aiConfig?.maxTokens ?? 2048,
-            };
+            });
 
             return await provider.generateResponse(systemPrompt, userPrompt, options);
         } catch (error) {

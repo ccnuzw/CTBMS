@@ -102,6 +102,7 @@ import { ConfigModule } from '../config/config.module';
     ReplayAssembler,
     DagScheduler,
     WorkflowExecutionRunnerService,
+    NodeExecutorRegistry,
   ],
 })
-export class WorkflowExecutionModule {}
+export class WorkflowExecutionModule { }

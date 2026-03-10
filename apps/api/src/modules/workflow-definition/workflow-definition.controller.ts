@@ -31,7 +31,6 @@ import {
 import { AIProviderFactory } from '../ai/providers/provider.factory';
 import { AIModelService } from '../ai/ai-model.service';
 import { AIProvider } from '@packages/types';
-import { AIRequestOptions } from '../ai/providers/base.provider';
 
 import { ConfigService } from '../config/config.service';
 
@@ -237,22 +236,19 @@ ${schemaDescription}
 
 只输出 JSON，不要其他文字。`;
 
-      const result = await provider.generateChat([{ role: 'user', content: prompt }], {
-        modelName: modelConfig.modelName || 'gpt-3.5-turbo',
-        apiKey: this.aiModelService.resolveApiKey(modelConfig, this.aiModelService.apiKey),
-        apiUrl:
-          this.aiModelService.resolveApiUrl(modelConfig, this.aiModelService.apiUrl) || undefined,
-        authType: modelConfig.authType as AIRequestOptions['authType'],
-        headers: this.aiModelService.resolveRecord(modelConfig.headers),
-        queryParams: this.aiModelService.resolveRecord(modelConfig.queryParams),
-        pathOverrides: this.aiModelService.resolveRecord(modelConfig.pathOverrides),
-        wireApi: this.aiModelService.resolveRecord(modelConfig.pathOverrides)?.['wireApi'],
-        modelFetchMode: modelConfig.modelFetchMode as AIRequestOptions['modelFetchMode'],
-        allowUrlProbe: modelConfig.allowUrlProbe ?? undefined,
-        allowCompatPathFallback: modelConfig.allowCompatPathFallback ?? undefined,
-        maxTokens: 512,
-        temperature: 0.1,
-      });
+      const result = await provider.generateChat(
+        [{ role: 'user', content: prompt }],
+        this.aiModelService.buildAIRequestOptions({
+          provider: modelConfig.provider as AIProvider,
+          config: modelConfig,
+          modelName: modelConfig.modelName || 'gpt-3.5-turbo',
+          apiKey: this.aiModelService.resolveApiKey(modelConfig, this.aiModelService.apiKey),
+          apiUrl:
+            this.aiModelService.resolveApiUrl(modelConfig, this.aiModelService.apiUrl) || undefined,
+          maxTokens: 512,
+          temperature: 0.1,
+        }),
+      );
 
       const rawText = result.content?.trim() ?? '{}';
       let jsonStr = rawText;

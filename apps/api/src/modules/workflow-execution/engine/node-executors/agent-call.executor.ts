@@ -1,7 +1,8 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { WorkflowNode } from '@packages/types';
+import { AIProvider, WorkflowNode } from '@packages/types';
 import { AIModelConfig, Prisma } from '@prisma/client';
 import { PrismaService } from '../../../../prisma';
+import { AIModelService } from '../../../ai/ai-model.service';
 import { AIProviderFactory } from '../../../ai/providers/provider.factory';
 import { AIRequestOptions, AIMessage, AIToolDefinition } from '../../../ai/providers/base.provider';
 import { OutputSchemaRegistryService } from '../../../agent-profile';
@@ -38,10 +39,11 @@ export class AgentCallNodeExecutor implements WorkflowNodeExecutor {
   constructor(
     private readonly prisma: PrismaService,
     private readonly aiProviderFactory: AIProviderFactory,
+    private readonly aiModelService: AIModelService,
     private readonly outputSchemaRegistryService: OutputSchemaRegistryService,
     private readonly configService: ConfigService,
     private readonly toolRegistry: ToolHandlerRegistryService,
-  ) { }
+  ) {}
 
   supports(node: WorkflowNode): boolean {
     return node.type === 'agent-call' || node.type === 'single-agent';
@@ -125,9 +127,9 @@ export class AgentCallNodeExecutor implements WorkflowNodeExecutor {
     const fullUserPrompt = fewShotBlock ? `${fewShotBlock}\n\n${userPrompt}` : userPrompt;
 
     // 6. 解析 AI 配置
-    const apiKey = this.resolveApiKey(modelConfig);
+    const apiKey = this.aiModelService.resolveApiKey(modelConfig, process.env.GEMINI_API_KEY ?? '');
     const apiUrl = modelConfig.apiUrl ?? undefined;
-    const providerType = (modelConfig.provider as 'google' | 'openai') ?? 'google';
+    const providerType = (modelConfig.provider as AIProvider) ?? 'google';
 
     this.logger.log(
       `执行 Agent[${agentCode}] 调用, model=${modelConfig.modelName}, provider=${providerType}`,
@@ -152,23 +154,16 @@ export class AgentCallNodeExecutor implements WorkflowNodeExecutor {
       if ((tools?.length ?? 0) === 0) tools = undefined;
     }
 
-    const pathOverrides = this.toRecord(modelConfig.pathOverrides);
-    const requestOptions: AIRequestOptions = {
+    const requestOptions = this.aiModelService.buildAIRequestOptions({
+      provider: providerType,
+      config: modelConfig,
       modelName: modelConfig.modelName,
       apiKey,
-      apiUrl: apiUrl ?? undefined,
-      authType: (modelConfig.authType as AIRequestOptions['authType']) ?? undefined,
-      headers: this.toRecord(modelConfig.headers),
-      queryParams: this.toRecord(modelConfig.queryParams),
-      pathOverrides,
-      wireApi: pathOverrides?.['wireApi'], // 提取 wireApi 协议标识（responses | chat）
-      temperature: modelConfig.temperature,
-      maxTokens: modelConfig.maxTokens,
-      topP: modelConfig.topP ?? undefined,
+      apiUrl,
       timeoutSeconds: profile.timeoutSeconds,
       maxRetries: modelConfig.maxRetries,
       tools,
-    };
+    });
 
     // 8. 调用 AI (包含 Tool Calling 多轮拦截器)
     const startTime = Date.now();
@@ -320,7 +315,7 @@ export class AgentCallNodeExecutor implements WorkflowNodeExecutor {
    * 重试策略（含指数退避）
    */
   private async retryCall(
-    providerType: 'google' | 'openai',
+    providerType: AIProvider,
     systemPrompt: string,
     userPrompt: string,
     options: AIRequestOptions,

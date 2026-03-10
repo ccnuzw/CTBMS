@@ -26,16 +26,21 @@ import {
   EyeOutlined,
   PlusOutlined,
   ReloadOutlined,
+  AppstoreOutlined,
 } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
 import { useSearchParams } from 'react-router-dom';
-import type { ExportTaskDto, ExportReportSection, ExportFormat } from '@packages/types';
+import type { ExportTaskDto, ExportReportSection, ExportFormat, ExportReportDataDto } from '@packages/types';
 import {
   useExportTasks,
   useExportTaskDetail,
   useCreateExportTask,
   useDeleteExportTask,
 } from '../api/report-exports';
+import { ReportTemplateSelector } from './ReportTemplateSelector';
+import { ReportPreviewDrawer } from './ReportPreviewDrawer';
+import type { ReportTemplate } from '../reportTemplates';
+import { renderTitleTemplate } from '../reportTemplates';
 
 const { Text, Title, Paragraph } = Typography;
 
@@ -72,6 +77,9 @@ export const ReportExportPage: React.FC = () => {
 
   const [selectedTaskId, setSelectedTaskId] = useState<string | undefined>();
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+  const [isTemplateSelectorOpen, setIsTemplateSelectorOpen] = useState(false);
+  const [previewData, setPreviewData] = useState<ExportReportDataDto | null>(null);
+  const [isPreviewOpen, setIsPreviewOpen] = useState(false);
 
   // 创建表单状态
   const [createForm, setCreateForm] = useState({
@@ -271,6 +279,12 @@ export const ReportExportPage: React.FC = () => {
               ]}
             />
             <Button
+              icon={<AppstoreOutlined />}
+              onClick={() => setIsTemplateSelectorOpen(true)}
+            >
+              从模板创建
+            </Button>
+            <Button
               type="primary"
               icon={<PlusOutlined />}
               onClick={() => setIsCreateModalOpen(true)}
@@ -434,19 +448,17 @@ export const ReportExportPage: React.FC = () => {
             )}
 
             {taskDetail.reportData && (
-              <Card title="报告数据预览" size="small">
-                <pre
-                  style={{
-                    fontSize: 11,
-                    maxHeight: 500,
-                    overflow: 'auto',
-                    whiteSpace: 'pre-wrap',
-                    margin: 0,
-                  }}
-                >
-                  {JSON.stringify(taskDetail.reportData, null, 2)}
-                </pre>
-              </Card>
+              <Button
+                type="default"
+                icon={<EyeOutlined />}
+                block
+                onClick={() => {
+                  setPreviewData(taskDetail.reportData as ExportReportDataDto);
+                  setIsPreviewOpen(true);
+                }}
+              >
+                可视化预览报告
+              </Button>
             )}
 
             {taskDetail.downloadUrl && (
@@ -463,6 +475,30 @@ export const ReportExportPage: React.FC = () => {
           </Space>
         )}
       </Drawer>
+
+      {/* ── 模板选择器 ── */}
+      <ReportTemplateSelector
+        visible={isTemplateSelectorOpen}
+        onClose={() => setIsTemplateSelectorOpen(false)}
+        onSelect={(template: ReportTemplate) => {
+          setCreateForm({
+            workflowExecutionId: '',
+            format: template.defaultFormat,
+            title: renderTitleTemplate(template.titleTemplate, {}),
+            sections: template.sections,
+            includeRawData: false,
+          });
+          setIsTemplateSelectorOpen(false);
+          setIsCreateModalOpen(true);
+        }}
+      />
+
+      {/* ── 报告预览 ── */}
+      <ReportPreviewDrawer
+        visible={isPreviewOpen}
+        onClose={() => setIsPreviewOpen(false)}
+        reportData={previewData}
+      />
     </Space>
   );
 };

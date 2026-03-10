@@ -17,12 +17,13 @@ export class AIController {
         @Query('provider') provider?: string,
         @Query('configKey') configKey?: string,
         @Query('apiKey') apiKey?: string,
-        @Query('apiUrl') apiUrl?: string
+        @Query('apiUrl') apiUrl?: string,
+        @Query('wireApi') wireApi?: string,
     ) {
         if (!provider && !configKey) {
             throw new Error('Provider parameter is required');
         }
-        return this.aiModelService.getAvailableModels(provider, apiKey, apiUrl, configKey);
+        return this.aiModelService.getAvailableModels({ provider, apiKey, apiUrl, configKey, wireApi });
     }
 
     @Post('models')
@@ -31,6 +32,7 @@ export class AIController {
         configKey?: string;
         apiKey?: string;
         apiUrl?: string;
+        wireApi?: string;
         authType?: 'bearer' | 'api-key' | 'custom' | 'none';
         headers?: Record<string, string>;
         queryParams?: Record<string, string>;
@@ -53,6 +55,7 @@ export class AIController {
         modelName: string;
         apiKey?: string;
         apiUrl?: string;
+        wireApi?: string;
         authType?: 'bearer' | 'api-key' | 'custom' | 'none';
         headers?: Record<string, string>;
         queryParams?: Record<string, string>;

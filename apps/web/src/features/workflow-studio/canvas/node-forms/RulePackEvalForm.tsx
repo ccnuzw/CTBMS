@@ -29,10 +29,10 @@ export const RulePackEvalForm: React.FC<RulePackEvalFormProps> = ({ config, onCh
                 showIcon
                 style={{ marginBottom: 12 }}
                 message="规则包综合评估"
-                description="节点将把对应业务包内的全部活跃规则进行组合运算和打分，最终由【通过阈值】决定该节点是否放行。"
+                description="将选定的规则包内所有规则进行综合打分，总分达到“通过分数”即算通过。"
             />
 
-            <Form.Item label="调用规则包" required help="选择需要绑定评估的核心业务规则集合">
+            <Form.Item label="规则包" required help="选择要使用的业务规则集合">
                 <Select
                     value={config.rulePackCode as string}
                     onChange={(value) => onChange('rulePackCode', value)}
@@ -49,13 +49,13 @@ export const RulePackEvalForm: React.FC<RulePackEvalFormProps> = ({ config, onCh
                     value={config.ruleVersionPolicy as string ?? 'LOCKED'}
                     onChange={(v) => onChange('ruleVersionPolicy', v)}
                     options={[
-                        { label: '锁定通过审核的最新发布版 (推荐)', value: 'LOCKED' },
-                        { label: '激进模式: 无论是否发布，使用最新草稿', value: 'LATEST' },
+                        { label: '使用已发布的稳定版本（推荐）', value: 'LOCKED' },
+                        { label: '使用最新草稿版本（测试时用）', value: 'LATEST' },
                     ]}
                 />
             </Form.Item>
 
-            <Form.Item label="通过阈值分数 (Minimum Hit Score)" required help="规则包内命中的规则总得分必须大于或等于此阈值，才算【评估通过】。">
+            <Form.Item label="通过分数" required help="规则评估总分达到此分数才算通过。分数越高要求越严格。">
                 <InputNumber
                     value={config.minHitScore as number ?? 60}
                     onChange={(v) => onChange('minHitScore', v)}

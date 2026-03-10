@@ -44,24 +44,10 @@ import {
   BatchPriceEntryTable,
 } from '../features/price-reporting';
 import { WorkflowDefinitionPage } from '../features/workflow-studio';
-import { WorkflowExecutionPage } from '../features/workflow-runtime';
-import { DecisionRulePackPage } from '../features/workflow-rule-center';
-import { AgentProfilePage, AgentPromptTemplatePage, SkillDashboardPage } from '../features/workflow-agent-center';
-import { AgentWizardPage } from '../features/agent-wizard';
-import { ParameterSetPage } from '../features/workflow-parameter-center';
-import { DataConnectorPage } from '../features/workflow-data-connector';
-import { TriggerGatewayPage } from '../features/trigger-gateway';
-import { ReportExportPage } from '../features/report-export';
-import { ExecutionAnalyticsDashboard } from '../features/execution-analytics';
-import { DecisionReportHubPage } from '../features/decision-record/components/DecisionReportHubPage';
-import { ExperimentAnalyticsHubPage } from '../features/workflow-experiment/components/ExperimentAnalyticsHubPage';
-import { AgentWorkbenchPage } from '../features/agent-workbench';
-import { TemplateMarketPage } from '../features/template-market';
-import { FuturesSimPage } from '../features/futures-sim';
-import { UserConfigBindingPage } from '../features/user-config-binding';
-import { ReplayEvaluationPage } from '../features/replay-evaluation';
-import { WorkflowAdvancedHubPage } from '../features/workflow-advanced/components/WorkflowAdvancedHubPage';
-import { AgentCopilotPage } from '../features/agent-copilot';
+import { WorkflowHubPage } from '../features/workflow-studio/components/WorkflowHubPage';
+import { WorkflowConfigPage } from '../features/workflow-studio/components/WorkflowConfigPage';
+import { ExecutionInsightPage } from '../features/workflow-studio/components/ExecutionInsightPage';
+import { AgentChatPanel } from '../features/agent-chat';
 import { MetricDictionaryPanel } from '../features/semantic-layer';
 import { DataQualityDashboard } from '../features/data-quality';
 
@@ -131,86 +117,46 @@ export const router = createBrowserRouter([
         element: <WorkflowDefinitionPage />,
       },
       {
-        path: 'workflow/executions',
-        element: <WorkflowExecutionPage />,
+        path: 'workflow/hub',
+        element: <WorkflowHubPage />,
       },
       {
-        path: 'workflow/rules',
-        element: <DecisionRulePackPage />,
+        path: 'workflow/config',
+        element: <WorkflowConfigPage />,
       },
       {
-        path: 'workflow/agents',
-        element: <AgentProfilePage />,
+        path: 'workflow/insight',
+        element: <ExecutionInsightPage />,
       },
       {
-        path: 'workflow/agents/wizard',
-        element: <AgentWizardPage />,
+        path: 'workflow/assistant',
+        element: (
+          <div style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - 96px)' }}>
+            <AgentChatPanel />
+          </div>
+        ),
       },
-      {
-        path: 'workflow/skills',
-        element: <SkillDashboardPage />,
-      },
-
-      {
-        path: 'workflow/prompts',
-        element: <AgentPromptTemplatePage />,
-      },
-      {
-        path: 'workflow/parameters',
-        element: <ParameterSetPage />,
-      },
-      {
-        path: 'workflow/connectors',
-        element: <DataConnectorPage />,
-      },
-      {
-        path: 'workflow/triggers',
-        element: <TriggerGatewayPage />,
-      },
-      {
-        path: 'workflow/decisions',
-        element: <Navigate to="/workflow/executions" replace />,
-      },
-      {
-        path: 'workflow/exports',
-        element: <ReportExportPage />,
-      },
-      {
-        path: 'workflow/experiments',
-        element: <Navigate to="/workflow/advanced?tab=analytics" replace />,
-      },
-      {
-        path: 'workflow/analytics',
-        element: <ExecutionAnalyticsDashboard />,
-      },
-      {
-        path: 'workflow/workbench',
-        element: <AgentWorkbenchPage />,
-      },
-      {
-        path: 'workflow/copilot',
-        element: <AgentCopilotPage />,
-      },
-      {
-        path: 'workflow/templates',
-        element: <TemplateMarketPage />,
-      },
-      {
-        path: 'workflow/futures',
-        element: <FuturesSimPage />,
-      },
-      {
-        path: 'workflow/bindings',
-        element: <UserConfigBindingPage />,
-      },
-      {
-        path: 'workflow/replay',
-        element: <ReplayEvaluationPage />,
-      },
-      {
-        path: 'workflow/advanced',
-        element: <WorkflowAdvancedHubPage />,
-      },
+      // ── 兼容重定向 ──
+      { path: 'workflow/executions', element: <Navigate to="/workflow/hub?tab=executions" replace /> },
+      { path: 'workflow/rules', element: <Navigate to="/workflow/hub?tab=rules" replace /> },
+      { path: 'workflow/parameters', element: <Navigate to="/workflow/hub?tab=parameters" replace /> },
+      { path: 'workflow/connectors', element: <Navigate to="/workflow/hub?tab=connectors" replace /> },
+      { path: 'workflow/decisions', element: <Navigate to="/workflow/hub?tab=executions" replace /> },
+      { path: 'workflow/agents', element: <Navigate to="/workflow/config?tab=agents" replace /> },
+      { path: 'workflow/agents/wizard', element: <Navigate to="/workflow/assistant" replace /> },
+      { path: 'workflow/prompts', element: <Navigate to="/workflow/config?tab=prompts" replace /> },
+      { path: 'workflow/skills', element: <Navigate to="/workflow/config?tab=skills" replace /> },
+      { path: 'workflow/triggers', element: <Navigate to="/workflow/config?tab=triggers" replace /> },
+      { path: 'workflow/exports', element: <Navigate to="/workflow/config?tab=tools" replace /> },
+      { path: 'workflow/templates', element: <Navigate to="/workflow/config?tab=tools" replace /> },
+      { path: 'workflow/bindings', element: <Navigate to="/workflow/config?tab=tools" replace /> },
+      { path: 'workflow/futures', element: <Navigate to="/workflow/config?tab=tools" replace /> },
+      { path: 'workflow/analytics', element: <Navigate to="/workflow/insight?tab=analytics" replace /> },
+      { path: 'workflow/replay', element: <Navigate to="/workflow/insight?tab=replay" replace /> },
+      { path: 'workflow/experiments', element: <Navigate to="/workflow/insight?tab=analytics" replace /> },
+      { path: 'workflow/advanced', element: <Navigate to="/workflow/insight?tab=analytics" replace /> },
+      { path: 'workflow/workbench', element: <Navigate to="/workflow/assistant" replace /> },
+      { path: 'workflow/copilot', element: <Navigate to="/workflow/assistant" replace /> },
       {
         path: 'workflow/metrics',
         element: <MetricDictionaryPanel />,

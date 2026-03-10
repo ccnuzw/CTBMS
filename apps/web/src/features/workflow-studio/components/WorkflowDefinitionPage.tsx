@@ -1,13 +1,16 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState, useCallback } from 'react';
 import type { ColumnsType } from 'antd/es/table';
 import dayjs, { Dayjs } from 'dayjs';
-import { Button, Card, Input, Select, Space, Switch, Table, Tag, Typography, Drawer, Alert } from 'antd';
+import { App, Button, Card, Input, Select, Space, Switch, Table, Tag, Typography, Drawer, Alert } from 'antd';
 import { WorkflowDefinitionDto, WorkflowDefinitionStatus, WorkflowMode, WorkflowUsageMethod, WorkflowVersionDto, WorkflowPublishAuditDto } from '@packages/types';
 
 import { useWorkflowDefinitionViewModel } from './workflow-definition/useWorkflowDefinitionViewModel';
+import { useCreateWorkflowDefinition } from '../api';
 import { WorkflowDefinitionCreateDrawer } from './workflow-definition/WorkflowDefinitionCreateDrawer';
 import { WorkflowDefinitionVersionDrawer } from './workflow-definition/WorkflowDefinitionVersionDrawer';
 import { WorkflowDefinitionPublishWizardModal } from './workflow-definition/WorkflowDefinitionPublishWizardModal';
+import { SceneSelector } from './SceneSelector';
+import type { SceneTemplate } from './sceneTemplates';
 import { WorkflowQuickRunnerModal } from './workflow-definition/WorkflowQuickRunnerModal';
 import {
   modeOptions,
@@ -27,8 +30,39 @@ import { VersionDiffViewer } from './VersionDiffViewer';
 const { Title, Text } = Typography;
 
 export const WorkflowDefinitionPage: React.FC = () => {
+  const { message } = App.useApp();
   const viewModel = useWorkflowDefinitionViewModel();
   const { state, queries, options, actions, mutations } = viewModel;
+  const [isSceneSelectorVisible, setSceneSelectorVisible] = useState(false);
+  const createFromSceneMutation = useCreateWorkflowDefinition();
+
+  const handleSelectScene = useCallback(async (scene: SceneTemplate) => {
+    try {
+      const workflowId = `scene-${scene.sceneCode.toLowerCase()}-${Date.now().toString(36)}`;
+      await createFromSceneMutation.mutateAsync({
+        workflowId,
+        name: scene.sceneName,
+        description: scene.description,
+        mode: scene.recommendedMode,
+        usageMethod: scene.recommendedUsage,
+        templateSource: 'PRIVATE',
+        dslSnapshot: {
+          ...scene.defaultDsl,
+          workflowId,
+          name: scene.sceneName,
+        },
+      });
+      message.success(`"${scene.sceneName}" 流程已创建`);
+      setSceneSelectorVisible(false);
+    } catch (error: any) {
+      message.error(error?.message || '创建失败，请重试');
+    }
+  }, [createFromSceneMutation, message]);
+
+  const handleCreateBlank = useCallback(() => {
+    setSceneSelectorVisible(false);
+    state.setCreateVisible(true);
+  }, [state]);
 
   const strictModeSourceLabel =
     queries.strictModeSetting?.source === 'DB' ? '系统配置' : queries.strictModeSetting?.source === 'ENV' ? '环境变量' : '默认值';
@@ -169,7 +203,7 @@ export const WorkflowDefinitionPage: React.FC = () => {
               <Switch checked={queries.strictModeSetting?.enabled ?? false} loading={queries.strictModeLoading || mutations.updateStrictModeMutation.isPending} checkedChildren="严格" unCheckedChildren="宽松" onChange={actions.handleStrictModeChange} />
               <Tag color="blue">{strictModeSourceLabel}</Tag>
             </Space>
-            <Button type="primary" onClick={() => state.setCreateVisible(true)}>新建工作流</Button>
+            <Button type="primary" onClick={() => setSceneSelectorVisible(true)}>新建工作流</Button>
           </Space>
         </Space>
 
@@ -287,6 +321,19 @@ export const WorkflowDefinitionPage: React.FC = () => {
         onClose={() => { state.setQuickRunnerVisible(false); state.setQuickRunnerVersion(null); }}
         onRun={actions.handleSubmitQuickRunner}
       />
+
+      <Drawer
+        title="选择业务场景"
+        open={isSceneSelectorVisible}
+        width="100%"
+        destroyOnClose
+        onClose={() => setSceneSelectorVisible(false)}
+      >
+        <SceneSelector
+          onSelectScene={handleSelectScene}
+          onCreateBlank={handleCreateBlank}
+        />
+      </Drawer>
     </Card>
   );
 };
