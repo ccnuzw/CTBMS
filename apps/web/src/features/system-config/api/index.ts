@@ -51,7 +51,7 @@ export const useUpdatePrompt = () => {
     return useMutation({
         mutationFn: async ({ id, data }: { id: string; data: Partial<CreatePromptDTO> }) => {
             const res = await fetch(`${PROMPT_API_BASE}/${id}`, {
-                method: 'PUT',
+                method: 'PATCH',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(data),
             });
@@ -138,7 +138,7 @@ export const useUpdateMappingRule = () => {
     return useMutation({
         mutationFn: async ({ id, data }: { id: string; data: UpdateMappingRuleDTO }) => {
             const res = await fetch(`${API_BASE}/rules/${id}`, {
-                method: 'PUT',
+                method: 'PATCH',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(data),
             });
@@ -199,7 +199,7 @@ export const useUpdateAIConfig = () => {
                 throw new Error('configKey is required');
             }
             const res = await fetch(`${AI_CONFIG_API_BASE}/${data.configKey}`, {
-                method: 'PUT',
+                method: 'PATCH',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(data),
             });
@@ -245,7 +245,7 @@ export const useUpdateWorkflowAgentStrictMode = () => {
     return useMutation({
         mutationFn: async (enabled: boolean) => {
             const res = await fetch(`${API_BASE}/workflow-agent-strict-mode`, {
-                method: 'PUT',
+                method: 'PATCH',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ enabled }),
             });
@@ -430,7 +430,7 @@ export const useUpdateDictionaryDomain = () => {
     return useMutation({
         mutationFn: async ({ code, data }: { code: string; data: UpdateDictionaryDomainDTO }) => {
             const res = await fetch(`${DICTIONARY_DOMAIN_API_BASE}/${encodeURIComponent(code)}`, {
-                method: 'PUT',
+                method: 'PATCH',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(data),
             });
@@ -499,7 +499,7 @@ export const useUpdateDictionaryItem = () => {
     return useMutation({
         mutationFn: async ({ domainCode, code, data }: { domainCode: string; code: string; data: UpdateDictionaryItemDTO }) => {
             const res = await fetch(`${DICTIONARY_DOMAIN_API_BASE}/${encodeURIComponent(domainCode)}/items/${encodeURIComponent(code)}`, {
-                method: 'PUT',
+                method: 'PATCH',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(data),
             });

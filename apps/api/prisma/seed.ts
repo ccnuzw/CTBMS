@@ -115,6 +115,9 @@ async function main() {
   runSeedScript('seed-trigger-configs.ts');
   runSeedScript('seed-user-config-bindings.ts');
 
+  // 9.6 对话工作流专用 DataConnector + AgentProfile
+  runSeedScript('seed-conversational-workflow.ts');
+
   // 9.5 A类预警规则
   runSeedScript('seed-market-alert-rules.ts');
 

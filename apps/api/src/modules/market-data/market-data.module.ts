@@ -1,8 +1,16 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '../config/config.module';
 import { MarketDataCutoverCompensationJob } from './market-data-cutover-compensation.job';
-import { MarketDataController } from './market-data.controller';
-import { MarketDataV1Controller } from './market-data.v1.controller';
+import {
+  MarketDataQueryController,
+  ReconciliationController,
+  ReconciliationCutoverController,
+} from './controllers';
+import {
+  MarketDataQueryV1Controller,
+  ReconciliationV1Controller,
+  ReconciliationCutoverV1Controller,
+} from './market-data.v1.controller';
 import { MarketDataReconciliationMetricsJob } from './market-data-reconciliation-metrics.job';
 import { MarketDataService } from './market-data.service';
 import { MarketDataQueryService } from './services/market-data-query.service';
@@ -12,7 +20,14 @@ import { MarketDataReconciliationService } from './services/market-data-reconcil
 
 @Module({
   imports: [ConfigModule],
-  controllers: [MarketDataController, MarketDataV1Controller],
+  controllers: [
+    MarketDataQueryController,
+    ReconciliationController,
+    ReconciliationCutoverController,
+    MarketDataQueryV1Controller,
+    ReconciliationV1Controller,
+    ReconciliationCutoverV1Controller,
+  ],
   providers: [
     MarketDataQueryService,
     MarketDataPersistenceService,

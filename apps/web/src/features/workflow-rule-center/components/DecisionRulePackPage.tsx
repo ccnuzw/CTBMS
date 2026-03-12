@@ -79,20 +79,24 @@ const templateSourceOptions: { label: string; value: WorkflowTemplateSource }[] 
 ];
 
 const operatorOptions: { label: string; value: DecisionRuleOperator }[] = [
-    { label: 'GT', value: 'GT' },
-    { label: 'GTE', value: 'GTE' },
-    { label: 'LT', value: 'LT' },
-    { label: 'LTE', value: 'LTE' },
-    { label: 'EQ', value: 'EQ' },
-    { label: 'NEQ', value: 'NEQ' },
-    { label: 'IN', value: 'IN' },
-    { label: 'NOT_IN', value: 'NOT_IN' },
-    { label: 'CONTAINS', value: 'CONTAINS' },
-    { label: 'NOT_CONTAINS', value: 'NOT_CONTAINS' },
-    { label: 'EXISTS', value: 'EXISTS' },
-    { label: 'NOT_EXISTS', value: 'NOT_EXISTS' },
-    { label: 'BETWEEN', value: 'BETWEEN' },
+    { label: '大于', value: 'GT' },
+    { label: '大于等于', value: 'GTE' },
+    { label: '小于', value: 'LT' },
+    { label: '小于等于', value: 'LTE' },
+    { label: '等于', value: 'EQ' },
+    { label: '不等于', value: 'NEQ' },
+    { label: '在...之中', value: 'IN' },
+    { label: '不在...之中', value: 'NOT_IN' },
+    { label: '包含', value: 'CONTAINS' },
+    { label: '不包含', value: 'NOT_CONTAINS' },
+    { label: '存在', value: 'EXISTS' },
+    { label: '不存在', value: 'NOT_EXISTS' },
+    { label: '介于...之间', value: 'BETWEEN' },
 ];
+
+const operatorLabelMap: Record<string, string> = Object.fromEntries(
+    operatorOptions.map((item) => [item.value, item.label]),
+);
 
 const parseExpectedValue = (expectedValueText?: string): unknown => {
     const normalized = expectedValueText?.trim();
@@ -378,7 +382,7 @@ export const DecisionRulePackPage: React.FC = () => {
                 title: '操作符',
                 dataIndex: 'operator',
                 width: 120,
-                render: (value: string) => <Tag>{value}</Tag>,
+                render: (value: string) => <Tag>{operatorLabelMap[value] || value}</Tag>,
             },
             {
                 title: '预期值',

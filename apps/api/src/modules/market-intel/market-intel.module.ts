@@ -1,6 +1,20 @@
 import { Module } from '@nestjs/common';
-import { MarketIntelController } from './market-intel.controller';
-import { MarketIntelV1Controller } from './market-intel.v1.controller';
+import {
+  IntelCrudController,
+  PriceDataController,
+  PriceAlertController,
+  EventInsightController,
+  IntelSearchController,
+  IntelDocumentController,
+} from './controllers';
+import {
+  IntelCrudV1Controller,
+  PriceDataV1Controller,
+  PriceAlertV1Controller,
+  EventInsightV1Controller,
+  IntelSearchV1Controller,
+  IntelDocumentV1Controller,
+} from './market-intel.v1.controller';
 import { IntelCrudService } from './intel-crud.service';
 import { IntelEventInsightService } from './intel-event-insight.service';
 import { IntelAnalysisService } from './intel-analysis.service';
@@ -20,7 +34,24 @@ import { KnowledgeModule } from '../knowledge/knowledge.module';
 
 @Module({
   imports: [KnowledgeModule],
-  controllers: [MarketIntelController, MarketIntelV1Controller],
+  controllers: [
+    // Base controllers — search/document controllers MUST come before CRUD controller
+    // because IntelCrudController has a wildcard @Get(':id') route that would
+    // swallow named routes like /feed, /universal-search, etc.
+    IntelSearchController,
+    IntelDocumentController,
+    PriceDataController,
+    PriceAlertController,
+    EventInsightController,
+    IntelCrudController,
+    // V1 controllers (same order: named routes before wildcard :id)
+    IntelSearchV1Controller,
+    IntelDocumentV1Controller,
+    PriceDataV1Controller,
+    PriceAlertV1Controller,
+    EventInsightV1Controller,
+    IntelCrudV1Controller,
+  ],
   providers: [
     IntelCrudService,
     IntelAnalysisService,
@@ -30,13 +61,10 @@ import { KnowledgeModule } from '../knowledge/knowledge.module';
     PriceAnalyticsService,
     PriceTimeseriesService,
     PriceAlertService,
-
     IntelAttachmentService,
-
     DocumentParserService,
     PdfToMarkdownService,
-    PdfToMarkdownService,
-      IntelEventInsightService,
+    IntelEventInsightService,
   ],
   exports: [
     IntelCrudService,
@@ -47,13 +75,10 @@ import { KnowledgeModule } from '../knowledge/knowledge.module';
     PriceAnalyticsService,
     PriceTimeseriesService,
     PriceAlertService,
-
     IntelAttachmentService,
-
     DocumentParserService,
     PdfToMarkdownService,
-    PdfToMarkdownService,
-      IntelEventInsightService,
+    IntelEventInsightService,
   ],
 })
 export class MarketIntelModule { }

@@ -57,7 +57,8 @@ export class DataFetchNodeExecutor implements WorkflowNodeExecutor {
   ) { }
 
   supports(node: WorkflowNode): boolean {
-    return node.type === 'data-fetch';
+    // external-api-fetch 本质上也是通过外部 API 获取数据，复用 data-fetch 逻辑
+    return node.type === 'data-fetch' || node.type === 'external-api-fetch';
   }
 
   async execute(context: NodeExecutionContext): Promise<NodeExecutionResult> {

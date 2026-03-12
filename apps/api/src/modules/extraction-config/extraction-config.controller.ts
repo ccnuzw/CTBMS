@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Put, Delete, Body, Param, Query } from '@nestjs/common';
+import { Controller, Get, Post, Patch, Delete, Body, Param, Query } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { ExtractionConfigService } from './extraction-config.service';
 import { RuleCondition } from '../ai/rule-engine.service';
@@ -34,7 +34,7 @@ export class ExtractionConfigController {
         return this.configService.createEventType(data);
     }
 
-    @Put('event-types/:id')
+    @Patch('event-types/:id')
     updateEventType(
         @Param('id') id: string,
         @Body() data: Partial<{
@@ -82,7 +82,7 @@ export class ExtractionConfigController {
         return this.configService.createInsightType(data);
     }
 
-    @Put('insight-types/:id')
+    @Patch('insight-types/:id')
     updateInsightType(
         @Param('id') id: string,
         @Body() data: Partial<{
@@ -139,7 +139,7 @@ export class ExtractionConfigController {
         return this.configService.createRule(data);
     }
 
-    @Put('rules/:id')
+    @Patch('rules/:id')
     updateRule(
         @Param('id') id: string,
         @Body() data: Partial<{

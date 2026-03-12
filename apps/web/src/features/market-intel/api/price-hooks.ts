@@ -267,7 +267,7 @@ export const useUpdateAlertRule = () => {
             id: string;
             payload: Partial<Omit<MarketAlertRule, 'id' | 'createdAt' | 'updatedAt'>>;
         }) => {
-            const res = await apiClient.put<MarketAlertRule[]>(
+            const res = await apiClient.patch<MarketAlertRule[]>(
                 `/v1/market-intel/alerts/rules/${id}`,
                 payload,
             );
@@ -344,7 +344,7 @@ export const useEvaluateAlerts = () => {
             }
             const suffix = params.toString();
             const res = await apiClient.post<EvaluateAlertsResponse>(
-                `/v1/market-intel/alerts/evaluate${suffix ? `?${suffix}` : ''}`,
+                `/v1/market-intel/alerts/actions/evaluate${suffix ? `?${suffix}` : ''}`,
             );
             return res.data;
         },

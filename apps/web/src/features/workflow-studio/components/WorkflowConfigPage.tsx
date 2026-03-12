@@ -1,50 +1,125 @@
-import React, { useState } from 'react';
-import { Tabs, Space, Typography, theme, Segmented } from 'antd';
+import React from 'react';
+import { Tabs, Space, Typography, theme, Flex } from 'antd';
 import {
     TeamOutlined,
     FormOutlined,
     AppstoreOutlined,
+    SettingOutlined,
+    SafetyCertificateOutlined,
+    ThunderboltOutlined,
 } from '@ant-design/icons';
 import { useSearchParams } from 'react-router-dom';
 import { AgentProfilePage, AgentPromptTemplatePage, SkillDashboardPage } from '../../workflow-agent-center';
 import { TriggerGatewayPage } from '../../trigger-gateway';
-import { ReportExportPage } from '../../report-export';
-import { TemplateMarketPage } from '../../template-market';
-import { UserConfigBindingPage } from '../../user-config-binding';
-import { FuturesSimPage } from '../../futures-sim';
+import { ParameterSetPage } from '../../workflow-parameter-center';
+import { DecisionRulePackPage } from '../../workflow-rule-center';
+import { WorkflowUxModeSwitcher } from '../../../components/WorkflowUxModeSwitcher';
+import { useWorkflowUxMode } from '../../../hooks/useWorkflowUxMode';
 
 const { Title, Paragraph } = Typography;
 
-type ToolView = 'skills' | 'triggers' | 'exports' | 'templates' | 'bindings' | 'futures';
+interface TabDef {
+    key: string;
+    label: React.ReactNode;
+    children: React.ReactNode;
+    /** 'simple' | 'standard' | 'expert' — 最低显示级别 */
+    minMode: 'simple' | 'standard' | 'expert';
+}
 
-const TOOL_OPTIONS = [
-    { label: '技能管理', value: 'skills' as ToolView },
-    { label: '自动触发', value: 'triggers' as ToolView },
-    { label: '报告导出', value: 'exports' as ToolView },
-    { label: '模板市场', value: 'templates' as ToolView },
-    { label: '用户绑定', value: 'bindings' as ToolView },
-    { label: '期货模拟', value: 'futures' as ToolView },
+const ALL_TABS: TabDef[] = [
+    {
+        key: 'agents',
+        label: (
+            <Space>
+                <TeamOutlined />
+                智能体
+            </Space>
+        ),
+        children: <AgentProfilePage />,
+        minMode: 'simple',
+    },
+    {
+        key: 'params',
+        label: (
+            <Space>
+                <SettingOutlined />
+                参数配置
+            </Space>
+        ),
+        children: <ParameterSetPage />,
+        minMode: 'simple',
+    },
+    {
+        key: 'rules',
+        label: (
+            <Space>
+                <SafetyCertificateOutlined />
+                规则配置
+            </Space>
+        ),
+        children: <DecisionRulePackPage />,
+        minMode: 'simple',
+    },
+    {
+        key: 'prompts',
+        label: (
+            <Space>
+                <FormOutlined />
+                提示词
+            </Space>
+        ),
+        children: <AgentPromptTemplatePage />,
+        minMode: 'standard',
+    },
+    {
+        key: 'skills',
+        label: (
+            <Space>
+                <AppstoreOutlined />
+                技能
+            </Space>
+        ),
+        children: <SkillDashboardPage />,
+        minMode: 'standard',
+    },
+    {
+        key: 'triggers',
+        label: (
+            <Space>
+                <ThunderboltOutlined />
+                自动触发
+            </Space>
+        ),
+        children: <TriggerGatewayPage />,
+        minMode: 'expert',
+    },
 ];
 
-const TOOL_VIEWS: Record<ToolView, React.ReactNode> = {
-    skills: <SkillDashboardPage />,
-    triggers: <TriggerGatewayPage />,
-    exports: <ReportExportPage />,
-    templates: <TemplateMarketPage />,
-    bindings: <UserConfigBindingPage />,
-    futures: <FuturesSimPage />,
-};
+const MODE_LEVEL: Record<string, number> = { simple: 0, standard: 1, expert: 2 };
 
 /**
  * 配置管理
  *
- * 收敛后 3 个 Tab：智能体、提示词、技能与工具
+ * 收敛后 Tab：
+ * - Simple:   智能体 | 参数配置 | 规则配置
+ * - Standard: + 提示词 | 技能
+ * - Expert:   + 自动触发
+ *
+ * 已移除：模板市场（→工作流管理页）、报告导出（→运营中心）、用户绑定、期货模拟
  */
 export const WorkflowConfigPage: React.FC = () => {
     const { token } = theme.useToken();
     const [searchParams, setSearchParams] = useSearchParams();
     const activeTab = searchParams.get('tab') ?? 'agents';
-    const [toolView, setToolView] = useState<ToolView>('skills');
+    const uxMode = useWorkflowUxMode((s) => s.mode);
+
+    const visibleTabs = ALL_TABS.filter(
+        (tab) => MODE_LEVEL[uxMode] >= MODE_LEVEL[tab.minMode],
+    );
+
+    const resolvedTab = visibleTabs.some((t) => t.key === activeTab)
+        ? activeTab
+        : visibleTabs[0]?.key ?? 'agents';
 
     const handleTabChange = (key: string) => {
         const next = new URLSearchParams(searchParams);
@@ -54,61 +129,28 @@ export const WorkflowConfigPage: React.FC = () => {
 
     return (
         <div>
-            <div style={{ marginBottom: token.marginMD }}>
-                <Title level={4} style={{ margin: 0 }}>
-                    配置管理
-                </Title>
-                <Paragraph type="secondary" style={{ margin: 0, marginTop: 4 }}>
-                    管理智能体、提示词和技能工具
-                </Paragraph>
-            </div>
+            <Flex justify="space-between" align="flex-start" style={{ marginBottom: token.marginMD }}>
+                <div>
+                    <Title level={4} style={{ margin: 0 }}>
+                        配置管理
+                    </Title>
+                    <Paragraph type="secondary" style={{ margin: 0, marginTop: 4 }}>
+                        管理智能体、参数、规则和工作流工具
+                    </Paragraph>
+                </div>
+                <WorkflowUxModeSwitcher />
+            </Flex>
             <Tabs
-                activeKey={activeTab}
+                activeKey={resolvedTab}
                 onChange={handleTabChange}
                 type="card"
                 size="large"
                 destroyInactiveTabPane
-                items={[
-                    {
-                        key: 'agents',
-                        label: (
-                            <Space>
-                                <TeamOutlined />
-                                智能体
-                            </Space>
-                        ),
-                        children: <AgentProfilePage />,
-                    },
-                    {
-                        key: 'prompts',
-                        label: (
-                            <Space>
-                                <FormOutlined />
-                                提示词
-                            </Space>
-                        ),
-                        children: <AgentPromptTemplatePage />,
-                    },
-                    {
-                        key: 'tools',
-                        label: (
-                            <Space>
-                                <AppstoreOutlined />
-                                技能与工具
-                            </Space>
-                        ),
-                        children: (
-                            <Space direction="vertical" size={16} style={{ width: '100%' }}>
-                                <Segmented
-                                    options={TOOL_OPTIONS}
-                                    value={toolView}
-                                    onChange={(value) => setToolView(value as ToolView)}
-                                />
-                                {TOOL_VIEWS[toolView]}
-                            </Space>
-                        ),
-                    },
-                ]}
+                items={visibleTabs.map(({ key, label, children }) => ({
+                    key,
+                    label,
+                    children,
+                }))}
             />
         </div>
     );

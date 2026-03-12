@@ -40,10 +40,8 @@ import {
 import { WorkflowDefinitionPage } from '../features/workflow-studio';
 import { WorkflowHubPage } from '../features/workflow-studio/components/WorkflowHubPage';
 import { WorkflowConfigPage } from '../features/workflow-studio/components/WorkflowConfigPage';
-import { ExecutionInsightPage } from '../features/workflow-studio/components/ExecutionInsightPage';
 import { AgentChatPanel } from '../features/agent-chat';
-import { MetricDictionaryPanel } from '../features/semantic-layer';
-import { DataQualityDashboard } from '../features/data-quality';
+import { ConversationalWorkbench } from '../features/workflow-studio/components/ConversationalWorkbench';
 
 // Backward-compatible redirect: /workstation/report/:type -> unified editor
 const WorkstationReportRedirect = () => {
@@ -120,23 +118,23 @@ export const router = createBrowserRouter([
       },
       {
         path: 'workflow/insight',
-        element: <ExecutionInsightPage />,
+        element: <Navigate to="/workflow/hub?tab=analytics" replace />,
       },
       {
         path: 'workflow/assistant',
         element: (
           <div style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - 96px)' }}>
-            <AgentChatPanel />
+            <ConversationalWorkbench />
           </div>
         ),
       },
       {
         path: 'workflow/metrics',
-        element: <MetricDictionaryPanel />,
+        element: <Navigate to="/workflow/hub?tab=analytics" replace />,
       },
       {
         path: 'workflow/quality',
-        element: <DataQualityDashboard />,
+        element: <Navigate to="/workflow/hub?tab=connectors" replace />,
       },
       // ── 兼容重定向（精简保留关键入口） ──
       { path: 'workflow/agents', element: <Navigate to="/workflow/config?tab=agents" replace /> },

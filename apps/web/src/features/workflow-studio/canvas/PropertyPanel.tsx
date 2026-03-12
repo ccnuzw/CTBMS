@@ -24,6 +24,7 @@ import { NODE_FORM_REGISTRY } from './node-forms/formRegistry';
 import { InputMappingMatrix } from './property-panel/InputMappingMatrix';
 import { NodeDryRunPreview } from './property-panel/NodeDryRunPreview';
 import { RuntimePresetCard as RuntimePresetCardComponent } from './property-panel/RuntimePresetCard';
+import { useWorkflowUxMode, type WorkflowUxMode } from '../../../hooks/useWorkflowUxMode';
 
 const { Text } = Typography;
 
@@ -91,7 +92,12 @@ export const PropertyPanel: React.FC<PropertyPanelProps> = ({
   const [viewMode, setViewMode] = React.useState<'ui' | 'json'>('ui');
   const [activeTab, setActiveTab] = React.useState('overview');
   const [runCollapseKey, setRunCollapseKey] = React.useState<string[]>([]);
-  const [configMode, setConfigMode] = React.useState<'简化' | '高级'>('简化');
+  const globalUxMode = useWorkflowUxMode((s) => s.mode);
+  const [localOverride, setLocalOverride] = React.useState<'简化' | '高级' | null>(null);
+
+  // 全局模式映射到面板模式，支持本地覆盖
+  const effectiveMode: '简化' | '高级' = localOverride
+    ?? (globalUxMode === 'expert' ? '高级' : '简化');
 
   React.useEffect(() => {
     setActiveTab('overview');
@@ -432,9 +438,11 @@ export const PropertyPanel: React.FC<PropertyPanelProps> = ({
             <Form.Item label="类型" style={{ marginBottom: 12 }}>
               <Space>
                 <Tag color={nodeTypeConfig?.color}>{nodeTypeConfig?.label ?? nodeType}</Tag>
-                <Text type="secondary" style={{ fontSize: 11 }}>
-                  {selectedNode.id}
-                </Text>
+                {effectiveMode === '高级' && (
+                  <Text type="secondary" style={{ fontSize: 11 }}>
+                    {selectedNode.id}
+                  </Text>
+                )}
               </Space>
               {nodeTypeConfig?.businessTip && (
                 <div style={{ marginTop: 4 }}>
@@ -445,13 +453,15 @@ export const PropertyPanel: React.FC<PropertyPanelProps> = ({
               )}
             </Form.Item>
 
-            <Form.Item label="启用" style={{ marginBottom: 12 }}>
-              <Switch
-                checked={isEnabled}
-                onChange={(value) => handleFieldChange('enabled', value)}
-                size="small"
-              />
-            </Form.Item>
+            {effectiveMode === '高级' && (
+              <Form.Item label="启用" style={{ marginBottom: 12 }}>
+                <Switch
+                  checked={isEnabled}
+                  onChange={(value) => handleFieldChange('enabled', value)}
+                  size="small"
+                />
+              </Form.Item>
+            )}
 
             <Form.Item label="描述" style={{ marginBottom: 12 }}>
               <Input.TextArea
@@ -462,16 +472,18 @@ export const PropertyPanel: React.FC<PropertyPanelProps> = ({
               />
             </Form.Item>
 
-            <Form.Item label="标签" style={{ marginBottom: 12 }}>
-              <Select
-                mode="tags"
-                value={nodeTags}
-                onChange={(value) => handleFieldChange('tags', value)}
-                tokenSeparators={[',']}
-                placeholder="添加标签..."
-                size="small"
-              />
-            </Form.Item>
+            {effectiveMode === '高级' && (
+              <Form.Item label="标签" style={{ marginBottom: 12 }}>
+                <Select
+                  mode="tags"
+                  value={nodeTags}
+                  onChange={(value) => handleFieldChange('tags', value)}
+                  tokenSeparators={[',']}
+                  placeholder="添加标签..."
+                  size="small"
+                />
+              </Form.Item>
+            )}
           </Form>
         </div>
       ),
@@ -573,8 +585,9 @@ export const PropertyPanel: React.FC<PropertyPanelProps> = ({
   ];
 
   const SIMPLE_TABS = new Set(['overview', 'capability']);
-  const visibleTabs = configMode === '简化'
-    ? tabs.filter((t) => SIMPLE_TABS.has(t.key))
+  const STANDARD_TABS = new Set(['overview', 'inputs', 'capability', 'validation']);
+  const visibleTabs = effectiveMode === '简化'
+    ? tabs.filter((t) => (globalUxMode === 'standard' ? STANDARD_TABS : SIMPLE_TABS).has(t.key))
     : tabs;
 
   return (
@@ -624,10 +637,10 @@ export const PropertyPanel: React.FC<PropertyPanelProps> = ({
           <Segmented
             size="small"
             options={['简化', '高级']}
-            value={configMode}
+            value={effectiveMode}
             onChange={(value) => {
-              setConfigMode(value as '简化' | '高级');
-              if (value === '简化' && !SIMPLE_TABS.has(activeTab)) {
+              setLocalOverride(value as '简化' | '高级');
+              if (value === '简化' && !SIMPLE_TABS.has(activeTab) && !STANDARD_TABS.has(activeTab)) {
                 setActiveTab('overview');
               }
             }}

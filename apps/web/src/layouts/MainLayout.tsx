@@ -91,24 +91,9 @@ export const MainLayout: React.FC = () => {
             label: '运营中心',
           },
           {
-            key: '/workflow/insight',
-            icon: <FundOutlined />,
-            label: '分析报告',
-          },
-          {
             key: '/workflow/config',
             icon: <SettingOutlined />,
             label: '配置管理',
-          },
-          {
-            key: '/workflow/metrics',
-            icon: <DatabaseOutlined />,
-            label: '指标字典',
-          },
-          {
-            key: '/workflow/quality',
-            icon: <ExperimentOutlined />,
-            label: '数据质量',
           },
         ],
       },

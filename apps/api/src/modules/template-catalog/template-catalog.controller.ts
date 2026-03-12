@@ -3,7 +3,7 @@ import {
   Get,
   Post,
   UseGuards,
-  Put,
+  Patch,
   Delete,
   Body,
   Param,
@@ -28,7 +28,7 @@ type AuthRequest = ExpressRequest & { user?: { id?: string } };
 
 @Controller('template-catalog')
 export class TemplateCatalogController {
-  constructor(private readonly service: TemplateCatalogService) {}
+  constructor(private readonly service: TemplateCatalogService) { }
 
   private getUserId(req: AuthRequest): string {
     const userId = req.user?.id;
@@ -73,7 +73,7 @@ export class TemplateCatalogController {
     return this.service.findOne(id, userId);
   }
 
-  @Put(':id')
+  @Patch(':id')
   update(
     @Request() req: AuthRequest,
     @Param('id') id: string,

@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Put, Delete, Body, Param, Query, Res } from '@nestjs/common';
+import { Controller, Get, Post, Patch, Delete, Body, Param, Query, Res } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { Response } from 'express';
 import { ConfigService } from './config.service';
@@ -13,9 +13,9 @@ import { setDeprecationHeaders } from '../../common/utils/deprecation';
 
 @Controller('config')
 export class ConfigController {
-  constructor(private readonly configService: ConfigService) {}
+  constructor(private readonly configService: ConfigService) { }
 
-  @Post('refresh')
+  @Post('actions/refresh')
   async refreshCache() {
     await this.configService.refreshCache();
     return { success: true, message: 'Cache refreshed' };
@@ -33,7 +33,7 @@ export class ConfigController {
     return this.configService.createMappingRule(body);
   }
 
-  @Put('rules/:id')
+  @Patch('rules/:id')
   async updateRule(@Param('id') id: string, @Body() body: Prisma.BusinessMappingRuleUpdateInput) {
     return this.configService.updateMappingRule(id, body);
   }
@@ -85,7 +85,7 @@ export class ConfigController {
     return this.configService.getWorkflowAgentStrictMode();
   }
 
-  @Put('workflow-agent-strict-mode')
+  @Patch('workflow-agent-strict-mode')
   async setWorkflowAgentStrictMode(@Body() body: { enabled: boolean; updatedBy?: string }) {
     return this.configService.setWorkflowAgentStrictMode(body.enabled, body.updatedBy);
   }
@@ -95,7 +95,7 @@ export class ConfigController {
     return this.configService.getWorkflowStandardizedReadMode();
   }
 
-  @Put('workflow-standardized-read-mode')
+  @Patch('workflow-standardized-read-mode')
   async setWorkflowStandardizedReadMode(@Body() body: { enabled: boolean; updatedBy?: string }) {
     return this.configService.setWorkflowStandardizedReadMode(body.enabled, body.updatedBy);
   }
@@ -105,7 +105,7 @@ export class ConfigController {
     return this.configService.getWorkflowReconciliationGateEnabled();
   }
 
-  @Put('workflow-reconciliation-gate-enabled')
+  @Patch('workflow-reconciliation-gate-enabled')
   async setWorkflowReconciliationGateEnabled(
     @Body() body: { enabled: boolean; updatedBy?: string },
   ) {
@@ -117,7 +117,7 @@ export class ConfigController {
     return this.configService.getWorkflowReconciliationMaxAgeMinutes();
   }
 
-  @Put('workflow-reconciliation-max-age-minutes')
+  @Patch('workflow-reconciliation-max-age-minutes')
   async setWorkflowReconciliationMaxAgeMinutes(
     @Body() body: { value: number; updatedBy?: string },
   ) {
@@ -135,7 +135,7 @@ export class ConfigController {
     return this.configService.createDictionaryDomain(body);
   }
 
-  @Put('dictionary-domains/:code')
+  @Patch('dictionary-domains/:code')
   async updateDictionaryDomain(
     @Param('code') code: string,
     @Body() body: UpdateDictionaryDomainDto,
@@ -161,7 +161,7 @@ export class ConfigController {
     return this.configService.createDictionaryItem(code, body);
   }
 
-  @Put('dictionary-domains/:code/items/:itemCode')
+  @Patch('dictionary-domains/:code/items/:itemCode')
   async updateDictionaryItem(
     @Param('code') code: string,
     @Param('itemCode') itemCode: string,

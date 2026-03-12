@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { useWorkflowUxMode } from '../../../../hooks/useWorkflowUxMode';
 import { Button, Drawer, Form, Input, Select, Space, App } from 'antd';
 import { CreateWorkflowDefinitionFormValues } from './types';
 import { slugifyWorkflowId, buildInitialDslSnapshot } from './utils';
@@ -30,6 +31,8 @@ export const WorkflowDefinitionCreateDrawer: React.FC<WorkflowDefinitionCreateDr
     const [form] = Form.useForm<CreateWorkflowDefinitionFormValues>();
     const [isWorkflowIdCustomized, setIsWorkflowIdCustomized] = useState(false);
     const createMutation = useCreateWorkflowDefinition();
+    const uxMode = useWorkflowUxMode((s) => s.mode);
+    const isSimple = uxMode === 'simple';
 
     const resolveStarterTemplateProfile = (
         starterTemplate?: CreateWorkflowDefinitionFormValues['starterTemplate'],
@@ -156,46 +159,50 @@ export const WorkflowDefinitionCreateDrawer: React.FC<WorkflowDefinitionCreateDr
                 >
                     <Input placeholder="例如: 玉米晨间线性决策" />
                 </Form.Item>
-                <Form.Item
-                    label="流程编码"
-                    name="workflowId"
-                    rules={[
-                        { required: true, message: '请输入流程编码' },
-                        { pattern: /^[a-zA-Z0-9_-]{3,100}$/, message: '仅支持字母、数字、下划线和中划线' },
-                    ]}
-                    extra="系统会根据流程名称自动生成编码，你也可以手动覆盖。"
-                >
-                    <Input
-                        placeholder="例如: wf_corn_morning_linear"
-                        addonAfter={
-                            <Button
-                                type="link"
-                                size="small"
-                                onClick={() => {
-                                    const generated = slugifyWorkflowId(form.getFieldValue('name'));
-                                    form.setFieldsValue({ workflowId: generated || undefined });
-                                    setIsWorkflowIdCustomized(false);
-                                }}
-                            >
-                                自动生成
-                            </Button>
-                        }
-                    />
-                </Form.Item>
-                <Form.Item
-                    label="默认搭载规则包（可选）"
-                    name="defaultRulePackCode"
-                    extra="选择后将自动生成：数据触发 -> 规则判定 -> 风险闸门 -> 消息通知 的完整标准流程；未选择时自动跳过规则判定环节。"
-                >
-                    <Select
-                        allowClear
-                        showSearch
-                        loading={isRulePackLoading}
-                        options={rulePackOptions}
-                        optionFilterProp="label"
-                        placeholder="请选择规则包编码"
-                    />
-                </Form.Item>
+                {!isSimple && (
+                    <Form.Item
+                        label="流程编码"
+                        name="workflowId"
+                        rules={[
+                            { required: true, message: '请输入流程编码' },
+                            { pattern: /^[a-zA-Z0-9_-]{3,100}$/, message: '仅支持字母、数字、下划线和中划线' },
+                        ]}
+                        extra="系统会根据流程名称自动生成编码，你也可以手动覆盖。"
+                    >
+                        <Input
+                            placeholder="例如: wf_corn_morning_linear"
+                            addonAfter={
+                                <Button
+                                    type="link"
+                                    size="small"
+                                    onClick={() => {
+                                        const generated = slugifyWorkflowId(form.getFieldValue('name'));
+                                        form.setFieldsValue({ workflowId: generated || undefined });
+                                        setIsWorkflowIdCustomized(false);
+                                    }}
+                                >
+                                    自动生成
+                                </Button>
+                            }
+                        />
+                    </Form.Item>
+                )}
+                {!isSimple && (
+                    <Form.Item
+                        label="默认搭载规则包（可选）"
+                        name="defaultRulePackCode"
+                        extra="选择后将自动生成：数据触发 -> 规则判定 -> 风险闸门 -> 消息通知 的完整标准流程；未选择时自动跳过规则判定环节。"
+                    >
+                        <Select
+                            allowClear
+                            showSearch
+                            loading={isRulePackLoading}
+                            options={rulePackOptions}
+                            optionFilterProp="label"
+                            placeholder="请选择规则包编码"
+                        />
+                    </Form.Item>
+                )}
                 <Form.Item label="描述" name="description">
                     <TextArea rows={4} placeholder="流程说明（可选）" />
                 </Form.Item>

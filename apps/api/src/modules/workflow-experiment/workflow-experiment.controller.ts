@@ -2,7 +2,7 @@ import {
     Controller,
     Get,
     Post,
-    Put,
+    Patch,
     Delete,
     Body,
     Param,
@@ -48,7 +48,7 @@ export class WorkflowExperimentController {
         return this.service.findOne(this.getUserId(req), id);
     }
 
-    @Put(':id')
+    @Patch(':id')
     update(
         @Request() req: AuthRequest,
         @Param('id') id: string,

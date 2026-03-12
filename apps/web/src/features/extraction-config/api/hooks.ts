@@ -46,7 +46,7 @@ export const useUpdateEventType = () => {
     const queryClient = useQueryClient();
     return useMutation({
         mutationFn: async ({ id, ...data }: Partial<EventTypeConfig> & { id: string }) => {
-            const { data: result } = await apiClient.put(`/extraction-config/event-types/${id}`, data);
+            const { data: result } = await apiClient.patch(`/extraction-config/event-types/${id}`, data);
             return result;
         },
         onSuccess: () => {
@@ -112,7 +112,7 @@ export const useUpdateInsightType = () => {
     const queryClient = useQueryClient();
     return useMutation({
         mutationFn: async ({ id, ...data }: Partial<InsightTypeConfig> & { id: string }) => {
-            const { data: result } = await apiClient.put(`/extraction-config/insight-types/${id}`, data);
+            const { data: result } = await apiClient.patch(`/extraction-config/insight-types/${id}`, data);
             return result;
         },
         onSuccess: () => {
@@ -195,7 +195,7 @@ export const useUpdateExtractionRule = () => {
     const queryClient = useQueryClient();
     return useMutation({
         mutationFn: async ({ id, ...data }: Partial<ExtractionRule> & { id: string }) => {
-            const { data: result } = await apiClient.put(`/extraction-config/rules/${id}`, data);
+            const { data: result } = await apiClient.patch(`/extraction-config/rules/${id}`, data);
             return result;
         },
         onSuccess: () => {

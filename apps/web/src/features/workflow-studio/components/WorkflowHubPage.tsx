@@ -1,23 +1,25 @@
 import React from 'react';
-import { Tabs, Space, Typography, theme } from 'antd';
+import { Tabs, Space, Typography, theme, Flex } from 'antd';
 import {
     PlayCircleOutlined,
     ApiOutlined,
-    ControlOutlined,
-    SafetyCertificateOutlined,
+    BarChartOutlined,
+    FileTextOutlined,
 } from '@ant-design/icons';
 import { useSearchParams } from 'react-router-dom';
 import { WorkflowExecutionPage } from '../../workflow-runtime';
-import { DataConnectorPage } from '../../workflow-data-connector';
-import { ParameterSetPage } from '../../workflow-parameter-center';
-import { DecisionRulePackPage } from '../../workflow-rule-center';
+import { DataSourcePanel } from './DataSourcePanel';
+import { ExecutionAnalyticsDashboard } from '../../execution-analytics';
+import { ReportExportPage } from '../../report-export';
+import { WorkflowUxModeSwitcher } from '../../../components/WorkflowUxModeSwitcher';
 
 const { Title, Paragraph } = Typography;
 
 /**
  * 运营中心
  *
- * 合并 4 个运营面板为 Tabs：运行记录、数据连接器、参数中心、规则中心
+ * 收敛后统一入口：运行记录、数据源、统计分析、报告导出
+ * （参数/规则已归入「配置管理」，分析报告已合并至此）
  */
 export const WorkflowHubPage: React.FC = () => {
     const { token } = theme.useToken();
@@ -33,19 +35,23 @@ export const WorkflowHubPage: React.FC = () => {
 
     return (
         <div>
-            <div style={{ marginBottom: token.marginMD }}>
-                <Title level={4} style={{ margin: 0 }}>
-                    运营中心
-                </Title>
-                <Paragraph type="secondary" style={{ margin: 0, marginTop: 4 }}>
-                    工作流运行记录、数据源、参数和业务规则管理
-                </Paragraph>
-            </div>
+            <Flex justify="space-between" align="flex-start" style={{ marginBottom: token.marginMD }}>
+                <div>
+                    <Title level={4} style={{ margin: 0 }}>
+                        运营中心
+                    </Title>
+                    <Paragraph type="secondary" style={{ margin: 0, marginTop: 4 }}>
+                        工作流运行记录、数据源管理、运营统计与报告导出
+                    </Paragraph>
+                </div>
+                <WorkflowUxModeSwitcher />
+            </Flex>
             <Tabs
                 activeKey={activeTab}
                 onChange={handleTabChange}
                 type="card"
                 size="large"
+                destroyInactiveTabPane
                 items={[
                     {
                         key: 'executions',
@@ -65,27 +71,27 @@ export const WorkflowHubPage: React.FC = () => {
                                 数据源
                             </Space>
                         ),
-                        children: <DataConnectorPage />,
+                        children: <DataSourcePanel />,
                     },
                     {
-                        key: 'parameters',
+                        key: 'analytics',
                         label: (
                             <Space>
-                                <ControlOutlined />
-                                参数配置
+                                <BarChartOutlined />
+                                统计分析
                             </Space>
                         ),
-                        children: <ParameterSetPage />,
+                        children: <ExecutionAnalyticsDashboard />,
                     },
                     {
-                        key: 'rules',
+                        key: 'exports',
                         label: (
                             <Space>
-                                <SafetyCertificateOutlined />
-                                业务规则
+                                <FileTextOutlined />
+                                报告导出
                             </Space>
                         ),
-                        children: <DecisionRulePackPage />,
+                        children: <ReportExportPage />,
                     },
                 ]}
             />

@@ -110,7 +110,7 @@ export const useIntelSmartBriefing = () => {
                 });
             }
             const res = await apiClient.post<{ summary: string }>(
-                '/v1/market-intel/dashboard/briefing',
+                '/v1/market-intel/dashboard/actions/briefing',
                 payload,
             );
             return res.data;

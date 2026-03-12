@@ -526,7 +526,7 @@ export const useUpdateTaskTemplate = () => {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async ({ id, dto }: { id: string; dto: Partial<CreateTaskTemplateDto> }) => {
-      const { data } = await apiClient.put<TaskTemplate>(`${TEMPLATE_BASE_URL}/${id}`, dto);
+      const { data } = await apiClient.patch<TaskTemplate>(`${TEMPLATE_BASE_URL}/${id}`, dto);
       return data;
     },
     onSuccess: () => {
@@ -552,7 +552,7 @@ export const useExecuteTaskTemplate = () => {
   return useMutation({
     mutationFn: async (templateId: string) => {
       const { data } = await apiClient.post<{ count: number; message: string }>(
-        `/intel-tasks/templates/${templateId}/execute`
+        `/intel-tasks/templates/${templateId}/actions/execute`
       );
       return data;
     },
@@ -567,7 +567,7 @@ export const useDistributeTasks = () => {
   return useMutation({
     mutationFn: async (dto: { templateId: string; assigneeIds?: string[]; overrideDeadline?: string }) => {
       const { data } = await apiClient.post<{ count: number; message: string }>(
-        '/intel-tasks/distribute',
+        '/intel-tasks/actions/distribute',
         dto
       );
       return data;
@@ -582,7 +582,7 @@ export const usePreviewTaskDistribution = () => {
   return useMutation({
     mutationFn: async (templateId: string) => {
       const { data } = await apiClient.post<import('@packages/types').DistributionPreviewResponse>(
-        `/intel-tasks/templates/${templateId}/preview`
+        `/intel-tasks/templates/${templateId}/actions/preview`
       );
       return data;
     },

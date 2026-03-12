@@ -44,7 +44,7 @@ export const useUpdateUserConfigBinding = () => {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async ({ id, dto }: { id: string; dto: UpdateUserConfigBindingDto }) => {
-      const res = await apiClient.put<UserConfigBindingDto>(`/user-config-bindings/${id}`, dto);
+      const res = await apiClient.patch<UserConfigBindingDto>(`/user-config-bindings/${id}`, dto);
       return res.data;
     },
     onSuccess: () => {

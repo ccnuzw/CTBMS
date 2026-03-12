@@ -139,7 +139,7 @@ export const usePublishWorkflowVersion = () => {
       workflowDefinitionId: string;
       payload: PublishWorkflowVersionDto;
     }) => {
-      const res = await apiClient.post(`${API_BASE}/${workflowDefinitionId}/publish`, payload);
+      const res = await apiClient.post(`${API_BASE}/${workflowDefinitionId}/actions/publish`, payload);
       return res.data;
     },
     onSuccess: (_, variables) => {
@@ -161,7 +161,7 @@ export const useValidateWorkflowDsl = () => {
   return useMutation({
     mutationFn: async (payload: ValidateWorkflowDslDto) => {
       const res = await apiClient.post<WorkflowValidationResult>(
-        `${API_BASE}/validate-dsl`,
+        `${API_BASE}/actions/validate-dsl`,
         payload,
       );
       return res.data;
@@ -173,7 +173,7 @@ export const usePreflightWorkflowDsl = () => {
   return useMutation({
     mutationFn: async (payload: PreflightWorkflowDslDto) => {
       const res = await apiClient.post<WorkflowDslPreflightResultDto>(
-        `${API_BASE}/preflight-dsl`,
+        `${API_BASE}/actions/preflight-dsl`,
         payload,
       );
       return res.data;
@@ -185,7 +185,7 @@ export const usePreviewWorkflowNode = () => {
   return useMutation({
     mutationFn: async (payload: ValidateWorkflowNodePreviewDto) => {
       const res = await apiClient.post<WorkflowNodePreviewResult>(
-        `${API_BASE}/preview-node`,
+        `${API_BASE}/actions/preview-node`,
         payload,
       );
       return res.data;
@@ -202,7 +202,7 @@ export const useTriggerWorkflowExecution = () => {
       paramSnapshot?: Record<string, unknown>;
     }) => {
       const res = await apiClient.post<WorkflowExecutionDetailDto>(
-        '/workflow-executions/trigger',
+        '/workflow-executions/actions/trigger',
         payload,
       );
       return res.data;
@@ -225,7 +225,7 @@ export const useSmartParseParams = () => {
         params: Record<string, unknown>;
         confidence: string;
         reasoning: string;
-      }>(`${API_BASE}/${workflowDefinitionId}/smart-parse-params`, body);
+      }>(`${API_BASE}/${workflowDefinitionId}/actions/smart-parse-params`, body);
       return res.data;
     },
   });

@@ -1,5 +1,6 @@
 import React from 'react';
 import { Form, Input, InputNumber, Select, Alert, Space, Button } from 'antd';
+import { useWorkflowUxMode } from '../../../../hooks/useWorkflowUxMode';
 
 interface FormProps {
     config: Record<string, unknown>;
@@ -7,6 +8,9 @@ interface FormProps {
 }
 
 export const FormulaCalcForm: React.FC<FormProps> = ({ config, onChange }) => {
+    const uxMode = useWorkflowUxMode((s) => s.mode);
+    const isSimple = uxMode === 'simple';
+    const isExpert = uxMode === 'expert';
     // 快捷插入公式辅助函数
     const handleInsert = (str: string) => {
         const current = (config.expression as string) || '';
@@ -49,39 +53,45 @@ export const FormulaCalcForm: React.FC<FormProps> = ({ config, onChange }) => {
                 />
             </Form.Item>
 
-            <Form.Item label="计算精度 (保留小数位数)">
-                <InputNumber
-                    value={config.precision as number ?? 2}
-                    onChange={(v) => onChange('precision', v)}
-                    style={{ width: '100%' }}
-                    min={0}
-                    max={10}
-                />
-            </Form.Item>
+            {!isSimple && (
+                <Form.Item label="计算精度 (保留小数位数)">
+                    <InputNumber
+                        value={config.precision as number ?? 2}
+                        onChange={(v) => onChange('precision', v)}
+                        style={{ width: '100%' }}
+                        min={0}
+                        max={10}
+                    />
+                </Form.Item>
+            )}
 
-            <Form.Item label="舍入规则">
-                <Select
-                    value={config.roundingMode as string || 'HALF_UP'}
-                    onChange={(v) => onChange('roundingMode', v)}
-                    options={[
-                        { label: '四舍五入 (Half Up)', value: 'HALF_UP' },
-                        { label: '向上取整 (Ceiling)', value: 'CEILING' },
-                        { label: '向下取整 (Floor)', value: 'FLOOR' },
-                    ]}
-                />
-            </Form.Item>
+            {isExpert && (
+                <Form.Item label="舍入规则">
+                    <Select
+                        value={config.roundingMode as string || 'HALF_UP'}
+                        onChange={(v) => onChange('roundingMode', v)}
+                        options={[
+                            { label: '四舍五入', value: 'HALF_UP' },
+                            { label: '向上取整', value: 'CEILING' },
+                            { label: '向下取整', value: 'FLOOR' },
+                        ]}
+                    />
+                </Form.Item>
+            )}
 
-            <Form.Item label="空值应对策略" help="当公式引用的节点数据由于某些原因不存在时">
-                <Select
-                    value={config.nullPolicy as string ?? 'FAIL'}
-                    onChange={(v) => onChange('nullPolicy', v)}
-                    options={[
-                        { label: '🚨 抛出异常中止流程 (默认)', value: 'FAIL' },
-                        { label: '🔄 直接返回空值 (Null)', value: 'RETURN_NULL' },
-                        { label: '🔢 在此计算中当作 0 处理', value: 'ZERO' },
-                    ]}
-                />
-            </Form.Item>
+            {isExpert && (
+                <Form.Item label="空值应对策略" help="当公式引用的节点数据由于某些原因不存在时">
+                    <Select
+                        value={config.nullPolicy as string ?? 'FAIL'}
+                        onChange={(v) => onChange('nullPolicy', v)}
+                        options={[
+                            { label: '🚨 抛出异常中止流程 (默认)', value: 'FAIL' },
+                            { label: '🔄 直接返回空值 (Null)', value: 'RETURN_NULL' },
+                            { label: '🔢 在此计算中当作 0 处理', value: 'ZERO' },
+                        ]}
+                    />
+                </Form.Item>
+            )}
         </Form>
     );
 };

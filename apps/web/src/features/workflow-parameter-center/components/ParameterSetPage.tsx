@@ -1,4 +1,5 @@
 import React, { useMemo } from 'react';
+import { useWorkflowUxMode } from '../../../hooks/useWorkflowUxMode';
 import dayjs from 'dayjs';
 import {
   Badge,
@@ -75,6 +76,9 @@ const { Title } = Typography;
 export const ParameterSetPage: React.FC = () => {
   const { token } = theme.useToken();
   const vm = useParameterSetViewModel();
+  const uxMode = useWorkflowUxMode((s) => s.mode);
+  const isSimple = uxMode === 'simple';
+  const isExpert = uxMode === 'expert';
 
   const setColumns = useMemo(
     () => buildSetColumns({ actions: vm.actions, setters: vm.setters, mutations: vm.mutations, state: vm.state }),
@@ -106,7 +110,7 @@ export const ParameterSetPage: React.FC = () => {
           <Space>
             <Input.Search
               allowClear
-              placeholder="按编码/名称搜索"
+              placeholder={isSimple ? '搜索参数包' : '按编码/名称搜索'}
               value={vm.state.keywordInput}
               onChange={(event) => {
                 const nextValue = event.target.value;
@@ -124,21 +128,23 @@ export const ParameterSetPage: React.FC = () => {
               }}
               style={{ width: 260 }}
             />
-            <Select
-              allowClear
-              style={{ width: 140 }}
-              placeholder="状态筛选"
-              options={[
-                { label: getActiveStatusLabel(true), value: true },
-                { label: getActiveStatusLabel(false), value: false },
-              ]}
-              value={vm.state.isActiveFilter}
-              onChange={(value) => {
-                vm.setters.setIsActiveFilter(value);
-                vm.setters.setPage(1);
-              }}
-            />
-            <Button onClick={() => vm.setters.setCompareVisible(true)}>版本对比</Button>
+            {!isSimple && (
+              <Select
+                allowClear
+                style={{ width: 140 }}
+                placeholder="状态筛选"
+                options={[
+                  { label: getActiveStatusLabel(true), value: true },
+                  { label: getActiveStatusLabel(false), value: false },
+                ]}
+                value={vm.state.isActiveFilter}
+                onChange={(value) => {
+                  vm.setters.setIsActiveFilter(value);
+                  vm.setters.setPage(1);
+                }}
+              />
+            )}
+            {isExpert && <Button onClick={() => vm.setters.setCompareVisible(true)}>版本对比</Button>}
             <Button type="primary" onClick={() => vm.setters.setCreateVisible(true)}>
               新建参数包
             </Button>
@@ -183,23 +189,27 @@ export const ParameterSetPage: React.FC = () => {
           form={vm.state.setForm}
           initialValues={{ templateSource: 'PRIVATE' }}
         >
-          <Form.Item name="setCode" label="参数包编码" rules={[{ required: true }]}>
-            <Input placeholder="如 BASELINE_SET" />
-          </Form.Item>
+          {!isSimple && (
+            <Form.Item name="setCode" label="参数包编码" rules={[{ required: true }]}>
+              <Input placeholder="如 BASELINE_SET" />
+            </Form.Item>
+          )}
           <Form.Item name="name" label="名称" rules={[{ required: true }]}>
             <Input />
           </Form.Item>
           <Form.Item name="description" label="说明">
             <Input.TextArea rows={2} />
           </Form.Item>
-          <Form.Item name="templateSource" label="模板来源" rules={[{ required: true }]}>
-            <Select
-              options={[
-                { label: getTemplateSourceLabel('PRIVATE'), value: 'PRIVATE' },
-                { label: getTemplateSourceLabel('PUBLIC'), value: 'PUBLIC' },
-              ]}
-            />
-          </Form.Item>
+          {!isSimple && (
+            <Form.Item name="templateSource" label="模板来源" rules={[{ required: true }]}>
+              <Select
+                options={[
+                  { label: getTemplateSourceLabel('PRIVATE'), value: 'PRIVATE' },
+                  { label: getTemplateSourceLabel('PUBLIC'), value: 'PUBLIC' },
+                ]}
+              />
+            </Form.Item>
+          )}
         </Form>
       </Modal>
 
@@ -250,37 +260,39 @@ export const ParameterSetPage: React.FC = () => {
             </Space>
           </Space>
 
-          <Space wrap>
-            <Select<ParameterScopeLevel>
-              allowClear
-              style={{ width: 220 }}
-              placeholder="按作用域批量重置"
-              value={vm.state.scopeResetLevel}
-              options={scopeOptions.map((item) => ({ label: getScopeLabel(item), value: item }))}
-              onChange={(value) => vm.setters.setScopeResetLevel(value)}
-            />
-            <Input
-              style={{ width: 220 }}
-              placeholder="作用域值(可选)"
-              value={vm.state.scopeResetValue}
-              onChange={(event) => vm.setters.setScopeResetValue(event.target.value)}
-            />
-            <Popconfirm
-              title="确认按当前作用域批量重置到默认值?"
-              onConfirm={vm.actions.handleScopeBatchReset}
-              disabled={!vm.state.scopeResetLevel}
-            >
-              <Button
+          {!isSimple && (
+            <Space wrap>
+              <Select<ParameterScopeLevel>
+                allowClear
+                style={{ width: 220 }}
+                placeholder="按作用域批量重置"
+                value={vm.state.scopeResetLevel}
+                options={scopeOptions.map((item) => ({ label: getScopeLabel(item), value: item }))}
+                onChange={(value) => vm.setters.setScopeResetLevel(value)}
+              />
+              <Input
+                style={{ width: 220 }}
+                placeholder="作用域值(可选)"
+                value={vm.state.scopeResetValue}
+                onChange={(event) => vm.setters.setScopeResetValue(event.target.value)}
+              />
+              <Popconfirm
+                title="确认按当前作用域批量重置到默认值?"
+                onConfirm={vm.actions.handleScopeBatchReset}
                 disabled={!vm.state.scopeResetLevel}
-                loading={vm.mutations.batchResetMutation.isPending}
               >
-                按作用域批量重置
-              </Button>
-            </Popconfirm>
-          </Space>
+                <Button
+                  disabled={!vm.state.scopeResetLevel}
+                  loading={vm.mutations.batchResetMutation.isPending}
+                >
+                  按作用域批量重置
+                </Button>
+              </Popconfirm>
+            </Space>
+          )}
 
           {/* Override Impact Summary */}
-          {vm.data.setDetail && (
+          {vm.data.setDetail && !isSimple && (
             <Row gutter={[16, 16]}>
               <Col xs={12} sm={6}>
                 <Card size="small">
@@ -358,223 +370,225 @@ export const ParameterSetPage: React.FC = () => {
                   />
                 ),
               },
-              {
-                key: 'diff',
-                label: `覆盖对比${vm.data.overrideDiff ? ` (${vm.data.overrideDiff.overriddenCount}/${vm.data.overrideDiff.totalCount})` : ''}`,
-                children: (
-                  <Table<ParameterOverrideDiffItemDto>
-                    rowKey="paramCode"
-                    loading={vm.data.isDiffLoading}
-                    dataSource={vm.data.overrideDiff?.items ?? []}
-                    columns={diffColumns}
-                    pagination={false}
-                    scroll={{ x: 1100 }}
-                  />
-                ),
-              },
-              {
-                key: 'impact',
-                label: '影响预览',
-                children: (
-                  <Space direction="vertical" style={{ width: '100%' }} size={16}>
-                    <Row gutter={[16, 16]}>
-                      <Col xs={12} sm={6}>
-                        <Card size="small">
-                          <Statistic
-                            title="受影响流程"
-                            value={vm.data.impactPreview?.workflowCount ?? 0}
-                            loading={vm.data.isImpactLoading}
-                          />
-                        </Card>
-                      </Col>
-                      <Col xs={12} sm={6}>
-                        <Card size="small">
-                          <Statistic
-                            title="受影响 Agent"
-                            value={vm.data.impactPreview?.agentCount ?? 0}
-                            loading={vm.data.isImpactLoading}
-                          />
-                        </Card>
-                      </Col>
-                    </Row>
+              ...(!isSimple ? [
+                {
+                  key: 'diff',
+                  label: `覆盖对比${vm.data.overrideDiff ? ` (${vm.data.overrideDiff.overriddenCount}/${vm.data.overrideDiff.totalCount})` : ''}`,
+                  children: (
+                    <Table<ParameterOverrideDiffItemDto>
+                      rowKey="paramCode"
+                      loading={vm.data.isDiffLoading}
+                      dataSource={vm.data.overrideDiff?.items ?? []}
+                      columns={diffColumns}
+                      pagination={false}
+                      scroll={{ x: 1100 }}
+                    />
+                  ),
+                },
+                {
+                  key: 'impact',
+                  label: '影响预览',
+                  children: (
+                    <Space direction="vertical" style={{ width: '100%' }} size={16}>
+                      <Row gutter={[16, 16]}>
+                        <Col xs={12} sm={6}>
+                          <Card size="small">
+                            <Statistic
+                              title="受影响流程"
+                              value={vm.data.impactPreview?.workflowCount ?? 0}
+                              loading={vm.data.isImpactLoading}
+                            />
+                          </Card>
+                        </Col>
+                        <Col xs={12} sm={6}>
+                          <Card size="small">
+                            <Statistic
+                              title="受影响 Agent"
+                              value={vm.data.impactPreview?.agentCount ?? 0}
+                              loading={vm.data.isImpactLoading}
+                            />
+                          </Card>
+                        </Col>
+                      </Row>
 
-                    <Card size="small" title="流程影响列表">
-                      <Table<ParameterImpactPreviewDto['workflows'][number]>
-                        rowKey="workflowVersionId"
-                        loading={vm.data.isImpactLoading}
-                        dataSource={vm.data.impactPreview?.workflows ?? []}
-                        pagination={{ pageSize: 8 }}
-                        columns={[
-                          { title: '流程编码', dataIndex: 'workflowCode', width: 180 },
-                          { title: '流程名称', dataIndex: 'workflowName', width: 220 },
-                          {
-                            title: '版本',
-                            dataIndex: 'versionCode',
-                            width: 120,
-                            render: (v) => <Tag>{v}</Tag>,
-                          },
-                        ]}
-                      />
-                    </Card>
+                      <Card size="small" title="流程影响列表">
+                        <Table<ParameterImpactPreviewDto['workflows'][number]>
+                          rowKey="workflowVersionId"
+                          loading={vm.data.isImpactLoading}
+                          dataSource={vm.data.impactPreview?.workflows ?? []}
+                          pagination={{ pageSize: 8 }}
+                          columns={[
+                            { title: '流程编码', dataIndex: 'workflowCode', width: 180 },
+                            { title: '流程名称', dataIndex: 'workflowName', width: 220 },
+                            {
+                              title: '版本',
+                              dataIndex: 'versionCode',
+                              width: 120,
+                              render: (v) => <Tag>{v}</Tag>,
+                            },
+                          ]}
+                        />
+                      </Card>
 
-                    <Card size="small" title="Agent 影响列表">
-                      <Table<ParameterImpactPreviewDto['agents'][number]>
-                        rowKey="id"
-                        loading={vm.data.isImpactLoading}
-                        dataSource={vm.data.impactPreview?.agents ?? []}
-                        pagination={{ pageSize: 8 }}
-                        columns={[
-                          { title: 'Agent 编码', dataIndex: 'agentCode', width: 200 },
-                          { title: '名称', dataIndex: 'agentName', width: 180 },
-                          {
-                            title: '角色',
-                            dataIndex: 'roleType',
-                            width: 160,
-                            render: (v) => <Tag>{v}</Tag>,
-                          },
-                        ]}
-                      />
-                    </Card>
-                  </Space>
-                ),
-              },
-              {
-                key: 'simulator',
-                label: '继承模拟',
-                children: vm.state.selectedSetId ? (
-                  <ParameterResolutionPreview parameterSetId={vm.state.selectedSetId} />
-                ) : null,
-              },
-              {
-                key: 'audit',
-                label: '变更审计',
-                children: (
-                  <Space direction="vertical" style={{ width: '100%' }} size={12}>
-                    <Flex justify="flex-end">
-                      <Select
-                        style={{ width: 120 }}
-                        value={vm.state.auditViewMode}
-                        onChange={vm.setters.setAuditViewMode}
-                        options={[
-                          { label: '表格视图', value: 'table' },
-                          { label: '时间线', value: 'timeline' },
-                        ]}
-                      />
-                    </Flex>
-                    {vm.state.auditViewMode === 'table' ? (
-                      <Table<ParameterChangeLogDto>
-                        rowKey="id"
-                        loading={vm.data.isLogsLoading}
-                        dataSource={vm.data.changeLogs?.data ?? []}
-                        columns={auditColumns}
-                        scroll={{ x: 1100 }}
-                        pagination={{
-                          current: vm.data.changeLogs?.page ?? vm.state.logPage,
-                          pageSize: 20,
-                          total: vm.data.changeLogs?.total ?? 0,
-                          onChange: (nextPage) => vm.setters.setLogPage(nextPage),
-                        }}
-                      />
-                    ) : (
-                      <>
-                        <Timeline
-                          items={(vm.data.changeLogs?.data ?? []).map((log) => ({
-                            key: log.id,
-                            color:
-                              operationColorMap[log.operation] === 'green'
-                                ? 'green'
-                                : operationColorMap[log.operation] === 'red'
-                                  ? 'red'
-                                  : operationColorMap[log.operation] === 'purple'
-                                    ? ('purple' as unknown as undefined)
-                                    : 'blue',
-                            dot:
-                              log.operation === 'PUBLISH' ? (
-                                <CheckCircleOutlined />
-                              ) : log.operation === 'DELETE' ? (
-                                <WarningOutlined />
-                              ) : log.operation === 'RESET_TO_DEFAULT' ||
-                                log.operation === 'BATCH_RESET' ? (
-                                <RollbackOutlined />
-                              ) : (
-                                <EditOutlined />
-                              ),
-                            children: (
-                              <Card size="small" style={{ marginBottom: 4 }}>
-                                <Flex
-                                  justify="space-between"
-                                  align="center"
-                                  style={{ marginBottom: 4 }}
-                                >
-                                  <Space size={4}>
-                                    <Tag color={operationColorMap[log.operation] || 'default'}>
-                                      {log.operation}
-                                    </Tag>
-                                    {log.fieldPath && <Tag>{log.fieldPath}</Tag>}
-                                  </Space>
-                                  <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                                    {log.createdAt
-                                      ? dayjs(log.createdAt).format('YYYY-MM-DD HH:mm:ss')
-                                      : '-'}
-                                  </Typography.Text>
-                                </Flex>
-                                {log.oldValue !== null && log.oldValue !== undefined && (
-                                  <Flex gap={8} style={{ fontSize: 12 }}>
-                                    <Typography.Text type="secondary">旧值:</Typography.Text>
-                                    <Typography.Text delete>
-                                      {formatValue(log.oldValue)}
-                                    </Typography.Text>
-                                    <Typography.Text type="secondary">→</Typography.Text>
-                                    <Typography.Text strong>
-                                      {formatValue(log.newValue)}
+                      <Card size="small" title="Agent 影响列表">
+                        <Table<ParameterImpactPreviewDto['agents'][number]>
+                          rowKey="id"
+                          loading={vm.data.isImpactLoading}
+                          dataSource={vm.data.impactPreview?.agents ?? []}
+                          pagination={{ pageSize: 8 }}
+                          columns={[
+                            { title: 'Agent 编码', dataIndex: 'agentCode', width: 200 },
+                            { title: '名称', dataIndex: 'agentName', width: 180 },
+                            {
+                              title: '角色',
+                              dataIndex: 'roleType',
+                              width: 160,
+                              render: (v) => <Tag>{v}</Tag>,
+                            },
+                          ]}
+                        />
+                      </Card>
+                    </Space>
+                  ),
+                },
+                {
+                  key: 'simulator',
+                  label: '继承模拟',
+                  children: vm.state.selectedSetId ? (
+                    <ParameterResolutionPreview parameterSetId={vm.state.selectedSetId} />
+                  ) : null,
+                },
+                {
+                  key: 'audit',
+                  label: '变更审计',
+                  children: (
+                    <Space direction="vertical" style={{ width: '100%' }} size={12}>
+                      <Flex justify="flex-end">
+                        <Select
+                          style={{ width: 120 }}
+                          value={vm.state.auditViewMode}
+                          onChange={vm.setters.setAuditViewMode}
+                          options={[
+                            { label: '表格视图', value: 'table' },
+                            { label: '时间线', value: 'timeline' },
+                          ]}
+                        />
+                      </Flex>
+                      {vm.state.auditViewMode === 'table' ? (
+                        <Table<ParameterChangeLogDto>
+                          rowKey="id"
+                          loading={vm.data.isLogsLoading}
+                          dataSource={vm.data.changeLogs?.data ?? []}
+                          columns={auditColumns}
+                          scroll={{ x: 1100 }}
+                          pagination={{
+                            current: vm.data.changeLogs?.page ?? vm.state.logPage,
+                            pageSize: 20,
+                            total: vm.data.changeLogs?.total ?? 0,
+                            onChange: (nextPage) => vm.setters.setLogPage(nextPage),
+                          }}
+                        />
+                      ) : (
+                        <>
+                          <Timeline
+                            items={(vm.data.changeLogs?.data ?? []).map((log) => ({
+                              key: log.id,
+                              color:
+                                operationColorMap[log.operation] === 'green'
+                                  ? 'green'
+                                  : operationColorMap[log.operation] === 'red'
+                                    ? 'red'
+                                    : operationColorMap[log.operation] === 'purple'
+                                      ? ('purple' as unknown as undefined)
+                                      : 'blue',
+                              dot:
+                                log.operation === 'PUBLISH' ? (
+                                  <CheckCircleOutlined />
+                                ) : log.operation === 'DELETE' ? (
+                                  <WarningOutlined />
+                                ) : log.operation === 'RESET_TO_DEFAULT' ||
+                                  log.operation === 'BATCH_RESET' ? (
+                                  <RollbackOutlined />
+                                ) : (
+                                  <EditOutlined />
+                                ),
+                              children: (
+                                <Card size="small" style={{ marginBottom: 4 }}>
+                                  <Flex
+                                    justify="space-between"
+                                    align="center"
+                                    style={{ marginBottom: 4 }}
+                                  >
+                                    <Space size={4}>
+                                      <Tag color={operationColorMap[log.operation] || 'default'}>
+                                        {log.operation}
+                                      </Tag>
+                                      {log.fieldPath && <Tag>{log.fieldPath}</Tag>}
+                                    </Space>
+                                    <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                                      {log.createdAt
+                                        ? dayjs(log.createdAt).format('YYYY-MM-DD HH:mm:ss')
+                                        : '-'}
                                     </Typography.Text>
                                   </Flex>
-                                )}
-                                {log.changeReason && (
-                                  <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                                    原因: {log.changeReason}
-                                  </Typography.Text>
-                                )}
-                                {log.changedByUserId && (
-                                  <Typography.Text
-                                    type="secondary"
-                                    style={{ fontSize: 11, display: 'block' }}
-                                  >
-                                    操作人: {log.changedByUserId}
-                                  </Typography.Text>
-                                )}
-                              </Card>
-                            ),
-                          }))}
-                        />
-                        <Flex justify="center">
-                          <Button
-                            type="link"
-                            disabled={vm.state.logPage <= 1}
-                            onClick={() => vm.setters.setLogPage((prev) => Math.max(prev - 1, 1))}
-                          >
-                            上一页
-                          </Button>
-                          <Typography.Text type="secondary" style={{ lineHeight: '32px' }}>
-                            {vm.data.changeLogs?.page ?? vm.state.logPage} /{' '}
-                            {Math.ceil((vm.data.changeLogs?.total ?? 0) / 20) || 1}
-                          </Typography.Text>
-                          <Button
-                            type="link"
-                            disabled={
-                              (vm.data.changeLogs?.page ?? vm.state.logPage) >=
-                              Math.ceil((vm.data.changeLogs?.total ?? 0) / 20)
-                            }
-                            onClick={() => vm.setters.setLogPage((prev) => prev + 1)}
-                          >
-                            下一页
-                          </Button>
-                        </Flex>
-                      </>
-                    )}
-                  </Space>
-                ),
-              },
+                                  {log.oldValue !== null && log.oldValue !== undefined && (
+                                    <Flex gap={8} style={{ fontSize: 12 }}>
+                                      <Typography.Text type="secondary">旧值:</Typography.Text>
+                                      <Typography.Text delete>
+                                        {formatValue(log.oldValue)}
+                                      </Typography.Text>
+                                      <Typography.Text type="secondary">→</Typography.Text>
+                                      <Typography.Text strong>
+                                        {formatValue(log.newValue)}
+                                      </Typography.Text>
+                                    </Flex>
+                                  )}
+                                  {log.changeReason && (
+                                    <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                                      原因: {log.changeReason}
+                                    </Typography.Text>
+                                  )}
+                                  {log.changedByUserId && (
+                                    <Typography.Text
+                                      type="secondary"
+                                      style={{ fontSize: 11, display: 'block' }}
+                                    >
+                                      操作人: {log.changedByUserId}
+                                    </Typography.Text>
+                                  )}
+                                </Card>
+                              ),
+                            }))}
+                          />
+                          <Flex justify="center">
+                            <Button
+                              type="link"
+                              disabled={vm.state.logPage <= 1}
+                              onClick={() => vm.setters.setLogPage((prev) => Math.max(prev - 1, 1))}
+                            >
+                              上一页
+                            </Button>
+                            <Typography.Text type="secondary" style={{ lineHeight: '32px' }}>
+                              {vm.data.changeLogs?.page ?? vm.state.logPage} /{' '}
+                              {Math.ceil((vm.data.changeLogs?.total ?? 0) / 20) || 1}
+                            </Typography.Text>
+                            <Button
+                              type="link"
+                              disabled={
+                                (vm.data.changeLogs?.page ?? vm.state.logPage) >=
+                                Math.ceil((vm.data.changeLogs?.total ?? 0) / 20)
+                              }
+                              onClick={() => vm.setters.setLogPage((prev) => prev + 1)}
+                            >
+                              下一页
+                            </Button>
+                          </Flex>
+                        </>
+                      )}
+                    </Space>
+                  ),
+                },
+              ] : []),
             ]}
           />
         </Space>
@@ -735,75 +749,77 @@ export const ParameterSetPage: React.FC = () => {
             }}
           </Form.Item>
 
-          <Collapse
-            ghost
-            style={{ backgroundColor: token.colorFillQuaternary, borderRadius: 8, marginTop: 16 }}
-          >
-            <Collapse.Panel key="advanced" header="⚙️ 高级配置 (按需展开)">
-              <Typography.Text type="secondary" style={{ display: 'block', marginBottom: 16 }}>
-                专业开发选项 / 数据源配置
-              </Typography.Text>
-              <Row gutter={16}>
-                <Col span={12}>
-                  <Form.Item name="scopeLevel" label="作用域层级" rules={[{ required: true }]}>
-                    <Select
-                      options={scopeOptions.map((item) => ({
-                        label: getScopeLabel(item),
-                        value: item,
-                      }))}
-                    />
-                  </Form.Item>
-                </Col>
-                <Col span={12}>
-                  <Form.Item name="scopeValue" label="限定作用域值">
-                    <Input placeholder="填入 ID 覆盖范围, 留空则全覆盖" />
-                  </Form.Item>
-                </Col>
-                <Col span={12}>
-                  <Form.Item name="unit" label="数值单位">
-                    <Input allowClear />
-                  </Form.Item>
-                </Col>
-                <Col span={12}>
-                  <Form.Item name="source" label="参数定义来源">
-                    <Input allowClear placeholder="例如: 业务规则V1, 外部API" />
-                  </Form.Item>
-                </Col>
-              </Row>
-              <Divider style={{ margin: '8px 0' }} />
-              <Row gutter={16}>
-                <Col span={8}>
-                  <Form.Item name="uiComponent" label="UI 控件覆盖渲染">
-                    <Select
-                      allowClear
-                      options={[
-                        { label: '默认输入 (Input)', value: 'input' },
-                        { label: '数字输入框 (NumberInput)', value: 'number-input' },
-                        { label: '短滑块 (Slider)', value: 'slider' },
-                        { label: '单选下拉 (Select)', value: 'select' },
-                        { label: '外部字典下拉 (DictSelect)', value: 'dict-select' },
-                      ]}
-                      placeholder="默认自动推断"
-                    />
-                  </Form.Item>
-                </Col>
-                <Col span={8}>
-                  <Form.Item name="optionsSourceId" label="外部选项数据源">
-                    <Input allowClear placeholder="如 SYSTEM_REGION" />
-                  </Form.Item>
-                </Col>
-                <Col span={8}>
-                  <Form.Item name="uiPropsText" label="特殊透传配置 (JSON)">
-                    <Input.TextArea
-                      rows={1}
-                      allowClear
-                      placeholder='如: {"placeholder":"填入年龄"}'
-                    />
-                  </Form.Item>
-                </Col>
-              </Row>
-            </Collapse.Panel>
-          </Collapse>
+          {!isSimple && (
+            <Collapse
+              ghost
+              style={{ backgroundColor: token.colorFillQuaternary, borderRadius: 8, marginTop: 16 }}
+            >
+              <Collapse.Panel key="advanced" header="⚙️ 高级配置 (按需展开)">
+                <Typography.Text type="secondary" style={{ display: 'block', marginBottom: 16 }}>
+                  专业开发选项 / 数据源配置
+                </Typography.Text>
+                <Row gutter={16}>
+                  <Col span={12}>
+                    <Form.Item name="scopeLevel" label="作用域层级" rules={[{ required: true }]}>
+                      <Select
+                        options={scopeOptions.map((item) => ({
+                          label: getScopeLabel(item),
+                          value: item,
+                        }))}
+                      />
+                    </Form.Item>
+                  </Col>
+                  <Col span={12}>
+                    <Form.Item name="scopeValue" label="限定作用域值">
+                      <Input placeholder="填入 ID 覆盖范围, 留空则全覆盖" />
+                    </Form.Item>
+                  </Col>
+                  <Col span={12}>
+                    <Form.Item name="unit" label="数值单位">
+                      <Input allowClear />
+                    </Form.Item>
+                  </Col>
+                  <Col span={12}>
+                    <Form.Item name="source" label="参数定义来源">
+                      <Input allowClear placeholder="例如: 业务规则V1, 外部API" />
+                    </Form.Item>
+                  </Col>
+                </Row>
+                <Divider style={{ margin: '8px 0' }} />
+                <Row gutter={16}>
+                  <Col span={8}>
+                    <Form.Item name="uiComponent" label="UI 控件覆盖渲染">
+                      <Select
+                        allowClear
+                        options={[
+                          { label: '默认输入 (Input)', value: 'input' },
+                          { label: '数字输入框 (NumberInput)', value: 'number-input' },
+                          { label: '短滑块 (Slider)', value: 'slider' },
+                          { label: '单选下拉 (Select)', value: 'select' },
+                          { label: '外部字典下拉 (DictSelect)', value: 'dict-select' },
+                        ]}
+                        placeholder="默认自动推断"
+                      />
+                    </Form.Item>
+                  </Col>
+                  <Col span={8}>
+                    <Form.Item name="optionsSourceId" label="外部选项数据源">
+                      <Input allowClear placeholder="如 SYSTEM_REGION" />
+                    </Form.Item>
+                  </Col>
+                  <Col span={8}>
+                    <Form.Item name="uiPropsText" label="特殊透传配置 (JSON)">
+                      <Input.TextArea
+                        rows={1}
+                        allowClear
+                        placeholder='如: {"placeholder":"填入年龄"}'
+                      />
+                    </Form.Item>
+                  </Col>
+                </Row>
+              </Collapse.Panel>
+            </Collapse>
+          )}
 
           <Divider style={{ margin: '16px 0' }} />
           <Row gutter={16}>

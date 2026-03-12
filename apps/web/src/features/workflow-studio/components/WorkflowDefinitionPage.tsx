@@ -2,6 +2,7 @@ import React, { useMemo, useState, useCallback } from 'react';
 import type { ColumnsType } from 'antd/es/table';
 import dayjs, { Dayjs } from 'dayjs';
 import { App, Button, Card, Input, Select, Space, Switch, Table, Tag, Typography, Drawer, Alert } from 'antd';
+import { ShopOutlined } from '@ant-design/icons';
 import { WorkflowDefinitionDto, WorkflowDefinitionStatus, WorkflowMode, WorkflowUsageMethod, WorkflowVersionDto, WorkflowPublishAuditDto } from '@packages/types';
 
 import { useWorkflowDefinitionViewModel } from './workflow-definition/useWorkflowDefinitionViewModel';
@@ -12,6 +13,9 @@ import { WorkflowDefinitionPublishWizardModal } from './workflow-definition/Work
 import { SceneSelector } from './SceneSelector';
 import type { SceneTemplate } from './sceneTemplates';
 import { WorkflowQuickRunnerModal } from './workflow-definition/WorkflowQuickRunnerModal';
+import { useWorkflowUxMode } from '../../../hooks/useWorkflowUxMode';
+import { WorkflowUxModeSwitcher } from '../../../components/WorkflowUxModeSwitcher';
+import { TemplateMarketPage } from '../../template-market';
 import {
   modeOptions,
   usageMethodOptions,
@@ -35,6 +39,10 @@ export const WorkflowDefinitionPage: React.FC = () => {
   const { state, queries, options, actions, mutations } = viewModel;
   const [isSceneSelectorVisible, setSceneSelectorVisible] = useState(false);
   const createFromSceneMutation = useCreateWorkflowDefinition();
+  const uxMode = useWorkflowUxMode((s) => s.mode);
+  const isSimple = uxMode === 'simple';
+  const isExpert = uxMode === 'expert';
+  const [isTemplateDrawerOpen, setTemplateDrawerOpen] = useState(false);
 
   const handleSelectScene = useCallback(async (scene: SceneTemplate) => {
     try {
@@ -68,40 +76,64 @@ export const WorkflowDefinitionPage: React.FC = () => {
     queries.strictModeSetting?.source === 'DB' ? '系统配置' : queries.strictModeSetting?.source === 'ENV' ? '环境变量' : '默认值';
 
   const definitionColumns = useMemo<ColumnsType<WorkflowDefinitionDto>>(
-    () => [
-      { title: '工作流名称', dataIndex: 'name', width: 240 },
-      { title: '编号', dataIndex: 'workflowId', width: 220 },
-      {
-        title: '模式', dataIndex: 'mode', width: 120,
-        render: (value: WorkflowMode) => <Tag color="blue">{workflowModeLabelMap[value] || value}</Tag>
-      },
-      {
-        title: '使用方式', dataIndex: 'usageMethod', width: 160,
-        render: (value: WorkflowUsageMethod) => <Tag>{workflowUsageMethodLabelMap[value] || value}</Tag>
-      },
-      {
-        title: '状态', dataIndex: 'status', width: 120,
-        render: (value: string) => (
-          <Tag color={definitionStatusColorMap[value] ?? 'default'}>
-            {workflowDefinitionStatusLabelMap[value as WorkflowDefinitionStatus] || value}
-          </Tag>
-        )
-      },
-      { title: '最新版本', dataIndex: 'latestVersionCode', width: 120, render: (value?: string | null) => value || '-' },
-      {
-        title: '更新时间', dataIndex: 'updatedAt', width: 180,
-        render: (value?: Date) => (value ? dayjs(value).format('YYYY-MM-DD HH:mm:ss') : '-')
-      },
-      {
-        title: '操作', key: 'actions', fixed: 'right', width: 140,
-        render: (_: unknown, record: WorkflowDefinitionDto) => (
-          <Button type="link" onClick={() => { state.setSelectedDefinition(record); state.setVersionVisible(true); }}>
-            查看版本
-          </Button>
-        )
-      },
-    ],
-    [state]
+    () => {
+      const cols: ColumnsType<WorkflowDefinitionDto> = [
+        { title: '工作流名称', dataIndex: 'name', width: 240 },
+      ];
+
+      if (!isSimple) {
+        cols.push({ title: '流程编号', dataIndex: 'workflowId', width: 220 });
+      }
+
+      if (isExpert) {
+        cols.push(
+          {
+            title: '模式', dataIndex: 'mode', width: 120,
+            render: (value: WorkflowMode) => <Tag color="blue">{workflowModeLabelMap[value] || value}</Tag>,
+          },
+          {
+            title: '使用方式', dataIndex: 'usageMethod', width: 160,
+            render: (value: WorkflowUsageMethod) => <Tag>{workflowUsageMethodLabelMap[value] || value}</Tag>,
+          },
+        );
+      }
+
+      cols.push(
+        {
+          title: '状态', dataIndex: 'status', width: 120,
+          render: (value: string) => (
+            <Tag color={definitionStatusColorMap[value] ?? 'default'}>
+              {workflowDefinitionStatusLabelMap[value as WorkflowDefinitionStatus] || value}
+            </Tag>
+          ),
+        },
+        { title: '最新版本', dataIndex: 'latestVersionCode', width: 120, render: (value?: string | null) => value || '-' },
+        {
+          title: '更新时间', dataIndex: 'updatedAt', width: 180,
+          render: (value?: Date) => (value ? dayjs(value).format('YYYY-MM-DD HH:mm:ss') : '-'),
+        },
+        {
+          title: '操作', key: 'actions', fixed: 'right', width: isSimple ? 100 : 140,
+          render: (_: unknown, record: WorkflowDefinitionDto) => (
+            <Space size={4}>
+              {!isSimple && (
+                <Button type="link" onClick={() => { state.setSelectedDefinition(record); state.setVersionVisible(true); }}>
+                  查看版本
+                </Button>
+              )}
+              {isSimple && (
+                <Button type="link" onClick={() => { state.setSelectedDefinition(record); state.setVersionVisible(true); }}>
+                  管理
+                </Button>
+              )}
+            </Space>
+          ),
+        },
+      );
+
+      return cols;
+    },
+    [state, isSimple, isExpert]
   );
 
   const versionColumns = useMemo<ColumnsType<WorkflowVersionDto>>(
@@ -195,25 +227,41 @@ export const WorkflowDefinitionPage: React.FC = () => {
         <Space style={{ width: '100%', justifyContent: 'space-between' }}>
           <div>
             <Title level={4} style={{ marginBottom: 0 }}>工作流编排</Title>
-            <Text type="secondary">创建和管理工作流，编辑画布、版本管理与发布。</Text>
+            <Text type="secondary">
+              {isSimple ? '创建和运行工作流。' : '创建和管理工作流，编辑画布、版本管理与发布。'}
+            </Text>
           </div>
           <Space wrap size={12}>
-            <Space size={6}>
-              <Text type="secondary">智能体严格模式</Text>
-              <Switch checked={queries.strictModeSetting?.enabled ?? false} loading={queries.strictModeLoading || mutations.updateStrictModeMutation.isPending} checkedChildren="严格" unCheckedChildren="宽松" onChange={actions.handleStrictModeChange} />
-              <Tag color="blue">{strictModeSourceLabel}</Tag>
-            </Space>
+            <WorkflowUxModeSwitcher />
+            {isExpert && (
+              <Space size={6}>
+                <Text type="secondary">智能体严格模式</Text>
+                <Switch checked={queries.strictModeSetting?.enabled ?? false} loading={queries.strictModeLoading || mutations.updateStrictModeMutation.isPending} checkedChildren="严格" unCheckedChildren="宽松" onChange={actions.handleStrictModeChange} />
+                <Tag color="blue">{strictModeSourceLabel}</Tag>
+              </Space>
+            )}
+            <Button icon={<ShopOutlined />} onClick={() => setTemplateDrawerOpen(true)}>模板库</Button>
             <Button type="primary" onClick={() => setSceneSelectorVisible(true)}>新建工作流</Button>
           </Space>
         </Space>
 
         <Space wrap>
-          <Input.Search allowClear style={{ width: 280 }} placeholder="搜索工作流名称或编号" value={state.keywordInput} onChange={(e) => { const val = e.target.value; state.setKeywordInput(val); if (!val.trim()) { state.setKeyword(undefined); state.setDefinitionPageNumber(1); } }} onSearch={(val) => { const norm = val.trim(); state.setKeyword(norm ? norm : undefined); state.setDefinitionPageNumber(1); }} />
-          <Select allowClear style={{ width: 180 }} placeholder="按模式筛选" options={modeOptions} value={state.selectedMode} onChange={(val) => { state.setSelectedMode(val); state.setDefinitionPageNumber(1); }} />
-          <Select allowClear style={{ width: 200 }} placeholder="按使用方式筛选" options={usageMethodOptions} value={state.selectedUsageMethod} onChange={(val) => { state.setSelectedUsageMethod(val); state.setDefinitionPageNumber(1); }} />
-          <Select allowClear style={{ width: 180 }} placeholder="按状态筛选" options={definitionStatusOptions} value={state.selectedStatus} onChange={(val) => { state.setSelectedStatus(val); state.setDefinitionPageNumber(1); }} />
-          <Select style={{ width: 180 }} options={[{ label: '包含公共模板', value: true }, { label: '仅私有流程', value: false }]} value={state.includePublic} onChange={(val: boolean) => { state.setIncludePublic(val); state.setDefinitionPageNumber(1); }} />
-          <Button onClick={() => { state.setKeywordInput(''); state.setKeyword(undefined); state.setSelectedMode(undefined); state.setSelectedUsageMethod(undefined); state.setSelectedStatus(undefined); state.setIncludePublic(true); state.setDefinitionPageNumber(1); state.setDefinitionPageSize(20); }}>重置筛选</Button>
+          <Input.Search allowClear style={{ width: 280 }} placeholder={isSimple ? '搜索工作流' : '搜索工作流名称或编号'} value={state.keywordInput} onChange={(e) => { const val = e.target.value; state.setKeywordInput(val); if (!val.trim()) { state.setKeyword(undefined); state.setDefinitionPageNumber(1); } }} onSearch={(val) => { const norm = val.trim(); state.setKeyword(norm ? norm : undefined); state.setDefinitionPageNumber(1); }} />
+          {isExpert && (
+            <>
+              <Select allowClear style={{ width: 180 }} placeholder="按模式筛选" options={modeOptions} value={state.selectedMode} onChange={(val) => { state.setSelectedMode(val); state.setDefinitionPageNumber(1); }} />
+              <Select allowClear style={{ width: 200 }} placeholder="按使用方式筛选" options={usageMethodOptions} value={state.selectedUsageMethod} onChange={(val) => { state.setSelectedUsageMethod(val); state.setDefinitionPageNumber(1); }} />
+            </>
+          )}
+          {!isSimple && (
+            <Select allowClear style={{ width: 180 }} placeholder="按状态筛选" options={definitionStatusOptions} value={state.selectedStatus} onChange={(val) => { state.setSelectedStatus(val); state.setDefinitionPageNumber(1); }} />
+          )}
+          {isExpert && (
+            <Select style={{ width: 180 }} options={[{ label: '包含公共模板', value: true }, { label: '仅私有流程', value: false }]} value={state.includePublic} onChange={(val: boolean) => { state.setIncludePublic(val); state.setDefinitionPageNumber(1); }} />
+          )}
+          {!isSimple && (
+            <Button onClick={() => { state.setKeywordInput(''); state.setKeyword(undefined); state.setSelectedMode(undefined); state.setSelectedUsageMethod(undefined); state.setSelectedStatus(undefined); state.setIncludePublic(true); state.setDefinitionPageNumber(1); state.setDefinitionPageSize(20); }}>重置筛选</Button>
+          )}
         </Space>
 
         <Table rowKey="id" loading={queries.isDefinitionLoading} columns={definitionColumns} dataSource={queries.definitionPage?.data || []} pagination={{ current: queries.definitionPage?.page || state.definitionPageNumber, pageSize: queries.definitionPage?.pageSize || state.definitionPageSize, total: queries.definitionPage?.total || 0, showSizeChanger: true, onChange: (p, s) => { state.setDefinitionPageNumber(p); state.setDefinitionPageSize(s); } }} scroll={{ x: 1200 }} />
@@ -333,6 +381,16 @@ export const WorkflowDefinitionPage: React.FC = () => {
           onSelectScene={handleSelectScene}
           onCreateBlank={handleCreateBlank}
         />
+      </Drawer>
+
+      <Drawer
+        title="模板库"
+        open={isTemplateDrawerOpen}
+        width="85%"
+        destroyOnClose
+        onClose={() => setTemplateDrawerOpen(false)}
+      >
+        <TemplateMarketPage />
       </Drawer>
     </Card>
   );

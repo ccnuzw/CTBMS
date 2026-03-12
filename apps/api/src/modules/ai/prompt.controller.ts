@@ -1,5 +1,5 @@
 
-import { Controller, Get, Post, Put, Delete, Body, Param } from '@nestjs/common';
+import { Controller, Get, Post, Patch, Delete, Body, Param } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PromptService } from './prompt.service';
 
@@ -17,7 +17,7 @@ export class PromptController {
         return this.promptService.create(body);
     }
 
-    @Put(':id')
+    @Patch(':id')
     async update(@Param('id') id: string, @Body() body: Prisma.PromptTemplateUncheckedUpdateInput) {
         return this.promptService.update(id, body);
     }

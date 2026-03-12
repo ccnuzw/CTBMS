@@ -178,7 +178,7 @@ export const useRerunExecution = () => {
   return useMutation({
     mutationFn: async (executionId: string) => {
       const res = await apiClient.post<{ id: string; status: string }>(
-        `/workflow-executions/${executionId}/rerun`,
+        `/workflow-executions/${executionId}/actions/rerun`,
       );
       return res.data;
     },

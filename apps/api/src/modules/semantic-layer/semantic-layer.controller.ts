@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Put, Delete, Param, Query, Body } from '@nestjs/common';
+import { Controller, Get, Post, Patch, Delete, Param, Query, Body } from '@nestjs/common';
 import { SemanticLayerService } from './semantic-layer.service';
 import {
     CreateCommodityDto,
@@ -33,7 +33,7 @@ export class SemanticLayerController {
         return this.service.findCommodity(code);
     }
 
-    @Put('commodities/:code')
+    @Patch('commodities/:code')
     updateCommodity(@Param('code') code: string, @Body() dto: UpdateCommodityDto) {
         return this.service.updateCommodity(code, dto);
     }
@@ -60,7 +60,7 @@ export class SemanticLayerController {
         return this.service.findRegion(code);
     }
 
-    @Put('regions/:code')
+    @Patch('regions/:code')
     updateRegion(@Param('code') code: string, @Body() dto: UpdateRegionDto) {
         return this.service.updateRegion(code, dto);
     }
@@ -87,7 +87,7 @@ export class SemanticLayerController {
         return this.service.findMetricDefinition(metricCode);
     }
 
-    @Put('metrics/:metricCode')
+    @Patch('metrics/:metricCode')
     updateMetricDefinition(
         @Param('metricCode') metricCode: string,
         @Body() dto: UpdateMetricDefinitionDto,

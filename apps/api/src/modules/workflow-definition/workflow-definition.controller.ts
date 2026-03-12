@@ -54,7 +54,7 @@ export class WorkflowDefinitionController {
     private readonly aiProviderFactory: AIProviderFactory,
     private readonly aiModelService: AIModelService,
     private readonly configService: ConfigService,
-  ) {}
+  ) { }
 
   @Post()
   create(@Body() dto: CreateWorkflowDefinitionRequest, @Request() req: AuthRequest) {
@@ -138,7 +138,7 @@ export class WorkflowDefinitionController {
     return this.workflowDefinitionService.createVersion(userId, id, dto);
   }
 
-  @Post(':id/publish')
+  @Post(':id/actions/publish')
   publishVersion(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: PublishWorkflowVersionRequest,
@@ -164,12 +164,12 @@ export class WorkflowDefinitionController {
     return this.workflowDefinitionService.listPublishAudits(userId, id, query);
   }
 
-  @Post('validate-dsl')
+  @Post('actions/validate-dsl')
   validateDsl(@Body() dto: ValidateWorkflowDslRequest) {
     return this.workflowDefinitionValidatorService.validateDsl(dto.dslSnapshot, dto.stage);
   }
 
-  @Post('preflight-dsl')
+  @Post('actions/preflight-dsl')
   preflightDsl(@Body() dto: PreflightWorkflowDslRequest) {
     const autoFixLevel = (dto as unknown as { autoFixLevel?: 'SAFE' | 'AGGRESSIVE' }).autoFixLevel;
     const enabledAutoFixCodes = (dto as unknown as { enabledAutoFixCodes?: string[] })
@@ -182,7 +182,7 @@ export class WorkflowDefinitionController {
     );
   }
 
-  @Post('preview-node')
+  @Post('actions/preview-node')
   previewNode(@Body() dto: ValidateWorkflowNodePreviewRequest) {
     return this.workflowNodePreviewService.previewNodeBindings(dto);
   }
@@ -191,7 +191,7 @@ export class WorkflowDefinitionController {
    * 自然语言参数解析接口
    * 将用户输入的一句话需求转换为符合工作流参数定义的结构化 JSON
    */
-  @Post(':id/smart-parse-params')
+  @Post(':id/actions/smart-parse-params')
   async smartParseParams(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() body: { userInput: string; paramSchema?: Record<string, unknown> },

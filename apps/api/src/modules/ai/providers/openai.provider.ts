@@ -109,6 +109,42 @@ export class OpenAIProvider implements IAIProvider {
     return url.toString();
   }
 
+  private buildEndpointUrl(
+    baseUrl: string,
+    path: string,
+    options: AIRequestOptions,
+  ): string {
+    const trimmedBase = baseUrl.replace(/\/+$/, '');
+    const normalizedPath = path.startsWith('/') ? path : `/${path}`;
+    const rawUrl = `${trimmedBase}${normalizedPath}`;
+
+    if (!options.queryParams || Object.keys(options.queryParams).length === 0) {
+      return rawUrl;
+    }
+
+    const url = new URL(rawUrl);
+    for (const [key, value] of Object.entries(options.queryParams)) {
+      if (value !== undefined && value !== null && String(value).length > 0) {
+        url.searchParams.set(key, String(value));
+      }
+    }
+    return url.toString();
+  }
+
+  private resolveEndpointPath(
+    type: 'chat' | 'completions' | 'responses',
+    options: AIRequestOptions,
+  ): string {
+    const overrideKey = type === 'chat' ? 'chatCompletions' : type;
+    const override = options.pathOverrides?.[overrideKey];
+    if (override) {
+      return override;
+    }
+    if (type === 'chat') return '/chat/completions';
+    if (type === 'responses') return '/responses';
+    return '/completions';
+  }
+
   private async fetchModelsDirect(
     apiUrl: string | undefined,
     options: AIRequestOptions,
@@ -137,7 +173,10 @@ export class OpenAIProvider implements IAIProvider {
     messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[],
     authMode: 'bearer' | 'api-key' | 'x-api-key' | 'none',
   ): Promise<string> {
-    const url = `${baseUrl.replace(/\/+$/, '')}/chat/completions`;
+    const path = this.resolveEndpointPath('chat', options);
+    const url = path.startsWith('http')
+      ? path
+      : this.buildEndpointUrl(baseUrl, path, options);
     const response = await fetch(url, {
       method: 'POST',
       headers: {
@@ -162,13 +201,88 @@ export class OpenAIProvider implements IAIProvider {
     return data.choices?.[0]?.message?.content || '';
   }
 
+  private async callChatCompletionFetchWithTools(
+    baseUrl: string,
+    options: AIRequestOptions,
+    messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[],
+    authMode: 'bearer' | 'api-key' | 'x-api-key' | 'none',
+  ): Promise<AIChatResponse> {
+    const path = this.resolveEndpointPath('chat', options);
+    const url = path.startsWith('http')
+      ? path
+      : this.buildEndpointUrl(baseUrl, path, options);
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(this.buildHeadersForAuthMode(options, authMode) || {}),
+      },
+      body: JSON.stringify({
+        model: options.modelName,
+        messages,
+        temperature: options.temperature ?? 0.3,
+        max_tokens: options.maxTokens ?? 8192,
+        top_p: options.topP,
+        tools: options.tools,
+      }),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`${response.status} ${errorText}`);
+    }
+
+    const data = (await response.json()) as {
+      choices?: Array<{
+        message?: {
+          content?: string;
+          tool_calls?: Array<{
+            id?: string;
+            type?: 'function';
+            function?: { name: string; arguments: string };
+          }>;
+        };
+      }>;
+      usage?: {
+        prompt_tokens?: number;
+        completion_tokens?: number;
+        total_tokens?: number;
+      };
+    };
+
+    const message = data.choices?.[0]?.message;
+    const tool_calls = message?.tool_calls?.map((toolCall, index) => ({
+      id: toolCall.id || `call_${index}`,
+      type: 'function' as const,
+      function: {
+        name: toolCall.function?.name || '',
+        arguments: toolCall.function?.arguments || '{}',
+      },
+    }));
+
+    return {
+      content: message?.content || null,
+      tool_calls: tool_calls?.length ? tool_calls : undefined,
+      usage: data.usage
+        ? {
+          prompt_tokens: data.usage.prompt_tokens ?? 0,
+          completion_tokens: data.usage.completion_tokens ?? 0,
+          total_tokens: data.usage.total_tokens ?? 0,
+        }
+        : undefined,
+    };
+  }
+
   private async callCompletionFetch(
     baseUrl: string,
     options: AIRequestOptions,
     prompt: string,
     authMode: 'bearer' | 'api-key' | 'x-api-key' | 'none',
   ): Promise<string> {
-    const url = `${baseUrl.replace(/\/+$/, '')}/completions`;
+    const path = this.resolveEndpointPath('completions', options);
+    const url = path.startsWith('http')
+      ? path
+      : this.buildEndpointUrl(baseUrl, path, options);
     const response = await fetch(url, {
       method: 'POST',
       headers: {
@@ -268,7 +382,10 @@ export class OpenAIProvider implements IAIProvider {
     prompt: string,
     authMode: 'bearer' | 'api-key' | 'x-api-key' | 'none',
   ): Promise<string> {
-    const url = `${baseUrl.replace(/\/+$/, '')}/responses`;
+    const path = this.resolveEndpointPath('responses', options);
+    const url = path.startsWith('http')
+      ? path
+      : this.buildEndpointUrl(baseUrl, path, options);
     const retries = Math.max(0, options.maxRetries ?? 2);
 
     const primaryBody: Record<string, unknown> = {
@@ -613,7 +730,45 @@ export class OpenAIProvider implements IAIProvider {
       };
     } catch (error) {
       this.logger.error('OpenAI generateChat failed', error);
-      throw error;
+      const msg = error instanceof Error ? error.message : String(error);
+      const shouldFallback =
+        options.allowCompatPathFallback !== false ||
+        !this.isOfficialOpenAIBase(options.apiUrl) ||
+        this.shouldForceCompatFallback(msg);
+
+      if (!shouldFallback) {
+        throw error;
+      }
+
+      const parseStatus = (message: string): number | undefined => {
+        const match = message.match(/^(\d{3})\b/);
+        return match ? Number(match[1]) : undefined;
+      };
+
+      const baseUrl = options.apiUrl || 'https://api.openai.com/v1';
+      const authModes = this.resolveAuthModes(options);
+      let lastError: Error | undefined;
+
+      for (const authMode of authModes) {
+        try {
+          return await this.callChatCompletionFetchWithTools(
+            baseUrl,
+            options,
+            openAiMessages,
+            authMode,
+          );
+        } catch (fallbackError) {
+          const fallbackMsg =
+            fallbackError instanceof Error ? fallbackError.message : String(fallbackError);
+          const status = parseStatus(fallbackMsg);
+          lastError = fallbackError instanceof Error ? fallbackError : new Error(fallbackMsg);
+          if ((status === 401 || status === 403) && authModes.length > 1) {
+            continue;
+          }
+        }
+      }
+
+      throw lastError || error;
     }
   }
 

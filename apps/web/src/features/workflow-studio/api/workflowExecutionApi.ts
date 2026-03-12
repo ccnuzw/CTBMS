@@ -88,7 +88,7 @@ export const useCancelWorkflowExecution = () => {
     return useMutation({
         mutationFn: async ({ id, payload }: { id: string; payload: CancelWorkflowExecutionDto }) => {
             const res = await apiClient.post<WorkflowExecutionDto>(
-                `${BASE}/${id}/cancel`,
+                `${BASE}/${id}/actions/cancel`,
                 payload
             );
             return res.data;
@@ -107,7 +107,7 @@ export const useRerunWorkflowExecution = () => {
     const qc = useQueryClient();
     return useMutation({
         mutationFn: async (id: string) => {
-            const res = await apiClient.post<WorkflowExecutionDetailDto>(`${BASE}/${id}/rerun`);
+            const res = await apiClient.post<WorkflowExecutionDetailDto>(`${BASE}/${id}/actions/rerun`);
             return res.data;
         },
         onSuccess: () => qc.invalidateQueries({ queryKey: executionKeys.all }),

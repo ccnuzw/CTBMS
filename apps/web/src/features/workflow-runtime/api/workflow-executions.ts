@@ -191,7 +191,7 @@ export const useRerunWorkflowExecution = () => {
   return useMutation({
     mutationFn: async (executionId: string) => {
       const res = await apiClient.post<WorkflowExecutionDetail>(
-        `/workflow-executions/${executionId}/rerun`,
+        `/workflow-executions/${executionId}/actions/rerun`,
       );
       return res.data;
     },
@@ -206,7 +206,7 @@ export const useCancelWorkflowExecution = () => {
   return useMutation({
     mutationFn: async ({ executionId, reason }: { executionId: string; reason?: string }) => {
       const res = await apiClient.post<WorkflowExecutionDetail>(
-        `/workflow-executions/${executionId}/cancel`,
+        `/workflow-executions/${executionId}/actions/cancel`,
         { reason },
       );
       return res.data;

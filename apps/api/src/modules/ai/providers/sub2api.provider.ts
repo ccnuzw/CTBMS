@@ -44,6 +44,90 @@ export class Sub2ApiProvider implements IAIProvider {
   }
 
   /**
+   * Parse the response body, handling the case where the server returns an
+   * SSE stream (text/event-stream) even though we set `stream: false`.
+   *
+   * Sub2API occasionally does this for long prompts; we extract the first
+   * JSON payload from the "data:" lines rather than crashing on `response.json()`.
+   */
+  private async parseResponseBody(response: Response): Promise<unknown> {
+    const contentType = response.headers.get('content-type') || '';
+
+    // Fast path: normal JSON response
+    if (!contentType.includes('text/event-stream')) {
+      // Double-check: sometimes content-type lies; peek the first bytes
+      const text = await response.text();
+      if (!text.startsWith('event:') && !text.startsWith('data:')) {
+        return JSON.parse(text);
+      }
+      // Falls through to SSE parsing below
+      return this.extractJsonFromSse(text);
+    }
+
+    // SSE stream response
+    const text = await response.text();
+    return this.extractJsonFromSse(text);
+  }
+
+  /**
+   * Extract the final complete JSON object from an SSE text stream.
+   * Looks for `data: {...}` payloads and returns the last valid one,
+   * which is typically the complete response.
+   */
+  private extractJsonFromSse(text: string): unknown {
+    this.logger.warn(
+      `[Sub2API] Received SSE stream despite stream=false, attempting extraction (${text.length} chars)`,
+    );
+
+    const dataLines = text
+      .split('\n')
+      .filter((line) => line.startsWith('data:'))
+      .map((line) => line.slice(5).trim())
+      .filter((line) => line && line !== '[DONE]');
+
+    // Try to find a complete JSON object (last data line is usually the full response)
+    for (let i = dataLines.length - 1; i >= 0; i--) {
+      try {
+        const parsed = JSON.parse(dataLines[i]);
+        if (parsed && typeof parsed === 'object') {
+          this.logger.log(`[Sub2API] Successfully extracted JSON from SSE data line ${i + 1}/${dataLines.length}`);
+          return parsed;
+        }
+      } catch {
+        // Not valid JSON, try previous line
+      }
+    }
+
+    // If no individual line is valid JSON, try concatenating all content from streaming chunks
+    // (some SSE streams send partial content in delta format)
+    const chunks: string[] = [];
+    for (const line of dataLines) {
+      try {
+        const parsed = JSON.parse(line);
+        // Responses API streaming format
+        const content =
+          parsed?.output_text ||
+          parsed?.delta?.content ||
+          parsed?.choices?.[0]?.delta?.content;
+        if (content) chunks.push(content);
+      } catch {
+        // skip
+      }
+    }
+
+    if (chunks.length > 0) {
+      const fullContent = chunks.join('');
+      this.logger.log(`[Sub2API] Assembled ${chunks.length} SSE chunks into ${fullContent.length} chars`);
+      // Return a synthetic Responses-style object
+      return { output_text: fullContent };
+    }
+
+    throw new Error(
+      `Received SSE stream response but could not extract valid JSON (${dataLines.length} data lines, ${text.length} total chars)`,
+    );
+  }
+
+  /**
    * Normalise the base URL so that endpoint helpers always receive a clean root.
    *
    * Rules (derived from sub2api gateway behaviour):
@@ -78,20 +162,45 @@ export class Sub2ApiProvider implements IAIProvider {
   }
 
   private buildHeaders(options: AIRequestOptions): Record<string, string> {
+    const authType = options.authType === 'custom' ? 'bearer' : options.authType || 'bearer';
+    return this.buildHeadersForAuthMode(options, authType);
+  }
+
+  private buildHeadersForAuthMode(
+    options: AIRequestOptions,
+    authMode: 'bearer' | 'api-key' | 'x-api-key' | 'none',
+  ): Record<string, string> {
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
       ...(options.headers || {}),
     };
 
-    if (options.apiKey) {
-      if (options.authType === 'api-key') {
-        headers['api-key'] = options.apiKey;
-      } else {
-        // Default: Bearer token (OpenAI-compatible)
-        headers['Authorization'] = `Bearer ${options.apiKey}`;
-      }
+    if (!options.apiKey || authMode === 'none') {
+      return headers;
     }
+
+    if (authMode === 'api-key' && !headers['api-key']) {
+      headers['api-key'] = options.apiKey;
+    }
+
+    if (authMode === 'x-api-key' && !headers['x-api-key']) {
+      headers['x-api-key'] = options.apiKey;
+    }
+
+    if (authMode === 'bearer' && !headers.Authorization) {
+      headers.Authorization = `Bearer ${options.apiKey}`;
+    }
+
     return headers;
+  }
+
+  private resolveAuthModes(
+    options: AIRequestOptions,
+  ): Array<'bearer' | 'x-api-key' | 'api-key' | 'none'> {
+    if (options.authType === 'bearer') return ['bearer', 'x-api-key', 'api-key'];
+    if (options.authType === 'api-key') return ['api-key', 'x-api-key', 'bearer'];
+    if (options.authType === 'none') return ['none'];
+    return ['bearer', 'x-api-key', 'api-key'];
   }
 
   /**
@@ -215,6 +324,41 @@ export class Sub2ApiProvider implements IAIProvider {
     return typed.choices?.[0]?.message?.content || '';
   }
 
+  private extractResponsesErrorMessage(data: unknown): string | undefined {
+    if (!data || typeof data !== 'object') return undefined;
+    const typed = data as Record<string, unknown>;
+    const error = typed.error as unknown;
+
+    if (typeof error === 'string' && error.trim().length > 0) return error;
+    if (error && typeof error === 'object') {
+      const message = (error as Record<string, unknown>).message;
+      if (typeof message === 'string' && message.trim().length > 0) return message;
+    }
+
+    const message = typed.message;
+    if (typeof message === 'string' && message.trim().length > 0) return message;
+
+    const detail = typed.detail;
+    if (typeof detail === 'string' && detail.trim().length > 0) return detail;
+
+    return undefined;
+  }
+
+  private summarizeResponseShape(data: unknown): string {
+    if (!data || typeof data !== 'object') return String(data);
+    const typed = data as Record<string, unknown>;
+    const keys = Object.keys(typed);
+    const outputTypes = Array.isArray(typed.output)
+      ? typed.output
+          .map((item) => {
+            if (!item || typeof item !== 'object') return '';
+            return (item as Record<string, unknown>).type as string;
+          })
+          .filter((value) => typeof value === 'string' && value.length > 0)
+      : [];
+    return `keys=[${keys.join(',')}], outputTypes=[${outputTypes.join(',')}]`;
+  }
+
   /**
    * Extract tool_calls from Responses API output.
    * Responses API returns tool calls as output items with type "function_call".
@@ -229,12 +373,56 @@ export class Sub2ApiProvider implements IAIProvider {
         name?: string;
         arguments?: string;
         tool_calls?: Sub2ApiToolCall[];
+        content?: Array<Record<string, unknown>>;
       }>;
     };
 
     if (!typed.output) return undefined;
 
     const toolCalls: Sub2ApiToolCall[] = [];
+
+    const pushToolCall = (item: Record<string, unknown>, fallbackIndex: number) => {
+      const name =
+        (item.name as string | undefined) ||
+        (item.tool_name as string | undefined) ||
+        (item.function && typeof item.function === 'object'
+          ? (item.function as Record<string, unknown>).name
+          : undefined);
+      if (typeof name !== 'string' || name.length === 0) return;
+
+      const rawArgs =
+        (item.arguments as unknown) ??
+        (item.tool_arguments as unknown) ??
+        (item.function && typeof item.function === 'object'
+          ? (item.function as Record<string, unknown>).arguments
+          : undefined);
+
+      let args = '{}';
+      if (typeof rawArgs === 'string') {
+        args = rawArgs;
+      } else if (rawArgs && typeof rawArgs === 'object') {
+        try {
+          args = JSON.stringify(rawArgs);
+        } catch {
+          args = '{}';
+        }
+      }
+
+      const id =
+        (item.call_id as string | undefined) ||
+        (item.id as string | undefined) ||
+        `call_${toolCalls.length || fallbackIndex}`;
+
+      toolCalls.push({
+        id,
+        type: 'function',
+        function: {
+          name,
+          arguments: args,
+        },
+      });
+    };
+
     for (const item of typed.output) {
       // Direct tool_calls on output items
       if (item.tool_calls) {
@@ -242,15 +430,25 @@ export class Sub2ApiProvider implements IAIProvider {
         continue;
       }
       // Responses API function_call output items
-      if (item.type === 'function_call' && item.name) {
-        toolCalls.push({
-          id: item.call_id || item.id || `call_${toolCalls.length}`,
-          type: 'function',
-          function: {
-            name: item.name,
-            arguments: item.arguments || '{}',
-          },
-        });
+      if ((item.type === 'function_call' || item.type === 'tool_call') && item.name) {
+        pushToolCall(item as unknown as Record<string, unknown>, toolCalls.length);
+        continue;
+      }
+
+      // Some gateways wrap tool calls inside message content parts
+      if (Array.isArray(item.content)) {
+        for (const part of item.content) {
+          if (!part || typeof part !== 'object') continue;
+          const partRecord = part as Record<string, unknown>;
+          if (Array.isArray(partRecord.tool_calls)) {
+            toolCalls.push(...(partRecord.tool_calls as Sub2ApiToolCall[]));
+            continue;
+          }
+          const partType = partRecord.type;
+          if (partType === 'function_call' || partType === 'tool_call') {
+            pushToolCall(partRecord, toolCalls.length);
+          }
+        }
       }
     }
 
@@ -272,9 +470,12 @@ export class Sub2ApiProvider implements IAIProvider {
     options: AIRequestOptions,
     body: Record<string, unknown>,
     retries: number = 2,
+    authMode?: 'bearer' | 'api-key' | 'x-api-key' | 'none',
   ): Promise<{ data: unknown; url: string }> {
     const url = this.getEndpoint(options, 'responses');
-    const headers = this.buildHeaders(options);
+    const headers = authMode
+      ? this.buildHeadersForAuthMode(options, authMode)
+      : this.buildHeaders(options);
 
     let lastError = '';
     for (let attempt = 0; attempt <= retries; attempt++) {
@@ -302,7 +503,7 @@ export class Sub2ApiProvider implements IAIProvider {
           throw new Error(lastError);
         }
 
-        const data = await response.json();
+        const data = await this.parseResponseBody(response);
         return { data, url };
       } catch (error) {
         lastError = error instanceof Error ? error.message : String(error);
@@ -323,9 +524,12 @@ export class Sub2ApiProvider implements IAIProvider {
     options: AIRequestOptions,
     body: Record<string, unknown>,
     retries: number = 2,
+    authMode?: 'bearer' | 'api-key' | 'x-api-key' | 'none',
   ): Promise<{ data: unknown; url: string }> {
     const url = this.getEndpoint(options, 'chat');
-    const headers = this.buildHeaders(options);
+    const headers = authMode
+      ? this.buildHeadersForAuthMode(options, authMode)
+      : this.buildHeaders(options);
 
     let lastError = '';
     for (let attempt = 0; attempt <= retries; attempt++) {
@@ -349,7 +553,7 @@ export class Sub2ApiProvider implements IAIProvider {
           throw new Error(lastError);
         }
 
-        const data = await response.json();
+        const data = await this.parseResponseBody(response);
         return { data, url };
       } catch (error) {
         lastError = error instanceof Error ? error.message : String(error);
@@ -374,53 +578,71 @@ export class Sub2ApiProvider implements IAIProvider {
   ): Promise<{ data: unknown; url: string; wireApi: 'responses' | 'chat' }> {
     const wireApi = this.resolveWireApi(options);
     const retries = Math.max(0, options.maxRetries ?? 2);
+    const authModes = this.resolveAuthModes(options);
+    let lastError: Error | undefined;
 
-    const isProtocolError = (msg: string) => {
+    const shouldFallback = (msg: string) => {
       const status = this.parseStatus(msg);
-      return status === 400 || status === 404 || status === 405;
+      if (status === 400 || status === 404 || status === 405) return true;
+      if (status === 500 || status === 502 || status === 503 || status === 504) return true;
+      const normalized = msg.toLowerCase();
+      return normalized.includes('<!doctype html') || normalized.includes('<html');
     };
 
-    if (wireApi === 'responses') {
+    for (const authMode of authModes) {
       try {
-        const result = await this.callResponses(options, responsesBody, retries);
-        return { ...result, wireApi: 'responses' };
-      } catch (error) {
-        const msg = error instanceof Error ? error.message : String(error);
-        if (isProtocolError(msg)) {
-          this.logger.warn(
-            `Sub2API responses endpoint failed (${msg}), falling back to chat/completions`,
-          );
+        if (wireApi === 'responses') {
           try {
-            const result = await this.callChatCompletions(options, chatBody, retries);
-            return { ...result, wireApi: 'chat' };
-          } catch (fallbackError) {
-            // Throw original error if fallback also fails
+            const result = await this.callResponses(options, responsesBody, retries, authMode);
+            return { ...result, wireApi: 'responses' };
+          } catch (error) {
+            const msg = error instanceof Error ? error.message : String(error);
+            if (shouldFallback(msg)) {
+              this.logger.warn(
+                `Sub2API responses endpoint failed (${msg}), falling back to chat/completions`,
+              );
+              try {
+                const result = await this.callChatCompletions(options, chatBody, retries, authMode);
+                return { ...result, wireApi: 'chat' };
+              } catch (fallbackError) {
+                throw error;
+              }
+            }
             throw error;
           }
+        }
+
+        // wireApi === 'chat'
+        try {
+          const result = await this.callChatCompletions(options, chatBody, retries, authMode);
+          return { ...result, wireApi: 'chat' };
+        } catch (error) {
+          const msg = error instanceof Error ? error.message : String(error);
+          if (shouldFallback(msg)) {
+            this.logger.warn(
+              `Sub2API chat/completions endpoint failed (${msg}), falling back to responses`,
+            );
+            try {
+              const result = await this.callResponses(options, responsesBody, retries, authMode);
+              return { ...result, wireApi: 'responses' };
+            } catch (fallbackError) {
+              throw error;
+            }
+          }
+          throw error;
+        }
+      } catch (error) {
+        const msg = error instanceof Error ? error.message : String(error);
+        const status = this.parseStatus(msg);
+        lastError = error instanceof Error ? error : new Error(msg);
+        if ((status === 401 || status === 403) && authModes.length > 1) {
+          continue;
         }
         throw error;
       }
     }
 
-    // wireApi === 'chat'
-    try {
-      const result = await this.callChatCompletions(options, chatBody, retries);
-      return { ...result, wireApi: 'chat' };
-    } catch (error) {
-      const msg = error instanceof Error ? error.message : String(error);
-      if (isProtocolError(msg)) {
-        this.logger.warn(
-          `Sub2API chat/completions endpoint failed (${msg}), falling back to responses`,
-        );
-        try {
-          const result = await this.callResponses(options, responsesBody, retries);
-          return { ...result, wireApi: 'responses' };
-        } catch (fallbackError) {
-          throw error;
-        }
-      }
-      throw error;
-    }
+    throw lastError || new Error('Sub2API call failed');
   }
 
   async generateResponse(
@@ -548,18 +770,36 @@ export class Sub2ApiProvider implements IAIProvider {
       );
 
       if (usedWireApi === 'responses') {
+        const content = this.extractResponsesContent(data) || null;
+        const toolCalls = this.extractResponsesToolCalls(data);
+        if (!content && (!toolCalls || toolCalls.length === 0)) {
+          const errorMessage =
+            this.extractResponsesErrorMessage(data) ||
+            `Empty Sub2API responses payload (${this.summarizeResponseShape(data)})`;
+          this.logger.warn(`[Sub2API] ${errorMessage}`);
+          throw new Error(errorMessage);
+        }
         return {
-          content: this.extractResponsesContent(data) || null,
-          tool_calls: this.extractResponsesToolCalls(data),
+          content,
+          tool_calls: toolCalls,
         };
       }
 
       // ChatCompletions format
       const typed = data as Sub2ApiChatResponse;
       const choiceMessage = typed.choices?.[0]?.message;
+      const content = choiceMessage?.content || null;
+      const toolCalls = choiceMessage?.tool_calls;
+      if (!content && (!toolCalls || toolCalls.length === 0)) {
+        const errorMessage =
+          this.extractResponsesErrorMessage(data) ||
+          `Empty Sub2API chat payload (${this.summarizeResponseShape(data)})`;
+        this.logger.warn(`[Sub2API] ${errorMessage}`);
+        throw new Error(errorMessage);
+      }
       return {
-        content: choiceMessage?.content || null,
-        tool_calls: choiceMessage?.tool_calls,
+        content,
+        tool_calls: toolCalls,
         usage: typed.usage
           ? {
             prompt_tokens: typed.usage.prompt_tokens,

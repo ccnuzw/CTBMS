@@ -75,7 +75,10 @@ export class AIModelService {
     fallback?: string,
     override?: string,
   ): string {
-    if (override) return override;
+    if (override !== undefined && override !== null && override !== '') return override;
+    if (config?.provider === 'sub2api') {
+      return config?.apiKey || '';
+    }
     if (config?.apiKey) return config.apiKey;
     if (config?.apiKeyEnvVar) {
       const envValue = process.env[config.apiKeyEnvVar];
@@ -104,6 +107,11 @@ export class AIModelService {
     override?: string,
     pathOverrides?: Record<string, string>,
   ): string | undefined {
+    const resolvedProvider = provider ?? config?.provider ?? undefined;
+    if (resolvedProvider === 'sub2api') {
+      return 'chat';
+    }
+
     const normalizedOverride = override?.trim();
     if (normalizedOverride) return normalizedOverride;
 
@@ -112,11 +120,6 @@ export class AIModelService {
 
     const normalizedPathOverride = pathOverrides?.wireApi?.trim();
     if (normalizedPathOverride) return normalizedPathOverride;
-
-    const resolvedProvider = provider ?? config?.provider ?? undefined;
-    if (resolvedProvider === 'sub2api') {
-      return 'responses';
-    }
 
     return undefined;
   }

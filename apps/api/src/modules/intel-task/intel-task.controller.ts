@@ -2,7 +2,7 @@ import {
     Controller,
     Get,
     Post,
-    Put,
+    Patch,
     Delete,
     Body,
     Param,
@@ -85,17 +85,17 @@ export class IntelTaskController {
         return this.itemTaskService.getMyTasks(targetUser);
     }
 
-    @Post('check-overdue')
+    @Post('actions/check-overdue')
     async checkOverdueTasks() {
         return this.taskStateService.checkOverdueTasks();
     }
 
-    @Put(':id')
+    @Patch(':id')
     async update(@Param('id') id: string, @Body() dto: UpdateIntelTaskDto) {
         return this.itemTaskService.update(id, dto);
     }
 
-    @Post(':id/submit')
+    @Post(':id/actions/submit')
     async submit(
         @Param('id') id: string,
         @Body() body: { operatorId: string; data?: Prisma.InputJsonValue }
@@ -105,7 +105,7 @@ export class IntelTaskController {
         return this.taskStateService.submitTask(id, operatorId, body.data);
     }
 
-    @Post(':id/review')
+    @Post(':id/actions/review')
     async review(
         @Param('id') id: string,
         @Body() body: { operatorId: string; approved: boolean; reason?: string }
@@ -114,7 +114,7 @@ export class IntelTaskController {
         return this.taskStateService.reviewTask(id, operatorId, body.approved, body.reason);
     }
 
-    @Post(':id/complete')
+    @Post(':id/actions/complete')
     async complete(
         @Param('id') id: string,
         @Body('intelId') intelId?: string,
@@ -122,7 +122,7 @@ export class IntelTaskController {
         return this.taskStateService.complete(id, intelId);
     }
 
-    @Post(':id/cancel')
+    @Post(':id/actions/cancel')
     async cancel(
         @Param('id') id: string,
         @Body() body: { operatorId?: string; reason?: string }
@@ -180,7 +180,7 @@ export class IntelTaskController {
         return this.templateService.findOne(id);
     }
 
-    @Put('templates/:id')
+    @Patch('templates/:id')
     async updateTemplate(@Param('id') id: string, @Body() dto: UpdateIntelTaskTemplateDto) {
         return this.templateService.update(id, dto);
     }
@@ -190,18 +190,18 @@ export class IntelTaskController {
         return this.templateService.remove(id);
     }
 
-    @Post('distribute')
+    @Post('actions/distribute')
     async distributeTasks(@Body() dto: BatchDistributeTasksDto) {
         const triggerUserId = 'system-user-placeholder';
         return this.dispatchService.distributeTasks(dto, triggerUserId);
     }
 
-    @Post('templates/:id/preview')
+    @Post('templates/:id/actions/preview')
     async previewDistribution(@Param('id') id: string) {
         return this.dispatchService.previewDistribution(id);
     }
 
-    @Post('templates/:id/execute')
+    @Post('templates/:id/actions/execute')
     async executeTemplate(@Param('id') id: string) {
         const triggerUserId = 'system-user-placeholder';
         return this.dispatchService.executeTemplate(id, triggerUserId);
@@ -227,7 +227,7 @@ export class IntelTaskController {
         return this.templateService.createRule({ ...dto, templateId: id });
     }
 
-    @Put('rules/:id')
+    @Patch('rules/:id')
     async updateRule(@Param('id') id: string, @Body() dto: UpdateIntelTaskRuleDto) {
         return this.templateService.updateRule(id, dto);
     }

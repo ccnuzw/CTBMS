@@ -51,6 +51,7 @@ import { DataGovernanceModule } from './modules/data-governance';
 import { MetricCenterModule } from './modules/metric-center';
 import { FeatureFlagModule } from './modules/feature-flag';
 import { AgentToolModule } from './modules/agent-tool';
+import { ConversationalWorkflowModule } from './modules/conversational-workflow';
 
 @Module({
   imports: [
@@ -101,6 +102,7 @@ import { AgentToolModule } from './modules/agent-tool';
     MetricCenterModule,
     FeatureFlagModule,
     AgentToolModule,
+    ConversationalWorkflowModule,
   ],
   controllers: [AppController],
   providers: [],

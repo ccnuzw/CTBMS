@@ -2,7 +2,7 @@ import {
   Controller,
   Get,
   Post,
-  Put,
+  Patch,
   Delete,
   Body,
   Param,
@@ -22,7 +22,7 @@ type AuthRequest = ExpressRequest & { user?: { id?: string } };
 
 @Controller('user-config-bindings')
 export class UserConfigBindingController {
-  constructor(private readonly service: UserConfigBindingService) {}
+  constructor(private readonly service: UserConfigBindingService) { }
 
   private getUserId(req: AuthRequest): string {
     const userId = req.user?.id;
@@ -82,7 +82,7 @@ export class UserConfigBindingController {
     return this.service.findOne(this.getUserId(req), id);
   }
 
-  @Put(':id')
+  @Patch(':id')
   update(
     @Request() req: AuthRequest,
     @Param('id') id: string,

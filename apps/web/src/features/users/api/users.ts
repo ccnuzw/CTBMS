@@ -30,37 +30,6 @@ export interface UserFilters {
   pageSize?: number;
 }
 
-// 获取用户列表（支持筛选）
-export const useUsers = (filters?: UserFilters, options?: { enabled?: boolean }) => {
-  return useQuery<UserWithRelations[]>({
-    queryKey: ['users', filters],
-    queryFn: async () => {
-      const params = new URLSearchParams();
-      if (filters?.organizationIds && filters.organizationIds.length > 0) {
-        params.append('organizationIds', filters.organizationIds.join(','));
-      } else if (filters?.organizationId) {
-        params.append('organizationId', filters.organizationId);
-      }
-      if (filters?.departmentIds && filters.departmentIds.length > 0) {
-        params.append('departmentIds', filters.departmentIds.join(','));
-      } else if (filters?.departmentId) {
-        params.append('departmentId', filters.departmentId);
-      }
-      if (filters?.ids && filters.ids.length > 0) {
-        params.append('ids', filters.ids.join(','));
-      }
-      if (filters?.keyword) params.append('keyword', filters.keyword);
-      if (filters?.status) params.append('status', filters.status);
-      if (filters?.unassigned) params.append('unassigned', 'true');
-
-      const res = await fetch(`${API_BASE}?${params.toString()}`);
-      if (!res.ok) throw new Error('获取用户列表失败');
-      return res.json();
-    },
-    enabled: options?.enabled ?? true,
-  });
-};
-
 export interface UserPageResponse {
   data: UserWithRelations[];
   total: number;
@@ -69,23 +38,58 @@ export interface UserPageResponse {
   totalPages: number;
 }
 
+/**
+ * 构建统一的 query params
+ */
+const buildUserParams = (filters?: UserFilters): URLSearchParams => {
+  const params = new URLSearchParams();
+  if (filters?.organizationIds && filters.organizationIds.length > 0) {
+    params.append('organizationIds', filters.organizationIds.join(','));
+  } else if (filters?.organizationId) {
+    params.append('organizationIds', filters.organizationId);
+  }
+  if (filters?.departmentIds && filters.departmentIds.length > 0) {
+    params.append('departmentIds', filters.departmentIds.join(','));
+  } else if (filters?.departmentId) {
+    params.append('departmentIds', filters.departmentId);
+  }
+  if (filters?.ids && filters.ids.length > 0) {
+    params.append('ids', filters.ids.join(','));
+  }
+  if (filters?.keyword) params.append('keyword', filters.keyword);
+  if (filters?.status) params.append('status', filters.status);
+  if (filters?.unassigned) params.append('unassigned', 'true');
+  if (filters?.page) params.append('page', String(filters.page));
+  if (filters?.pageSize) params.append('pageSize', String(filters.pageSize));
+  return params;
+};
+
+/**
+ * 获取用户列表（返回数组，默认 pageSize=200 用于下拉选择等场景）
+ */
+export const useUsers = (filters?: UserFilters, options?: { enabled?: boolean }) => {
+  return useQuery<UserWithRelations[]>({
+    queryKey: ['users', filters],
+    queryFn: async () => {
+      const params = buildUserParams({ ...filters, pageSize: filters?.pageSize ?? 200 });
+      const res = await fetch(`${API_BASE}?${params.toString()}`);
+      if (!res.ok) throw new Error('获取用户列表失败');
+      const result: UserPageResponse = await res.json();
+      return result.data;
+    },
+    enabled: options?.enabled ?? true,
+  });
+};
+
+/**
+ * 获取用户分页列表（返回分页对象，用于表格展示）
+ */
 export const useUsersPaged = (filters?: UserFilters, options?: { enabled?: boolean }) => {
   return useQuery<UserPageResponse>({
     queryKey: ['users-paged', filters],
     queryFn: async () => {
-      const params = new URLSearchParams();
-      if (filters?.organizationIds && filters.organizationIds.length > 0) {
-        params.append('organizationIds', filters.organizationIds.join(','));
-      }
-      if (filters?.departmentIds && filters.departmentIds.length > 0) {
-        params.append('departmentIds', filters.departmentIds.join(','));
-      }
-      if (filters?.keyword) params.append('keyword', filters.keyword);
-      if (filters?.status) params.append('status', filters.status);
-      if (filters?.page) params.append('page', String(filters.page));
-      if (filters?.pageSize) params.append('pageSize', String(filters.pageSize));
-
-      const res = await fetch(`${API_BASE}/paged?${params.toString()}`);
+      const params = buildUserParams(filters);
+      const res = await fetch(`${API_BASE}?${params.toString()}`);
       if (!res.ok) throw new Error('获取用户列表失败');
       return res.json();
     },
@@ -158,7 +162,7 @@ export const useAssignRoles = () => {
 
   return useMutation({
     mutationFn: async ({ id, data }: { id: string; data: AssignRolesDto }) => {
-      const res = await fetch(`${API_BASE}/${id}/roles`, {
+      const res = await fetch(`${API_BASE}/${id}/actions/assign-roles`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(data),
@@ -199,7 +203,7 @@ export const useBatchAssignUsers = () => {
 
   return useMutation({
     mutationFn: async (data: BatchAssignUsersDto) => {
-      const res = await fetch(`${API_BASE}/batch-assign`, {
+      const res = await fetch(`${API_BASE}/actions/batch-assign`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(data),

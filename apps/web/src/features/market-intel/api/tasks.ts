@@ -206,7 +206,7 @@ export const useUpdateTask = () => {
     const queryClient = useQueryClient();
     return useMutation({
         mutationFn: async ({ id, data }: { id: string; data: UpdateIntelTaskDto }) => {
-            const { data: res } = await apiClient.put<IntelTaskResponse>(`${BASE_URL}/${id}`, data);
+            const { data: res } = await apiClient.patch<IntelTaskResponse>(`${BASE_URL}/${id}`, data);
             return res;
         },
         onSuccess: () => {
@@ -220,7 +220,7 @@ export const useCompleteTask = () => {
     const queryClient = useQueryClient();
     return useMutation({
         mutationFn: async ({ id, intelId }: { id: string; intelId?: string }) => {
-            const { data: res } = await apiClient.post<IntelTaskResponse>(`${BASE_URL}/${id}/complete`, { intelId });
+            const { data: res } = await apiClient.post<IntelTaskResponse>(`${BASE_URL}/${id}/actions/complete`, { intelId });
             return res;
         },
         onSuccess: () => {
@@ -245,9 +245,9 @@ export const useDeleteTask = () => {
 export const useSubmitTask = () => {
     const queryClient = useQueryClient();
     return useMutation({
-         
+
         mutationFn: async ({ id, operatorId, data }: { id: string; operatorId: string; data?: any }) => {
-            const { data: res } = await apiClient.post<IntelTaskResponse>(`${BASE_URL}/${id}/submit`, { operatorId, data });
+            const { data: res } = await apiClient.post<IntelTaskResponse>(`${BASE_URL}/${id}/actions/submit`, { operatorId, data });
             return res;
         },
         onSuccess: () => {
@@ -261,7 +261,7 @@ export const useReviewTask = () => {
     const queryClient = useQueryClient();
     return useMutation({
         mutationFn: async ({ id, operatorId, approved, reason }: { id: string; operatorId: string; approved: boolean; reason?: string }) => {
-            const { data: res } = await apiClient.post<IntelTaskResponse>(`${BASE_URL}/${id}/review`, { operatorId, approved, reason });
+            const { data: res } = await apiClient.post<IntelTaskResponse>(`${BASE_URL}/${id}/actions/review`, { operatorId, approved, reason });
             return res;
         },
         onSuccess: () => {
@@ -274,7 +274,7 @@ export const useCancelTask = () => {
     const queryClient = useQueryClient();
     return useMutation({
         mutationFn: async ({ id, operatorId, reason }: { id: string; operatorId?: string; reason?: string }) => {
-            const { data: res } = await apiClient.post<IntelTaskResponse>(`${BASE_URL}/${id}/cancel`, { operatorId, reason });
+            const { data: res } = await apiClient.post<IntelTaskResponse>(`${BASE_URL}/${id}/actions/cancel`, { operatorId, reason });
             return res;
         },
         onSuccess: () => {
@@ -329,7 +329,7 @@ export const useUpdateTaskRule = () => {
     const queryClient = useQueryClient();
     return useMutation({
         mutationFn: async ({ id, data }: { id: string; data: UpdateIntelTaskRuleDto }) => {
-            const { data: res } = await apiClient.put<IntelTaskRuleResponse>(`${BASE_URL}/rules/${id}`, data);
+            const { data: res } = await apiClient.patch<IntelTaskRuleResponse>(`${BASE_URL}/rules/${id}`, data);
             return res;
         },
         onSuccess: (_, variables) => {
@@ -372,7 +372,7 @@ export const useUpdateTaskTemplate = () => {
     const queryClient = useQueryClient();
     return useMutation({
         mutationFn: async ({ id, data }: { id: string; data: UpdateIntelTaskTemplateDto }) => {
-            const { data: res } = await apiClient.put<IntelTaskTemplateResponse>(`${BASE_URL}/templates/${id}`, data);
+            const { data: res } = await apiClient.patch<IntelTaskTemplateResponse>(`${BASE_URL}/templates/${id}`, data);
             return res;
         },
         onSuccess: () => {
@@ -397,7 +397,7 @@ export const useDistributeTasks = () => {
     const queryClient = useQueryClient();
     return useMutation({
         mutationFn: async (data: BatchDistributeTasksDto) => {
-            const { data: res } = await apiClient.post<{ count: number; message: string }>(`${BASE_URL}/distribute`, data);
+            const { data: res } = await apiClient.post<{ count: number; message: string }>(`${BASE_URL}/actions/distribute`, data);
             return res;
         },
         onSuccess: () => {
@@ -410,7 +410,7 @@ export const useDistributeTasks = () => {
 export const usePreviewDistribution = () => {
     return useMutation({
         mutationFn: async (templateId: string) => {
-            const { data } = await apiClient.post<any>(`${BASE_URL}/templates/${templateId}/preview`);
+            const { data } = await apiClient.post<any>(`${BASE_URL}/templates/${templateId}/actions/preview`);
             return data;
         },
     });

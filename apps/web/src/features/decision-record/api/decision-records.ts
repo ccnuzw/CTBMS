@@ -83,7 +83,7 @@ export const useUpdateDecisionRecord = () => {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async ({ id, dto }: { id: string; dto: UpdateDecisionRecordDto }) => {
-      const res = await apiClient.put<DecisionRecordDto>(`/decision-records/${id}`, dto);
+      const res = await apiClient.patch<DecisionRecordDto>(`/decision-records/${id}`, dto);
       return res.data;
     },
     onSuccess: (data) => {

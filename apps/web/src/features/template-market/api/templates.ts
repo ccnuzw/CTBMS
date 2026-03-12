@@ -102,7 +102,7 @@ export const useUpdateTemplate = () => {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async ({ id, dto }: { id: string; dto: UpdateTemplateCatalogDto }) => {
-      const res = await apiClient.put<TemplateCatalogDto>(`/template-catalog/${id}`, dto);
+      const res = await apiClient.patch<TemplateCatalogDto>(`/template-catalog/${id}`, dto);
       return res.data;
     },
     onSuccess: () => {

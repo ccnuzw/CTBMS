@@ -95,7 +95,7 @@ export const useUpdateMarketIntel = () => {
 
     return useMutation({
         mutationFn: async ({ id, data }: { id: string; data: UpdateMarketIntelDto }) => {
-            const res = await apiClient.put<MarketIntelResponse>(`/v1/market-intel/${id}`, data);
+            const res = await apiClient.patch<MarketIntelResponse>(`/v1/market-intel/${id}`, data);
             return res.data;
         },
         onSuccess: (_, variables) => {
@@ -219,7 +219,7 @@ export const useLeaderboard = (
 export const useAnalyzeContent = () => {
     return useMutation({
         mutationFn: async (data: AnalyzeContentDto) => {
-            const res = await apiClient.post<AIAnalysisResult>('/v1/market-intel/analyze', data);
+            const res = await apiClient.post<AIAnalysisResult>('/v1/market-intel/actions/analyze', data);
             return res.data;
         },
     });
@@ -228,7 +228,7 @@ export const useAnalyzeContent = () => {
 export const useGenerateInsight = () => {
     return useMutation({
         mutationFn: async (data: { content: string }) => {
-            const res = await apiClient.post<{ summary: string }>('/v1/market-intel/generate-insight', data);
+            const res = await apiClient.post<{ summary: string }>('/v1/market-intel/actions/generate-insight', data);
             return res.data;
         },
     });
@@ -247,7 +247,7 @@ interface AITestResult {
 export const useTestAI = () => {
     return useMutation({
         mutationFn: async () => {
-            const res = await apiClient.get<AITestResult>('/v1/market-intel/test-ai');
+            const res = await apiClient.get<AITestResult>('/v1/market-intel/actions/test-ai');
             return res.data;
         },
     });
@@ -275,7 +275,7 @@ export const usePromoteToReport = () => {
     return useMutation({
         mutationFn: async (data: PromoteToReportRequest) => {
             const res = await apiClient.post<PromoteToReportResponse>(
-                `/v1/market-intel/${data.intelId}/promote-to-report`,
+                `/v1/market-intel/${data.intelId}/actions/promote-to-report`,
                 {
                     reportType: data.reportType,
                     triggerDeepAnalysis: data.triggerDeepAnalysis ?? true,

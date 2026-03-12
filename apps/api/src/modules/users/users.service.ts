@@ -1,20 +1,13 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { User, UserStatus, Gender, Prisma } from '@prisma/client';
-import { CreateUserDto, UpdateUserDto, AssignRolesDto, BatchAssignUsersDto } from '@packages/types';
+import { CreateUserDto, UpdateUserDto, AssignRolesDto, BatchAssignUsersDto, UserQuery } from '@packages/types';
 import { PrismaService } from '../../prisma';
 
 @Injectable()
 export class UsersService {
-  constructor(private prisma: PrismaService) {}
+  constructor(private prisma: PrismaService) { }
 
-  private buildUserWhere(filters?: {
-    organizationIds?: string[];
-    departmentIds?: string[];
-    ids?: string[];
-    status?: UserStatus;
-    keyword?: string;
-    unassigned?: boolean;
-  }): Prisma.UserWhereInput {
+  private buildUserWhere(filters?: UserQuery): Prisma.UserWhereInput {
     const where: Prisma.UserWhereInput = {};
     if (filters?.unassigned) {
       where.organizationId = null;
@@ -177,38 +170,9 @@ export class UsersService {
   }
 
   /**
-   * 获取所有用户（支持筛选）
+   * 统一分页查询用户（支持筛选）
    */
-  async findAll(filters?: {
-    organizationIds?: string[];
-    departmentIds?: string[];
-    ids?: string[];
-    status?: UserStatus;
-    keyword?: string;
-    unassigned?: boolean;
-  }): Promise<User[]> {
-    const where = this.buildUserWhere(filters);
-    return this.prisma.user.findMany({
-      where,
-      orderBy: [{ createdAt: 'desc' }],
-      include: {
-        organization: true,
-        department: true,
-        roles: {
-          include: { role: true },
-        },
-      },
-    });
-  }
-
-  async findPaged(filters: {
-    organizationIds?: string[];
-    departmentIds?: string[];
-    status?: UserStatus;
-    keyword?: string;
-    page: number;
-    pageSize: number;
-  }) {
+  async findPaged(filters: UserQuery) {
     const where = this.buildUserWhere(filters);
     const page = Math.max(1, Number(filters.page || 1));
     const pageSize = Math.max(1, Math.min(200, Number(filters.pageSize || 20)));

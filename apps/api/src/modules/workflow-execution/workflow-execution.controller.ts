@@ -31,7 +31,7 @@ export class WorkflowExecutionController {
     private readonly workflowExecutionReplayService: WorkflowExecutionReplayService,
   ) { }
 
-  @Post('trigger')
+  @Post('actions/trigger')
   trigger(@Body() dto: TriggerWorkflowExecutionRequest, @Request() req: AuthRequest) {
     const userId = req.user?.id;
     if (!userId) {
@@ -40,7 +40,7 @@ export class WorkflowExecutionController {
     return this.workflowExecutionService.trigger(userId, dto);
   }
 
-  @Post(':id/rerun')
+  @Post(':id/actions/rerun')
   rerun(@Param('id', ParseUUIDPipe) id: string, @Request() req: AuthRequest) {
     const userId = req.user?.id;
     if (!userId) {
@@ -49,7 +49,7 @@ export class WorkflowExecutionController {
     return this.workflowExecutionService.rerun(userId, id);
   }
 
-  @Post(':id/cancel')
+  @Post(':id/actions/cancel')
   cancel(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: CancelWorkflowExecutionRequest,
